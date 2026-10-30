@@ -19,8 +19,12 @@ from app.shared.errors import error_body
 log = logging.getLogger(__name__)
 MB = 1024 * 1024
 
-# 경로별 본문 한도. 파일을 받는 경로가 생기면 그 경로만 여기에 더한다 (예: "/files": 21 * MB). 나머지는 1MB.
-LIMITS: dict[str, int] = {}
+# 경로별 본문 한도: 사진 10MB · 도면 20MB · 사업자등록증 10MB에 multipart 머리 몫을 더한 값. 나머지 JSON은 1MB.
+# 파일을 받는 경로가 생기면 그 경로만 한 줄씩 더한다.
+LIMITS: dict[str, int] = {
+    "/auth/vendor-signup": 11 * MB,
+    "/files": 21 * MB,
+}
 DEFAULT_LIMIT = 1 * MB
 
 

@@ -8,7 +8,11 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import db, queue
+from app.account.router import router as account_router
+from app.auth.router import router as auth_router
 from app.config import settings
+from app.files.router import router as files_router
+from app.project.router import router as project_router
 from app.shared.errors import (
     AppError,
     app_error_handler,
@@ -17,6 +21,7 @@ from app.shared.errors import (
     validation_error_handler,
 )
 from app.shared.request_guards import BodyLimit, CatchAll
+from app.vendor.router import router as vendor_router
 
 
 @asynccontextmanager
@@ -43,7 +48,13 @@ app.add_exception_handler(RequestValidationError, validation_error_handler)
 app.add_exception_handler(StarletteHTTPException, http_error_handler)
 
 # 기능 router는 한 줄에 하나씩, 이름 순으로 더한다 (여러 사람이 동시에 더해도 충돌이 덜 나게).
-ROUTERS: list = []
+ROUTERS = [
+    account_router,
+    auth_router,
+    files_router,
+    project_router,
+    vendor_router,
+]
 for r in ROUTERS:
     app.include_router(r)
 

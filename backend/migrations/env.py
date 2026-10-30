@@ -7,7 +7,10 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 # 기능 models를 만들면 autogenerate가 읽도록 여기에 한 줄씩, 이름 순으로 import한다.
-# 예: `import app.auth.models` 뒤에 F401 noqa 주석을 붙인다.
+import app.auth.models
+import app.files.models
+import app.project.models
+import app.vendor.models  # noqa: F401
 from app.config import settings
 from app.db import Base
 

@@ -7,6 +7,8 @@
 
 import asyncio
 import os
+import shutil
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -41,6 +43,7 @@ TEST_DB = "mitjip_test"
 ADMIN_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/postgres"
 TEST_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/{TEST_DB}"
 REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
+FILES_DIR = tempfile.mkdtemp(prefix="mitjip-files-")
 
 # app을 불러오기 전에 설정을 테스트용으로 바꾼다
 os.environ.update(
@@ -48,6 +51,7 @@ os.environ.update(
         "APP_ENV": "test",
         "DATABASE_URL": f"postgresql+asyncpg://{_user}:{_pw}@{_host}:{_port}/{TEST_DB}",
         "REDIS_URL": REDIS_URL,
+        "FILES_DIR": FILES_DIR,
     }
 )
 
@@ -91,6 +95,7 @@ def _database():
     command.downgrade(cfg, "0001")  # 되돌리기도 되는지 본다
     command.upgrade(cfg, "head")
     yield
+    shutil.rmtree(FILES_DIR, ignore_errors=True)
 
 
 @pytest.fixture(autouse=True)

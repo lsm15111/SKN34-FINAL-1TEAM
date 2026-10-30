@@ -58,9 +58,14 @@ lib/api/<영역>.ts         서버 쪽 읽기의 입구. 영역마다 한 파일
 main.py                  앱 조립: 미들웨어 · router 등록(ROUTERS) · /health/live · /health/ready
 worker.py                arq worker
 config.py · db.py · queue.py   설정 · DB 세션 · 큐 연결
-shared/                  errors · request_guards
-migrations/              Alembic. 0001은 빈 시작점
-기능 패키지(만들 것): auth · account · files · project · vendor · quote · visit · schedule · refprice · jobs · calc · agent
+shared/                  errors · clock · ids · ratelimit · regions · request_guards
+auth/                    가입 · 로그인 · 세션 · 권한(deps) · 관리자 계정 만들기(cli)
+account/                 탈퇴
+files/                   올리기 · 사진 처리(images) · 저장(storage)
+project/                 프로젝트 만들기 · 보기
+vendor/                  업체 가입 신청 · 관리자 승인
+migrations/              Alembic. 0001(빈 시작점) → 0006
+아직 없음: quote · visit · schedule · refprice · jobs · calc · agent
 ```
 
 - 기능 안 파일은 필요한 것만 둔다: `router.py`(HTTP), `service.py`(업무 흐름 · 상태 · commit), `repository.py`(DB), `schemas.py`, `models.py`, `client.py`(외부 API).
