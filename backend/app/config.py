@@ -15,6 +15,19 @@ class Settings(BaseSettings):
     llm_live: bool = False
     # 상태를 바꾸는 요청(POST 등)에서 허용할 브라우저 Origin, 쉼표로 구분
     allowed_origins: str = "http://localhost:3000,http://localhost:3100"
+    # 로그인 세션 유지 기간(일)
+    session_days: int = 14
+    # 올린 파일을 두는 폴더. 운영에서 객체 저장소로 바꾸면 files/storage.py만 고친다
+    files_dir: str = "./data/files"
+
+    @property
+    def is_https(self) -> bool:
+        return self.app_env in ("staging", "production")
+
+    @property
+    def session_cookie(self) -> str:
+        # https에서는 __Host- 접두어로 다른 하위 도메인이 덮어쓰지 못하게 한다
+        return "__Host-mj_sid" if self.is_https else "mj_sid"
 
     @property
     def origins(self) -> set[str]:

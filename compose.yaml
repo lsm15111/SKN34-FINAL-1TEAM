@@ -10,6 +10,8 @@ x-api-env: &api-env
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   # 로그인 쿠키로 상태를 바꾸는 요청을 받아 줄 화면 주소 (쉼표로 구분)
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
+  # 올린 사진 · 도면 · 사업자등록증을 두는 곳 (files-data 볼륨)
+  FILES_DIR: /data/files
 
 services:
   db:
@@ -57,6 +59,8 @@ services:
       context: ./backend
       target: prod
     environment: *api-env
+    volumes:
+      - files-data:/data/files
     depends_on:
       db:
         condition: service_healthy
@@ -100,3 +104,4 @@ services:
 volumes:
   db-data:
   redis-data:
+  files-data:

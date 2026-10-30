@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --locked --no-install-proj
 COPY app ./app
 COPY migrations ./migrations
 COPY alembic.ini ./
-RUN useradd --system --uid 10001 app
+RUN useradd --system --uid 10001 app && mkdir -p /data/files && chown app /data/files
 USER app
 # 프로세스 2개: 하나가 무거운 일(비밀번호 해시 · 사진 처리)을 할 때 다른 요청을 받는다.
 # DB 연결은 프로세스마다 최대 10개(app/db.py). 끌 때는 하던 요청을 20초까지 마친다.

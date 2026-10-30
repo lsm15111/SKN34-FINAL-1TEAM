@@ -36,3 +36,6 @@ build/
 .DS_Store
 Thumbs.db
 *.log
+
+# 올린 파일 (API를 PC에서 바로 띄울 때 생김)
+backend/data/
