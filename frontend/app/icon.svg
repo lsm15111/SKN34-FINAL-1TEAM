@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- 믿집 표시: 지붕 + 'ㅁ' 칸. 색은 globals.css --accent(#2d6cb5)와 같은 값이다. 파비콘은 CSS 변수를 못 읽어서 값을 직접 쓴다. -->
+  <rect width="32" height="32" rx="8" fill="#2d6cb5"/>
+  <path d="M6.5 14.5 16 7l9.5 7.5" fill="none" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <rect x="10" y="14.5" width="12" height="10.5" rx="1.5" fill="none" stroke="#fff" stroke-width="2.6"/>
+</svg>

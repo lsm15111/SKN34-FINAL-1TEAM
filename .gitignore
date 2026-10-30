@@ -22,6 +22,8 @@ htmlcov/
 # Node.js / frontend
 node_modules/
 .next/
+next-env.d.ts
+*.tsbuildinfo
 .nuxt/
 .vite/
 coverage/

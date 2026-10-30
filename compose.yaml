@@ -1,0 +1,102 @@
+# 믿집 공통 구성. 로컬에서는 compose.override.yaml이 자동으로 덧붙는다.
+# 운영 구성(compose.prod.yaml · Caddy)은 배포를 정할 때 더한다.
+name: skn34-final
+
+x-api-env: &api-env
+  APP_ENV: ${APP_ENV:-local}
+  DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mitjip}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD를 .env에 넣어 주세요}@db:5432/${POSTGRES_DB:-mitjip}
+  REDIS_URL: redis://redis:6379/0
+  LLM_LIVE: ${LLM_LIVE:-false}
+  OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+  # 로그인 쿠키로 상태를 바꾸는 요청을 받아 줄 화면 주소 (쉼표로 구분)
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-mitjip}
+      POSTGRES_USER: ${POSTGRES_USER:-mitjip}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD를 .env에 넣어 주세요}
+      TZ: Asia/Seoul
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  # 스키마를 최신으로 올리고 끝나는 1회용 작업
+  migrate:
+    image: ${API_IMAGE:-skn34-final/api:local}
+    build:
+      context: ./backend
+      target: prod
+    command: ["alembic", "upgrade", "head"]
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  api:
+    image: ${API_IMAGE:-skn34-final/api:local}
+    build:
+      context: ./backend
+      target: prod
+    environment: *api-env
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/live', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # LLM 호출·기준 단가 수집·알림 같은 백그라운드 작업 (arq + Redis)
+  worker:
+    image: ${API_IMAGE:-skn34-final/api:local}
+    build:
+      context: ./backend
+      target: prod
+    command: ["arq", "app.worker.WorkerSettings"]
+    environment: *api-env
+    depends_on:
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    image: ${WEB_IMAGE:-skn34-final/web:local}
+    build:
+      context: ./frontend
+      target: prod
+      args:
+        API_INTERNAL_URL: http://api:8000
+    environment:
+      API_INTERNAL_URL: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  redis-data:

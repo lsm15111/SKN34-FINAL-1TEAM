@@ -1,0 +1,56 @@
+# 로컬 개발용. `docker compose up` 하면 자동으로 덧붙는다.
+# 코드를 컨테이너에 바인드 마운트하고, 고치면 자동으로 다시 뜬다.
+# Windows 폴더를 마운트하면 파일 변경 알림이 안 오므로 폴링을 켠다.
+# 내 PC에서 쓰는 포트와 겹치면 .env의 *_HOST_PORT 값을 바꾼다 (DB는 기본 5433: PC에 깔린 PostgreSQL과 안 겹치게).
+services:
+  db:
+    ports:
+      - "127.0.0.1:${DB_HOST_PORT:-5433}:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:${REDIS_HOST_PORT:-6379}:6379"
+
+  migrate:
+    image: skn34-final/api:dev
+    build:
+      target: dev
+    volumes:
+      - ./backend:/app
+
+  api:
+    image: skn34-final/api:dev
+    build:
+      target: dev
+    volumes:
+      - ./backend:/app
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8000}:8000"
+
+  worker:
+    image: skn34-final/api:dev
+    build:
+      target: dev
+    command: ["arq", "app.worker.WorkerSettings", "--watch", "app"]
+    volumes:
+      - ./backend:/app
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"
+
+  web:
+    image: skn34-final/web:dev
+    build:
+      target: dev
+    # Turbopack은 마운트된 Windows 폴더의 변경을 못 잡아서 Docker 안에서는 webpack + 폴링으로 띄운다.
+    # PC에서 바로 띄울 때(pnpm dev)는 기본값 Turbopack을 그대로 쓴다.
+    command: ["pnpm", "exec", "next", "dev", "--webpack", "--hostname", "0.0.0.0", "--port", "3000"]
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      WATCHPACK_POLLING: "true"
+    ports:
+      - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"

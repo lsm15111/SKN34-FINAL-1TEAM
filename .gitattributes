@@ -1,6 +1,10 @@
-* text=auto
+# 저장소에는 LF로 둔다 (Windows에서 줄 끝만 바뀐 diff · Docker 안 스크립트 오류 방지)
+* text=auto eol=lf
 *.sh text eol=lf
 *.yml text eol=lf
 *.yaml text eol=lf
 *.bat text eol=crlf
 *.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.pdf binary
