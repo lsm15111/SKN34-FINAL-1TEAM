@@ -1,0 +1,41 @@
+[project]
+name = "mitjip-api"
+version = "0.1.0"
+description = "믿집 API: 견적·실측·공정표·계약과 에이전트 작업"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.162",
+    "uvicorn[standard]>=0.54",
+    "sqlalchemy[asyncio]>=2.1",
+    "asyncpg>=0.32",
+    "alembic>=1.20",
+    "pydantic-settings>=2.16",
+    "arq>=0.28,<0.29",  # 2025-10부터 유지보수 전용. 올리기 전에 팀에 묻는다
+    "redis>=5.3",
+    "argon2-cffi>=25.1.0",
+    "python-multipart>=0.0.32",
+    "pillow>=13.0.0",
+    "pillow-heif>=1.8.1",
+]
+
+[dependency-groups]
+dev = [
+    "httpx2>=2.16.0",
+    "pytest>=9.2",
+    "ruff>=0.14",
+]
+
+[tool.uv]
+package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI 의존성 주입(Depends 등)은 기본값 자리에 함수 호출을 쓰는 것이 정해진 방식이다
+extend-immutable-calls = ["fastapi.Depends", "fastapi.File", "fastapi.Form", "fastapi.Query", "app.auth.deps.require_role"]

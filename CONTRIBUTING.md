@@ -3,7 +3,7 @@
 ## 브랜치와 Pull Request
 
 - `main`은 공유 기준 브랜치입니다. 기능 개발은 별도 브랜치에서 진행합니다.
-- 브랜치 이름 예시: `feat/기능명`, `fix/수정명`, `docs/문서명`, `chore/설정명`.
+- 브랜치 이름: `작업유형-기능이름` (영어 소문자, 하이픈). 예: `feat-login`, `fix-api-error`, `docs-architecture`, `chore-initial-setup`.
 - Pull Request에는 변경 목적, 주요 내용, 직접 확인한 테스트를 기록합니다.
 - CI가 성공하고 팀원 한 명 이상이 승인한 뒤 병합합니다.
 - 프로젝트별 실행 방법과 테스트 명령이 생기면 README와 CI를 함께 갱신합니다.

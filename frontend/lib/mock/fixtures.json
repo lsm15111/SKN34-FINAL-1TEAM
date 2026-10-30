@@ -1,0 +1,1937 @@
+{
+  "generatedAt": "2026-10-29",
+  "note": "예시 데이터. mitjip-v6 계산 엔진과 2026 공공 단가로 만든 값이고, 업체·단지·회원은 모두 가상이에요.",
+  "area": {
+    "supply": 113.3,
+    "jeon": 84.97,
+    "supplyPy": 34.3,
+    "dobaePy": 92.5
+  },
+  "spaces": [
+    {
+      "id": "living",
+      "name": "거실"
+    },
+    {
+      "id": "kitchen",
+      "name": "주방"
+    },
+    {
+      "id": "master",
+      "name": "안방"
+    },
+    {
+      "id": "room2",
+      "name": "작은방 1"
+    },
+    {
+      "id": "room3",
+      "name": "작은방 2"
+    },
+    {
+      "id": "hall",
+      "name": "복도·현관"
+    }
+  ],
+  "standard": {
+    "id": "std-p1-1",
+    "createdAt": "2026-10-29",
+    "basisDate": "2026-10-29",
+    "sources": [
+      "표준시장단가 2026 하반기 (2026.5.8 공고)",
+      "시중노임단가 2026.9.1 적용 (도배공 229,833원 · 내장공 258,904원 · 보통인부 172,698원)",
+      "조달청 시설공통자재 가격 2026 상반기",
+      "건설공사 표준품셈 2026"
+    ],
+    "qty": {
+      "wall": 225.1,
+      "ceil": 80.8,
+      "totalM2": 305.9,
+      "molding": 82,
+      "base": 62,
+      "basis": "공급 113.3㎡ · 업계 산식 도배평 = 공급평 × 2.5 · 발코니 확장 +8%"
+    },
+    "lines": [
+      {
+        "k": "wall_paste",
+        "trade": "dobae",
+        "name": "도배지 바름 · 벽",
+        "qty": 225.1,
+        "unit": "㎡",
+        "unitPrice": 5993,
+        "amount": 1349000,
+        "src": "표준시장단가 2026 하반기 OB110.20000 도배지바름 벽(콘크리트·모르타르면)",
+        "kind": "public"
+      },
+      {
+        "k": "ceil_paste",
+        "trade": "dobae",
+        "name": "도배지 바름 · 천장",
+        "qty": 80.8,
+        "unit": "㎡",
+        "unitPrice": 8531,
+        "amount": 689000,
+        "src": "표준시장단가 2026 하반기 OB130.10000 도배지바름 천장(석고보드면)",
+        "kind": "public"
+      },
+      {
+        "k": "wall_remove",
+        "trade": "dobae",
+        "name": "기존 벽지 해체 · 벽",
+        "qty": 225.1,
+        "unit": "㎡",
+        "unitPrice": 2702,
+        "amount": 608000,
+        "src": "표준품셈 2026 유지관리 3-2-7 도배 해체(벽) × 시중노임단가 2026.9.1",
+        "kind": "public"
+      },
+      {
+        "k": "ceil_remove",
+        "trade": "dobae",
+        "name": "기존 벽지 해체 · 천장",
+        "qty": 80.8,
+        "unit": "㎡",
+        "unitPrice": 3507,
+        "amount": 283000,
+        "src": "표준품셈 2026 유지관리 3-2-7 도배 해체(천장) × 시중노임단가 2026.9.1",
+        "kind": "public"
+      },
+      {
+        "k": "primer",
+        "trade": "dobae",
+        "name": "초배지",
+        "qty": 334.8,
+        "unit": "㎡",
+        "unitPrice": 242,
+        "amount": 81000,
+        "src": "조달청 시설공통자재 2026 상반기 초배지",
+        "kind": "public"
+      },
+      {
+        "k": "silk",
+        "trade": "dobae",
+        "name": "정배지 (실크)",
+        "qty": 23,
+        "unit": "롤",
+        "unitPrice": null,
+        "amount": null,
+        "src": "공공 가격 없음 · 표준품셈 정배지 1.2㎡/㎡로 수량만 계산",
+        "kind": "none"
+      },
+      {
+        "k": "molding",
+        "trade": "mokgong",
+        "name": "천장 몰딩 설치",
+        "qty": 82,
+        "unit": "m",
+        "unitPrice": 8168,
+        "amount": 670000,
+        "src": "표준시장단가 2026 하반기 OG002 천장 몰딩(재료 제외)",
+        "kind": "public"
+      },
+      {
+        "k": "base",
+        "trade": "mokgong",
+        "name": "걸레받이 설치 (MDF)",
+        "qty": 62,
+        "unit": "m",
+        "unitPrice": 3757,
+        "amount": 233000,
+        "src": "표준시장단가 2026 하반기 OA5 걸레받이 MDF(재료 제외)",
+        "kind": "public"
+      },
+      {
+        "k": "mok_mat",
+        "trade": "mokgong",
+        "name": "몰딩 · 걸레받이 자재",
+        "qty": null,
+        "unit": "",
+        "unitPrice": null,
+        "amount": null,
+        "src": "공공 가격 없음 · 업체 견적에서 확인",
+        "kind": "none"
+      },
+      {
+        "k": "mok_remove",
+        "trade": "mokgong",
+        "name": "기존 몰딩 · 걸레받이 철거",
+        "qty": null,
+        "unit": "",
+        "unitPrice": null,
+        "amount": null,
+        "src": "공공 기준 없음 · 업체 견적에서 확인",
+        "kind": "none"
+      }
+    ],
+    "totals": {
+      "dobae": 3010000,
+      "mokgong": 903000,
+      "all": 3913000
+    },
+    "excluded": [
+      "정배지(실크) 자재비",
+      "몰딩 · 걸레받이 자재비",
+      "기존 몰딩 · 걸레받이 철거",
+      "짐 이동 · 보양 · 폐기물",
+      "간접비 · 이윤 · 부가세"
+    ],
+    "notice": "공공데이터로 계산한 참고용 기준 금액이에요. 업체 견적은 자재 등급, 현장 상태, 인건비 관행에 따라 이보다 높거나 낮을 수 있어요."
+  },
+  "vendors": [
+    {
+      "id": "v1",
+      "name": "결도배",
+      "trades": [
+        "dobae"
+      ],
+      "years": 12,
+      "since": 2014,
+      "areas": [
+        "마포구",
+        "서대문구",
+        "은평구",
+        "용산구",
+        "종로구",
+        "중구"
+      ],
+      "crew": {
+        "dobae": 3
+      },
+      "rating": 4.8,
+      "reviews": 126,
+      "jobs": {
+        "apt": 61,
+        "villa": 13
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 1시간",
+      "as": {
+        "dobae": "1년"
+      },
+      "notes": [
+        "도배만 해요. 목공은 다른 업체와 따로 잡아야 해요."
+      ],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v2",
+      "name": "나무결목공",
+      "trades": [
+        "mokgong"
+      ],
+      "years": 15,
+      "since": 2011,
+      "areas": [
+        "마포구",
+        "서대문구",
+        "영등포구",
+        "강서구",
+        "양천구",
+        "은평구"
+      ],
+      "crew": {
+        "mokgong": 2
+      },
+      "rating": 4.7,
+      "reviews": 64,
+      "jobs": {
+        "apt": 40,
+        "villa": 22
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "mokgong": "1년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v3",
+      "name": "바름집수리",
+      "trades": [
+        "dobae",
+        "mokgong"
+      ],
+      "years": 9,
+      "since": 2017,
+      "areas": [
+        "마포구",
+        "서대문구",
+        "종로구",
+        "중구",
+        "용산구",
+        "성동구"
+      ],
+      "crew": {
+        "dobae": 2,
+        "mokgong": 1
+      },
+      "rating": 4.6,
+      "reviews": 89,
+      "jobs": {
+        "apt": 58,
+        "villa": 21
+      },
+      "license": true,
+      "bond": true,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년",
+        "mokgong": "2년"
+      },
+      "notes": [
+        "천장 초배를 기본으로 넣어요."
+      ],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v4",
+      "name": "온빛인테리어",
+      "trades": [
+        "dobae",
+        "mokgong"
+      ],
+      "years": 6,
+      "since": 2020,
+      "areas": [
+        "마포구",
+        "은평구",
+        "서대문구",
+        "강서구",
+        "양천구",
+        "고양시",
+        "김포시"
+      ],
+      "crew": {
+        "dobae": 3,
+        "mokgong": 2
+      },
+      "rating": 4.9,
+      "reviews": 41,
+      "jobs": {
+        "apt": 33,
+        "villa": 6
+      },
+      "license": true,
+      "bond": true,
+      "response": "평균 30분",
+      "as": {
+        "dobae": "2년",
+        "mokgong": "2년"
+      },
+      "notes": [],
+      "weekend": "none",
+      "visitFee": 0
+    },
+    {
+      "id": "v5",
+      "name": "마루와벽",
+      "trades": [
+        "dobae",
+        "mokgong"
+      ],
+      "years": 11,
+      "since": 2015,
+      "areas": [
+        "마포구",
+        "영등포구",
+        "동작구",
+        "관악구",
+        "구로구",
+        "금천구",
+        "양천구"
+      ],
+      "crew": {
+        "dobae": 2,
+        "mokgong": 2
+      },
+      "rating": 4.4,
+      "reviews": 152,
+      "jobs": {
+        "apt": 77,
+        "villa": 48
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년",
+        "mokgong": "1년"
+      },
+      "notes": [
+        "기존 벽지 철거를 따로 받아요."
+      ],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v6",
+      "name": "한올도배",
+      "trades": [
+        "dobae"
+      ],
+      "years": 14,
+      "since": 2012,
+      "areas": [
+        "강남구",
+        "서초구",
+        "송파구",
+        "강동구",
+        "성남시",
+        "하남시",
+        "광진구"
+      ],
+      "crew": {
+        "dobae": 3
+      },
+      "rating": 4.8,
+      "reviews": 203,
+      "jobs": {
+        "apt": 95,
+        "villa": 11
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v7",
+      "name": "단정목공",
+      "trades": [
+        "mokgong"
+      ],
+      "years": 10,
+      "since": 2016,
+      "areas": [
+        "강남구",
+        "서초구",
+        "송파구",
+        "동작구",
+        "관악구",
+        "성남시"
+      ],
+      "crew": {
+        "mokgong": 2
+      },
+      "rating": 4.6,
+      "reviews": 58,
+      "jobs": {
+        "apt": 47,
+        "villa": 9
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "mokgong": "1년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v8",
+      "name": "이음인테리어",
+      "trades": [
+        "dobae",
+        "mokgong"
+      ],
+      "years": 8,
+      "since": 2018,
+      "areas": [
+        "강남구",
+        "송파구",
+        "강동구",
+        "광진구",
+        "성동구",
+        "하남시",
+        "구리시"
+      ],
+      "crew": {
+        "dobae": 2,
+        "mokgong": 2
+      },
+      "rating": 4.7,
+      "reviews": 77,
+      "jobs": {
+        "apt": 52,
+        "villa": 8
+      },
+      "license": true,
+      "bond": true,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년",
+        "mokgong": "2년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v9",
+      "name": "새벽도배",
+      "trades": [
+        "dobae"
+      ],
+      "years": 7,
+      "since": 2019,
+      "areas": [
+        "노원구",
+        "도봉구",
+        "강북구",
+        "성북구",
+        "중랑구",
+        "동대문구",
+        "의정부시",
+        "남양주시"
+      ],
+      "crew": {
+        "dobae": 2
+      },
+      "rating": 4.5,
+      "reviews": 71,
+      "jobs": {
+        "apt": 49,
+        "villa": 27
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v10",
+      "name": "고운손집수리",
+      "trades": [
+        "dobae",
+        "mokgong"
+      ],
+      "years": 13,
+      "since": 2013,
+      "areas": [
+        "노원구",
+        "성북구",
+        "동대문구",
+        "중랑구",
+        "광진구",
+        "강북구",
+        "구리시",
+        "남양주시"
+      ],
+      "crew": {
+        "dobae": 2,
+        "mokgong": 1
+      },
+      "rating": 4.6,
+      "reviews": 118,
+      "jobs": {
+        "apt": 64,
+        "villa": 39
+      },
+      "license": true,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년",
+        "mokgong": "1년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v11",
+      "name": "다온집수리",
+      "trades": [
+        "dobae",
+        "mokgong"
+      ],
+      "years": 10,
+      "since": 2016,
+      "areas": [
+        "수원시",
+        "용인시",
+        "화성시",
+        "안양시",
+        "군포시",
+        "성남시",
+        "광명시"
+      ],
+      "crew": {
+        "dobae": 3,
+        "mokgong": 2
+      },
+      "rating": 4.7,
+      "reviews": 96,
+      "jobs": {
+        "apt": 81,
+        "villa": 12
+      },
+      "license": true,
+      "bond": true,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "1년",
+        "mokgong": "2년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v12",
+      "name": "새길도배",
+      "trades": [
+        "dobae"
+      ],
+      "years": 5,
+      "since": 2021,
+      "areas": [
+        "부천시",
+        "계양구",
+        "부평구",
+        "남동구",
+        "미추홀구",
+        "연수구",
+        "서구",
+        "김포시",
+        "광명시"
+      ],
+      "crew": {
+        "dobae": 2
+      },
+      "rating": 4.3,
+      "reviews": 38,
+      "jobs": {
+        "apt": 29,
+        "villa": 25
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "dobae": "6개월"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    },
+    {
+      "id": "v13",
+      "name": "정목공방",
+      "trades": [
+        "mokgong"
+      ],
+      "years": 18,
+      "since": 2008,
+      "areas": [
+        "고양시",
+        "파주시",
+        "김포시",
+        "부천시",
+        "서구",
+        "계양구",
+        "은평구"
+      ],
+      "crew": {
+        "mokgong": 1
+      },
+      "rating": 4.9,
+      "reviews": 47,
+      "jobs": {
+        "apt": 30,
+        "villa": 18
+      },
+      "license": false,
+      "bond": false,
+      "response": "평균 3시간",
+      "as": {
+        "mokgong": "2년"
+      },
+      "notes": [],
+      "weekend": "sat",
+      "visitFee": 0
+    }
+  ],
+  "recommend": {
+    "dobae": [
+      {
+        "vendorId": "v1",
+        "rank": 1,
+        "score": 84,
+        "total": 3491500,
+        "pros": [
+          "최근 1년 아파트 시공 61건",
+          "희망일 11.16(월)에 시작할 수 있어요",
+          "평점 4.8 · 후기 126개"
+        ],
+        "cons": []
+      },
+      {
+        "vendorId": "v3",
+        "rank": 2,
+        "score": 81,
+        "total": 3720000,
+        "pros": [
+          "최근 1년 아파트 시공 58건",
+          "희망일 11.16(월)에 시작할 수 있어요",
+          "평점 4.6 · 후기 89개"
+        ],
+        "cons": []
+      },
+      {
+        "vendorId": "v4",
+        "rank": 3,
+        "score": 76,
+        "total": 4091000,
+        "pros": [
+          "희망일 11.16(월)에 시작할 수 있어요",
+          "평점 4.9 · 후기 41개",
+          "최근 1년 아파트 시공 33건"
+        ],
+        "cons": [
+          "후기가 41개로 적은 편이에요",
+          "토요일에는 작업하지 않아요"
+        ]
+      }
+    ],
+    "mokgong": [
+      {
+        "vendorId": "v3",
+        "rank": 1,
+        "score": 77,
+        "total": 1448000,
+        "pros": [
+          "최근 1년 아파트 시공 58건",
+          "희망일 11.16(월)에 시작할 수 있어요",
+          "평점 4.6 · 후기 89개"
+        ],
+        "cons": []
+      },
+      {
+        "vendorId": "v5",
+        "rank": 2,
+        "score": 70,
+        "total": 1275600,
+        "pros": [
+          "최근 1년 아파트 시공 77건",
+          "희망일 11.16(월)에 시작할 수 있어요",
+          "가견적이 중간값보다 10% 낮아요"
+        ],
+        "cons": []
+      },
+      {
+        "vendorId": "v4",
+        "rank": 3,
+        "score": 70,
+        "total": 1638000,
+        "pros": [
+          "희망일 11.16(월)에 시작할 수 있어요",
+          "평점 4.9 · 후기 41개",
+          "최근 1년 아파트 시공 33건"
+        ],
+        "cons": [
+          "후기가 41개로 적은 편이에요",
+          "가견적이 중간값보다 16% 높아요"
+        ]
+      }
+    ]
+  },
+  "quotes": {
+    "dobae": [
+      {
+        "vendorId": "v1",
+        "total": 3491500,
+        "vat": 349150,
+        "direct": 3389500,
+        "margin": 102000,
+        "marginRate": 0.03,
+        "lo": 3320000,
+        "hi": 4040000,
+        "lines": [
+          {
+            "k": "rollWall",
+            "name": "벽지 — 벽",
+            "qty": 16,
+            "unit": "롤",
+            "amount": 624000,
+            "state": "in",
+            "note": "실크 · 벽 225㎡"
+          },
+          {
+            "k": "rollCeil",
+            "name": "벽지 — 천장",
+            "qty": 6,
+            "unit": "롤",
+            "amount": 234000,
+            "state": "in",
+            "note": "실크 · 천장 81㎡"
+          },
+          {
+            "k": "sub",
+            "name": "부자재 (풀·초배지)",
+            "qty": 92.5,
+            "unit": "도배평",
+            "amount": 324000,
+            "state": "in",
+            "note": ""
+          },
+          {
+            "k": "labor",
+            "name": "도배 인건비",
+            "qty": 7.5,
+            "unit": "품",
+            "amount": 2137500,
+            "state": "in",
+            "note": "도배공 3명 팀 · 짐 있는 집 +1품"
+          },
+          {
+            "k": "demo",
+            "name": "기존 벽지 철거",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "bundle",
+            "note": "인건비에 포함"
+          },
+          {
+            "k": "primer",
+            "name": "천장 초배",
+            "qty": 1,
+            "unit": "식",
+            "amount": 269000,
+            "state": "opt",
+            "note": "하면 천장 들뜸이 줄어요"
+          },
+          {
+            "k": "putty",
+            "name": "퍼티·바탕 보수",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "cond",
+            "note": "벽 상태를 보고 실측 때 정해요"
+          },
+          {
+            "k": "move",
+            "name": "짐 이동·보양",
+            "qty": 1,
+            "unit": "식",
+            "amount": 50000,
+            "state": "sep",
+            "note": "인건비에 1품을 더했어요"
+          },
+          {
+            "k": "waste",
+            "name": "폐기물·운반",
+            "qty": 1,
+            "unit": "식",
+            "amount": 20000,
+            "state": "sep",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "vendorId": "v3",
+        "total": 3720000,
+        "vat": 372000,
+        "direct": 3509000,
+        "margin": 211000,
+        "marginRate": 0.06,
+        "lo": 3530000,
+        "hi": 4300000,
+        "lines": [
+          {
+            "k": "rollWall",
+            "name": "벽지 — 벽",
+            "qty": 16,
+            "unit": "롤",
+            "amount": 656000,
+            "state": "in",
+            "note": "실크 · 벽 225㎡"
+          },
+          {
+            "k": "rollCeil",
+            "name": "벽지 — 천장",
+            "qty": 6,
+            "unit": "롤",
+            "amount": 246000,
+            "state": "in",
+            "note": "실크 · 천장 81㎡"
+          },
+          {
+            "k": "sub",
+            "name": "부자재 (풀·초배지)",
+            "qty": 92.5,
+            "unit": "도배평",
+            "amount": 352000,
+            "state": "in",
+            "note": ""
+          },
+          {
+            "k": "labor",
+            "name": "도배 인건비",
+            "qty": 7.5,
+            "unit": "품",
+            "amount": 2175000,
+            "state": "in",
+            "note": "도배공 2명 팀 · 짐 있는 집 +1품"
+          },
+          {
+            "k": "demo",
+            "name": "기존 벽지 철거",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "bundle",
+            "note": "인건비에 포함"
+          },
+          {
+            "k": "primer",
+            "name": "천장 초배",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "bundle",
+            "note": "기본으로 해요"
+          },
+          {
+            "k": "putty",
+            "name": "퍼티·바탕 보수",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "cond",
+            "note": "벽 상태를 보고 실측 때 정해요"
+          },
+          {
+            "k": "move",
+            "name": "짐 이동·보양",
+            "qty": 1,
+            "unit": "식",
+            "amount": 50000,
+            "state": "sep",
+            "note": "인건비에 1품을 더했어요"
+          },
+          {
+            "k": "waste",
+            "name": "폐기물·운반",
+            "qty": 1,
+            "unit": "식",
+            "amount": 30000,
+            "state": "sep",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "vendorId": "v4",
+        "total": 4091000,
+        "vat": 409100,
+        "direct": 3719000,
+        "margin": 372000,
+        "marginRate": 0.1,
+        "lo": 3890000,
+        "hi": 4750000,
+        "lines": [
+          {
+            "k": "rollWall",
+            "name": "벽지 — 벽",
+            "qty": 16,
+            "unit": "롤",
+            "amount": 720000,
+            "state": "in",
+            "note": "실크 · 벽 225㎡"
+          },
+          {
+            "k": "rollCeil",
+            "name": "벽지 — 천장",
+            "qty": 6,
+            "unit": "롤",
+            "amount": 270000,
+            "state": "in",
+            "note": "실크 · 천장 81㎡"
+          },
+          {
+            "k": "sub",
+            "name": "부자재 (풀·초배지)",
+            "qty": 92.5,
+            "unit": "도배평",
+            "amount": 389000,
+            "state": "in",
+            "note": ""
+          },
+          {
+            "k": "labor",
+            "name": "도배 인건비",
+            "qty": 7.5,
+            "unit": "품",
+            "amount": 2250000,
+            "state": "in",
+            "note": "도배공 3명 팀 · 짐 있는 집 +1품"
+          },
+          {
+            "k": "demo",
+            "name": "기존 벽지 철거",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "bundle",
+            "note": "인건비에 포함"
+          },
+          {
+            "k": "primer",
+            "name": "천장 초배",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "bundle",
+            "note": "기본으로 해요"
+          },
+          {
+            "k": "putty",
+            "name": "퍼티·바탕 보수",
+            "qty": null,
+            "unit": "",
+            "amount": 0,
+            "state": "cond",
+            "note": "벽 상태를 보고 실측 때 정해요"
+          },
+          {
+            "k": "move",
+            "name": "짐 이동·보양",
+            "qty": 1,
+            "unit": "식",
+            "amount": 50000,
+            "state": "sep",
+            "note": "인건비에 1품을 더했어요"
+          },
+          {
+            "k": "waste",
+            "name": "폐기물·운반",
+            "qty": 1,
+            "unit": "식",
+            "amount": 40000,
+            "state": "sep",
+            "note": ""
+          }
+        ]
+      }
+    ],
+    "mokgong": [
+      {
+        "vendorId": "v3",
+        "total": 1448000,
+        "vat": 144800,
+        "direct": 1366000,
+        "margin": 82000,
+        "marginRate": 0.06,
+        "lo": 1380000,
+        "hi": 1550000,
+        "lines": [
+          {
+            "k": "molding",
+            "name": "천장 몰딩 교체",
+            "qty": 82,
+            "unit": "m",
+            "amount": 902000,
+            "state": "in",
+            "note": "기존 몰딩 철거 포함"
+          },
+          {
+            "k": "base",
+            "name": "걸레받이 교체",
+            "qty": 62,
+            "unit": "m",
+            "amount": 434000,
+            "state": "in",
+            "note": "기존 걸레받이 철거 포함"
+          },
+          {
+            "k": "mprotect",
+            "name": "보양·자재 운반",
+            "qty": 1,
+            "unit": "식",
+            "amount": 30000,
+            "state": "sep",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "vendorId": "v5",
+        "total": 1275600,
+        "vat": 127560,
+        "direct": 1226600,
+        "margin": 49000,
+        "marginRate": 0.04,
+        "lo": 1210000,
+        "hi": 1360000,
+        "lines": [
+          {
+            "k": "molding",
+            "name": "천장 몰딩 교체",
+            "qty": 82,
+            "unit": "m",
+            "amount": 803600,
+            "state": "in",
+            "note": "기존 몰딩 철거 포함"
+          },
+          {
+            "k": "base",
+            "name": "걸레받이 교체",
+            "qty": 62,
+            "unit": "m",
+            "amount": 403000,
+            "state": "in",
+            "note": "기존 걸레받이 철거 포함"
+          },
+          {
+            "k": "mprotect",
+            "name": "보양·자재 운반",
+            "qty": 1,
+            "unit": "식",
+            "amount": 20000,
+            "state": "sep",
+            "note": ""
+          }
+        ]
+      },
+      {
+        "vendorId": "v4",
+        "total": 1638000,
+        "vat": 163800,
+        "direct": 1489000,
+        "margin": 149000,
+        "marginRate": 0.1,
+        "lo": 1560000,
+        "hi": 1750000,
+        "lines": [
+          {
+            "k": "molding",
+            "name": "천장 몰딩 교체",
+            "qty": 82,
+            "unit": "m",
+            "amount": 984000,
+            "state": "in",
+            "note": "기존 몰딩 철거 포함"
+          },
+          {
+            "k": "base",
+            "name": "걸레받이 교체",
+            "qty": 62,
+            "unit": "m",
+            "amount": 465000,
+            "state": "in",
+            "note": "기존 걸레받이 철거 포함"
+          },
+          {
+            "k": "mprotect",
+            "name": "보양·자재 운반",
+            "qty": 1,
+            "unit": "식",
+            "amount": 40000,
+            "state": "sep",
+            "note": ""
+          }
+        ]
+      }
+    ]
+  },
+  "compare": {
+    "dobae": {
+      "rows": [
+        {
+          "key": "paper",
+          "label": "벽지 (실크)",
+          "std": {
+            "amount": null,
+            "text": "공공 가격 없음"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 858000,
+              "text": "포함"
+            },
+            "v3": {
+              "amount": 902000,
+              "text": "포함"
+            },
+            "v4": {
+              "amount": 990000,
+              "text": "포함"
+            }
+          }
+        },
+        {
+          "key": "sub",
+          "label": "부자재 · 초배지",
+          "std": {
+            "amount": 81000,
+            "text": "조달청 초배지"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 324000,
+              "text": "포함"
+            },
+            "v3": {
+              "amount": 352000,
+              "text": "포함"
+            },
+            "v4": {
+              "amount": 389000,
+              "text": "포함"
+            }
+          }
+        },
+        {
+          "key": "labor",
+          "label": "도배 인건비",
+          "std": {
+            "amount": 2038000,
+            "text": "표준시장단가"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 2137500,
+              "text": "포함"
+            },
+            "v3": {
+              "amount": 2175000,
+              "text": "포함"
+            },
+            "v4": {
+              "amount": 2250000,
+              "text": "포함"
+            }
+          }
+        },
+        {
+          "key": "demo",
+          "label": "기존 벽지 철거",
+          "std": {
+            "amount": 891000,
+            "text": "표준품셈"
+          },
+          "vendors": {
+            "v1": {
+              "amount": null,
+              "text": "인건비에 포함"
+            },
+            "v3": {
+              "amount": null,
+              "text": "인건비에 포함"
+            },
+            "v4": {
+              "amount": null,
+              "text": "인건비에 포함"
+            }
+          }
+        },
+        {
+          "key": "primer",
+          "label": "천장 초배",
+          "std": {
+            "amount": null,
+            "text": "초배지에 포함"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 269000,
+              "text": "선택"
+            },
+            "v3": {
+              "amount": null,
+              "text": "기본 포함"
+            },
+            "v4": {
+              "amount": null,
+              "text": "기본 포함"
+            }
+          }
+        },
+        {
+          "key": "putty",
+          "label": "퍼티 · 바탕 보수",
+          "std": {
+            "amount": null,
+            "text": "공공 기준 없음"
+          },
+          "vendors": {
+            "v1": {
+              "amount": null,
+              "text": "실측 후 결정"
+            },
+            "v3": {
+              "amount": null,
+              "text": "실측 후 결정"
+            },
+            "v4": {
+              "amount": null,
+              "text": "실측 후 결정"
+            }
+          }
+        },
+        {
+          "key": "move",
+          "label": "짐 이동 · 보양",
+          "std": {
+            "amount": null,
+            "text": "제외"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 50000,
+              "text": "별도"
+            },
+            "v3": {
+              "amount": 50000,
+              "text": "별도"
+            },
+            "v4": {
+              "amount": 50000,
+              "text": "별도"
+            }
+          }
+        },
+        {
+          "key": "waste",
+          "label": "폐기물 · 운반",
+          "std": {
+            "amount": null,
+            "text": "제외"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 20000,
+              "text": "별도"
+            },
+            "v3": {
+              "amount": 30000,
+              "text": "별도"
+            },
+            "v4": {
+              "amount": 40000,
+              "text": "별도"
+            }
+          }
+        },
+        {
+          "key": "margin",
+          "label": "이윤 · 관리비",
+          "std": {
+            "amount": null,
+            "text": "제외"
+          },
+          "vendors": {
+            "v1": {
+              "amount": 102000,
+              "text": "3%"
+            },
+            "v3": {
+              "amount": 211000,
+              "text": "6%"
+            },
+            "v4": {
+              "amount": 372000,
+              "text": "10%"
+            }
+          }
+        }
+      ],
+      "total": {
+        "label": "합계 · 부가세 별도",
+        "std": {
+          "amount": 3010000,
+          "text": "공공 기준 · 일부 제외"
+        },
+        "vendors": {
+          "v1": {
+            "amount": 3491500,
+            "text": ""
+          },
+          "v3": {
+            "amount": 3720000,
+            "text": ""
+          },
+          "v4": {
+            "amount": 4091000,
+            "text": ""
+          }
+        }
+      }
+    },
+    "mokgong": {
+      "rows": [
+        {
+          "key": "molding",
+          "label": "천장 몰딩",
+          "std": {
+            "amount": 670000,
+            "text": "시공만 · 자재 제외"
+          },
+          "vendors": {
+            "v3": {
+              "amount": 902000,
+              "text": "자재 · 시공 · 철거"
+            },
+            "v5": {
+              "amount": 803600,
+              "text": "자재 · 시공 · 철거"
+            },
+            "v4": {
+              "amount": 984000,
+              "text": "자재 · 시공 · 철거"
+            }
+          }
+        },
+        {
+          "key": "base",
+          "label": "걸레받이",
+          "std": {
+            "amount": 233000,
+            "text": "시공만 · 자재 제외"
+          },
+          "vendors": {
+            "v3": {
+              "amount": 434000,
+              "text": "자재 · 시공 · 철거"
+            },
+            "v5": {
+              "amount": 403000,
+              "text": "자재 · 시공 · 철거"
+            },
+            "v4": {
+              "amount": 465000,
+              "text": "자재 · 시공 · 철거"
+            }
+          }
+        },
+        {
+          "key": "protect",
+          "label": "보양 · 자재 운반",
+          "std": {
+            "amount": null,
+            "text": "제외"
+          },
+          "vendors": {
+            "v3": {
+              "amount": 30000,
+              "text": "별도"
+            },
+            "v5": {
+              "amount": 20000,
+              "text": "별도"
+            },
+            "v4": {
+              "amount": 40000,
+              "text": "별도"
+            }
+          }
+        },
+        {
+          "key": "margin",
+          "label": "이윤 · 관리비",
+          "std": {
+            "amount": null,
+            "text": "제외"
+          },
+          "vendors": {
+            "v3": {
+              "amount": 82000,
+              "text": "6%"
+            },
+            "v5": {
+              "amount": 49000,
+              "text": "4%"
+            },
+            "v4": {
+              "amount": 149000,
+              "text": "10%"
+            }
+          }
+        }
+      ],
+      "total": {
+        "label": "합계 · 부가세 별도",
+        "std": {
+          "amount": 903000,
+          "text": "공공 기준 · 일부 제외"
+        },
+        "vendors": {
+          "v3": {
+            "amount": 1448000,
+            "text": ""
+          },
+          "v5": {
+            "amount": 1275600,
+            "text": ""
+          },
+          "v4": {
+            "amount": 1638000,
+            "text": ""
+          }
+        }
+      }
+    }
+  },
+  "finals": {
+    "dobae": {
+      "vendorId": "v1",
+      "total": 3671500,
+      "vat": 367150,
+      "direct": 3564500,
+      "margin": 107000,
+      "estimateTotal": 3491500,
+      "deltaTotal": 180000,
+      "findings": [
+        "벽 면적이 추정보다 4% 넓어요",
+        "작은방 창가 벽에 곰팡이 자국이 있어요"
+      ],
+      "lines": [
+        {
+          "k": "rollWall",
+          "name": "벽지 — 벽",
+          "qty": 16,
+          "unit": "롤",
+          "amount": 624000,
+          "state": "in",
+          "note": "실크 · 벽 234㎡"
+        },
+        {
+          "k": "rollCeil",
+          "name": "벽지 — 천장",
+          "qty": 6,
+          "unit": "롤",
+          "amount": 234000,
+          "state": "in",
+          "note": "실크 · 천장 78㎡"
+        },
+        {
+          "k": "sub",
+          "name": "부자재 (풀·초배지)",
+          "qty": 94.5,
+          "unit": "도배평",
+          "amount": 331000,
+          "state": "in",
+          "note": ""
+        },
+        {
+          "k": "labor",
+          "name": "도배 인건비",
+          "qty": 7.5,
+          "unit": "품",
+          "amount": 2137500,
+          "state": "in",
+          "note": "도배공 3명 팀 · 짐 있는 집 +1품"
+        },
+        {
+          "k": "demo",
+          "name": "기존 벽지 철거",
+          "qty": null,
+          "unit": "",
+          "amount": 0,
+          "state": "bundle",
+          "note": "인건비에 포함"
+        },
+        {
+          "k": "primer",
+          "name": "천장 초배",
+          "qty": 1,
+          "unit": "식",
+          "amount": 261000,
+          "state": "opt",
+          "note": "하면 천장 들뜸이 줄어요"
+        },
+        {
+          "k": "putty",
+          "name": "퍼티·방균 (부분)",
+          "qty": 1,
+          "unit": "식",
+          "amount": 168000,
+          "state": "sep",
+          "note": "작은방 창가 벽"
+        },
+        {
+          "k": "move",
+          "name": "짐 이동·보양",
+          "qty": 1,
+          "unit": "식",
+          "amount": 50000,
+          "state": "sep",
+          "note": "인건비에 1품을 더했어요"
+        },
+        {
+          "k": "waste",
+          "name": "폐기물·운반",
+          "qty": 1,
+          "unit": "식",
+          "amount": 20000,
+          "state": "sep",
+          "note": ""
+        }
+      ],
+      "diff": [
+        {
+          "name": "부자재 (풀·초배지)",
+          "from": 92.5,
+          "to": 94.5,
+          "delta": 7000
+        },
+        {
+          "name": "퍼티·방균 (부분)",
+          "from": null,
+          "to": 1,
+          "delta": 168000
+        }
+      ]
+    },
+    "mokgong": {
+      "vendorId": "v3",
+      "total": 1484000,
+      "vat": 148400,
+      "direct": 1400000,
+      "margin": 84000,
+      "estimateTotal": 1448000,
+      "deltaTotal": 36000,
+      "findings": [
+        "거실 우물천장 둘레만큼 몰딩이 더 들어가요"
+      ],
+      "lines": [
+        {
+          "k": "molding",
+          "name": "천장 몰딩 교체",
+          "qty": 87,
+          "unit": "m",
+          "amount": 957000,
+          "state": "in",
+          "note": "기존 몰딩 철거 포함"
+        },
+        {
+          "k": "base",
+          "name": "걸레받이 교체",
+          "qty": 59,
+          "unit": "m",
+          "amount": 413000,
+          "state": "in",
+          "note": "기존 걸레받이 철거 포함"
+        },
+        {
+          "k": "mprotect",
+          "name": "보양·자재 운반",
+          "qty": 1,
+          "unit": "식",
+          "amount": 30000,
+          "state": "sep",
+          "note": ""
+        }
+      ],
+      "diff": [
+        {
+          "name": "천장 몰딩 교체",
+          "from": 82,
+          "to": 87,
+          "delta": 55000
+        },
+        {
+          "name": "걸레받이 교체",
+          "from": 62,
+          "to": 59,
+          "delta": -21000
+        }
+      ]
+    }
+  },
+  "expected": {
+    "start": "2026-11-16",
+    "end": "2026-11-26",
+    "days": [
+      "2026-11-16",
+      "2026-11-17",
+      "2026-11-18",
+      "2026-11-19",
+      "2026-11-20",
+      "2026-11-21",
+      "2026-11-23",
+      "2026-11-24",
+      "2026-11-25",
+      "2026-11-26"
+    ],
+    "tasks": [
+      {
+        "k": "prep",
+        "label": "보양·기존 몰딩 철거",
+        "team": "목공",
+        "s": 0,
+        "e": 1,
+        "why": "엘리베이터·현관·바닥을 먼저 덮어요",
+        "from": {
+          "date": "2026-11-16",
+          "half": "am"
+        },
+        "to": {
+          "date": "2026-11-16",
+          "half": "am"
+        }
+      },
+      {
+        "k": "mok",
+        "label": "목공 (몰딩·걸레받이)",
+        "team": "목공",
+        "s": 1,
+        "e": 7,
+        "why": "3.5품 ÷ 목수 1명",
+        "from": {
+          "date": "2026-11-16",
+          "half": "pm"
+        },
+        "to": {
+          "date": "2026-11-19",
+          "half": "am"
+        }
+      },
+      {
+        "k": "putty",
+        "label": "퍼티·바탕 정리",
+        "team": "도배",
+        "s": 7,
+        "e": 8,
+        "why": "실크는 벽이 고르게 펴져야 해요",
+        "from": {
+          "date": "2026-11-19",
+          "half": "pm"
+        },
+        "to": {
+          "date": "2026-11-19",
+          "half": "pm"
+        }
+      },
+      {
+        "k": "dobae",
+        "label": "도배 (초배·정배)",
+        "team": "도배",
+        "s": 8,
+        "e": 18,
+        "why": "7.5품 ÷ 도배공 2명 × 1.25 (짐 있는 집)",
+        "from": {
+          "date": "2026-11-20",
+          "half": "am"
+        },
+        "to": {
+          "date": "2026-11-25",
+          "half": "pm"
+        }
+      },
+      {
+        "k": "check",
+        "label": "청소·검수",
+        "team": "업체·나",
+        "s": 18,
+        "e": 19,
+        "why": "벽지 이음새·몰딩 틈을 같이 봐요",
+        "from": {
+          "date": "2026-11-26",
+          "half": "am"
+        },
+        "to": {
+          "date": "2026-11-26",
+          "half": "am"
+        }
+      }
+    ],
+    "todos": [
+      {
+        "who": "나",
+        "when": "2026-11-09",
+        "t": "벽지 품번 고르기",
+        "d": "샘플북에서 고른 품번을 업체에 알려 주면 자재를 주문해요"
+      },
+      {
+        "who": "나",
+        "when": "2026-11-11",
+        "t": "관리사무소 공사 신고 · 엘리베이터 사용 예약",
+        "d": "단지마다 신고 기한과 동의서 여부가 달라요"
+      },
+      {
+        "who": "업체",
+        "when": "2026-11-14",
+        "t": "공사 안내문 붙이기",
+        "d": "공사 기간과 연락처를 적어 엘리베이터·현관에 붙여요"
+      },
+      {
+        "who": "나",
+        "when": "2026-11-15",
+        "t": "방별로 짐 옮길 범위 정하기",
+        "d": "업체가 방마다 짐을 옮기며 진행해요"
+      },
+      {
+        "who": "나",
+        "when": "2026-11-26",
+        "t": "검수 참석",
+        "d": "마지막 날 업체와 같이 둘러봐요"
+      }
+    ],
+    "weekendNote": "일요일·공휴일 쉼 (토요일 작업은 단지 규약 확인)"
+  },
+  "confirmed": {
+    "mokgong": {
+      "vendorId": "v3",
+      "start": "2026-11-16",
+      "end": "2026-11-19",
+      "days": [
+        "2026-11-16",
+        "2026-11-17",
+        "2026-11-18",
+        "2026-11-19"
+      ],
+      "tasks": [
+        {
+          "k": "prep",
+          "label": "보양·기존 몰딩 철거",
+          "team": "목공",
+          "s": 0,
+          "e": 1,
+          "why": "엘리베이터·현관·바닥을 먼저 덮어요",
+          "from": {
+            "date": "2026-11-16",
+            "half": "am"
+          },
+          "to": {
+            "date": "2026-11-16",
+            "half": "am"
+          }
+        },
+        {
+          "k": "mok",
+          "label": "목공 (몰딩·걸레받이)",
+          "team": "목공",
+          "s": 1,
+          "e": 7,
+          "why": "3.5품 ÷ 목수 1명",
+          "from": {
+            "date": "2026-11-16",
+            "half": "pm"
+          },
+          "to": {
+            "date": "2026-11-19",
+            "half": "am"
+          }
+        },
+        {
+          "k": "check",
+          "label": "청소·검수",
+          "team": "업체·나",
+          "s": 7,
+          "e": 8,
+          "why": "벽지 이음새·몰딩 틈을 같이 봐요",
+          "from": {
+            "date": "2026-11-19",
+            "half": "pm"
+          },
+          "to": {
+            "date": "2026-11-19",
+            "half": "pm"
+          }
+        }
+      ]
+    },
+    "dobae": {
+      "vendorId": "v1",
+      "start": "2026-11-20",
+      "end": "2026-11-25",
+      "days": [
+        "2026-11-20",
+        "2026-11-21",
+        "2026-11-23",
+        "2026-11-24",
+        "2026-11-25"
+      ],
+      "tasks": [
+        {
+          "k": "prep",
+          "label": "보양·기존 벽지 철거",
+          "team": "도배",
+          "s": 0,
+          "e": 1,
+          "why": "가구와 바닥을 덮어요",
+          "from": {
+            "date": "2026-11-20",
+            "half": "am"
+          },
+          "to": {
+            "date": "2026-11-20",
+            "half": "am"
+          }
+        },
+        {
+          "k": "putty",
+          "label": "퍼티·바탕 정리",
+          "team": "도배",
+          "s": 1,
+          "e": 2,
+          "why": "곰팡이 자리 방균 후 퍼티",
+          "from": {
+            "date": "2026-11-20",
+            "half": "pm"
+          },
+          "to": {
+            "date": "2026-11-20",
+            "half": "pm"
+          }
+        },
+        {
+          "k": "dobae",
+          "label": "도배 (초배·정배)",
+          "team": "도배",
+          "s": 2,
+          "e": 9,
+          "why": "7.5품 ÷ 도배공 3명 × 1.25 (짐 있는 집)",
+          "from": {
+            "date": "2026-11-21",
+            "half": "am"
+          },
+          "to": {
+            "date": "2026-11-25",
+            "half": "am"
+          }
+        },
+        {
+          "k": "check",
+          "label": "청소·검수",
+          "team": "업체·나",
+          "s": 9,
+          "e": 10,
+          "why": "벽지 이음새·몰딩 틈을 같이 봐요",
+          "from": {
+            "date": "2026-11-25",
+            "half": "pm"
+          },
+          "to": {
+            "date": "2026-11-25",
+            "half": "pm"
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,5 +1,10 @@
 name: CI
 
+# PR과 main에 올라온 코드를 확인한다. 유료 API(LLM)는 부르지 않는다 (LLM_LIVE=false).
+# - repository-checks: 저장소 공통 점검 (JSON 문법, 충돌 표시, 줄 끝 공백, .env 추적)
+# - backend: ruff, migration head가 하나인지, pytest(실제 PostgreSQL · Redis, migration up → down → up), API 명세 저장
+# - frontend: API 타입이 명세와 같은지, typecheck, lint, build
+
 on:
   push:
     branches:
@@ -28,3 +33,88 @@ jobs:
         run: |
           python3 -m compileall -q .github/scripts
           python3 .github/scripts/check_repo.py
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: mitjip
+          POSTGRES_PASSWORD: ci-only-password
+          POSTGRES_DB: mitjip
+        ports: ["5433:5432"]
+        options: >-
+          --health-cmd "pg_isready -U mitjip" --health-interval 5s --health-timeout 5s --health-retries 12
+      redis:
+        image: redis:8-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 12
+    env:
+      POSTGRES_USER: mitjip
+      POSTGRES_PASSWORD: ci-only-password
+      DB_HOST_PORT: "5433"
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - run: uv sync --locked
+      - name: ruff
+        run: uv run ruff check . && uv run ruff format --check .
+      - name: migration head가 하나인지 (둘이면 rebase 뒤 내 revision의 down_revision을 최신 head로 바꾼다)
+        run: |
+          heads=$(uv run alembic heads | wc -l)
+          echo "heads: $heads"
+          test "$heads" -le 1
+      - name: pytest
+        run: uv run pytest -q
+      - name: API 명세 저장 (프런트 타입 비교용)
+        env:
+          APP_ENV: local
+          DATABASE_URL: postgresql+asyncpg://mitjip:ci-only-password@127.0.0.1:5433/mitjip
+          REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          uv run uvicorn app.main:app --port 8000 &
+          curl --silent --show-error --fail --retry 20 --retry-delay 1 --retry-connrefused -o ../openapi.json http://127.0.0.1:8000/openapi.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: openapi.json
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    needs: backend
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: frontend/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: openapi
+          path: .
+      - name: API 타입이 명세와 같은지 (API를 바꾸고 pnpm gen:api를 안 돌리면 실패)
+        run: |
+          pnpm exec openapi-typescript ../openapi.json -o lib/backend/schema.d.ts
+          git diff --exit-code -- lib/backend/schema.d.ts
+      - run: pnpm typecheck
+      - run: pnpm lint
+      - run: pnpm build
