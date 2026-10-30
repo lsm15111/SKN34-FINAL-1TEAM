@@ -2,7 +2,7 @@
 
 SK Networks Family AICAMP 34기 1팀 최종 프로젝트 저장소입니다.
 
-믿집: 아파트 도배 · 목공 표준견적과 업체 가견적을 비교하는 서비스입니다. 지금은 초기 설정(웹 · API · DB · Redis 뼈대)만 있고, 기능은 이슈 단위로 더합니다. 작업 규칙은 [AGENTS.md](AGENTS.md)에 있습니다.
+믿집: 아파트 도배 · 목공 표준견적과 업체 가견적을 비교하는 서비스입니다. 회원 · 파일 · 프로젝트 · 업체 API와 화면이 있고, 예상 공정표부터 확정 공정표까지(3~6단계) 화면은 예시 데이터로 그립니다. 기능은 이슈 단위로 더합니다. 작업 규칙은 [AGENTS.md](AGENTS.md)에 있습니다.
 
 ## 기술 스택
 
@@ -21,11 +21,12 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-- 웹 http://localhost:3000 (첫 화면에서 API · DB · Redis 연결을 보여 줍니다)
+- 웹 http://localhost:3000 (예시 프로젝트: 가입 · 로그인 뒤 http://localhost:3000/projects/p1)
 - API 문서 http://localhost:8000/docs
 - 코드를 고치면 웹 · API · worker가 자동으로 다시 뜹니다. 포트가 겹치면 `.env`의 `*_HOST_PORT`를 바꿉니다.
 - 웹만 PC에서 띄울 때: `cd frontend && pnpm install && pnpm dev --port 3100`
 - 테스트: `docker compose up -d db redis` 뒤 `cd backend && uv run pytest`
+- 관리자 계정(가입 화면 없음): `docker compose exec api python -m app.auth.cli create-admin --email <메일> --name 관리자` (비밀번호는 화면에서 입력)
 
 ## 개발 흐름
 
