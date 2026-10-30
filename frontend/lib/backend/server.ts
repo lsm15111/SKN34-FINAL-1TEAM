@@ -7,6 +7,11 @@ export type Schemas = components["schemas"];
 
 const BASE = process.env.API_INTERNAL_URL ?? "http://localhost:8000";
 
+/** 로그인 쿠키(개발 mj_sid, 운영 __Host-mj_sid)가 있는지 */
+export async function hasSessionCookie() {
+  return (await cookies()).getAll().some((c) => c.name.endsWith("mj_sid"));
+}
+
 /** GET. 없거나(404) 권한이 없으면(401 · 403) null, 그 밖의 실패는 예외로 올린다. */
 export async function serverGet<T>(path: string): Promise<T | null> {
   const res = await fetch(`${BASE}${path}`, {

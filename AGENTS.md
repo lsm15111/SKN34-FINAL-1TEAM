@@ -40,16 +40,17 @@
 **프런트 구조** (`frontend/`)
 
 ```
-app/layout.tsx · page.tsx   뼈대 · 첫 화면(연결 확인)
-app/globals.css          디자인 토큰과 여러 화면이 같이 쓰는 공용 클래스만
-app/<경로>/page.tsx      화면(라우트)
+app/<경로>/page.tsx      화면(라우트). 권한은 lib/session.ts의 requireRole로 확인
+app/globals.css          디자인 토큰과 여러 화면이 같이 쓰는 공용 클래스. 옮겨 온 화면 전용 클래스가 아직 남아 있어서, 그 화면을 고칠 때 module.css로 옮긴다
 components/<영역>/        화면 조각. 영역: site · start · project · vendors · my · auth · admin · ui
                          한 컴포넌트에만 쓰는 스타일은 옆에 <이름>.module.css로 둔다
 lib/backend/server.ts    Server Component → FastAPI. 쿠키를 넘기고 읽기만 한다
 lib/backend/client.ts    브라우저 → /api/*. 쓰기와 오류(ApiError)
 lib/backend/schema.d.ts  API 타입. pnpm gen:api로 만들고 손으로 고치지 않는다
-lib/api/<영역>.ts         서버 쪽 읽기의 입구. 영역마다 한 파일 (지금은 health.ts)
-기능과 함께 생길 것: lib/session.ts(로그인한 사람) · lib/mock/(예시 데이터)
+lib/api/<영역>.ts         서버 쪽 읽기의 입구. 영역마다 한 파일: project · vendor · quote · visit · schedule · admin
+lib/mock/                예시 데이터. API가 생기면 lib/api/<영역>.ts 안에서만 바꾼다
+lib/session.ts           로그인한 사람(GET /me)
+lib/format.ts · labels.ts · trade-status.ts · types.ts   표시 형식 · 화면 말 · 공정 상태 · 타입
 ```
 
 **백엔드 구조** (`backend/app/`)
