@@ -11,6 +11,7 @@ from app.config import settings
 from app.directory import client, tasks
 from app.directory.repository import key_hash
 from tests.conftest import query
+from tests.sourcing_helpers import consent, customer_project
 
 HEAD = [
     "상가업소번호",
@@ -174,9 +175,9 @@ def test_kiscon_replays_events_into_current_vendors(key):
     ]
     seen: list = []
     got = run_kiscon([page(p1, 5), page(p2, 5)], seen)
-    assert got == {"items": 5, "events": 4, "saved": 1, "removed": 0}
+    assert got == {"items": 5, "events": 4, "saved": 1, "closed": 0}
     v = vendors()
-    assert set(v) == {a}  # 토목은 거르고, 말소된 c는 남지 않는다
+    assert set(v) == {a}  # 토목은 거르고, 한 기간 안에 등록 · 말소된 c는 처음부터 넣지 않는다
     assert v[a]["industries"] == ["도장ㆍ습식ㆍ방수ㆍ석공사업", "실내건축공사업"]
     assert {"dobae", "mokgong", "paint", "tile", "bath"} <= set(v[a]["trades"])
     assert (v[a]["reg_kind"], v[a]["reg_no"], v[a]["phone"]) == ("construction", a, "021234567")
@@ -196,9 +197,31 @@ def test_kiscon_close_and_transfer_follow_the_registration(key):
         item(d, "실내건축공사업", "양수", "20261020", name="가짜인수", tel="010-0000-0000"),
     ]
     got = run_kiscon([page(moved, 2)])
-    assert got["removed"] == 1
+    assert got["closed"] == 1
     v = vendors()
-    assert set(v) == {d} and v[d]["name"] == "가짜인수" and v[d]["phone"] is None  # 휴대전화는 버림
+    assert set(v) == {a, d}  # a는 지우지 않고 빠짐으로 표시한다
+    assert v[a]["closed_at"] is not None and v[d]["closed_at"] is None
+    assert v[d]["name"] == "가짜인수" and v[d]["phone"] is None  # 휴대전화는 버림
+
+
+def test_closed_vendor_keeps_consent_and_comes_back_when_registered_again(key, api):
+    a = "1000000001"
+    run_kiscon([page([item(a, "실내건축공사업", "신규", "20261002")], 1)])
+    consent(str(vendors()[a]["id"]))
+    _, pid = customer_project(api)
+
+    def names():
+        return [c["name"] for c in api.get(f"/projects/{pid}/sourcing").json()["candidates"]]
+
+    assert "가짜건설" in names()
+    assert run_kiscon([page([item(a, "실내건축공사업", "폐업", "20261010")], 1)])["closed"] == 1
+    assert vendors()[a]["closed_at"] is not None and "가짜건설" not in names()
+    contacts = query("select count(*) n from ext_vendor_contacts")
+    assert contacts[0]["n"] == 1  # 동의 증빙은 남는다
+    # 같은 기간을 다시 받아도 그대로, 나중에 다시 등록되면 되살린다
+    assert run_kiscon([page([item(a, "실내건축공사업", "폐업", "20261010")], 1)])["closed"] == 0
+    run_kiscon([page([item(a, "실내건축공사업", "신규", "20261020")], 1)])
+    assert vendors()[a]["closed_at"] is None and "가짜건설" in names()
 
 
 def test_kiscon_failure_midway_changes_nothing(key):

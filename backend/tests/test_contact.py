@@ -4,6 +4,7 @@ import asyncio
 import uuid
 from datetime import UTC, datetime
 
+import asyncpg
 import pytest
 
 from app.config import settings
@@ -154,6 +155,28 @@ def test_optout_link_blocks_and_hides_the_vendor(api, on):
     ids = [c["id"] for c in api.get(f"/projects/{w['pid']}/sourcing").json()["candidates"]]
     assert w["v"] not in ids
     assert send(api, w).json()["error"]["code"] == "opted_out"
+
+
+def test_closed_vendor_is_blocked_and_cannot_be_requested(api, on):
+    w = world(api)
+    assert send(api, w).status_code == 201
+    query("update ext_vendors set closed_at = now() where id = $1", uuid.UUID(w["v"]))
+    assert dispatch(DryRunSender()) == {"blocked": 1}
+    assert history()[-1] == ("queued", "blocked", "closed")
+    assert send(api, w).json()["error"]["code"] == "vendor"
+
+
+def test_consent_and_contact_history_survive_vendor_deletion_attempts(api):
+    w = world(api)
+    delete = "delete from ext_vendors where id = $1"
+    with pytest.raises(asyncpg.exceptions.ForeignKeyViolationError):
+        query(delete, uuid.UUID(w["v"]))  # 동의 연락처가 있는 업체
+    assert send(api, w).status_code == 201
+    query("delete from ext_vendor_contacts")
+    with pytest.raises(asyncpg.exceptions.ForeignKeyViolationError):
+        query(delete, uuid.UUID(w["v"]))  # 대신 연락 기록이 있는 업체
+    query(delete, uuid.UUID(w["plain"]))  # 기록이 없는 업체는 지울 수 있다
+    assert query("select count(*) n from contact_requests")[0]["n"] == 1
 
 
 def test_only_consented_vendors_in_the_region(api):

@@ -113,8 +113,9 @@ async def candidates(
 
 
 async def card(s: AsyncSession, vendor_id: uuid.UUID) -> ExtCard | None:
+    """후보로 쓸 수 있는 외부 업체 한 곳. 없거나 출처에서 빠진 업체면 None."""
     r = await repo.get(s, vendor_id)
-    if r is None:
+    if r is None or r.closed_at is not None:
         return None
     return _card(r, None, (await repo.channels_of(s, [r.id])).get(r.id, []))
 
@@ -124,10 +125,13 @@ def best_channel(channels: Sequence[str]) -> str | None:
 
 
 async def contact_target(s: AsyncSession, vendor_id: uuid.UUID, channel: str) -> Target | str:
-    """보내기 직전에 다시 본다: 그 수단에 아직 동의가 있는지. 못 보내면 이유('opted_out' · 'no_contact')."""
+    """보내기 직전에 다시 본다: 수신거부 · 출처에서 빠짐 · 그 수단의 동의.
+    못 보내면 이유('opted_out' · 'closed' · 'no_contact')."""
     r = await repo.get(s, vendor_id)
     if r is None or r.opted_out:
         return "opted_out"
+    if r.closed_at is not None:
+        return "closed"
     got = dict(await repo.contacts_of(s, vendor_id))
     if channel not in got:
         return "no_contact"
@@ -161,7 +165,10 @@ async def import_sangga_csv(s: AsyncSession, path: Path, *, now: datetime) -> di
 async def sync_kiscon(
     s: AsyncSession, http: httpx2.AsyncClient, key: str, start: str, end: str, *, now: datetime
 ) -> dict[str, int]:
-    """공시 기간의 KISCON 이벤트를 받아 지금 등록 상태로 맞춘다. 업종이 모두 빠진 업체는 지운다."""
+    """공시 기간의 KISCON 이벤트를 받아 지금 등록 상태로 맞춘다.
+
+    업종이 모두 빠진 업체(말소 · 폐업 · 양도)는 지우지 않고 빠짐(closed_at)으로 표시한다. 다시 등록되면 되살린다.
+    """
     items = await client.kiscon_items(http, key, start, end)  # 다 받은 뒤에만 DB를 연다
     events = list(kiscon_events(items))
     touched = sorted({e.reg_no for e in events})
@@ -170,9 +177,9 @@ async def sync_kiscon(
     rows = [kiscon_row(no, after[no]) for no in touched if no in after]
     gone = [no for no in touched if no in before and no not in after]
     saved = await repo.upsert(s, rows, now=now)
-    removed = await repo.delete_by_source(s, "kiscon", gone)
+    closed = await repo.close_by_source(s, "kiscon", gone, now=now)
     await s.commit()
-    return {"items": len(items), "events": len(events), "saved": saved, "removed": removed}
+    return {"items": len(items), "events": len(events), "saved": saved, "closed": closed}
 
 
 async def verify_biz(

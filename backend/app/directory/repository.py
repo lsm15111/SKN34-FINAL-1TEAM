@@ -65,7 +65,10 @@ async def opted_out_hashes(s: AsyncSession, hashes: Sequence[str]) -> set[str]:
 
 
 async def upsert(s: AsyncSession, rows: Sequence[VendorRow], *, now: datetime) -> int:
-    """출처 번호가 같으면 출처 칸만 고친다. 수신거부 목록에 걸리는 업체는 처음부터 수신거부로 둔다."""
+    """출처 번호가 같으면 출처 칸만 고친다. 수신거부 목록에 걸리는 업체는 처음부터 수신거부로 둔다.
+
+    출처에 다시 나온 업체는 빠졌던 표시(closed_at)를 지운다.
+    """
     saved = 0
     for part in _chunks(rows, BATCH):
         latest = {(r.source, r.source_id): r for r in part}  # 같은 묶음에 두 번 있으면 뒤의 것
@@ -91,6 +94,7 @@ async def upsert(s: AsyncSession, rows: Sequence[VendorRow], *, now: datetime) -
             | {
                 "fetched_at": stmt.excluded.fetched_at,
                 "updated_at": stmt.excluded.updated_at,
+                "closed_at": None,
                 "opted_out": or_(ExtVendor.opted_out, stmt.excluded.opted_out),
             },
         )
@@ -99,26 +103,36 @@ async def upsert(s: AsyncSession, rows: Sequence[VendorRow], *, now: datetime) -
     return saved
 
 
-async def delete_by_source(s: AsyncSession, source: str, source_ids: Sequence[str]) -> int:
-    removed = 0
+async def close_by_source(
+    s: AsyncSession, source: str, source_ids: Sequence[str], *, now: datetime
+) -> int:
+    """출처에서 빠진 업체를 빠짐으로 표시한다. 행 · 동의 연락처 · 연락 기록은 지우지 않는다."""
+    closed = 0
     for part in _chunks(list(source_ids)):
         res = await s.execute(
-            delete(ExtVendor).where(ExtVendor.source == source, ExtVendor.source_id.in_(part))
+            update(ExtVendor)
+            .where(
+                ExtVendor.source == source,
+                ExtVendor.source_id.in_(part),
+                ExtVendor.closed_at.is_(None),
+            )
+            .values(closed_at=now, updated_at=now)
         )
-        removed += res.rowcount
-    return removed
+        closed += res.rowcount
+    return closed
 
 
 async def candidates(
     s: AsyncSession, trades: Sequence[str], sido: str, sgg: str, limit: int
 ) -> list[ExtVendor]:
     """같은 시 · 도에서 공정이 겹치는 업체. 같은 시 · 군 · 구, 동의한 연락처, 견적 창구, 포트폴리오,
-    건설업 등록 순으로 앞에 둔다. 수신거부와 휴업 · 폐업 업체는 뺀다."""
+    건설업 등록 순으로 앞에 둔다. 수신거부, 출처에서 빠진 업체, 휴업 · 폐업 업체는 뺀다."""
     consented = exists().where(ExtVendorContact.vendor_id == ExtVendor.id)
     q = (
         select(ExtVendor)
         .where(
             ExtVendor.opted_out.is_(False),
+            ExtVendor.closed_at.is_(None),
             ExtVendor.sido == sido,
             ExtVendor.trades.op("&&")(cast(list(trades), ARRAY(String(10)))),
             or_(ExtVendor.biz_status.is_(None), ExtVendor.biz_status.in_(("active", "unknown"))),
@@ -184,11 +198,12 @@ async def opt_out(s: AsyncSession, vendor_id: uuid.UUID, *, now: datetime) -> No
 
 
 async def biz_nos_due(s: AsyncSession, before: datetime, limit: int) -> list[str]:
-    """국세청 상태를 확인할 사업자번호: 아직 안 봤거나 before보다 오래전에 본 것"""
+    """국세청 상태를 확인할 사업자번호: 아직 안 봤거나 before보다 오래전에 본 것 (빠진 업체 제외)"""
     q = (
         select(ExtVendor.reg_no)
         .where(
             ExtVendor.reg_no.is_not(None),
+            ExtVendor.closed_at.is_(None),
             or_(ExtVendor.biz_checked_at.is_(None), ExtVendor.biz_checked_at < before),
         )
         .group_by(ExtVendor.reg_no)
@@ -213,12 +228,13 @@ async def set_biz_status(s: AsyncSession, statuses: dict[str, str], *, now: date
 async def homepages_due(
     s: AsyncSession, before: datetime, limit: int
 ) -> list[tuple[uuid.UUID, str]]:
-    """홈페이지를 확인할 업체: 수신거부가 아니고, 아직 안 봤거나 before보다 오래전에 본 것"""
+    """홈페이지를 확인할 업체: 수신거부 · 빠진 업체가 아니고, 아직 안 봤거나 before보다 오래전에 본 것"""
     q = (
         select(ExtVendor.id, ExtVendor.homepage)
         .where(
             ExtVendor.homepage.is_not(None),
             ExtVendor.opted_out.is_(False),
+            ExtVendor.closed_at.is_(None),
             or_(ExtVendor.site_checked_at.is_(None), ExtVendor.site_checked_at < before),
         )
         .order_by(ExtVendor.site_checked_at.nulls_first(), ExtVendor.id)
@@ -258,6 +274,7 @@ async def places_due(
         )
         .where(
             ExtVendor.opted_out.is_(False),
+            ExtVendor.closed_at.is_(None),
             ExtVendor.sido.is_not(None),
             ExtVendor.sgg.is_not(None),
             or_(ExtVendor.place_checked_at.is_(None), ExtVendor.place_checked_at < before),
@@ -282,7 +299,7 @@ async def save_places(s: AsyncSession, found: dict[uuid.UUID, str | None], *, no
 
 
 async def kiscon_holdings(s: AsyncSession, reg_nos: Sequence[str]) -> dict[str, Holding]:
-    """KISCON에서 온 업체의 지금 등록 업종 (이벤트를 이어서 돌릴 출발점)"""
+    """KISCON에서 온 업체의 지금 등록 업종 (이벤트를 이어서 돌릴 출발점). 빠진 업체는 등록이 없는 것으로 본다."""
     out: dict[str, Holding] = {}
     for part in _chunks(list(reg_nos)):
         q = select(
@@ -291,7 +308,11 @@ async def kiscon_holdings(s: AsyncSession, reg_nos: Sequence[str]) -> dict[str, 
             ExtVendor.industries,
             ExtVendor.address,
             ExtVendor.phone,
-        ).where(ExtVendor.source == "kiscon", ExtVendor.source_id.in_(part))
+        ).where(
+            ExtVendor.source == "kiscon",
+            ExtVendor.source_id.in_(part),
+            ExtVendor.closed_at.is_(None),
+        )
         for sid, name, items, address, phone in (await s.execute(q)).all():
             out[sid] = Holding(name=name, items=frozenset(items), address=address, phone=phone)
     return out

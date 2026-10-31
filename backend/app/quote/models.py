@@ -20,6 +20,8 @@ from app.shared.ids import uuid7
 QUOTE_STATUSES = ("requested", "viewed")
 CONTACT_STATUSES = ("draft", "queued", "sent", "failed", "blocked")
 _CONTACT_IN = "('draft', 'queued', 'sent', 'failed', 'blocked')"
+# 이력의 이유: 고객 동의 · 수신거부 · 동의 연락처 없음 · 출처에서 빠진 업체 · 발송 오류
+_REASONS_IN = "('consent', 'opted_out', 'no_contact', 'closed', 'send_error')"
 
 
 class QuoteRequest(Base):
@@ -104,7 +106,8 @@ class ContactRequest(Base):
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     project_id: Mapped[uuid.UUID] = mapped_column()
     trade: Mapped[str] = mapped_column(String(10))
-    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ext_vendors.id", ondelete="CASCADE"))
+    # 보낸 기록 · 고객 동의 증빙이라 업체 행이 지워져도 따라 지우지 않는다 (RESTRICT)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ext_vendors.id", ondelete="RESTRICT"))
     channel: Mapped[str] = mapped_column(String(5))
     body: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
@@ -121,10 +124,7 @@ class ContactRequestEvent(Base):
     __table_args__ = (
         CheckConstraint(f"from_status is null or from_status in {_CONTACT_IN}", name="from_status"),
         CheckConstraint(f"to_status in {_CONTACT_IN}", name="to_status"),
-        CheckConstraint(
-            "reason is null or reason in ('consent', 'opted_out', 'no_contact', 'send_error')",
-            name="reason",
-        ),
+        CheckConstraint(f"reason is null or reason in {_REASONS_IN}", name="reason"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
