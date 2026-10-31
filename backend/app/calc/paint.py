@@ -323,6 +323,10 @@ def quote(inp: PaintInput, p: PaintPrices) -> PaintQuote:
             assumptions.append(f"발코니 확장은 벽 · 천장 면적을 {p.balcony_factor}배로 잡았어요.")
         if inp.putty == "spot":
             assumptions.append("부분 퍼티는 보수할 곳을 실측 때 보고 정해요.")
+        else:
+            assumptions.append(
+                "퍼티 · 칠 기간은 공공 품셈 기준이라 업체 일정보다 길게 나올 수 있어요."
+            )
     if "door" in chosen:
         assumptions.append(f"문 하나(문짝 양면 · 문틀)를 {p.door_m2}㎡로 잡았어요.")
     if painted:
