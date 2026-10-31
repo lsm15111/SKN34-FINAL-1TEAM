@@ -87,12 +87,24 @@ def test_each_rule_break_fails_only_its_check(wp_case, change, check):
 
 def test_terms_need_gloss_in_first_sentence(wp_case):
     plan = copy.deepcopy(GOOD_WP)
-    plan["cautions"][0]["text"] = "천장 도배는 벽보다 품이 더 들어요."
-    assert tp.unexplained_terms(plan) == ["품"]
-    plan["cautions"][0]["text"] = "천장 도배는 벽보다 일손(품)이 더 들어요."
-    assert tp.unexplained_terms(plan) == []
+    plan["cautions"][0]["text"] = "합지는 기존 벽지에 덧방하는 경우가 많아요."
+    assert tp.unexplained_terms(plan, "wallpaper") == ["덧방"]
+    plan["cautions"][0]["text"] = "합지는 기존 벽지를 떼지 않고 그 위에 바르는(덧방) 경우가 많아요."
+    assert tp.unexplained_terms(plan, "wallpaper") == []
     plan["steps"][0]["note"] = "짐 정리 · 보양을 해요."
-    assert tp.unexplained_terms(plan) == ["보양"]
+    assert tp.unexplained_terms(plan, "wallpaper") == ["보양"]
+
+
+def test_everyday_words_are_not_terms():
+    plan = copy.deepcopy(GOOD_WP)
+    plan["cautions"][0]["text"] = (
+        "천장 도배는 벽보다 품이 더 들어요. 그래서 짐 있는 집 할증이 붙어요."
+    )
+    assert tp.unexplained_terms(plan, "wallpaper") == []
+    # 목공 지식의 할증은 '버리는 몫'이라 풀어야 한다
+    assert tp.unexplained_terms(plan, "carpentry") == ["할증"]
+    plan["cautions"][0]["text"] = "자재에는 버리는 몫(할증)이 이미 들어 있어요."
+    assert tp.unexplained_terms(plan, "carpentry") == []
 
 
 def test_empty_house_must_not_talk_about_belongings():

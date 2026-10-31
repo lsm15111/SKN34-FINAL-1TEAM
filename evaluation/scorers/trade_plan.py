@@ -189,11 +189,13 @@ def violations(rule: Rule, plan: dict) -> list[str]:
     ]
 
 
-def unexplained_terms(plan: dict) -> list[str]:
-    """처음 나온 문장에서 풀이 없이 쓴 어려운 용어"""
+def unexplained_terms(plan: dict, agent: str | None = None) -> list[str]:
+    """처음 나온 문장에서 풀이 없이 쓴 어려운 용어 (agent를 주면 그 에이전트가 보는 용어만)"""
     sents = _sents(plan, ALL)
     out = []
     for name, term in TERMS.items():
+        if agent is not None and agent not in term.agents:
+            continue
         first = next((s for s in sents if term.pattern.search(s)), None)
         if first is not None and not term.gloss.search(first):
             out.append(name)
@@ -262,7 +264,7 @@ def score(agent: str, plan: dict, expect: dict, sources: set[str]) -> dict:
     put("caution_source", not bad_src, f"목록 밖 출처 {bad_src}")
     ends = bad_endings(plan)
     put("style", not ends, ends[0][-40:] if ends else "")
-    terms = unexplained_terms(plan)
+    terms = unexplained_terms(plan, agent)
     put("terms", not terms, ", ".join(terms))
 
     results: dict[str, bool] = {}

@@ -2,11 +2,16 @@
 
 풀이는 같은 문장 안에 있으면 된다. 예: '밑종이를 먼저 바르고(초배) 새 벽지를 발라요(정배).'
 목록은 도배 · 목공 지식(SKILL.md)과 계산 엔진 줄 · 단계 이름에 나오는 업계 말에서 골랐다.
-등박스 · 우물천장 · 무몰딩 · 히든 걸레받이처럼 아파트 인테리어에서 흔히 쓰는 말은 넣지 않았다.
+- 등박스 · 우물천장 · 무몰딩 · 히든 걸레받이처럼 아파트 인테리어에서 흔히 쓰는 말은 넣지 않았다.
+- '품이 더 들어요'는 일상 말이라 넣지 않았다. 품셈 같은 기준 이름만 본다.
+- 할증은 목공에서만 본다. 도배의 '짐 있는 집 작업 할증'은 흔히 아는 '웃돈' 뜻이고,
+  목공 지식의 할증은 '버리는 몫'이라 풀지 않으면 웃돈으로 잘못 읽힌다.
 """
 
 import re
 from dataclasses import dataclass
+
+BOTH = ("wallpaper", "carpentry")
 
 
 @dataclass(frozen=True)
@@ -14,10 +19,11 @@ class Term:
     pattern: re.Pattern[str]  # 용어
     gloss: re.Pattern[str]  # 풀이로 인정하는 말
     easy: str  # 쉬운 말 예
+    agents: tuple[str, ...] = BOTH  # 이 용어를 보는 에이전트
 
 
-def _t(pattern: str, gloss: str, easy: str) -> Term:
-    return Term(re.compile(pattern), re.compile(gloss), easy)
+def _t(pattern: str, gloss: str, easy: str, agents: tuple[str, ...] = BOTH) -> Term:
+    return Term(re.compile(pattern), re.compile(gloss), easy, agents)
 
 
 _EVEN = r"바탕을?\s?고르|고르게|평평|매끈"
@@ -43,13 +49,11 @@ TERMS: dict[str, Term] = {
         "기존 벽지 위에 바로 바르기",
     ),
     "보양": _t(r"보양", r"덮|감싸|보호|가리|씌우|비닐", "바닥 · 가구 덮기"),
-    "품": _t(
-        r"(?<![가-힣])품(이|을|은|도|과|만)?(?![가-힣])",
-        r"일손|사람\s?손|작업량|일하는\s?사람|인력|시간이\s?더|손이\s?더|할\s?수\s?있는\s?양",
-        "일손",
-    ),
     "할증": _t(
-        r"할증", r"버리는\s?(몫|양)|여유분|넉넉|더\s?(붙|얹|사|들)|추가", "버리는 몫까지 더 사는 양"
+        r"할증",
+        r"버리는\s?(몫|양)|여유분|넉넉|자투리",
+        "버리는 몫까지 더 잡은 양",
+        ("carpentry",),
     ),
     "소요량": _t(r"소요량", r"필요한\s?양|드는\s?양|쓰는\s?양|들어가는\s?양", "필요한 양"),
     "문선": _t(r"문선", r"문\s?(둘레|테두리)|둘레\s?마감|테두리", "문 둘레 마감"),
