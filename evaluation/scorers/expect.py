@@ -26,7 +26,7 @@ def expect(trade: str, card: ConsultCard, facts: dict) -> dict:
         if f.kind == "count":
             continue
         chosen = vals[f.key] if isinstance(vals[f.key], list) else [vals[f.key]]
-        must += [f"sum.{f.key}.{v}" for v in chosen]
+        must += [f"sum.{f.key}.{v}" for v in chosen if f"sum.{f.key}.{v}" in table]
         if f.kind == "multi":
             must_not += [f"not_chosen.{f.key}.{v}" for v in f.values if v not in chosen]
     must.append(f"sum.occupied.{'yes' if card.occupied else 'no'}")
@@ -46,6 +46,10 @@ def expect(trade: str, card: ConsultCard, facts: dict) -> dict:
     ]
     if "scope.etc" in table:
         must_not.append("scope.etc")
+    # 꼭 언급할 말(예문)에 든 낱말은 언급하면 안 됨으로 보지 않는다
+    # (예: 도장 '벽 전체' 퍼티와 칠할 곳 '벽', 전기 '늘릴 콘센트 자리'와 '콘센트 · 스위치 교체')
+    said = [table[r].example for r in must if table[r].example]
+    must_not = [r for r in must_not if not any(table[r].any.search(x) for x in said)]
     if cfg.extra:
         more, less = cfg.extra(card.model_dump(mode="json"), dict(vals))
         must += more

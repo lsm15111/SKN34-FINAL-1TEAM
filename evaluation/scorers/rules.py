@@ -154,6 +154,12 @@ def line_pattern(name: str) -> str:
     return alt(all_words(name)) or re.escape(name)
 
 
+def _one(w: str) -> str:
+    """한 글자 낱말(예: 도장 칠할 곳 '벽')은 홀로 쓰였거나 조사가 붙었을 때만 (벽지 · 벽면은 아님)"""
+    e = re.escape(w)
+    return rf"(?<![가-힣]){e}(?:(?![가-힣])|(?=[은는을를이가과와도만에의]))"
+
+
 def alt(words: Iterable[str]) -> str:
     """낱말 목록 → 정규식 (띄어 써도 맞게)"""
-    return "|".join(re.escape(w).replace(r"\ ", r"\s?") for w in words)
+    return "|".join(_one(w) if len(w) == 1 else re.escape(w).replace(r"\ ", r"\s?") for w in words)

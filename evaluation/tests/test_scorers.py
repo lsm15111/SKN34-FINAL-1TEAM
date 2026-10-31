@@ -99,6 +99,76 @@ def test_terms_need_gloss_in_first_sentence():
     assert terms(plan, "dobae") == ["보양"]
 
 
+def test_term_easy_words_count_as_gloss():
+    from evaluation.scorers.terms import TERMS
+
+    assert [k for k, t in TERMS.items() if not t.gloss.search(t.easy)] == []
+
+
+def test_rules_fit_new_trade_labels(monkeypatch):
+    """새 공정 화면 말: 숫자뿐인 선택지 · 한 글자 선택지 · 괄호로 푼 업계 말 · 꼭 언급과 겹치는 낱말"""
+    from types import SimpleNamespace as NS
+
+    from app.agent.trade import TradeAgent
+    from app.consult.schemas import ConsultCard
+    from app.consult.trades import REGISTRY
+    from app.consult.trades.base import Choice, FieldSpec, TradeSpec
+    from evaluation.plan import config
+    from evaluation.scorers import witness
+    from evaluation.scorers.expect import expect
+
+    two = (Choice("wall", "벽"), Choice("ceil", "천장"))
+    method = (Choice("remove", "다 뜯고 새로"), Choice("over", "덧방 (위에 덧붙이기)"))
+    spec = TradeSpec(
+        key="probex",
+        label="시험",
+        order=56,
+        fields=(
+            FieldSpec(
+                "length", "길이", "?", "choice", (Choice("s", "2.4m"), Choice("fit", "보통"))
+            ),
+            FieldSpec("parts", "칠할 곳", "?", "multi", two, max=2),
+            FieldSpec("walls", "칠할 벽 수", "?", "count", min=1, max=9, unknown=2),
+            FieldSpec("method", "지금 타일", "?", "choice", method),
+        ),
+        agent=TradeAgent("probex", "시험", "probex-v1", "시스템", "답", {"field": "현장"}),
+        build=lambda c, v: NS(lines=[], steps=[]),
+        card_lines=lambda c, v: [],
+    )
+    monkeypatch.setitem(REGISTRY, "probex", spec)
+    monkeypatch.setattr(trades, "ORDER", ("mokgong", "probex", "dobae"))
+    monkeypatch.setitem(config.CONFIGS, "probex", config.PlanConfig(scope_exempt=()))
+    caches = (tp.rules, tp.auto_exempt, trades.after_lines)
+    for c in caches:
+        c.cache_clear()
+    try:
+        rules = tp.rules("probex")
+        assert (
+            "sum.length.s" not in rules and "sum.length.fit" in rules
+        )  # '2.4m'은 숫자 없이 못 쓴다
+        wall = rules["not_chosen.parts.wall"].any
+        assert wall.search("벽을 칠해요") and wall.search("벽 전체")
+        assert not wall.search("벽지를 발라요") and not wall.search("벽면")
+        glossed = witness.gloss("덧방으로 해요.", "probex")
+        assert glossed == "덧방(기존 것을 떼지 않고 위에 덧붙이기)으로 해요."
+        assert witness._pack(["가", "나", "다라", "마"], 3) == ["가 나", "다라", "마"]
+        values = {"length": "s", "parts": ["ceil"], "walls": 2, "method": "over"}
+        card = ConsultCard(
+            trades=["probex"],
+            area_m2="84.0",
+            area_basis="supply",
+            occupied=False,
+            values={"probex": values},
+            to_check=["probex.walls"],
+        )
+        e = expect("probex", card, {"step_keys": [], "after_visit": []})
+        # '칠할 벽 수'를 실측 때 확인해야 하니 고르지 않은 '벽'을 언급 금지로 두지 않는다
+        assert "check.walls" in e["must"] and "not_chosen.parts.wall" not in e["must_not"]
+    finally:
+        for c in caches:
+            c.cache_clear()
+
+
 def test_everyday_words_are_not_terms():
     plan = copy.deepcopy(GOOD_WP)
     plan["cautions"][0]["text"] = (

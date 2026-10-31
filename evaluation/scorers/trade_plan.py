@@ -72,7 +72,7 @@ CHECKS = {
 _DIGIT = re.compile(r"\d")
 NUM_WORD = re.compile(
     r"(십|백|천|만|억)\s?원(?![래목])"
-    r"|(하루|이틀|사흘|나흘|일주일|반나절|한\s?달)\s?(정도|만에|이면|가|이|안에|이상)?\s?(걸|소요|끝)"
+    r"|(하루|이틀|사흘|나흘|일주일|반나절|한\s?달)\s?(정도면?|만에|이면|면|쯤|가|이|안에|이상)?\s?(걸|소요|끝)"
     r"|(?<![가-힣])(한|두|세|네)\s?명"
 )
 _STEM_EXAMPLE = {
@@ -125,7 +125,7 @@ def choice_words(f, drop: tuple[str, ...]) -> dict[str, list[str]]:
                 " ".join(w for w in part.split() if not w.endswith("요"))
                 for part in re.split(r"\s*·\s*", re.sub(r"\(.*?\)", " ", c.label))
             ]
-            ws = [x for x in chunks if len(x) >= 2]
+            ws = [x for x in chunks if len(x) >= 2] or [x for x in chunks if x]
         out[c.value] = ws or all_words(f.label, drop)
     return out
 
@@ -147,9 +147,11 @@ def rules(trade: str) -> dict[str, Rule]:
         cws = choice_words(f, drop)
         for c in f.choices:
             w = cws[c.value]
-            out[f"sum.{f.key}.{c.value}"] = rule(
-                f"요약에 {f.label} '{c.label}'", ("summary",), alt(w), example=w[0]
-            )
+            # '2.4m'처럼 숫자로만 말할 수 있는 값은 요약에 쓸 수 없다 (숫자 금지)
+            if not all(re.search(r"\d", x) for x in w):
+                out[f"sum.{f.key}.{c.value}"] = rule(
+                    f"요약에 {f.label} '{c.label}'", ("summary",), alt(w), example=w[0]
+                )
             if f.kind == "multi":
                 out[f"not_chosen.{f.key}.{c.value}"] = rule(
                     f"고르지 않은 {c.label} 언급", ALL, alt(w), neg=True
@@ -161,7 +163,7 @@ def rules(trade: str) -> dict[str, Rule]:
                 f"모르는 {f.label}을 실측 때 확인",
                 VC,
                 alt(cw),
-                example=f"{cw[0]}{josa(cw[0])} 실측 때 같이 확인해요.",
+                example=f"{f.label}{josa(f.label)} 실측 때 같이 확인해요.",
             )
     for key, name in trades.after_lines(trade).items():
         out[f"after.{key}"] = rule(

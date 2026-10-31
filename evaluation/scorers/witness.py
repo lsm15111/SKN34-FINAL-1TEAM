@@ -8,7 +8,8 @@
 
 import re
 
-from evaluation.scorers.rules import Rule
+from evaluation.scorers.rules import Rule, sentences
+from evaluation.scorers.terms import TERMS, unexplained
 
 _SMP = {
     "text": "공공 기준 단가는 업체 견적과 견주어 보는 기준이고 업체 가격이 아니에요.",
@@ -176,6 +177,23 @@ def mokgong(case: dict) -> dict:
     }
 
 
+def _pack(items: list[str], n: int) -> list[str]:
+    """예문이 n개보다 많으면 가장 짧은 이웃 둘씩 한 줄로 합친다 (칸이 많은 공정)"""
+    items = list(items)
+    while len(items) > n:
+        i = min(range(len(items) - 1), key=lambda k: len(items[k]) + len(items[k + 1]))
+        items[i : i + 2] = [f"{items[i]} {items[i + 1]}"]
+    return items
+
+
+def gloss(text: str, trade: str) -> str:
+    """풀지 않은 업계 말이 처음 나온 곳 뒤에 쉬운 말을 괄호로 붙인다 (화면 말에서 온 예문용)"""
+    for name in unexplained(sentences(text), trade):
+        term = TERMS[name]
+        text = term.pattern.sub(lambda m, e=term.easy: f"{m.group(0)}({e})", text, count=1)
+    return text
+
+
 def generic(case: dict, label: str, rules: dict[str, Rule], sources: dict[str, str]) -> dict:
     """규칙의 예문으로 만든 모범 답 (설정에 손으로 쓴 답이 없는 공정)"""
     card, e = case["input"]["card"], case["expect"]
@@ -192,6 +210,7 @@ def generic(case: dict, label: str, rules: dict[str, Rule], sources: dict[str, s
     ]
     if "prep.mention" in must and "prep" not in e["step_keys"]:
         placed.insert(0, PREP_NOTE)
+    placed = _pack(placed, 10)  # 실측 질문 6개 + 주의 4개 안에 넣는다
     visit = (placed[:6] + [p for p in _PAD if p not in placed])[: max(3, min(6, len(placed)))]
     src = "field" if "field" in sources else next(iter(sources))
     cautions = [{"text": t, "source": src} for t in placed[6:10]]
@@ -200,11 +219,16 @@ def generic(case: dict, label: str, rules: dict[str, Rule], sources: dict[str, s
             cautions.append(c)
     while len(cautions) < 2:
         cautions.append({"text": "자세한 범위는 실측 때 업체와 같이 정해요.", "source": src})
+
+    def g(t: str) -> str:  # 화면 말에 든 업계 말(예: 덧방 · 줄퍼티)을 푼다
+        return gloss(t, case["trade"])
+
     return {
-        "summary": f"{head}{home} {label} 공사예요. 자세한 범위는 실측 때 정해요.",
+        "summary": g(f"{head}{home} {label} 공사예요. 자세한 범위는 실측 때 정해요."),
         "steps": [
-            {"key": k, "note": notes.get(k, "이 단계 일을 순서대로 해요.")} for k in e["step_keys"]
+            {"key": k, "note": g(notes.get(k, "이 단계 일을 순서대로 해요."))}
+            for k in e["step_keys"]
         ],
-        "visit_checks": visit,
-        "cautions": cautions,
+        "visit_checks": [g(v) for v in visit],
+        "cautions": [c | {"text": g(c["text"])} for c in cautions],
     }
