@@ -7,8 +7,12 @@ from app.consult.trades import (
     bath,
     dobae,
     electric,
+    film,
+    floor,
     kitchen,
     mokgong,
+    paint,
+    tile,
     window,
 )
 from app.consult.trades.base import TradeSpec
@@ -17,8 +21,12 @@ _SPECS: tuple[TradeSpec, ...] = (
     bath.SPEC,
     dobae.SPEC,
     electric.SPEC,
+    film.SPEC,
+    floor.SPEC,
     kitchen.SPEC,
     mokgong.SPEC,
+    paint.SPEC,
+    tile.SPEC,
     window.SPEC,
 )
 REGISTRY: dict[str, TradeSpec] = {s.key: s for s in sorted(_SPECS, key=lambda s: s.order)}
@@ -29,6 +37,10 @@ _LATE = sorted((s for s in _SPECS if s.late_order is not None), key=lambda s: s.
 if len({s.late_order for s in _LATE}) != len(_LATE):
     raise ValueError("늦게 하는 작업 순서(late_order)는 겹치면 안 돼요")
 LATE_ORDER: tuple[str, ...] = tuple(s.key for s in _LATE)
+# 같이 쓰는 칸(share)을 여러 공정에 한 번에 물을 때의 질문 (바꿀 · 칠할 · 붙일처럼 뜻이 섞이지 않게)
+SHARED_QUESTIONS: dict[str, str] = {
+    "doors": "공사할 방문은 몇 개예요?",
+}
 
 
 def catalog() -> str:

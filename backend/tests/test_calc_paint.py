@@ -60,6 +60,7 @@ def test_everything_34_pyeong_supply_full_putty():
         ("finish", 1),
     ]
     assert r.days == Decimal("11.5")
+    assert any("업체 일정보다 길게" in x for x in r.assumptions)  # 공공 품셈 기간이라 알린다
 
 
 def test_doors_only_eco_exclusive_occupied():
@@ -103,6 +104,7 @@ def test_ceiling_only_with_spot_putty():
         ("paint", 2),
         ("finish", 1),
     ]
+    assert not any("업체 일정보다 길게" in x for x in r.assumptions)
 
 
 def test_putty_range_and_paint_grade_order_the_price():

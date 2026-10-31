@@ -37,7 +37,7 @@ from app.consult.schemas import (
     SummaryOut,
     TradeOut,
 )
-from app.consult.trades import LATE_ORDER, ORDER, REGISTRY, catalog
+from app.consult.trades import LATE_ORDER, ORDER, REGISTRY, SHARED_QUESTIONS, catalog
 from app.consult.trades.base import UNKNOWN, Common, FieldSpec, TradeSpec, Value
 from app.consult.trades.overlaps import overlaps
 from app.project import service as project_service
@@ -135,7 +135,10 @@ def questions(c: ConsultCard) -> list[Question]:
             users = [sp.label for sp, g in missing if g.share == f.share]
             if len(users) > 1:
                 q = q.model_copy(
-                    update={"text": f"{f.question} ({' · '.join(users)}에 같이 넣어요)"}
+                    update={
+                        "text": f"{SHARED_QUESTIONS.get(f.share, f.question)} "
+                        f"{' · '.join(users)}에 같이 넣고, 공정마다 다르면 대화로 바꿀 수 있어요."
+                    }
                 )
         out.append(q)
     return out
