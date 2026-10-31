@@ -44,11 +44,20 @@ def failed(case: dict, answer: str, sources: list[str] | None = None) -> set[str
 
 
 def test_generator_counts_2to1_and_fragments(built):
-    assert len(built) == 4980
+    """등록된 공정마다 주제 10개 (손으로 쓴 질문이 없는 주제도 스펙 · 지식으로 만든다), 범주마다 같은 수"""
+    want = {f"{t}.{topic}" for t in trades.registered() for topic in make_cases.P.TOPICS}
+    per = make_cases.TOTAL // len(want) // 3 * 3
+    assert len(built) == len(want) * per
     cnt = Counter((c["category"], c["split"]) for c in built)
     cats = {k for k, _ in cnt}
-    assert len(cats) == 20 and {c.split(".")[1] for c in cats} == set(make_cases.P.TOPICS)
+    assert cats == want == {f"{t}.{topic}" for t, topic in make_cases.categories()}
     assert all(cnt[cat, "dev"] == 2 * cnt[cat, "heldout"] for cat in cats)
+    hand = {(t, topic) for t, topic, _ in make_cases.P.BANK}
+    assert {t for t, _ in hand} == set(trades.registered())  # 10공정 모두 손으로 쓴 질문이 있다
+    for t, topic in hand:
+        assert set(make_cases.subjects(t, topic)) >= {
+            k for tt, tp, k in make_cases.P.BANK if (tt, tp) == (t, topic)
+        }  # 손으로 쓴 거리는 모범 답이 채점을 지나 모두 남는다
     r = gen.split_report(built)
     assert (r["dup_ids"], r["dup_inputs"], r["uneven"], r["shared_fragments"]) == (0, 0, [], [])
     qs = {s: {c["input"]["question"] for c in built if c["split"] == s} for s in gen.SPLITS}

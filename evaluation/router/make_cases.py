@@ -141,16 +141,18 @@ def noun_options(trade: str, f: FieldSpec) -> dict[str, list[str]]:
 
 
 def field_phrase(t: Talk, trade: str, f: FieldSpec, value) -> str:
-    """칸 값으로 정하는 말. 묶음이 없으면 스펙 화면 말로 만든다 (새 공정: 칸 이름을 붙여 어느 칸인지 드러낸다)"""
+    """칸 값으로 정하는 말. 묶음이 없으면 스펙 화면 말로 만든다 (새 공정: 칸 이름을 붙여 어느 칸인지 드러낸다).
+    같이 쓰는 칸(share)은 공정을 집지 않는 SHARE 말을 쓴다 (기대가 같은 칸을 모두 바꾸는 것이라서)"""
     r = t.r
     head = f"{f.label}{josa(f.label, '은는')}"
+    base = f"share:{f.share}" if f.share else f"field:{trade}:{f.key}"
     if f.kind == "count" and value != UNKNOWN:
-        key = f"field:{trade}:{f.key}:count"
+        key = f"{base}:count"
         if key in P.BANK.table:
             return fill(t.pick(key), c=value)
         unit = f.unit or "개"
         return f"{head} {value}{unit}{'이에요' if josa(unit, '01') == '0' else '예요'}"
-    key = f"field:{trade}:{f.key}:{value}"
+    key = f"{base}:{value}"
     if key in P.BANK.table:
         return t.pick(key)
     if value == UNKNOWN:
