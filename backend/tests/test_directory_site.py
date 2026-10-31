@@ -31,20 +31,32 @@ async def fake_dns(host: str, port: int) -> list[str]:
         return ["93.184.216.34"]
     if host == "intranet.test":
         return ["10.0.0.5"]
+    if host == "mixed.test":  # 공인 · 사설이 섞인 답
+        return ["93.184.216.34", "10.0.0.5"]
+    if host == "mapped.test":  # IPv6 꼴로 감싼 루프백
+        return ["::ffff:127.0.0.1"]
     if host == "169.254.169.254":
         return [host]
     raise OSError("no such host")
 
 
 class Web:
-    """주소 → (상태, 본문, 머리글). 받은 요청을 모두 적어 둔다."""
+    """주소 → (상태, 본문, 머리글). 받은 요청과 실제로 연결한 IP · TLS 이름을 모두 적어 둔다."""
 
     def __init__(self, pages: dict[str, tuple]):
-        self.pages, self.seen = pages, []
+        self.pages, self.seen, self.peers = pages, [], []
 
     def __call__(self, request: httpx2.Request) -> httpx2.Response:
-        url = str(request.url)
+        # 확인기는 IP로 연결하고 이름은 Host 머리글로 보낸다. 원래 주소로 되돌려 찾는다
+        url = f"{request.url.scheme}://{request.headers['host']}{request.url.raw_path.decode()}"
         self.seen.append((url, request.headers.get("user-agent", "")))
+        self.peers.append(
+            (
+                request.url.host,
+                request.extensions.get("sni_hostname"),
+                request.headers.get("connection"),
+            )
+        )
         status, body, headers = self.pages.get(url, (404, "", {}))
         if isinstance(body, bytes):
             return httpx2.Response(status, content=body, headers=headers)
@@ -69,7 +81,7 @@ def check(web: Web, url: str = HOME, **kw):
             site = SiteChecker(
                 http,
                 interval=kw.pop("interval", 0.0),
-                resolve=fake_dns,
+                resolve=kw.pop("resolve", fake_dns),
                 sleep=fake_sleep,
                 clock=lambda: 0.0,
             )
@@ -144,6 +156,9 @@ def test_blocked_domains_are_never_requested(url):
     [
         "http://intranet.test/",
         "http://169.254.169.254/latest/meta-data/",
+        "https://mixed.test/",
+        "https://mapped.test/",
+        "http://[::1]/",
         "https://fake-vendor.test:8443/",
         "ftp://fake-vendor.test/",
     ],
@@ -152,6 +167,32 @@ def test_internal_addresses_and_odd_ports_are_never_requested(url):
     web = Web({})
     got, _ = check(web, url)
     assert got.status == "unsafe" and web.urls == []
+
+
+def test_connects_only_to_the_checked_ip():
+    web = Web({"https://fake-vendor.test/robots.txt": (404, "", {}), HOME: (200, PAGE, HTML)})
+    assert check(web)[0].status == "ok"
+    # 이름은 Host 머리글 · TLS SNI로만 가고, 연결은 확인한 IP로, 연결을 다시 쓰지 않는다
+    assert web.peers == [("93.184.216.34", "fake-vendor.test", "close")] * 2
+
+
+def test_dns_rebinding_cannot_reach_an_internal_address():
+    answers = iter([["93.184.216.34"], ["93.184.216.34"]])
+
+    async def rebinding_dns(host: str, port: int) -> list[str]:
+        return next(answers, ["127.0.0.1"])  # 두 번 확인한 뒤로는 내부 주소를 준다
+
+    web = Web(
+        {
+            "https://rebind.test/robots.txt": (404, "", {}),
+            "https://rebind.test/": (301, "", {"location": "/next"}),
+            "https://rebind.test/next": (200, PAGE, HTML),
+        }
+    )
+    got, _ = check(web, "https://rebind.test/", resolve=rebinding_dns)
+    assert got.status == "unsafe"  # 넘겨주기에서 다시 확인하니 내부 주소라 멈춘다
+    assert web.urls == ["https://rebind.test/robots.txt", "https://rebind.test/"]
+    assert {ip for ip, _, _ in web.peers} == {"93.184.216.34"}  # 확인한 IP에만 닿았다
 
 
 def test_redirect_to_a_blocked_domain_stops_there():
