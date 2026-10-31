@@ -6,11 +6,11 @@ import uuid
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import ARRAY, String, case, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.directory.models import ContactOptout, ExtVendor
+from app.directory.models import ContactOptout, ExtVendor, ExtVendorContact
 from app.directory.sources import Holding, VendorRow
 from app.shared.ids import uuid7
 
@@ -106,6 +106,46 @@ async def delete_by_source(s: AsyncSession, source: str, source_ids: Sequence[st
         )
         removed += res.rowcount
     return removed
+
+
+async def candidates(
+    s: AsyncSession, trades: Sequence[str], sido: str, sgg: str, limit: int
+) -> list[ExtVendor]:
+    """같은 시 · 도에서 공정이 겹치는 업체. 같은 시 · 군 · 구, 동의한 연락처, 견적 창구, 포트폴리오,
+    건설업 등록 순으로 앞에 둔다. 수신거부와 휴업 · 폐업 업체는 뺀다."""
+    consented = exists().where(ExtVendorContact.vendor_id == ExtVendor.id)
+    q = (
+        select(ExtVendor)
+        .where(
+            ExtVendor.opted_out.is_(False),
+            ExtVendor.sido == sido,
+            ExtVendor.trades.op("&&")(cast(list(trades), ARRAY(String(10)))),
+            or_(ExtVendor.biz_status.is_(None), ExtVendor.biz_status.in_(("active", "unknown"))),
+        )
+        .order_by(
+            case((ExtVendor.sgg == sgg, 0), else_=1),
+            case((consented, 0), else_=1),
+            case((ExtVendor.quote_url.is_not(None), 0), else_=1),
+            case((func.cardinality(ExtVendor.portfolio_urls) > 0, 0), else_=1),
+            case((ExtVendor.reg_kind == "construction", 0), else_=1),
+            ExtVendor.name,
+            ExtVendor.id,
+        )
+        .limit(limit)
+    )
+    return list((await s.execute(q)).scalars())
+
+
+async def channels_of(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+    """업체가 동의한 연락 수단 이름만 (값은 읽지 않는다)"""
+    out: dict[uuid.UUID, set[str]] = {}
+    for part in _chunks(list(ids)):
+        q = select(ExtVendorContact.vendor_id, ExtVendorContact.channel).where(
+            ExtVendorContact.vendor_id.in_(part)
+        )
+        for vid, channel in (await s.execute(q)).all():
+            out.setdefault(vid, set()).add(channel)
+    return {k: sorted(v) for k, v in out.items()}
 
 
 async def biz_nos_due(s: AsyncSession, before: datetime, limit: int) -> list[str]:

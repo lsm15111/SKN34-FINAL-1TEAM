@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
@@ -55,6 +55,28 @@ async def trades_and_areas(s: AsyncSession, ids: list[uuid.UUID]) -> tuple[dict,
     for vid, sido, sgg in (await s.execute(q)).all():
         areas[vid].append((sido, sgg))
     return trades, areas
+
+
+async def approved_serving(
+    s: AsyncSession, trades: list[str], sido: str, sgg: str
+) -> list[tuple[Vendor, list[str]]]:
+    """승인된 업체 중 그 공정을 하고 그 시 · 군 · 구를 맡는 곳 (맞는 공정 목록과 함께)"""
+    q = (
+        select(Vendor, func.array_agg(VendorTrade.trade.distinct()))
+        .join(User, User.id == Vendor.user_id)
+        .join(VendorTrade, VendorTrade.vendor_id == Vendor.user_id)
+        .join(VendorArea, VendorArea.vendor_id == Vendor.user_id)
+        .where(
+            Vendor.status == "approved",
+            User.status == "active",
+            VendorTrade.trade.in_(trades),
+            VendorArea.sido == sido,
+            VendorArea.sgg == sgg,
+        )
+        .group_by(Vendor.user_id)
+        .order_by(Vendor.reviewed_at, Vendor.user_id)
+    )
+    return [(v, sorted(ts)) for v, ts in (await s.execute(q)).all()]
 
 
 async def set_status(

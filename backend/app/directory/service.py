@@ -4,7 +4,11 @@
 """
 
 import asyncio
+import re
+import uuid
 from collections import Counter
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -17,6 +21,74 @@ from app.directory.site import SiteChecker
 from app.directory.sources import kiscon_events, kiscon_row, read_sangga_csv, replay
 
 RECHECK = timedelta(days=30)  # 국세청 상태 · 홈페이지를 다시 보는 간격
+PLACE_URL = "https://place.map.kakao.com/{}"
+SOURCE_LABEL = {
+    "sangga": "소상공인 상가정보",
+    "kiscon": "건설산업지식정보시스템(KISCON) 공시",
+    "seed": "개발용 가짜 데이터",
+}
+
+
+@dataclass(frozen=True)
+class ExtCard:
+    """후보로 보여 줄 외부 업체. 연락처 값은 넣지 않고 동의한 연락 수단 이름만 둔다."""
+
+    id: uuid.UUID
+    name: str
+    source: str
+    trades: list[str]
+    industries: list[str]
+    sido: str | None
+    sgg: str | None
+    reg_kind: str | None
+    biz_status: str | None
+    phone: str | None
+    homepage: str | None
+    portfolio_urls: list[str]
+    quote_url: str | None
+    place_url: str | None
+    visit_fee: int | None
+    fetched_at: datetime
+    channels: list[str]
+    opted_out: bool
+
+
+async def candidates(
+    s: AsyncSession, trades: Sequence[str], sido: str, sgg: str, *, limit: int = 12
+) -> list[ExtCard]:
+    """프로젝트 공정 · 지역에 맞는 외부 업체. 같은 이름이 같은 시 · 군 · 구에 두 번 있으면(출처가 달라) 하나만."""
+    rows = await repo.candidates(s, trades, sido, sgg, limit * 2)
+    channels = await repo.channels_of(s, [r.id for r in rows])
+    out: list[ExtCard] = []
+    seen: set[tuple[str, str | None]] = set()
+    for r in rows:
+        key = (re.sub(r"\W", "", r.name), r.sgg)
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(
+            ExtCard(
+                id=r.id,
+                name=r.name,
+                source=r.source,
+                trades=[t for t in r.trades if t in trades],
+                industries=list(r.industries),
+                sido=r.sido,
+                sgg=r.sgg,
+                reg_kind=r.reg_kind,
+                biz_status=r.biz_status,
+                phone=r.phone,
+                homepage=r.homepage,
+                portfolio_urls=list(r.portfolio_urls),
+                quote_url=r.quote_url,
+                place_url=PLACE_URL.format(r.place_ref) if r.place_ref else None,
+                visit_fee=r.visit_fee,
+                fetched_at=r.fetched_at,
+                channels=channels.get(r.id, []),
+                opted_out=r.opted_out,
+            )
+        )
+    return out[:limit]
 
 
 async def import_sangga_csv(s: AsyncSession, path: Path, *, now: datetime) -> dict[str, int]:

@@ -15,7 +15,9 @@ from app.shared.clock import now_utc
 from app.shared.errors import AppError
 from app.vendor import repository as repo
 from app.vendor.models import Vendor
-from app.vendor.schemas import AreaIn, VendorAdminOut, VendorSignupIn
+from app.vendor.schemas import AreaIn, VendorAdminOut, VendorCard, VendorSignupIn
+
+NO_NAME = "상호 미등록 업체"  # 승인 뒤 업체 정보를 아직 안 채운 경우
 
 
 async def signup(
@@ -75,6 +77,25 @@ async def get_for_admin(s: AsyncSession, vendor_id: uuid.UUID) -> VendorAdminOut
     if pair is None:
         raise AppError(404, "not_found", "업체를 찾을 수 없어요.")
     return (await _out(s, [pair]))[0]
+
+
+async def candidates(s: AsyncSession, trades: list[str], sido: str, sgg: str) -> list[VendorCard]:
+    """가견적 후보: 승인됐고 그 공정 · 시 · 군 · 구를 맡는 앱 업체"""
+    return [
+        VendorCard(
+            user_id=v.user_id,
+            name=v.biz_name or NO_NAME,
+            trades=ts,
+            site_url=v.site_url,
+            approved_at=v.reviewed_at,
+        )
+        for v, ts in await repo.approved_serving(s, trades, sido, sgg)
+    ]
+
+
+async def is_approved(s: AsyncSession, vendor_id: uuid.UUID) -> bool:
+    got = await repo.review_of(s, vendor_id)
+    return got is not None and got[0] == "approved"
 
 
 async def approve(s: AsyncSession, admin: User, vendor_id: uuid.UUID) -> VendorAdminOut:

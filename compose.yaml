@@ -20,6 +20,8 @@ x-api-env: &api-env
   BOT_CONTACT_URL: ${BOT_CONTACT_URL:-}
   CRAWL_INTERVAL_S: ${CRAWL_INTERVAL_S:-3}
   CRAWL_TIMEOUT_S: ${CRAWL_TIMEOUT_S:-10}
+  # 외부 업체 대신 연락 (법무 검토 전에는 false)
+  CONTACT_SEND_ENABLED: ${CONTACT_SEND_ENABLED:-false}
 
 services:
   db:

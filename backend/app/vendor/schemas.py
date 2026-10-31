@@ -30,6 +30,16 @@ class RejectIn(BaseModel):
     reason: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
 
 
+class VendorCard(BaseModel):
+    """가견적 후보로 보여 줄 승인 업체. 연락처 · 담당자 이름은 넣지 않는다."""
+
+    user_id: uuid.UUID
+    name: str
+    trades: list[str]
+    site_url: str | None
+    approved_at: datetime | None
+
+
 class VendorAdminOut(BaseModel):
     """관리자 업체관리 · 가입 승인 화면용. 업체 정보 칸은 승인 뒤 채워진다."""
 

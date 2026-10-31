@@ -33,6 +33,8 @@ class Settings(BaseSettings):
     # 홈페이지 확인기: 요청 사이 간격(초)과 한 요청을 기다리는 시간(초)
     crawl_interval_s: float = 3.0
     crawl_timeout_s: float = 10.0
+    # 외부 업체에 믿집이 대신 연락하기. 법무 검토 전에는 끈다 (끄면 요청은 queued에서 멈춘다)
+    contact_send_enabled: bool = False
 
     @property
     def is_https(self) -> bool:
