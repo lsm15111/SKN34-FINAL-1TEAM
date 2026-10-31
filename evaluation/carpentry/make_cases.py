@@ -176,7 +176,8 @@ def report(cases: list[dict], smp: list[dict]) -> str:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔에서도 한글이 깨지지 않게
+    for stream in (sys.stdout, sys.stderr):  # Windows 콘솔에서도 한글이 깨지지 않게
+        stream.reconfigure(encoding="utf-8")
     cases = build()
     smp = sample(cases)
     gen.write_jsonl(FULL, cases)

@@ -168,7 +168,8 @@ def ok(r: dict, full: bool) -> bool:
 
 
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔에서도 한글이 깨지지 않게
+    for stream in (sys.stdout, sys.stderr):  # Windows 콘솔에서도 한글이 깨지지 않게
+        stream.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="평가 사례 무료 점검 (T0)")
     ap.add_argument("--agent", choices=trades.AGENTS, action="append")
     ap.add_argument("--cases", type=Path, help="사례 jsonl (에이전트 하나일 때)")

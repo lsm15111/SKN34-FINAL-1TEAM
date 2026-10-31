@@ -372,7 +372,8 @@ async def run_batch(agent: str, cases: list[dict]) -> list[dict]:
 
 # ---------------------------------------------------------------- 진입점
 def main() -> None:
-    sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔에서도 한글이 깨지지 않게
+    for stream in (sys.stdout, sys.stderr):  # Windows 콘솔에서도 한글이 깨지지 않게
+        stream.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="공정 에이전트 평가 실행기")
     ap.add_argument("--agent", choices=trades.AGENTS, required=True)
     ap.add_argument(
