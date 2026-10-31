@@ -125,7 +125,7 @@ def _app_card(v: VendorCard, p: ProjectOut, states: list[RequestStateOut]) -> Ca
         route_label=ROUTE_LABEL[c.route],
         cost=CostOut(kind=c.cost, amount=c.fee, label=cost_label(c)),
         source=SourceOut(kind="app", label="믿집 승인 업체", fetched_at=v.approved_at),
-        links=LinksOut(homepage=v.site_url),
+        links=LinksOut(homepage=v.site_url, portfolio=v.portfolio_urls),
         registration="사업자등록증 확인 (믿집 관리자 승인)",
         biz_status=None,
         phone=None,

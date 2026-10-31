@@ -1,7 +1,16 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, SmallInteger, String, Text, func
+from sqlalchemy import (
+    ARRAY,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    SmallInteger,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -21,6 +30,7 @@ TRADES = (
     "window",
 )
 _TRADE_IN = ", ".join(f"'{t}'" for t in TRADES)
+MAX_PORTFOLIO_URLS = 5
 
 
 class Vendor(Base):
@@ -39,6 +49,15 @@ class Vendor(Base):
         CheckConstraint(
             "reject_reason is null or length(btrim(reject_reason)) > 0", name="reject_reason_text"
         ),
+        CheckConstraint("site_url is null or site_url ~ '^https?://'", name="site_url"),
+        CheckConstraint(
+            f"cardinality(portfolio_urls) <= {MAX_PORTFOLIO_URLS}", name="portfolio_urls"
+        ),
+        # 링크마다 http(s)://로 시작하고 빈칸이 없다 (빈 값 · NULL 칸은 '!'가 되어 걸린다)
+        CheckConstraint(
+            "array_to_string(portfolio_urls, ' ', '!') ~ '^(https?://[^[:space:]]+( |$))*$'",
+            name="portfolio_links",
+        ),
     )
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -50,6 +69,10 @@ class Vendor(Base):
     phone: Mapped[str | None] = mapped_column(String(20))
     address: Mapped[str | None] = mapped_column(String(200))
     site_url: Mapped[str | None] = mapped_column(String(300))
+    # 시공 사례 링크 (블로그 · SNS · 홈페이지 글). 업체가 업체 정보 관리에서 적고, 가견적 후보에 보인다
+    portfolio_urls: Mapped[list[str]] = mapped_column(
+        ARRAY(String(300)), default=list, server_default="{}"
+    )
     license_file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("files.id"))
     intro: Mapped[str] = mapped_column(Text, default="", server_default="")
     status: Mapped[str] = mapped_column(String(10), default="pending", server_default="pending")

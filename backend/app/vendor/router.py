@@ -13,10 +13,17 @@ from app.auth.schemas import MeOut
 from app.db import get_session
 from app.shared.ratelimit import client_ip
 from app.vendor import service
-from app.vendor.schemas import RejectIn, VendorAdminOut, VendorSignupIn
+from app.vendor.schemas import (
+    RejectIn,
+    VendorAdminOut,
+    VendorProfileIn,
+    VendorProfileOut,
+    VendorSignupIn,
+)
 
 router = APIRouter(tags=["업체"])
 admin_only = require_role("admin")
+vendor_only = require_role("vendor")
 
 
 @router.post(
@@ -42,6 +49,30 @@ async def vendor_signup(
     user, token = await service.signup(s, body, license_file, client_ip(request))
     set_session_cookie(response, token)
     return await auth_service.me(s, user)
+
+
+@router.get(
+    "/vendor/profile",
+    response_model=VendorProfileOut,
+    summary="업체 정보 관리 · 상호 · 맡는 공정 · 일하는 지역 · 포트폴리오 링크 (승인 업체만)",
+)
+async def get_profile(
+    user: User = Depends(vendor_only), s: AsyncSession = Depends(get_session)
+) -> VendorProfileOut:
+    return await service.get_profile(s, user)
+
+
+@router.put(
+    "/vendor/profile",
+    response_model=VendorProfileOut,
+    summary="업체 정보 관리 저장 · 통째로 바꿈 (승인 업체만)",
+)
+async def save_profile(
+    data: VendorProfileIn,
+    user: User = Depends(vendor_only),
+    s: AsyncSession = Depends(get_session),
+) -> VendorProfileOut:
+    return await service.save_profile(s, user, data)
 
 
 @router.get("/admin/vendors", response_model=list[VendorAdminOut], summary="업체관리 · 상태별 목록")
