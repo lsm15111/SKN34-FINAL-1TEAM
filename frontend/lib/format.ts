@@ -49,6 +49,16 @@ export function euro(word: string): string {
   return `${word}${j === 0 || j === 8 ? "로" : "으로"}`;
 }
 
+/** API 기간(일, 0.5 단위 문자열) → "6.5일" */
+export function duration(d: string | number): string {
+  return `${Number(d).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}일`;
+}
+
+/** 공정표 칸 하나의 반나절 수 → "반나절" · "1일" · "1.5일" */
+export function halfDays(n: number): string {
+  return n === 1 ? "반나절" : duration(n / 2);
+}
+
 export function sqm(n: number): string {
   return `${n.toLocaleString("ko-KR", { maximumFractionDigits: 2 })}㎡`;
 }

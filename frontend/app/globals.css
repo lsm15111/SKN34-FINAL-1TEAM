@@ -304,6 +304,10 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .mj-b-ok { background: var(--ok-weak); color: var(--ok); }
 .mj-b-wait { border: 1px solid var(--line-strong); color: var(--ink-sub); }
 .mj-b-dark { background: var(--ink); color: #fff; }
+/* 견적 줄 근거: 공공 기준 · 가정(팀 가정값) · 실측 후 확인(공공 단가 없음) */
+.mj-b-public { background: var(--ok-weak); color: var(--ok); }
+.mj-b-assumed { background: var(--warn-weak); color: var(--warn); }
+.mj-b-check { border: 1px dashed var(--warn); color: var(--warn); }
 
 /* 표 (B 고지서형 명세 · 선과 띠로 나눔) */
 .mj-table-box { position: relative; overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius-l); background: var(--bg); }
@@ -404,3 +408,6 @@ body { position: relative; }
 /* 업체 정보 출처 표시: 업체가 적은 정보 · 믿집 기록 */
 .mj-src { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: 4px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 700; }
 .mj-fold summary { cursor: pointer; min-height: 44px; display: flex; align-items: center; font-weight: 700; }
+/* 접기 표시: summary · 접기 버튼 안의 꺾쇠. 펼치면 뒤집는다 */
+.mj-fold-i { flex: none; width: 20px; height: 20px; color: var(--ink-sub); transition: transform 0.15s ease; }
+details[open] > summary .mj-fold-i, [aria-expanded="true"] > .mj-fold-i { transform: rotate(180deg); }
