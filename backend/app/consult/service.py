@@ -80,7 +80,7 @@ MAX_EXPERTS = 3  # 한 턴에 부르는 공정 전문가 수
 
 ROUTER_SYSTEM = router_agent.system(catalog())
 NOT_YET = "아직 안 정했어요"
-FALLBACK_REPLY = "말씀을 잘 알아듣지 못했어요. 다시 적어 주세요."
+FALLBACK_REPLY = "지금은 답을 만들지 못했어요. 잠시 뒤 다시 적어 주세요."
 CHANGED_REPLY = "알겠어요. 바꾼 값으로 다시 계산했어요."
 OUT_OF_SCOPE = f"지금은 {' · '.join(s.label for s in REGISTRY.values())} 상담만 할 수 있어요."
 PLAN_FAILED = "설명을 만들지 못했어요. 계산 결과만 보여 드려요."
