@@ -10,6 +10,8 @@ from app.calc.dobae import DobaePrices, won
 from app.calc.mokgong import MokgongPrices
 
 _WAGE_HELPER = 172_698  # 보통인부 2026.9.1 시중노임단가 (대한건설협회)
+# 목재창호 설치 여닫이 1.0~3.0㎡ 원/개소: 단가표 재료비 3,294 + 노무비 79,045 (문 자재는 따로)
+_DOOR_INSTALL = 82_339
 
 DOBAE_2026H2 = DobaePrices(
     version="2026H2",
@@ -50,14 +52,19 @@ MOKGONG_2026H2 = MokgongPrices(
     base=3_757,
     base_mat=2_000,
     base_ratio=Decimal("1.04"),
-    door_set=430_110,
-    door_leaf=255_954,
+    door_install=_DOOR_INSTALL,
+    door_leaf_install=won(Decimal(_DOOR_INSTALL) / 2),
+    door_set_mat=260_000,
+    door_leaf_mat=150_000,
+    casing=2_314,
+    casing_per_door=Decimal("10.2"),
     frame=11_054,
     board=12_937,
     ceiling_mat=8_000,
     md_molding=Decimal("0.035"),
     md_base=Decimal(2) / Decimal(165),
     md_door=Decimal("0.313"),
+    md_casing=Decimal("0.010"),
     md_frame=Decimal("0.0323"),
     md_board=Decimal(2) / Decimal(45),
     molding_per_py=Decimal("2.4"),
@@ -71,8 +78,11 @@ MOKGONG_2026H2 = MokgongPrices(
         "molding_mat": "팀 가정값 (몰딩 자재는 공공 가격이 없어요) · 소요량 표준품셈",
         "base": "표준시장단가 2026 하반기 · 걸레받이 MDF (재료 제외)",
         "base_mat": "팀 가정값 (걸레받이 자재는 공공 가격이 없어요) · 소요량 표준품셈",
-        "door_set": "서울시 희망의 집수리 단가 2025 · PVC 방문 문틀 + 문짝 (철거 · 설치 포함)",
-        "door_leaf": "서울시 희망의 집수리 단가 2025 · PVC 방문 문짝 (철거 · 설치 포함)",
+        "door_install": "표준시장단가 2026 하반기 · 목재창호 설치 여닫이 1.0~3.0㎡ (재료 제외)",
+        "door_leaf_install": "팀 가정값 (문짝만 다는 공공 단가가 없어 목재창호 설치 여닫이의 절반)",
+        "casing": "표준시장단가 2026 하반기 · 목재창호 설치 문선 (재료 제외)",
+        "door_set_mat": "팀 가정값 (조달청에 목재 · ABS 방문 가격이 없어요) · 문틀 · 문짝 · 문선 · 철물",
+        "door_leaf_mat": "팀 가정값 (조달청에 목재 · ABS 방문 가격이 없어요) · 문짝 · 철물",
         "frame": "표준시장단가 2026 하반기 · 경량천장틀 BAR 간격 450 (재료 제외)",
         "board": "표준시장단가 2026 하반기 · 천장 석고판 1겹 (석고판 제외)",
         "ceiling_mat": "팀 가정값 (천장틀 · 석고보드 자재는 공공 가격이 없어요)",
