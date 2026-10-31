@@ -2,7 +2,8 @@ name: CI
 
 # PR과 통합 브랜치에 올라온 코드를 확인한다. 유료 API(LLM)는 부르지 않는다 (LLM_LIVE=false).
 # - repository-checks: 저장소 공통 점검 (JSON 문법, 충돌 표시, 줄 끝 공백, .env 추적)
-# - backend: ruff, migration head 단일 검증, pytest(실제 PostgreSQL · Redis), 스키마 차이 검사, API 명세 저장
+# - backend: ruff, migration head 단일 검증, pytest(실제 PostgreSQL · Redis), 평가 도구(ruff · 테스트 · 사례 점검),
+#   스키마 차이 검사, API 명세 저장
 # - frontend: API 타입이 명세와 같은지, typecheck, lint, build
 # - containers: Compose 설정, 운영용 API · 웹 이미지 빌드, 컨테이너 실행 확인
 
@@ -79,6 +80,14 @@ jobs:
           test "$heads" -eq 1
       - name: pytest
         run: uv run pytest -q
+      # 평가 도구(evaluation/): DB · LLM 없이 돈다. 사례 점검은 커밋한 표본(sample_100)으로 한다
+      - name: 평가 도구 (ruff · 테스트 · 사례 무료 점검)
+        env:
+          LLM_LIVE: "false"
+        run: |
+          uv run ruff check ../evaluation && uv run ruff format --check ../evaluation
+          uv run pytest -q -p no:cacheprovider ../evaluation/tests
+          uv run python ../evaluation/check_cases.py
       - name: DB 모델과 마이그레이션 일치 검사
         env:
           APP_ENV: test
