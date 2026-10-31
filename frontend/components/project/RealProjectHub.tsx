@@ -1,5 +1,5 @@
 // 실제로 만든 프로젝트의 진행 현황. 저장된 답과 올린 사진 · 도면을 API에서 읽어 보여 준다.
-// 예상 공정표 · 표준견적서부터는 아직 API가 없어서 '연결 전'으로 알리고 예시 프로젝트로 안내한다.
+// 예상 공정표 · 표준견적서는 상담에서 보고, 업체 고르기(가견적 후보)는 실제 API로 잇는다. 그 밖 단계는 '연결 전'으로 알린다.
 import { Fragment } from "react";
 import Link from "next/link";
 import { ProjectTrack } from "./ProjectTrack";
@@ -37,6 +37,7 @@ export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
             <p className="mj-sub">{p.photos.length || p.plans.length ? "답과 사진 · 도면을" : "답을"} 저장했어요. 예상 공정표와 표준견적서는 아직 이 프로젝트에 연결되지 않았어요.</p>
             <div className="mj-btn-row">
               {picked.length ? <Link href={`/consult?project=${p.id}`} className="mj-btn mj-btn-pri">{consult}</Link> : null}
+              <Link href={`/projects/${p.id}/vendors`} className="mj-btn mj-btn-sec">가견적 받을 업체 보기</Link>
               <Link href="/projects/p1" className="mj-btn mj-btn-sec">예시 프로젝트로 흐름 보기</Link>
             </div>
           </section>

@@ -33,7 +33,7 @@ export default async function ProjectLayout({ children, params }: { children: Re
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
           <span className="mj-h3">{p.region} · {sizeLabel(p.size)}</span>
         </div>
-        <ProjectNav id={p.id} stage="draft" ready={false} />
+        <ProjectNav id={p.id} stage="draft" ready={false} live={["vendors"]} />
       </>
     );
   }

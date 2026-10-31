@@ -1,0 +1,8 @@
+.list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.item { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius-l); background: var(--bg); }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.facts { margin: 0; padding-left: 20px; list-style: disc; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.msg { padding: 10px 12px; border-left: 4px solid var(--accent-pastel); border-radius: 0 var(--radius) var(--radius) 0; background: var(--surface); white-space: pre-wrap; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+  .item { padding: 14px; }
+}

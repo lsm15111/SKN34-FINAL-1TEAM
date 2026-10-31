@@ -108,6 +108,20 @@ class QuoteRequestOut(BaseModel):
     created_at: datetime
 
 
+class SentRequestOut(BaseModel):
+    """고객이 이 프로젝트에서 앱 업체에 보낸 가견적 요청 한 줄"""
+
+    id: uuid.UUID
+    trade: str
+    trade_label: str
+    vendor_id: uuid.UUID
+    vendor_name: str
+    status: Literal["requested", "viewed"]
+    status_label: str
+    created_at: datetime
+    viewed_at: datetime | None
+
+
 class InboxItemOut(BaseModel):
     """업체 받은편지함 한 줄. 고객 이름 · 연락처 · 동 · 호수는 없다."""
 

@@ -7,6 +7,7 @@ from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.quote.models import ContactRequest, ContactRequestEvent, QuoteRequest
+from app.vendor.models import Vendor
 
 INBOX_LIMIT = 100
 
@@ -106,6 +107,17 @@ async def quote_states(s: AsyncSession, project_id: uuid.UUID) -> list[tuple[uui
         QuoteRequest.project_id == project_id
     )
     return [(v, t, st) for v, t, st in (await s.execute(q)).all()]
+
+
+async def sent(s: AsyncSession, project_id: uuid.UUID) -> list[tuple[QuoteRequest, str | None]]:
+    """이 프로젝트에서 보낸 요청과 업체 상호 (새 것부터)"""
+    q = (
+        select(QuoteRequest, Vendor.biz_name)
+        .join(Vendor, Vendor.user_id == QuoteRequest.vendor_id)
+        .where(QuoteRequest.project_id == project_id)
+        .order_by(QuoteRequest.created_at.desc(), QuoteRequest.id)
+    )
+    return [(r, name) for r, name in (await s.execute(q)).all()]
 
 
 async def inbox(s: AsyncSession, vendor_id: uuid.UUID) -> list[QuoteRequest]:
