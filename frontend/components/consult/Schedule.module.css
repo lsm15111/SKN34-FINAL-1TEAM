@@ -1,0 +1,24 @@
+.card { gap: 16px; }
+.head { display: flex; flex-direction: column; gap: 4px; }
+
+/* 단계: 왼쪽 점과 세로 줄로 잇는다 */
+.phases { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.phase { position: relative; padding: 0 0 18px 30px; }
+.phase:last-child { padding-bottom: 0; }
+.phase::before { content: ""; position: absolute; left: 8px; top: 22px; bottom: 0; width: 2px; background: var(--accent-pastel); }
+.phase:last-child::before { display: none; }
+.dot { position: absolute; left: 0; top: 5px; width: 18px; height: 18px; border-radius: 50%; background: var(--bg); border: 4px solid var(--accent); }
+.phaseHead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; min-height: 28px; }
+.phaseHead b { font-size: var(--fs-md); }
+
+/* 단계 안의 작업: 공정 · 작업 이름 · 기간 */
+.steps { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.step { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 4px 10px; padding: 9px 12px; border-radius: var(--radius); background: var(--surface); }
+.trade { justify-self: start; }
+.name { min-width: 0; overflow-wrap: anywhere; }
+.dur { font-weight: 700; white-space: nowrap; }
+@media (max-width: 480px) {
+  .card { padding: 18px 16px; }
+  .phase { padding-left: 26px; }
+  .step { gap: 4px 8px; padding: 8px 10px; }
+}
