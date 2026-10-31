@@ -12,7 +12,10 @@
     uv run python ../evaluation/run_agent.py --trade dobae --sample 20 --live          # 실제 호출 (유료)
     uv run python ../evaluation/run_agent.py --trade dobae --live --batch              # Batch (유료, 50% 할인)
     uv run python ../evaluation/run_agent.py --trade dobae --rescore <결과 폴더>       # 다시 채점만
+    uv run python ../evaluation/run_agent.py --trade dobae --sample 20 --fake --plan-prompt v2  # 프롬프트 v2로
 --live 없이는 유료 호출을 하지 않는다. 단계마다(T1 20개 · T2 150개 · T3 5,000개) 금액을 먼저 보이고 승인받는다.
+--plan-prompt v2: 같은 지식으로 prompts/<지식 이름>_v2.md를 써서 공정 에이전트를 다시 만든다 (v1 · v2를 같은 사례로
+비교). 결과 폴더 이름과 summary에 프롬프트 버전이 붙는다.
 Batch는 결과 폴더의 batch.json에 Batch id를 적어 두고, 기다리다 끊기면 같은 --out으로 다시 돌려 결과만 받는다.
 공정 의견 캐시(LLM_PLAN_CACHE_S)는 평가 동안 끈다.
 """
@@ -54,6 +57,23 @@ def ideal(trade: str):
         return cfg.witness
     rules, src, label = trade_plan.rules(trade), trades.sources(trade), trades.label(trade)
     return lambda case: witness.generic(case, label, rules, src)
+
+
+def plan_agent(trade: str, version: str | None = None):
+    """공정 의견 에이전트. version(예: v2)을 주면 같은 지식 · 화면 말로 prompts/<지식 이름>_<버전>.md를 써서
+    다시 만든다. 파일이 없으면 FileNotFoundError"""
+    agent = trades.agent(trade)
+    if not version:
+        return agent
+    from app.agent import trade as agent_trade
+
+    name = f"{agent.name}_{version}.md"
+    if not (Path(agent_trade.__file__).parent / "prompts" / name).exists():
+        raise FileNotFoundError(
+            f"공정 의견 프롬프트 파일이 없어요: backend/app/agent/prompts/{name} "
+            f"(--plan-prompt {version} 옵션은 그 파일이 있는 브랜치에서 써요)"
+        )
+    return agent_trade.TradeAgent.load(agent.name, trades.label(trade), name)
 
 
 @contextmanager
@@ -98,8 +118,9 @@ async def run(
     concurrency: int = 4,
     out_dir: Path | None = None,
     poll_s: float | None = None,
+    plan_prompt: str | None = None,
 ) -> list[dict]:
-    agent = trades.agent(trade)
+    agent = plan_agent(trade, plan_prompt)
 
     async def plan(case: dict):
         inp = case["input"]
@@ -278,10 +299,17 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="공정 의견 평가 실행기")
     ap.add_argument("--trade", required=True, help=f"공정 키 ({', '.join(trades.registered())})")
     ap.add_argument("--judge", type=int, default=0, help="판정 LLM으로 매길 층화 표본 수")
+    ap.add_argument(
+        "--plan-prompt", help="공정 의견 프롬프트 버전 (예: v2). 비우면 공정 스펙에 등록된 프롬프트"
+    )
     runner.add_args(ap)
     args = ap.parse_args()
     trade = args.trade
     trades.spec(trade)  # 등록된 공정인지 먼저 본다
+    try:
+        agent = plan_agent(trade, args.plan_prompt)
+    except FileNotFoundError as e:
+        sys.exit(str(e))
 
     if args.rescore:
         raw = json.loads((args.rescore / "raw.json").read_text(encoding="utf-8"))
@@ -327,14 +355,16 @@ def main() -> None:
             sys.exit(".env에 ANTHROPIC_API_KEY를 넣어 주세요.")
         settings.llm_live = True
 
-    stamp = datetime.now().strftime("%Y%m%d-%H%M") + ("-fake" if args.fake else "")
+    stamp = datetime.now().strftime("%Y%m%d-%H%M") + f"-{agent.plan_prompt_version}"
+    stamp += "-fake" if args.fake else ""
     out_dir = args.out or case_dir(trade) / "results" / stamp
     meta = {
         "trade": trade,
         "label": trades.label(trade),
         "model": "fake" if args.fake else model,
         "effort": "-" if args.fake else effort,
-        "prompt_version": trades.agent(trade).plan_prompt_version,
+        "prompt_version": agent.plan_prompt_version,
+        "plan_prompt": args.plan_prompt or "스펙에 등록된 것",
         "rubric": judge.PLAN.version if judge_ids else None,
         "mode": mode,
         "cases": path.relative_to(ROOT).as_posix(),
@@ -353,6 +383,7 @@ def main() -> None:
             mode=mode,
             concurrency=args.concurrency,
             out_dir=out_dir,
+            plan_prompt=args.plan_prompt,
         )
     )
     print()

@@ -134,6 +134,27 @@ def test_one_broken_case_does_not_stop_the_run(wp_sample):
     assert "의견 생성 성공 (화면에 보임) | 50% (1/2)" in report
 
 
+def test_plan_prompt_option_reloads_agent_or_fails_clearly(wp_sample):
+    """--plan-prompt: 같은 지식으로 그 버전 프롬프트 파일을 써서 다시 만든다. 파일이 없으면 분명한 오류"""
+    from evaluation.common import trades
+
+    spec_agent = trades.agent("dobae")
+    assert run_agent.plan_agent("dobae") is spec_agent
+    again = run_agent.plan_agent("dobae", "v1")  # 스펙에 등록된 v1 파일로 다시 만든 것
+    assert again is not spec_agent
+    assert (again.plan_prompt_version, again.plan_system, again.sources) == (
+        spec_agent.plan_prompt_version,
+        spec_agent.plan_system,
+        spec_agent.sources,
+    )
+    with pytest.raises(FileNotFoundError, match="prompts/wallpaper_v9.md"):
+        run_agent.plan_agent("dobae", "v9")
+    results = asyncio.run(
+        run_agent.run("dobae", wp_sample[:2], judge_ids=set(), mode="fake", plan_prompt="v1")
+    )
+    assert all(r["status"] == "ok" and all(r["scores"]["checks"].values()) for r in results)
+
+
 def test_rescore_uses_saved_raw(wp_sample):
     cases = wp_sample[:2]
     results = asyncio.run(run_agent.run("dobae", cases, judge_ids=set(), mode="fake"))
