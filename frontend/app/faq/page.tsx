@@ -38,7 +38,7 @@ export default function FaqPage() {
         <details className="mj-fold mj-panel">
           <summary>반셀프와 턴키는 무엇이 다른가요?</summary>
           <p>반셀프는 공정마다 업체를 골라 따로 계약하는 방식이에요. 턴키는 한 업체가 전체 공사를 일괄로 맡는 방식이에요.</p>
-          <p className="mj-small">위 비용 표는 반셀프 기준이고, 턴키로 맡기면 30~50% 더 들어요. 믿집은 도배 · 목공 공정별로 업체를 비교해 고르는 반셀프 방식이에요.</p>
+          <p className="mj-small">위 비용 표는 반셀프 기준이고, 턴키로 맡기면 30~50% 더 들어요. 믿집은 도배 · 바닥재 · 욕실 · 주방 같은 10개 공정마다 업체를 비교해 고르는 반셀프 방식이에요.</p>
         </details>
       </main>
     </>

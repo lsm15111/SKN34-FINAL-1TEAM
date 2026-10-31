@@ -6,7 +6,7 @@ const noto = Noto_Sans_KR({ weight: ["400", "500", "700"], subsets: ["latin"], d
 
 export const metadata: Metadata = {
   title: { default: "믿집", template: "%s · 믿집" },
-  description: "아파트 도배·목공, 공공 기준 표준견적과 업체 가견적을 비교하고 실측까지",
+  description: "아파트 도배 · 바닥 · 욕실 · 주방 등 10개 공정, 공공 기준 표준견적과 업체 가견적을 비교하고 실측까지",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
