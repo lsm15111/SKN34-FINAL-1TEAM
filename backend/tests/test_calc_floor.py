@@ -40,6 +40,7 @@ def test_engineered_34_pyeong_supply_with_removal():
     # 품 = 75.0 × 11,663 ÷ 257,926 = 3.39 → 3.5, 마루공 2명이면 반나절 4번
     assert r.man_days == Decimal("3.5")
     assert [(s.key, s.half_days) for s in r.steps] == [("remove", 2), ("lay", 4), ("finish", 1)]
+    assert not any(s.late for s in r.steps)  # 마루는 도배 앞에 하는 본 작업
     assert r.days == Decimal("3.5")
     states = {ln.key: ln.state for ln in r.lines}
     assert states["remove"] == states["waste"] == "after_visit" and "moving" not in states
@@ -63,8 +64,29 @@ def test_thin_vinyl_exclusive_occupied_without_removal():
     assert "remove" not in keys and "level" not in keys and "sub" not in keys
     assert line(r, "moving").state == "after_visit"
     assert [(s.key, s.half_days) for s in r.steps] == [("prep", 1), ("lay", 2), ("finish", 1)]
+    assert [s.key for s in r.steps if s.late] == ["lay"]  # 장판은 도배가 끝난 뒤에 깐다
     assert r.man_days == Decimal("2.0") and r.days == Decimal(2)
     assert not any("전용면적은" in a for a in r.assumptions)
+
+
+def test_decotile_34_pyeong_supply():
+    r = q(kind="decotile")
+    lay = line(r, "lay")
+    assert lay.amount == 1_223_100 and lay.basis == "public"  # 75.0 × 16,308
+    mat = line(r, "mat")
+    assert mat.qty == Decimal("78.8") and mat.amount == 1_347_480  # 78.75 → 78.8 × 17,100
+    assert mat.basis == "public"
+    assert line(r, "level").state == "after_visit"
+    assert (r.subtotal, r.vat, r.total) == (2_570_580, 257_058, 2_827_638)
+    # 품 = 75.0 × 15,166 ÷ 258,904 = 4.39 → 4.5, 2명이면 반나절 5번. 도배 앞에 하는 본 작업
+    assert r.man_days == Decimal("4.5")
+    assert [(s.key, s.half_days, s.late) for s in r.steps] == [
+        ("remove", 2, False),
+        ("lay", 5, False),
+        ("finish", 1, False),
+    ]
+    assert r.days == Decimal(4)
+    assert any("데코타일 시공비" in a for a in r.assumptions)
 
 
 def test_porcelain_with_balcony_extension():
@@ -90,7 +112,7 @@ def test_supply_and_exclusive_give_the_same_floor():
 def test_kinds_are_ordered_by_price():
     total = {k: q(kind=k).subtotal for k in floor.KINDS}
     assert total["vinyl_18"] < total["vinyl_22"] < total["laminate"] < total["engineered"]
-    assert total["engineered"] < total["porcelain"]
+    assert total["vinyl_22"] < total["decotile"] < total["engineered"] < total["porcelain"]
 
 
 @pytest.mark.parametrize(
@@ -135,6 +157,8 @@ def test_properties_over_all_combinations():
             keys = [s.key for s in r.steps]
             assert len(set(keys)) == len(keys) and keys[-1] == "finish"
             assert ("prep" in keys) == occupied and ("remove" in keys) == remove
+            late = [s.key for s in r.steps if s.late]
+            assert late == (["lay"] if floor.GROUP[kind] == "vinyl" else [])
             assert all(s.half_days >= 1 for s in r.steps)
             assert r.days == Decimal(sum(s.half_days for s in r.steps)) / 2
             assert r.man_days >= 0 and r.version == "2026H2"

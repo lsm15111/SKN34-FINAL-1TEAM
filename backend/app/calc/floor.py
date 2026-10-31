@@ -1,4 +1,4 @@
-"""바닥재 표준견적서와 예상 공정표. 종류는 장판(얇은 · 두꺼운) · 강마루 · 강화마루 · 포세린 타일이다.
+"""바닥재 표준견적서와 예상 공정표. 종류는 장판(얇은 · 두꺼운) · 데코타일 · 강마루 · 강화마루 · 포세린 타일이다.
 
 금액은 원 정수이고 반올림은 won() 한 곳에서만 한다. 면적은 ㎡ 소수 한 자리, 품은 0.5 단위로 올린다.
 실측 전이라 바닥 면적은 평형에서 가정값으로 추정하고, 그 가정은 결과의 assumptions에 그대로 남긴다.
@@ -21,25 +21,41 @@ from app.calc.common import (
     won,
 )
 
-Kind = Literal["vinyl_18", "vinyl_22", "engineered", "laminate", "porcelain"]
-KINDS: tuple[Kind, ...] = ("vinyl_18", "vinyl_22", "engineered", "laminate", "porcelain")
+Kind = Literal["vinyl_18", "vinyl_22", "decotile", "engineered", "laminate", "porcelain"]
+KINDS: tuple[Kind, ...] = (
+    "vinyl_18",
+    "vinyl_22",
+    "decotile",
+    "engineered",
+    "laminate",
+    "porcelain",
+)
 KIND_NAME = {
     "vinyl_18": "장판 1.8T",
     "vinyl_22": "장판 2.2T",
+    "decotile": "데코타일",
     "engineered": "강마루",
     "laminate": "강화마루",
     "porcelain": "포세린 타일",
 }
 # 시공 방식 묶음. 시공 단가 · 품 · 자재 소요량은 묶음마다 같다
-Group = Literal["vinyl", "wood", "tile"]
+Group = Literal["vinyl", "deco", "wood", "tile"]
 GROUP: dict[str, Group] = {
     "vinyl_18": "vinyl",
     "vinyl_22": "vinyl",
+    "decotile": "deco",
     "engineered": "wood",
     "laminate": "wood",
     "porcelain": "tile",
 }
-LAY_STEP = {"vinyl": "장판 깔기", "wood": "마루 깔기", "tile": "타일 붙이기 · 줄눈"}
+LAY_STEP = {
+    "vinyl": "장판 깔기",
+    "deco": "데코타일 붙이기",
+    "wood": "마루 깔기",
+    "tile": "타일 붙이기 · 줄눈",
+}
+# 도배가 끝난 뒤에 까는 묶음 (Step.late). 나머지는 도배 앞에 하는 본 작업이다
+LATE_GROUPS = ("vinyl",)
 
 
 @dataclass(frozen=True)
@@ -208,7 +224,7 @@ def quote(inp: FloorInput, p: FloorPrices) -> FloorQuote:
     steps = [Step("prep", "짐 정리 · 보양", 1)] if inp.occupied else []
     if inp.remove:
         steps.append(Step("remove", "기존 바닥 철거 · 바탕 정리", p.remove_half_days))
-    steps.append(Step("lay", LAY_STEP[g], half_days(md, p.crew)))
+    steps.append(Step("lay", LAY_STEP[g], half_days(md, p.crew), late=g in LATE_GROUPS))
     if g == "tile":
         steps.append(Step("cure", "양생 (밟지 않기)", p.cure_half_days))
     steps.append(Step("finish", "마감 확인 · 청소", 1))
@@ -226,6 +242,10 @@ def quote(inp: FloorInput, p: FloorPrices) -> FloorQuote:
     assumptions.append(f"자재는 재단 여유를 넣어 바닥재 면적의 {p.mat_ratio[g]}배로 잡았어요.")
     if mat_key in p.assumed:
         assumptions.append(f"{name} 자재값은 공공 가격이 없어 팀 가정값이에요.")
+    if g == "deco":
+        assumptions.append(
+            "데코타일 시공비 · 기간은 공공 단가 기준이라 업체 견적보다 크게 나올 수 있어요."
+        )
     if g == "tile":
         assumptions.append(
             "포세린 시공 단가는 600×600 크기 기준이에요. 더 큰 타일은 실측 때 다시 봐요."

@@ -8,27 +8,36 @@ from decimal import Decimal
 
 from app.calc.floor import FloorPrices
 
-# 2026.9.1 시중노임단가 (대한건설협회). 장판은 도배공 직종에 들어간다
+# 2026.9.1 시중노임단가 (대한건설협회). 장판은 도배공, 데코타일은 내장공 직종에 들어간다
 _WAGE_PAPER = Decimal(229_833)  # 도배공
+_WAGE_INTERIOR = Decimal(258_904)  # 내장공
 _WAGE_FLOORING = Decimal(257_926)  # 플로어링마루시공공
 _WAGE_TILE = Decimal(294_379)  # 타일공
 
 FLOOR_2026H2 = FloorPrices(
     version="2026H2",
-    # 표준시장단가 = 재료비(부자재) + 노무비. 장판 1,093 + 6,188 · 마루 745 + 11,663 · 타일 955 + 30,867
-    lay={"vinyl": 7_281, "wood": 12_408, "tile": 31_822},
+    # 표준시장단가 = 재료비(부자재) + 노무비.
+    # 장판 1,093 + 6,188 · 데코타일 1,142 + 15,166 · 마루 745 + 11,663 · 타일 955 + 30,867
+    lay={"vinyl": 7_281, "deco": 16_308, "wood": 12_408, "tile": 31_822},
     mat={
         "vinyl_18": 10_530,
         "vinyl_22": 14_580,
+        "decotile": 17_100,
         "engineered": 22_000,
         "laminate": 14_000,
         "porcelain": 29_000,
     },
-    mat_ratio={"vinyl": Decimal("1.1"), "wood": Decimal("1.05"), "tile": Decimal("1.05")},
+    mat_ratio={
+        "vinyl": Decimal("1.1"),
+        "deco": Decimal("1.05"),
+        "wood": Decimal("1.05"),
+        "tile": Decimal("1.05"),
+    },
     tile_sub=4_000,
     level=13_391,  # 262 + 13,129
     md={
         "vinyl": Decimal(6_188) / _WAGE_PAPER,
+        "deco": Decimal(15_166) / _WAGE_INTERIOR,
         "wood": Decimal(11_663) / _WAGE_FLOORING,
         "tile": Decimal(30_867) / _WAGE_TILE,
     },
@@ -41,10 +50,12 @@ FLOOR_2026H2 = FloorPrices(
     vat_rate=Decimal("0.1"),
     sources={
         "lay_vinyl": "표준시장단가 2026 하반기 · 합성고분자계 바닥재 시트 전면접합 (장판 제외)",
+        "lay_deco": "표준시장단가 2026 하반기 · 합성고분자계 바닥재 설치 타일 (데코타일 제외)",
         "lay_wood": "표준시장단가 2026 하반기 · 플로어링 마루 설치 (마루 제외)",
         "lay_tile": "표준시장단가 2026 하반기 · 타일 압착붙이기 바닥 0.21~0.40㎡ (타일 제외)",
         "mat_vinyl_18": "조달청 가격정보 PVC 바닥재 1.8mm (2026-10 공고)",
         "mat_vinyl_22": "조달청 가격정보 PVC 바닥재 2.2mm (2026-10 공고)",
+        "mat_decotile": "조달청 가격정보 PVC 바닥재 데코타일 450×450×3mm (2026-10 공고)",
         "mat_engineered": "팀 가정값 (강마루 자재는 공공 가격이 없어요, 본드 포함)",
         "mat_laminate": "팀 가정값 (강화마루 자재는 공공 가격이 없어요, 밑깔개 포함)",
         "mat_porcelain": (
