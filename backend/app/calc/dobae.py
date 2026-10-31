@@ -192,7 +192,7 @@ def quote(inp: DobaeInput, p: DobaePrices) -> DobaeQuote:
     steps = [Step("prep", "짐 정리 · 보양", 1)] if inp.occupied else []
     steps.append(
         Step(
-            "paper", "초배 · 정배 (벽 · 천장)" if inp.include_ceiling else "초배 · 정배 (벽)", work
+            "paper", "벽지 바르기 (벽 · 천장)" if inp.include_ceiling else "벽지 바르기 (벽)", work
         )
     )
     steps.append(Step("finish", "마감 · 확인 · 청소", 1))
