@@ -1,4 +1,9 @@
 .chat { gap: 12px; }
+/* '처음부터 다시' 뒤 초점이 오는 칸. 공용 초점 모양이 모서리를 바꾸지 않게 둔다 */
+.chat:focus-visible { border-radius: var(--radius-l); }
+/* 이어 보기 안내 · 처음부터 다시 */
+.bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.bar p { flex: 1 1 14em; min-width: 0; }
 .log { display: flex; flex-direction: column; gap: 10px; max-height: 460px; min-height: 200px; overflow-y: auto; padding-right: 4px; }
 .bubble { margin: 0; max-width: 85%; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-md); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .bot { align-self: flex-start; background: var(--surface-2); color: var(--ink); }

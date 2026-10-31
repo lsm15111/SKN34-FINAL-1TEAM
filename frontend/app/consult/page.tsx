@@ -13,7 +13,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 export default async function ConsultPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const { project } = await searchParams;
   const projectId = project && UUID.test(project) ? project : null;
-  await requireRole("customer", projectId ? `/consult?project=${projectId}` : "/consult");
+  const me = await requireRole("customer", projectId ? `/consult?project=${projectId}` : "/consult");
   const head = (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
       <span className="mj-eyebrow">공정 상담</span>
@@ -27,7 +27,8 @@ export default async function ConsultPage({ searchParams }: { searchParams: Prom
         <SiteHeader />
         <main id="main" className="mj-wrap mj-main">
           {head}
-          <ConsultChat projectId={projectId} />
+          {/* 계정이나 프로젝트가 바뀌면 상담 상태를 새로 읽는다 */}
+          <ConsultChat key={`${me.id}:${projectId}`} projectId={projectId} userId={me.id} />
         </main>
       </>
     );
