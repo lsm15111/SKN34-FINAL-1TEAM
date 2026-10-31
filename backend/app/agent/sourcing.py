@@ -18,7 +18,6 @@ from app.agent import llm
 
 PROMPT_VERSION = "sourcing-v1"
 SYSTEM = (Path(__file__).parent / "prompts" / "sourcing_v1.md").read_text(encoding="utf-8")
-EFFORT = "low"  # 짧은 글쓰기라 생각을 적게. 역할별 설정이 생기면 그쪽으로 옮긴다
 MAX_NOTES = 20  # 설명을 받을 후보 수 (앞에서부터)
 WHY_LIMIT, DRAFT_LIMIT = 120, 600
 DRAFT_ROUTES = ("app_request", "proxy", "link", "phone")
@@ -126,7 +125,7 @@ async def explain(
 ) -> tuple[Notes, llm.Usage]:
     """LLM 한 번. 쓸 수 있는 것이 하나도 없으면 LlmError."""
     user = render(facts, cands, routes)
-    raw, usage = await llm.parse(SYSTEM, user, SourcingNotes, effort=EFFORT)
+    raw, usage = await llm.parse(SYSTEM, user, SourcingNotes, role="sourcing")
     notes = validate(raw, {c.key for c in cands}, set(routes), allowed_numbers(user))
     if not notes.why and not notes.drafts:
         raise llm.LlmError("all_dropped")

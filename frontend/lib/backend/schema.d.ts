@@ -107,6 +107,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/directory/opt-out": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 외부 업체 수신거부 (로그인 없음) */
+        post: operations["opt_out_directory_opt_out_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files": {
         parameters: {
             query?: never;
@@ -187,6 +204,91 @@ export interface paths {
         get: operations["get_project_projects__project_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/sourcing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 가견적 후보 업체 · 받는 길 · 비용 · 출처 */
+        get: operations["sourcing_projects__project_id__sourcing_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/quote-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 앱 업체에 가견적 요청 */
+        post: operations["create_quote_request_projects__project_id__quote_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/contact-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 외부 업체에 믿집이 대신 가견적 요청 (동의 필수, 꺼져 있으면 queued에서 멈춤) */
+        post: operations["create_contact_request_contact_requests_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/quote-requests": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 업체 받은편지함 · 받은 가견적 요청 */
+        get: operations["vendor_inbox_vendor_quote_requests_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/quote-requests/{request_id}/viewed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 업체가 가견적 요청을 확인 */
+        post: operations["mark_viewed_vendor_quote_requests__request_id__viewed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -375,6 +477,80 @@ export interface components {
              */
             license_file: string;
         };
+        /** CandidateOut */
+        CandidateOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "app" | "ext";
+            /** Name */
+            name: string;
+            /** Trades */
+            trades: string[];
+            /** Region */
+            region: string;
+            /**
+             * Near
+             * @description 프로젝트와 같은 시 · 군 · 구
+             */
+            near: boolean;
+            /**
+             * Route
+             * @enum {string}
+             */
+            route: "app_request" | "proxy" | "link" | "phone" | "reference";
+            /** Route Label */
+            route_label: string;
+            cost: components["schemas"]["CostOut"];
+            source: components["schemas"]["SourceOut"];
+            links: components["schemas"]["LinksOut"];
+            /**
+             * Registration
+             * @description 등록 정보 (예: 실내건축공사업 등록)
+             */
+            registration: string | null;
+            /**
+             * Biz Status
+             * @description 국세청 사업자 상태
+             */
+            biz_status: string | null;
+            /**
+             * Phone
+             * @description 공공 등록 정보에 나온 사무실 번호
+             */
+            phone: string | null;
+            /**
+             * Proxy Off
+             * @description 대신 요청을 쓸 수 있는 업체지만 기능이 꺼져 있음
+             */
+            proxy_off: boolean;
+            /**
+             * Checklist
+             * @description 전화로 물어볼 것 (phone 길일 때)
+             */
+            checklist: string[];
+            /**
+             * Why
+             * @description 이 업체를 고른 이유 한 줄 (LLM, 실패하면 비움)
+             */
+            why?: string | null;
+            /**
+             * Draft
+             * @description 요청문 초안 (LLM, 실패하면 비움)
+             */
+            draft?: string | null;
+            /**
+             * Requests
+             * @default []
+             */
+            requests: components["schemas"]["RequestStateOut"][];
+        };
         /** CautionOut */
         CautionOut: {
             /** Text */
@@ -497,6 +673,85 @@ export interface components {
             /** Notice */
             notice: string | null;
         };
+        /**
+         * ContactRequestIn
+         * @description 외부 업체에 믿집이 대신 보낼 가견적 요청. 고객이 받는 업체와 보낼 글에 동의해야 한다.
+         */
+        ContactRequestIn: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Trade */
+            trade: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             * @description 외부 업체 id
+             */
+            vendor_id: string;
+            /**
+             * Body
+             * @description 업체에 보낼 글 (10자 이상, 링크 없이)
+             */
+            body: string;
+            /**
+             * Consent
+             * @description 받는 업체 · 보낼 글 · 믿집이 대신 보내는 것에 동의 (true만 받는다)
+             * @constant
+             */
+            consent: true;
+        };
+        /** ContactRequestOut */
+        ContactRequestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Trade */
+            trade: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "sms" | "email" | "form";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "draft" | "queued" | "sent" | "failed" | "blocked";
+            /** Send Enabled */
+            send_enabled: boolean;
+            /** Notice */
+            notice: string;
+        };
+        /** CostOut */
+        CostOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "free" | "vendor_fee" | "unknown";
+            /**
+             * Amount
+             * @description 원. 업체가 공지한 출장비일 때만
+             */
+            amount: number | null;
+            /** Label */
+            label: string;
+        };
         /** DobaeIn */
         DobaeIn: {
             /** Spaces */
@@ -552,6 +807,41 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /**
+         * InboxItemOut
+         * @description 업체 받은편지함 한 줄. 고객 이름 · 연락처 · 동 · 호수는 없다.
+         */
+        InboxItemOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Trade */
+            trade: string;
+            /** Trade Label */
+            trade_label: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "viewed";
+            /** Status Label */
+            status_label: string;
+            /** Region */
+            region: string;
+            /** Facts */
+            facts: string[];
+            /** Message */
+            message: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Viewed At */
+            viewed_at: string | null;
+        };
         /** LineOut */
         LineOut: {
             /** Key */
@@ -578,6 +868,26 @@ export interface components {
              * @enum {string}
              */
             basis: "public" | "assumed" | "none";
+        };
+        /** LinksOut */
+        LinksOut: {
+            /** Homepage */
+            homepage?: string | null;
+            /**
+             * Portfolio
+             * @default []
+             */
+            portfolio: string[];
+            /**
+             * Quote
+             * @description 공개 견적 · 문의 창구
+             */
+            quote?: string | null;
+            /**
+             * Place
+             * @description 카카오맵 장소 페이지
+             */
+            place?: string | null;
         };
         /** LoginIn */
         LoginIn: {
@@ -625,6 +935,21 @@ export interface components {
             spaces: string[];
             /** Items */
             items: ("molding" | "base" | "door" | "flatten")[];
+        };
+        /**
+         * OptOutIn
+         * @description 대신 연락 메시지의 수신거부 링크에 든 값
+         */
+        OptOutIn: {
+            /** Token */
+            token: string;
+        };
+        /** OptOutOut */
+        OptOutOut: {
+            /** Done */
+            done: boolean;
+            /** Message */
+            message: string;
         };
         /** PhotoIn */
         PhotoIn: {
@@ -814,10 +1139,60 @@ export interface components {
             /** Assumptions */
             assumptions: string[];
         };
+        /** QuoteRequestIn */
+        QuoteRequestIn: {
+            /** Trade */
+            trade: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+            /**
+             * Message
+             * @description 업체에 남길 말 (선택)
+             * @default
+             */
+            message: string;
+        };
+        /** QuoteRequestOut */
+        QuoteRequestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Trade */
+            trade: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "viewed";
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
         /** RejectIn */
         RejectIn: {
             /** Reason */
             reason: string;
+        };
+        /** RequestStateOut */
+        RequestStateOut: {
+            /** Trade */
+            trade: string;
+            /** Status */
+            status: string;
+            /** Label */
+            label: string;
         };
         /** ScheduleStepOut */
         ScheduleStepOut: {
@@ -870,6 +1245,46 @@ export interface components {
             basis?: ("supply" | "exclusive") | null;
             /** M2 */
             m2?: string | null;
+        };
+        /** SourceOut */
+        SourceOut: {
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "app" | "sangga" | "kiscon" | "seed";
+            /** Label */
+            label: string;
+            /**
+             * Fetched At
+             * @description 모은 날 (앱 업체는 승인한 날)
+             */
+            fetched_at: string | null;
+        };
+        /** SourcingOut */
+        SourcingOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Region */
+            region: string;
+            /** Trades */
+            trades: string[];
+            /**
+             * Facts
+             * @description 업체에 건넬 집 정보 (코드가 만든 것, 복사용)
+             */
+            facts: string[];
+            /** Candidates */
+            candidates: components["schemas"]["CandidateOut"][];
+            /** Proxy Enabled */
+            proxy_enabled: boolean;
+            /** Notice */
+            notice?: string | null;
+            /** Prompt Version */
+            prompt_version?: string | null;
         };
         /** SpaceIn */
         SpaceIn: {
@@ -1238,6 +1653,39 @@ export interface operations {
             };
         };
     };
+    opt_out_directory_opt_out_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OptOutIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OptOutOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     upload_files_post: {
         parameters: {
             query?: never;
@@ -1395,6 +1843,156 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sourcing_projects__project_id__sourcing_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SourcingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_quote_request_projects__project_id__quote_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["QuoteRequestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_contact_request_contact_requests_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContactRequestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactRequestOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_inbox_vendor_quote_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxItemOut"][];
+                };
+            };
+        };
+    };
+    mark_viewed_vendor_quote_requests__request_id__viewed_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                request_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InboxItemOut"];
                 };
             };
             /** @description Validation Error */
