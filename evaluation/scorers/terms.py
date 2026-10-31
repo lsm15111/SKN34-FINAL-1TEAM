@@ -1,7 +1,8 @@
-"""어려운 용어 표. 공정 의견에 이 말을 쓰면 처음 나오는 문장에서 쉬운 말로 풀어야 한다.
+"""어려운 용어 표. 에이전트 글에 이 말을 쓰면 처음 나오는 문장에서 쉬운 말로 풀어야 한다.
 
 풀이는 같은 문장 안에 있으면 된다. 예: '밑종이를 먼저 바르고(초배) 새 벽지를 발라요(정배).'
 목록은 도배 · 목공 지식(SKILL.md)과 계산 엔진 줄 · 단계 이름에 나오는 업계 말에서 골랐다.
+새 공정 용어는 그 공정 지식을 보고 더한다 (trades를 비우면 모든 공정에서 본다).
 - 등박스 · 우물천장 · 무몰딩 · 히든 걸레받이처럼 아파트 인테리어에서 흔히 쓰는 말은 넣지 않았다.
 - '품이 더 들어요'는 일상 말이라 넣지 않았다. 품셈 같은 기준 이름만 본다.
 - 할증은 목공에서만 본다. 도배의 '짐 있는 집 작업 할증'은 흔히 아는 '웃돈' 뜻이고,
@@ -9,9 +10,8 @@
 """
 
 import re
+from collections.abc import Iterable
 from dataclasses import dataclass
-
-BOTH = ("wallpaper", "carpentry")
 
 
 @dataclass(frozen=True)
@@ -19,11 +19,11 @@ class Term:
     pattern: re.Pattern[str]  # 용어
     gloss: re.Pattern[str]  # 풀이로 인정하는 말
     easy: str  # 쉬운 말 예
-    agents: tuple[str, ...] = BOTH  # 이 용어를 보는 에이전트
+    trades: tuple[str, ...] = ()  # 이 용어를 보는 공정 키 (비우면 모든 공정)
 
 
-def _t(pattern: str, gloss: str, easy: str, agents: tuple[str, ...] = BOTH) -> Term:
-    return Term(re.compile(pattern), re.compile(gloss), easy, agents)
+def _t(pattern: str, gloss: str, easy: str, trades: tuple[str, ...] = ()) -> Term:
+    return Term(re.compile(pattern), re.compile(gloss), easy, trades)
 
 
 _EVEN = r"바탕을?\s?고르|고르게|평평|매끈"
@@ -53,7 +53,7 @@ TERMS: dict[str, Term] = {
         r"할증",
         r"버리는\s?(몫|양)|여유분|넉넉|자투리",
         "버리는 몫까지 더 잡은 양",
-        ("carpentry",),
+        ("mokgong",),
     ),
     "소요량": _t(r"소요량", r"필요한\s?양|드는\s?양|쓰는\s?양|들어가는\s?양", "필요한 양"),
     "문선": _t(r"문선", r"문\s?(둘레|테두리)|둘레\s?마감|테두리", "문 둘레 마감"),
@@ -64,3 +64,16 @@ TERMS: dict[str, Term] = {
         "공공 기준",
     ),
 }
+
+
+def unexplained(sents: Iterable[str], trade: str | None = None) -> list[str]:
+    """처음 나온 문장에서 풀이 없이 쓴 어려운 용어 (trade를 주면 그 공정이 보는 용어만)"""
+    sents = list(sents)
+    out = []
+    for name, term in TERMS.items():
+        if trade is not None and term.trades and trade not in term.trades:
+            continue
+        first = next((s for s in sents if term.pattern.search(s)), None)
+        if first is not None and not term.gloss.search(first):
+            out.append(name)
+    return out

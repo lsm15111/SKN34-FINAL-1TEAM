@@ -1,112 +1,74 @@
-"""무료 점검(T0): 생성 사례를 계산 엔진에 다시 넣어 보고, 기대 검사 규칙끼리 모순이 없는지 본다. LLM 호출 없음.
+"""무료 점검(T0): 만든 사례를 상담 · 계산 코드에 다시 넣어 보고, 기대 규칙끼리 모순이 없는지 본다. LLM 호출 없음.
 
-1. 형식: 키 · 값 범위 · id 중복 · 같은 입력 · 범주마다 dev:held-out 2:1 · 두 나눔의 문장 조각 겹침
-2. 계산: 계산 엔진이 오류 없이 돌고, 저장한 단계 키 · '실측 후' 줄이 지금 계산과 같다
-   (계산 엔진이나 기준 단가가 바뀌면 여기서 잡힌다. 그때는 생성기를 다시 돌린다)
-3. 기대 검사: 지금 규칙으로 다시 만든 것과 같고, 규칙 id가 채점표에 있으며, 꼭 언급과 언급하면 안 됨이 겹치지 않는다
-4. 모범 답: 규칙을 모두 지키는 답(scorers/witness.py)을 채점하면 모든 검사를 통과한다 (규칙끼리 모순이 없다는 증거)
-5. 입력 글: 공정 에이전트가 받을 글을 만들 수 있고 단계 키가 다 들어 있다
+공정 의견 (공정마다)
+1. 형식: 키 · id 중복 · 같은 입력 · 범주마다 dev:held-out 2:1 · 두 나눔의 문장 조각 겹침
+2. 카드: 상담 카드(ConsultCard)로 스펙 검사를 지나고, 상담과 같게 맞춘 카드(normalize)와 같다
+3. 계산: 저장한 단계 키 · '실측 후' 줄이 지금 계산과 같다 (계산 엔진 · 기준 단가가 바뀌면 여기서 잡힌다)
+4. 기대 검사: 지금 규칙으로 다시 만든 것과 같고, 규칙 id가 채점표에 있으며, 꼭 언급과 언급하면 안 됨이 겹치지 않는다
+5. 모범 답: 규칙을 모두 지키는 답을 채점하면 모든 검사를 통과한다 (규칙끼리 모순이 없다는 증거)
+6. 입력 글: 공정 에이전트가 받을 글을 만들 수 있고 단계 키가 다 들어 있다
+라우터 · 전문가 답: 각 폴더의 check.py가 같은 방식으로 본다 (모범 답이 채점을 모두 통과하는지 등).
 
-실행 (저장소 루트에서): cd backend && uv run python ../evaluation/check_cases.py [--agent wallpaper] [--cases 경로]
-기본은 두 에이전트의 cases_5k.jsonl(없으면 sample_100.jsonl). 문제가 있으면 1로 끝난다.
+실행 (저장소 루트에서): cd backend && uv run python ../evaluation/check_cases.py [--trade dobae] [--cases 경로]
+기본은 등록된 공정마다 plan/<공정>/cases_5k.jsonl(없으면 sample_100.jsonl)과 라우터 · 전문가 사례. 문제가 있으면 1로 끝난다.
 """
 
 import argparse
 import json
 import sys
 from collections import Counter
-from decimal import Decimal, InvalidOperation
 from pathlib import Path
+
+from pydantic import ValidationError
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "backend")]
 
 from evaluation.common import gen, trades
-from evaluation.scorers import trade_plan, witness
+from evaluation.run_agent import default_cases, ideal
+from evaluation.scorers import trade_plan
 from evaluation.scorers.expect import expect
 
-KEYS = ("id", "agent", "split", "category", "strata", "input", "expect")
+KEYS = ("id", "trade", "split", "category", "strata", "input", "expect")
+OTHER_SETS: dict = {}  # 평가 이름 → 그 평가의 check 모듈 (default_cases · check_set)
 
 
-def _input_errors(agent: str, inp: dict) -> list[str]:
-    errs = []
-    c = inp["common"]
-    try:
-        area = Decimal(c["area_m2"])
-        if not (0 < area <= 1000 and area == area.quantize(Decimal("0.1"))):
-            errs.append("면적은 0~1000㎡, 소수 한 자리")
-    except (InvalidOperation, TypeError):
-        errs.append("면적 값")
-    if c["area_basis"] not in ("supply", "exclusive"):
-        errs.append("면적 기준 값")
-    if not (isinstance(c["occupied"], bool) and isinstance(c["balcony_ext"], bool)):
-        errs.append("거주 · 발코니는 참거짓")
-    if c.get("built_year") is not None and not 1900 <= c["built_year"] <= 2100:
-        errs.append("준공 연도 범위")
-    if not set(inp.get("other_trades", [])) <= {trades.OTHER[agent]}:
-        errs.append("같이 하는 공정 값")
-    to_check = inp.get("to_check", [])
-    if not set(to_check) <= set(trades.CHECK_FIELDS[agent]) or len(set(to_check)) != len(to_check):
-        errs.append("to_check 칸")
-    if "area_basis" in to_check and c["area_basis"] != trades.DEFAULTS["area_basis"]:
-        errs.append("모르는 면적 기준은 기본값이어야 해요")
-    if agent == "wallpaper":
-        t = inp["trades"]["dobae"]
-        if t["grade"] not in ("economy", "basic") or not isinstance(t["include_ceiling"], bool):
-            errs.append("도배 칸 값")
-        for f in ("grade", "include_ceiling"):
-            if f in to_check and t[f] != trades.DEFAULTS[f]:
-                errs.append(f"모르는 {f}는 기본값이어야 해요")
-        return errs
-    t = inp["trades"]["mokgong"]
-    items = t["items"]
-    if not items or list(items) != [i for i in trades.ITEMS if i in items]:
-        errs.append("목공 항목은 하나 이상, 정해진 순서로 한 번씩")
-    if "door" in items:
-        if not (isinstance(t["doors"], int) and 1 <= t["doors"] <= 10):
-            errs.append("방문 개수 1~10")
-        if not isinstance(t["door_frame"], bool):
-            errs.append("문틀 교체는 참거짓")
-        for f in ("doors", "door_frame"):
-            if f in to_check and t[f] != trades.DEFAULTS[f]:
-                errs.append(f"모르는 {f}는 기본값이어야 해요")
-    elif (
-        t["doors"] is not None
-        or t["door_frame"] is not None
-        or {"doors", "door_frame"} & set(to_check)
-    ):
-        errs.append("방문이 없으면 방문 칸은 비워요")
-    if len(t["spaces"]) > 30 or any(not s or len(s) > 20 for s in t["spaces"]):
-        errs.append("공간 이름은 1~20자, 30개까지")
-    return errs
-
-
-def check_case(agent: str, case: dict, sources: set[str]) -> list[str]:
+def check_case(trade: str, case: dict, sources: set[str], witness) -> list[str]:
     missing = [k for k in KEYS if k not in case]
     if missing:
         return [f"키 없음: {missing}"]
     errs = []
-    if case["agent"] != agent:
-        errs.append("agent 값")
+    if case["trade"] != trade:
+        errs.append("trade 값")
     if case["split"] not in gen.SPLITS:
         errs.append("split 값")
     inp, exp = case["input"], case["expect"]
-    errs += _input_errors(agent, inp)
+    try:
+        c = trades.card(inp)
+    except (ValidationError, KeyError, TypeError) as e:
+        return errs + [f"카드가 스펙에 맞지 않아요: {type(e).__name__}"]
+    if c.model_dump(mode="json") != inp["card"]:
+        errs.append("카드가 상담 규칙(normalize)으로 맞춘 것과 달라요")
+    if trade not in c.trades or c.area_m2 is None or c.occupied is None or c.area_basis is None:
+        errs.append("공정 · 공통 칸이 비었어요")
     if errs:
         return errs
+    sp = trades.spec(trade)
+    if sp.missing(c.values.get(trade, {})):
+        return ["물을 칸이 남았어요 (공정 의견은 칸이 다 찬 뒤에 만든다)"]
     try:
-        q = trades.quote(agent, inp)
-    except (ValueError, KeyError, TypeError, InvalidOperation) as e:
+        q = sp.build(trades.common(c), c.values[trade])
+    except (ValueError, KeyError, TypeError) as e:
         return [f"계산 오류: {e}"]
     facts = trades.facts(q)
     if facts["step_keys"] != exp["step_keys"]:
         errs.append("단계 키가 지금 계산과 달라요")
     if facts["after_visit"] != exp["after_visit"]:
         errs.append("'실측 후' 줄이 지금 계산과 달라요")
-    if expect(agent, inp, facts) != exp:
+    if expect(trade, c, facts) != exp:
         errs.append("기대 검사가 지금 규칙과 달라요")
-    rules = trade_plan.RULES[agent]
+    rules = trade_plan.rules(trade)
     unknown = [r for r in exp["must"] + exp["must_not"] if r not in rules]
     if unknown:
         errs.append(f"채점표에 없는 규칙: {unknown}")
@@ -115,29 +77,22 @@ def check_case(agent: str, case: dict, sources: set[str]) -> list[str]:
         errs.append(f"꼭 언급과 언급하면 안 됨에 같이 있음: {sorted(both)}")
     if unknown:
         return errs
-    s = trade_plan.score(agent, witness.ideal_plan(agent, case), exp, sources)
+    s = trade_plan.score(trade, witness(case), exp, sources)
     failed = [k for k, ok in s["checks"].items() if not ok]
     if failed:
         errs.append(
             "모범 답이 통과 못 함: " + "; ".join(f"{k} {s['detail'].get(k, '')}" for k in failed)
         )
-    text = trades.render(agent, inp, q)
+    text = trades.render(trade, inp, q)
     if any(f"- {k} | " not in text for k in exp["step_keys"]) or "{" in text:
         errs.append("입력 글에 단계 키가 빠졌거나 채우지 못한 자리가 있어요")
     return errs
 
 
-def check_set(agent: str, cases: list[dict]) -> dict:
-    sources = trade_plan.skill_sources(agent)
-    problems = {}
-    for c in cases:
-        errs = check_case(agent, c, sources)
-        if errs:
-            problems[c.get("id", "?")] = errs
+def split_report(cases: list[dict]) -> dict:
+    """나눔 · 중복 · 조각 겹침 (세 평가가 같이 쓴다)"""
     ids = [c.get("id") for c in cases]
-    dup_ids = len(ids) - len(set(ids))
-    inputs = [json.dumps(c.get("input"), sort_keys=True) for c in cases]
-    dup_inputs = len(inputs) - len(set(inputs))
+    inputs = [json.dumps(c.get("input"), sort_keys=True, ensure_ascii=False) for c in cases]
     cnt = Counter((c.get("category"), c.get("split")) for c in cases)
     uneven = sorted(
         cat for cat in {k for k, _ in cnt} if abs(cnt[cat, "dev"] - 2 * cnt[cat, "heldout"]) > 2
@@ -145,15 +100,23 @@ def check_set(agent: str, cases: list[dict]) -> dict:
     tpl = {
         s: {x for c in cases if c.get("split") == s for x in c.get("tpl", [])} for s in gen.SPLITS
     }
-    shared = sorted(tpl["dev"] & tpl["heldout"])
     return {
         "n": len(cases),
-        "problems": problems,
-        "dup_ids": dup_ids,
-        "dup_inputs": dup_inputs,
+        "dup_ids": len(ids) - len(set(ids)),
+        "dup_inputs": len(inputs) - len(set(inputs)),
         "uneven": uneven,
-        "shared_fragments": shared,
+        "shared_fragments": sorted(tpl["dev"] & tpl["heldout"]),
     }
+
+
+def check_set(trade: str, cases: list[dict]) -> dict:
+    sources, witness = set(trades.sources(trade)), ideal(trade)
+    problems = {}
+    for c in cases:
+        errs = check_case(trade, c, sources, witness)
+        if errs:
+            problems[c.get("id", "?")] = errs
+    return split_report(cases) | {"problems": problems}
 
 
 def ok(r: dict, full: bool) -> bool:
@@ -167,36 +130,46 @@ def ok(r: dict, full: bool) -> bool:
     )
 
 
+def row(name: str, path: Path, r: dict, full: bool) -> str:
+    uneven = len(r["uneven"]) if full else "-"
+    return (
+        f"| {name} | {path.relative_to(ROOT).as_posix()} | {r['n']} | {len(r['problems'])} | "
+        f"{r['dup_ids']} | {r['dup_inputs']} | {uneven} | {len(r['shared_fragments'])} |"
+    )
+
+
 def main() -> None:
     for stream in (sys.stdout, sys.stderr):  # Windows 콘솔에서도 한글이 깨지지 않게
         stream.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser(description="평가 사례 무료 점검 (T0)")
-    ap.add_argument("--agent", choices=trades.AGENTS, action="append")
-    ap.add_argument("--cases", type=Path, help="사례 jsonl (에이전트 하나일 때)")
+    ap.add_argument("--trade", action="append", help="공정 의견 공정 키 (없으면 등록된 공정 전부)")
+    ap.add_argument("--cases", type=Path, help="사례 jsonl (--trade 하나일 때)")
+    ap.add_argument("--only", choices=["plan", "router", "expert"], action="append")
     args = ap.parse_args()
-    agents = args.agent or list(trades.AGENTS)
-    if args.cases and len(agents) != 1:
-        sys.exit("--cases는 --agent 하나와 같이 써요.")
+    picked = args.trade or list(trades.registered())
+    if args.cases and len(picked) != 1:
+        sys.exit("--cases는 --trade 하나와 같이 써요.")
+    only = set(args.only or ("plan", "router", "expert"))
 
     print(
-        "| 에이전트 | 사례 파일 | 사례 | 사례 문제 | id 중복 | 같은 입력 | 범주 2:1 어긋남 | 조각 겹침 |"
+        "| 평가 | 사례 파일 | 사례 | 사례 문제 | id 중복 | 같은 입력 | 범주 2:1 어긋남 | 조각 겹침 |"
     )
     print("| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |")
-    all_ok = True
-    details = []
-    for agent in agents:
-        path = (args.cases or HERE / agent / "cases_5k.jsonl").resolve()
-        if not path.exists():
-            path = HERE / agent / "sample_100.jsonl"
-        r = check_set(agent, gen.read_jsonl(path))
+    all_ok, details = True, []
+    sets: list[tuple[str, Path, dict]] = []
+    if "plan" in only:
+        for trade in picked:
+            path = (args.cases or default_cases(trade)).resolve()
+            sets.append((f"공정 의견 {trade}", path, check_set(trade, gen.read_jsonl(path))))
+    for kind, mod in OTHER_SETS.items():
+        if kind in only and not args.trade:
+            path = mod.default_cases().resolve()
+            sets.append((kind, path, mod.check_set(gen.read_jsonl(path))))
+    for name, path, r in sets:
         full = path.name == "cases_5k.jsonl"
         all_ok &= ok(r, full)
-        uneven = len(r["uneven"]) if full else "-"
-        print(
-            f"| {agent} | {path.relative_to(ROOT).as_posix()} | {r['n']} | {len(r['problems'])} | "
-            f"{r['dup_ids']} | {r['dup_inputs']} | {uneven} | {len(r['shared_fragments'])} |"
-        )
-        details += [f"{agent} {cid}: {'; '.join(e)}" for cid, e in list(r["problems"].items())[:10]]
+        print(row(name, path, r, full))
+        details += [f"{name} {cid}: {'; '.join(e)}" for cid, e in list(r["problems"].items())[:10]]
     for d in details:
         print(d)
     print("\n점검 통과" if all_ok else "\n점검 실패")

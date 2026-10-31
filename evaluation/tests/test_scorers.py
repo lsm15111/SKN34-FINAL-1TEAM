@@ -1,25 +1,29 @@
-"""코드 채점: 규칙을 지킨 가짜 응답은 통과하고, 어긴 응답은 그 검사만 실패한다."""
+"""공정 의견 코드 채점: 규칙을 지킨 가짜 응답은 통과하고, 어긴 응답은 그 검사만 실패한다."""
 
 import copy
 
 import pytest
 
+from evaluation.common import trades
+from evaluation.run_agent import ideal
 from evaluation.scorers import trade_plan as tp
-from evaluation.scorers import witness
+from evaluation.scorers.rules import label_words, line_pattern, plan_sents
+from evaluation.scorers.terms import unexplained
 from evaluation.tests.conftest import cp_input, make_case, wp_input
 
-WP_SRC = tp.skill_sources("wallpaper")
-CP_SRC = tp.skill_sources("carpentry")
 
-
-def failed(agent: str, plan: dict, case: dict) -> set[str]:
-    s = tp.score(agent, plan, case["expect"], WP_SRC if agent == "wallpaper" else CP_SRC)
+def failed(trade: str, plan: dict, case: dict) -> set[str]:
+    s = tp.score(trade, plan, case["expect"], set(trades.sources(trade)))
     return {k for k, ok in s["checks"].items() if not ok}
 
 
-def failed_rules(agent: str, plan: dict, case: dict) -> set[str]:
-    s = tp.score(agent, plan, case["expect"], WP_SRC if agent == "wallpaper" else CP_SRC)
+def failed_rules(trade: str, plan: dict, case: dict) -> set[str]:
+    s = tp.score(trade, plan, case["expect"], set(trades.sources(trade)))
     return {k for k, ok in s["rules"].items() if not ok}
+
+
+def terms(plan: dict, trade: str) -> list[str]:
+    return unexplained(plan_sents(plan), trade)
 
 
 GOOD_WP = {
@@ -46,9 +50,9 @@ GOOD_WP = {
 
 
 def test_rule_following_plans_pass(wp_case, cp_case):
-    assert failed("wallpaper", GOOD_WP, wp_case) == set()
-    for agent, case in (("wallpaper", wp_case), ("carpentry", cp_case)):
-        assert failed(agent, witness.ideal_plan(agent, case), case) == set()
+    assert failed("dobae", GOOD_WP, wp_case) == set()
+    for trade, case in (("dobae", wp_case), ("mokgong", cp_case)):
+        assert failed(trade, ideal(trade)(case), case) == set()
 
 
 @pytest.mark.parametrize(
@@ -80,19 +84,19 @@ def test_rule_following_plans_pass(wp_case, cp_case):
 def test_each_rule_break_fails_only_its_check(wp_case, change, check):
     plan = copy.deepcopy(GOOD_WP)
     change(plan)
-    got = failed("wallpaper", plan, wp_case)
+    got = failed("dobae", plan, wp_case)
     assert check in got
     assert got <= {check, "no_number_words", "summary_sent", "must"}
 
 
-def test_terms_need_gloss_in_first_sentence(wp_case):
+def test_terms_need_gloss_in_first_sentence():
     plan = copy.deepcopy(GOOD_WP)
     plan["cautions"][0]["text"] = "합지는 기존 벽지에 덧방하는 경우가 많아요."
-    assert tp.unexplained_terms(plan, "wallpaper") == ["덧방"]
+    assert terms(plan, "dobae") == ["덧방"]
     plan["cautions"][0]["text"] = "합지는 기존 벽지를 떼지 않고 그 위에 바르는(덧방) 경우가 많아요."
-    assert tp.unexplained_terms(plan, "wallpaper") == []
+    assert terms(plan, "dobae") == []
     plan["steps"][0]["note"] = "짐 정리 · 보양을 해요."
-    assert tp.unexplained_terms(plan, "wallpaper") == ["보양"]
+    assert terms(plan, "dobae") == ["보양"]
 
 
 def test_everyday_words_are_not_terms():
@@ -100,85 +104,104 @@ def test_everyday_words_are_not_terms():
     plan["cautions"][0]["text"] = (
         "천장 도배는 벽보다 품이 더 들어요. 그래서 짐 있는 집 할증이 붙어요."
     )
-    assert tp.unexplained_terms(plan, "wallpaper") == []
+    assert terms(plan, "dobae") == []
     # 목공 지식의 할증은 '버리는 몫'이라 풀어야 한다
-    assert tp.unexplained_terms(plan, "carpentry") == ["할증"]
+    assert terms(plan, "mokgong") == ["할증"]
     plan["cautions"][0]["text"] = "자재에는 버리는 몫(할증)이 이미 들어 있어요."
-    assert tp.unexplained_terms(plan, "carpentry") == []
+    assert terms(plan, "mokgong") == []
 
 
 def test_empty_house_must_not_talk_about_belongings():
-    case = make_case("wallpaper", wp_input(occupied=False))
-    plan = witness.ideal_plan("wallpaper", case)
-    assert failed("wallpaper", plan, case) == set()
+    case = make_case("dobae", wp_input(occupied=False))
+    plan = ideal("dobae")(case)
+    assert failed("dobae", plan, case) == set()
     plan["summary"] += " 빈집이라 짐 정리 없이 바로 시작해요."
-    assert "empty.moving" in failed_rules("wallpaper", plan, case)
+    assert "empty.moving" in failed_rules("dobae", plan, case)
     # '벌어짐 · 갈라짐'의 '짐'은 짐 이야기가 아니다
-    plan = witness.ideal_plan("wallpaper", case)
+    plan = ideal("dobae")(case)
     plan["steps"][-1]["note"] = "이음매 벌어짐과 벽 갈라짐을 보고 청소해요."
-    assert "empty.moving" not in failed_rules("wallpaper", plan, case)
+    assert "empty.moving" not in failed_rules("dobae", plan, case)
 
 
 def test_not_chosen_ceiling_allows_negated_mention():
-    case = make_case("wallpaper", wp_input(include_ceiling=False))
-    plan = witness.ideal_plan("wallpaper", case)
+    case = make_case("dobae", wp_input(include_ceiling="no"))
+    plan = ideal("dobae")(case)
     assert "천장은 하지 않는" in plan["summary"]
-    assert failed("wallpaper", plan, case) == set()
+    assert failed("dobae", plan, case) == set()
     plan["visit_checks"].append("천장도 같이 바르면 깔끔해요.")
-    assert "not_chosen.ceiling" in failed_rules("wallpaper", plan, case)
+    assert "not_chosen.include_ceiling" in failed_rules("dobae", plan, case)
     plan["visit_checks"][-1] = "천장 높이를 재 달라고 해요."  # 벽 높이 이야기라 괜찮다
-    assert "not_chosen.ceiling" not in failed_rules("wallpaper", plan, case)
+    assert "not_chosen.include_ceiling" not in failed_rules("dobae", plan, case)
 
 
-def test_carpentry_unchosen_items_and_other_trade(cp_case):
-    plan = witness.ideal_plan("carpentry", cp_case)
-    assert failed("carpentry", plan, cp_case) == set()
+def test_carpentry_unchosen_items_and_trades_not_picked(cp_case):
+    plan = ideal("mokgong")(cp_case)
+    assert failed("mokgong", plan, cp_case) == set()
     bad = copy.deepcopy(plan)
     bad["visit_checks"].append("문틀이 뒤틀렸는지도 봐 달라고 해요.")
     bad["cautions"][-1] = {"text": "목공이 끝난 뒤 도배를 해요.", "source": "field"}
-    assert failed_rules("carpentry", bad, cp_case) == {"not_chosen.door", "other.trade"}
+    bad["cautions"][-2] = {"text": "욕실 타일도 같이 보면 좋아요.", "source": "field"}
+    got = failed_rules("mokgong", bad, cp_case)
+    assert got == {"not_chosen.items.door", "scope.dobae", "scope.bath", "scope.tile"}
     ok = copy.deepcopy(plan)
     ok["visit_checks"].append("방문 교체는 이번에 하지 않아요.")
-    assert "not_chosen.door" not in failed_rules("carpentry", ok, cp_case)
+    ok["cautions"][-1] = {"text": "욕실 공사는 목공과 따로 하는 공사예요.", "source": "field"}
+    assert failed_rules("mokgong", ok, cp_case) == set()
 
 
 def test_conditions_from_case_input():
-    case = make_case(
-        "carpentry",
-        cp_input(
-            items=["door"],
-            doors=3,
-            door_frame=True,
-            occupied=True,
-            other_trades=["dobae"],
-            to_check=["doors"],
-        ),
+    inp = cp_input(
+        items=["door"],
+        doors=3,  # 모르겠어요 → 기본값 3을 넣고 to_check에 남긴다 (상담과 같게)
+        occupied=True,
+        others=["dobae"],
+        to_check=["mokgong.doors"],
     )
+    case = make_case("mokgong", inp)
     must = set(case["expect"]["must"])
-    assert {"sum.item.door", "sum.door_frame.yes", "prep.mention", "after.moving"} <= must
-    assert {"order.other", "check.doors"} <= must
-    assert {"not_chosen.molding", "not_chosen.base", "not_chosen.flatten"} <= set(
+    assert {"sum.items.door", "sum.door_frame.yes", "prep.mention", "after.moving"} <= must
+    assert {"after.remove_door", "order.dobae", "check.doors"} <= must
+    assert {"not_chosen.items.molding", "not_chosen.items.base", "not_chosen.items.flatten"} <= set(
         case["expect"]["must_not"]
     )
-    plan = witness.ideal_plan("carpentry", case)
-    assert failed("carpentry", plan, case) == set()
+    assert "scope.dobae" not in case["expect"]["must_not"]
+    plan = ideal("mokgong")(case)
+    assert failed("mokgong", plan, case) == set()
     plan["cautions"] = [c for c in plan["cautions"] if "도배" not in c["text"]]
     plan["visit_checks"] = [v for v in plan["visit_checks"] if "개수" not in v]
-    assert failed_rules("carpentry", plan, case) == {"order.other", "check.doors"}
+    assert failed_rules("mokgong", plan, case) == {"order.dobae", "check.doors"}
 
 
 def test_order_rule_needs_same_sentence():
-    case = make_case("wallpaper", wp_input(other_trades=["mokgong"]))
-    plan = witness.ideal_plan("wallpaper", case)
-    assert failed("wallpaper", plan, case) == set()
+    case = make_case("dobae", wp_input(others=["mokgong"]))
+    plan = ideal("dobae")(case)
+    assert failed("dobae", plan, case) == set()
     for c in plan["cautions"]:
         if "목공" in c["text"]:
             c["text"] = "목공도 해요. 그다음 이야기는 실측 때 해요."
-    assert "order.other" in failed_rules("wallpaper", plan, case)
+    assert "order.mokgong" in failed_rules("dobae", plan, case)
 
 
-def test_skill_sources_match_agent_module():
-    from evaluation.common import trades
+def test_rules_cover_every_after_visit_line_and_use_spec_sources():
+    for trade in trades.registered():
+        rules = tp.rules(trade)
+        assert {f"after.{k}" for k in trades.after_lines(trade)} <= set(rules)
+        assert trades.sources(trade) == trades.spec(trade).agent.sources
+    assert set(trades.after_lines("mokgong")) == {
+        "remove_ceiling",
+        "remove_door",
+        "remove_trim",
+        "waste",
+        "moving",
+    }
 
-    assert WP_SRC == set(trades.module("wallpaper").SOURCES)
-    assert CP_SRC == set(trades.module("carpentry").SOURCES)
+
+def test_words_from_screen_labels():
+    assert label_words("저가형 · 합지") == ["저가형", "합지"]
+    assert label_words("천장도 해요") == ["천장"]
+    assert label_words("천장 몰딩") == ["몰딩"]
+    assert label_words("문틀까지 바꿔요") == ["문틀"]
+    assert label_words("걸레받이") == ["걸레받이"]
+    assert label_words("천장 도배", drop=("도배",)) == []
+    assert line_pattern("기존 방문 · 문틀 철거").startswith("철거|")
+    assert "폐기물" in line_pattern("폐기물 처리")

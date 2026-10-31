@@ -146,15 +146,17 @@ def sample_2to1(
 CASE_KEYS = ("split", "category", "strata", "input", "expect")
 
 
-def number_cases(cases: list[dict], prefix: str, agent: str) -> list[dict]:
-    """나눔마다 차례 번호(prefix-d0001 · prefix-h0001)를 붙이고 사례 키 순서를 맞춘다."""
+def number_cases(cases: list[dict], prefix: str, **head: object) -> list[dict]:
+    """나눔마다 차례 번호(prefix-d0001 · prefix-h0001)를 붙이고 사례 키 순서를 맞춘다.
+
+    head는 id 다음에 둘 키 (예: trade="dobae")."""
     n: Counter[str] = Counter()
     out = []
     for c in cases:
         n[c["split"]] += 1
-        head = {"id": f"{prefix}-{c['split'][0]}{n[c['split']]:04d}", "agent": agent}
-        rest = {k: v for k, v in c.items() if k not in CASE_KEYS}
-        out.append(head | {k: c[k] for k in CASE_KEYS} | rest)
+        first = {"id": f"{prefix}-{c['split'][0]}{n[c['split']]:04d}"} | head
+        rest = {k: v for k, v in c.items() if k not in CASE_KEYS and k not in first}
+        out.append(first | {k: c[k] for k in CASE_KEYS if k in c} | rest)
     return out
 
 
@@ -192,8 +194,9 @@ def norm(text: str) -> str:
     return re.sub(r"\d+(?:[.,]\d+)*", "#", re.sub(r"\s", "", text))
 
 
-def grams(text: str, n: int = 3) -> frozenset[str]:
-    t = norm(text)
+def grams(text: str, n: int = 3, keep_numbers: bool = False) -> frozenset[str]:
+    """글자 n-gram. keep_numbers면 수를 #로 바꾸지 않는다 (수가 답인 고객 말: '34평' · '25평'은 다른 사례)"""
+    t = re.sub(r"\s", "", text) if keep_numbers else norm(text)
     return frozenset(t[i : i + n] for i in range(max(1, len(t) - n + 1)))
 
 
@@ -207,8 +210,9 @@ class NearDup:
     gram 역색인으로 겹치는 글만 견주어 수천 개도 빠르게 돈다.
     """
 
-    def __init__(self, threshold: float = 0.8) -> None:
+    def __init__(self, threshold: float = 0.8, keep_numbers: bool = False) -> None:
         self.threshold = threshold
+        self.keep_numbers = keep_numbers
         self._sets: dict[Hashable, list[frozenset[str]]] = defaultdict(list)
         self._index: dict[Hashable, dict[str, list[int]]] = defaultdict(dict)
 
@@ -223,11 +227,11 @@ class NearDup:
 
     def nearest(self, text: str, group: Hashable = None) -> float:
         """이 묶음에서 가장 비슷한 글과의 Jaccard"""
-        return self._nearest(grams(text), group)
+        return self._nearest(grams(text, keep_numbers=self.keep_numbers), group)
 
     def add(self, text: str, group: Hashable = None) -> bool:
         """비슷한 글이 없으면 넣고 True, 있으면 넣지 않고 False"""
-        g = grams(text)
+        g = grams(text, keep_numbers=self.keep_numbers)
         if self._nearest(g, group) >= self.threshold:
             return False
         sets, index = self._sets[group], self._index[group]
