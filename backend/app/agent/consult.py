@@ -12,8 +12,8 @@ from app.agent import llm
 from app.agent.schemas import RouterOut
 from app.agent.trade import NUMBER_CLAIM
 
-PROMPT_VERSION = "consult-v4"
-_PROMPT = (Path(__file__).parent / "prompts" / "consult_v4.md").read_text(encoding="utf-8")
+PROMPT_VERSION = "consult-v5"
+_PROMPT = (Path(__file__).parent / "prompts" / "consult_v5.md").read_text(encoding="utf-8")
 _CATALOG_HEAD = (
     "# 공정과 칸\n\n"
     "칸 줄: 칸 이름 | 화면 말 | 종류(choice 하나 · multi 여러 개 · count 숫자) | 값=뜻 | 구분 설명\n\n"
