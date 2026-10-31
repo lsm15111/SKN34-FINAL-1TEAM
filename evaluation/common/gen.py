@@ -285,7 +285,7 @@ def noisy(
 # ---------------------------------------------------------------- 파일 · 표
 def write_jsonl(path: Path, rows: Iterable[dict]) -> int:
     lines = [json.dumps(row, ensure_ascii=False) for row in rows]
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
     return len(lines)
 
 
