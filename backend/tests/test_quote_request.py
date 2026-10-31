@@ -3,6 +3,9 @@
 import asyncio
 import uuid
 
+import asyncpg
+import pytest
+
 from app.auth.models import User
 from app.db import SessionLocal
 from app.quote import service
@@ -133,3 +136,48 @@ def test_permissions_and_limits(api):
     assert nope.status_code == 403 and nope.json()["error"]["code"] == "vendor_not_approved"
     api.cookies.clear()
     assert ask(api, w["pid"], w["a"][1]).status_code == 401
+
+
+def test_customer_sees_sent_requests_and_status(api):
+    w = world(api)
+    sent = f"/projects/{w['pid']}/quote-requests"
+    assert api.get(sent).json() == []
+    first = ask(api, w["pid"], w["a"][1]).json()["id"]
+    ask(api, w["pid"], w["a"][1], trade="mokgong")
+    ask(api, w["pid"], w["b"][1])
+    use(api, w["a"][0])
+    api.post(f"/vendor/quote-requests/{first}/viewed")
+    use(api, w["c"])
+    r = api.get(sent)
+    assert r.status_code == 200, r.text
+    got = [(x["vendor_name"], x["trade_label"], x["status_label"]) for x in r.json()]
+    assert got == [  # 새 것부터
+        ("가짜도배B", "도배", "요청했어요"),
+        ("가짜도배A", "목공", "요청했어요"),
+        ("가짜도배A", "도배", "업체가 확인했어요"),
+    ]
+    (viewed,) = [x for x in r.json() if x["id"] == first]
+    assert viewed["status"] == "viewed" and viewed["viewed_at"]
+
+
+def test_sent_requests_permissions(api):
+    w = world(api)
+    sent = f"/projects/{w['pid']}/quote-requests"
+    ask(api, w["pid"], w["a"][1])
+    signup(api, "other@mitjip.test")
+    assert api.get(sent).status_code == 404  # 남의 프로젝트
+    use(api, w["a"][0])
+    assert api.get(sent).status_code == 403  # 업체는 고객 목록을 못 본다
+    api.cookies.clear()
+    assert api.get(sent).status_code == 401
+
+
+def test_vendor_trades_cover_ten_trades(api):
+    """업체 공정 10개: 새 공정(타일)을 하는 업체도 후보가 되고 가견적을 받는다. 모르는 공정은 DB가 막는다."""
+    _, tile = app_vendor(api, "tile@mitjip.test", "가짜타일", trades=("tile", "bath"))
+    _, pid = customer_project(api, trades={"tile": {"spaces": ["a"]}})
+    (card,) = api.get(f"/projects/{pid}/sourcing").json()["candidates"]
+    assert (card["id"], card["trades"], card["route"]) == (tile, ["tile"], "app_request")
+    assert ask(api, pid, tile, trade="tile").status_code == 201
+    with pytest.raises(asyncpg.exceptions.CheckViolationError):
+        query("insert into vendor_trades (vendor_id, trade) values ($1, 'sauna')", uuid.UUID(tile))

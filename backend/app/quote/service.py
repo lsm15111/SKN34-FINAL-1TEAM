@@ -37,6 +37,7 @@ from app.quote.schemas import (
     QuoteRequestIn,
     QuoteRequestOut,
     RequestStateOut,
+    SentRequestOut,
     SourceOut,
     SourcingOut,
 )
@@ -303,6 +304,25 @@ async def create_quote_request(
         status="requested",
         created_at=req.created_at,
     )
+
+
+async def sent_requests(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[SentRequestOut]:
+    """고객이 이 프로젝트에서 앱 업체에 보낸 가견적 요청과 지금 상태 (새 것부터)"""
+    p = await project_service.get_for(s, user, project_id)  # 남의 프로젝트는 404
+    return [
+        SentRequestOut(
+            id=r.id,
+            trade=r.trade,
+            trade_label=TRADE_LABEL[r.trade],
+            vendor_id=r.vendor_id,
+            vendor_name=name or vendor_service.NO_NAME,
+            status=r.status,
+            status_label=QUOTE_LABEL[r.status],
+            created_at=r.created_at,
+            viewed_at=r.viewed_at,
+        )
+        for r, name in await repo.sent(s, p.id)
+    ]
 
 
 async def _approved_vendor(s: AsyncSession, user: User) -> None:

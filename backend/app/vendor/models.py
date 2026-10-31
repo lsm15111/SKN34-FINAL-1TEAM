@@ -7,7 +7,20 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.db import Base
 from app.shared.ids import uuid7
 
-TRADES = ("dobae", "mokgong")
+# 업체가 하는 공정. 키는 프로젝트 공정(project_trades)과 같은 10개다
+TRADES = (
+    "dobae",
+    "mokgong",
+    "floor",
+    "film",
+    "paint",
+    "tile",
+    "bath",
+    "kitchen",
+    "electric",
+    "window",
+)
+_TRADE_IN = ", ".join(f"'{t}'" for t in TRADES)
 
 
 class Vendor(Base):
@@ -53,7 +66,7 @@ class VendorTrade(Base):
     """업체가 하는 공정"""
 
     __tablename__ = "vendor_trades"
-    __table_args__ = (CheckConstraint("trade in ('dobae', 'mokgong')", name="trade"),)
+    __table_args__ = (CheckConstraint(f"trade in ({_TRADE_IN})", name="trade"),)
 
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("vendors.user_id", ondelete="CASCADE"), primary_key=True

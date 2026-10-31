@@ -13,6 +13,7 @@ from app.quote.schemas import (
     InboxItemOut,
     QuoteRequestIn,
     QuoteRequestOut,
+    SentRequestOut,
     SourcingOut,
 )
 from app.shared import ratelimit
@@ -61,6 +62,19 @@ async def create_quote_request(
         "가견적 요청을 너무 많이 보냈어요. 잠시 뒤에 다시 해 주세요.",
     )
     return await service.create_quote_request(s, user, project_id, data)
+
+
+@router.get(
+    "/projects/{project_id}/quote-requests",
+    response_model=list[SentRequestOut],
+    summary="이 프로젝트에서 보낸 가견적 요청 · 상태",
+)
+async def sent_quote_requests(
+    project_id: uuid.UUID,
+    user: User = Depends(customer_only),
+    s: AsyncSession = Depends(get_session),
+) -> list[SentRequestOut]:
+    return await service.sent_requests(s, user, project_id)
 
 
 @router.post(

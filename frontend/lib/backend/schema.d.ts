@@ -234,7 +234,8 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 이 프로젝트에서 보낸 가견적 요청 · 상태 */
+        get: operations["sent_quote_requests_projects__project_id__quote_requests_get"];
         put?: never;
         /** 앱 업체에 가견적 요청 */
         post: operations["create_quote_request_projects__project_id__quote_requests_post"];
@@ -1211,6 +1212,42 @@ export interface components {
             phase: "prep" | "remove" | "main" | "late" | "finish";
         };
         /**
+         * SentRequestOut
+         * @description 고객이 이 프로젝트에서 앱 업체에 보낸 가견적 요청 한 줄
+         */
+        SentRequestOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Trade */
+            trade: string;
+            /** Trade Label */
+            trade_label: string;
+            /**
+             * Vendor Id
+             * Format: uuid
+             */
+            vendor_id: string;
+            /** Vendor Name */
+            vendor_name: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "requested" | "viewed";
+            /** Status Label */
+            status_label: string;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Viewed At */
+            viewed_at: string | null;
+        };
+        /**
          * SignupIn
          * @description 일반 회원가입
          */
@@ -1909,6 +1946,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SourcingOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    sent_quote_requests_projects__project_id__quote_requests_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SentRequestOut"][];
                 };
             };
             /** @description Validation Error */
