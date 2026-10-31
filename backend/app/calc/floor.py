@@ -173,7 +173,7 @@ def quote(inp: FloorInput, p: FloorPrices) -> FloorQuote:
             lines.append(
                 Line(
                     "level",
-                    "바닥 평탄화 (셀프레벨링, 자재 제외)",
+                    "바닥 평탄화 (필요하면, 셀프레벨링 · 자재 제외)",
                     floor,
                     "㎡",
                     p.level,
