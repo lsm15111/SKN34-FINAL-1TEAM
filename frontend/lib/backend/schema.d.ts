@@ -99,7 +99,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 도배 · 목공 상담 한 턴 */
+        /** 공정 상담 한 턴 */
         post: operations["consult_turn_consult_post"];
         delete?: never;
         options?: never;
@@ -324,16 +324,13 @@ export interface components {
     schemas: {
         /**
          * Answer
-         * @description 폼에서 고른 · 적은 답
+         * @description 폼에서 고른 · 적은 답. field는 공통 칸(area · area_basis · occupied) 또는 "공정.칸".
          */
         Answer: {
-            /**
-             * Field
-             * @enum {string}
-             */
-            field: "area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame";
+            /** Field */
+            field: string;
             /** Value */
-            value: string;
+            value: string | string[];
         };
         /** AreaIn */
         AreaIn: {
@@ -341,6 +338,18 @@ export interface components {
             sido: string;
             /** Sgg */
             sgg: string;
+        };
+        /**
+         * BasisCounts
+         * @description 견적 줄 근거별 개수 ('안 함' 줄은 빼고)
+         */
+        BasisCounts: {
+            /** Public */
+            public: number;
+            /** Assumed */
+            assumed: number;
+            /** None */
+            none: number;
         };
         /** Body_upload_files_post */
         Body_upload_files_post: {
@@ -373,20 +382,25 @@ export interface components {
             /** Source */
             source: string;
         };
-        /** Choice */
-        Choice: {
+        /** ChoiceOut */
+        ChoiceOut: {
             /** Value */
             value: string;
             /** Label */
             label: string;
+            /**
+             * Desc
+             * @default
+             */
+            desc: string;
         };
         /**
          * ConsultCard
-         * @description 요구사항 카드(도배 · 목공). 비어 있는 필수 칸은 코드가 폼으로 묻는다.
+         * @description 요구사항 카드. 공통 칸 + 공정별 칸(values). 비어 있는 필수 칸은 코드가 폼으로 묻는다.
          */
         "ConsultCard-Input": {
             /** Trades */
-            trades?: ("dobae" | "mokgong")[];
+            trades?: string[];
             /** Area M2 */
             area_m2?: number | string | null;
             /** Area Basis */
@@ -400,28 +414,26 @@ export interface components {
             balcony_ext: boolean;
             /** Built Year */
             built_year?: number | null;
-            /** Grade */
-            grade?: ("economy" | "basic") | null;
-            /** Include Ceiling */
-            include_ceiling?: boolean | null;
-            /** Mok Items */
-            mok_items?: ("molding" | "base" | "door" | "flatten")[];
-            /** Mok Spaces */
-            mok_spaces?: string[];
-            /** Doors */
-            doors?: number | null;
-            /** Door Frame */
-            door_frame?: boolean | null;
+            /** Values */
+            values?: {
+                [key: string]: {
+                    [key: string]: string | number | string[];
+                };
+            };
+            /** Spaces */
+            spaces?: {
+                [key: string]: string[];
+            };
             /** To Check */
-            to_check?: ("area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame")[];
+            to_check?: string[];
         };
         /**
          * ConsultCard
-         * @description 요구사항 카드(도배 · 목공). 비어 있는 필수 칸은 코드가 폼으로 묻는다.
+         * @description 요구사항 카드. 공통 칸 + 공정별 칸(values). 비어 있는 필수 칸은 코드가 폼으로 묻는다.
          */
         "ConsultCard-Output": {
             /** Trades */
-            trades?: ("dobae" | "mokgong")[];
+            trades?: string[];
             /** Area M2 */
             area_m2?: string | null;
             /** Area Basis */
@@ -435,20 +447,18 @@ export interface components {
             balcony_ext: boolean;
             /** Built Year */
             built_year?: number | null;
-            /** Grade */
-            grade?: ("economy" | "basic") | null;
-            /** Include Ceiling */
-            include_ceiling?: boolean | null;
-            /** Mok Items */
-            mok_items?: ("molding" | "base" | "door" | "flatten")[];
-            /** Mok Spaces */
-            mok_spaces?: string[];
-            /** Doors */
-            doors?: number | null;
-            /** Door Frame */
-            door_frame?: boolean | null;
+            /** Values */
+            values?: {
+                [key: string]: {
+                    [key: string]: string | number | string[];
+                };
+            };
+            /** Spaces */
+            spaces?: {
+                [key: string]: string[];
+            };
             /** To Check */
-            to_check?: ("area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame")[];
+            to_check?: string[];
         };
         /** ConsultIn */
         ConsultIn: {
@@ -461,20 +471,27 @@ export interface components {
             answers?: components["schemas"]["Answer"][];
             /** Project Id */
             project_id?: string | null;
+            /** Trades */
+            trades?: string[] | null;
         };
         /** ConsultOut */
         ConsultOut: {
             card: components["schemas"]["ConsultCard-Output"];
+            /** Trade Labels */
+            trade_labels: {
+                [key: string]: string;
+            };
             /** Reply */
             reply: string | null;
             /** Questions */
             questions: components["schemas"]["Question"][];
+            /** Facts */
+            facts: components["schemas"]["Fact"][];
             /** Results */
             results: components["schemas"]["TradeOut"][];
             /** Schedule */
             schedule: components["schemas"]["ScheduleStepOut"][];
-            /** Days */
-            days: string | null;
+            summary: components["schemas"]["SummaryOut"] | null;
             /** Notice */
             notice: string | null;
         };
@@ -494,6 +511,23 @@ export interface components {
             spaces: string[];
             /** Grade */
             grade: ("economy" | "basic") | null;
+        };
+        /**
+         * Fact
+         * @description 카드 값을 화면 말로 (지금까지 정한 것)
+         */
+        Fact: {
+            /** Trade */
+            trade: string | null;
+            /** Label */
+            label: string;
+            /** Text */
+            text: string;
+            /**
+             * Check
+             * @default false
+             */
+            check: boolean;
         };
         /** FileOut */
         FileOut: {
@@ -537,6 +571,11 @@ export interface components {
             state: "included" | "bundled" | "separate" | "optional" | "after_visit" | "excluded";
             /** Source */
             source: string;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "public" | "assumed" | "none";
         };
         /** LoginIn */
         LoginIn: {
@@ -731,17 +770,23 @@ export interface components {
         };
         /** Question */
         Question: {
-            /**
-             * Field
-             * @enum {string}
-             */
-            field: "area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame";
+            /** Field */
+            field: string;
             /** Trade */
-            trade: ("dobae" | "mokgong") | null;
+            trade: string | null;
             /** Text */
             text: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "text" | "choice" | "multi" | "count";
             /** Choices */
-            choices: components["schemas"]["Choice"][];
+            choices: components["schemas"]["ChoiceOut"][];
+            /** Min */
+            min?: number | null;
+            /** Max */
+            max?: number | null;
         };
         /**
          * QuoteOut
@@ -774,11 +819,8 @@ export interface components {
         };
         /** ScheduleStepOut */
         ScheduleStepOut: {
-            /**
-             * Trade
-             * @enum {string}
-             */
-            trade: "dobae" | "mokgong";
+            /** Trade */
+            trade: string;
             /** Key */
             key: string;
             /** Name */
@@ -851,13 +893,27 @@ export interface components {
             /** Half Days */
             half_days: number;
         };
+        /**
+         * SummaryOut
+         * @description 공정 전체 합계 (계산 엔진이 공정 금액을 더한 값)와 이은 공정표 기간
+         */
+        SummaryOut: {
+            /** Subtotal */
+            subtotal: number;
+            /** Vat */
+            vat: number;
+            /** Total */
+            total: number;
+            /** Days */
+            days: string;
+            basis_counts: components["schemas"]["BasisCounts"];
+        };
         /** TradeOut */
         TradeOut: {
-            /**
-             * Trade
-             * @enum {string}
-             */
-            trade: "dobae" | "mokgong";
+            /** Trade */
+            trade: string;
+            /** Label */
+            label: string;
             quote: components["schemas"]["QuoteOut"];
             plan: components["schemas"]["PlanOut"] | null;
             /**

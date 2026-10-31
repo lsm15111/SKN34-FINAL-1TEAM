@@ -4,9 +4,10 @@ import { listMyProjects } from "@/lib/api/project";
 import { sizeLabel } from "@/lib/labels";
 import { requireRole } from "@/lib/session";
 
-export const metadata = { title: "도배 · 목공 상담" };
+export const metadata = { title: "공정 상담" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// 견적 받기(프로젝트)에서 고를 수 있는 공정 이름. 상담 화면 안의 공정 이름은 API가 준다
 const TRADE: Record<string, string> = { dobae: "도배", mokgong: "목공" };
 
 export default async function ConsultPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
@@ -15,7 +16,7 @@ export default async function ConsultPage({ searchParams }: { searchParams: Prom
   await requireRole("customer", projectId ? `/consult?project=${projectId}` : "/consult");
   const head = (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <span className="mj-eyebrow">도배 · 목공 상담</span>
+      <span className="mj-eyebrow">공정 상담</span>
       <h1 className="mj-h1">우리 집 공사, 물어보면서 정해요</h1>
       <p className="mj-sub">견적 받기에서 알려 주신 정보로 공공 기준 표준견적서와 공정별 전문가 의견을 보여 드려요.</p>
     </div>
