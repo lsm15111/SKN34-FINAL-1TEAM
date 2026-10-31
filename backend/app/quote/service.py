@@ -3,13 +3,19 @@
 다른 기능은 그 service의 공개 함수로만 부른다: project(프로젝트) · vendor(앱 업체) · directory(외부 업체).
 """
 
+import hashlib
+import json
 import uuid
 from collections import Counter, defaultdict
 from datetime import datetime
 
+from redis.exceptions import RedisError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import queue
+from app.agent import sourcing as sourcing_agent
+from app.agent.llm import LlmError
 from app.auth.models import User
 from app.config import settings
 from app.directory import service as directory_service
@@ -52,6 +58,8 @@ from app.vendor.schemas import VendorCard
 
 MAX_EXT = 12  # 외부 업체 후보 최대 수
 NO_CANDIDATES = "이 지역 · 공정에 맞는 업체를 아직 찾지 못했어요."
+NOTES_FAILED = "설명을 만들지 못했어요. 업체 목록과 받는 길만 보여 드려요."
+NOTES_TTL_S = 86400
 QUOTE_LABEL = {"requested": "요청했어요", "viewed": "업체가 확인했어요"}
 # 상태 전이: 바뀔 상태 → 바꿀 수 있는 지금 상태 (하나뿐이라 이력의 이전 상태가 정해진다)
 QUOTE_MOVES: dict[str, tuple[str]] = {"viewed": ("requested",)}
@@ -157,18 +165,88 @@ async def sourcing(s: AsyncSession, user: User, project_id: uuid.UUID) -> Sourci
     app = await vendor_service.candidates(s, trades, p.sido, p.sgg)
     ext = await directory_service.candidates(s, trades, p.sido, p.sgg, limit=MAX_EXT)
     states = await _states(s, p.id)
-    await s.close()  # 아래는 DB 없이 만든다
+    await s.close()  # LLM을 기다리는 동안 DB 연결을 붙잡지 않는다
     cards = [_app_card(v, p, states[v.user_id]) for v in app]
     cards += [_ext_card(e, p, states[e.id]) for e in ext]
+    facts = request_facts(p)
+    notice = NO_CANDIDATES if not cards else await _explain(facts, cards)
     return SourcingOut(
         project_id=p.id,
         region=p.region,
         trades=trades,
-        facts=request_facts(p),
+        facts=facts,
         candidates=cards,
         proxy_enabled=settings.contact_send_enabled,
-        notice=None if cards else NO_CANDIDATES,
+        notice=notice,
+        prompt_version=sourcing_agent.PROMPT_VERSION if cards and notice is None else None,
     )
+
+
+def _basis(c: CandidateOut) -> str:
+    """LLM에 줄 근거 (코드가 가진 사실만)"""
+    parts = [c.registration] if c.registration else []
+    parts += ["같은 시 · 군 · 구"] if c.near else []
+    parts += ["견적 창구 있음"] if c.links.quote else []
+    parts += ["포트폴리오 링크 있음"] if c.links.portfolio else []
+    return ", ".join(parts) or "등록 정보 없음"
+
+
+async def _explain(facts: list[str], cards: list[CandidateOut]) -> str | None:
+    """후보마다 이유 한 줄, 받는 길마다 요청문 초안을 붙인다. 실패하면 설명 없이 알림만."""
+    head = cards[: sourcing_agent.MAX_NOTES]
+    cands = [
+        sourcing_agent.Candidate(
+            key=k,
+            name=c.name,
+            kind="앱" if c.kind == "app" else "외부",
+            trades=" · ".join(TRADE_LABEL[t] for t in c.trades),
+            region=c.region,
+            route=c.route,
+            cost=c.cost.label,
+            basis=_basis(c),
+        )
+        for k, c in zip(sourcing_agent.keys(len(head)), head, strict=True)
+    ]
+    routes = [r for r in sourcing_agent.DRAFT_ROUTES if any(c.route == r for c in head)]
+    key = (
+        "sourcing:"
+        + hashlib.sha256(
+            (sourcing_agent.PROMPT_VERSION + sourcing_agent.render(facts, cands, routes)).encode()
+        ).hexdigest()
+    )
+    notes = await _cached(key)
+    if notes is None:
+        try:
+            notes, _ = await sourcing_agent.explain(facts, cands, routes)
+        except LlmError:
+            return NOTES_FAILED
+        await _cache(key, notes)
+    for c, cand in zip(head, cands, strict=True):
+        c.why = notes.why.get(cand.key)
+    for c in cards:
+        c.draft = notes.drafts.get(c.route)
+    return None
+
+
+async def _cached(key: str) -> sourcing_agent.Notes | None:
+    try:
+        raw = await queue.redis.get(key)
+    except RedisError:
+        return None
+    if not raw:
+        return None
+    data = json.loads(raw)
+    return sourcing_agent.Notes(why=data["why"], drafts=data["drafts"], dropped=0)
+
+
+async def _cache(key: str, notes: sourcing_agent.Notes) -> None:
+    """같은 입력이면 하루 동안 LLM을 다시 부르지 않는다 (지워져도 되는 짧은 캐시)."""
+    try:
+        await queue.redis.set(
+            key, json.dumps({"why": notes.why, "drafts": notes.drafts}), ex=NOTES_TTL_S
+        )
+    except RedisError:
+        pass
 
 
 async def _states(s: AsyncSession, project_id: uuid.UUID) -> dict[uuid.UUID, list[RequestStateOut]]:
