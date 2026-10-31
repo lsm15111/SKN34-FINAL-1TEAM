@@ -5,13 +5,21 @@
 
 from app.consult.trades import (
     dobae,
+    film,
+    floor,
     mokgong,
+    paint,
+    tile,
 )
 from app.consult.trades.base import TradeSpec
 
 _SPECS: tuple[TradeSpec, ...] = (
     dobae.SPEC,
+    film.SPEC,
+    floor.SPEC,
     mokgong.SPEC,
+    paint.SPEC,
+    tile.SPEC,
 )
 REGISTRY: dict[str, TradeSpec] = {s.key: s for s in sorted(_SPECS, key=lambda s: s.order)}
 if len(REGISTRY) != len(_SPECS) or len({s.order for s in _SPECS}) != len(_SPECS):

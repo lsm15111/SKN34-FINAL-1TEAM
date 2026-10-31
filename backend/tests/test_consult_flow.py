@@ -81,7 +81,9 @@ def test_values_set_per_trade_are_kept(paint):
 
 def test_router_catalog_lists_shared_fields(paint):
     text = catalog()
-    assert "share=doors: mokgong.doors, fakepaint.doors" in text
+    # 방문 개수는 도장 · 필름도 같이 쓴다 (공정이 늘어도 맞게 줄 안의 칸만 본다)
+    row = next(ln for ln in text.splitlines() if ln.startswith("- share=doors: "))
+    assert {"mokgong.doors", "fakepaint.doors"} <= set(row.split(": ", 1)[1].split(", "))
     assert "mokgong.doors | 방문 개수 | count" in text
 
 
