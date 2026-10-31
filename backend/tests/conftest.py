@@ -39,7 +39,10 @@ def _get(k: str, default: str = "") -> str:
 _user, _pw = _get("POSTGRES_USER", "mitjip"), _get("POSTGRES_PASSWORD")
 # Windows에서 localhost는 IPv6(::1)를 먼저 시도해 연결마다 2초씩 늦어진다. Docker 포트는 127.0.0.1에만 열려 있다
 _host, _port = os.environ.get("TEST_DB_HOST", "127.0.0.1"), _get("DB_HOST_PORT", "5433")
-TEST_DB = "mitjip_test"
+# 여러 작업을 동시에 돌릴 때는 TEST_DB_NAME · TEST_REDIS_URL을 서로 다르게 준다
+TEST_DB = os.environ.get("TEST_DB_NAME", "mitjip_test")
+if not TEST_DB.replace("_", "").isalnum():
+    raise RuntimeError("TEST_DB_NAME은 영문 · 숫자 · _만 써요")
 ADMIN_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/postgres"
 TEST_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/{TEST_DB}"
 REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
