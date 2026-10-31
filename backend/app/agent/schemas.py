@@ -16,6 +16,8 @@ class CardUpdate(BaseModel):
     occupied: bool | None
     balcony_ext: bool | None
     built_year: int | None
+    doors: int | None
+    door_frame: Literal["yes", "no", "unknown"] | None
     out_of_scope: bool
     reply: str
 
@@ -30,8 +32,8 @@ class Caution(BaseModel):
     source: str
 
 
-class DobaePlan(BaseModel):
-    """도배 공정 에이전트의 의견. 숫자는 없고, 숫자는 계산 엔진 결과를 화면이 보여 준다."""
+class TradePlan(BaseModel):
+    """공정 에이전트(도배 · 목공)의 의견. 숫자는 없고, 숫자는 계산 엔진 결과를 화면이 보여 준다."""
 
     summary: str
     steps: list[PlanStep]

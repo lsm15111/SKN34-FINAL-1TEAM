@@ -2,7 +2,7 @@
 
 같은 모델(LLM_MODEL)로 같은 사례를 두 방식에 넣고 코드로 채점한다.
 - direct: 시스템 프롬프트 없이 고객 말을 그대로 보낸다. 정보가 빠진 사례는 둘째 턴에 빠진 정보를 준다.
-- ours: 상담 API와 같은 흐름(consult.service.turn). 코드가 묻는 칸은 정답 카드로 답한다(버튼 클릭과 같음).
+- ours: 상담 API와 같은 흐름(consult.service.turn). 코드가 묻는 칸은 정답 카드로 답한다(첫 화면 폼 답과 같음).
 - 'Claude에게 그냥 묻기' 답의 금액 · 되물음은 같은 모델이 낮은 effort로 뽑는다(추출만, 평가는 코드).
 
 실행 (저장소 루트에서, 실제 유료 호출):
@@ -51,7 +51,7 @@ from app.agent import llm, wallpaper
 from app.calc import dobae as calc
 from app.config import settings
 from app.consult import service
-from app.consult.schemas import Answer, ConsultIn, DobaeCard
+from app.consult.schemas import Answer, ConsultCard, ConsultIn
 
 Field = Literal["area", "area_basis", "grade", "include_ceiling", "occupied"]
 _calls: contextvars.ContextVar[list] = contextvars.ContextVar("calls")
@@ -89,9 +89,9 @@ class _NoDb:
         return None
 
 
-def truth_card(t: dict) -> DobaeCard:
+def truth_card(t: dict) -> ConsultCard:
     area = calc.pyeong_to_m2(Decimal(t["pyeong"])) if "pyeong" in t else calc.m2(Decimal(t["m2"]))
-    return DobaeCard(
+    return ConsultCard(
         area_m2=area,
         area_basis=t["area_basis"],
         grade=t["grade"],
@@ -146,28 +146,29 @@ async def run_ours(case: dict) -> dict:
     t = case["truth"]
     out = await service.turn(_NoDb(), None, ConsultIn(message=case["message"]))
     first_card, first_reply = out.card, out.reply
-    asked: list[str] = []
-    while out.question is not None and len(asked) < 6:
-        f = out.question.field
-        asked.append(f)
-        out = await service.turn(_NoDb(), None, ConsultIn(card=out.card, answer=answer_for(f, t)))
+    # 코드가 폼으로 묻는 칸에 정답 카드로 한 번에 답한다
+    asked = [q.field for q in out.questions]
+    if asked:
+        answers = [answer_for(f, t) for f in asked]
+        out = await service.turn(_NoDb(), None, ConsultIn(card=out.card, answers=answers))
     want = calc.quote(_input(truth_card(t)), _prices())
+    res = out.results[0] if out.results else None
     return {
         "first_card": first_card.model_dump(mode="json"),
         "asked": asked,
         "reply_first": first_reply,
-        "total": out.quote.total if out.quote else None,
-        "subtotal": out.quote.subtotal if out.quote else None,
+        "total": res.quote.total if res else None,
+        "subtotal": res.quote.subtotal if res else None,
         "want_total": want.total,
         "want_subtotal": want.subtotal,
-        "plan_status": out.plan_status,
-        "plan": out.plan.model_dump() if out.plan else None,
+        "plan_status": res.plan_status if res else None,
+        "plan": res.plan.model_dump() if res and res.plan else None,
         "dropped": sum(_dropped.get()),
         "calls": [u.__dict__ for u in _calls.get()],
     }
 
 
-def _input(c: DobaeCard) -> calc.DobaeInput:
+def _input(c: ConsultCard) -> calc.DobaeInput:
     return calc.DobaeInput(
         area_m2=c.area_m2,
         area_basis=c.area_basis,
