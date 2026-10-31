@@ -26,7 +26,7 @@ async def extract(turns: list[tuple[str, str]], card: dict) -> tuple[CardUpdate,
         f"지금까지 채운 칸: {json.dumps(card, ensure_ascii=False, sort_keys=True)}\n\n"
         f"<conversation>\n{convo}\n</conversation>"
     )
-    return await llm.parse(SYSTEM, user, CardUpdate)
+    return await llm.parse(SYSTEM, user, CardUpdate, role="router")
 
 
 def reply_ok(text: str) -> bool:

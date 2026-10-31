@@ -2,18 +2,20 @@
 
 상담 오케스트레이터가 칸을 다 채우면 도구처럼 부른다 (읽기 전용, DB에 쓰지 않는다).
 계산 엔진 결과를 받아 할 일 · 실측 때 확인할 것 · 주의사항을 쓴다. 숫자는 쓰지 않는다.
-규칙을 어긴 항목은 버리고, 요약이 어긋나면 결과 전체를 버린다.
+규칙을 어긴 항목은 버리고, 요약이 어긋나면 결과 전체를 버린다. 입력이 같으면 하루 동안 캐시를 쓴다.
 새 공정은 모듈을 따로 만들지 않고 consult/trades/<공정>.py에서 TradeAgent.load(...)로 만든다.
 """
 
+import hashlib
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from app.agent import llm
+from app.agent import cache, llm
 from app.agent.schemas import TradePlan
 from app.calc.common import Line, Step
+from app.config import settings
 
 _DIR = Path(__file__).parent
 STATE_LABEL = {
@@ -36,7 +38,7 @@ class Quote(Protocol):
 class PlanResult:
     plan: TradePlan
     dropped: int  # 규칙을 어겨 버린 항목 수
-    usage: llm.Usage
+    usage: llm.Usage | None  # 캐시에서 꺼냈으면 None (LLM을 부르지 않음)
 
 
 def skill(name: str) -> str:
@@ -121,7 +123,23 @@ class TradeAgent:
     def validate(self, plan: TradePlan, step_keys: set[str]) -> tuple[TradePlan, int]:
         return validate(plan, step_keys, self.sources)
 
+    def _plan_key(self, user: str) -> str:
+        model, effort = llm.pick("plan")
+        system = hashlib.sha256(self.plan_system.encode()).hexdigest()
+        return cache.key("plan", model, effort, self.plan_prompt_version, system, user)
+
     async def plan(self, card_text: str, q: Quote) -> PlanResult:
-        raw, usage = await llm.parse(self.plan_system, render(card_text, q), TradePlan)
+        """모델 · 프롬프트 · 지식 · 입력(집 정보 · 견적)이 같으면 캐시를 쓴다. 검사를 지난 결과만 넣는다."""
+        user = render(card_text, q)
+        ttl = settings.llm_plan_cache_s
+        k = self._plan_key(user) if ttl > 0 else ""
+        if k and (hit := await cache.get(k)):
+            try:
+                return PlanResult(TradePlan.model_validate(hit["plan"]), int(hit["dropped"]), None)
+            except (KeyError, TypeError, ValueError):
+                pass  # 모양이 맞지 않으면 새로 만든다
+        raw, usage = await llm.parse(self.plan_system, user, TradePlan, role="plan")
         clean, dropped = self.validate(raw, {s.key for s in q.steps})
+        if k:
+            await cache.put(k, {"plan": clean.model_dump(), "dropped": dropped}, ttl)
         return PlanResult(clean, dropped, usage)

@@ -11,6 +11,16 @@ x-api-env: &api-env
   ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
   LLM_MODEL: ${LLM_MODEL:-claude-opus-5-5}
   LLM_EFFORT: ${LLM_EFFORT:-medium}
+  # 역할별 모델 · 생각 깊이 (모델을 비우면 LLM_MODEL)
+  LLM_MODEL_ROUTER: ${LLM_MODEL_ROUTER:-}
+  LLM_MODEL_EXPERT: ${LLM_MODEL_EXPERT:-}
+  LLM_MODEL_PLAN: ${LLM_MODEL_PLAN:-}
+  LLM_MODEL_SOURCING: ${LLM_MODEL_SOURCING:-}
+  LLM_EFFORT_ROUTER: ${LLM_EFFORT_ROUTER:-low}
+  LLM_EFFORT_EXPERT: ${LLM_EFFORT_EXPERT:-low}
+  LLM_EFFORT_PLAN: ${LLM_EFFORT_PLAN:-medium}
+  LLM_EFFORT_SOURCING: ${LLM_EFFORT_SOURCING:-low}
+  LLM_PLAN_CACHE_S: ${LLM_PLAN_CACHE_S:-86400}
   # 로그인 쿠키로 상태를 바꾸는 요청을 받아 줄 화면 주소 (쉼표로 구분)
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
   # 올린 사진 · 도면 · 사업자등록증을 두는 곳 (files-data 볼륨)
