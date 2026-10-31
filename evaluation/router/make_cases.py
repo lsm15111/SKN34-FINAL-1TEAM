@@ -206,30 +206,6 @@ def question_phrase(t: Talk, trade: str) -> str:
 
 
 # ---------------------------------------------------------------- 카드
-def base_card(r, picked: list[str], full: bool) -> dict:
-    basis = r.choice(house.BASIS)
-    a = house.area(r, basis, r.choice(house.SIZES))
-    has_area = full or r.random() < 0.6
-    shares: set[str] = set()
-    values = {}
-    for k in [k for k in trades.registered() if k in picked]:
-        values[k] = trades.random_values(
-            r, REGISTRY[k], skip_shares=shares, keep=1.0 if full else 0.6
-        )
-        shares |= {f.share for f in REGISTRY[k].fields if f.share and f.key in values[k]}
-    return {
-        "trades": [k for k in trades.registered() if k in picked],
-        "area_m2": a["area_m2"] if has_area else None,
-        "area_basis": a["area_basis"] if has_area else None,
-        "occupied": r.choice((True, False)) if full or r.random() < 0.6 else None,
-        "balcony_ext": r.random() < 0.4,
-        "built_year": r.randint(1985, 2024) if r.random() < 0.3 else None,
-        "values": values,
-        "spaces": {},
-        "to_check": ["area_basis"] if has_area and basis == "unknown" else [],
-    }
-
-
 def set_field(r, card: dict, trade: str, f: FieldSpec, ok) -> None:
     """그 칸이 물어지고(when) 지금 값이 ok(값 또는 None)를 지키게 카드 값을 맞춘다.
     먼저 다른 칸은 그대로 두고 이 칸만 바꿔 보고, 조건이 안 맞으면 그 공정 값을 다시 뽑는다."""
@@ -386,7 +362,7 @@ def build_case(r, cat: str, row: dict) -> tuple[dict, dict, list[str]]:
         if len(picked) < 2:
             raise Retry
         picked.remove(r.choice(picked))  # 카드에 없는 공정이 있어야 하는 범주
-    card = base_card(r, picked, row["state"] == "full")
+    card = house.random_card(r, picked, row["state"] == "full")
     out: dict = {
         "changes": [],
         "questions": [],

@@ -55,6 +55,33 @@ def built_year(r: random.Random, bucket: str) -> int | None:
     return None if bucket == "none" else r.randint(*_YEAR[bucket])
 
 
+def random_card(r: random.Random, picked: list[str], full: bool) -> dict:
+    """상담 카드 JSON (normalize 전, 라우터 · 전문가 생성기). full이 아니면 칸 일부만 채운다 (폼이 덜 찬 카드).
+    같이 쓰는 칸은 앞 공정에만 넣는다 (normalize가 채운다)."""
+    from evaluation.common import trades
+
+    basis = r.choice(BASIS)
+    a = area(r, basis, r.choice(SIZES))
+    has_area = full or r.random() < 0.6
+    shares: set[str] = set()
+    values = {}
+    for k in [k for k in trades.registered() if k in picked]:
+        sp = trades.spec(k)
+        values[k] = trades.random_values(r, sp, skip_shares=shares, keep=1.0 if full else 0.6)
+        shares |= {f.share for f in sp.fields if f.share and f.key in values[k]}
+    return {
+        "trades": [k for k in trades.registered() if k in picked],
+        "area_m2": a["area_m2"] if has_area else None,
+        "area_basis": a["area_basis"] if has_area else None,
+        "occupied": r.choice((True, False)) if full or r.random() < 0.6 else None,
+        "balcony_ext": r.random() < 0.4,
+        "built_year": r.randint(1985, 2024) if r.random() < 0.3 else None,
+        "values": values,
+        "spaces": {},
+        "to_check": ["area_basis"] if has_area and basis == "unknown" else [],
+    }
+
+
 # 견적 받기에서 고객이 적은 공간 이름 (번호 % 3 == 2는 held-out 전용).
 # 욕실 · 화장실은 범위 밖 공사 키워드와 겹쳐 넣지 않는다
 SPACES = Fragments(

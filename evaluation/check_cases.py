@@ -24,6 +24,7 @@ ROOT = HERE.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "backend")]
 
 from evaluation.common import gen, trades
+from evaluation.expert import check as expert_check
 from evaluation.router import check as router_check
 from evaluation.run_agent import default_cases, ideal
 from evaluation.scorers import trade_plan
@@ -31,7 +32,7 @@ from evaluation.scorers.expect import expect
 
 KEYS = ("id", "trade", "split", "category", "strata", "input", "expect")
 # 평가 이름 → (표에 쓸 이름, check 모듈: default_cases · check_set)
-OTHER_SETS = {"router": ("라우터", router_check)}
+OTHER_SETS = {"router": ("라우터", router_check), "expert": ("전문가 답", expert_check)}
 
 
 def check_case(trade: str, case: dict, sources: set[str], witness) -> list[str]:
