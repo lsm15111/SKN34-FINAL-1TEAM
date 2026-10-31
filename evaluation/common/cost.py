@@ -48,24 +48,43 @@ class CallShape:
 # 출력 평균 1,260 (p90 1,424 · 최대 2,201). 5k 사례는 입력 글이 평균 468자라 입력을 390으로 잡는다
 # 목공 공정 의견 · 판정: 실측이 없어 도배 글자당 토큰 비율로 잡은 추정값. T1(공정마다 20개)에서 다시 잰다
 #   목공 입력 526자 · 시스템 3,183자 / 판정 시스템(기준표 + 지식) 3,412~4,038자 · 입력(공정 입력 + 의견 1,101자)
+# 라우터: 시스템(프롬프트 + 전 공정 칸 목록)이 기준 커밋 2,120자 · v5(10공정) 6,111자, 입력 평균 345자 (p90 414).
+#   v5 값으로 셈한다. 출력은 RouterOut JSON 약 120토큰 + effort low 생각을 300으로 가정
+# 전문가 답: 시스템(expert_v1 + 그 공정 지식)이 도배 2,230 · 목공 3,038 · 10공정 평균 3,051자, 입력(집 정보 + 질문)
+#   평균 116자. 출력은 300자 안 답 + effort low 생각을 400으로 가정. 판정: 기준표 + 지식 평균 4,181자,
+#   입력은 답 220자로 잡아 371자, 출력은 기준 4개 점수 · 이유 + effort low를 500으로 가정
 SHAPES = {
-    "wallpaper": CallShape(390, 3231, 1260, "도배 실측 135회 평균, 입력은 5k 글자 수로 보정"),
-    "carpentry": CallShape(440, 4190, 1400, "추정: 도배 글자당 토큰 비율, 단계가 많아 출력 +10%"),
+    "dobae": CallShape(390, 3231, 1260, "도배 실측 135회 평균, 입력은 5k 글자 수로 보정"),
+    "mokgong": CallShape(440, 4190, 1400, "추정: 도배 글자당 토큰 비율, 단계가 많아 출력 +10%"),
     "judge": CallShape(1800, 4900, 700, "추정: 도배 글자당 토큰 비율, 출력은 effort low 가정"),
+    "router": CallShape(290, 8040, 300, "추정: v5 시스템 6,111자 · 입력 345자, 출력 effort low"),
+    "expert": CallShape(
+        100, 4010, 400, "추정: 10공정 시스템 평균 3,051자 · 입력 116자, 답 300자 안"
+    ),
+    "judge_expert": CallShape(310, 5500, 500, "추정: 기준표 + 지식 평균 4,181자 · 입력 371자"),
 }
 
 
+def shape(name: str) -> CallShape:
+    """호출 토큰 모양. 실측 · 추정이 없는 공정 의견은 목공 값으로 셈한다"""
+    return SHAPES.get(name) or SHAPES["mokgong"]
+
+
+TOKEN_KEYS = ("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens")
+
+
 def call_cost(usage: dict, model: str | None = None) -> float | None:
-    """llm.Usage 한 번의 비용 ($). 가격표에 없는 모델이면 None"""
+    """llm.Usage 한 번의 비용 ($). Batch로 받은 것(batch: true)은 50% 할인. 가격표에 없는 모델이면 None"""
     p = PRICES.get(model or usage["model"])
     if p is None:
         return None
-    return (
+    full = (
         usage["input_tokens"] * p.input
         + usage["cache_write_tokens"] * p.cache_write
         + usage["cache_read_tokens"] * p.cache_read
         + usage["output_tokens"] * p.output
     ) / 1e6
+    return full * (BATCH_DISCOUNT if usage.get("batch") else 1)
 
 
 def total_cost(usages: list[dict]) -> tuple[float, int]:
@@ -94,8 +113,13 @@ def estimate(
     return (n * per + cached) / 1e6
 
 
-def estimate_table(agent: str, sizes: tuple[int, ...] = (20, 150, 5000), judge: int = 0) -> str:
-    """모델별 예상 비용 표 (마크다운). judge는 판정 LLM으로 매길 사례 수"""
+def estimate_table(
+    name: str,
+    sizes: tuple[int, ...] = (20, 150, 5000),
+    judge: int = 0,
+    judge_shape: str = "judge",
+) -> str:
+    """모델별 예상 비용 표 (마크다운). name은 호출 모양 이름, judge는 판정 LLM으로 매길 사례 수"""
     head = " | ".join(f"{n:,}개" for n in sizes)
     out = [
         f"| 모델 | {head} | {sizes[-1]:,}개 Batch |",
@@ -104,8 +128,8 @@ def estimate_table(agent: str, sizes: tuple[int, ...] = (20, 150, 5000), judge: 
     for model, label in MODEL_LABEL.items():
 
         def cost(n: int, batch: bool = False, model: str = model) -> float:
-            plan = estimate(SHAPES[agent], n, model, batch=batch)
-            return plan + estimate(SHAPES["judge"], min(judge, n), model, batch=batch)
+            plan = estimate(shape(name), n, model, batch=batch)
+            return plan + estimate(SHAPES[judge_shape], min(judge, n), model, batch=batch)
 
         cells = " | ".join(f"${cost(n):,.2f}" for n in sizes)
         out.append(f"| {label} | {cells} | ${cost(sizes[-1], True):,.2f} |")

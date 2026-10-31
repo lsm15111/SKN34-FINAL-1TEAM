@@ -1,44 +1,59 @@
-"""사례 입력 + 계산 엔진 결과 → 기대 검사 (단계 키 · 꼭 언급 · 언급하면 안 됨).
+"""사례 카드 + 계산 엔진 결과 → 기대 검사 (단계 키 · '실측 후' 줄 · 꼭 언급 · 언급하면 안 됨).
 
 생성기가 사례마다 붙이고, 무료 점검(check_cases.py)이 지금 규칙으로 다시 만들어 같은지 본다.
-규칙 id의 뜻과 키워드는 trade_plan.RULES에 있다.
+규칙 id의 뜻과 키워드는 trade_plan.rules(공정)에 있다.
 """
 
-from evaluation.common.trades import CHECK_FIELDS, ITEMS, OTHER
+from app.consult.schemas import ConsultCard
+from evaluation.common import trades
+from evaluation.plan import config
+from evaluation.scorers.trade_plan import rules, scope_table
 
 
-def expect(agent: str, inp: dict, facts: dict) -> dict:
+def neighbours(trade: str, picked: list[str]) -> list[str]:
+    """같이 하는 공정 중 공정 순서에서 바로 앞 · 바로 뒤 공정"""
+    seq = [k for k in trades.registered() if k in picked]
+    i = seq.index(trade)
+    return seq[max(i - 1, 0) : i] + seq[i + 1 : i + 2]
+
+
+def expect(trade: str, card: ConsultCard, facts: dict) -> dict:
     """facts: trades.facts(견적) — step_keys · after_visit"""
-    c = inp["common"]
-    other, to_check = inp.get("other_trades", []), inp.get("to_check", [])
-    must = [f"sum.occupied.{'yes' if c['occupied'] else 'no'}"]
-    must_not = ["scope"]
-    if agent == "wallpaper":
-        t = inp["trades"]["dobae"]
-        must = [f"sum.grade.{t['grade']}", "sum.ceiling", *must]
-        if not t["include_ceiling"]:
-            must_not.append("not_chosen.ceiling")
-        if c["balcony_ext"]:
-            must.append("balcony.check")
-        else:
-            must_not.append("balcony.none")
-    else:
-        t = inp["trades"]["mokgong"]
-        must = [f"sum.item.{i}" for i in t["items"]] + must
-        if "door" in t["items"]:
-            must.append(f"sum.door_frame.{'yes' if t['door_frame'] else 'no'}")
-        must_not += [f"not_chosen.{i}" for i in ITEMS if i not in t["items"]]
-        must_not.append("balcony.any")
-    if c["occupied"]:
+    sp, cfg, table = trades.spec(trade), config.get(trade), rules(trade)
+    vals = card.values.get(trade, {})
+    must, must_not = [], []
+    for f in sp.asked(vals):
+        if f.kind == "count":
+            continue
+        chosen = vals[f.key] if isinstance(vals[f.key], list) else [vals[f.key]]
+        must += [f"sum.{f.key}.{v}" for v in chosen if f"sum.{f.key}.{v}" in table]
+        if f.kind == "multi":
+            must_not += [f"not_chosen.{f.key}.{v}" for v in f.values if v not in chosen]
+    must.append(f"sum.occupied.{'yes' if card.occupied else 'no'}")
+    if card.occupied:
         must.append("prep.mention")
     else:
         must_not.append("empty.moving")
     must += [f"after.{k}" for k in facts["after_visit"]]
-    if OTHER[agent] in other:
-        must.append("order.other")
-    else:
-        must_not.append("other.trade")
-    must += [f"check.{f}" for f in to_check if f in CHECK_FIELDS[agent]]
+    must += [f"order.{k}" for k in neighbours(trade, card.trades)]
+    must += [
+        "check." + name.split(".", 1)[-1]
+        for name in card.to_check
+        if name == "area_basis" or name.startswith(f"{trade}.")
+    ]
+    must_not += [
+        f"scope.{k}" for k in scope_table() if k not in card.trades and f"scope.{k}" in table
+    ]
+    if "scope.etc" in table:
+        must_not.append("scope.etc")
+    # 꼭 언급할 말(예문)에 든 낱말은 언급하면 안 됨으로 보지 않는다
+    # (예: 도장 '벽 전체' 퍼티와 칠할 곳 '벽', 전기 '늘릴 콘센트 자리'와 '콘센트 · 스위치 교체')
+    said = [table[r].example for r in must if table[r].example]
+    must_not = [r for r in must_not if not any(table[r].any.search(x) for x in said)]
+    if cfg.extra:
+        more, less = cfg.extra(card.model_dump(mode="json"), dict(vals))
+        must += more
+        must_not += less
     return {
         "step_keys": list(facts["step_keys"]),
         "after_visit": list(facts["after_visit"]),

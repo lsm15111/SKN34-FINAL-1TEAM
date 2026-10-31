@@ -1,4 +1,4 @@
-"""공정 의견 사례의 집 조건 값 (도배 · 목공 생성기가 같이 쓴다). 표준 라이브러리 + 계산 엔진 환산만 쓴다.
+"""평가 사례의 집 조건 값 (공정 의견 · 라우터 · 전문가 생성기가 같이 쓴다). 표준 라이브러리 + 계산 엔진 환산만 쓴다.
 
 면적은 상담 코드(consult.service._area)와 같은 환산으로 ㎡ 소수 한 자리 문자열을 만든다.
 면적 기준을 '모르겠어요'로 둔 집은 공급면적으로 계산하고, 생성기가 to_check에 남긴다.
@@ -8,6 +8,7 @@ import random
 from decimal import Decimal
 
 from app.calc.common import m2, pyeong_to_m2
+from evaluation.common.gen import Fragments, noisy
 
 SIZES = ("S", "M", "L")  # 공급 평형 기준 대략 ~24평 · 25~35평 · 36평~
 BASIS = ("supply", "exclusive", "unknown")
@@ -52,3 +53,57 @@ def area(r: random.Random, basis: str, size: str) -> dict:
 
 def built_year(r: random.Random, bucket: str) -> int | None:
     return None if bucket == "none" else r.randint(*_YEAR[bucket])
+
+
+def random_card(r: random.Random, picked: list[str], full: bool) -> dict:
+    """상담 카드 JSON (normalize 전, 라우터 · 전문가 생성기). full이 아니면 칸 일부만 채운다 (폼이 덜 찬 카드).
+    같이 쓰는 칸은 앞 공정에만 넣는다 (normalize가 채운다)."""
+    from evaluation.common import trades
+
+    basis = r.choice(BASIS)
+    a = area(r, basis, r.choice(SIZES))
+    has_area = full or r.random() < 0.6
+    shares: set[str] = set()
+    values = {}
+    for k in [k for k in trades.registered() if k in picked]:
+        sp = trades.spec(k)
+        values[k] = trades.random_values(r, sp, skip_shares=shares, keep=1.0 if full else 0.6)
+        shares |= {f.share for f in sp.fields if f.share and f.key in values[k]}
+    return {
+        "trades": [k for k in trades.registered() if k in picked],
+        "area_m2": a["area_m2"] if has_area else None,
+        "area_basis": a["area_basis"] if has_area else None,
+        "occupied": r.choice((True, False)) if full or r.random() < 0.6 else None,
+        "balcony_ext": r.random() < 0.4,
+        "built_year": r.randint(1985, 2024) if r.random() < 0.3 else None,
+        "values": values,
+        "spaces": {},
+        "to_check": ["area_basis"] if has_area and basis == "unknown" else [],
+    }
+
+
+# 견적 받기에서 고객이 적은 공간 이름 (번호 % 3 == 2는 held-out 전용).
+# 욕실 · 화장실은 범위 밖 공사 키워드와 겹쳐 넣지 않는다
+SPACES = Fragments(
+    {
+        "space": [
+            "거실", "안방", "작은방", "주방", "현관", "드레스룸", "아이방", "서재", "옷방",
+            "큰방", "침실", "작은방1", "작은방2", "알파룸", "공부방", "부부 침실", "막내방", "손님방",
+            "거실 겸 주방", "팬트리", "현관 복도", "아기방", "드레스 룸", "작업실", "게스트룸", "중간방",
+            "끝방", "건넌방", "복도", "애기방",
+        ]
+    }
+)  # fmt: skip
+SPACE_PATTERNS = ("none", "one", "few", "all")
+
+
+def space_names(r: random.Random, pattern: str, split: str, used: list[str]) -> list[str]:
+    """공간 이름 0개 · 1개 · 2~3개 · 4~6개. 15%는 띄어쓰기 잡음을 넣는다 (고객이 적은 이름이라)"""
+    if pattern == "none":
+        return []
+    k = {"one": 1, "few": r.choice((2, 3)), "all": r.randint(4, 6)}[pattern]
+    names = SPACES.sample(r, "space", split, k, used)
+    if r.random() < 0.15:
+        i = r.randrange(len(names))
+        names[i], _ = noisy(names[i], r, k=1, ops=("nospace", "add_space"))
+    return names
