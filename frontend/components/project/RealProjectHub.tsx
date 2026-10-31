@@ -34,7 +34,7 @@ export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
             <ProjectTrack now={step} />
             <span className="mj-eyebrow">지금 단계</span>
             <h1 id="now-h" className="mj-h2">프로젝트를 만들었어요</h1>
-            <p className="mj-sub">{p.photos.length || p.plans.length ? "답과 사진 · 도면을" : "답을"} 저장했어요. 예상 공정표와 표준견적서는 아직 이 프로젝트에 연결되지 않았어요.</p>
+            <p className="mj-sub">{p.photos.length || p.plans.length ? "답과 사진 · 도면을" : "답을"} 저장했어요. 예상 공정표와 표준견적서는 상담에서 볼 수 있어요.</p>
             <div className="mj-btn-row">
               {picked.length ? <Link href={`/consult?project=${p.id}`} className="mj-btn mj-btn-pri">{consult}</Link> : null}
               <Link href={`/projects/${p.id}/vendors`} className="mj-btn mj-btn-sec">가견적 받을 업체 보기</Link>
