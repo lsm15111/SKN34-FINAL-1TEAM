@@ -49,6 +49,8 @@ def test_some_devices_downlights_and_new_points():
     states = {ln.key: ln.state for ln in r.lines}
     assert states["ceiling_patch"] == states["panel"] == states["moving"] == "after_visit"
     assert [s.key for s in r.steps] == ["prep", "wire", "fixture", "finish"]
+    # 배선은 본 작업, 기구 달기는 도배 · 바닥 뒤 작업
+    assert [s.key for s in r.steps if s.late] == ["fixture"]
 
 
 def test_new_points_only():

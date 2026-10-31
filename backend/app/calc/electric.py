@@ -236,7 +236,9 @@ def quote(inp: ElectricInput, p: ElectricPrices) -> ElectricQuote:
     if points:
         steps.append(Step("wire", "배선 추가 (1차)", half_days(md_wire, p.crew)))
     parts = [n for n, k in (("조명", n_light), ("콘센트", n_outlet), ("스위치", n_switch)) if k]
-    steps.append(Step("fixture", f"{' · '.join(parts)} 달기 (2차)", half_days(md_fit, p.crew)))
+    # 기구 달기는 도배 · 바닥을 마친 뒤에 한다 (공정을 이을 때 뒤로 모은다). 배선은 본 작업
+    fit = Step("fixture", f"{' · '.join(parts)} 달기 (2차)", half_days(md_fit, p.crew), late=True)
+    steps.append(fit)
     steps.append(Step("finish", "점등 · 작동 확인 · 청소", 1))
     days = Decimal(sum(s.half_days for s in steps)) / 2
 

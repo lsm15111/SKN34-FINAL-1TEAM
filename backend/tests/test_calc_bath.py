@@ -37,14 +37,18 @@ def test_one_bath_full_remove():
     assert states["demolish"] == states["plumbing"] == states["waste"] == "after_visit"
     assert "moving" not in states and "tub" not in states
     # 타일 품: 17.0 × 41,296 ÷ 467,077 + 4.0 × 38,626 ÷ 467,077 = 1.83 → 타일공 2명이면 반나절 2번
+    # 철거 단계 키는 remove (공정을 이을 때 맨 앞으로 모인다)
     assert [(s.key, s.half_days) for s in r.steps] == [
-        ("demolish", 2),
+        ("remove", 2),
         ("waterproof", 3),
         ("tile", 4),
         ("fit", 1),
         ("finish", 1),
     ]
     assert (r.days, r.man_days) == (Decimal("5.5"), Decimal(3))
+    assert not any(s.late for s in r.steps)  # 욕실은 한 덩어리로 본 작업
+    assert any("실측 때 다시 재요" in x for x in r.assumptions)
+    assert any("시장 값보다 높게" in x for x in r.assumptions)
     assert r.version == "2026H2"
 
 
@@ -66,7 +70,8 @@ def test_fixtures_only_has_no_tile_work():
     assert a["caulk"] == 29_704  # 2 × 4m × 3,713
     assert r.subtotal == 1_229_704
     assert not {"tile_wall", "ceiling", "accessories", "plumbing"} & a.keys()
-    assert [s.key for s in r.steps] == ["demolish", "fit", "finish"]
+    assert [s.key for s in r.steps] == ["remove", "fit", "finish"]
+    assert not any("시장 값보다 높게" in x for x in r.assumptions)  # 타일 공사가 없다
     assert (r.floor_m2, r.wall_m2) == (Decimal(0), Decimal(0))
 
 

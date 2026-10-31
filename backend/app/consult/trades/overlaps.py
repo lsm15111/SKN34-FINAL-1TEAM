@@ -37,7 +37,41 @@ def both(fa: Callable[[Values], bool], fb: Callable[[Values], bool]):
     return lambda a, b: fa(a) and fb(b)
 
 
-RULES: tuple[Overlap, ...] = ()
+RULES: tuple[Overlap, ...] = (
+    Overlap(
+        "dobae",
+        "window",
+        both(always, always),
+        "창호를 바꾸면 창 둘레 벽지가 상할 수 있어요. 도배를 같이 하면 창 둘레 도배 보수가 "
+        "창호 견적에 또 들어 있지 않은지 봐요.",
+    ),
+    Overlap(
+        "electric",
+        "kitchen",
+        both(always, always),
+        "주방에 인덕션을 두면 전용 회로가 필요할 수 있어요. 주방과 전기 견적에 겹쳐 넣지 말고 "
+        "전기 공정에서 같이 봐요.",
+    ),
+    Overlap(
+        "electric",
+        "mokgong",
+        both(has("light_type", "downlight", "line"), has("items", "flatten")),
+        "천장 평탄화를 하면 다운라이트 · 라인 조명 자리를 목공 때 같이 잡아요. 천장 구멍 · 보수가 "
+        "전기와 목공 견적에 겹치지 않는지 봐요.",
+    ),
+    Overlap(
+        "film",
+        "kitchen",
+        both(has("items", "kitchen"), always),
+        "주방 가구를 새로 바꾸면 주방 문짝 필름은 하지 않아도 돼요.",
+    ),
+    Overlap(
+        "paint",
+        "window",
+        both(has("surfaces", "balcony"), always),
+        "창호를 먼저 바꾸고 베란다 탄성코트를 칠해요. 창을 떼고 달 때 베란다 벽이 상할 수 있어요.",
+    ),
+)
 
 
 def overlaps(trades: list[str], values: Mapping[str, Values]) -> list[str]:

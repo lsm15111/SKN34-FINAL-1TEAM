@@ -296,7 +296,7 @@ def test_invented_numbers_and_out_of_scope_replies(api, fake_llm):
     fake_llm["route"] = route(reply="보통 300만 원쯤 들어요.")
     assert turn(api, message="얼마 정도 들어요?")["reply"] is None
     fake_llm["route"] = route(reply="", out_of_scope=True)
-    assert turn(api, message="욕실 방수도 해 주세요")["reply"] == OUT_OF_SCOPE
+    assert turn(api, message="전자계약도 해 주세요")["reply"] == OUT_OF_SCOPE
     # 답을 버려도 칸이 바뀌었으면 다시 계산했다고만 알린다
     fake_llm["route"] = route(
         reply="합지면 30만 원 싸요.", changes=[change("dobae.grade", "economy")]
