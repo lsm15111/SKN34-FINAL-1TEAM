@@ -3,6 +3,7 @@
 - 상가정보 CSV: 업종(표준산업분류 코드 · 상권업종 소분류)으로 거르고 업소번호를 출처 번호로 쓴다. 전화 칸은 없다.
 - KISCON 공시: 등록 · 변경 · 말소 · 양도 · 양수 이벤트를 날짜 순으로 다시 돌려 지금 등록된 업체를 만든다.
   대표자 이름(ncrGsMaster)은 읽지 않는다. 휴대전화 번호는 버린다.
+- 카카오 장소 검색: 이름과 시 · 군 · 구가 같은 장소 하나의 ID만 고른다. 다른 칸은 버린다.
 """
 
 import codecs
@@ -210,3 +211,28 @@ def kiscon_events(items: Iterable[dict[str, str]]) -> Iterator[KisconEvent]:
         e = kiscon_event(item)
         if e is not None:
             yield e
+
+
+# ── 카카오 장소 ID 맞추기 ──
+
+_CORP = re.compile(r"주식회사|유한회사|\(주\)|\(유\)|㈜")
+
+
+def _plain_name(name: str) -> str:
+    """띄어쓰기 · 기호 · 회사 꼴을 뺀 이름 ('(주) 가짜 인테리어' → '가짜인테리어')"""
+    return re.sub(r"\W", "", _CORP.sub("", name)).lower()
+
+
+def kakao_place_id(name: str, sido: str, sgg: str, docs: Iterable[dict[str, str]]) -> str | None:
+    """검색 결과에서 이름과 시 · 군 · 구가 같은 장소가 딱 하나면 그 ID. 없거나 둘 이상이면 None."""
+    want = _plain_name(name)
+    if not want:
+        return None
+    ids = {
+        d["id"]
+        for d in docs
+        if re.fullmatch(r"\d{1,20}", d.get("id", ""))
+        and _plain_name(d.get("place_name", "")) == want
+        and region_from_address(d.get("address_name") or d.get("road_address_name")) == (sido, sgg)
+    }
+    return ids.pop() if len(ids) == 1 else None

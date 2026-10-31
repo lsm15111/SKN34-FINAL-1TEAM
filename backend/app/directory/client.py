@@ -1,13 +1,15 @@
-"""공공 API 호출 (공공데이터포털 KISCON · 국세청). 키가 없으면 부르지 않는다.
+"""외부 API 호출 (공공데이터포털 KISCON · 국세청, 카카오 장소 검색). 키가 없으면 부르지 않는다.
 
 - 응답은 JSON · XML 둘 다 읽는다 (같은 포털이라도 API마다 기본 형식이 다르다).
 - 오류 · 로그에 요청 주소를 넣지 않는다. 주소에 서비스 키가 들어 있다.
 - KISCON 작업 이름 · 날짜 인자 이름은 활용 문서만 보고 정했다. 키를 받으면 응답으로 한 번 확인한다.
+- 카카오 검색 결과는 장소를 맞춰 보는 데만 쓰고 버린다. 저장은 장소 ID만 한다.
 """
 
 import json
 import re
 import xml.etree.ElementTree as ET
+from decimal import Decimal
 
 import httpx2
 
@@ -21,6 +23,9 @@ KISCON_OP = "getConAdminInfoList"  # 확인 필요
 KISCON_DATE_PARAMS = ("startDate", "endDate")  # 확인 필요 (공시 기간, YYYYMMDD)
 NTS_URL = "https://api.odcloud.kr/api/nts-businessman/v1/status"
 NTS_BATCH = 100  # 국세청 API 한 번에 100건
+KAKAO_URL = "https://dapi.kakao.com/v2/local/search/keyword.json"
+KAKAO_RADIUS_M = 2000  # 좌표를 알 때 찾는 반경
+_KAKAO_KEEP = ("id", "place_name", "address_name", "road_address_name")  # 맞춰 보는 데 쓰는 칸만
 PAGE_ROWS = 100
 _OK_CODES = {None, "", "00", "0", "000", "0000", "INFO-000", "NORMAL_SERVICE", "OK"}
 _NTS_STATUS = {"01": "active", "02": "suspended", "03": "closed"}
@@ -147,3 +152,28 @@ async def nts_status(http: httpx2.AsyncClient, key: str, numbers: list[str]) -> 
         if len(no) == 10:
             out[no] = _NTS_STATUS.get(_text(d.get("b_stt_cd")), "unknown")
     return out
+
+
+async def kakao_places(
+    http: httpx2.AsyncClient,
+    key: str,
+    query: str,
+    *,
+    x: Decimal | None = None,
+    y: Decimal | None = None,
+) -> list[dict[str, str]]:
+    """카카오 로컬 키워드 검색 첫 쪽(15건). 좌표(x 경도, y 위도)를 알면 그 둘레만 찾는다."""
+    params: dict = {"query": query, "size": 15}
+    if x is not None and y is not None:
+        params |= {"x": str(x), "y": str(y), "radius": KAKAO_RADIUS_M}
+    try:
+        r = await http.get(KAKAO_URL, params=params, headers={"Authorization": f"KakaoAK {key}"})
+    except httpx2.HTTPError as exc:
+        raise ApiError(type(exc).__name__) from None
+    if r.status_code != 200:
+        raise ApiError(f"http_{r.status_code}")
+    try:
+        docs = r.json().get("documents") or []
+    except (ValueError, AttributeError) as exc:
+        raise ApiError("bad_json") from exc
+    return [{k: _text(d.get(k)) for k in _KAKAO_KEEP} for d in docs if isinstance(d, dict)]

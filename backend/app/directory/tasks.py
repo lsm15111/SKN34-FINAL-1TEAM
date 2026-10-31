@@ -72,6 +72,20 @@ async def verify_biz_status(ctx: dict, limit: int = 1000) -> dict:
             return {"error": exc.reason}
 
 
+async def match_kakao_places(ctx: dict, limit: int = 200) -> dict:
+    """외부 업체의 카카오맵 장소 ID만 맞춘다. 검색 결과의 다른 칸(전화 · 주소 · 분류)은 저장하지 않는다."""
+    if not settings.kakao_rest_key:
+        return {"skipped": "no_key"}
+    async with _http(ctx) as http, SessionLocal() as s:
+        try:
+            return await service.match_places(
+                s, http, settings.kakao_rest_key, now=now_utc(), limit=limit
+            )
+        except client.ApiError as exc:
+            log.warning("카카오 장소를 찾지 못했어요 (%s)", exc.reason)
+            return {"error": exc.reason}
+
+
 async def check_homepages(ctx: dict, limit: int = 50) -> dict:
     """업체 홈페이지에서 포트폴리오 · 견적 링크만 찾는다 (robots.txt 준수, 요청 간격)."""
     async with _http(ctx, settings.crawl_timeout_s) as http, SessionLocal() as s:

@@ -23,6 +23,7 @@ class WorkerSettings:
     functions: ClassVar[list] = [
         directory_tasks.check_homepages,
         directory_tasks.import_sangga_csv,
+        directory_tasks.match_kakao_places,
         directory_tasks.sync_kiscon,
         directory_tasks.verify_biz_status,
         quote_tasks.dispatch_contact_requests,

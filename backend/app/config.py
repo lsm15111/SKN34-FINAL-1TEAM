@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     # ── 외부 업체 정보 (가견적) ──
     # 공공데이터포털 서비스 키(KISCON 건설업체 · 국세청 사업자 상태). 비어 있으면 수집 작업을 건너뛴다
     data_go_kr_key: str = ""
+    # 카카오 REST API 키 (선택). 있으면 외부 업체의 카카오맵 장소 ID만 맞춘다. 비어 있으면 건너뛴다
+    kakao_rest_key: str = ""
     # 수집기 User-Agent에 붙일 연락 주소 (사이트 운영자가 믿집에 연락할 곳)
     bot_contact_url: str = ""
     # 홈페이지 확인기: 요청 사이 간격(초)과 한 요청을 기다리는 시간(초)

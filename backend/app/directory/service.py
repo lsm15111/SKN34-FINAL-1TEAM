@@ -19,10 +19,16 @@ from app.directory import client
 from app.directory import repository as repo
 from app.directory.models import ExtVendor
 from app.directory.site import SiteChecker
-from app.directory.sources import kiscon_events, kiscon_row, read_sangga_csv, replay
+from app.directory.sources import (
+    kakao_place_id,
+    kiscon_events,
+    kiscon_row,
+    read_sangga_csv,
+    replay,
+)
 from app.shared.errors import AppError
 
-RECHECK = timedelta(days=30)  # 국세청 상태 · 홈페이지를 다시 보는 간격
+RECHECK = timedelta(days=30)  # 국세청 상태 · 홈페이지 · 카카오 장소를 다시 보는 간격
 PLACE_URL = "https://place.map.kakao.com/{}"
 SOURCE_LABEL = {
     "sangga": "소상공인 상가정보",
@@ -181,6 +187,27 @@ async def verify_biz(
     changed = await repo.set_biz_status(s, statuses, now=now)
     await s.commit()
     return {"asked": len(numbers), "answered": len(statuses), "changed": changed}
+
+
+async def match_places(
+    s: AsyncSession, http: httpx2.AsyncClient, key: str, *, now: datetime, limit: int = 200
+) -> dict[str, int]:
+    """카카오 장소 검색에서 이름 · 시 · 군 · 구가 같은 장소 하나를 찾으면 그 ID만 남긴다 (화면의 카카오맵 링크)."""
+    targets = await repo.places_due(s, now - RECHECK, limit)
+    await s.rollback()  # 검색하는 동안 DB 연결을 붙잡지 않는다
+    found: dict[uuid.UUID, str | None] = {}
+    for vendor_id, name, sido, sgg, lat, lng in targets:
+        # 좌표가 있으면 그 둘레에서 이름으로, 없으면 시 · 군 · 구를 붙여 찾는다
+        q = name if lat is not None else f"{sgg} {name}"
+        docs = await client.kakao_places(http, key, q, x=lng, y=lat)
+        found[vendor_id] = kakao_place_id(name, sido, sgg, docs)
+    saved = await repo.save_places(s, found, now=now)
+    await s.commit()
+    return {
+        "asked": len(targets),
+        "matched": sum(v is not None for v in found.values()),
+        "saved": saved,
+    }
 
 
 async def check_homepages(

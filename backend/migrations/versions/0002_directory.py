@@ -52,6 +52,7 @@ def upgrade() -> None:
         sa.Column("quote_url", sa.String(length=300), nullable=True),
         sa.Column("site_checked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("place_ref", sa.String(length=20), nullable=True),
+        sa.Column("place_checked_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("visit_fee", sa.BigInteger(), nullable=True),
         sa.Column("fetched_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("opted_out", sa.Boolean(), server_default=sa.text("false"), nullable=False),

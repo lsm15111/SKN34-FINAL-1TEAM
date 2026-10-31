@@ -5,6 +5,7 @@ import secrets
 import uuid
 from collections.abc import Iterable, Sequence
 from datetime import datetime
+from decimal import Decimal
 
 from sqlalchemy import ARRAY, String, case, cast, delete, exists, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -239,6 +240,45 @@ async def save_links(
     if portfolio_urls is not None:
         values |= {"portfolio_urls": portfolio_urls, "quote_url": quote_url}
     await s.execute(update(ExtVendor).where(ExtVendor.id == vendor_id).values(**values))
+
+
+async def places_due(
+    s: AsyncSession, before: datetime, limit: int
+) -> list[tuple[uuid.UUID, str, str, str, Decimal | None, Decimal | None]]:
+    """카카오 장소를 맞춰 볼 업체: 수신거부가 아니고 시 · 군 · 구를 알며, 아직 안 봤거나 오래전에 본 것.
+    (id, 이름, 시 · 도, 시 · 군 · 구, 위도, 경도)"""
+    q = (
+        select(
+            ExtVendor.id,
+            ExtVendor.name,
+            ExtVendor.sido,
+            ExtVendor.sgg,
+            ExtVendor.lat,
+            ExtVendor.lng,
+        )
+        .where(
+            ExtVendor.opted_out.is_(False),
+            ExtVendor.sido.is_not(None),
+            ExtVendor.sgg.is_not(None),
+            or_(ExtVendor.place_checked_at.is_(None), ExtVendor.place_checked_at < before),
+        )
+        .order_by(ExtVendor.place_checked_at.nulls_first(), ExtVendor.id)
+        .limit(limit)
+    )
+    return [(i, n, a, b, la, ln) for i, n, a, b, la, ln in (await s.execute(q)).all()]
+
+
+async def save_places(s: AsyncSession, found: dict[uuid.UUID, str | None], *, now: datetime) -> int:
+    """맞춘 장소 ID(못 찾았으면 None)와 확인한 때. 그사이 수신거부한 업체는 건너뛴다."""
+    saved = 0
+    for vendor_id, place_ref in found.items():
+        res = await s.execute(
+            update(ExtVendor)
+            .where(ExtVendor.id == vendor_id, ExtVendor.opted_out.is_(False))
+            .values(place_ref=place_ref, place_checked_at=now, updated_at=now)
+        )
+        saved += res.rowcount
+    return saved
 
 
 async def kiscon_holdings(s: AsyncSession, reg_nos: Sequence[str]) -> dict[str, Holding]:

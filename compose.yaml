@@ -15,8 +15,9 @@ x-api-env: &api-env
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
   # 올린 사진 · 도면 · 사업자등록증을 두는 곳 (files-data 볼륨)
   FILES_DIR: /data/files
-  # 외부 업체 수집 (공공데이터포털 키, 수집기 연락 주소)
+  # 외부 업체 수집 (공공데이터포털 키, 카카오 키(선택), 수집기 연락 주소)
   DATA_GO_KR_KEY: ${DATA_GO_KR_KEY:-}
+  KAKAO_REST_KEY: ${KAKAO_REST_KEY:-}
   BOT_CONTACT_URL: ${BOT_CONTACT_URL:-}
   CRAWL_INTERVAL_S: ${CRAWL_INTERVAL_S:-3}
   CRAWL_TIMEOUT_S: ${CRAWL_TIMEOUT_S:-10}

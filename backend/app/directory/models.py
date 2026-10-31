@@ -104,6 +104,7 @@ class ExtVendor(Base):
     site_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # 카카오 장소 ID만 (주소는 place.map.kakao.com/{id}). 카카오 API의 다른 결과는 두지 않는다
     place_ref: Mapped[str | None] = mapped_column(String(20))
+    place_checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # 업체가 공지한 출장(방문) 비용, 원. 0이면 무료라고 공지한 것, 비어 있으면 모름
     visit_fee: Mapped[int | None] = mapped_column(BigInteger)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
