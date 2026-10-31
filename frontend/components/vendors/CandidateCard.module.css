@@ -1,0 +1,41 @@
+/* 가견적 후보 업체 카드 */
+.card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--radius-l); background: var(--bg); }
+.head { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.name { font-size: var(--fs-lg); font-weight: 700; overflow-wrap: anywhere; }
+.meta { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: var(--fs-sm); color: var(--ink-sub); }
+.why { padding: 10px 12px; border-left: 4px solid var(--accent-pastel); border-radius: 0 var(--radius) var(--radius) 0; background: var(--surface); }
+
+/* 비용 · 등록 정보 · 출처 */
+.info { margin: 0; display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-sm); }
+.info > div { display: grid; grid-template-columns: 92px minmax(0, 1fr); align-items: baseline; gap: 8px; }
+.info dt { font-weight: 700; color: var(--ink-sub); }
+.info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.states { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 받는 길 */
+.route { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
+.routeH { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; }
+.done { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.confirm { display: flex; flex-direction: column; gap: 12px; padding: 14px 16px; border: 2px solid var(--accent-pastel); border-radius: var(--radius); background: var(--surface); }
+.confirmQ { font-weight: 700; }
+.text summary { font-size: var(--fs-sm); color: var(--accent-ink); }
+.text textarea { margin-top: 6px; background: var(--surface); font-size: var(--fs-sm); }
+.phone { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.phone b { font-size: var(--fs-h2); letter-spacing: 0.02em; }
+.say { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border-radius: var(--radius); background: var(--surface); }
+.check { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; }
+.checkH { padding: 0; margin-bottom: 4px; font-size: var(--fs-md); font-weight: 700; }
+.checkI { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; padding: 9px 0; border-top: 1px solid var(--line); cursor: pointer; }
+.checkI input { flex: none; width: 22px; height: 22px; margin: 2px 0 0; accent-color: var(--accent); }
+.off { font-size: var(--fs-sm); }
+
+/* 포트폴리오 · 홈페이지 · 카카오맵 */
+.links { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0 18px; }
+.links a { display: inline-flex; align-items: center; min-height: 44px; font-size: var(--fs-sm); font-weight: 700; text-underline-offset: 3px; }
+
+@media (max-width: 480px) {
+  .card { padding: 16px; }
+  .actions > :global(.mj-btn) { flex: 1 1 100%; }
+  .info > div { grid-template-columns: minmax(0, 1fr); gap: 0; }
+}
