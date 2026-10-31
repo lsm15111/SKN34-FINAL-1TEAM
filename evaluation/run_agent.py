@@ -154,6 +154,8 @@ async def run_case(agent: str, case: dict, mod) -> dict:
         res["shown"], res["dropped"] = r.plan.model_dump(), r.dropped
     except LlmError as e:
         res["status"], res["reason"] = "failed", e.reason
+    except Exception as e:  # noqa: BLE001 — 사례 하나의 뜻밖 오류로 유료 실행 결과 전체를 잃지 않게
+        res["status"], res["reason"] = "failed", f"error:{type(e).__name__}"
     if rec := _calls.get():
         raw, usage = rec[-1]
         res["raw"], res["usage"] = raw.model_dump(), dict(usage.__dict__)
@@ -179,6 +181,8 @@ async def judge_case(agent: str, case: dict, res: dict, mod, parse, effort: str,
         res["judge"], res["judge_usage"] = scores, dict(usage.__dict__)
     except (LlmError, ValueError) as e:
         res["judge_error"] = getattr(e, "reason", str(e))
+    except Exception as e:  # noqa: BLE001 — 판정 하나가 실패해도 나머지 결과는 남긴다
+        res["judge_error"] = f"error:{type(e).__name__}"
 
 
 async def run(

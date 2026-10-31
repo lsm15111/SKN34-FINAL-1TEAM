@@ -66,6 +66,30 @@ def test_fake_run_end_to_end(tmp_path, agent):
     assert (tmp_path / "summary.md").read_text(encoding="utf-8") == report
 
 
+def test_one_broken_case_does_not_stop_the_run(wp_sample):
+    import copy
+
+    broken = copy.deepcopy(wp_sample[0])
+    broken["input"]["common"]["area_m2"] = "0.0"  # 계산 엔진이 ValueError
+    results = asyncio.run(
+        run_agent.run("wallpaper", [broken, wp_sample[1]], judge_ids=set(), fake=True)
+    )
+    assert results[0]["status"] == "failed" and results[0]["reason"] == "error:ValueError"
+    assert results[0]["scores"] is None and results[1]["status"] == "ok"
+    assert "의견 생성 성공 (화면에 보임) | 50% (1/2)" in run_agent.summarize(
+        {
+            "agent": "wallpaper",
+            "model": "fake",
+            "effort": "-",
+            "prompt_version": "t",
+            "cases": "x",
+            "stratify": "category",
+            "seed": 1,
+        },
+        results,
+    )
+
+
 def test_rescore_uses_saved_raw(wp_sample):
     cases = wp_sample[:2]
     results = asyncio.run(run_agent.run("wallpaper", cases, judge_ids=set(), fake=True))
