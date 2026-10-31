@@ -1,14 +1,26 @@
 // 실제로 만든 프로젝트의 진행 현황. 저장된 답과 올린 사진 · 도면을 API에서 읽어 보여 준다.
 // 예상 공정표 · 표준견적서부터는 아직 API가 없어서 '연결 전'으로 알리고 예시 프로젝트로 안내한다.
+import { Fragment } from "react";
 import Link from "next/link";
 import { ProjectTrack } from "./ProjectTrack";
 import type { ApiProject } from "@/lib/api/project";
-import { WHEN_LABEL, budgetLabel, gradeLabel, mokLabel, sizeLabel } from "@/lib/labels";
+import { TRADE_KEYS, WHEN_LABEL, budgetLabel, gradeLabel, mokLabel, sizeLabel } from "@/lib/labels";
+import { TRADE_LABEL } from "@/lib/types";
 import { dateSeoul, md } from "@/lib/format";
 
 export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
   const name = (id: string) => p.spaces.find((s) => s.id === id)?.name ?? "";
   const { dobae, mokgong } = p.trades;
+  // 고른 공정과 기본정보에 보일 한 줄 (도배는 유형, 목공은 항목도)
+  const picked = TRADE_KEYS.flatMap((t) => {
+    const tr = p.trades[t];
+    if (!tr) return [];
+    const where = tr.spaces.map(name).join(" · ");
+    const text = t === "dobae" && dobae ? `${gradeLabel(dobae.grade)} · ${where}` : t === "mokgong" && mokgong ? `${where} · ${mokgong.items.map(mokLabel).join(" · ")}` : where;
+    return [{ t, label: TRADE_LABEL[t], text }];
+  });
+  // 공정 이름이 많으면 버튼이 폰 너비를 넘어서 둘까지만 버튼에 적는다 (전체는 기본정보에 있다)
+  const consult = picked.length <= 2 ? `${picked.map((x) => x.label).join(" · ")} 상담 받기` : `고른 공정 ${picked.length}개 상담 받기`;
   const when = p.when.kind === "date" && p.when.start
     ? ` · ${md(p.when.start)}${p.when.end && p.when.end !== p.when.start ? ` ~ ${md(p.when.end)}` : ""}`
     : p.when.kind === "movein" && p.when.start ? ` · ${md(p.when.start)}` : "";
@@ -24,7 +36,7 @@ export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
             <h1 id="now-h" className="mj-h2">프로젝트를 만들었어요</h1>
             <p className="mj-sub">{p.photos.length || p.plans.length ? "답과 사진 · 도면을" : "답을"} 저장했어요. 예상 공정표와 표준견적서는 아직 이 프로젝트에 연결되지 않았어요.</p>
             <div className="mj-btn-row">
-              {dobae || mokgong ? <Link href={`/consult?project=${p.id}`} className="mj-btn mj-btn-pri">{[dobae && "도배", mokgong && "목공"].filter(Boolean).join(" · ")} 상담 받기</Link> : null}
+              {picked.length ? <Link href={`/consult?project=${p.id}`} className="mj-btn mj-btn-pri">{consult}</Link> : null}
               <Link href="/projects/p1" className="mj-btn mj-btn-sec">예시 프로젝트로 흐름 보기</Link>
             </div>
           </section>
@@ -62,8 +74,7 @@ export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
             <dt>시기</dt><dd>{WHEN_LABEL[p.when.kind]}{when}</dd>
             <dt>집 상태</dt><dd>{p.occupied ? "살면서 공사" : "빈집"}</dd>
             <dt>예산</dt><dd>{budgetLabel(p.budget)}</dd>
-            <dt>도배</dt><dd>{dobae ? `${gradeLabel(dobae.grade)} · ${dobae.spaces.map(name).join(" · ")}` : "안 함"}</dd>
-            <dt>목공</dt><dd>{mokgong ? `${mokgong.spaces.map(name).join(" · ")} · ${mokgong.items.map(mokLabel).join(" · ")}` : "안 함"}</dd>
+            {picked.map((x) => <Fragment key={x.t}><dt>{x.label}</dt><dd>{x.text}</dd></Fragment>)}
             <dt>사진 · 도면</dt><dd>사진 {p.photos.length}장 · {p.plans.length ? `도면 ${p.plans.length}개` : "도면 없음"}</dd>
           </dl>
           <p className="mj-tiny">만든 날 {md(dateSeoul(p.created_at))}</p>
