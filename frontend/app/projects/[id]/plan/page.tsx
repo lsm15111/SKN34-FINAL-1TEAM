@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { NotConnected } from "@/components/project/RealProjectHub";
+import { SeeInConsult } from "@/components/project/RealProjectHub";
 import { isDemoProject } from "@/lib/api/project";
 import { getExpectedSchedule } from "@/lib/api/schedule";
 import { Gantt, type GanttRow } from "@/components/project/Gantt";
@@ -10,7 +10,7 @@ export const metadata = { title: "예상 공정표" };
 
 export default async function PlanPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ new?: string }> }) {
   const { id } = await params;
-  if (!isDemoProject(id)) return <NotConnected id={id} />;
+  if (!isDemoProject(id)) return <SeeInConsult id={id} title="예상 공정표" />;
   const { new: isNew } = await searchParams;
   const s = await getExpectedSchedule(id);
   const rows: GanttRow[] = s.tasks.map((t) => ({ label: t.label, sub: t.team, from: t.from, to: t.to, tone: t.team === "도배" ? "b" : "a" }));

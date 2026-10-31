@@ -33,7 +33,8 @@ export default async function ProjectLayout({ children, params }: { children: Re
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 14px" }}>
           <span className="mj-h3">{p.region} · {sizeLabel(p.size)}</span>
         </div>
-        <ProjectNav id={p.id} stage="draft" ready={false} live={["vendors"]} />
+        {/* 예상 공정표 · 표준견적서 탭은 상담으로 잇는 안내를 보인다 */}
+        <ProjectNav id={p.id} stage="draft" ready={false} live={["plan", "standard", "vendors"]} />
       </>
     );
   }

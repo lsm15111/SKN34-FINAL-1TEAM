@@ -1,6 +1,6 @@
 import { isDemoProject } from "@/lib/api/project";
 import { getStandardQuote } from "@/lib/api/quote";
-import { NotConnected } from "@/components/project/RealProjectHub";
+import { SeeInConsult } from "@/components/project/RealProjectHub";
 import { TRADES, TRADE_LABEL } from "@/lib/types";
 import { md, won, wonFull } from "@/lib/format";
 
@@ -8,7 +8,7 @@ export const metadata = { title: "표준견적서" };
 
 export default async function StandardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  if (!isDemoProject(id)) return <NotConnected id={id} />;
+  if (!isDemoProject(id)) return <SeeInConsult id={id} title="표준견적서" />;
   const q = await getStandardQuote(id);
   return (
     <main id="main" className="mj-wrap mj-main">

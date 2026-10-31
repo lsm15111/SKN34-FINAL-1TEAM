@@ -85,6 +85,22 @@ export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
   );
 }
 
+/** 실제 프로젝트의 예상 공정표 · 표준견적서 화면. 상담에서 보여 주므로 상담으로 잇는다 (진행 현황과 같은 안내) */
+export function SeeInConsult({ id, title }: { id: string; title: string }) {
+  return (
+    <main id="main" className="mj-wrap mj-main">
+      <section className="mj-panel" aria-labelledby="ic-h" style={{ maxWidth: 640 }}>
+        <h1 id="ic-h" className="mj-h2">{title}</h1>
+        <p className="mj-sub">예상 공정표와 표준견적서는 상담에서 볼 수 있어요.</p>
+        <div className="mj-btn-row">
+          <Link href={`/consult?project=${id}`} className="mj-btn mj-btn-pri">상담에서 보기</Link>
+          <Link href={`/projects/${id}`} className="mj-btn mj-btn-sec">진행 현황으로</Link>
+        </div>
+      </section>
+    </main>
+  );
+}
+
 /** 실제 프로젝트에서 아직 API가 없는 단계 화면 */
 export function NotConnected({ id }: { id: string }) {
   return (
