@@ -5,10 +5,20 @@
 """
 
 from dataclasses import dataclass
-from decimal import ROUND_CEILING, Decimal
+from decimal import Decimal
 from typing import Literal
 
-from app.calc.dobae import COUNTED, PYEONG_M2, AreaBasis, Line, Step, half_up, m2, won
+from app.calc.common import (
+    COUNTED,
+    PYEONG_M2,
+    AreaBasis,
+    Line,
+    Step,
+    half_days,
+    half_up,
+    m2,
+    won,
+)
 
 Item = Literal["molding", "base", "door", "flatten"]
 ITEMS: tuple[Item, ...] = ("molding", "base", "door", "flatten")
@@ -71,10 +81,6 @@ class MokgongQuote:
     assumptions: list[str]
 
 
-def _half_days(md: Decimal, crew: int) -> int:
-    return max(int((md / crew * 2).to_integral_value(rounding=ROUND_CEILING)), 1)
-
-
 def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
     if inp.area_m2 <= 0:
         raise ValueError("면적은 0보다 커야 해요")
@@ -128,6 +134,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
                 won(flatten * p.ceiling_mat),
                 "included",
                 src["ceiling_mat"],
+                "assumed",
             ),
         ]
     if doors:
@@ -169,6 +176,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
                 won(mat * p.molding_mat),
                 "included",
                 src["molding_mat"],
+                "assumed",
             ),
         ]
     if "base" in items:
@@ -195,6 +203,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
                 won(mat * p.base_mat),
                 "included",
                 src["base_mat"],
+                "assumed",
             ),
         ]
 
@@ -209,6 +218,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
                 None,
                 "after_visit",
                 src["none"],
+                "none",
             )
         )
     if molding or base:
@@ -222,12 +232,25 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
                 None,
                 "after_visit",
                 src["none"],
+                "none",
             )
         )
-    lines.append(Line("waste", "폐기물 처리", None, "식", None, None, "after_visit", src["none"]))
+    lines.append(
+        Line("waste", "폐기물 처리", None, "식", None, None, "after_visit", src["none"], "none")
+    )
     if inp.occupied:
         lines.append(
-            Line("moving", "짐 이동 · 보양", None, "식", None, None, "after_visit", src["none"])
+            Line(
+                "moving",
+                "짐 이동 · 보양",
+                None,
+                "식",
+                None,
+                None,
+                "after_visit",
+                src["none"],
+                "none",
+            )
         )
 
     subtotal = sum(ln.amount for ln in lines if ln.state in COUNTED and ln.amount is not None)
@@ -237,12 +260,12 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
     if flatten or molding or base:
         steps.append(Step("remove", "철거 · 바탕 정리", 1))
     if flatten:
-        steps.append(Step("ceiling", "천장 평탄화 (틀 · 석고보드)", _half_days(md_ceiling, p.crew)))
+        steps.append(Step("ceiling", "천장 평탄화 (틀 · 석고보드)", half_days(md_ceiling, p.crew)))
     if doors:
-        steps.append(Step("door", "방문 교체", _half_days(md_door, p.crew)))
+        steps.append(Step("door", "방문 교체", half_days(md_door, p.crew)))
     if molding or base:
         name = " · ".join(n for n, q in (("몰딩", molding), ("걸레받이", base)) if q)
-        steps.append(Step("trim", name, _half_days(md_trim, p.crew)))
+        steps.append(Step("trim", name, half_days(md_trim, p.crew)))
     steps.append(Step("finish", "정리 · 청소", 1))
     days = Decimal(sum(s.half_days for s in steps)) / 2
 

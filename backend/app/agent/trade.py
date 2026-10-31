@@ -12,7 +12,7 @@ from typing import Protocol
 
 from app.agent import llm
 from app.agent.schemas import TradePlan
-from app.calc.dobae import Line, Step
+from app.calc.common import Line, Step
 
 _DIR = Path(__file__).parent
 STATE_LABEL = {

@@ -3,7 +3,7 @@
 from dataclasses import dataclass
 from decimal import Decimal
 
-from app.calc.dobae import Step
+from app.calc.common import Step
 
 ORDER = ("mokgong", "dobae")
 

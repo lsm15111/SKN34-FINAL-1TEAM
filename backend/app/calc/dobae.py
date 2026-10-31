@@ -5,18 +5,25 @@
 """
 
 from dataclasses import dataclass
-from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Literal
 
-AreaBasis = Literal["supply", "exclusive"]
-Grade = Literal["economy", "basic"]
-# 포함 상태 6종. 합계에는 included(포함) · separate(따로 계산)만 들어간다
-LineState = Literal["included", "bundled", "separate", "optional", "after_visit", "excluded"]
-COUNTED = ("included", "separate")
+from app.calc.common import (  # noqa: F401 (다른 모듈이 calc.dobae를 통해 쓰던 이름)
+    BASIS_LABEL,
+    COUNTED,
+    PYEONG_M2,
+    AreaBasis,
+    Line,
+    LineState,
+    Step,
+    half_up,
+    m2,
+    pyeong_to_m2,
+    won,
+)
 
-PYEONG_M2 = Decimal("3.3058")
+Grade = Literal["economy", "basic"]
 GRADE_PAPER = {"economy": "합지", "basic": "실크"}
-BASIS_LABEL = {"supply": "공급면적", "exclusive": "전용면적"}
 
 
 @dataclass(frozen=True)
@@ -55,25 +62,6 @@ class DobaeInput:
 
 
 @dataclass(frozen=True)
-class Line:
-    key: str
-    name: str
-    qty: Decimal | None
-    unit: str
-    unit_price: int | None
-    amount: int | None
-    state: LineState
-    source: str
-
-
-@dataclass(frozen=True)
-class Step:
-    key: str
-    name: str
-    half_days: int
-
-
-@dataclass(frozen=True)
 class DobaeQuote:
     version: str
     paper_m2: Decimal  # 도배하는 면적 (벽 + 천장)
@@ -87,24 +75,6 @@ class DobaeQuote:
     steps: list[Step]
     days: Decimal
     assumptions: list[str]
-
-
-def won(x: Decimal) -> int:
-    """원 단위 반올림. 계산 엔진 안에서 금액은 모두 이 함수로 끝낸다."""
-    return int(x.quantize(Decimal(1), rounding=ROUND_HALF_UP))
-
-
-def m2(x: Decimal) -> Decimal:
-    return x.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP)
-
-
-def half_up(x: Decimal) -> Decimal:
-    """0.5 단위로 올린다 (품 · 기간)."""
-    return (x * 2).to_integral_value(rounding=ROUND_CEILING) / 2
-
-
-def pyeong_to_m2(pyeong: Decimal) -> Decimal:
-    return m2(pyeong * PYEONG_M2)
 
 
 def quote(inp: DobaeInput, p: DobaePrices) -> DobaeQuote:
@@ -153,6 +123,7 @@ def quote(inp: DobaeInput, p: DobaePrices) -> DobaeQuote:
             won(paper_qty * p.paper[inp.grade]),
             "included",
             src[f"paper_{inp.grade}"],
+            "assumed" if inp.grade == "economy" else "public",
         ),
         Line(
             "primer",
@@ -192,10 +163,22 @@ def quote(inp: DobaeInput, p: DobaePrices) -> DobaeQuote:
             src["removal"],
         )
     )
-    lines.append(Line("waste", "폐기물 처리", None, "식", None, None, "after_visit", src["none"]))
+    lines.append(
+        Line("waste", "폐기물 처리", None, "식", None, None, "after_visit", src["none"], "none")
+    )
     if inp.occupied:
         lines.append(
-            Line("moving", "짐 이동 · 보양", None, "식", None, None, "after_visit", src["none"])
+            Line(
+                "moving",
+                "짐 이동 · 보양",
+                None,
+                "식",
+                None,
+                None,
+                "after_visit",
+                src["none"],
+                "none",
+            )
         )
 
     subtotal = sum(ln.amount for ln in lines if ln.state in COUNTED and ln.amount is not None)
