@@ -4,12 +4,14 @@
 """
 
 from app.consult.trades import (
+    bath,
     dobae,
     mokgong,
 )
 from app.consult.trades.base import TradeSpec
 
 _SPECS: tuple[TradeSpec, ...] = (
+    bath.SPEC,
     dobae.SPEC,
     mokgong.SPEC,
 )
