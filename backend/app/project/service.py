@@ -23,6 +23,7 @@ from app.project.schemas import (
     SizeIn,
     SpaceOut,
     TradesOut,
+    TradeSpacesOut,
     WhenIn,
 )
 from app.shared.errors import AppError
@@ -76,9 +77,7 @@ async def create(s: AsyncSession, owner: User, data: ProjectCreate, today: date)
         await s.flush()
         space_id[sp.key] = row.id
 
-    for trade, t in (("dobae", data.trades.dobae), ("mokgong", data.trades.mokgong)):
-        if t is None:
-            continue
+    for trade, t in data.trades.picked().items():
         s.add(
             ProjectTrade(
                 project_id=p.id,
@@ -127,13 +126,16 @@ def _size(p: Project) -> SizeIn:
 
 async def _out(s: AsyncSession, p: Project) -> ProjectOut:
     spaces, trades, links, files = await repo.parts(s, p.id)
-    tr = TradesOut()
+    picked: dict[str, DobaeOut | MokgongOut | TradeSpacesOut] = {}
     for t in trades:
         ids = [link.space_id for link in links if link.trade == t.trade]
         if t.trade == "dobae":
-            tr.dobae = DobaeOut(spaces=ids, grade=t.grade)
+            picked[t.trade] = DobaeOut(spaces=ids, grade=t.grade)
+        elif t.trade == "mokgong":
+            picked[t.trade] = MokgongOut(spaces=ids, items=list(t.items))
         else:
-            tr.mokgong = MokgongOut(spaces=ids, items=list(t.items))
+            picked[t.trade] = TradeSpacesOut(spaces=ids)
+    tr = TradesOut(**picked)
     return ProjectOut(
         id=p.id,
         sido=p.sido,

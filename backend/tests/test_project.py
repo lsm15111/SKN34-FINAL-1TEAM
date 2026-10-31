@@ -1,4 +1,8 @@
+import uuid
 from datetime import date, timedelta
+
+import asyncpg
+import pytest
 
 from tests.conftest import query
 from tests.helpers import PDF, make_admin, signup, upload, use, vendor_signup
@@ -6,6 +10,8 @@ from tests.helpers import PDF, make_admin, signup, upload, use, vendor_signup
 # 오늘 기준 한 달 뒤 (2년 넘는 날짜는 받지 않는다)
 SOON = (date.today() + timedelta(days=30)).isoformat()
 SOON_END = (date.today() + timedelta(days=34)).isoformat()
+# 도배 · 목공 밖 공정: 고른 공간만 받는다 (공정 칸은 상담에서 묻는다)
+SPACE_ONLY = ("floor", "film", "paint", "tile", "bath", "kitchen", "electric", "window")
 
 
 def body(photo_ids=(), plan_ids=(), **over) -> dict:
@@ -67,6 +73,56 @@ def test_dobae_needs_a_grade(api):
     assert row["grade"] == "economy"
 
 
+def test_every_trade_can_be_picked(api):
+    signup(api)
+    trades = {
+        "dobae": {"spaces": ["a"], "grade": "basic"},
+        "mokgong": {"spaces": ["a"], "items": ["base"]},
+        **{t: {"spaces": ["b", "c", "b"]} for t in SPACE_ONLY},
+    }
+    r = api.post("/projects", json=body(trades=trades))
+    assert r.status_code == 201, r.text
+    p = r.json()
+    ids = sorted(s["id"] for s in p["spaces"] if s["name"] in ("방", "방 2"))
+    for t in SPACE_ONLY:
+        assert list(p["trades"][t]) == ["spaces"] and sorted(p["trades"][t]["spaces"]) == ids
+    assert api.get(f"/projects/{p['id']}").json() == p
+    assert api.get("/projects").json()[0]["trades"] == sorted(trades)
+    sql = "select trade, items, grade from project_trades where trade = any($1)"
+    rows = query(sql, list(SPACE_ONLY))
+    assert {x["trade"] for x in rows} == set(SPACE_ONLY)
+    assert all(x["items"] == [] and x["grade"] is None for x in rows)
+
+
+def test_space_only_trades_are_checked(api):
+    signup(api)
+    for trades in (
+        {"sauna": {"spaces": ["a"]}},  # 모르는 공정
+        {"floor": {"spaces": ["a"]}, "sauna": {"spaces": ["a"]}},  # 버리지 않고 알린다
+        {"floor": {"spaces": []}},
+        {"floor": {"spaces": ["zzz"]}},  # 넣지 않은 공간
+        {"floor": None},
+    ):
+        assert api.post("/projects", json=body(trades=trades)).status_code == 422, trades
+    assert query("select count(*) from projects")[0][0] == 0
+    only = api.post("/projects", json=body(trades={"window": {"spaces": ["c"]}}))
+    assert only.status_code == 201
+    assert {k for k, v in only.json()["trades"].items() if v} == {"window"}
+
+
+def test_db_keeps_trade_keys_and_shapes(api):
+    signup(api)
+    pid = uuid.UUID(api.post("/projects", json=body()).json()["id"])
+    insert = "insert into project_trades (project_id, trade, items, grade) values ($1, $2, $3, $4)"
+    for trade, items, grade in (
+        ("sauna", [], None),  # 모르는 공정
+        ("bath", ["door"], None),  # 목공 밖 공정은 항목이 없다
+        ("window", [], "basic"),  # 도배 밖 공정은 유형이 없다
+    ):
+        with pytest.raises(asyncpg.CheckViolationError):
+            query(insert, pid, trade, items, grade)
+
+
 def test_exact_area_instead_of_band(api):
     signup(api)
     r = api.post("/projects", json=body(size={"basis": "exclusive", "m2": "84.9"}))
@@ -113,13 +169,17 @@ def test_files_must_be_mine_and_unused(api):
     assert other
 
 
-def test_who_can_create_and_see(api):
+@pytest.mark.parametrize(
+    "trades", [None, {"bath": {"spaces": ["a"]}, "electric": {"spaces": ["a", "b"]}}]
+)
+def test_who_can_create_and_see(api, trades):
+    b = body(**({"trades": trades} if trades else {}))
     owner = signup(api, "owner@mitjip.test")
-    pid = api.post("/projects", json=body()).json()["id"]
+    pid = api.post("/projects", json=b).json()["id"]
     signup(api, "someone@mitjip.test")
     assert api.get(f"/projects/{pid}").status_code == 404
     vendor_signup(api)
-    assert api.post("/projects", json=body()).status_code == 403
+    assert api.post("/projects", json=b).status_code == 403
     make_admin(api)
     assert api.get(f"/projects/{pid}").status_code == 200
     use(api, owner)

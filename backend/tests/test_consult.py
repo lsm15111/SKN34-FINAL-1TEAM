@@ -24,6 +24,7 @@ from app.consult.service import (
     PLAN_FAILED,
 )
 from app.consult.trades import REGISTRY
+from app.consult.trades.base import Choice, FieldSpec, TradeSpec
 from tests.helpers import make_admin, signup
 from tests.test_project import body
 
@@ -387,6 +388,45 @@ def test_prefill_from_my_project_only(api):
 
     signup(api, email="other@mitjip.test")
     assert api.post(URL, json={"project_id": pid}).status_code == 404
+
+
+def test_prefill_takes_only_registered_trades(api, monkeypatch):
+    # 견적 받기의 공정 중 상담에 등록된 공정만 카드에 넣는다. 도배 · 목공 밖 공정은 공간만 가져온다
+    mok = REGISTRY["mokgong"]
+    kind = FieldSpec(
+        key="kind",
+        label="바닥재 종류",
+        question="어떤 바닥재로 할까요?",
+        kind="choice",
+        choices=(Choice("maru", "강마루"), Choice("jangpan", "장판")),
+    )
+    floor = TradeSpec(
+        key="floor",
+        label="바닥재",
+        order=85,
+        fields=(kind,),
+        agent=mok.agent,
+        build=mok.build,
+        card_lines=mok.card_lines,
+    )
+    monkeypatch.setitem(REGISTRY, "floor", floor)
+    monkeypatch.delitem(REGISTRY, "window", raising=False)
+    signup(api)
+    pid = project(
+        api,
+        dobae={"spaces": ["a"], "grade": "basic"},
+        floor={"spaces": ["b", "c"]},
+        window={"spaces": ["a"]},
+    )
+    out = turn(api, project_id=pid)
+    c = out["card"]
+    assert c["trades"] == [k for k in REGISTRY if k in ("dobae", "floor")]
+    assert out["trade_labels"] == {"dobae": "도배", "floor": "바닥재"}
+    assert c["values"] == {"dobae": {"grade": "basic"}}
+    assert c["spaces"]["dobae"] == ["거실"] and sorted(c["spaces"]["floor"]) == ["방", "방 2"]
+    assert "window" not in c["spaces"]
+    # 새 공정 칸은 견적 받기에 없어서 첫 폼으로 묻는다
+    assert {"dobae.include_ceiling", "floor.kind"} <= set(fields(out))
 
 
 def test_door_questions_only_when_doors_are_picked(api):
