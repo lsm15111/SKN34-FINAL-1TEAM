@@ -328,11 +328,11 @@ def quote(inp: BathInput, p: BathPrices) -> BathQuote:
         md_fit += p.md_tub
     steps = [Step("prep", "짐 정리 · 보양", 1)] if inp.occupied else []
     if not full:
-        steps.append(Step("demolish", "기존 도기 · 수전 떼기", 1))
+        steps.append(Step("remove", "기존 도기 · 수전 떼기", 1))
     elif overlay:
-        steps.append(Step("demolish", "도기 · 천장재 떼기 · 바탕 청소", 1))
+        steps.append(Step("remove", "도기 · 천장재 떼기 · 바탕 청소", 1))
     else:
-        steps.append(Step("demolish", "철거 · 바탕 정리", 2))
+        steps.append(Step("remove", "철거 · 바탕 정리", 2))
         steps.append(Step("waterproof", "방수 두 번 · 물 채워 새는지 확인", p.wp_half_days))
     fit_days = half_days(md_fit, p.fit_crew)
     if full:
@@ -362,6 +362,9 @@ def quote(inp: BathInput, p: BathPrices) -> BathQuote:
             )
         assumptions.append(
             f"타일 소요량에는 버리는 몫 {int((p.tile_ratio - 1) * 100)}%를 넣었어요."
+        )
+        assumptions.append(
+            "타일 붙이는 공공 단가는 시장 값보다 높게 나오는 편이에요. 업체 견적과 견줄 때 참고해요."
         )
     guessed = ["도기", "수전"] + (["천장재", "액세서리"] if full else [])
     guessed += {"new": ["욕조"], "remove": ["샤워 파티션"]}.get(inp.tub, [])

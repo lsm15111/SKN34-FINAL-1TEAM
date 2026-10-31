@@ -139,6 +139,7 @@ def quote(inp: KitchenInput, p: KitchenPrices) -> KitchenQuote:
         ),
         _after("demolish", "기존 싱크대 철거", src),
         _after("plumbing", "급수 · 배수 · 가스 위치 조정", src),
+        _after("induction", "인덕션 전용 회로 (필요하면)", src),
         _after("waste", "폐기물 처리", src),
     ]
     if inp.occupied:
@@ -150,11 +151,13 @@ def quote(inp: KitchenInput, p: KitchenPrices) -> KitchenQuote:
     md = length * p.md_cabinet
     parts = [n for n, on in (("싱크볼 · 수전", inp.faucet), ("후드", inp.hood)) if on]
     steps = [Step("prep", "짐 정리 · 보양", 1)] if inp.occupied else []
+    # 가구 · 상판 · 연결은 도배 · 바닥을 마친 뒤에 한다 (공정을 이을 때 뒤로 모은다)
+    fit = " · ".join(parts) + " 연결" if parts else "싱크 급수 · 배수 연결"
     steps += [
         Step("remove", "기존 싱크대 철거", 1),
-        Step("cabinet", "하부장 · 상부장 설치", half_days(md, p.crew)),
-        Step("top", "상판 설치", 1),
-        Step("fit", " · ".join(parts) + " 연결" if parts else "싱크 급수 · 배수 연결", 1),
+        Step("cabinet", "하부장 · 상부장 설치", half_days(md, p.crew), late=True),
+        Step("top", "상판 설치", 1, late=True),
+        Step("fit", fit, 1, late=True),
         Step("finish", "실리콘 · 청소", 1),
     ]
     days = Decimal(sum(s.half_days for s in steps)) / 2
@@ -178,7 +181,7 @@ def quote(inp: KitchenInput, p: KitchenPrices) -> KitchenQuote:
             text += f" {LAYOUT_NAME[inp.layout]} 배치는 일자의 {factor}배예요."
         assumptions.append(text + " 실측 때 다시 재요.")
     assumptions += [
-        "주방 벽 타일과 인덕션 전용선 같은 전기 배선은 타일 · 전기 공정에서 따로 봐요.",
+        "주방 벽 타일은 타일 공정에서 봐요. 인덕션 전용 회로는 필요하면 실측 때 정해요.",
         f"하루 {p.crew}명이 들어가는 것으로 기간을 잡았어요.",
     ]
 

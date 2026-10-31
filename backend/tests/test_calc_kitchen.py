@@ -41,6 +41,12 @@ def test_straight_34_pyeong_is_all_assumed():
         ("finish", 1),
     ]
     assert (r.man_days, r.days) == (Decimal("1.5"), Decimal(3))
+    # 가구 · 상판 · 연결은 도배 · 바닥 뒤 작업, 철거는 앞
+    assert [s.key for s in r.steps if s.late] == ["cabinet", "top", "fit"]
+    # 주방 벽 타일은 타일 공정, 인덕션 전용 회로는 실측 후
+    induction = next(ln for ln in r.lines if ln.key == "induction")
+    assert (induction.name, induction.state) == ("인덕션 전용 회로 (필요하면)", "after_visit")
+    assert not any("타일" in ln.name for ln in r.lines)
 
 
 def test_l_shape_quartz_from_exclusive_area_without_hood():
