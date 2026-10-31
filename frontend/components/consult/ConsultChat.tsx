@@ -1,22 +1,19 @@
 "use client";
 // 공정 상담. 무엇을 물을지와 숫자는 API(코드 · 계산 엔진)가 정하고, 이 화면은 폼 · 대화 · 결과를 보여 주기만 한다.
-// 폼은 질문 종류(kind)로 그리고, 지금까지 정한 것은 API가 화면 말로 준 facts를 그대로 보인다 (공정 이름을 화면에 박지 않는다).
+// 폼은 QuestionForm이 질문 종류(kind)로 그리고, 지금까지 정한 것은 API가 화면 말로 준 facts를 그대로 보인다 (공정 이름을 화면에 박지 않는다).
 // 필수 칸은 프로젝트 정보로 채우고 빈 칸만 첫 폼으로 받는다. 대화와 카드는 화면이 들고 매 턴 보낸다 (아직 DB에 남기지 않음).
 import { Fragment, useEffect, useRef, useState } from "react";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { won, wonFull } from "@/lib/format";
+import { QuestionForm, type AnswerIn } from "./QuestionForm";
 import s from "./ConsultChat.module.css";
 
 type Card = Schemas["ConsultCard-Output"];
 type Out = Schemas["ConsultOut"];
 type Result = Schemas["TradeOut"];
 type Plan = NonNullable<Result["plan"]>;
-type Question = Schemas["Question"];
 type Turn = { role: "user" | "assistant"; text: string };
-type FormValue = string | string[];
-type AnswerIn = { field: string; value: FormValue };
 
-const UNKNOWN = "unknown";
 const STATE: Record<string, { label: string; cls: string }> = {
   included: { label: "포함", cls: "mj-b-in" },
   bundled: { label: "묶음 포함", cls: "mj-b-bundle" },
@@ -26,29 +23,10 @@ const STATE: Record<string, { label: string; cls: string }> = {
   excluded: { label: "안 함", cls: "mj-b-no" },
 };
 
-/** 폼 답이 다 찼는지 (여러 개 고르기는 최소 개수 이상) */
-function filled(q: Question, v: FormValue | undefined): boolean {
-  if (Array.isArray(v)) return v.includes(UNKNOWN) || v.length >= (q.min ?? 1);
-  return !!v && v.trim() !== "";
-}
-
-/** 보낼 값. 여러 개 고르기에서 '모르겠어요'를 골랐으면 그 값 하나만 */
-function answerValue(v: FormValue): FormValue {
-  if (Array.isArray(v)) return v.includes(UNKNOWN) ? UNKNOWN : v;
-  return v.trim();
-}
-
-function counts(q: Question): number[] {
-  const lo = q.min ?? 1;
-  const hi = q.max ?? lo;
-  return Array.from({ length: Math.max(hi - lo + 1, 0) }, (_, i) => lo + i);
-}
-
 export function ConsultChat({ projectId }: { projectId: string }) {
   const [card, setCard] = useState<Card | null>(null);
   const [out, setOut] = useState<Out | null>(null);
   const [plans, setPlans] = useState<Record<string, Plan>>({});
-  const [form, setForm] = useState<Record<string, FormValue>>({});
   const [log, setLog] = useState<Turn[]>([{ role: "assistant", text: "안녕하세요. 견적 받기에서 알려 주신 정보로 상담을 시작할게요." }]);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
@@ -100,27 +78,6 @@ export function ConsultChat({ projectId }: { projectId: string }) {
 
   const questions = out?.questions ?? [];
   const labels = out?.trade_labels ?? {};
-  const formReady = questions.length > 0 && questions.every((q) => filled(q, form[q.field]));
-  const groups: { trade: string | null; label: string }[] = [{ trade: null, label: "집 정보" }, ...Object.entries(labels).map(([trade, label]) => ({ trade, label }))];
-
-  function pick(field: string, value: string) {
-    setForm((f) => ({ ...f, [field]: value }));
-  }
-
-  function toggle(field: string, value: string) {
-    setForm((f) => {
-      const cur = Array.isArray(f[field]) ? (f[field] as string[]) : [];
-      if (value === UNKNOWN) return { ...f, [field]: cur.includes(UNKNOWN) ? [] : [UNKNOWN] };
-      const rest = cur.filter((x) => x !== UNKNOWN);
-      return { ...f, [field]: rest.includes(value) ? rest.filter((x) => x !== value) : [...rest, value] };
-    });
-  }
-
-  function submitForm(e: React.FormEvent) {
-    e.preventDefault();
-    if (!formReady || busy) return;
-    void send({ answers: questions.map((q) => ({ field: q.field, value: answerValue(form[q.field]) })) });
-  }
 
   function submitChat(e: React.FormEvent) {
     e.preventDefault();
@@ -136,28 +93,7 @@ export function ConsultChat({ projectId }: { projectId: string }) {
   return (
     <div className={s.wrap}>
       {questions.length ? (
-        <form className={`mj-panel ${s.form}`} onSubmit={submitForm} aria-labelledby="form-h">
-          <div className={s.head}>
-            <h2 id="form-h" className="mj-h2">먼저 몇 가지만 정해요</h2>
-            <p className="mj-sub">견적 받기에서 받지 않은 것만 물어요. 모르면 &lsquo;모르겠어요&rsquo;를 고르면 기본값으로 계산하고 실측 때 확인해요.</p>
-          </div>
-          {groups.map((g) => {
-            const qs = questions.filter((q) => (q.trade ?? null) === g.trade);
-            if (!qs.length) return null;
-            return (
-              <div key={g.label} className={s.group}>
-                <span className="mj-eyebrow">{g.label}</span>
-                {qs.map((q) => (
-                  <QuestionField key={q.field} q={q} value={form[q.field]} busy={busy} onPick={(v) => pick(q.field, v)} onToggle={(v) => toggle(q.field, v)} />
-                ))}
-              </div>
-            );
-          })}
-          {error ? <p className="mj-error" role="alert">{error}</p> : null}
-          <div className="mj-btn-row">
-            <button type="submit" className="mj-btn mj-btn-pri" disabled={busy || !formReady}>{busy ? "계산하고 있어요…" : "표준견적서 보기"}</button>
-          </div>
-        </form>
+        <QuestionForm questions={questions} labels={labels} busy={busy} error={error} onSubmit={(answers) => void send({ answers })} />
       ) : null}
 
       <div className="mj-split">
@@ -225,61 +161,6 @@ export function ConsultChat({ projectId }: { projectId: string }) {
         </>
       ) : null}
     </div>
-  );
-}
-
-function QuestionField({ q, value, busy, onPick, onToggle }: { q: Question; value?: FormValue; busy: boolean; onPick: (v: string) => void; onToggle: (v: string) => void }) {
-  const id = `q-${q.field.replace(/\W/g, "-")}`;
-  const one = typeof value === "string" ? value : "";
-  const chip = `mj-btn mj-btn-sec mj-btn-sm ${s.chip}`;
-  if (q.kind === "text") {
-    const area = q.field === "area";
-    return (
-      <div className="mj-field">
-        <label htmlFor={id} className="mj-label">{q.text}</label>
-        <input id={id} className="mj-input" inputMode={area ? "decimal" : undefined} maxLength={20} placeholder={area ? "예: 34평, 84㎡" : undefined} value={one} disabled={busy}
-          onChange={(e) => onPick(e.target.value)} />
-        <div className="mj-chips">
-          {q.choices.map((c) => (
-            <button key={c.value} type="button" className={chip} disabled={busy} aria-pressed={one === c.value} onClick={() => onPick(c.value)}>{c.label}</button>
-          ))}
-        </div>
-      </div>
-    );
-  }
-  if (q.kind === "count") {
-    return (
-      <fieldset className="mj-fieldset">
-        <legend className="mj-label">{q.text}</legend>
-        <div className="mj-chips">
-          {counts(q).map((n) => (
-            <button key={n} type="button" className={`${chip} mj-num`} disabled={busy} aria-pressed={one === String(n)} onClick={() => onPick(String(n))}>{n}</button>
-          ))}
-          {q.choices.map((c) => (
-            <button key={c.value} type="button" className={chip} disabled={busy} aria-pressed={one === c.value} onClick={() => onPick(c.value)}>{c.label}</button>
-          ))}
-        </div>
-      </fieldset>
-    );
-  }
-  const multi = q.kind === "multi";
-  const many = Array.isArray(value) ? value : [];
-  return (
-    <fieldset className="mj-fieldset">
-      <legend className="mj-label">{q.text}</legend>
-      <div className={`mj-choices ${s.options}`}>
-        {q.choices.map((c) => (
-          <label key={c.value} className="mj-choice">
-            <input type={multi ? "checkbox" : "radio"} name={id} value={c.value} checked={multi ? many.includes(c.value) : one === c.value} disabled={busy}
-              onChange={() => (multi ? onToggle(c.value) : onPick(c.value))} />
-            <span className="mj-choice-main">
-              <span className="mj-choice-title">{c.label}</span>
-              {c.desc ? <span className="mj-choice-desc">{c.desc}</span> : null}
-            </span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
   );
 }
 

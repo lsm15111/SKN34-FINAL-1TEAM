@@ -1,0 +1,29 @@
+.form { gap: 20px; }
+.head { display: flex; flex-direction: column; gap: 4px; }
+.group { display: flex; flex-direction: column; gap: 18px; padding-top: 18px; border-top: 1px solid var(--line); }
+
+/* 종류 카드: 하나 고르기 · 여러 개 고르기. 고르면 강조는 .mj-choice가 한다 */
+.cards { grid-template-columns: repeat(auto-fit, minmax(min(200px, 100%), 1fr)); }
+.unknown:not(:has(input:checked)) { border-style: dashed; background: var(--surface); }
+
+/* 빠른 선택 칩 · 모르겠어요 */
+.quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 44px; }
+.chip[aria-pressed="true"] { border: 2px solid var(--accent); background: var(--accent-weak); color: var(--accent-ink); padding: 0 13px; }
+
+/* 개수: − 숫자 + */
+.count { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
+.stepper { display: inline-flex; align-items: center; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg); }
+.step { display: inline-flex; align-items: center; justify-content: center; width: 52px; height: 52px; padding: 0; border: 0; background: none; color: var(--accent-ink); font-size: var(--fs-h2); font-weight: 700; cursor: pointer; }
+.step:first-child { border-radius: var(--radius) 0 0 var(--radius); }
+.step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+.step:hover:not(:disabled) { background: var(--surface-2); }
+.step:disabled { color: var(--line-strong); cursor: not-allowed; }
+.val { min-width: 56px; text-align: center; font-size: var(--fs-lg); font-weight: 700; }
+.empty { color: var(--ink-mute); }
+
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
+@media (max-width: 480px) {
+  .form { padding: 18px 16px; }
+  .submit { flex: 1 1 100%; }
+}
