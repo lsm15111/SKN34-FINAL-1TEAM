@@ -2,13 +2,12 @@ import Link from "next/link";
 import { ConsultChat } from "@/components/consult/ConsultChat";
 import { listMyProjects } from "@/lib/api/project";
 import { sizeLabel } from "@/lib/labels";
+import { TRADE_LABEL } from "@/lib/types";
 import { requireRole } from "@/lib/session";
 
 export const metadata = { title: "공정 상담" };
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-// 견적 받기(프로젝트)에서 고를 수 있는 공정 이름. 상담 화면 안의 공정 이름은 API가 준다
-const TRADE: Record<string, string> = { dobae: "도배", mokgong: "목공" };
 
 export default async function ConsultPage({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
   const { project } = await searchParams;
@@ -31,7 +30,7 @@ export default async function ConsultPage({ searchParams }: { searchParams: Prom
   }
 
   // 상담은 프로젝트(견적 받기에서 받은 집 정보)로 시작한다
-  const mine = (await listMyProjects()).filter((p) => p.trades.some((t) => t in TRADE));
+  const mine = (await listMyProjects()).filter((p) => p.trades.some((t) => t in TRADE_LABEL));
   return (
     <main id="main" className="mj-wrap mj-main">
       {head}
@@ -42,7 +41,7 @@ export default async function ConsultPage({ searchParams }: { searchParams: Prom
             {mine.map((p) => (
               <li key={p.id}>
                 <Link href={`/consult?project=${p.id}`} className="mj-btn mj-btn-sec" style={{ width: "100%", justifyContent: "flex-start" }}>
-                  {p.region} · {sizeLabel(p.size)} · {p.trades.map((t) => TRADE[t] ?? t).join(" · ")}
+                  {p.region} · {sizeLabel(p.size)} · {p.trades.map((t) => TRADE_LABEL[t as keyof typeof TRADE_LABEL] ?? t).join(" · ")}
                 </Link>
               </li>
             ))}
