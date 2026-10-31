@@ -5,9 +5,10 @@
 
 import hashlib
 import json
+import logging
 import uuid
 from collections import Counter, defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from redis.exceptions import RedisError
 from sqlalchemy.exc import IntegrityError
@@ -56,6 +57,8 @@ from app.shared.regions import SIDO, region_label
 from app.vendor import service as vendor_service
 from app.vendor.schemas import VendorCard
 
+log = logging.getLogger(__name__)
+
 MAX_EXT = 12  # 외부 업체 후보 최대 수
 NO_CANDIDATES = "이 지역 · 공정에 맞는 업체를 아직 찾지 못했어요."
 NOTES_FAILED = "설명을 만들지 못했어요. 업체 목록과 받는 길만 보여 드려요."
@@ -65,18 +68,24 @@ QUOTE_LABEL = {"requested": "요청했어요", "viewed": "업체가 확인했어
 QUOTE_MOVES: dict[str, tuple[str]] = {"viewed": ("requested",)}
 CONTACT_MOVES: dict[str, tuple[str]] = {
     "queued": ("draft",),
-    "sent": ("queued",),
-    "failed": ("queued",),
+    "sending": ("queued",),  # 보내기 전에 선점
+    "sent": ("sending",),
+    "test_sent": ("sending",),
+    "failed": ("sending",),
     "blocked": ("queued",),
 }
+DRY_RUN_LABEL = "시험으로 기록만 했어요 (실제로 보내지 않았어요)"
+STUCK_LABEL = "보냈는지 확인이 필요해요"
 CONTACT_LABEL = {
     "draft": "작성 중이에요",
     "queued": "보내기 전이에요",
+    "sending": "보내는 중이에요",
     "sent": "보냈어요",
+    "test_sent": DRY_RUN_LABEL,
     "failed": "보내지 못했어요",
     "blocked": "보낼 수 없는 업체예요",
 }
-DRY_RUN_LABEL = "시험으로 기록만 했어요 (실제로 보내지 않았어요)"
+STUCK_AFTER = timedelta(minutes=15)  # sending에 이보다 오래 있으면 보냈는지 모르는 것으로 본다
 OFF_NOTICE = "대신 요청은 아직 꺼져 있어요. 요청은 저장해 두었고, 켜지면 보내요."
 NIGHT_NOTICE = "밤 9시부터 아침 8시까지는 보내지 않아요. 아침에 보내요."
 QUEUED_NOTICE = "곧 보내요."
@@ -256,8 +265,8 @@ async def _states(s: AsyncSession, project_id: uuid.UUID) -> dict[uuid.UUID, lis
         out[vendor_id].append(
             RequestStateOut(trade=trade, status=status, label=QUOTE_LABEL[status])
         )
-    for vendor_id, trade, status, sender in await repo.contact_states(s, project_id):
-        label = DRY_RUN_LABEL if sender == "dry_run" else CONTACT_LABEL[status]
+    for vendor_id, trade, status, reason in await repo.contact_states(s, project_id):
+        label = STUCK_LABEL if reason == "stuck" else CONTACT_LABEL[status]
         out[vendor_id].append(RequestStateOut(trade=trade, status=status, label=label))
     return out
 
@@ -454,13 +463,28 @@ async def create_contact_request(
     )
 
 
+async def _try_move_contact(s: AsyncSession, request_id: uuid.UUID, **kw) -> bool:
+    """작업(worker)용: _move_contact로 바꾸고 commit. 다른 쪽이 먼저 바꿨으면(409) False."""
+    try:
+        await _move_contact(s, request_id, **kw)
+    except AppError as exc:
+        if exc.status != 409:
+            raise
+        return False
+    await s.commit()
+    return True
+
+
 async def dispatch_contacts(
     s: AsyncSession, sender: Sender, *, now: datetime, limit: int = 50
 ) -> dict[str, int | str]:
-    """queued인 대신 연락을 보낸다. 꺼져 있거나 · 발신자 연락처가 없거나 · 밤이면 아무것도 안 한다.
+    """queued인 대신 연락을 먼저 선점하고 보낸다. 꺼져 있거나 · 발신자 연락처가 없거나 · 밤이면 아무것도 안 한다.
 
-    업체마다 보내기 직전에 수신거부 · 동의를 다시 보고, 업체당 하루 한도를 넘으면 다음 날로 미룬다.
-    보내는 동안에는 DB 트랜잭션을 열어 두지 않는다. 이 작업은 worker 하나에서만 돈다 (중복 발송 방지).
+    한 건마다: 수신거부 · 출처에서 빠짐 · 동의를 다시 본다(아니면 blocked) → 업체당 하루 한도를 넘으면
+    다음 날로 미룬다 → queued → sending 선점을 commit → 보내기(멱등 키 = 요청 id) →
+    sent · test_sent(시험 발송) · failed. 선점한 뒤 멈추면 sending에 남고 다시 보내지 않는다
+    (fail_stuck_contacts가 failed로 돌린다). 작업이 겹쳐도 선점은 한 쪽만 된다.
+    보내는 동안에는 DB 트랜잭션을 열어 두지 않는다.
     """
     if not settings.contact_send_enabled:
         return {"skipped": "disabled"}
@@ -474,28 +498,47 @@ async def dispatch_contacts(
     today = outbox.day_start(now)
     for req_id, vendor_id, channel, body in due:
         target = await directory_service.contact_target(s, vendor_id, channel)
-        if isinstance(target, str):  # 수신거부 · 동의 철회
-            await _move_contact(s, req_id, to="blocked", now=now, reason=target)
-            await s.commit()
-            seen["blocked"] += 1
+        if isinstance(target, str):  # 수신거부 · 출처에서 빠짐 · 동의 철회
+            moved = await _try_move_contact(s, req_id, to="blocked", now=now, reason=target)
+            seen["blocked" if moved else "taken"] += 1
             continue
-        over = await repo.sent_since(s, vendor_id, today) >= settings.contact_daily_per_vendor
-        await s.rollback()
-        if over:
+        # 업체마다 줄을 세워 오늘 보낸 수를 세고 선점까지 한 트랜잭션에 한다 (겹쳐도 한도를 넘지 않게)
+        await repo.lock(s, f"contact:vendor:{vendor_id}")
+        if await repo.claimed_since(s, vendor_id, today) >= settings.contact_daily_per_vendor:
+            await s.rollback()
             seen["deferred"] += 1
+            continue
+        claim = {"claimed_at": now, "sender": sender.name}
+        if not await _try_move_contact(s, req_id, to="sending", now=now, values=claim):
+            seen["taken"] += 1  # 다른 작업이 먼저 가져갔다
             continue
         link = outbox.optout_url(settings.web_url, target.optout_token)
         text = outbox.compose(
             body, sender_contact=settings.contact_sender_contact, optout_link=link
         )
+        msg = Outgoing(channel=target.channel, to=target.value, text=text)
         try:
-            await sender.send(Outgoing(channel=target.channel, to=target.value, text=text))
+            await sender.send(msg, idempotency_key=str(req_id))
         except SendError:
-            await _move_contact(s, req_id, to="failed", now=now, reason="send_error")
-            seen["failed"] += 1
+            to, values, reason = "failed", {}, "send_error"
         else:
-            sent = {"sent_at": now, "sender": sender.name}
-            await _move_contact(s, req_id, to="sent", now=now, values=sent)
-            seen["sent"] += 1
-        await s.commit()
+            to, values, reason = ("test_sent" if sender.test else "sent"), {"sent_at": now}, None
+        if await _try_move_contact(s, req_id, to=to, now=now, reason=reason, values=values):
+            seen[to] += 1
+        else:  # 그사이 멈춘 발송으로 정리됐다 (이력에 stuck으로 남아 있다)
+            log.warning("대신 연락 결과를 남기지 못했어요 (이미 정리됨): %s", to)
+            seen["late"] += 1
     return dict(seen)
+
+
+async def fail_stuck_contacts(s: AsyncSession, *, now: datetime) -> dict[str, int]:
+    """sending에 STUCK_AFTER보다 오래 멈춘 대신 연락을 failed(이유 stuck, 확인 필요)로 돌린다.
+
+    보냈는지 모르므로 자동으로 다시 보내지 않는다. 사람이 발송사 기록을 보고 판단한다.
+    """
+    ids = await repo.stuck_contacts(s, now - STUCK_AFTER)
+    await s.rollback()
+    moved = 0
+    for req_id in ids:
+        moved += await _try_move_contact(s, req_id, to="failed", now=now, reason="stuck")
+    return {"stuck": moved}

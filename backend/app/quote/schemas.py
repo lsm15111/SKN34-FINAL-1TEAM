@@ -38,7 +38,9 @@ class ContactRequestOut(BaseModel):
     trade: str
     vendor_id: uuid.UUID
     channel: Literal["sms", "email", "form"]
-    status: Literal["draft", "queued", "sent", "failed", "blocked"]
+    status: Literal["draft", "queued", "sending", "sent", "test_sent", "failed", "blocked"] = Field(
+        description="test_sent = 시험 발송(기록만, 실제로 보내지 않음). sent는 실제 발송만"
+    )
     send_enabled: bool
     notice: str
 

@@ -3,6 +3,8 @@
 - 이메일 · 전화번호는 모으지 않는다. mailto · tel 링크와 '@'가 든 주소는 버리고, 페이지 내용은 두지 않는다.
 - 긁기 금지 도메인은 robots.txt도 읽지 않는다. 그 주소를 링크로 보여 주는 것은 괜찮다 (읽지 않으므로).
 - 내부 주소(사설 · 루프백 IP)와 80 · 443 밖의 포트는 읽지 않는다. 서버 안쪽(클라우드 메타데이터 등)을 찌르지 않게.
+  이름은 요청마다(넘겨주기 포함) 한 번만 풀고 확인한 IP로 바로 접속한다. 이름은 Host 머리글과 TLS SNI로만
+  보낸다. 확인한 뒤 DNS 답이 바뀌어도(DNS rebinding) 다른 주소에 닿지 않는다.
 - 요청마다 간격을 두고, robots.txt의 Crawl-delay가 더 길면 그것을 따른다. robots.txt를 못 읽으면 읽지 않는다.
 """
 
@@ -71,6 +73,15 @@ class SiteLinks:
     quote_url: str | None = None
 
 
+@dataclass(frozen=True)
+class _Pinned:
+    """확인한 IP로 고정한 요청 하나"""
+
+    url: str  # 호스트 자리에 확인한 IP
+    host: str  # Host 머리글 (원래 이름[:포트])
+    sni: str  # TLS 인증서를 확인할 이름
+
+
 def is_blocked(host: str | None) -> bool:
     h = (host or "").lower().rstrip(".")
     return not h or any(h == d or h.endswith("." + d) for d in BLOCKED_DOMAINS)
@@ -79,6 +90,13 @@ def is_blocked(host: str | None) -> bool:
 async def _resolve(host: str, port: int) -> list[str]:
     infos = await asyncio.get_running_loop().getaddrinfo(host, port, type=socket.SOCK_STREAM)
     return [info[4][0] for info in infos]
+
+
+def _ip(addr: str) -> ipaddress.IPv4Address | ipaddress.IPv6Address:
+    ip = ipaddress.ip_address(addr.split("%")[0])  # IPv6 영역 표시(%eth0)는 뗀다
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped:
+        return ip.ipv4_mapped  # ::ffff:127.0.0.1 → 127.0.0.1
+    return ip
 
 
 def _decode(body: bytes, ctype: str) -> str:
@@ -173,31 +191,56 @@ class SiteChecker:
                 await self._sleep(wait)
         self._last = self._clock()
 
-    async def _safe(self, url: str) -> Status | None:
-        """읽으면 안 되는 주소면 그 이유"""
-        parts = urlsplit(url)
-        if parts.scheme not in ("http", "https") or parts.username or parts.password:
-            return "unsafe"
-        if is_blocked(parts.hostname):
-            return "blocked"
+    async def _addresses(self, name: str, port: int) -> list[str]:
         try:
-            port = parts.port or (443 if parts.scheme == "https" else 80)
+            return [str(ipaddress.ip_address(name))]  # IP로 적은 주소는 풀지 않는다
         except ValueError:
+            return await self._resolve(name, port)
+
+    async def _pin(self, url: str) -> _Pinned | Status:
+        """읽어도 되는 주소면 확인한 IP로 고정한 요청, 아니면 그 이유.
+
+        이름을 풀어 나온 주소가 모두 공인 IP일 때만 그중 하나로 고정한다. 접속은 그 IP로만 한다.
+        """
+        try:
+            u = httpx2.URL(url)
+        except httpx2.InvalidURL:
             return "unsafe"
+        if u.scheme not in ("http", "https") or u.userinfo:
+            return "unsafe"
+        if is_blocked(u.host):
+            return "blocked"
+        port = u.port or (443 if u.scheme == "https" else 80)
         if port not in (80, 443):
             return "unsafe"
+        name = u.raw_host.decode("ascii")  # 한글 도메인은 punycode로
         try:
-            addrs = await self._resolve(parts.hostname or "", port)
+            addrs = await self._addresses(name, port)
         except OSError:
             return "error"
-        ok = addrs and all(ipaddress.ip_address(a.split("%")[0]).is_global for a in addrs)
-        return None if ok else "unsafe"
+        try:
+            ips = [_ip(a) for a in addrs]
+        except ValueError:
+            return "unsafe"
+        if not ips or not all(ip.is_global for ip in ips):
+            return "unsafe"
+        pinned = str(u.copy_with(host=str(ips[0])))
+        return _Pinned(url=pinned, host=u.netloc.decode("ascii"), sni=name)
 
-    async def _get(self, url: str, limit: int, delay: float) -> tuple[int, bytes, str, str]:
-        """(상태, 본문 앞부분, Content-Type, Location). 본문은 limit 바이트까지만 읽는다."""
+    async def _get(self, t: _Pinned, limit: int, delay: float) -> tuple[int, bytes, str, str]:
+        """(상태, 본문 앞부분, Content-Type, Location). 본문은 limit 바이트까지만 읽는다.
+
+        연결은 확인한 IP로만 한다. 같은 IP를 쓰는 다른 사이트와 연결이 섞이지 않게 연결을 다시 쓰지 않는다.
+        """
         await self._pace(delay)
-        headers = {"Accept": "text/html, */*;q=0.1"}
-        async with self.http.stream("GET", url, headers=headers, follow_redirects=False) as r:
+        headers = {"Accept": "text/html, */*;q=0.1", "Host": t.host, "Connection": "close"}
+        async with self.http.stream(
+            "GET",
+            t.url,
+            headers=headers,
+            extensions={"sni_hostname": t.sni},
+            follow_redirects=False,
+        ) as r:
             if r.status_code in _REDIRECT:
                 return r.status_code, b"", "", r.headers.get("location", "")
             body = bytearray()
@@ -217,9 +260,10 @@ class SiteChecker:
         target = origin + "/robots.txt"
         try:
             for _ in range(MAX_HOPS + 1):
-                if await self._safe(target) is not None:
+                pinned = await self._pin(target)  # 넘겨주기마다 다시 확인하고 고정한다
+                if isinstance(pinned, str):
                     break
-                status, body, _, location = await self._get(target, ROBOTS_LIMIT, self.interval)
+                status, body, _, location = await self._get(pinned, ROBOTS_LIMIT, self.interval)
                 if status in _REDIRECT and location:
                     target = urljoin(target, location)
                     continue
@@ -241,9 +285,9 @@ class SiteChecker:
     async def check(self, homepage: str) -> SiteLinks:
         url = homepage
         for _ in range(MAX_HOPS + 1):
-            bad = await self._safe(url)
-            if bad is not None:
-                return SiteLinks(bad)
+            pinned = await self._pin(url)  # 넘겨주기마다 다시 확인하고 고정한다
+            if isinstance(pinned, str):
+                return SiteLinks(pinned)
             rp = await self._robots_for(url)
             if rp is None or not rp.can_fetch(BOT, url):
                 return SiteLinks("robots")
@@ -251,7 +295,7 @@ class SiteChecker:
             if delay > MAX_CRAWL_DELAY:
                 return SiteLinks("robots")
             try:
-                status, body, ctype, location = await self._get(url, PAGE_LIMIT, delay)
+                status, body, ctype, location = await self._get(pinned, PAGE_LIMIT, delay)
             except httpx2.HTTPError:
                 return SiteLinks("error")
             if status in _REDIRECT and location:

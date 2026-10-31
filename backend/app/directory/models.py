@@ -108,6 +108,9 @@ class ExtVendor(Base):
     # 업체가 공지한 출장(방문) 비용, 원. 0이면 무료라고 공지한 것, 비어 있으면 모름
     visit_fee: Mapped[int | None] = mapped_column(BigInteger)
     fetched_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    # 출처에서 빠진 때 (KISCON 말소 · 폐업 · 양도). 동의 · 연락 기록을 지키려고 행은 지우지 않고
+    # 후보 · 연락에서만 뺀다. 출처에 다시 나오면 비운다
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     opted_out: Mapped[bool] = mapped_column(Boolean, default=False, server_default=false())
     # 수신거부 링크에 넣는 무작위 값. 응답에 내보내지 않는다
     optout_token: Mapped[str] = mapped_column(String(64), unique=True)
@@ -118,7 +121,10 @@ class ExtVendor(Base):
 
 
 class ExtVendorContact(Base):
-    """외부 업체가 믿집의 연락을 받겠다고 동의해 준 연락처. 자동으로 모은 연락처는 두지 않는다."""
+    """외부 업체가 믿집의 연락을 받겠다고 동의해 준 연락처. 자동으로 모은 연락처는 두지 않는다.
+
+    동의 증빙이라 업체 행과 함께 지워지지 않는다 (FK RESTRICT: 연락처가 있는 업체 행은 지울 수 없다).
+    """
 
     __tablename__ = "ext_vendor_contacts"
     __table_args__ = (
@@ -136,7 +142,7 @@ class ExtVendorContact(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
     vendor_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("ext_vendors.id", ondelete="CASCADE"), index=True
+        ForeignKey("ext_vendors.id", ondelete="RESTRICT"), index=True
     )
     channel: Mapped[str] = mapped_column(String(5))
     value: Mapped[str] = mapped_column(String(300))

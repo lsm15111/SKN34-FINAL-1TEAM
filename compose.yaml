@@ -37,6 +37,8 @@ x-api-env: &api-env
   CONTACT_DAILY_PER_VENDOR: ${CONTACT_DAILY_PER_VENDOR:-2}
   CONTACT_SENDER_CONTACT: ${CONTACT_SENDER_CONTACT:-}
   WEB_URL: ${WEB_URL:-http://localhost:3000}
+  # worker 주기 작업 (false면 모두 끈다)
+  CRON_ENABLED: ${CRON_ENABLED:-true}
 
 services:
   db:

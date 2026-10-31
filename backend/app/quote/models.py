@@ -18,8 +18,13 @@ from app.db import Base
 from app.shared.ids import uuid7
 
 QUOTE_STATUSES = ("requested", "viewed")
-CONTACT_STATUSES = ("draft", "queued", "sent", "failed", "blocked")
-_CONTACT_IN = "('draft', 'queued', 'sent', 'failed', 'blocked')"
+CONTACT_STATUSES = ("draft", "queued", "sending", "sent", "test_sent", "failed", "blocked")
+_CONTACT_IN = "('draft', 'queued', 'sending', 'sent', 'test_sent', 'failed', 'blocked')"
+# 보내려고 선점한 뒤의 상태. 보낸 쪽(sender)과 선점한 때(claimed_at)가 있다
+_CLAIMED_IN = "('sending', 'sent', 'test_sent', 'failed')"
+# 이력의 이유: 고객 동의 · 수신거부 · 동의 연락처 없음 · 출처에서 빠진 업체 · 발송 오류 ·
+# sending에 오래 멈춤(보냈는지 모름)
+_REASONS_IN = "('consent', 'opted_out', 'no_contact', 'closed', 'send_error', 'stuck')"
 
 
 class QuoteRequest(Base):
@@ -78,6 +83,8 @@ class ContactRequest(Base):
     """외부 업체에 믿집이 대신 보내는 가견적 요청 (아웃박스). 기능 플래그가 꺼져 있으면 queued에서 멈춘다.
 
     고객이 수신 업체 · 보낼 내용에 동의한 때를 남긴다. 받는 곳은 업체가 동의해 준 연락처뿐이다.
+    상태: draft → queued → sending(보내기 전에 선점) → sent · test_sent(시험 발송) · failed, queued → blocked.
+    sending에 멈춘 것은 다시 보내지 않고 failed(이유 stuck, 확인 필요)로 돌린다.
     """
 
     __tablename__ = "contact_requests"
@@ -92,8 +99,14 @@ class ContactRequest(Base):
         CheckConstraint(f"status in {_CONTACT_IN}", name="status"),
         CheckConstraint("channel in ('sms', 'email', 'form')", name="channel"),
         CheckConstraint("length(btrim(body)) between 10 and 800", name="body"),
-        CheckConstraint("(status = 'sent') = (sent_at is not null)", name="sent"),
-        CheckConstraint("(status = 'sent') = (sender is not null)", name="sender"),
+        CheckConstraint("(status in ('sent', 'test_sent')) = (sent_at is not null)", name="sent"),
+        CheckConstraint(f"(status in {_CLAIMED_IN}) = (sender is not null)", name="sender"),
+        CheckConstraint(f"(status in {_CLAIMED_IN}) = (claimed_at is not null)", name="claimed"),
+        # 기록만 하는 dry_run이 '보낸' 것은 test_sent, 실제 발송만 sent (둘이 섞이지 않게)
+        CheckConstraint(
+            "status not in ('sent', 'test_sent') or (status = 'test_sent') = (sender = 'dry_run')",
+            name="test_sent",
+        ),
         # 지금 보내는 쪽은 보내지 않고 기록만 하는 dry_run 하나뿐이다
         CheckConstraint("sender is null or sender in ('dry_run')", name="sender_kind"),
         Index("ix_contact_requests_customer_day", "customer_id", "created_at"),
@@ -104,12 +117,15 @@ class ContactRequest(Base):
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
     project_id: Mapped[uuid.UUID] = mapped_column()
     trade: Mapped[str] = mapped_column(String(10))
-    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ext_vendors.id", ondelete="CASCADE"))
+    # 보낸 기록 · 고객 동의 증빙이라 업체 행이 지워져도 따라 지우지 않는다 (RESTRICT)
+    vendor_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ext_vendors.id", ondelete="RESTRICT"))
     channel: Mapped[str] = mapped_column(String(5))
     body: Mapped[str] = mapped_column(Text)
     consented_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     status: Mapped[str] = mapped_column(String(10), default="draft", server_default="draft")
     sender: Mapped[str | None] = mapped_column(String(10))
+    # 보내려고 선점한 때 (queued → sending). 오래 지나도 sending이면 멈춘 것으로 본다
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -121,10 +137,7 @@ class ContactRequestEvent(Base):
     __table_args__ = (
         CheckConstraint(f"from_status is null or from_status in {_CONTACT_IN}", name="from_status"),
         CheckConstraint(f"to_status in {_CONTACT_IN}", name="to_status"),
-        CheckConstraint(
-            "reason is null or reason in ('consent', 'opted_out', 'no_contact', 'send_error')",
-            name="reason",
-        ),
+        CheckConstraint(f"reason is null or reason in {_REASONS_IN}", name="reason"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
