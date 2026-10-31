@@ -7,7 +7,14 @@ from app.auth.deps import require_role
 from app.auth.models import User
 from app.db import get_session
 from app.quote import service
-from app.quote.schemas import InboxItemOut, QuoteRequestIn, QuoteRequestOut, SourcingOut
+from app.quote.schemas import (
+    ContactRequestIn,
+    ContactRequestOut,
+    InboxItemOut,
+    QuoteRequestIn,
+    QuoteRequestOut,
+    SourcingOut,
+)
 from app.shared import ratelimit
 
 router = APIRouter(tags=["가견적"])
@@ -54,6 +61,26 @@ async def create_quote_request(
         "가견적 요청을 너무 많이 보냈어요. 잠시 뒤에 다시 해 주세요.",
     )
     return await service.create_quote_request(s, user, project_id, data)
+
+
+@router.post(
+    "/contact-requests",
+    status_code=201,
+    response_model=ContactRequestOut,
+    summary="외부 업체에 믿집이 대신 가견적 요청 (동의 필수, 꺼져 있으면 queued에서 멈춤)",
+)
+async def create_contact_request(
+    data: ContactRequestIn,
+    user: User = Depends(customer_only),
+    s: AsyncSession = Depends(get_session),
+) -> ContactRequestOut:
+    await ratelimit.hit(
+        ratelimit.key("contact-request", str(user.id)),
+        20,
+        3600,
+        "대신 요청을 너무 많이 보냈어요. 잠시 뒤에 다시 해 주세요.",
+    )
+    return await service.create_contact_request(s, user, data)
 
 
 @router.get(

@@ -148,6 +148,40 @@ async def channels_of(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UU
     return {k: sorted(v) for k, v in out.items()}
 
 
+async def get(s: AsyncSession, vendor_id: uuid.UUID) -> ExtVendor | None:
+    return await s.get(ExtVendor, vendor_id)
+
+
+async def by_token(s: AsyncSession, token: str) -> ExtVendor | None:
+    q = select(ExtVendor).where(ExtVendor.optout_token == token)
+    return (await s.execute(q)).scalar_one_or_none()
+
+
+async def contacts_of(s: AsyncSession, vendor_id: uuid.UUID) -> list[tuple[str, str]]:
+    """(수단, 값). 보내기 직전과 수신거부 때만 읽는다."""
+    q = (
+        select(ExtVendorContact.channel, ExtVendorContact.value)
+        .where(ExtVendorContact.vendor_id == vendor_id)
+        .order_by(ExtVendorContact.consented_at)
+    )
+    return [(c, v) for c, v in (await s.execute(q)).all()]
+
+
+async def add_optouts(
+    s: AsyncSession, hashes: Sequence[str], *, vendor_id: uuid.UUID, via: str
+) -> None:
+    rows = [{"key_hash": h, "vendor_id": vendor_id, "via": via} for h in hashes]
+    await s.execute(insert(ContactOptout).values(rows).on_conflict_do_nothing())
+
+
+async def opt_out(s: AsyncSession, vendor_id: uuid.UUID, *, now: datetime) -> None:
+    """수신거부로 표시하고 동의 연락처는 지운다 (동의를 거둔 것으로 본다)."""
+    await s.execute(delete(ExtVendorContact).where(ExtVendorContact.vendor_id == vendor_id))
+    await s.execute(
+        update(ExtVendor).where(ExtVendor.id == vendor_id).values(opted_out=True, updated_at=now)
+    )
+
+
 async def biz_nos_due(s: AsyncSession, before: datetime, limit: int) -> list[str]:
     """국세청 상태를 확인할 사업자번호: 아직 안 봤거나 before보다 오래전에 본 것"""
     q = (

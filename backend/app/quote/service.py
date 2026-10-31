@@ -4,7 +4,8 @@
 """
 
 import uuid
-from collections import defaultdict
+from collections import Counter, defaultdict
+from datetime import datetime
 
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,10 +18,13 @@ from app.directory.industry import TRADE_LABEL
 from app.directory.service import SOURCE_LABEL, ExtCard
 from app.project import service as project_service
 from app.project.schemas import ProjectOut
+from app.quote import outbox
 from app.quote import repository as repo
-from app.quote.models import QuoteRequest, QuoteRequestEvent
+from app.quote.models import ContactRequest, ContactRequestEvent, QuoteRequest, QuoteRequestEvent
 from app.quote.schemas import (
     CandidateOut,
+    ContactRequestIn,
+    ContactRequestOut,
     CostOut,
     InboxItemOut,
     LinksOut,
@@ -30,6 +34,7 @@ from app.quote.schemas import (
     SourceOut,
     SourcingOut,
 )
+from app.quote.sender import Outgoing, Sender, SendError
 from app.quote.sourcing import (
     ROUTE_LABEL,
     Facts,
@@ -48,8 +53,25 @@ from app.vendor.schemas import VendorCard
 MAX_EXT = 12  # 외부 업체 후보 최대 수
 NO_CANDIDATES = "이 지역 · 공정에 맞는 업체를 아직 찾지 못했어요."
 QUOTE_LABEL = {"requested": "요청했어요", "viewed": "업체가 확인했어요"}
-# 가견적 요청 상태 전이: 바뀔 상태 → 바꿀 수 있는 지금 상태
-QUOTE_MOVES: dict[str, tuple[str, ...]] = {"viewed": ("requested",)}
+# 상태 전이: 바뀔 상태 → 바꿀 수 있는 지금 상태 (하나뿐이라 이력의 이전 상태가 정해진다)
+QUOTE_MOVES: dict[str, tuple[str]] = {"viewed": ("requested",)}
+CONTACT_MOVES: dict[str, tuple[str]] = {
+    "queued": ("draft",),
+    "sent": ("queued",),
+    "failed": ("queued",),
+    "blocked": ("queued",),
+}
+CONTACT_LABEL = {
+    "draft": "작성 중이에요",
+    "queued": "보내기 전이에요",
+    "sent": "보냈어요",
+    "failed": "보내지 못했어요",
+    "blocked": "보낼 수 없는 업체예요",
+}
+DRY_RUN_LABEL = "시험으로 기록만 했어요 (실제로 보내지 않았어요)"
+OFF_NOTICE = "대신 요청은 아직 꺼져 있어요. 요청은 저장해 두었고, 켜지면 보내요."
+NIGHT_NOTICE = "밤 9시부터 아침 8시까지는 보내지 않아요. 아침에 보내요."
+QUEUED_NOTICE = "곧 보내요."
 BIZ_LABEL = {
     "active": "계속 사업 중 (국세청 확인)",
     "suspended": "휴업 중 (국세청 확인)",
@@ -156,6 +178,9 @@ async def _states(s: AsyncSession, project_id: uuid.UUID) -> dict[uuid.UUID, lis
         out[vendor_id].append(
             RequestStateOut(trade=trade, status=status, label=QUOTE_LABEL[status])
         )
+    for vendor_id, trade, status, sender in await repo.contact_states(s, project_id):
+        label = DRY_RUN_LABEL if sender == "dry_run" else CONTACT_LABEL[status]
+        out[vendor_id].append(RequestStateOut(trade=trade, status=status, label=label))
     return out
 
 
@@ -252,3 +277,147 @@ async def _move_quote(s: AsyncSession, request_id: uuid.UUID, *, to: str, actor:
             request_id=request_id, from_status=allowed[0], to_status=to, actor_id=actor, at=now
         )
     )
+
+
+# ── 외부 업체 대신 연락 (아웃박스) ──
+
+
+async def _move_contact(
+    s: AsyncSession,
+    request_id: uuid.UUID,
+    *,
+    to: str,
+    now: datetime,
+    reason: str | None = None,
+    actor: uuid.UUID | None = None,
+    values: dict | None = None,
+) -> None:
+    """대신 연락 상태를 바꾸는 한 곳: 허용 전이 → 조건부 UPDATE(1행이 아니면 409) → 같은 트랜잭션에 이력."""
+    allowed = CONTACT_MOVES[to]
+    if not await repo.move_contact(s, request_id, to=to, allowed_from=allowed, values=values or {}):
+        await s.rollback()
+        raise AppError(409, "invalid_state", "이미 처리한 요청이에요.")
+    s.add(
+        ContactRequestEvent(
+            request_id=request_id,
+            from_status=allowed[0],
+            to_status=to,
+            reason=reason,
+            actor_id=actor,
+            at=now,
+        )
+    )
+
+
+async def create_contact_request(
+    s: AsyncSession, user: User, data: ContactRequestIn
+) -> ContactRequestOut:
+    """고객이 동의한 글을 아웃박스에 넣는다 (draft → queued). 꺼져 있으면 보내지 않고 queued에 둔다."""
+    p = await project_service.get_for(s, user, data.project_id)  # 남의 프로젝트는 404
+    if data.trade not in project_trades(p):
+        raise AppError(422, "trade", "이 프로젝트에 없는 공정이에요.")
+    card = await directory_service.card(s, data.vendor_id)
+    if card is None or card.sido != p.sido or data.trade not in card.trades:
+        raise AppError(422, "vendor", "이 업체에는 대신 요청할 수 없어요.")
+    if card.opted_out:
+        raise AppError(422, "opted_out", "연락을 원하지 않는 업체예요.")
+    channel = directory_service.best_channel(card.channels)
+    if channel is None:
+        raise AppError(
+            422, "no_contact", "연락처에 동의한 업체가 아니에요. 업체 링크나 전화를 써 주세요."
+        )
+    now = now_utc()
+    # 같은 고객 · 같은 업체의 요청을 줄 세워 하루 한도를 정확히 센다 (늘 고객 → 업체 순으로 잠근다)
+    await repo.lock(s, f"contact:customer:{user.id}")
+    await repo.lock(s, f"contact:vendor:{card.id}")
+    today = outbox.day_start(now)
+    if (
+        await repo.contacts_since(s, today, customer_id=user.id)
+        >= settings.contact_daily_per_customer
+    ):
+        raise AppError(
+            429, "contact_limit", "오늘은 대신 요청을 더 보낼 수 없어요. 내일 다시 해 주세요."
+        )
+    if await repo.contacts_since(s, today, vendor_id=card.id) >= settings.contact_daily_per_vendor:
+        raise AppError(
+            429, "contact_limit", "이 업체에는 오늘 더 요청할 수 없어요. 내일 다시 해 주세요."
+        )
+    req = ContactRequest(
+        customer_id=user.id,
+        project_id=p.id,
+        trade=data.trade,
+        vendor_id=card.id,
+        channel=channel,
+        body=data.body,
+        consented_at=now,
+        status="draft",
+        created_at=now,
+    )
+    try:
+        s.add(req)
+        await s.flush()
+        s.add(ContactRequestEvent(request_id=req.id, to_status="draft", actor_id=user.id, at=now))
+        await _move_contact(s, req.id, to="queued", now=now, reason="consent", actor=user.id)
+        await s.commit()
+    except IntegrityError as exc:  # 같은 업체 · 공정에 두 번 → 고유 제약
+        await s.rollback()
+        raise AppError(409, "already_requested", "이미 이 업체에 대신 요청했어요.") from exc
+    enabled = settings.contact_send_enabled
+    notice = OFF_NOTICE if not enabled else NIGHT_NOTICE if outbox.is_night(now) else QUEUED_NOTICE
+    return ContactRequestOut(
+        id=req.id,
+        project_id=p.id,
+        trade=req.trade,
+        vendor_id=card.id,
+        channel=channel,
+        status="queued",
+        send_enabled=enabled,
+        notice=notice,
+    )
+
+
+async def dispatch_contacts(
+    s: AsyncSession, sender: Sender, *, now: datetime, limit: int = 50
+) -> dict[str, int | str]:
+    """queued인 대신 연락을 보낸다. 꺼져 있거나 · 발신자 연락처가 없거나 · 밤이면 아무것도 안 한다.
+
+    업체마다 보내기 직전에 수신거부 · 동의를 다시 보고, 업체당 하루 한도를 넘으면 다음 날로 미룬다.
+    보내는 동안에는 DB 트랜잭션을 열어 두지 않는다. 이 작업은 worker 하나에서만 돈다 (중복 발송 방지).
+    """
+    if not settings.contact_send_enabled:
+        return {"skipped": "disabled"}
+    if not settings.contact_sender_contact:
+        return {"skipped": "no_sender_contact"}
+    if outbox.is_night(now):
+        return {"skipped": "night"}
+    due = await repo.queued_contacts(s, limit)
+    await s.rollback()
+    seen: Counter[str] = Counter()
+    today = outbox.day_start(now)
+    for req_id, vendor_id, channel, body in due:
+        target = await directory_service.contact_target(s, vendor_id, channel)
+        if isinstance(target, str):  # 수신거부 · 동의 철회
+            await _move_contact(s, req_id, to="blocked", now=now, reason=target)
+            await s.commit()
+            seen["blocked"] += 1
+            continue
+        over = await repo.sent_since(s, vendor_id, today) >= settings.contact_daily_per_vendor
+        await s.rollback()
+        if over:
+            seen["deferred"] += 1
+            continue
+        link = outbox.optout_url(settings.web_url, target.optout_token)
+        text = outbox.compose(
+            body, sender_contact=settings.contact_sender_contact, optout_link=link
+        )
+        try:
+            await sender.send(Outgoing(channel=target.channel, to=target.value, text=text))
+        except SendError:
+            await _move_contact(s, req_id, to="failed", now=now, reason="send_error")
+            seen["failed"] += 1
+        else:
+            sent = {"sent_at": now, "sender": sender.name}
+            await _move_contact(s, req_id, to="sent", now=now, values=sent)
+            seen["sent"] += 1
+        await s.commit()
+    return dict(seen)

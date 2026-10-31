@@ -17,8 +17,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.directory import client
 from app.directory import repository as repo
+from app.directory.models import ExtVendor
 from app.directory.site import SiteChecker
 from app.directory.sources import kiscon_events, kiscon_row, read_sangga_csv, replay
+from app.shared.errors import AppError
 
 RECHECK = timedelta(days=30)  # 국세청 상태 · 홈페이지를 다시 보는 간격
 PLACE_URL = "https://place.map.kakao.com/{}"
@@ -53,6 +55,41 @@ class ExtCard:
     opted_out: bool
 
 
+CHANNEL_ORDER = ("sms", "email", "form")  # 대신 연락할 때 고르는 순서
+
+
+@dataclass(frozen=True)
+class Target:
+    """대신 연락을 보낼 곳. 보내기 직전에만 만든다."""
+
+    channel: str
+    value: str
+    optout_token: str
+
+
+def _card(r: ExtVendor, trades: Sequence[str] | None, channels: list[str]) -> ExtCard:
+    return ExtCard(
+        id=r.id,
+        name=r.name,
+        source=r.source,
+        trades=[t for t in r.trades if trades is None or t in trades],
+        industries=list(r.industries),
+        sido=r.sido,
+        sgg=r.sgg,
+        reg_kind=r.reg_kind,
+        biz_status=r.biz_status,
+        phone=r.phone,
+        homepage=r.homepage,
+        portfolio_urls=list(r.portfolio_urls),
+        quote_url=r.quote_url,
+        place_url=PLACE_URL.format(r.place_ref) if r.place_ref else None,
+        visit_fee=r.visit_fee,
+        fetched_at=r.fetched_at,
+        channels=channels,
+        opted_out=r.opted_out,
+    )
+
+
 async def candidates(
     s: AsyncSession, trades: Sequence[str], sido: str, sgg: str, *, limit: int = 12
 ) -> list[ExtCard]:
@@ -63,32 +100,48 @@ async def candidates(
     seen: set[tuple[str, str | None]] = set()
     for r in rows:
         key = (re.sub(r"\W", "", r.name), r.sgg)
-        if key in seen:
-            continue
-        seen.add(key)
-        out.append(
-            ExtCard(
-                id=r.id,
-                name=r.name,
-                source=r.source,
-                trades=[t for t in r.trades if t in trades],
-                industries=list(r.industries),
-                sido=r.sido,
-                sgg=r.sgg,
-                reg_kind=r.reg_kind,
-                biz_status=r.biz_status,
-                phone=r.phone,
-                homepage=r.homepage,
-                portfolio_urls=list(r.portfolio_urls),
-                quote_url=r.quote_url,
-                place_url=PLACE_URL.format(r.place_ref) if r.place_ref else None,
-                visit_fee=r.visit_fee,
-                fetched_at=r.fetched_at,
-                channels=channels.get(r.id, []),
-                opted_out=r.opted_out,
-            )
-        )
+        if key not in seen:
+            seen.add(key)
+            out.append(_card(r, trades, channels.get(r.id, [])))
     return out[:limit]
+
+
+async def card(s: AsyncSession, vendor_id: uuid.UUID) -> ExtCard | None:
+    r = await repo.get(s, vendor_id)
+    if r is None:
+        return None
+    return _card(r, None, (await repo.channels_of(s, [r.id])).get(r.id, []))
+
+
+def best_channel(channels: Sequence[str]) -> str | None:
+    return next((c for c in CHANNEL_ORDER if c in channels), None)
+
+
+async def contact_target(s: AsyncSession, vendor_id: uuid.UUID, channel: str) -> Target | str:
+    """보내기 직전에 다시 본다: 그 수단에 아직 동의가 있는지. 못 보내면 이유('opted_out' · 'no_contact')."""
+    r = await repo.get(s, vendor_id)
+    if r is None or r.opted_out:
+        return "opted_out"
+    got = dict(await repo.contacts_of(s, vendor_id))
+    if channel not in got:
+        return "no_contact"
+    return Target(channel=channel, value=got[channel], optout_token=r.optout_token)
+
+
+async def opt_out(s: AsyncSession, token: str, *, now: datetime) -> None:
+    """수신거부 링크. 업체를 목록에서 빼고 동의 연락처를 지운다. 다시 모아도 수신거부로 남는다."""
+    r = await repo.by_token(s, token)
+    if r is None:
+        raise AppError(404, "not_found", "수신거부 링크가 올바르지 않아요.")
+    contacts = await repo.contacts_of(s, r.id)
+    await repo.add_optouts(
+        s,
+        repo.identity_hashes(r.source, r.source_id, r.reg_no, contacts),
+        vendor_id=r.id,
+        via="link",
+    )
+    await repo.opt_out(s, r.id, now=now)
+    await s.commit()
 
 
 async def import_sangga_csv(s: AsyncSession, path: Path, *, now: datetime) -> dict[str, int]:

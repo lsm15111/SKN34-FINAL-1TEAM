@@ -1,10 +1,46 @@
+import re
 import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.quote.sourcing import CostKind, Route
+
+_LINK = re.compile(r"https?://|www\.", re.IGNORECASE)
+
+
+class ContactRequestIn(BaseModel):
+    """외부 업체에 믿집이 대신 보낼 가견적 요청. 고객이 받는 업체와 보낼 글에 동의해야 한다."""
+
+    project_id: uuid.UUID
+    trade: str = Field(min_length=1, max_length=10)
+    vendor_id: uuid.UUID = Field(description="외부 업체 id")
+    body: str = Field(max_length=800, description="업체에 보낼 글 (10자 이상, 링크 없이)")
+    consent: Literal[True] = Field(
+        description="받는 업체 · 보낼 글 · 믿집이 대신 보내는 것에 동의 (true만 받는다)"
+    )
+
+    @field_validator("body")
+    @classmethod
+    def _body(cls, v: str) -> str:
+        v = v.strip()
+        if len(v) < 10:
+            raise ValueError("요청 내용을 10자 이상 적어 주세요.")
+        if _LINK.search(v):
+            raise ValueError("링크는 넣을 수 없어요.")
+        return v
+
+
+class ContactRequestOut(BaseModel):
+    id: uuid.UUID
+    project_id: uuid.UUID
+    trade: str
+    vendor_id: uuid.UUID
+    channel: Literal["sms", "email", "form"]
+    status: Literal["draft", "queued", "sent", "failed", "blocked"]
+    send_enabled: bool
+    notice: str
 
 
 class CostOut(BaseModel):

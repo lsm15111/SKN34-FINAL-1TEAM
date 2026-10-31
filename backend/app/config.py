@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     crawl_timeout_s: float = 10.0
     # 외부 업체에 믿집이 대신 연락하기. 법무 검토 전에는 끈다 (끄면 요청은 queued에서 멈춘다)
     contact_send_enabled: bool = False
+    # 대신 연락 하루 한도 (서울 날짜): 고객 한 명이 만드는 요청 수, 업체 한 곳이 받는 요청 수
+    contact_daily_per_customer: int = 5
+    contact_daily_per_vendor: int = 2
+    # 대신 연락 메시지 끝에 밝힐 발신자(믿집) 연락처. 비어 있으면 켜져 있어도 보내지 않는다
+    contact_sender_contact: str = ""
+    # 수신거부 링크를 만들 웹 주소
+    web_url: str = "http://localhost:3000"
 
     @property
     def is_https(self) -> bool:

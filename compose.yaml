@@ -20,8 +20,12 @@ x-api-env: &api-env
   BOT_CONTACT_URL: ${BOT_CONTACT_URL:-}
   CRAWL_INTERVAL_S: ${CRAWL_INTERVAL_S:-3}
   CRAWL_TIMEOUT_S: ${CRAWL_TIMEOUT_S:-10}
-  # 외부 업체 대신 연락 (법무 검토 전에는 false)
+  # 외부 업체 대신 연락 (법무 검토 전에는 false), 하루 한도, 발신자 연락처, 수신거부 링크 주소
   CONTACT_SEND_ENABLED: ${CONTACT_SEND_ENABLED:-false}
+  CONTACT_DAILY_PER_CUSTOMER: ${CONTACT_DAILY_PER_CUSTOMER:-5}
+  CONTACT_DAILY_PER_VENDOR: ${CONTACT_DAILY_PER_VENDOR:-2}
+  CONTACT_SENDER_CONTACT: ${CONTACT_SENDER_CONTACT:-}
+  WEB_URL: ${WEB_URL:-http://localhost:3000}
 
 services:
   db:

@@ -11,6 +11,7 @@ from arq.connections import RedisSettings
 
 from app.config import settings
 from app.directory import tasks as directory_tasks
+from app.quote import tasks as quote_tasks
 
 
 async def ping(ctx: dict) -> str:
@@ -24,6 +25,7 @@ class WorkerSettings:
         directory_tasks.import_sangga_csv,
         directory_tasks.sync_kiscon,
         directory_tasks.verify_biz_status,
+        quote_tasks.dispatch_contact_requests,
         ping,
     ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
