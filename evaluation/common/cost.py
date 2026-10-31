@@ -44,30 +44,58 @@ class CallShape:
 
 
 # 도배 공정 의견: evaluation/dobae/results/20261031-{1645,1649,2013}의 공정 의견 호출 135번
-# (Opus 5.5 · effort medium). 입력 평균 353 (글자당 0.84) · 시스템 3,213~3,231 (글자당 1.32) ·
-# 출력 평균 1,260 (p90 1,424 · 최대 2,201). 5k 사례는 입력 글이 평균 468자라 입력을 390으로 잡는다
-# 목공 공정 의견 · 판정: 실측이 없어 도배 글자당 토큰 비율로 잡은 추정값. T1(공정마다 20개)에서 다시 잰다
-#   목공 입력 526자 · 시스템 3,183자 / 판정 시스템(기준표 + 지식) 3,412~4,038자 · 입력(공정 입력 + 의견 1,101자)
-# 라우터: 시스템(프롬프트 + 전 공정 칸 목록)이 기준 커밋 2,120자 · v5(10공정) 6,111자, 입력 평균 345자 (p90 414).
-#   v5 값으로 셈한다. 출력은 RouterOut JSON 약 120토큰 + effort low 생각을 300으로 가정
-# 전문가 답: 시스템(expert_v1 + 그 공정 지식)이 도배 2,230 · 목공 3,038 · 10공정 평균 3,051자, 입력(집 정보 + 질문)
-#   평균 116자. 출력은 300자 안 답 + effort low 생각을 400으로 가정. 판정: 기준표 + 지식 평균 4,181자,
-#   입력은 답 220자로 잡아 371자, 출력은 기준 4개 점수 · 이유 + effort low를 500으로 가정
+# (Opus 5.5 · effort medium). 입력 평균 353 (글자당 0.837) · 시스템 3,213~3,231 (글자당 1.315) ·
+# 출력 평균 1,260 (p90 1,424 · 최대 2,201). 10공정 5k 사례는 입력 글이 평균 492자라 입력을 410으로 잡는다
+# 다른 공정 · 판정: 실측이 없어 도배 글자당 토큰 비율로 잡은 추정값. T1(공정마다 20개)에서 다시 잰다
+#   입력 = 5k 사례 입력 글 평균 × 0.837, 시스템 = 공정 의견 시스템(v1 지시 + 지식) × 1.315,
+#   출력 = 1,260 + (평균 단계 수 - 도배 2.48) × 100 (단계 설명 한 줄)
+#   판정 입력 = 공정 입력 + 의견 글(도배 실측 1,101자 + 단계 차 × 75자) × 1.315, 시스템 = 기준표 + 지식,
+#   출력은 기준 4개 점수 · 이유 + effort low를 700으로 가정. "judge"는 10공정 평균 (판정 모양이 없는 공정)
+# 라우터: 시스템(v5 프롬프트 + 10공정 칸 목록) 6,111자, 입력(카드 + 대화) 10공정 사례 평균 452자 (p90 551).
+#   출력은 RouterOut JSON 약 120토큰 + effort low 생각을 300으로 가정
+# 전문가 답: 시스템(expert_v1 + 그 공정 지식)이 10공정 평균 3,051자 (도배 2,230 ~ 욕실 3,471), 입력(집 정보 + 질문)
+#   평균 127자. 출력은 300자 안 답 + effort low 생각을 400으로 가정. 판정: 기준표 + 지식 평균 4,181자,
+#   입력은 답 220자로 잡아 382자, 출력은 기준 4개 점수 · 이유 + effort low를 500으로 가정
+_PLAN = "추정: 도배 글자당 토큰 비율 · 10공정 5k 입력 글, 출력은 단계 수로 보정"
+_JUDGE = "추정: 도배 글자당 토큰 비율 · 기준표 + 그 공정 지식, 출력은 effort low 가정"
 SHAPES = {
-    "dobae": CallShape(390, 3231, 1260, "도배 실측 135회 평균, 입력은 5k 글자 수로 보정"),
-    "mokgong": CallShape(440, 4190, 1400, "추정: 도배 글자당 토큰 비율, 단계가 많아 출력 +10%"),
-    "judge": CallShape(1800, 4900, 700, "추정: 도배 글자당 토큰 비율, 출력은 effort low 가정"),
-    "router": CallShape(290, 8040, 300, "추정: v5 시스템 6,111자 · 입력 345자, 출력 effort low"),
+    "dobae": CallShape(410, 3231, 1260, "도배 실측 135회 평균, 입력은 10공정 5k 글자 수로 보정"),
+    "mokgong": CallShape(480, 4420, 1440, _PLAN),
+    "window": CallShape(530, 4540, 1360, _PLAN),
+    "electric": CallShape(470, 4400, 1320, _PLAN),
+    "bath": CallShape(730, 5050, 1460, _PLAN),
+    "tile": CallShape(490, 4870, 1420, _PLAN),
+    "kitchen": CallShape(560, 4530, 1560, _PLAN),
+    "paint": CallShape(550, 4870, 1490, _PLAN),
+    "film": CallShape(390, 4050, 1260, _PLAN),
+    "floor": CallShape(350, 4870, 1340, _PLAN),
+    "judge": CallShape(2070, 5570, 700, "추정: 10공정 공정 의견 판정 평균"),
+    "judge_dobae": CallShape(1860, 4490, 700, _JUDGE),
+    "judge_mokgong": CallShape(2100, 5550, 700, _JUDGE),
+    "judge_window": CallShape(2080, 5570, 700, _JUDGE),
+    "judge_electric": CallShape(1970, 5400, 700, _JUDGE),
+    "judge_bath": CallShape(2380, 6120, 700, _JUDGE),
+    "judge_tile": CallShape(2090, 5920, 700, _JUDGE),
+    "judge_kitchen": CallShape(2310, 5600, 700, _JUDGE),
+    "judge_paint": CallShape(2220, 5930, 700, _JUDGE),
+    "judge_film": CallShape(1840, 5140, 700, _JUDGE),
+    "judge_floor": CallShape(1880, 5940, 700, _JUDGE),
+    "router": CallShape(380, 8040, 300, "추정: v5 시스템 6,111자 · 입력 452자, 출력 effort low"),
     "expert": CallShape(
-        100, 4010, 400, "추정: 10공정 시스템 평균 3,051자 · 입력 116자, 답 300자 안"
+        110, 4010, 400, "추정: 10공정 시스템 평균 3,051자 · 입력 127자, 답 300자 안"
     ),
-    "judge_expert": CallShape(310, 5500, 500, "추정: 기준표 + 지식 평균 4,181자 · 입력 371자"),
+    "judge_expert": CallShape(320, 5500, 500, "추정: 기준표 + 지식 평균 4,181자 · 입력 382자"),
 }
 
 
 def shape(name: str) -> CallShape:
     """호출 토큰 모양. 실측 · 추정이 없는 공정 의견은 목공 값으로 셈한다"""
     return SHAPES.get(name) or SHAPES["mokgong"]
+
+
+def judge_shape(trade: str) -> str:
+    """공정 의견 판정 모양 이름 (공정마다 지식 길이가 달라 시스템이 다르다. 없으면 10공정 평균)"""
+    return f"judge_{trade}" if f"judge_{trade}" in SHAPES else "judge"
 
 
 TOKEN_KEYS = ("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens")
