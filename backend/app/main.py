@@ -11,6 +11,7 @@ from app import db, queue
 from app.account.router import router as account_router
 from app.auth.router import router as auth_router
 from app.config import settings
+from app.consult.router import router as consult_router
 from app.files.router import router as files_router
 from app.project.router import router as project_router
 from app.shared.errors import (
@@ -51,6 +52,7 @@ app.add_exception_handler(StarletteHTTPException, http_error_handler)
 ROUTERS = [
     account_router,
     auth_router,
+    consult_router,
     files_router,
     project_router,
     vendor_router,
