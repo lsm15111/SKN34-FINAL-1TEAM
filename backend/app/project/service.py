@@ -163,6 +163,12 @@ async def get_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> Project
     return await _out(s, p)
 
 
+async def read(s: AsyncSession, project_id: uuid.UUID) -> ProjectOut | None:
+    """권한 확인 없이 읽는다. 부르는 쪽이 먼저 확인한다 (예: 가견적 요청을 받은 업체만)."""
+    p = await repo.get(s, project_id)
+    return await _out(s, p) if p else None
+
+
 async def list_mine(s: AsyncSession, user: User) -> list[ProjectListItem]:
     rows = await repo.list_by_owner(s, user.id)
     trades = await repo.trades_of(s, [p.id for p in rows])

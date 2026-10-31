@@ -56,6 +56,35 @@ class CandidateOut(BaseModel):
     requests: list[RequestStateOut] = []
 
 
+class QuoteRequestIn(BaseModel):
+    trade: str = Field(min_length=1, max_length=10)
+    vendor_id: uuid.UUID
+    message: str = Field(default="", max_length=1000, description="업체에 남길 말 (선택)")
+
+
+class QuoteRequestOut(BaseModel):
+    id: uuid.UUID
+    trade: str
+    vendor_id: uuid.UUID
+    status: Literal["requested", "viewed"]
+    created_at: datetime
+
+
+class InboxItemOut(BaseModel):
+    """업체 받은편지함 한 줄. 고객 이름 · 연락처 · 동 · 호수는 없다."""
+
+    id: uuid.UUID
+    trade: str
+    trade_label: str
+    status: Literal["requested", "viewed"]
+    status_label: str
+    region: str
+    facts: list[str]
+    message: str
+    created_at: datetime
+    viewed_at: datetime | None
+
+
 class SourcingOut(BaseModel):
     project_id: uuid.UUID
     region: str
