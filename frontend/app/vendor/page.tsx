@@ -2,15 +2,21 @@ import Link from "next/link";
 import { SiteHeader } from "@/components/site/SiteHeader";
 import { VendorInbox } from "@/components/vendors/VendorInbox";
 import { getVendorInbox } from "@/lib/api/quote";
+import { getVendorProfile } from "@/lib/api/vendor";
+import { TRADE_KEYS } from "@/lib/labels";
 import { requireRole } from "@/lib/session";
+import { TRADE_LABEL } from "@/lib/types";
 
 export const metadata = { title: "업체 홈" };
 
-// 업체 홈. 가입 신청 뒤 승인 상태를 보이고, 승인되면 받은 가견적 요청을 보인다.
+// 업체 홈. 가입 신청 뒤 승인 상태를 보이고, 승인되면 업체 정보(공정 · 지역)와 받은 가견적 요청을 보인다.
 export default async function VendorHome() {
   const s = await requireRole("vendor", "/vendor");
   const st = s.vendorStatus;
   const inbox = st === "approved" ? await getVendorInbox() : null;
+  const profile = st === "approved" ? await getVendorProfile() : null;
+  const info = profile && profile !== "error" ? profile : null;
+  const listed = !!info && info.trades.length > 0 && info.areas.length > 0;
   return (
     <>
       <SiteHeader />
@@ -21,6 +27,19 @@ export default async function VendorHome() {
             <section className="mj-panel" aria-labelledby="st-h" style={{ borderColor: "var(--accent)", borderWidth: 2 }}>
               <h2 id="st-h" className="mj-h2">승인됐어요</h2>
               <p className="mj-sub">믿집 고객이 보낸 가견적 요청을 아래에서 볼 수 있어요. 가견적서 쓰기 화면은 다음에 열려요.</p>
+            </section>
+            <section className="mj-panel" aria-labelledby="pf-h">
+              <h2 id="pf-h" className="mj-h2">업체 정보</h2>
+              {listed && info ? (
+                <p className="mj-sub">맡는 공정 {TRADE_KEYS.filter((t) => info.trades.includes(t)).map((t) => TRADE_LABEL[t]).join(" · ")} · 일하는 지역 <span className="mj-num">{info.areas.length}</span>곳</p>
+              ) : info ? (
+                <p className="mj-notice mj-notice-warn"><span>공정 · 지역을 넣어야 고객 가견적 후보에 나와요.</span></p>
+              ) : (
+                <p className="mj-small">업체 정보를 불러오지 못했어요. 업체 정보 관리에서 다시 확인해 주세요.</p>
+              )}
+              <div className="mj-btn-row">
+                <Link href="/vendor/profile" className={`mj-btn ${listed ? "mj-btn-sec" : "mj-btn-pri"}`}>업체 정보 관리</Link>
+              </div>
             </section>
             <section aria-labelledby="in-h" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               <h2 id="in-h" className="mj-h2">받은 가견적 요청{inbox ? <span className="mj-num"> {inbox.length}건</span> : null}</h2>

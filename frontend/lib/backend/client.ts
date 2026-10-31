@@ -16,7 +16,7 @@ export function errorText(e: unknown) {
   return e instanceof ApiError ? e.message : "잠시 문제가 생겼어요. 다시 해 주세요.";
 }
 
-export async function call<T = unknown>(method: "GET" | "POST" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
+export async function call<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown): Promise<T> {
   const init: RequestInit = { method, credentials: "same-origin" };
   if (body instanceof FormData) init.body = body; // 경계값이 붙은 Content-Type은 브라우저가 정한다
   else if (body !== undefined) { init.body = JSON.stringify(body); init.headers = { "content-type": "application/json" }; }
