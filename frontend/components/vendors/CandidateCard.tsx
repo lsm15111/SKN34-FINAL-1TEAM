@@ -55,14 +55,14 @@ export function CandidateCard({ c, trade, projectId, facts, sent, onSent }: Prop
       {c.why ? <p className={s.why}><span className="mj-src">도우미 설명</span>{c.why}</p> : null}
 
       <dl className={s.info}>
-        <div><dt>가견적 비용</dt><dd><span className={`mj-badge ${COST_BADGE[c.cost.kind]}`}>{c.cost.label}</span></dd></div>
+        <div><dt>가견적 비용</dt><dd><span className={`mj-badge ${COST_BADGE[c.cost.kind]} ${s.wrap}`}>{c.cost.label}</span></dd></div>
         {c.registration ? <div><dt>등록 정보</dt><dd>{c.registration}</dd></div> : null}
         {c.biz_status ? <div><dt>사업자 상태</dt><dd>{c.biz_status}</dd></div> : null}
         <div><dt>출처</dt><dd>{c.source.label}{day ? ` · ${c.kind === "app" ? "승인한 날" : "모은 날"} ${day}` : ""}</dd></div>
       </dl>
       {chips.length ? (
         <ul className={s.states} aria-label="보낸 요청">
-          {chips.map((r) => <li key={r.trade} className="mj-badge mj-b-dark">{tradeName(r.trade)} · {r.label}</li>)}
+          {chips.map((r) => <li key={r.trade} className={`mj-badge mj-b-dark ${s.wrap}`}>{tradeName(r.trade)} · {r.label}</li>)}
         </ul>
       ) : null}
 
@@ -111,7 +111,7 @@ function AppRequest({ c, trade, projectId, done, onSent }: { c: Candidate; trade
   const result = useRef<HTMLParagraphElement>(null);
   useEffect(() => { if (open) (done ? result : ask).current?.focus(); }, [open, done]); // 보낸 뒤에는 결과 글로
 
-  if (done) return <p ref={result} tabIndex={-1} className={s.done} role="status"><span className="mj-badge mj-b-ok">{done}</span> 이 업체에 {tradeName(trade)} 가견적을 요청했어요.</p>;
+  if (done) return <p ref={result} tabIndex={-1} className={s.done} role="status"><span className={`mj-badge mj-b-in ${s.wrap}`}>{done}</span> 이 업체에 {tradeName(trade)} 가견적을 요청했어요.</p>;
 
   async function send() {
     setBusy(true);
@@ -168,7 +168,8 @@ function ProxyRequest({ c, trade, projectId, facts, done, onSent }: { c: Candida
   const [notice, setNotice] = useState("");
   const body = useRef<HTMLTextAreaElement>(null);
 
-  if (done) return <p className={s.done} role="status"><span className="mj-badge mj-b-ok">{done}</span> {notice}</p>;
+  // 상태 글은 API label 그대로 (보내기 전 · 보내는 중 · 시험 기록 · 실패 등). 영어 상태값은 보이지 않는다
+  if (done) return <p className={s.done} role="status"><span className={`mj-badge mj-b-in ${s.wrap}`}>{done}</span> {notice}</p>;
 
   async function send() {
     const text = body.current?.value.trim() ?? "";

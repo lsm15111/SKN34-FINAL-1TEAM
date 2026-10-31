@@ -11,6 +11,8 @@
 .info dt { font-weight: 700; color: var(--ink-sub); }
 .info dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
 .states { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+/* 상태 · 비용 글은 API가 주는 문장이라 길 수 있어서 배지 안에서 줄을 바꾼다 */
+.wrap:global(.mj-badge) { max-width: 100%; padding-block: 3px; white-space: normal; overflow-wrap: anywhere; line-height: 1.4; }
 
 /* 받는 길 */
 .route { display: flex; flex-direction: column; gap: 10px; padding-top: 12px; border-top: 1px solid var(--line); }
