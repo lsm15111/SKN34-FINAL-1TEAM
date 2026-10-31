@@ -6,7 +6,7 @@ from datetime import datetime
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.quote.models import ContactRequest, QuoteRequest
+from app.quote.models import ContactRequest, ContactRequestEvent, QuoteRequest
 
 INBOX_LIMIT = 100
 
@@ -31,13 +31,23 @@ async def contacts_since(
     return int((await s.execute(q)).scalar_one())
 
 
-async def sent_since(s: AsyncSession, vendor_id: uuid.UUID, since: datetime) -> int:
+async def claimed_since(s: AsyncSession, vendor_id: uuid.UUID, since: datetime) -> int:
+    """이 업체에 since 뒤로 보내기 시작한 대신 연락 수 (보냄 · 시험 발송 · 보내는 중 · 실패 모두)"""
     q = select(func.count()).where(
-        ContactRequest.vendor_id == vendor_id,
-        ContactRequest.status == "sent",
-        ContactRequest.sent_at >= since,
+        ContactRequest.vendor_id == vendor_id, ContactRequest.claimed_at >= since
     )
     return int((await s.execute(q)).scalar_one())
+
+
+async def stuck_contacts(s: AsyncSession, before: datetime, limit: int = 500) -> list[uuid.UUID]:
+    """before보다 먼저 선점했는데 아직 sending인 요청"""
+    q = (
+        select(ContactRequest.id)
+        .where(ContactRequest.status == "sending", ContactRequest.claimed_at < before)
+        .order_by(ContactRequest.claimed_at, ContactRequest.id)
+        .limit(limit)
+    )
+    return list((await s.execute(q)).scalars())
 
 
 async def queued_contacts(
@@ -58,11 +68,20 @@ async def queued_contacts(
 async def contact_states(
     s: AsyncSession, project_id: uuid.UUID
 ) -> list[tuple[uuid.UUID, str, str, str | None]]:
-    """(외부 업체, 공정, 상태, 보낸 쪽)"""
-    q = select(
-        ContactRequest.vendor_id, ContactRequest.trade, ContactRequest.status, ContactRequest.sender
-    ).where(ContactRequest.project_id == project_id)
-    return [(v, t, st, se) for v, t, st, se in (await s.execute(q)).all()]
+    """(외부 업체, 공정, 상태, 지금 상태가 된 이유). 상태마다 한 번만 들어가므로 이력 한 줄이 정해진다."""
+    reason = (
+        select(ContactRequestEvent.reason)
+        .where(
+            ContactRequestEvent.request_id == ContactRequest.id,
+            ContactRequestEvent.to_status == ContactRequest.status,
+        )
+        .limit(1)
+        .scalar_subquery()
+    )
+    q = select(ContactRequest.vendor_id, ContactRequest.trade, ContactRequest.status, reason).where(
+        ContactRequest.project_id == project_id
+    )
+    return [(v, t, st, why) for v, t, st, why in (await s.execute(q)).all()]
 
 
 async def move_contact(

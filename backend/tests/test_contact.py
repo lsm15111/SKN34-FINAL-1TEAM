@@ -2,16 +2,17 @@
 
 import asyncio
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import asyncpg
 import pytest
 
 from app.config import settings
 from app.db import SessionLocal
+from app.quote import repository as repo
 from app.quote import service, tasks
-from app.quote.sender import DryRunSender, SendError
-from app.quote.service import DRY_RUN_LABEL, OFF_NOTICE
+from app.quote.sender import DryRunSender, Outgoing, SendError
+from app.quote.service import DRY_RUN_LABEL, OFF_NOTICE, STUCK_LABEL
 from tests.conftest import query
 from tests.helpers import signup, use
 from tests.sourcing_helpers import app_vendor, consent, customer_project, ext_vendor
@@ -47,9 +48,28 @@ def status():
     return [r["status"] for r in query("select status from contact_requests order by created_at")]
 
 
+def stuck(now):
+    async def go():
+        async with SessionLocal() as s:
+            return await service.fail_stuck_contacts(s, now=now)
+
+    return asyncio.run(go())
+
+
 def history():
-    rows = query("select from_status, to_status, reason from contact_request_events order by at")
+    # 한 번에 돈 작업은 시각이 같다. 상태는 앞으로만 가므로 그 순서로 줄 세운다
+    step = (
+        "case to_status when 'draft' then 0 when 'queued' then 1 when 'sending' then 2 else 3 end"
+    )
+    rows = query(
+        f"select from_status, to_status, reason from contact_request_events order by at, {step}"
+    )
     return [(r["from_status"], r["to_status"], r["reason"]) for r in rows]
+
+
+def card_of(api, w):
+    out = api.get(f"/projects/{w['pid']}/sourcing").json()
+    return next(c for c in out["candidates"] if c["id"] == w["v"])
 
 
 @pytest.fixture
@@ -101,7 +121,7 @@ def test_daytime_send_shows_sender_and_optout_link(api, on):
     w = world(api)
     send(api, w)
     sender = DryRunSender()
-    assert dispatch(sender) == {"sent": 1}
+    assert dispatch(sender) == {"test_sent": 1}  # 기록만 하는 쪽이라 시험 발송
     (msg,) = sender.outbox
     token = query("select optout_token from ext_vendors where source_id = 'c-ok'")[0][
         "optout_token"
@@ -109,16 +129,17 @@ def test_daytime_send_shows_sender_and_optout_link(api, on):
     assert (msg.channel, msg.to) == ("sms", "01000000001")
     assert msg.text.startswith(BODY) and "[믿집]" in msg.text and "help@mitjip.example" in msg.text
     assert msg.text.endswith(f"받지 않으려면: http://localhost:3000/opt-out?t={token}")
-    (row,) = query("select status, sender, sent_at from contact_requests")
-    assert (row["status"], row["sender"]) == ("sent", "dry_run") and row["sent_at"]
-    assert history()[-1] == ("queued", "sent", None)
-    card = next(
-        c
-        for c in api.get(f"/projects/{w['pid']}/sourcing").json()["candidates"]
-        if c["id"] == w["v"]
-    )
-    assert card["route"] == "proxy" and card["requests"][0]["label"] == DRY_RUN_LABEL
+    (row,) = query("select id, status, sender, claimed_at, sent_at from contact_requests")
+    assert (row["status"], row["sender"]) == ("test_sent", "dry_run")
+    assert row["claimed_at"] and row["sent_at"]
+    assert sender.keys == [str(row["id"])]  # 멱등 키는 요청 id
+    assert history()[-2:] == [("queued", "sending", None), ("sending", "test_sent", None)]
+    card = card_of(api, w)
+    assert card["route"] == "proxy" and card["requests"][0]["status"] == "test_sent"
+    assert card["requests"][0]["label"] == DRY_RUN_LABEL
     assert dispatch(DryRunSender()) == {}  # 다시 돌려도 두 번 보내지 않는다
+    with pytest.raises(asyncpg.exceptions.CheckViolationError):
+        query("update contact_requests set status = 'sent'")  # 시험 발송은 '보냄'이 될 수 없다
 
 
 def test_send_failure_is_recorded(api, on):
@@ -126,11 +147,84 @@ def test_send_failure_is_recorded(api, on):
     send(api, w)
 
     class Broken(DryRunSender):
-        async def send(self, msg):
+        async def send(self, msg, *, idempotency_key):
             raise SendError("provider_down")
 
     assert dispatch(Broken()) == {"failed": 1}
-    assert status() == ["failed"] and history()[-1] == ("queued", "failed", "send_error")
+    assert status() == ["failed"] and history()[-1] == ("sending", "failed", "send_error")
+    assert dispatch(DryRunSender()) == {}  # 실패한 것을 저절로 다시 보내지 않는다
+
+
+def test_a_claimed_request_is_sent_once(api, on, monkeypatch):
+    w = world(api)
+    send(api, w)
+    stale = asyncio.run(_queued())
+
+    class Nested(DryRunSender):
+        """보내는 동안 다른 작업이 또 돈다"""
+
+        async def send(self, msg, *, idempotency_key):
+            await super().send(msg, idempotency_key=idempotency_key)
+            async with SessionLocal() as s:
+                self.inner = await service.dispatch_contacts(s, DryRunSender(), now=DAY)
+
+    first = Nested()
+    assert dispatch(first) == {"test_sent": 1} and first.inner == {}
+    # 둘이 같은 queued를 읽었어도 선점은 한 쪽만 된다
+    monkeypatch.setattr(repo, "queued_contacts", lambda s, limit: _same(stale))
+    late = DryRunSender()
+    assert dispatch(late) == {"taken": 1} and late.outbox == []
+    assert len(first.outbox) == 1 and status() == ["test_sent"]
+
+
+async def _queued():
+    async with SessionLocal() as s:
+        return await repo.queued_contacts(s, 50)
+
+
+async def _same(rows):
+    return rows
+
+
+def test_stuck_send_is_never_resent_and_asks_for_a_check(api, on):
+    w = world(api)
+    send(api, w)
+
+    class Crash(DryRunSender):
+        async def send(self, msg, *, idempotency_key):
+            raise RuntimeError("worker died")  # 보냈는지 모르는 채로 멈춤
+
+    with pytest.raises(RuntimeError):
+        dispatch(Crash())
+    assert status() == ["sending"]
+    again = DryRunSender()
+    assert dispatch(again) == {} and again.outbox == []  # 선점된 것은 다시 보내지 않는다
+    assert stuck(DAY + timedelta(minutes=5)) == {"stuck": 0}  # 아직 기다린다
+    assert stuck(DAY + timedelta(minutes=16)) == {"stuck": 1}
+    assert status() == ["failed"] and history()[-1] == ("sending", "failed", "stuck")
+    assert card_of(api, w)["requests"][0]["label"] == STUCK_LABEL
+    assert dispatch(DryRunSender()) == {}
+
+
+def test_late_result_does_not_overwrite_the_stuck_mark(api, on):
+    w = world(api)
+    send(api, w)
+
+    class Slow(DryRunSender):
+        async def send(self, msg, *, idempotency_key):
+            await super().send(msg, idempotency_key=idempotency_key)
+            async with SessionLocal() as s:  # 너무 오래 걸려 그사이 정리됐다
+                await service.fail_stuck_contacts(s, now=DAY + timedelta(hours=1))
+
+    assert dispatch(Slow()) == {"late": 1}
+    assert status() == ["failed"] and history()[-1] == ("sending", "failed", "stuck")
+
+
+def test_dry_run_sender_keeps_one_message_per_key():
+    sender, msg = DryRunSender(), Outgoing("sms", "01000000001", "가짜 메시지예요")
+    asyncio.run(sender.send(msg, idempotency_key="k1"))
+    asyncio.run(sender.send(msg, idempotency_key="k1"))
+    assert sender.outbox == [msg] and sender.keys == ["k1"]
 
 
 def test_optout_link_blocks_and_hides_the_vendor(api, on):
@@ -208,8 +302,8 @@ def test_daily_limits_per_customer_and_vendor(api, on, monkeypatch):
 
     # 보낼 때도 업체당 하루 한도를 지킨다: 넘으면 다음 날로 미룬다
     monkeypatch.setattr(settings, "contact_daily_per_vendor", 1)
-    assert dispatch(DryRunSender()) == {"sent": 1, "deferred": 1}
-    assert sorted(status()) == ["queued", "sent"]
+    assert dispatch(DryRunSender()) == {"test_sent": 1, "deferred": 1}
+    assert sorted(status()) == ["queued", "test_sent"]
 
 
 def test_permissions(api):

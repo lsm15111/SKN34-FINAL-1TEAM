@@ -27,6 +27,7 @@ class WorkerSettings:
         directory_tasks.sync_kiscon,
         directory_tasks.verify_biz_status,
         quote_tasks.dispatch_contact_requests,
+        quote_tasks.fail_stuck_contacts,
         ping,
     ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

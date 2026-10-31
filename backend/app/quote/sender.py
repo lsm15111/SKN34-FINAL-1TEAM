@@ -27,19 +27,28 @@ class SendError(Exception):
 
 
 class Sender(Protocol):
-    name: str
+    name: str  # contact_requests.sender에 남는 이름
+    test: bool  # True면 실제로 보내지 않는다 (상태가 sent가 아니라 test_sent)
 
-    async def send(self, msg: Outgoing) -> None: ...
+    async def send(self, msg: Outgoing, *, idempotency_key: str) -> None:
+        """idempotency_key(요청 id)가 같으면 한 번만 보낸다. 실제 발송사에는 멱등 키로 넘긴다."""
+        ...
 
 
 class DryRunSender:
     """보내지 않는다. 보냈을 메시지를 메모리에만 두고, 로그에는 수단과 글자 수만 남긴다."""
 
     name = "dry_run"
+    test = True
 
     def __init__(self) -> None:
         self.outbox: list[Outgoing] = []
+        self.keys: list[str] = []
 
-    async def send(self, msg: Outgoing) -> None:
+    async def send(self, msg: Outgoing, *, idempotency_key: str) -> None:
+        if idempotency_key in self.keys:
+            log.info("같은 요청이라 다시 기록하지 않았어요: %s", msg.channel)
+            return
+        self.keys.append(idempotency_key)
         self.outbox.append(msg)
         log.info("대신 연락을 기록만 했어요 (보내지 않음): %s, %d자", msg.channel, len(msg.text))
