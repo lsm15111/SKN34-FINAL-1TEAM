@@ -4,6 +4,7 @@ from decimal import Decimal
 
 import pytest
 
+from app.agent.schemas import Change, RouterOut
 from app.consult import service
 from app.consult.schemas import Answer, ConsultCard
 from app.consult.trades import REGISTRY, catalog
@@ -85,6 +86,36 @@ def test_router_catalog_lists_shared_fields(paint):
     row = next(ln for ln in text.splitlines() if ln.startswith("- share=doors: "))
     assert {"mokgong.doors", "fakepaint.doors"} <= set(row.split(": ", 1)[1].split(", "))
     assert "mokgong.doors | 방문 개수 | count" in text
+
+
+def test_chat_can_add_and_remove_trades():
+    base = ConsultCard(
+        trades=["dobae"], area_m2=Decimal("112.4"), area_basis="supply", occupied=False
+    )
+    # 등록된 공정만 더하고, 공정 순서대로 둔다. 더한 공정의 칸은 폼이 묻는다
+    c = service.normalize(service.apply_trades(base, ["floor", "nope"], []))
+    assert c.trades == ["floor", "dobae"]
+    assert "floor.kind" in [q.field for q in service.questions(c)]
+    # 뺀 공정의 칸 값과 확인 표시는 지운다
+    c = c.model_copy(update={"values": {"floor": {"kind": "laminate"}}, "to_check": ["floor.kind"]})
+    c = service.normalize(service.apply_trades(c, [], ["floor"]))
+    assert (c.trades, c.values, c.to_check) == (["dobae"], {}, [])
+    # 마지막 공정은 빼지 않는다
+    assert service.apply_trades(base, [], ["dobae"]).trades == ["dobae"]
+    # 라우터가 공정을 더하면서 그 공정 칸도 바꾸면 둘 다 들어간다 (공정을 먼저 더한다)
+    kind = Change(field="floor.kind", op="set", value="laminate")
+    r = RouterOut(
+        **dict.fromkeys(
+            ("pyeong", "area_m2", "area_basis", "occupied", "balcony_ext", "built_year")
+        ),
+        changes=[kind],
+        questions=[],
+        out_of_scope=False,
+        reply="",
+        trades_add=["floor"],
+    )
+    c = service.normalize(service.apply_route(base, r))
+    assert c.trades == ["floor", "dobae"] and c.values["floor"]["kind"] == "laminate"
 
 
 def test_overlap_rules_need_both_trades_and_values(monkeypatch):

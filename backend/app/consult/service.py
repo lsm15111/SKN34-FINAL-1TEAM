@@ -225,8 +225,18 @@ def apply_change(c: ConsultCard, ch: Change) -> ConsultCard:
     return _set_value(c, spec.key, f.key, v, unknown)
 
 
+def apply_trades(c: ConsultCard, add: list[str], remove: list[str]) -> ConsultCard:
+    """대화로 공정을 더하거나 뺀다. 등록된 공정만, 하나는 남긴다. 뺀 공정의 칸 값은 prune이 지운다."""
+    picked = (set(c.trades) | {k for k in add if k in REGISTRY}) - set(remove)
+    trades = [k for k in ORDER if k in picked]
+    if not trades or trades == c.trades:
+        return c
+    return c.model_copy(update={"trades": trades})
+
+
 def apply_route(c: ConsultCard, r: RouterOut) -> ConsultCard:
-    """라우터가 뽑은 값 중 범위 · 스펙에 맞는 것만 카드에 넣는다."""
+    """라우터가 뽑은 값 중 범위 · 스펙에 맞는 것만 카드에 넣는다. 공정을 먼저 바꾸고 칸을 바꾼다."""
+    c = apply_trades(c, r.trades_add[:10], r.trades_remove[:10])
     if r.area_m2 is not None:
         area = _area(str(r.area_m2), "㎡")
         c = _set_common(c, area_m2=area) if area is not None else c

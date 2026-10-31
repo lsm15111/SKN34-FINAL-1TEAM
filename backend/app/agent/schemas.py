@@ -30,6 +30,9 @@ class RouterOut(BaseModel):
     changes: list[Change]
     questions: list[TradeQuestion]
     out_of_scope: bool
+    # 대화로 공정을 더하거나 뺀다 (공정 키). 코드가 레지스트리로 검사한다
+    trades_add: list[str] = []
+    trades_remove: list[str] = []
     reply: str
 
 
