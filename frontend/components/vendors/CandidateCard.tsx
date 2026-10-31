@@ -2,11 +2,12 @@
 // 가견적 후보 업체 한 곳: 앱 · 외부 배지, 공정 · 지역, 왜 이 업체(도우미 설명, 있을 때만), 비용 · 출처 · 모은 날, 받는 길 하나.
 // 받는 길: 앱 업체는 화면 안 확인 뒤 요청 · 견적 창구는 새 탭 + 요청문 복사 · 전화는 번호 + 통화 체크리스트
 // · 참고는 링크만 · 대신 연락은 동의 뒤 요청. 비용은 API 글을 그대로 보이고 화면에서 계산하지 않는다.
+// 대신 연락이 꺼져 있으면 받는 길 칸에 안내를 한 줄만 둔다 (지금 할 수 있는 것을 먼저).
 import { useEffect, useId, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ApiError, call, errorText, type Schemas } from "@/lib/backend/client";
 import { TRADE_LABEL, type TradeKey } from "@/lib/types";
-import { dateSeoul, ymd } from "@/lib/format";
+import { dateSeoul, eulReul, ymd } from "@/lib/format";
 import { CopyButton } from "./CopyButton";
 import s from "./CandidateCard.module.css";
 
@@ -23,6 +24,7 @@ type Props = {
 
 const tradeName = (t: string) => TRADE_LABEL[t as TradeKey] ?? t;
 const COST_BADGE: Record<Candidate["cost"]["kind"], string> = { free: "mj-b-ok", vendor_fee: "mj-b-sep", unknown: "mj-b-wait" };
+const PROXY_LATER = "믿집이 이 업체에 대신 연락하는 건 법 검토가 끝나면 열려요.";
 
 /** 업체가 공개한 주소 중 http · https만 연다 */
 function safeHref(u?: string | null) {
@@ -72,23 +74,42 @@ export function CandidateCard({ c, trade, projectId, facts, sent, onSent }: Prop
         {c.route === "proxy" ? <ProxyRequest c={c} trade={trade} projectId={projectId} facts={facts} done={done} onSent={onSent} /> : null}
         {c.route === "link" ? <LinkRoute c={c} facts={facts} /> : null}
         {c.route === "phone" ? <PhoneRoute c={c} /> : null}
-        {c.route === "reference" ? <Links c={c} empty="등록 정보만 있어요. 이 업체에 물어볼 길은 아직 없어요." /> : null}
+        {c.route === "reference" ? <ReferenceRoute c={c} /> : c.proxy_off ? <p className="mj-tiny">{PROXY_LATER}</p> : null}
       </div>
-      {c.proxy_off ? <p className={`mj-notice ${s.off}`}><span>이 업체는 믿집이 대신 연락할 수 있지만, 대신 연락은 법 검토가 끝나면 열려요.</span></p> : null}
-      {c.route !== "reference" ? <Links c={c} /> : null}
+      {c.route !== "reference" ? <Links c={c} items={linkItems(c)} /> : null}
     </li>
   );
 }
 
-/** 포트폴리오 · 홈페이지 · 카카오맵 (새 탭) */
-function Links({ c, empty }: { c: Candidate; empty?: string }) {
+type LinkItem = { href: string; label: string; kind: string };
+
+/** 포트폴리오 · 홈페이지 · 카카오맵 중 열 수 있는 것 */
+function linkItems(c: Candidate): LinkItem[] {
   const many = c.links.portfolio.length > 1;
-  const items = [
-    ...c.links.portfolio.map((u, i) => ({ href: safeHref(u), label: many ? `포트폴리오 ${i + 1}` : "포트폴리오" })),
-    { href: safeHref(c.links.homepage), label: "홈페이지" },
-    { href: safeHref(c.links.place), label: "카카오맵" },
-  ].filter((x): x is { href: string; label: string } => !!x.href);
-  if (!items.length) return empty ? <p className="mj-small">{empty}</p> : null;
+  return [
+    ...c.links.portfolio.map((u, i) => ({ href: safeHref(u), label: many ? `포트폴리오 ${i + 1}` : "포트폴리오", kind: "포트폴리오" })),
+    { href: safeHref(c.links.homepage), label: "홈페이지", kind: "홈페이지" },
+    { href: safeHref(c.links.place), label: "카카오맵", kind: "카카오맵" },
+  ].filter((x): x is LinkItem => !!x.href);
+}
+
+/** 정보만 보기: 지금 볼 수 있는 것을 먼저 알린다. 대신 연락이 꺼져 있으면 같은 줄에 덧붙여 안내를 하나로 둔다 */
+function ReferenceRoute({ c }: { c: Candidate }) {
+  const items = linkItems(c);
+  const can = [...new Set([...(c.registration ? ["등록 정보"] : []), ...items.map((x) => x.kind)])];
+  const now = can.length ? `지금은 ${eulReul(can.join(" · "))} 볼 수 있어요.` : "지금은 위 정보만 볼 수 있어요.";
+  const text = c.proxy_off ? `${now} ${PROXY_LATER}` : items.length ? null : "등록 정보만 있어요. 이 업체에 물어볼 길은 아직 없어요.";
+  return (
+    <>
+      {text ? <p className="mj-small">{text}</p> : null}
+      <Links c={c} items={items} />
+    </>
+  );
+}
+
+/** 포트폴리오 · 홈페이지 · 카카오맵 (새 탭) */
+function Links({ c, items }: { c: Candidate; items: LinkItem[] }) {
+  if (!items.length) return null;
   return (
     <ul className={s.links}>
       {items.map((x) => (
