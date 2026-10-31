@@ -12,7 +12,7 @@
 - 기대(단계 키 · 실측 후 줄 · 꼭 언급 · 언급하면 안 됨)는 계산 엔진 + 스펙 + 공정 설정(config.py)으로 붙인다
 
 실행 (저장소 루트에서): cd backend && uv run python ../evaluation/plan/make_cases.py --trade dobae
-→ evaluation/plan/<공정>/cases_5k.jsonl (커밋 안 함) · sample_100.jsonl (커밋)
+→ evaluation/plan/<공정>/cases_5k.jsonl (커밋 안 함) · sample_100.jsonl · README.md (커밋)
 """
 
 import argparse
@@ -254,6 +254,63 @@ def report(trade: str, cases: list[dict], smp: list[dict], stats: dict) -> str:
     return "\n\n".join(parts)
 
 
+def opt_text(f: FieldSpec, opt: str, cfg: config.PlanConfig) -> str:
+    """범주 값 이름 → 화면 말"""
+    if opt == "unknown":
+        return "모르겠어요"
+    if f.kind == "count":
+        lo, hi = buckets(f, cfg)[opt]
+        return f"{lo}{f.unit}" if lo == hi else f"{lo}~{hi}{f.unit}"
+    return " + ".join(f.text(x) for x in opt.split("+"))
+
+
+def readme(trade: str, cases: list[dict], smp: list[dict]) -> str:
+    """공정 폴더 README: 범주 표와 다시 만드는 명령 (생성기가 쓴다)"""
+    sp, cfg = trades.spec(trade), config.get(trade)
+    cat_fields, grid_fields = layout(sp, cfg)
+    cnt = Counter((c["category"], c["split"]) for c in cases)
+    rows = []
+    for combo in itertools.product(*(field_opts(f, cfg) for f in cat_fields)):
+        name = "-".join(combo)
+        text = " / ".join(opt_text(f, o, cfg) for f, o in zip(cat_fields, combo, strict=True))
+        rows.append(f"| `{name}` | {text} | {cnt[name, 'dev']} | {cnt[name, 'heldout']} |")
+    dev = sum(c["split"] == "dev" for c in cases)
+    s_dev = sum(c["split"] == "dev" for c in smp)
+    grid = ", ".join(f.label + ("*" if f.when else "") for f in grid_fields)
+    if grid:
+        grid = f" × 범주 밖 칸 ({grid})"
+    if any(f.when for f in grid_fields):
+        grid += ". *는 조건이 켜질 때만 묻는 칸"
+    cmd = f"--trade {trade}"
+    return "\n".join(
+        [
+            f"# 공정 의견 사례: {sp.label} (`{trade}`)",
+            "",
+            "`../make_cases.py`가 공정 스펙으로 만든 파일이다. 손으로 고치지 않고 다시 만든다.",
+            "",
+            f"- 전체 {len(cases):,}개: `cases_5k.jsonl` (커밋 안 함)",
+            f"- 표본 {len(smp)}개: `sample_100.jsonl` (커밋, dev {s_dev} · held-out {len(smp) - s_dev})",
+            f"- 범주: {' × '.join(f.label for f in cat_fields)} {len(rows)}개",
+            f"- 범주 안 격자: 거주 × 같이 하는 공정 × 면적 기준{grid}",
+            "",
+            "| 범주 | 값 | dev | held-out |",
+            "| --- | --- | ---: | ---: |",
+            *rows,
+            f"| 합계 | | {dev:,} | {len(cases) - dev:,} |",
+            "",
+            "## 다시 만들기 (저장소 루트에서)",
+            "",
+            "```bash",
+            "cd backend",
+            f"uv run python ../evaluation/plan/make_cases.py {cmd}   # 사례 · 표본 · 이 README",
+            f"uv run python ../evaluation/check_cases.py {cmd}       # 무료 점검 (T0)",
+            f"uv run python ../evaluation/run_agent.py {cmd} --fake  # 가짜 LLM으로 채점 흐름 (무료)",
+            "```",
+            "",
+        ]
+    )
+
+
 def main() -> None:
     for stream in (sys.stdout, sys.stderr):  # Windows 콘솔에서도 한글이 깨지지 않게
         stream.reconfigure(encoding="utf-8")
@@ -272,6 +329,7 @@ def main() -> None:
         d.mkdir(parents=True, exist_ok=True)
         gen.write_jsonl(d / "cases_5k.jsonl", cases)
         gen.write_jsonl(d / "sample_100.jsonl", smp)
+        (d / "README.md").write_text(readme(trade, cases, smp), encoding="utf-8", newline="\n")
         assert gen.read_jsonl(d / "cases_5k.jsonl") == cases, "다시 읽은 사례가 달라요"
         print(f"## {trades.label(trade)} ({trade}): {len(cases)}개 → {d.relative_to(ROOT)}\n")
         print(report(trade, cases, smp, stats))

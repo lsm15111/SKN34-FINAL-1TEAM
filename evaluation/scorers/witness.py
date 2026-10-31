@@ -48,6 +48,14 @@ def _cautions(first: dict, order: dict | None, more: list[dict]) -> list[dict]:
     return out[:4]
 
 
+def _order(trade: str, must: list[str], mine: dict[str, str]) -> dict | None:
+    """같이 하는 공정과의 순서를 주의 하나에 모은다 (손으로 쓴 문장이 없으면 규칙 예문)"""
+    from evaluation.scorers.trade_plan import rules  # trade_plan이 이 파일을 import한다
+
+    lines = [mine.get(r) or rules(trade)[r].example for r in must if r.startswith("order.")]
+    return {"text": " ".join(lines), "source": "field"} if lines else None
+
+
 def dobae(case: dict) -> dict:
     card, e = case["input"]["card"], case["expect"]
     t = card["values"]["dobae"]
@@ -90,9 +98,7 @@ def dobae(case: dict) -> dict:
             "가견적에 들어 있는지 물어봐요.",
             "source": "field",
         },
-        {"text": "목공을 같이 하면 목공이 끝난 뒤에 도배해요.", "source": "field"}
-        if "order.mokgong" in must
-        else None,
+        _order("dobae", must, {"order.mokgong": "목공을 같이 하면 목공이 끝난 뒤에 도배해요."}),
         more,
     )
     return {
@@ -164,9 +170,7 @@ def mokgong(case: dict) -> dict:
             "가견적에 들어 있는지 물어봐요.",
             "source": "field",
         },
-        {"text": "도배를 같이 하면 목공을 먼저 끝내고 도배해요.", "source": "field"}
-        if "order.dobae" in must
-        else None,
+        _order("mokgong", must, {"order.dobae": "도배를 같이 하면 목공을 먼저 끝내고 도배해요."}),
         [],
     )
     return {

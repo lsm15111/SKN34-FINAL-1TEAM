@@ -60,8 +60,33 @@ def test_trade_categories_follow_router_v5(built):
             assert not set(c["expect"]["questions"]) & set(card["trades"])
         if cat == "vendor":  # 업체 소개 · 견적 요청은 범위 안 (v5)
             assert not c["expect"]["out_of_scope"] and c["expect"]["reply_has"] == ["가견적"]
+        if cat == "trade.add" and c["strata"]["form"] == "two":  # 두 공정을 한꺼번에
+            assert len(ideal["trades_add"]) == 2
+        if c["strata"].get("form") == "last_trade":  # 하나뿐인 공정 빼기 → 남긴다
+            assert cat == "no_change" and len(card["trades"]) == 1 and not c["expect"]["effect"]
     oos = {c["input"]["message"] for c in built if c["category"] == "out_of_scope"}
     assert not any("업체" in m or "방수" in m for m in oos)
+    forms = Counter(c["strata"].get("form") for c in built)
+    assert forms["two"] > 60 and forms["last_trade"] > 50  # 범주 249개를 꼴마다 나눔
+
+
+def test_share_field_phrases_name_no_trade(built):
+    """같이 쓰는 칸(방문 개수)은 공정을 집지 않는 말로 묻고, 카드 공정의 같은 칸을 모두 바꾸는 것이 기대"""
+    doors = [
+        c
+        for c in built
+        if c["category"] == "field.count"
+        and sum(t in ("mokgong", "paint", "film") for t in c["input"]["card"]["trades"]) >= 2
+        and any(k.endswith(".doors") for k in c["expect"]["effect"])
+    ]
+    assert doors
+    for c in doors:
+        card, eff = c["input"]["card"], c["expect"]["effect"]
+        sharing = [
+            t for t in card["trades"] if trades.spec(t).field("doors") and f"{t}.doors" in eff
+        ]
+        assert len({eff[f"{t}.doors"] for t in sharing}) == 1
+        assert not any(w in c["input"]["message"] for w in ("칠할", "필름 붙일", "바꿀 방문"))
 
 
 def test_committed_sample_matches_generator(built, sample):
@@ -80,17 +105,15 @@ def test_check_catches_broken_cases(sample):
     wrong["expect"]["effect"][k] = "nope"
     extra = copy.deepcopy(first(sample, "no_change"))
     extra["expect"]["ideal"]["occupied"] = not extra["input"]["card"]["occupied"]
-    card = copy.deepcopy(
-        next(
-            c
-            for c in sample
-            if c["input"]["card"]["trades"] == ["dobae"]
-            and "grade" not in c["input"]["card"]["values"].get("dobae", {})
-        )
+    card, name = next(
+        (copy.deepcopy(c), f"{t}.{f.key}")
+        for c in sample
+        for t in c["input"]["card"]["trades"]
+        for f in trades.spec(t).fields
+        if f.asks(c["input"]["card"]["values"].get(t, {}))
+        and f.key not in c["input"]["card"]["values"].get(t, {})
     )
-    card["input"]["card"]["to_check"].append(
-        "dobae.grade"
-    )  # 값 없는 칸 확인 표시: normalize가 지운다
+    card["input"]["card"]["to_check"].append(name)  # 값 없는 칸 확인 표시: normalize가 지운다
     bad = copy.deepcopy(first(sample, "question"))
     bad["input"]["card"]["to_check"].append("nope.field")  # 스펙 검사에 걸림
     good = first(sample, "common.area", lambda c: c["id"] != card["id"])
@@ -114,16 +137,20 @@ def test_multi_add_scores_same_as_set(built):
 
 
 def test_invented_change_is_caught(built):
-    c, t, f = next(
-        (c, t, f)
+    def flips(sp, vals: dict, new: dict) -> bool:
+        """다른 칸의 조건(when)이 바뀌는지 (바뀌면 지워지는 칸도 생겨 지어낸 변경이 하나가 아니다)"""
+        return any(g.asks(vals) != g.asks(new) for g in sp.fields if g.when)
+
+    c, t, f, value = next(
+        (c, t, f, v)
         for c in built
         if c["category"] == "no_change" and c["strata"]["form"] == "chitchat"
         for t in c["input"]["card"]["trades"]
         for f in trades.spec(t).fields
-        if f.kind == "choice" and f.asks(c["input"]["card"]["values"].get(t, {}))
+        if f.kind == "choice" and f.asks(vals := c["input"]["card"]["values"].get(t, {}))
+        for v in f.values
+        if v != vals.get(f.key) and not flips(trades.spec(t), vals, vals | {f.key: v})
     )
-    cur = c["input"]["card"]["values"].get(t, {}).get(f.key)
-    value = next(v for v in f.values if v != cur)
     s = S.score(c, raw_of(c, changes=[{"field": f"{t}.{f.key}", "op": "set", "value": value}]))
     assert not s["checks"]["no_invented"] and s["checks"]["no_missed"]
     assert s["counts"]["fp"] == 1 and s["counts"]["tp"] == 0
@@ -145,6 +172,16 @@ def test_trade_add_remove_and_ask_only(built):
     s = S.score(rem, raw_of(rem, trades_remove=["nope"]))
     assert not s["checks"]["raw_trades"] and not s["checks"]["trades_exact"]
     assert s["counts"]["t_fn"] == 1
+
+    two = first(built, "trade.add", lambda c: c["strata"]["form"] == "two")
+    s = S.score(two, raw_of(two, trades_add=two["expect"]["ideal"]["trades_add"][:1]))
+    assert not s["checks"]["trades_exact"] and s["counts"]["t_fn"] == 1  # 하나만 더함
+
+    last = first(built, "no_change", lambda c: c["strata"]["form"] == "last_trade")
+    only = last["input"]["card"]["trades"]
+    for rem_ in ([], only):  # 빼라고 내도 상담 코드가 하나는 남긴다 → 둘 다 맞음
+        s = S.score(last, raw_of(last, trades_remove=rem_))
+        assert all(s["checks"].values()), s["detail"]
 
 
 def test_scoring_runs_without_trade_fields(built):

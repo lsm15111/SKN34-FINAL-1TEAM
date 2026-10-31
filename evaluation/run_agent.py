@@ -343,7 +343,10 @@ def main() -> None:
             f"{k} {v}" for k, v in sorted(Counter(gen.get(c, args.stratify) for c in cases).items())
         )
     )
-    print(runner.estimate_text(trade, cases, len(judge_ids), model, effort))
+    from evaluation.common import cost
+
+    judge_shape = cost.judge_shape(trade)
+    print(runner.estimate_text(trade, cases, len(judge_ids), model, effort, judge_shape))
     mode = runner.mode_of(args)
     if mode is None:
         print(

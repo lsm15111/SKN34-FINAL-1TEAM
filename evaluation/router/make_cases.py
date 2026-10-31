@@ -2,9 +2,9 @@
 
 - 범주 20개 × 249개 (dev 166 · held-out 83): 공통 칸(면적 · 면적 기준 · 거주 · 발코니 · 준공 연도),
   공정 칸(하나 고르기 · 여러 개 고르기 정하기/더하기/빼기 · 숫자 · 모르겠어요 · 두 칸), 공통 + 공정 칸,
-  질문(카드 공정 · 카드에 없는 공정), 바꾸기 + 질문, 공정 더하기(+ 그 공정 칸) · 빼기(+ 남은 공정 칸) ·
-  묻기만 함(더하지 않고 그 공정 전문가에게), 업체 소개 · 견적 요청('가견적 받기' 안내), 범위 밖,
-  안 바꿈(맞장구 · 이미 같은 값 · 이미 있는 공정 더하기)
+  질문(카드 공정 · 카드에 없는 공정), 바꾸기 + 질문, 공정 더하기(+ 그 공정 칸 · 두 공정 한꺼번에) ·
+  빼기(+ 남은 공정 칸) · 묻기만 함(더하지 않고 그 공정 전문가에게), 업체 소개 · 견적 요청('가견적 받기' 안내),
+  범위 밖, 안 바꿈(맞장구 · 이미 같은 값 · 이미 있는 공정 더하기 · 하나뿐인 공정 빼기: 상담 코드가 남긴다)
 - 범주 안에서 목표(어느 칸 · 어떤 값 · 말하는 꼴)와 카드 공정 묶음은 조합마다 고르게, 카드 상태(덜 참 · 다 참) ·
   앞 대화 · 잡음은 값마다 고르게 채운다
 - 고객 말은 phrases.py 조각으로 만든다. 묶음마다 조각 3개 중 1개는 held-out 전용이라 두 나눔이 같은 조각을 쓰지 않는다
@@ -67,6 +67,7 @@ KINDS = ("choice", "multi", "count", "unknown")
 CHANGED = "알겠어요. 바꾼 값으로 다시 계산했어요."
 ADDED = "알겠어요. 더한 공정의 칸은 화면에서 골라 주세요."
 VENDOR = "업체는 결과 화면의 '가견적 받기'에서 볼 수 있어요."
+KEEP_LAST = "공정은 하나는 남아 있어야 해서 그대로 뒀어요."  # 하나뿐인 공정을 빼 달라고 할 때
 VENDOR_WORDS = ["가견적"]  # 업체 소개 · 견적 요청 답에 꼭 있어야 할 말
 PRE = gen.Fragments(
     {
@@ -141,16 +142,18 @@ def noun_options(trade: str, f: FieldSpec) -> dict[str, list[str]]:
 
 
 def field_phrase(t: Talk, trade: str, f: FieldSpec, value) -> str:
-    """칸 값으로 정하는 말. 묶음이 없으면 스펙 화면 말로 만든다 (새 공정: 칸 이름을 붙여 어느 칸인지 드러낸다)"""
+    """칸 값으로 정하는 말. 묶음이 없으면 스펙 화면 말로 만든다 (새 공정: 칸 이름을 붙여 어느 칸인지 드러낸다).
+    같이 쓰는 칸(share)은 공정을 집지 않는 SHARE 말을 쓴다 (기대가 같은 칸을 모두 바꾸는 것이라서)"""
     r = t.r
     head = f"{f.label}{josa(f.label, '은는')}"
+    base = f"share:{f.share}" if f.share else f"field:{trade}:{f.key}"
     if f.kind == "count" and value != UNKNOWN:
-        key = f"field:{trade}:{f.key}:count"
+        key = f"{base}:count"
         if key in P.BANK.table:
             return fill(t.pick(key), c=value)
         unit = f.unit or "개"
         return f"{head} {value}{unit}{'이에요' if josa(unit, '01') == '0' else '예요'}"
-    key = f"field:{trade}:{f.key}:{value}"
+    key = f"{base}:{value}"
     if key in P.BANK.table:
         return t.pick(key)
     if value == UNKNOWN:
@@ -362,6 +365,11 @@ def build_case(r, cat: str, row: dict) -> tuple[dict, dict, list[str]]:
         if len(picked) < 2:
             raise Retry
         picked.remove(r.choice(picked))  # 카드에 없는 공정이 있어야 하는 범주
+    if form == "two":  # 카드에 없는 공정이 둘 이상 있어야 한다
+        while len(picked) > 1 and len(trades.registered()) - len(picked) < 2:
+            picked.remove(r.choice(picked))
+    if form == "last_trade":  # 공정이 하나뿐인 카드
+        picked = [r.choice(picked)]
     card = house.random_card(r, picked, row["state"] == "full")
     out: dict = {
         "changes": [],
@@ -419,13 +427,14 @@ def build_case(r, cat: str, row: dict) -> tuple[dict, dict, list[str]]:
         out["changes"] += ch
         out["questions"].append({"trade": trade, "question": q})
         main.append(ch[0]["field"])
-    elif cat == "trade.add":  # 공정을 더한다 (+ 그 공정 칸 하나. 공정을 먼저 더하고 칸을 바꾼다)
+    elif cat == "trade.add":  # 공정을 더한다 (+ 그 공정 칸 하나, 또는 두 공정을 한꺼번에)
         others = [k for k in trades.registered() if k not in picked]
-        if not others:
+        xs = r.sample(others, 2 if form == "two" else 1) if len(others) >= 2 else others
+        if not xs or (form == "two" and len(xs) < 2):
             raise Retry
-        x = r.choice(others)
-        said.append(fill(t.pick("trade:add"), x=trade_noun(r, x)))
-        out["trades_add"].append(x)
+        x = xs[0]
+        said.append(fill(t.pick("trade:add"), x=join_ko([trade_noun(r, k) for k in xs])))
+        out["trades_add"] += xs
         main.append("trades")
         if form == "with_field":
             after = [k for k in trades.registered() if k in picked or k == x]
@@ -469,6 +478,9 @@ def build_case(r, cat: str, row: dict) -> tuple[dict, dict, list[str]]:
         value = r.choice(f.values)
         set_field(r, card, trade, f, lambda o: o == value)
         said.append(field_phrase(t, trade, f, value))
+    elif form == "last_trade":  # 하나 남은 공정을 빼 달라는 말 → 상담 코드가 남긴다 (바뀌지 않음)
+        said.append(fill(t.pick("trade:remove"), x=trade_noun(r, picked[0])))
+        out["reply"] = KEEP_LAST
     else:  # already: 이미 카드에 있는 공정을 하겠다는 말 → 더하지 않는 것이 기대
         said.append(fill(t.pick("trade:add"), x=trade_noun(r, r.choice(picked))))
     card = norm_card(card)
@@ -491,7 +503,9 @@ def ideal_out(out: dict, cat: str) -> dict:
     업체 소개 · 견적 요청이면 '가견적 받기'를, 공정을 더했으면 그 칸을 화면에서 고르라고 말한다 (v5)"""
     d = dict.fromkeys(("pyeong", "area_m2", "area_basis", "occupied", "balcony_ext", "built_year"))
     d |= {k: v for k, v in out.items() if k in d}
-    if out["questions"]:
+    if out.get("reply"):
+        reply = out["reply"]
+    elif out["questions"]:
         reply = ""
     elif cat == "out_of_scope":
         reply = service.OUT_OF_SCOPE
@@ -553,10 +567,12 @@ def design(cat: str) -> tuple[dict, dict]:
         core["form"] = ("area", "basis", "occupied", "balcony", "year")
     elif cat == "change.question":
         core["form"] = ("same", "any")
-    elif cat in ("trade.add", "trade.remove"):
+    elif cat == "trade.add":  # 두 공정을 한꺼번에 더하려면 카드 밖 공정이 둘 이상 있어야 한다
+        core["form"] = ("only", "with_field") + (("two",) if len(trades.registered()) > 2 else ())
+    elif cat == "trade.remove":
         core["form"] = ("only", "with_field")
-    elif cat == "no_change":
-        core["form"] = ("chitchat", "same_value", "already")
+    elif cat == "no_change":  # last_trade: 하나뿐인 공정을 빼 달라고 함 (상담 코드가 남긴다)
+        core["form"] = ("chitchat", "same_value", "already", "last_trade")
     extra = {"state": ("partial", "full"), "history": ("none", "some"), "noise": ("none", "noisy")}
     return core, extra
 

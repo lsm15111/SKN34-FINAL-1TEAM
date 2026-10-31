@@ -259,7 +259,11 @@ def main() -> None:
     counts = Counter(gen.get(c, args.stratify) for c in cases)
     print(f"사례 파일 {path.relative_to(ROOT)} · 층 {args.stratify}: ", end="")
     print(", ".join(f"{k} {v}" for k, v in sorted(counts.items())))
-    print(runner.estimate_text("expert", cases, len(judge_ids), model, effort, "judge_expert"))
+    print(  # 전문가 · 판정 시스템은 공정 지식마다 다르다
+        runner.estimate_text(
+            "expert", cases, len(judge_ids), model, effort, "judge_expert", "trade", judge_ids
+        )
+    )
     mode = runner.mode_of(args)
     if mode is None:
         print(

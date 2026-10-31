@@ -43,6 +43,20 @@ def test_estimate_only_shows_all_models(wp_sample):
         assert f"| {label} |" in text
 
 
+def test_estimate_counts_cache_per_system_group():
+    """공정마다 시스템이 다르면(전문가 답) 캐시 쓰기를 공정마다 센다 → 한 묶음으로 셀 때보다 비싸다"""
+    cases = [{"id": f"c{i}", "split": "dev", "trade": "ab"[i % 2]} for i in range(12)]
+
+    def opus(text: str) -> float:
+        line = next(x for x in text.splitlines() if x.startswith("| Opus 5.5 |"))
+        return float(line.split("|")[2].strip().lstrip("$"))
+
+    args = ("expert", cases, 2, "m", "low", "judge_expert")
+    one = runner.estimate_text(*args)
+    two = runner.estimate_text(*args, "trade", {"c0", "c1"})
+    assert "2묶음" in two and opus(two) > opus(one)
+
+
 @pytest.mark.parametrize("trade", ["dobae", "mokgong"])
 @pytest.mark.parametrize("mode", ["fake", "fake-batch"])
 def test_fake_run_end_to_end(tmp_path, trade, mode):
@@ -165,6 +179,8 @@ def test_rescore_uses_saved_raw(wp_sample):
 
 
 def test_cost_from_usage_and_estimate():
+    from evaluation.common import trades
+
     u = {
         "model": "claude-opus-5-5",
         "input_tokens": 1_000_000,
@@ -184,7 +200,10 @@ def test_cost_from_usage_and_estimate():
     want = (10 * (100 * 2 + 500 * 10) + 2 * 1000 * 2.5 + 8 * 1000 * 0.1) / 1e6
     assert normal == pytest.approx(want)
     assert "| Haiku 5.5 |" in cost.estimate_table("dobae", judge=10)
-    assert cost.shape("floor") == cost.SHAPES["mokgong"]  # 실측 없는 공정은 목공 값
+    assert cost.shape("probex") == cost.SHAPES["mokgong"]  # 모양이 없는 공정은 목공 값
+    for t in trades.registered():  # 10공정 모두 공정 의견 · 판정 모양이 있다
+        assert cost.shape(t) is cost.SHAPES[t] and cost.judge_shape(t) == f"judge_{t}"
+    assert cost.judge_shape("probex") == "judge"
 
 
 def test_judge_schema_checks_range_and_renders_answer():

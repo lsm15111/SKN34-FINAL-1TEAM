@@ -13,6 +13,7 @@
 import asyncio
 import contextvars
 import json
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from contextlib import contextmanager
 from dataclasses import dataclass, field
@@ -294,26 +295,42 @@ def pct(a: int, b: int) -> str:
 
 
 def estimate_text(
-    name: str, cases: list[dict], n_judge: int, model: str, effort: str, judge_shape: str = "judge"
+    name: str,
+    cases: list[dict],
+    n_judge: int,
+    model: str,
+    effort: str,
+    judge_shape: str = "judge",
+    group: str | None = None,
+    judged: set[str] | None = None,
 ) -> str:
-    """호출 수 · 토큰 모양 · 모델별 예상 비용 (호출 없음)"""
+    """호출 수 · 토큰 모양 · 모델별 예상 비용 (호출 없음).
+    group: 시스템 프롬프트가 이 키(예: trade)마다 다르면 캐시를 묶음마다 따로 센다 (judged: 판정할 사례 id)"""
     s = cost.shape(name)
     nd = sum(c["split"] == "dev" for c in cases)
+    sizes, jsizes, note = [len(cases)], [n_judge], []
+    if group:
+        ids = judged or set()
+        sizes = list(Counter(gen.get(c, group) for c in cases).values())
+        jsizes = list(Counter(gen.get(c, group) for c in cases if c["id"] in ids).values())
+        note = [f"시스템 프롬프트가 {group}마다 달라 캐시를 {len(sizes)}묶음으로 따로 센다"]
     rows = [
         f"사례 {len(cases)}개 (dev {nd} · held-out {len(cases) - nd})",
         f"호출: 에이전트 {len(cases)}번 + 판정 {n_judge}번 (지금 설정: {model} · effort {effort})",
         f"토큰 모양(평균): 입력 {s.uncached} + 시스템(캐시) {s.system} · 출력 {s.output} ({s.basis})",
+        *note,
         "",
         "| 모델 | 이번 실행 | 같은 사례 Batch |",
         "| --- | ---: | ---: |",
     ]
     for m, label in cost.MODEL_LABEL.items():
         js = cost.SHAPES[judge_shape]
-        normal = cost.estimate(s, len(cases), m) + cost.estimate(js, n_judge, m)
-        batch = cost.estimate(s, len(cases), m, batch=True) + cost.estimate(
-            js, n_judge, m, batch=True
-        )
-        rows.append(f"| {label} | ${normal:,.2f} | ${batch:,.2f} |")
+
+        def total(batch: bool, m: str = m, js: cost.CallShape = js) -> float:
+            agent = sum(cost.estimate(s, n, m, batch=batch) for n in sizes)
+            return agent + sum(cost.estimate(js, n, m, batch=batch) for n in jsizes)
+
+        rows.append(f"| {label} | ${total(False):,.2f} | ${total(True):,.2f} |")
     rows += ["", f"가격: {cost.PRICE_SOURCE}. 생각 토큰에 따라 달라요."]
     return "\n".join(rows)
 
