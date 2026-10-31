@@ -1,8 +1,9 @@
-"""공정 에이전트(도배 · 목공)가 같이 쓰는 부분: 지식 읽기, 입력 만들기, 출력 검사.
+"""공정 에이전트(TradeAgent): 공정 하나의 지식(SKILL)으로 공정 의견(plan)을 만든다.
 
-공정 에이전트는 상담 오케스트레이터가 칸을 다 채우면 도구처럼 부른다 (읽기 전용).
+상담 오케스트레이터가 칸을 다 채우면 도구처럼 부른다 (읽기 전용, DB에 쓰지 않는다).
 계산 엔진 결과를 받아 할 일 · 실측 때 확인할 것 · 주의사항을 쓴다. 숫자는 쓰지 않는다.
 규칙을 어긴 항목은 버리고, 요약이 어긋나면 결과 전체를 버린다.
+새 공정은 모듈을 따로 만들지 않고 consult/trades/<공정>.py에서 TradeAgent.load(...)로 만든다.
 """
 
 import re
@@ -94,3 +95,33 @@ def validate(plan: TradePlan, step_keys: set[str], known: dict[str, str]) -> tup
         summary=plan.summary.strip(), steps=steps, visit_checks=checks, cautions=cautions
     )
     return clean, dropped
+
+
+@dataclass
+class TradeAgent:
+    """공정 하나의 에이전트. 지식 · 프롬프트는 만들 때 읽어 고정한다 (프롬프트 캐시가 맞게)."""
+
+    name: str  # 지식 폴더 이름 (agent/skills/<name>/SKILL.md)
+    label: str  # 화면 말 (예: 도배)
+    plan_prompt_version: str  # 예: wallpaper-v1
+    plan_system: str
+    sources: dict[str, str]  # 지식 '출처' id → 이름
+
+    @classmethod
+    def load(cls, name: str, label: str, plan_prompt_file: str) -> "TradeAgent":
+        knowledge = skill(name)
+        return cls(
+            name=name,
+            label=label,
+            plan_prompt_version=plan_prompt_file.removesuffix(".md").replace("_", "-"),
+            plan_system=system(plan_prompt_file, f"{label} 지식", knowledge),
+            sources=sources(knowledge),
+        )
+
+    def validate(self, plan: TradePlan, step_keys: set[str]) -> tuple[TradePlan, int]:
+        return validate(plan, step_keys, self.sources)
+
+    async def plan(self, card_text: str, q: Quote) -> PlanResult:
+        raw, usage = await llm.parse(self.plan_system, render(card_text, q), TradePlan)
+        clean, dropped = self.validate(raw, {s.key for s in q.steps})
+        return PlanResult(clean, dropped, usage)
