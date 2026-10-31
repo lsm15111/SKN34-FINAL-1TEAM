@@ -1,33 +1,42 @@
-"""상담 오케스트레이터의 LLM 부분: 대화에서 칸 값을 뽑고 고객 말에 짧게 답한다.
+"""상담 라우터 (LLM 한 번): 대화에서 바꿀 칸과 공정별 질문을 뽑고 고객 말에 짧게 답한다.
 
-무엇을 물을지, 언제 계산하고 공정 에이전트를 부를지는 코드(consult.service)가 정한다.
+공정 지식(SKILL)은 넣지 않는다. 질문은 공정 전문가(agent.trade)가 답한다. 그래서 시스템 프롬프트가 짧고,
+공정 칸 목록은 레지스트리로 만든 고정 글이라 프롬프트 캐시가 맞는다.
+무엇을 물을지, 뽑은 값이 맞는지, 언제 계산하고 누구를 부를지는 코드(consult.service)가 정한다.
 """
 
 import json
-import re
+from pathlib import Path
 
-from app.agent import carpentry, llm, trade, wallpaper
-from app.agent.schemas import CardUpdate
+from app.agent import llm
+from app.agent.schemas import RouterOut
+from app.agent.trade import NUMBER_CLAIM
 
-PROMPT_VERSION = "consult-v3"
-SYSTEM = (
-    trade.system("consult_v3.md", "도배 지식", wallpaper.SKILL)
-    + "\n\n# 목공 지식\n\n"
-    + carpentry.SKILL
+PROMPT_VERSION = "consult-v4"
+_PROMPT = (Path(__file__).parent / "prompts" / "consult_v4.md").read_text(encoding="utf-8")
+_CATALOG_HEAD = (
+    "# 공정과 칸\n\n"
+    "칸 줄: 칸 이름 | 화면 말 | 종류(choice 하나 · multi 여러 개 · count 숫자) | 값=뜻 | 구분 설명\n\n"
 )
 
-# 답에 금액 · 기간 · 면적을 새로 만들어 넣었으면 쓰지 않는다 (숫자는 계산 엔진만)
-_NUMBER_CLAIM = re.compile(r"\d[\d,.]*\s*(원|만|천|억|%|일|시간|주|㎡|m|제곱|미터)")
+
+def system(catalog: str) -> str:
+    """프롬프트 + 레지스트리 전 공정의 칸 목록 (공정이 바뀌지 않는 한 같은 글)"""
+    return _PROMPT + "\n\n" + _CATALOG_HEAD + catalog
 
 
-async def extract(turns: list[tuple[str, str]], card: dict) -> tuple[CardUpdate, llm.Usage]:
+async def route(
+    system_text: str, turns: list[tuple[str, str]], trades: list[str], card: dict
+) -> tuple[RouterOut, llm.Usage]:
     convo = "\n".join(f"{'고객' if role == 'user' else '상담사'}: {text}" for role, text in turns)
     user = (
+        f"고객 공정: {', '.join(trades)}\n"
         f"지금까지 채운 칸: {json.dumps(card, ensure_ascii=False, sort_keys=True)}\n\n"
         f"<conversation>\n{convo}\n</conversation>"
     )
-    return await llm.parse(SYSTEM, user, CardUpdate, role="router")
+    return await llm.parse(system_text, user, RouterOut, role="router")
 
 
 def reply_ok(text: str) -> bool:
-    return bool(text.strip()) and len(text) <= 300 and not _NUMBER_CLAIM.search(text)
+    """비었거나 너무 길거나 금액 · 기간 · 면적을 지어낸 답은 쓰지 않는다."""
+    return bool(text.strip()) and len(text) <= 300 and not NUMBER_CLAIM.search(text)

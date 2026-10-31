@@ -4,7 +4,6 @@ from app.agent import trade
 
 AGENT = trade.TradeAgent.load("carpentry", "목공", "carpentry_v1.md")
 PROMPT_VERSION = AGENT.plan_prompt_version
-SKILL = trade.skill("carpentry")
 SOURCES = AGENT.sources
 PlanResult = trade.PlanResult
 plan = AGENT.plan

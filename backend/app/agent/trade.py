@@ -1,8 +1,9 @@
-"""공정 에이전트(TradeAgent): 공정 하나의 지식(SKILL)으로 공정 의견(plan)을 만든다.
+"""공정 에이전트(TradeAgent): 공정 하나의 지식(SKILL)으로 공정 의견(plan)과 전문가 답(answer)을 만든다.
 
-상담 오케스트레이터가 칸을 다 채우면 도구처럼 부른다 (읽기 전용, DB에 쓰지 않는다).
-계산 엔진 결과를 받아 할 일 · 실측 때 확인할 것 · 주의사항을 쓴다. 숫자는 쓰지 않는다.
-규칙을 어긴 항목은 버리고, 요약이 어긋나면 결과 전체를 버린다. 입력이 같으면 하루 동안 캐시를 쓴다.
+상담 오케스트레이터가 도구처럼 부른다 (읽기 전용, DB에 쓰지 않는다). 숫자는 쓰지 않는다.
+- plan: 칸이 다 차면 계산 엔진 결과를 받아 할 일 · 실측 때 확인할 것 · 주의사항을 쓴다.
+  규칙을 어긴 항목은 버리고, 요약이 어긋나면 결과 전체를 버린다. 입력이 같으면 하루 동안 캐시를 쓴다.
+- answer: 고객 질문에 그 공정 지식만으로 짧게 답한다. 지어낸 금액 · 기간 · 면적이 있으면 버린다.
 새 공정은 모듈을 따로 만들지 않고 consult/trades/<공정>.py에서 TradeAgent.load(...)로 만든다.
 """
 
@@ -13,11 +14,12 @@ from pathlib import Path
 from typing import Protocol
 
 from app.agent import cache, llm
-from app.agent.schemas import TradePlan
+from app.agent.schemas import ExpertAnswer, TradePlan
 from app.calc.common import Line, Step
 from app.config import settings
 
 _DIR = Path(__file__).parent
+EXPERT_PROMPT = "expert_v1.md"
 STATE_LABEL = {
     "included": "포함",
     "bundled": "묶음 포함",
@@ -27,6 +29,8 @@ STATE_LABEL = {
     "excluded": "안 함",
 }
 _DIGIT = re.compile(r"\d")
+# 금액 · 기간 · 면적 · 길이를 새로 만든 글 (숫자는 계산 엔진만 만든다)
+NUMBER_CLAIM = re.compile(r"\d[\d,.]*\s*(원|만|천|억|%|일|시간|주|㎡|m|제곱|미터)")
 
 
 class Quote(Protocol):
@@ -39,6 +43,12 @@ class PlanResult:
     plan: TradePlan
     dropped: int  # 규칙을 어겨 버린 항목 수
     usage: llm.Usage | None  # 캐시에서 꺼냈으면 None (LLM을 부르지 않음)
+
+
+@dataclass(frozen=True)
+class AnswerResult:
+    answer: ExpertAnswer
+    usage: llm.Usage
 
 
 def skill(name: str) -> str:
@@ -107,6 +117,7 @@ class TradeAgent:
     label: str  # 화면 말 (예: 도배)
     plan_prompt_version: str  # 예: wallpaper-v1
     plan_system: str
+    answer_system: str
     sources: dict[str, str]  # 지식 '출처' id → 이름
 
     @classmethod
@@ -117,6 +128,7 @@ class TradeAgent:
             label=label,
             plan_prompt_version=plan_prompt_file.removesuffix(".md").replace("_", "-"),
             plan_system=system(plan_prompt_file, f"{label} 지식", knowledge),
+            answer_system=system(EXPERT_PROMPT, f"{label} 지식", knowledge),
             sources=sources(knowledge),
         )
 
@@ -143,3 +155,16 @@ class TradeAgent:
         if k:
             await cache.put(k, {"plan": clean.model_dump(), "dropped": dropped}, ttl)
         return PlanResult(clean, dropped, usage)
+
+    def check_answer(self, a: ExpertAnswer) -> ExpertAnswer:
+        """비었거나 300자를 넘거나 금액 · 기간 · 면적을 지어냈으면 LlmError. 목록 밖 출처는 버린다."""
+        text = a.answer.strip()
+        if not text or len(text) > 300 or NUMBER_CLAIM.search(text):
+            raise llm.LlmError("invalid_answer")
+        known = [s for s in dict.fromkeys(a.sources) if s in self.sources]
+        return ExpertAnswer(answer=text, sources=known)
+
+    async def answer(self, question: str, card_text: str) -> AnswerResult:
+        user = f"<input>\n집 정보:\n{card_text}\n\n고객 질문: {question}\n</input>"
+        raw, usage = await llm.parse(self.answer_system, user, ExpertAnswer, role="expert")
+        return AnswerResult(self.check_answer(raw), usage)

@@ -11,7 +11,7 @@ from app.shared import ratelimit
 router = APIRouter(tags=["상담"])
 
 
-@router.post("/consult", response_model=ConsultOut, summary="도배 · 목공 상담 한 턴")
+@router.post("/consult", response_model=ConsultOut, summary="공정 상담 한 턴")
 async def consult_turn(
     data: ConsultIn,
     user: User = Depends(require_role("customer")),

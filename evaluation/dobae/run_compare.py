@@ -36,13 +36,15 @@ def _load_env() -> None:
         if "=" in line and not line.lstrip().startswith("#"):
             k, v = line.split("=", 1)
             k = k.strip()
-            if k in ("ANTHROPIC_API_KEY", "LLM_MODEL", "LLM_EFFORT") and v.strip():
+            llm_key = k.startswith(("LLM_MODEL", "LLM_EFFORT"))  # 역할별 설정 포함
+            if (k == "ANTHROPIC_API_KEY" or llm_key) and v.strip():
                 os.environ.setdefault(k, v.strip())
 
 
 sys.stdout.reconfigure(encoding="utf-8")  # Windows 콘솔에서도 한글이 깨지지 않게
 _load_env()
 os.environ["LLM_LIVE"] = "true"
+os.environ["LLM_PLAN_CACHE_S"] = "0"  # 실행마다 새로 만든 의견을 잰다 (캐시 끔)
 os.environ.setdefault("APP_ENV", "local")
 
 from pydantic import BaseModel
@@ -91,23 +93,37 @@ class _NoDb:
 
 def truth_card(t: dict) -> ConsultCard:
     area = calc.pyeong_to_m2(Decimal(t["pyeong"])) if "pyeong" in t else calc.m2(Decimal(t["m2"]))
+    ceiling = "yes" if t["include_ceiling"] else "no"
     return ConsultCard(
         area_m2=area,
         area_basis=t["area_basis"],
-        grade=t["grade"],
-        include_ceiling=t["include_ceiling"],
         occupied=t["occupied"],
         balcony_ext=t.get("balcony_ext", False),
+        values={"dobae": {"grade": t["grade"], "include_ceiling": ceiling}},
     )
 
 
+def flat(card: dict) -> dict:
+    """카드를 예전 칸 이름(grade · include_ceiling)으로 편다. consult-v3 이전 raw.json도 그대로 읽는다."""
+    if "values" not in card:
+        return card
+    d = card["values"].get("dobae", {})
+    ceiling = d.get("include_ceiling")
+    return card | {
+        "grade": d.get("grade"),
+        "include_ceiling": None if ceiling is None else ceiling == "yes",
+    }
+
+
 def answer_for(field: str, t: dict) -> Answer:
-    if field == "area":
+    """폼 질문(field: area · area_basis · occupied · dobae.grade · dobae.include_ceiling)에 정답으로 답한다."""
+    key = field.removeprefix("dobae.")
+    if key == "area":
         v = str(t["pyeong"]) if "pyeong" in t else f"{t['m2']}㎡"
-    elif field in ("include_ceiling", "occupied"):
-        v = "yes" if t[field] else "no"
+    elif key in ("include_ceiling", "occupied"):
+        v = "yes" if t[key] else "no"
     else:
-        v = t[field]
+        v = t[key]
     return Answer(field=field, value=v)
 
 
@@ -137,7 +153,8 @@ def _validate_logged(plan, keys):
 
 
 _ORIG_PARSE, _ORIG_VALIDATE = llm.parse, wallpaper.validate
-llm.parse, wallpaper.validate = _parse_logged, _validate_logged
+# 상담은 공정 스펙의 에이전트(wallpaper.AGENT)를 부르므로 그 인스턴스의 검사를 감싼다
+llm.parse, wallpaper.AGENT.validate = _parse_logged, _validate_logged
 
 
 async def run_ours(case: dict) -> dict:
@@ -147,15 +164,15 @@ async def run_ours(case: dict) -> dict:
     out = await service.turn(_NoDb(), None, ConsultIn(message=case["message"]))
     first_card, first_reply = out.card, out.reply
     # 코드가 폼으로 묻는 칸에 정답 카드로 한 번에 답한다
-    asked = [q.field for q in out.questions]
-    if asked:
-        answers = [answer_for(f, t) for f in asked]
+    fields = [q.field for q in out.questions]
+    if fields:
+        answers = [answer_for(f, t) for f in fields]
         out = await service.turn(_NoDb(), None, ConsultIn(card=out.card, answers=answers))
     want = calc.quote(_input(truth_card(t)), _prices())
     res = out.results[0] if out.results else None
     return {
         "first_card": first_card.model_dump(mode="json"),
-        "asked": asked,
+        "asked": [f.removeprefix("dobae.") for f in fields],  # 사례의 칸 이름(grade 등)으로
         "reply_first": first_reply,
         "total": res.quote.total if res else None,
         "subtotal": res.quote.subtotal if res else None,
@@ -169,11 +186,12 @@ async def run_ours(case: dict) -> dict:
 
 
 def _input(c: ConsultCard) -> calc.DobaeInput:
+    d = c.values["dobae"]
     return calc.DobaeInput(
         area_m2=c.area_m2,
         area_basis=c.area_basis,
-        grade=c.grade,
-        include_ceiling=c.include_ceiling,
+        grade=d["grade"],
+        include_ceiling=d["include_ceiling"] == "yes",
         occupied=c.occupied,
         balcony_ext=c.balcony_ext,
     )
@@ -249,14 +267,14 @@ def summarize(cases: list[dict], res: dict) -> str:
         for o in o_runs:
             n_runs += 1
             ours_calls += o["calls"]
-            card = o["first_card"]
+            card = flat(o["first_card"])
             want = truth_card(c["truth"])
             for f in c["stated"]:
                 if f not in REQUIRED:
                     continue
                 n_fields += 1
                 got = card["area_m2"] if f == "area" else card[f]
-                exp = str(want.area_m2) if f == "area" else want.model_dump(mode="json")[f]
+                exp = str(want.area_m2) if f == "area" else flat(want.model_dump(mode="json"))[f]
                 ok_fields += got == exp
             expect = set(c["ask"]) - set(c.get("ask_or_check", []))
             asked_ok += expect <= set(o["asked"]) and not (set(o["asked"]) - set(c["ask"]))
