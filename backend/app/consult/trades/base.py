@@ -8,8 +8,9 @@
     공정표 단계 키 prep(짐 정리 · 보양) · finish(정리 · 청소)는 공정을 이을 때 한 번만 남는다.
   - refprice/<키>.py: 단가 한 벌. 값마다 출처 · 적용 시점 · 근거 수준(public · assumed · none).
   - agent/skills/<이름>/SKILL.md(끝에 '## 출처'와 "- [id] 이름" 줄) · agent/prompts/<이름>_v1.md(공정 의견).
+    <이름>은 새 공정이면 키와 같다 (도배 · 목공만 wallpaper · carpentry). 전문가 답 프롬프트는 공통(expert_v1).
   - consult/trades/<키>.py: SPEC = TradeSpec(...). consult/trades/__init__.py에 import와 목록을 한 줄씩 이름 순으로.
-- 칸 값: choice → str (예/아니요도 "yes" · "no"), multi → list[str], count → int.
+- 칸 값: choice → str (예/아니요도 "yes" · "no"), multi → list[str], count → int. "unknown"은 선택지 값으로 못 쓴다.
   unknown이 있으면 폼에 '모르겠어요'를 보이고, 고르면 그 값을 넣은 뒤 to_check에 남긴다 (실측 때 확인).
   when(values)이 있으면 그 조건일 때만 묻는다 (값이 빈 칸일 수 있다). 조건이 꺼지면 그 칸 값은 지운다.
 - build(common, values) -> Quote: 값은 이미 검사됐고 물을 칸은 다 찼다. calc 입력을 만들고 refprice 단가로
