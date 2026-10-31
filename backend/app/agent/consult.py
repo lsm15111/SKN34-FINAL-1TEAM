@@ -5,20 +5,19 @@
 
 import json
 import re
-from pathlib import Path
 
-from app.agent import llm
+from app.agent import carpentry, llm, trade, wallpaper
 from app.agent.schemas import CardUpdate
 
-PROMPT_VERSION = "consult-v2"
-_DIR = Path(__file__).parent
-SKILL = (_DIR / "skills" / "wallpaper" / "SKILL.md").read_text(encoding="utf-8")
+PROMPT_VERSION = "consult-v3"
 SYSTEM = (
-    (_DIR / "prompts" / "consult_v2.md").read_text(encoding="utf-8") + "\n\n# 도배 지식\n\n" + SKILL
+    trade.system("consult_v3.md", "도배 지식", wallpaper.SKILL)
+    + "\n\n# 목공 지식\n\n"
+    + carpentry.SKILL
 )
 
 # 답에 금액 · 기간 · 면적을 새로 만들어 넣었으면 쓰지 않는다 (숫자는 계산 엔진만)
-_NUMBER_CLAIM = re.compile(r"\d[\d,.]*\s*(원|만|천|억|%|일|시간|주|㎡|m2|제곱)")
+_NUMBER_CLAIM = re.compile(r"\d[\d,.]*\s*(원|만|천|억|%|일|시간|주|㎡|m|제곱|미터)")
 
 
 async def extract(turns: list[tuple[str, str]], card: dict) -> tuple[CardUpdate, llm.Usage]:
