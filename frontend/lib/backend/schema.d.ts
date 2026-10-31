@@ -313,6 +313,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/vendor/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 업체 정보 관리 · 상호 · 맡는 공정 · 일하는 지역 · 포트폴리오 링크 (승인 업체만) */
+        get: operations["get_profile_vendor_profile_get"];
+        /** 업체 정보 관리 저장 · 통째로 바꿈 (승인 업체만) */
+        put: operations["save_profile_vendor_profile_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/vendors": {
         parameters: {
             query?: never;
@@ -1499,6 +1517,54 @@ export interface components {
             /** Intro */
             intro: string;
         };
+        /**
+         * VendorProfileIn
+         * @description 업체 정보 관리. 통째로 바꾼다. 공정 · 지역이 있어야 고객 가견적 후보에 나온다.
+         */
+        VendorProfileIn: {
+            /**
+             * Biz Name
+             * @description 상호 (가견적 후보에 보이는 이름)
+             */
+            biz_name: string;
+            /**
+             * Site Url
+             * @description 홈페이지
+             */
+            site_url?: string | null;
+            /**
+             * Trades
+             * @description 맡는 공정 키
+             */
+            trades: string[];
+            /**
+             * Areas
+             * @description 일하는 지역 (시 · 도 id + 시 · 군 · 구)
+             */
+            areas: components["schemas"]["AreaIn"][];
+            /**
+             * Portfolio Urls
+             * @description 시공 사례 링크 (http · https)
+             * @default []
+             */
+            portfolio_urls: string[];
+        };
+        /**
+         * VendorProfileOut
+         * @description 업체 정보 관리 화면. 승인 직후에는 모두 비어 있다.
+         */
+        VendorProfileOut: {
+            /** Biz Name */
+            biz_name: string | null;
+            /** Site Url */
+            site_url: string | null;
+            /** Trades */
+            trades: string[];
+            /** Areas */
+            areas: components["schemas"]["AreaIn"][];
+            /** Portfolio Urls */
+            portfolio_urls: string[];
+        };
         /** WhenIn */
         WhenIn: {
             /**
@@ -2130,6 +2196,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_profile_vendor_profile_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorProfileOut"];
+                };
+            };
+        };
+    };
+    save_profile_vendor_profile_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorProfileIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorProfileOut"];
                 };
             };
             /** @description Validation Error */

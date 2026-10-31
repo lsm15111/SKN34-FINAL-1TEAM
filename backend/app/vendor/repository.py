@@ -1,7 +1,8 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, tuple_, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
@@ -77,6 +78,52 @@ async def approved_serving(
         .order_by(Vendor.reviewed_at, Vendor.user_id)
     )
     return [(v, sorted(ts)) for v, ts in (await s.execute(q)).all()]
+
+
+async def get(s: AsyncSession, vendor_id: uuid.UUID) -> Vendor | None:
+    return (await s.execute(select(Vendor).where(Vendor.user_id == vendor_id))).scalar_one_or_none()
+
+
+async def update_profile(
+    s: AsyncSession,
+    vendor_id: uuid.UUID,
+    *,
+    biz_name: str,
+    site_url: str | None,
+    portfolio_urls: list[str],
+) -> bool:
+    """승인된 업체일 때만 바꾼다. 바꾼 행은 트랜잭션이 끝날 때까지 잠겨, 같은 업체의 저장은 줄을 선다."""
+    res = await s.execute(
+        update(Vendor)
+        .where(Vendor.user_id == vendor_id, Vendor.status == "approved")
+        .values(biz_name=biz_name, site_url=site_url, portfolio_urls=portfolio_urls)
+    )
+    return res.rowcount == 1
+
+
+async def set_trades(s: AsyncSession, vendor_id: uuid.UUID, trades: list[str]) -> None:
+    """빠진 공정만 지우고 새 공정만 더한다 (이미 있으면 그대로)."""
+    await s.execute(
+        delete(VendorTrade).where(
+            VendorTrade.vendor_id == vendor_id, VendorTrade.trade.not_in(trades)
+        )
+    )
+    if trades:
+        rows = [{"vendor_id": vendor_id, "trade": t} for t in trades]
+        await s.execute(insert(VendorTrade).values(rows).on_conflict_do_nothing())
+
+
+async def set_areas(s: AsyncSession, vendor_id: uuid.UUID, areas: list[tuple[str, str]]) -> None:
+    """빠진 지역만 지우고 새 지역만 더한다 (이미 있으면 그대로)."""
+    await s.execute(
+        delete(VendorArea).where(
+            VendorArea.vendor_id == vendor_id,
+            tuple_(VendorArea.sido, VendorArea.sgg).not_in(areas),
+        )
+    )
+    if areas:
+        rows = [{"vendor_id": vendor_id, "sido": a, "sgg": b} for a, b in areas]
+        await s.execute(insert(VendorArea).values(rows).on_conflict_do_nothing())
 
 
 async def set_status(
