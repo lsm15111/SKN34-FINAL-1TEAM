@@ -37,6 +37,25 @@ class Settings(BaseSettings):
     session_days: int = 14
     # 올린 파일을 두는 폴더. 운영에서 객체 저장소로 바꾸면 files/storage.py만 고친다
     files_dir: str = "./data/files"
+    # ── 외부 업체 정보 (가견적) ──
+    # 공공데이터포털 서비스 키(KISCON 건설업체 · 국세청 사업자 상태). 비어 있으면 수집 작업을 건너뛴다
+    data_go_kr_key: str = ""
+    # 카카오 REST API 키 (선택). 있으면 외부 업체의 카카오맵 장소 ID만 맞춘다. 비어 있으면 건너뛴다
+    kakao_rest_key: str = ""
+    # 수집기 User-Agent에 붙일 연락 주소 (사이트 운영자가 믿집에 연락할 곳)
+    bot_contact_url: str = ""
+    # 홈페이지 확인기: 요청 사이 간격(초)과 한 요청을 기다리는 시간(초)
+    crawl_interval_s: float = 3.0
+    crawl_timeout_s: float = 10.0
+    # 외부 업체에 믿집이 대신 연락하기. 법무 검토 전에는 끈다 (끄면 요청은 queued에서 멈춘다)
+    contact_send_enabled: bool = False
+    # 대신 연락 하루 한도 (서울 날짜): 고객 한 명이 만드는 요청 수, 업체 한 곳이 받는 요청 수
+    contact_daily_per_customer: int = 5
+    contact_daily_per_vendor: int = 2
+    # 대신 연락 메시지 끝에 밝힐 발신자(믿집) 연락처. 비어 있으면 켜져 있어도 보내지 않는다
+    contact_sender_contact: str = ""
+    # 수신거부 링크를 만들 웹 주소
+    web_url: str = "http://localhost:3000"
 
     @property
     def is_https(self) -> bool:

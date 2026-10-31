@@ -12,8 +12,10 @@ from app.account.router import router as account_router
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.consult.router import router as consult_router
+from app.directory.router import router as directory_router
 from app.files.router import router as files_router
 from app.project.router import router as project_router
+from app.quote.router import router as quote_router
 from app.shared.errors import (
     AppError,
     app_error_handler,
@@ -53,8 +55,10 @@ ROUTERS = [
     account_router,
     auth_router,
     consult_router,
+    directory_router,
     files_router,
     project_router,
+    quote_router,
     vendor_router,
 ]
 for r in ROUTERS:
