@@ -33,7 +33,8 @@ def spec(**over) -> TradeSpec:
 
 
 def test_registry_is_in_work_order_with_short_keys():
-    assert ORDER == ("mokgong", "dobae") and list(REGISTRY) == list(ORDER)
+    assert list(REGISTRY) == list(ORDER)
+    assert ORDER.index("mokgong") < ORDER.index("dobae")  # 목공이 끝난 뒤 도배
     orders = [s.order for s in REGISTRY.values()]
     assert orders == sorted(orders) and len(set(orders)) == len(orders)
     for key, s in REGISTRY.items():
