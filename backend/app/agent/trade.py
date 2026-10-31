@@ -55,10 +55,19 @@ def skill(name: str) -> str:
     return (_DIR / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
 
 
-def system(prompt: str, title: str, knowledge: str) -> str:
-    return (
-        (_DIR / "prompts" / prompt).read_text(encoding="utf-8") + f"\n\n# {title}\n\n" + knowledge
+_INCLUDE = re.compile(r"\{\{(\w+)\}\}")
+
+
+def prompt_text(name: str) -> str:
+    """프롬프트 파일. {{이름}}은 prompts/이름.md(공통 규칙)로 바꿔 끼운다."""
+    text = (_DIR / "prompts" / name).read_text(encoding="utf-8")
+    return _INCLUDE.sub(
+        lambda m: (_DIR / "prompts" / f"{m.group(1)}.md").read_text(encoding="utf-8").strip(), text
     )
+
+
+def system(prompt: str, title: str, knowledge: str) -> str:
+    return prompt_text(prompt) + f"\n\n# {title}\n\n" + knowledge
 
 
 def sources(knowledge: str) -> dict[str, str]:
