@@ -20,15 +20,17 @@ class Settings(BaseSettings):
     llm_effort: str = "medium"
     llm_timeout_s: float = 60.0
     # 역할별 모델 · 생각 깊이. 모델이 비어 있으면 llm_model을 쓴다
-    # router: 상담 라우터 · expert: 공정 전문가 답 · plan: 공정 의견 · sourcing: 가견적
+    # router: 상담 라우터 · expert: 공정 전문가 답 · plan: 공정 의견 · sourcing: 가견적 · judge: 평가 판정
     llm_model_router: str = ""
     llm_model_expert: str = ""
     llm_model_plan: str = ""
     llm_model_sourcing: str = ""
+    llm_model_judge: str = ""
     llm_effort_router: str = "low"
     llm_effort_expert: str = "low"
     llm_effort_plan: str = "medium"
     llm_effort_sourcing: str = "low"
+    llm_effort_judge: str = "low"
     # 공정 의견 캐시 시간(초). 입력이 같으면 LLM을 다시 부르지 않는다. 0이면 끈다
     llm_plan_cache_s: int = 86400
     # 상태를 바꾸는 요청(POST 등)에서 허용할 브라우저 Origin, 쉼표로 구분
