@@ -127,12 +127,19 @@ def stratified_sample(
     return [items[i] for i in sorted(pick)]
 
 
-def sample_2to1(items: list[dict], n: int, key: Callable[[dict], Hashable]) -> list[dict]:
-    """층마다 고르게, dev:held-out 2:1로 앞에서부터 고른다 (난수 없이 늘 같다). 표본 파일용"""
+def sample_2to1(
+    items: list[dict], n: int, key: Callable[[dict], Hashable], r: random.Random | None = None
+) -> list[dict]:
+    """나눔마다 dev:held-out 2:1 자리를 나누고, 그 안에서 층마다 고르게 뽑는다.
+
+    r이 없으면 앞에서부터 골라 늘 같다 (표본 파일용).
+    """
+    if n <= 0 or n >= len(items):
+        return list(items)
     nd = round(n * 2 / 3)
     out: list[dict] = []
     for split, k in (("dev", nd), ("heldout", n - nd)):
-        out += stratified_sample([x for x in items if x["split"] == split], k, key)
+        out += stratified_sample([x for x in items if x["split"] == split], k, key, r)
     return out
 
 
