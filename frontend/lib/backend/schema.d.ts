@@ -90,6 +90,23 @@ export interface paths {
         patch: operations["patch_me_me_patch"];
         trace?: never;
     };
+    "/consult/dobae": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 도배 상담 한 턴 */
+        post: operations["dobae_turn_consult_dobae_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/files": {
         parameters: {
             query?: never;
@@ -305,6 +322,19 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Answer
+         * @description 선택지 버튼으로 고른 답
+         */
+        Answer: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "area" | "area_basis" | "grade" | "include_ceiling" | "occupied";
+            /** Value */
+            value: string;
+        };
         /** AreaIn */
         AreaIn: {
             /** Sido */
@@ -335,6 +365,94 @@ export interface components {
              * @description 사업자등록증 (jpg · png · pdf)
              */
             license_file: string;
+        };
+        /** CautionOut */
+        CautionOut: {
+            /** Text */
+            text: string;
+            /** Source */
+            source: string;
+        };
+        /** Choice */
+        Choice: {
+            /** Value */
+            value: string;
+            /** Label */
+            label: string;
+        };
+        /** ConsultIn */
+        ConsultIn: {
+            card?: components["schemas"]["DobaeCard-Input"];
+            /** History */
+            history?: components["schemas"]["Turn"][];
+            /** Message */
+            message?: string | null;
+            answer?: components["schemas"]["Answer"] | null;
+            /** Project Id */
+            project_id?: string | null;
+        };
+        /** ConsultOut */
+        ConsultOut: {
+            card: components["schemas"]["DobaeCard-Output"];
+            /** Reply */
+            reply: string | null;
+            question: components["schemas"]["Question"] | null;
+            quote: components["schemas"]["QuoteOut"] | null;
+            plan: components["schemas"]["PlanOut"] | null;
+            /** Plan Status */
+            plan_status: ("new" | "same" | "failed") | null;
+            /** Notice */
+            notice: string | null;
+        };
+        /**
+         * DobaeCard
+         * @description 요구사항 카드(도배). 비어 있는 필수 칸을 코드가 하나씩 묻는다.
+         */
+        "DobaeCard-Input": {
+            /** Area M2 */
+            area_m2?: number | string | null;
+            /** Area Basis */
+            area_basis?: ("supply" | "exclusive") | null;
+            /** Grade */
+            grade?: ("economy" | "basic") | null;
+            /** Include Ceiling */
+            include_ceiling?: boolean | null;
+            /** Occupied */
+            occupied?: boolean | null;
+            /**
+             * Balcony Ext
+             * @default false
+             */
+            balcony_ext: boolean;
+            /** Built Year */
+            built_year?: number | null;
+            /** To Check */
+            to_check?: ("area" | "area_basis" | "grade" | "include_ceiling" | "occupied")[];
+        };
+        /**
+         * DobaeCard
+         * @description 요구사항 카드(도배). 비어 있는 필수 칸을 코드가 하나씩 묻는다.
+         */
+        "DobaeCard-Output": {
+            /** Area M2 */
+            area_m2?: string | null;
+            /** Area Basis */
+            area_basis?: ("supply" | "exclusive") | null;
+            /** Grade */
+            grade?: ("economy" | "basic") | null;
+            /** Include Ceiling */
+            include_ceiling?: boolean | null;
+            /** Occupied */
+            occupied?: boolean | null;
+            /**
+             * Balcony Ext
+             * @default false
+             */
+            balcony_ext: boolean;
+            /** Built Year */
+            built_year?: number | null;
+            /** To Check */
+            to_check?: ("area" | "area_basis" | "grade" | "include_ceiling" | "occupied")[];
         };
         /** DobaeIn */
         DobaeIn: {
@@ -373,6 +491,28 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LineOut */
+        LineOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Qty */
+            qty: string | null;
+            /** Unit */
+            unit: string;
+            /** Unit Price */
+            unit_price: number | null;
+            /** Amount */
+            amount: number | null;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "included" | "bundled" | "separate" | "optional" | "after_visit" | "excluded";
+            /** Source */
+            source: string;
         };
         /** LoginIn */
         LoginIn: {
@@ -443,6 +583,29 @@ export interface components {
              * Format: uuid
              */
             space_id: string;
+        };
+        /**
+         * PlanOut
+         * @description 도배 공정 에이전트 의견 (AI가 만든 설명)
+         */
+        PlanOut: {
+            /** Summary */
+            summary: string;
+            /** Steps */
+            steps: components["schemas"]["PlanStep"][];
+            /** Visit Checks */
+            visit_checks: string[];
+            /** Cautions */
+            cautions: components["schemas"]["CautionOut"][];
+            /** Prompt Version */
+            prompt_version: string;
+        };
+        /** PlanStep */
+        PlanStep: {
+            /** Key */
+            key: string;
+            /** Note */
+            note: string;
         };
         /**
          * ProjectCreate
@@ -542,6 +705,48 @@ export interface components {
              */
             created_at: string;
         };
+        /** Question */
+        Question: {
+            /**
+             * Field
+             * @enum {string}
+             */
+            field: "area" | "area_basis" | "grade" | "include_ceiling" | "occupied";
+            /** Text */
+            text: string;
+            /** Choices */
+            choices: components["schemas"]["Choice"][];
+        };
+        /**
+         * QuoteOut
+         * @description 표준견적서(도배). 계산 엔진 결과 그대로, VAT 별도 합계와 VAT를 따로 둔다.
+         */
+        QuoteOut: {
+            /** Version */
+            version: string;
+            /** Paper M2 */
+            paper_m2: string;
+            /** Wall M2 */
+            wall_m2: string;
+            /** Ceiling M2 */
+            ceiling_m2: string;
+            /** Lines */
+            lines: components["schemas"]["LineOut"][];
+            /** Subtotal */
+            subtotal: number;
+            /** Vat */
+            vat: number;
+            /** Total */
+            total: number;
+            /** Man Days */
+            man_days: string;
+            /** Steps */
+            steps: components["schemas"]["StepOut"][];
+            /** Days */
+            days: string;
+            /** Assumptions */
+            assumptions: string[];
+        };
         /** RejectIn */
         RejectIn: {
             /** Reason */
@@ -603,6 +808,15 @@ export interface components {
             /** Name */
             name: string;
         };
+        /** StepOut */
+        StepOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Half Days */
+            half_days: number;
+        };
         /** TradesIn */
         TradesIn: {
             dobae?: components["schemas"]["DobaeIn"] | null;
@@ -612,6 +826,16 @@ export interface components {
         TradesOut: {
             dobae?: components["schemas"]["DobaeOut"] | null;
             mokgong?: components["schemas"]["MokgongOut"] | null;
+        };
+        /** Turn */
+        Turn: {
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
+            /** Text */
+            text: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -856,6 +1080,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    dobae_turn_consult_dobae_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ConsultIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConsultOut"];
                 };
             };
             /** @description Validation Error */

@@ -23,7 +23,10 @@ export function RealProjectHub({ p, step }: { p: ApiProject; step: number }) {
             <span className="mj-eyebrow">지금 단계</span>
             <h1 id="now-h" className="mj-h2">프로젝트를 만들었어요</h1>
             <p className="mj-sub">{p.photos.length || p.plans.length ? "답과 사진 · 도면을" : "답을"} 저장했어요. 예상 공정표와 표준견적서는 아직 이 프로젝트에 연결되지 않았어요.</p>
-            <div className="mj-btn-row"><Link href="/projects/p1" className="mj-btn mj-btn-sec">예시 프로젝트로 흐름 보기</Link></div>
+            <div className="mj-btn-row">
+              {dobae ? <Link href={`/consult?project=${p.id}`} className="mj-btn mj-btn-pri">도배 상담 받기</Link> : null}
+              <Link href="/projects/p1" className="mj-btn mj-btn-sec">예시 프로젝트로 흐름 보기</Link>
+            </div>
           </section>
 
           {bySpace.length || p.plans.length ? (

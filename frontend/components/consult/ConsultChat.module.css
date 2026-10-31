@@ -1,0 +1,20 @@
+.wrap { display: flex; flex-direction: column; gap: 28px; }
+.chat { gap: 12px; }
+.log { display: flex; flex-direction: column; gap: 10px; max-height: 460px; min-height: 200px; overflow-y: auto; padding-right: 4px; }
+.bubble { margin: 0; max-width: 85%; padding: 10px 14px; border-radius: var(--radius); font-size: var(--fs-md); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.bot { align-self: flex-start; background: var(--surface-2); color: var(--ink); }
+.me { align-self: flex-end; background: var(--accent-weak); color: var(--accent-ink); }
+.wait { color: var(--ink-sub); }
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choices button { min-height: 44px; }
+.composer { display: flex; gap: 8px; }
+.composer input { flex: 1 1 auto; min-width: 0; }
+.result { display: flex; flex-direction: column; gap: 14px; }
+.head { display: flex; flex-direction: column; gap: 4px; }
+.totals { flex-direction: row; flex-wrap: wrap; gap: 24px; }
+.totals > div { display: flex; flex-direction: column; gap: 2px; min-width: 140px; }
+.totals b { font-size: var(--fs-h2); }
+.accent { color: var(--accent-ink); }
+.muted { color: var(--ink-mute); }
+.list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.planHead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
