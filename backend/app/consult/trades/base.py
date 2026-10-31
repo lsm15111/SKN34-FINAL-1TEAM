@@ -13,15 +13,21 @@
 - 칸 값: choice → str (예/아니요도 "yes" · "no"), multi → list[str], count → int. "unknown"은 선택지 값으로 못 쓴다.
   unknown이 있으면 폼에 '모르겠어요'를 보이고, 고르면 그 값을 넣은 뒤 to_check에 남긴다 (실측 때 확인).
   when(values)이 있으면 그 조건일 때만 묻는다 (값이 빈 칸일 수 있다). 조건이 꺼지면 그 칸 값은 지운다.
+  share가 같은 칸(예: "doors" 방문 개수)은 여러 공정을 골라도 한 번만 묻고, 답은 비어 있는 같은 share 칸에
+  모두 넣는다. 공정마다 값이 달라지면(대화로 한 공정만 바꿈) 그대로 둔다.
 - build(common, values) -> Quote: 값은 이미 검사됐고 물을 칸은 다 찼다. calc 입력을 만들고 refprice 단가로
   calc를 부른다. 금액 · 수량 · 기간은 calc만 만든다.
+- 공정표: 단계 키 remove(철거)는 공정을 이을 때 맨 앞(짐 정리 다음)에 모인다. 도배가 끝난 뒤에 하는 작업
+  (장판 깔기 · 가구 설치 · 조명 교체)은 calc가 Step(late=True)로 표시하고, 스펙의 late_order 순서로 뒤에 모인다.
 - card_lines(common, values) -> list[str]: 공정 의견 에이전트에 넘길 이 공정 칸 설명. 공통 칸 · 공간 ·
   같이 하는 공정 · 모른다고 한 칸 줄은 오케스트레이터가 붙인다.
 - prefill(project) -> dict: 견적 받기(ProjectOut)로 채울 칸 값. 견적 받기에 이 공정 칸이 없으면 prefill=None.
 - agent: TradeAgent.load(이름, 화면 말, "<이름>_v1.md").
 
-공정 순서 order (철거 없음 기준, 작은 수가 먼저):
-window 10 · electric 20 · mokgong 30 · bath 40 · tile 50 · kitchen 60 · film 70 · paint 80 · dobae 90 · floor 100
+공정 순서 order (본 작업, 작은 수가 먼저. 철거는 공정마다 앞으로 모인다):
+window 10 · electric 20 · mokgong 30 · bath 40 · tile 50 · kitchen 60 · paint 70 · film 75 · floor 85 · dobae 90
+- 도장 뒤에 필름 (퍼티 샌딩 먼지가 필름 접착을 망친다), 마루 · 포세린은 도배 앞, 장판은 도배 뒤(late).
+늦게 하는 작업 late_order (Step.late인 단계만): floor 10 (장판) · kitchen 20 (가구 설치) · electric 30 (조명 · 스위치)
 """
 
 import re
@@ -64,10 +70,11 @@ class FieldSpec:
     when: Callable[[Values], bool] | None = None  # 이 조건일 때만 묻는다
     unit: str = "개"  # count 값 뒤에 붙는 화면 단위
     hint: str = ""  # 라우터가 칸을 헷갈리지 않게 붙이는 짧은 설명
+    share: str | None = None  # 같은 값을 여러 공정이 같이 쓰는 칸 (한 번만 묻는다). 예: "doors"
 
     def __post_init__(self) -> None:
-        if not _FIELD.fullmatch(self.key):
-            raise ValueError(f"칸 키는 영어 소문자 · _ 20자 이하예요: {self.key}")
+        if not _FIELD.fullmatch(self.key) or (self.share and not _FIELD.fullmatch(self.share)):
+            raise ValueError(f"칸 키 · share는 영어 소문자 · _ 20자 이하예요: {self.key}")
         if self.kind == "count":
             if self.choices or not 0 <= self.min <= self.max:
                 raise ValueError(f"count 칸은 선택지 없이 min <= max예요: {self.key}")
@@ -154,12 +161,15 @@ class TradeSpec:
     build: Callable[[Common, Values], Quote]
     card_lines: Callable[[Common, Values], list[str]]
     prefill: Callable[["ProjectOut"], dict[str, Value]] | None = None
+    late_order: int | None = (
+        None  # Step(late=True) 단계가 있는 공정만. 도배 뒤 작업 순서 (작은 수가 먼저)
+    )
 
     def __post_init__(self) -> None:
         if not _KEY.fullmatch(self.key):
             raise ValueError(f"공정 키는 영어 소문자 10자 이하예요: {self.key}")
         keys = [f.key for f in self.fields]
-        if len(set(keys)) != len(keys) or self.order <= 0:
+        if len(set(keys)) != len(keys) or self.order <= 0 or (self.late_order or 1) <= 0:
             raise ValueError(f"칸 키가 겹치거나 순서가 0 이하예요: {self.key}")
 
     def field(self, key: str) -> FieldSpec | None:
@@ -192,5 +202,6 @@ class TradeSpec:
             if f.unknown is not None:
                 vals += f", {UNKNOWN}=모르겠어요"
             hint = f" | {f.hint}" if f.hint else ""
+            hint += f" | 같이 쓰는 칸 share={f.share}" if f.share else ""
             rows.append(f"- {self.key}.{f.key} | {f.label} | {f.kind} | {vals}{hint}")
         return "\n".join(rows)

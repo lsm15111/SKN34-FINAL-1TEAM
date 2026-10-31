@@ -17,8 +17,21 @@ REGISTRY: dict[str, TradeSpec] = {s.key: s for s in sorted(_SPECS, key=lambda s:
 if len(REGISTRY) != len(_SPECS) or len({s.order for s in _SPECS}) != len(_SPECS):
     raise ValueError("공정 키와 순서(order)는 겹치면 안 돼요")
 ORDER: tuple[str, ...] = tuple(REGISTRY)
+_LATE = sorted((s for s in _SPECS if s.late_order is not None), key=lambda s: s.late_order)
+if len({s.late_order for s in _LATE}) != len(_LATE):
+    raise ValueError("늦게 하는 작업 순서(late_order)는 겹치면 안 돼요")
+LATE_ORDER: tuple[str, ...] = tuple(s.key for s in _LATE)
 
 
 def catalog() -> str:
     """라우터 프롬프트에 넣는 전 공정 칸 목록. 레지스트리로 만든 고정 글이라 프롬프트 캐시가 맞는다."""
-    return "\n\n".join(s.catalog() for s in REGISTRY.values())
+    parts = [s.catalog() for s in REGISTRY.values()]
+    shares: dict[str, list[str]] = {}
+    for s in REGISTRY.values():
+        for f in s.fields:
+            if f.share:
+                shares.setdefault(f.share, []).append(f"{s.key}.{f.key}")
+    if rows := [f"- share={k}: {', '.join(v)}" for k, v in shares.items() if len(v) > 1]:
+        head = "## 같이 쓰는 칸 (고객이 공정을 집어 말하지 않으면 같은 값으로 모두 바꾼다)"
+        parts.append("\n".join([head, *rows]))
+    return "\n\n".join(parts)

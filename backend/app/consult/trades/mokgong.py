@@ -76,6 +76,7 @@ SPEC = TradeSpec(
             unknown=3,
             when=_doors,
             hint="바꿀 방문 개수를 숫자로 말했을 때만",
+            share="doors",
         ),
         FieldSpec(
             key="door_frame",

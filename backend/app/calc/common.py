@@ -36,6 +36,8 @@ class Step:
     key: str
     name: str
     half_days: int
+    # 도배가 끝난 뒤에 하는 작업 (장판 깔기 · 가구 설치 · 조명 교체). 공정을 이을 때 뒤로 모은다
+    late: bool = False
 
 
 class Quote(Protocol):

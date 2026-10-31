@@ -492,6 +492,8 @@ export interface components {
             /** Schedule */
             schedule: components["schemas"]["ScheduleStepOut"][];
             summary: components["schemas"]["SummaryOut"] | null;
+            /** Overlaps */
+            overlaps: string[];
             /** Notice */
             notice: string | null;
         };
@@ -827,6 +829,11 @@ export interface components {
             name: string;
             /** Half Days */
             half_days: number;
+            /**
+             * Phase
+             * @enum {string}
+             */
+            phase: "prep" | "remove" | "main" | "late" | "finish";
         };
         /**
          * SignupIn

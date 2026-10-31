@@ -37,8 +37,9 @@ from app.consult.schemas import (
     SummaryOut,
     TradeOut,
 )
-from app.consult.trades import ORDER, REGISTRY, catalog
+from app.consult.trades import LATE_ORDER, ORDER, REGISTRY, catalog
 from app.consult.trades.base import UNKNOWN, Common, FieldSpec, TradeSpec, Value
+from app.consult.trades.overlaps import overlaps
 from app.project import service as project_service
 from app.shared.errors import AppError
 
@@ -118,10 +119,25 @@ def _question(spec: TradeSpec, f: FieldSpec) -> Question:
 
 
 def questions(c: ConsultCard) -> list[Question]:
-    """아직 비어 있는 필수 칸: 공통 칸 먼저, 공정은 공정 순서 · 스펙 칸 순서대로"""
+    """아직 비어 있는 필수 칸: 공통 칸 먼저, 공정은 공정 순서 · 스펙 칸 순서대로.
+
+    share가 같은 칸(예: 방문 개수)은 처음 한 번만 묻고, 같이 쓰는 공정 이름을 질문 끝에 붙인다.
+    """
     out = [COMMON_QUESTIONS[f] for f in _common_missing(c)]
-    for spec in _specs(c):
-        out += [_question(spec, f) for f in spec.missing(c.values.get(spec.key, {}))]
+    missing = [(sp, f) for sp in _specs(c) for f in sp.missing(c.values.get(sp.key, {}))]
+    asked: set[str] = set()
+    for spec, f in missing:
+        if f.share in asked:
+            continue
+        q = _question(spec, f)
+        if f.share:
+            asked.add(f.share)
+            users = [sp.label for sp, g in missing if g.share == f.share]
+            if len(users) > 1:
+                q = q.model_copy(
+                    update={"text": f"{f.question} ({' · '.join(users)}에 같이 넣어요)"}
+                )
+        out.append(q)
     return out
 
 
@@ -240,6 +256,30 @@ def prune(c: ConsultCard) -> ConsultCard:
     if values == c.values and to_check == c.to_check:
         return c
     return c.model_copy(update={"values": values, "to_check": to_check})
+
+
+def share_fill(c: ConsultCard) -> ConsultCard:
+    """share가 같은 칸은 한 번만 묻는다: 다른 공정에 값이 있으면 비어 있는 칸에 그 값을 넣는다.
+
+    '모르겠어요' 표시도 같이 옮긴다. 이미 값이 있는 칸(공정마다 다르게 정한 값)은 건드리지 않는다.
+    """
+    known: dict[str, tuple[Value, bool]] = {}
+    for spec in _specs(c):
+        vals = c.values.get(spec.key, {})
+        for f in spec.asked(vals):
+            if f.share and f.key in vals and f.share not in known:
+                known[f.share] = (vals[f.key], f"{spec.key}.{f.key}" in c.to_check)
+    for spec in _specs(c):
+        for f in spec.missing(c.values.get(spec.key, {})):
+            if f.share in known and f.ok(known[f.share][0]):
+                v, unknown = known[f.share]
+                c = _set_value(c, spec.key, f.key, f.norm(v), unknown)
+    return c
+
+
+def normalize(c: ConsultCard) -> ConsultCard:
+    """조건이 꺼진 칸을 지우고(prune) 같이 쓰는 칸을 채운다(share_fill)."""
+    return share_fill(prune(c))
 
 
 def facts(c: ConsultCard) -> list[Fact]:
@@ -425,12 +465,13 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
         except LlmError:
             failed = True
         else:
-            routed = prune(apply_route(card, route))
-            changed = routed != prune(card)
+            routed = normalize(apply_route(card, route))
+            changed = routed != normalize(card)
             card = routed
-    card = prune(card)
+    card = normalize(card)
     fs = facts(card)
     labels = {s.key: s.label for s in _specs(card)}
+    cross = overlaps(card.trades, card.values)
     experts = [_answer(spec, q, _expert_text(fs, spec.key)) for spec, q in _asks(route)]
 
     todo = questions(card)
@@ -445,6 +486,7 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
             results=[],
             schedule=[],
             summary=None,
+            overlaps=cross,
             notice=None,
         )
 
@@ -452,7 +494,8 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
     specs = _specs(card)
     quotes = {sp.key: sp.build(common, card.values.get(sp.key, {})) for sp in specs}
     # 처음 다 찼거나 그 공정 칸(공통 칸 포함)이 바뀌었을 때만 공정 의견을 다시 만든다
-    before = prune(data.card) if data.card is not None and not questions(data.card) else None
+    prev = normalize(data.card) if data.card is not None else None
+    before = prev if prev is not None and not questions(prev) else None
     redo = [
         sp
         for sp in specs
@@ -475,7 +518,7 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
         )
         for sp in specs
     ]
-    steps, days = sequence({k: q.steps for k, q in quotes.items()}, ORDER)
+    steps, days = sequence({k: q.steps for k, q in quotes.items()}, ORDER, LATE_ORDER)
     t = totals(quotes.values())
     return ConsultOut(
         card=card,
@@ -492,5 +535,6 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
             days=days,
             basis_counts=BasisCounts(**t.basis_counts),
         ),
+        overlaps=cross,
         notice=PLAN_FAILED if any(r.plan_status == "failed" for r in results) else None,
     )

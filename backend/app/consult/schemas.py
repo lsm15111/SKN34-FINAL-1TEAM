@@ -178,6 +178,8 @@ class ScheduleStepOut(BaseModel):
     key: str
     name: str
     half_days: int
+    # prep 짐 정리 · 보양, remove 철거, main 본 작업, late 도배 뒤 작업(장판 · 가구 · 조명), finish 정리 · 청소
+    phase: Literal["prep", "remove", "main", "late", "finish"]
 
 
 class BasisCounts(BaseModel):
@@ -207,4 +209,5 @@ class ConsultOut(BaseModel):
     results: list[TradeOut]  # 칸이 다 차면 공정마다 (공정 순서대로)
     schedule: list[ScheduleStepOut]  # 공정을 이은 예상 공정표
     summary: SummaryOut | None
+    overlaps: list[str]  # 같이 고른 공정끼리 범위가 겹칠 수 있다는 알림 (계산은 그대로)
     notice: str | None
