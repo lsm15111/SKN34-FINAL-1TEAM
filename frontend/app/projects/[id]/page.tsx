@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { RealProjectHub } from "@/components/project/RealProjectHub";
-import { gradeLabel } from "@/lib/labels";
+import { TRADE_KEYS, gradeLabel } from "@/lib/labels";
 import { notFound } from "next/navigation";
 import { ProjectTrack } from "@/components/project/ProjectTrack";
 import { demoTradeLines, getMyProject, getProject, isDemoProject, realTradeLines } from "@/lib/api/project";
@@ -20,7 +20,7 @@ export default async function ProjectHub({ params }: { params: Promise<{ id: str
   if (!isDemoProject(id)) {
     const real = await getMyProject(id);
     if (!real) notFound();
-    return <RealProjectHub p={real} step={projectStep(realTradeLines(TRADES.filter((t) => real.trades[t])))} />;
+    return <RealProjectHub p={real} step={projectStep(realTradeLines(TRADE_KEYS.filter((t) => real.trades[t])))} />;
   }
   const p = await getProject(id);
   if (!p) notFound();

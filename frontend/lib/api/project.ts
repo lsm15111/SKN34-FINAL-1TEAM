@@ -2,6 +2,7 @@
 // 견적 · 실측 API가 생기면 예시 부분을 하나씩 실제 호출로 바꾼다.
 import { serverGet, type Schemas } from "@/lib/backend/server";
 import { FX, HISTORY, PROJECTS, QUOTE_REQUESTS, VENDORS, VISITS } from "@/lib/mock/data";
+import { TRADE_KEYS } from "@/lib/labels";
 import type { Trade } from "@/lib/types";
 import type { TradeLine } from "@/lib/trade-status";
 import { md } from "@/lib/format";
@@ -24,9 +25,9 @@ export async function getHistory(projectId: string) { return HISTORY[projectId] 
 
 // ── 내 프로젝트 카드의 공정별 상태 (lib/trade-status.ts)
 
-/** 실제 프로젝트: 견적 · 실측 API가 아직 없어서 모든 공정이 '업체 고르기' 단계다. */
+/** 실제 프로젝트: 견적 · 실측 API가 아직 없어서 모든 공정이 '업체 고르기' 단계다. 공정 순서는 화면 순서(TRADE_KEYS) */
 export function realTradeLines(trades: string[]): TradeLine[] {
-  return trades.filter((t): t is Trade => t === "dobae" || t === "mokgong").map((trade) => ({ trade, stage: "choosing", text: "업체를 골라 가견적을 요청해요" }));
+  return TRADE_KEYS.filter((t) => trades.includes(t)).map((trade) => ({ trade, stage: "choosing", text: "업체를 골라 가견적을 요청해요" }));
 }
 
 /** 예시 프로젝트: 예시 데이터의 요청 · 실측 · 확정 기록으로 단계를 정한다. */

@@ -1,12 +1,12 @@
 // 공정별 진행 상태 → 내 프로젝트 카드 한 줄.
 // 상태는 데이터를 주는 쪽(lib/api.ts)이 정하고, 여기서는 화면 말과 갈 곳만 붙인다.
-import type { Trade } from "./types";
+import type { TradeKey } from "./types";
 
 export type TradeStage = "choosing" | "estimate_wait" | "comparing" | "visit_wait" | "final_arrived" | "confirmed" | "scheduled";
 export type Turn = "me" | "vendor" | "done";
 
 export interface TradeLine {
-  trade: Trade;
+  trade: TradeKey;
   stage: TradeStage;
   text: string; // 예: "3곳 중 2곳 도착"
 }

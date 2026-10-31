@@ -1,6 +1,8 @@
 // 작성 중인 견적 요청서(브라우저 저장). 질문 흐름, 홈 · 내 프로젝트의 '쓰던 요청서' 카드가 같이 쓴다.
 // 사진 파일은 여기에 넣지 않는다(브라우저 저장소에 못 넣음). 서버에는 '프로젝트 만들기'를 누를 때 올린다.
 import { regionLabel } from "@/lib/mock/regions";
+import { TRADE_KEYS } from "@/lib/labels";
+import { TRADE_LABEL, type TradeKey } from "@/lib/types";
 import type { Photo } from "./PhotoDrop";
 
 export const DRAFT_KEY = "mj_start_draft_v3";
@@ -16,7 +18,8 @@ export function clearPhotoMemo() {
   PHOTO_MEMO.uploaded = {};
 }
 
-export type DraftLite = { sido?: string; sgg?: string; size?: string; manualBasis?: string; manualM2?: string; trades?: { dobae: boolean; mokgong: boolean } };
+// trades: 공정마다 골랐는지. 예전 저장(도배 · 목공만)도 그대로 읽는다
+export type DraftLite = { sido?: string; sgg?: string; size?: string; manualBasis?: string; manualM2?: string; trades?: Partial<Record<TradeKey, boolean>> };
 
 export function readDraft(): { a: DraftLite; step: string } | null {
   try {
@@ -37,7 +40,7 @@ export function writeDraft(value: unknown | null) {
 // 카드에 보일 한 줄: 공사 · 지역 · 평수
 export function draftLine(a: DraftLite): { label: string; value: string }[] {
   const rows: { label: string; value: string }[] = [];
-  const trades = [a.trades?.dobae && "도배", a.trades?.mokgong && "목공"].filter(Boolean).join(" · ");
+  const trades = TRADE_KEYS.filter((t) => a.trades?.[t]).map((t) => TRADE_LABEL[t]).join(" · ");
   if (trades) rows.push({ label: "공사", value: trades });
   if (a.sido) rows.push({ label: "지역", value: regionLabel(a.sido, a.sgg) });
   if (a.size) rows.push({ label: "평수", value: a.size === "manual" ? `${a.manualBasis === "jeon" ? "전용" : "공급"} ${a.manualM2}㎡` : a.size === "50" ? "50평 이상" : `${a.size}평대` });

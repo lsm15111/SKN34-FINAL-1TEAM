@@ -3,7 +3,7 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SizeBand = Literal["10", "20", "30", "40", "50"]
 Budget = Literal["u300", "300-500", "500-700", "700-1000", "o1000", "undecided"]
@@ -65,6 +65,8 @@ class WhenIn(BaseModel):
 
 
 class TradeIn(BaseModel):
+    """공정에 고른 공간 (공간 이름표). 도배 · 목공 밖 공정은 이것만 받고, 공정 칸은 상담 첫 폼에서 묻는다."""
+
     spaces: list[str] = Field(min_length=1)
 
 
@@ -77,12 +79,28 @@ class MokgongIn(TradeIn):
 
 
 class TradesIn(BaseModel):
+    """고른 공정. 키는 상담 공정 스펙(consult.trades)의 키와 같다. 모르는 공정은 버리지 않고 422로 알린다."""
+
+    model_config = ConfigDict(extra="forbid")
+
     dobae: DobaeIn | None = None
     mokgong: MokgongIn | None = None
+    floor: TradeIn | None = None  # 바닥재
+    film: TradeIn | None = None  # 필름
+    paint: TradeIn | None = None  # 도장
+    tile: TradeIn | None = None  # 타일
+    bath: TradeIn | None = None  # 욕실
+    kitchen: TradeIn | None = None  # 주방
+    electric: TradeIn | None = None  # 전기 · 조명
+    window: TradeIn | None = None  # 창호
+
+    def picked(self) -> dict[str, TradeIn]:
+        """고른 공정만, 위 순서대로"""
+        return {k: t for k in TradesIn.model_fields if (t := getattr(self, k)) is not None}
 
     @model_validator(mode="after")
     def _any(self) -> "TradesIn":
-        if self.dobae is None and self.mokgong is None:
+        if not self.picked():
             raise ValueError("공정을 하나 이상 골라 주세요.")
         return self
 
@@ -118,11 +136,10 @@ class ProjectCreate(BaseModel):
         if len(set(names)) != len(names):
             raise ValueError("같은 이름의 공간이 있어요.")
         known = set(keys)
-        for t in (self.trades.dobae, self.trades.mokgong):
-            if t and not set(t.spaces) <= known:
+        for t in self.trades.picked().values():
+            if not set(t.spaces) <= known:
                 raise ValueError("공정에 없는 공간이 들어 있어요.")
-            if t:
-                t.spaces = list(dict.fromkeys(t.spaces))
+            t.spaces = list(dict.fromkeys(t.spaces))
         if self.trades.mokgong:
             self.trades.mokgong.items = list(dict.fromkeys(self.trades.mokgong.items))
         per: dict[str, int] = {}
@@ -153,9 +170,23 @@ class MokgongOut(BaseModel):
     items: list[MokItem]
 
 
+class TradeSpacesOut(BaseModel):
+    """도배 · 목공 밖 공정: 고른 공간만"""
+
+    spaces: list[uuid.UUID]
+
+
 class TradesOut(BaseModel):
     dobae: DobaeOut | None = None
     mokgong: MokgongOut | None = None
+    floor: TradeSpacesOut | None = None
+    film: TradeSpacesOut | None = None
+    paint: TradeSpacesOut | None = None
+    tile: TradeSpacesOut | None = None
+    bath: TradeSpacesOut | None = None
+    kitchen: TradeSpacesOut | None = None
+    electric: TradeSpacesOut | None = None
+    window: TradeSpacesOut | None = None
 
 
 class PhotoOut(BaseModel):

@@ -1,8 +1,15 @@
 // 화면이 받는 데이터 모양. 백엔드가 붙으면 OpenAPI에서 생성한 타입으로 바꾼다.
+import type { components } from "./backend/schema";
 
+// 공정 키 10개. 견적 받기 API(TradesIn)와 상담 공정 스펙의 키가 같다. 묶음 · 화면 순서는 lib/labels.ts
+export type TradeKey = keyof components["schemas"]["TradesIn"];
+export const TRADE_LABEL: Record<TradeKey, string> = {
+  dobae: "도배", mokgong: "목공", floor: "바닥재", film: "필름", paint: "도장",
+  tile: "타일", bath: "욕실", kitchen: "주방", electric: "전기·조명", window: "창호",
+};
+// 예시 프로젝트 데이터(업체 · 견적 · 공정표)는 아직 도배 · 목공만 있다
 export type Trade = "dobae" | "mokgong";
 export const TRADES: Trade[] = ["dobae", "mokgong"];
-export const TRADE_LABEL: Record<Trade, string> = { dobae: "도배", mokgong: "목공" };
 
 export type LineState = "in" | "bundle" | "sep" | "opt" | "cond" | "no";
 export const LINE_STATE_LABEL: Record<LineState, string> = { in: "포함", bundle: "묶음", sep: "별도", opt: "선택", cond: "실측 후", no: "안 함" };

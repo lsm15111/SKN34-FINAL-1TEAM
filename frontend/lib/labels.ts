@@ -1,10 +1,33 @@
 // API 코드값 ↔ 화면 말. 질문 흐름(보내기)과 프로젝트 화면(보이기)이 같이 쓴다.
 import type { components } from "./backend/schema";
+import type { TradeKey } from "./types";
 
 type S = components["schemas"];
 export type Budget = NonNullable<S["ProjectCreate"]["budget"]>;
 export type MokItem = S["MokgongIn"]["items"][number];
 export type DobaeGrade = S["DobaeIn"]["grade"];
+
+// 견적 받기의 공정 고르기: 묶음과 화면 순서. 공정 이름은 TRADE_LABEL(lib/types.ts)
+export const TRADE_GROUPS: { label: string; keys: TradeKey[] }[] = [
+  { label: "벽 · 바닥 마감", keys: ["dobae", "floor", "paint", "film", "tile"] },
+  { label: "공간 · 설비", keys: ["bath", "kitchen", "electric", "window"] },
+  { label: "목공", keys: ["mokgong"] },
+];
+/** 공정을 보이는 순서 (고르기 · 공간 고르기 · 요약) */
+export const TRADE_KEYS: TradeKey[] = TRADE_GROUPS.flatMap((g) => g.keys);
+// 공정 카드의 한 줄 설명: 무엇을 하는 공정인지
+export const TRADE_DESC: Record<TradeKey, string> = {
+  dobae: "벽지 · 천장지를 새로 발라요",
+  floor: "장판 · 마루 · 바닥 타일을 깔아요",
+  paint: "벽 · 천장 · 문 · 베란다를 칠해요",
+  film: "문 · 문틀 · 가구에 필름을 붙여요",
+  tile: "현관 · 베란다 · 주방 벽에 붙여요",
+  bath: "방수 · 타일 · 도기 · 수전을 고쳐요",
+  kitchen: "싱크대 · 상판 · 후드를 바꿔요",
+  electric: "조명 · 스위치 · 콘센트를 바꿔요",
+  window: "낡은 창틀과 유리(새시)를 바꿔요",
+  mokgong: "몰딩 · 걸레받이 · 방문을 바꿔요",
+};
 
 export const BUDGETS: { key: Budget; label: string }[] = [
   { key: "u300", label: "300만 원 이하" },

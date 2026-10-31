@@ -1330,6 +1330,14 @@ export interface components {
             days: string;
             basis_counts: components["schemas"]["BasisCounts"];
         };
+        /**
+         * TradeIn
+         * @description 공정에 고른 공간 (공간 이름표). 도배 · 목공 밖 공정은 이것만 받고, 공정 칸은 상담 첫 폼에서 묻는다.
+         */
+        TradeIn: {
+            /** Spaces */
+            spaces: string[];
+        };
         /** TradeOut */
         TradeOut: {
             /** Trade */
@@ -1344,15 +1352,42 @@ export interface components {
              */
             plan_status: "new" | "same" | "failed";
         };
-        /** TradesIn */
+        /**
+         * TradeSpacesOut
+         * @description 도배 · 목공 밖 공정: 고른 공간만
+         */
+        TradeSpacesOut: {
+            /** Spaces */
+            spaces: string[];
+        };
+        /**
+         * TradesIn
+         * @description 고른 공정. 키는 상담 공정 스펙(consult.trades)의 키와 같다. 모르는 공정은 버리지 않고 422로 알린다.
+         */
         TradesIn: {
             dobae?: components["schemas"]["DobaeIn"] | null;
             mokgong?: components["schemas"]["MokgongIn"] | null;
+            floor?: components["schemas"]["TradeIn"] | null;
+            film?: components["schemas"]["TradeIn"] | null;
+            paint?: components["schemas"]["TradeIn"] | null;
+            tile?: components["schemas"]["TradeIn"] | null;
+            bath?: components["schemas"]["TradeIn"] | null;
+            kitchen?: components["schemas"]["TradeIn"] | null;
+            electric?: components["schemas"]["TradeIn"] | null;
+            window?: components["schemas"]["TradeIn"] | null;
         };
         /** TradesOut */
         TradesOut: {
             dobae?: components["schemas"]["DobaeOut"] | null;
             mokgong?: components["schemas"]["MokgongOut"] | null;
+            floor?: components["schemas"]["TradeSpacesOut"] | null;
+            film?: components["schemas"]["TradeSpacesOut"] | null;
+            paint?: components["schemas"]["TradeSpacesOut"] | null;
+            tile?: components["schemas"]["TradeSpacesOut"] | null;
+            bath?: components["schemas"]["TradeSpacesOut"] | null;
+            kitchen?: components["schemas"]["TradeSpacesOut"] | null;
+            electric?: components["schemas"]["TradeSpacesOut"] | null;
+            window?: components["schemas"]["TradeSpacesOut"] | null;
         };
         /** Turn */
         Turn: {

@@ -96,11 +96,18 @@ class ProjectSpace(Base):
 
 
 class ProjectTrade(Base):
-    """프로젝트에서 고른 공정. 도배는 유형(grade), 목공은 항목(items)도 둔다."""
+    """프로젝트에서 고른 공정. 도배는 유형(grade), 목공은 항목(items)도 둔다.
+
+    다른 공정은 고른 공간만 둔다. 종류 · 개수 같은 공정 칸은 상담 첫 폼에서 묻는다.
+    """
 
     __tablename__ = "project_trades"
     __table_args__ = (
-        CheckConstraint("trade in ('dobae', 'mokgong')", name="trade"),
+        CheckConstraint(
+            "trade in ('dobae', 'mokgong', 'floor', 'film', 'paint', 'tile', 'bath', 'kitchen',"
+            " 'electric', 'window')",
+            name="trade",
+        ),
         CheckConstraint("trade = 'mokgong' or cardinality(items) = 0", name="items"),
         CheckConstraint(
             "items <@ array['molding', 'base', 'door', 'flatten']::varchar[]", name="item_keys"

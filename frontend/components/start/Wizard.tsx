@@ -1,37 +1,45 @@
 "use client";
-// 견적 받기 질문 흐름 (기본정보 → 공간 · 공정).
+// 견적 받기 질문 흐름 (기본정보 → 공정 → 공정마다 공간).
 // 한 화면에 질문 하나. 고르기만 해서는 넘어가지 않고 '다음'을 눌러야 넘어간다(입력만으로 화면이 바뀌지 않게).
 // 답은 브라우저에 자동 저장되고, 다시 열면 묻지 않고 이어서 보여 준다. 프로젝트를 만들면 지운다.
 // 만들기: 로그인 확인 → 사진 · 도면을 POST /files로 하나씩 올림 → POST /projects. 실패하면 답과 사진은 그대로 남는다.
+// 도배 · 목공 밖 공정은 공간만 고른다. 종류 · 개수 같은 공정 칸은 상담 첫 폼에서 묻는다.
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { SIDO, regionLabel } from "@/lib/mock/regions";
 import { eulReul, md, todaySeoul } from "@/lib/format";
 import { ApiError, call, errorText, type Schemas } from "@/lib/backend/client";
-import { BUDGETS, DOBAE_GRADES, MOK_ITEMS, type DobaeGrade } from "@/lib/labels";
+import { BUDGETS, DOBAE_GRADES, MOK_ITEMS, TRADE_DESC, TRADE_GROUPS, TRADE_KEYS, type DobaeGrade } from "@/lib/labels";
+import { TRADE_LABEL, type TradeKey } from "@/lib/types";
 import { DateCalendar } from "./DateCalendar";
 import { PhotoDrop, toPhotos, type Photo } from "./PhotoDrop";
 import { PHOTO_MEMO, clearPhotoMemo, readDraft, writeDraft } from "./draft";
 
-type Step = "region" | "house" | "size" | "when" | "living" | "budget" | "trades" | "dobae" | "mokgong" | "photos" | "plan" | "review";
+type Step = "region" | "house" | "size" | "when" | "living" | "budget" | "trades" | TradeKey | "photos" | "plan" | "review";
 type Size = "10" | "20" | "30" | "40" | "50" | "manual";
+type SpaceOnly = Exclude<TradeKey, "dobae" | "mokgong">;
 type Answers = {
   sido?: string; sgg?: string;
   house?: "apt"; builtYear: string;
   size?: Size; manualBasis?: "supply" | "jeon"; manualM2: string; balconyExt: boolean;
   when?: "date" | "movein" | "months" | "unknown"; whenDate: string; whenEnd: string; occupied?: "yes" | "no"; budget?: string;
-  trades: { dobae: boolean; mokgong: boolean };
+  trades: Partial<Record<TradeKey, boolean>>;
   dobae: { spaces: string[]; grade?: DobaeGrade };
   mokgong: { spaces: string[]; items: string[] };
+  tradeSpaces: Partial<Record<SpaceOnly, string[]>>; // 도배 · 목공 밖 공정에 고른 공간 id
   spaces: Space[];
 };
 type Space = { id: string; name: string; custom?: boolean };
 const EMPTY: Answers = {
   builtYear: "", manualM2: "", balconyExt: false, whenDate: "", whenEnd: "",
-  trades: { dobae: false, mokgong: false }, dobae: { spaces: [] }, mokgong: { spaces: [], items: [] },
+  trades: {}, dobae: { spaces: [] }, mokgong: { spaces: [], items: [] }, tradeSpaces: {},
   spaces: [],
 };
 const QUICK_SPACES = ["방", "주방", "거실", "현관"];
+// 공정마다 자주 넣는 공간. 없으면 QUICK_SPACES
+const QUICK_BY_TRADE: Partial<Record<TradeKey, string[]>> = {
+  bath: ["욕실", "안방 욕실"], tile: ["주방", "현관", "베란다"], window: ["거실", "방", "베란다"],
+};
 const PHOTO_TYPES = "image/jpeg,image/png,image/webp,image/heic"; // API가 받는 형식 (backend/app/files/service.py)
 
 const HOUSES = [
@@ -52,9 +60,30 @@ const WHEN = [
 // 저장된 답은 화면 말로 두고, 보낼 때 API 코드값으로 바꾼다 (예전 임시 저장과 맞추려고).
 const BUDGET = BUDGETS.map((b) => b.label);
 
+const isTrade = (s: string): s is TradeKey => (TRADE_KEYS as string[]).includes(s);
+/** 공정에 고른 공간 id */
+function spacesOf(a: Answers, t: TradeKey): string[] {
+  return t === "dobae" || t === "mokgong" ? a[t].spaces : a.tradeSpaces[t] ?? [];
+}
+function withSpaces(a: Answers, t: TradeKey, ids: string[]): Answers {
+  if (t === "dobae") return { ...a, dobae: { ...a.dobae, spaces: ids } };
+  if (t === "mokgong") return { ...a, mokgong: { ...a.mokgong, spaces: ids } };
+  return { ...a, tradeSpaces: { ...a.tradeSpaces, [t]: ids } };
+}
+// 공간 질문 · 안내에 붙이는 말: 도배할 · 목공할 · 바닥재 공사할
+const doing = (t: TradeKey) => (t === "dobae" ? "도배할" : t === "mokgong" ? "목공할" : `${TRADE_LABEL[t]} 공사할`);
+
 /** 답 → POST /projects 본문. 공정에 고른 공간만 보낸다. */
 function toRequest(a: Answers, picked: Space[], photoIds: { space: string; file_id: string }[], planIds: string[]): Schemas["ProjectCreate"] {
   const dated = a.when === "date" || a.when === "movein";
+  const trades: Schemas["TradesIn"] = {};
+  for (const t of TRADE_KEYS) {
+    if (!a.trades[t]) continue;
+    const spaces = spacesOf(a, t);
+    if (t === "dobae") trades.dobae = { spaces, grade: a.dobae.grade! };
+    else if (t === "mokgong") trades.mokgong = { spaces, items: a.mokgong.items.map((v) => MOK_ITEMS.find((m) => m.label === v)!.key) };
+    else trades[t] = { spaces };
+  }
   return {
     sido: a.sido!, sgg: a.sgg!, house_type: "apt",
     built_year: a.builtYear ? Number(a.builtYear) : null,
@@ -64,10 +93,7 @@ function toRequest(a: Answers, picked: Space[], photoIds: { space: string; file_
     occupied: a.occupied === "yes",
     budget: BUDGETS.find((b) => b.label === a.budget)?.key ?? null,
     spaces: picked.map((sp) => ({ key: sp.id, name: sp.name })),
-    trades: {
-      dobae: a.trades.dobae ? { spaces: a.dobae.spaces, grade: a.dobae.grade! } : null,
-      mokgong: a.trades.mokgong ? { spaces: a.mokgong.spaces, items: a.mokgong.items.map((v) => MOK_ITEMS.find((m) => m.label === v)!.key) } : null,
-    },
+    trades,
     photos: photoIds,
     plans: planIds,
   };
@@ -133,9 +159,10 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
 
   const sido = SIDO.find((s) => s.id === a.sido);
   const spaces = a.spaces;
+  const chosen = TRADE_KEYS.filter((t) => a.trades[t]);
   // 지금 고른 공정에 들어간 공간만 (공정을 껐다면 그 공정의 공간은 뺀다)
-  const picked = spaces.filter((sp) => (a.trades.dobae && a.dobae.spaces.includes(sp.id)) || (a.trades.mokgong && a.mokgong.spaces.includes(sp.id)));
-  const steps: Step[] = ["region", "house", "size", "when", "living", "budget", "trades", ...(a.trades.dobae ? ["dobae" as Step] : []), ...(a.trades.mokgong ? ["mokgong" as Step] : []), "photos", "plan", "review"];
+  const picked = spaces.filter((sp) => chosen.some((t) => spacesOf(a, t).includes(sp.id)));
+  const steps: Step[] = ["region", "house", "size", "when", "living", "budget", "trades", ...chosen, "photos", "plan", "review"];
   const idx = Math.max(0, steps.indexOf(stepId));
   const set = (p: Partial<Answers>) => { setA((x) => ({ ...x, ...p })); setError(null); };
 
@@ -151,10 +178,10 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
     if (s === "when" && a.when === "date" && !a.whenDate) return "시작하는 날을 골라 주세요.";
     if (s === "when" && a.when === "movein" && !a.whenDate) return "이사하는 날을 골라 주세요.";
     if (s === "living" && !a.occupied) return "공사할 때 집 상태를 골라 주세요.";
-    if (s === "trades" && !a.trades.dobae && !a.trades.mokgong) return "공정을 하나 이상 골라 주세요.";
-    if (s === "dobae" && !a.dobae.spaces.length) return a.spaces.length ? "도배할 공간을 하나 이상 골라 주세요." : "도배할 공간을 하나 이상 넣어 주세요.";
+    if (s === "trades" && !chosen.length) return "공정을 하나 이상 골라 주세요.";
+    if (isTrade(s) && !spacesOf(a, s).length) return `${doing(s)} 공간을 하나 이상 ${a.spaces.length ? "골라" : "넣어"} 주세요.`;
     if (s === "dobae" && !a.dobae.grade) return "도배 유형을 골라 주세요.";
-    if (s === "mokgong" && (!a.mokgong.spaces.length || !a.mokgong.items.length)) return !a.mokgong.spaces.length ? (a.spaces.length ? "목공할 공간을 하나 이상 골라 주세요." : "목공할 공간을 하나 이상 넣어 주세요.") : "목공 항목을 하나 이상 골라 주세요.";
+    if (s === "mokgong" && !a.mokgong.items.length) return "목공 항목을 하나 이상 골라 주세요.";
     return null;
   }
   function go(to: Step) {
@@ -174,17 +201,19 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
     if (stepId === "review") { if (!sending) void finish(); return; }
     go(steps[idx + 1]);
   }
-  function addSpace(base: string, t: "dobae" | "mokgong") {
+  function addSpace(base: string, t: TradeKey) {
     if (!base.trim()) return;
     const name = nextName(base, spaces.map((x) => x.name));
     const id = `sp-${Date.now().toString(36)}`;
-    set({ spaces: [...spaces, { id, name, custom: true }], [t]: { ...a[t], spaces: [...a[t].spaces, id] } } as Partial<Answers>);
+    set(withSpaces({ ...a, spaces: [...spaces, { id, name, custom: true }] }, t, [...spacesOf(a, t), id]));
     setSpaceMsg(`${eulReul(name)} 넣고 골랐어요.`);
     setNewSpace("");
   }
   function removeSpace(id: string) {
     const sp = spaces.find((x) => x.id === id);
-    set({ spaces: spaces.filter((x) => x.id !== id), dobae: { ...a.dobae, spaces: a.dobae.spaces.filter((x) => x !== id) }, mokgong: { ...a.mokgong, spaces: a.mokgong.spaces.filter((x) => x !== id) } });
+    let next: Answers = { ...a, spaces: spaces.filter((x) => x.id !== id) };
+    for (const t of TRADE_KEYS) if (spacesOf(next, t).includes(id)) next = withSpaces(next, t, spacesOf(next, t).filter((x) => x !== id));
+    set(next);
     (photos[id] ?? []).forEach((ph) => URL.revokeObjectURL(ph.url));
     setPhotos((m) => { const n = { ...m }; delete n[id]; return n; });
     setSpaceMsg(`${eulReul(sp?.name ?? "공간")} 뺐어요.`);
@@ -257,7 +286,6 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
   const dateErr = !!error && stepId === "when" && (a.when === "date" || a.when === "movein") && !a.whenDate;
   const desc = error ? "step-err" : undefined;
   const optional = stepId === "budget" || stepId === "photos" || stepId === "plan";
-  const tradeSpaces = (t: "dobae" | "mokgong") => a[t].spaces;
   const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
   const sizeText = a.size === "manual" ? `${a.manualBasis === "supply" ? "공급" : "전용"} ${a.manualM2}㎡` : SIZES.find((s) => s.v === a.size)?.t ?? "";
 
@@ -268,9 +296,15 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
   if (a.when) summary.push({ label: "시기", value: `${WHEN.find((w) => w.v === a.when)?.t}${a.when === "date" && a.whenDate ? ` · ${md(a.whenDate)}${a.whenEnd && a.whenEnd !== a.whenDate ? ` ~ ${md(a.whenEnd)}` : ""}` : a.when === "movein" && a.whenDate ? ` · ${md(a.whenDate)}` : ""}`, step: "when" });
   if (a.occupied) summary.push({ label: "집 상태", value: a.occupied === "yes" ? "살면서 공사" : "빈집", step: "living" });
   if (a.budget) summary.push({ label: "예산", value: a.budget, step: "budget" });
-  if (a.trades.dobae || a.trades.mokgong) summary.push({ label: "공정", value: [a.trades.dobae && "도배", a.trades.mokgong && "목공"].filter(Boolean).join(" · "), step: "trades" });
-  if (a.trades.dobae && a.dobae.spaces.length) summary.push({ label: "도배", value: [DOBAE_GRADES.find((g) => g.key === a.dobae.grade)?.label, ...a.dobae.spaces.map((id) => spaces.find((x) => x.id === id)?.name)].filter(Boolean).join(" · "), step: "dobae" });
-  if (a.trades.mokgong && a.mokgong.spaces.length) summary.push({ label: "목공", value: `${a.mokgong.spaces.map((id) => spaces.find((x) => x.id === id)?.name).filter(Boolean).join(" · ")} · ${a.mokgong.items.join(" · ")}`, step: "mokgong" });
+  if (chosen.length) summary.push({ label: "공정", value: chosen.map((t) => TRADE_LABEL[t]).join(" · "), step: "trades" });
+  for (const t of chosen) {
+    const names = spacesOf(a, t).map((id) => spaces.find((x) => x.id === id)?.name).filter(Boolean);
+    if (!names.length) continue;
+    const value = t === "dobae" ? [DOBAE_GRADES.find((g) => g.key === a.dobae.grade)?.label, ...names].filter(Boolean).join(" · ")
+      : t === "mokgong" ? `${names.join(" · ")} · ${a.mokgong.items.join(" · ")}`
+      : names.join(" · ");
+    summary.push({ label: TRADE_LABEL[t], value, step: t });
+  }
   const photoCount = picked.reduce((n, sp) => n + (photos[sp.id]?.length ?? 0), 0);
   if (photoCount) summary.push({ label: "사진", value: `${photoCount}장`, step: "photos" });
   if (plan.length) summary.push({ label: "도면", value: `${plan.length}개`, step: "plan" });
@@ -431,25 +465,32 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
 
         {stepId === "trades" && (
           <fieldset className="mj-fieldset" aria-describedby={desc}>
-            {Q({ title: "어떤 공사가 필요한가요?" })}
-            <div className="mj-choices mj-choices-2">
-              <label className="mj-choice"><input type="checkbox" checked={a.trades.dobae} onChange={(e) => set({ trades: { ...a.trades, dobae: e.target.checked } })} data-first /><span className="mj-choice-main"><span className="mj-choice-title">도배</span><span className="mj-choice-desc">벽지 · 천장지</span></span></label>
-              <label className="mj-choice"><input type="checkbox" checked={a.trades.mokgong} onChange={(e) => set({ trades: { ...a.trades, mokgong: e.target.checked } })} /><span className="mj-choice-main"><span className="mj-choice-title">목공</span><span className="mj-choice-desc">몰딩 · 걸레받이 · 문 · 천장</span></span></label>
-            </div>
+            {Q({ title: "어떤 공사가 필요한가요?", sub: "여러 개 골라도 돼요. 공정마다 공사할 공간을 이어서 골라요." })}
+            {TRADE_GROUPS.map((g, gi) => (
+              <fieldset key={g.label} className="mj-fieldset">
+                <legend className="mj-label">{g.label}</legend>
+                <div className="mj-choices mj-choices-2">
+                  {g.keys.map((t, i) => (
+                    <label key={t} className="mj-choice"><input type="checkbox" checked={!!a.trades[t]} onChange={(e) => set({ trades: { ...a.trades, [t]: e.target.checked } })} data-first={gi === 0 && i === 0 ? true : undefined} /><span className="mj-choice-main"><span className="mj-choice-title">{TRADE_LABEL[t]}</span><span className="mj-choice-desc">{TRADE_DESC[t]}</span></span></label>
+                  ))}
+                </div>
+              </fieldset>
+            ))}
             {err}
           </fieldset>
         )}
 
-        {(stepId === "dobae" || stepId === "mokgong") && (() => {
+        {isTrade(stepId) && (() => {
           const t = stepId;
-          const sel = tradeSpaces(t);
+          const sel = spacesOf(a, t);
+          const title = t === "dobae" ? "도배할 공간과 유형을 골라 주세요" : t === "mokgong" ? "목공할 공간과 항목을 골라 주세요" : `${doing(t)} 공간을 골라 주세요`;
           return (
             <fieldset className="mj-fieldset" aria-describedby={desc}>
-              {Q({ title: t === "dobae" ? "도배할 공간과 유형을 골라 주세요" : "목공할 공간과 항목을 골라 주세요" })}
+              {Q({ title, sub: t === "dobae" || t === "mokgong" ? undefined : "종류 · 개수 같은 자세한 내용은 상담에서 물어볼게요." })}
               <fieldset className="mj-fieldset">
                 <legend className="mj-label">공간</legend>
                 <div className="mj-btn-row" style={{ gap: 8 }}>
-                  {QUICK_SPACES.map((q, i) => <button key={q} type="button" className="mj-btn mj-btn-sec mj-btn-sm" onClick={() => addSpace(q, t)} data-first={!spaces.length && i === 0 ? true : undefined}>+ {q}</button>)}
+                  {(QUICK_BY_TRADE[t] ?? QUICK_SPACES).map((q, i) => <button key={q} type="button" className="mj-btn mj-btn-sec mj-btn-sm" onClick={() => addSpace(q, t)} data-first={!spaces.length && i === 0 ? true : undefined}>+ {q}</button>)}
                 </div>
                 <div className="mj-space-add">
                   <label className="mj-label" htmlFor={`add-${t}`}>공간 추가</label>
@@ -460,10 +501,10 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
                 </div>
                 <p className="mj-sr" aria-live="polite">{spaceMsg}</p>
                 {spaces.length ? (
-                  <div className="mj-choices mj-choices-2" role="group" aria-label={t === "dobae" ? "도배할 공간" : "목공할 공간"}>
+                  <div className="mj-choices mj-choices-2" role="group" aria-label={`${doing(t)} 공간`}>
                     {spaces.map((s, i) => (
                       <div key={s.id} className="mj-space">
-                        <label className="mj-choice"><input type="checkbox" checked={sel.includes(s.id)} onChange={() => set({ [t]: { ...a[t], spaces: toggle(sel, s.id) } } as Partial<Answers>)} data-first={!sel.length && i === 0 ? true : undefined} /><span className="mj-choice-main"><span className="mj-choice-title">{s.name}</span></span></label>
+                        <label className="mj-choice"><input type="checkbox" checked={sel.includes(s.id)} onChange={() => set(withSpaces(a, t, toggle(sel, s.id)))} data-first={!sel.length && i === 0 ? true : undefined} /><span className="mj-choice-main"><span className="mj-choice-title">{s.name}</span></span></label>
                         <button type="button" className="mj-space-x" onClick={() => removeSpace(s.id)} aria-label={`${s.name} 빼기`}><svg aria-hidden="true" width="16" height="16" viewBox="0 0 20 20"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" strokeWidth="2" strokeLinecap="round" /></svg></button>
                       </div>
                     ))}
@@ -479,7 +520,7 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
                     ))}
                   </div>
                 </fieldset>
-              ) : (
+              ) : t === "mokgong" ? (
                 <fieldset className="mj-fieldset">
                   <legend className="mj-label">목공 항목</legend>
                   <div className="mj-choices mj-choices-2">
@@ -488,7 +529,7 @@ export function Wizard({ mode = "page", onClose }: { mode?: "page" | "dialog"; o
                     ))}
                   </div>
                 </fieldset>
-              )}
+              ) : null}
               {err}
             </fieldset>
           );
