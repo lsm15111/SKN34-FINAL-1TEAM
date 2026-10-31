@@ -200,6 +200,7 @@ class SummaryOut(BaseModel):
 
 class ConsultOut(BaseModel):
     card: ConsultCard
+    trade_labels: dict[str, str]  # 카드 공정 키 → 화면 말 (공정 순서대로)
     reply: str | None
     questions: list[Question]  # 비어 있지 않으면 폼으로 받는다
     facts: list[Fact]  # 지금까지 정한 것 (화면 말)

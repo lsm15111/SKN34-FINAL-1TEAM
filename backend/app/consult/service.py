@@ -272,7 +272,8 @@ def facts(c: ConsultCard) -> list[Fact]:
                 )
             )
         if c.spaces.get(spec.key):
-            out.append(Fact(trade=spec.key, label="공간", text=" · ".join(c.spaces[spec.key])))
+            names = " · ".join(c.spaces[spec.key])
+            out.append(Fact(trade=spec.key, label=f"{spec.label} 공간", text=names))
     return out
 
 
@@ -429,6 +430,7 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
             card = routed
     card = prune(card)
     fs = facts(card)
+    labels = {s.key: s.label for s in _specs(card)}
     experts = [_answer(spec, q, _expert_text(fs, spec.key)) for spec, q in _asks(route)]
 
     todo = questions(card)
@@ -436,6 +438,7 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
         answers = list(await asyncio.gather(*experts))
         return ConsultOut(
             card=card,
+            trade_labels=labels,
             reply=_reply(route, failed, changed, answers),
             questions=todo,
             facts=fs,
@@ -476,6 +479,7 @@ async def turn(s: AsyncSession, user: User | None, data: ConsultIn) -> ConsultOu
     t = totals(quotes.values())
     return ConsultOut(
         card=card,
+        trade_labels=labels,
         reply=_reply(route, failed, changed, answers),
         questions=[],
         facts=fs,

@@ -361,6 +361,8 @@ def test_prefill_from_my_project_only(api):
     assert c["values"] == {"mokgong": {"items": ["molding", "base"]}, "dobae": {"grade": "basic"}}
     assert (c["area_m2"], c["area_basis"], c["occupied"]) == ("112.4", "supply", True)
     assert c["spaces"] == {"mokgong": ["거실"], "dobae": ["거실", "방", "방 2"]}
+    assert list(out["trade_labels"].items()) == [("mokgong", "목공"), ("dobae", "도배")]
+    assert ("목공 공간", "거실") in {(f["label"], f["text"]) for f in out["facts"]}
     # 견적 받기에 없는 칸만 폼으로 묻는다
     assert fields(out) == ["dobae.include_ceiling"]
 
