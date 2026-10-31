@@ -13,6 +13,12 @@ class Settings(BaseSettings):
     api_root_path: str = ""
     # false면 LLM을 부르지 않고 스텁 응답을 쓴다 (유료 호출 0회)
     llm_live: bool = False
+    # Claude API 키. 비어 있으면 SDK가 다른 인증(환경변수 · 로그인 프로필)을 찾는다
+    anthropic_api_key: str = ""
+    # 에이전트가 쓰는 모델과 생각 깊이. 한 번 호출을 기다리는 최대 시간(초)
+    llm_model: str = "claude-opus-5-5"
+    llm_effort: str = "medium"
+    llm_timeout_s: float = 60.0
     # 상태를 바꾸는 요청(POST 등)에서 허용할 브라우저 Origin, 쉼표로 구분
     allowed_origins: str = "http://localhost:3000,http://localhost:3100"
     # 로그인 세션 유지 기간(일)
