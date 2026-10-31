@@ -90,7 +90,7 @@ _AREA = re.compile(r"^\s*(\d{1,3}(?:\.\d+)?)\s*(평형|평|㎡|m2|제곱미터)?
 
 def _specs(c: ConsultCard) -> list[TradeSpec]:
     """카드의 공정을 공정 순서(order)대로"""
-    return [s for k, s in REGISTRY.items() if k in c.trades]
+    return sorted((s for k, s in REGISTRY.items() if k in c.trades), key=lambda s: s.order)
 
 
 def _common_missing(c: ConsultCard) -> list[str]:

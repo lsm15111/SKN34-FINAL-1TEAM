@@ -1,7 +1,7 @@
 """프로젝트 공정 10개: 바닥재 · 필름 · 도장 · 타일 · 욕실 · 주방 · 전기·조명 · 창호를 더한다
 
-Revision ID: 0002_project_trades
-Revises: 0001
+Revision ID: 0005
+Revises: 0004
 Create Date: 2026-11-01
 
 새 공정은 고른 공간만 둔다 (공정 칸은 상담에서 묻는다). 표 · 열은 그대로이고 CHECK만 바꾼다.
@@ -12,8 +12,8 @@ from collections.abc import Sequence
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "0002_project_trades"
-down_revision: str | Sequence[str] | None = "0001"
+revision: str = "0005"
+down_revision: str | Sequence[str] | None = "0004"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

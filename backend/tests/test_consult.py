@@ -16,6 +16,7 @@ from app.agent.schemas import (
     TradeQuestion,
 )
 from app.config import settings
+from app.consult import service as consult_service
 from app.consult.service import (
     CHANGED_REPLY,
     EXPERT_FAILED,
@@ -24,7 +25,6 @@ from app.consult.service import (
     PLAN_FAILED,
 )
 from app.consult.trades import REGISTRY
-from app.consult.trades.base import Choice, FieldSpec, TradeSpec
 from tests.helpers import make_admin, signup
 from tests.test_project import body
 
@@ -391,26 +391,10 @@ def test_prefill_from_my_project_only(api):
 
 
 def test_prefill_takes_only_registered_trades(api, monkeypatch):
-    # 견적 받기의 공정 중 상담에 등록된 공정만 카드에 넣는다. 도배 · 목공 밖 공정은 공간만 가져온다
-    mok = REGISTRY["mokgong"]
-    kind = FieldSpec(
-        key="kind",
-        label="바닥재 종류",
-        question="어떤 바닥재로 할까요?",
-        kind="choice",
-        choices=(Choice("maru", "강마루"), Choice("jangpan", "장판")),
-    )
-    floor = TradeSpec(
-        key="floor",
-        label="바닥재",
-        order=85,
-        fields=(kind,),
-        agent=mok.agent,
-        build=mok.build,
-        card_lines=mok.card_lines,
-    )
-    monkeypatch.setitem(REGISTRY, "floor", floor)
-    monkeypatch.delitem(REGISTRY, "window", raising=False)
+    # 견적 받기의 공정 중 상담에 등록된 공정만 카드에 넣는다 (등록에서 빠진 공정은 공간도 가져오지 않는다)
+    # 공유 REGISTRY를 빼고 되돌리면 dict 순서가 바뀌므로, 창호를 뺀 복사본을 상담 서비스에만 끼운다
+    reg = {k: s for k, s in REGISTRY.items() if k != "window"}
+    monkeypatch.setattr(consult_service, "REGISTRY", reg)
     signup(api)
     pid = project(
         api,
