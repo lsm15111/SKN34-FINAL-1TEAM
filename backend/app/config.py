@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     data_go_kr_key: str = ""
     # 수집기 User-Agent에 붙일 연락 주소 (사이트 운영자가 믿집에 연락할 곳)
     bot_contact_url: str = ""
+    # 홈페이지 확인기: 요청 사이 간격(초)과 한 요청을 기다리는 시간(초)
+    crawl_interval_s: float = 3.0
+    crawl_timeout_s: float = 10.0
 
     @property
     def is_https(self) -> bool:

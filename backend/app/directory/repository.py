@@ -2,10 +2,11 @@
 
 import hashlib
 import secrets
+import uuid
 from collections.abc import Iterable, Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, or_, select
+from sqlalchemy import delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -105,6 +106,65 @@ async def delete_by_source(s: AsyncSession, source: str, source_ids: Sequence[st
         )
         removed += res.rowcount
     return removed
+
+
+async def biz_nos_due(s: AsyncSession, before: datetime, limit: int) -> list[str]:
+    """국세청 상태를 확인할 사업자번호: 아직 안 봤거나 before보다 오래전에 본 것"""
+    q = (
+        select(ExtVendor.reg_no)
+        .where(
+            ExtVendor.reg_no.is_not(None),
+            or_(ExtVendor.biz_checked_at.is_(None), ExtVendor.biz_checked_at < before),
+        )
+        .group_by(ExtVendor.reg_no)
+        .order_by(func.min(ExtVendor.biz_checked_at).nulls_first())
+        .limit(limit)
+    )
+    return list((await s.execute(q)).scalars())
+
+
+async def set_biz_status(s: AsyncSession, statuses: dict[str, str], *, now: datetime) -> int:
+    changed = 0
+    for no, status in statuses.items():
+        res = await s.execute(
+            update(ExtVendor)
+            .where(ExtVendor.reg_no == no)
+            .values(biz_status=status, biz_checked_at=now, updated_at=now)
+        )
+        changed += res.rowcount
+    return changed
+
+
+async def homepages_due(
+    s: AsyncSession, before: datetime, limit: int
+) -> list[tuple[uuid.UUID, str]]:
+    """홈페이지를 확인할 업체: 수신거부가 아니고, 아직 안 봤거나 before보다 오래전에 본 것"""
+    q = (
+        select(ExtVendor.id, ExtVendor.homepage)
+        .where(
+            ExtVendor.homepage.is_not(None),
+            ExtVendor.opted_out.is_(False),
+            or_(ExtVendor.site_checked_at.is_(None), ExtVendor.site_checked_at < before),
+        )
+        .order_by(ExtVendor.site_checked_at.nulls_first(), ExtVendor.id)
+        .limit(limit)
+    )
+    return [(i, h) for i, h in (await s.execute(q)).all()]
+
+
+async def save_links(
+    s: AsyncSession,
+    vendor_id: uuid.UUID,
+    *,
+    now: datetime,
+    portfolio_urls: list[str] | None,
+    quote_url: str | None,
+) -> None:
+    """확인한 때를 남긴다. 링크를 찾았으면(portfolio_urls가 None이 아니면) 링크도 바꾼다."""
+    values: dict = {"site_checked_at": now, "updated_at": now}
+    if portfolio_urls is not None:
+        values |= {"portfolio_urls": portfolio_urls, "quote_url": quote_url}
+    await s.execute(update(ExtVendor).where(ExtVendor.id == vendor_id).values(**values))
 
 
 async def kiscon_holdings(s: AsyncSession, reg_nos: Sequence[str]) -> dict[str, Holding]:

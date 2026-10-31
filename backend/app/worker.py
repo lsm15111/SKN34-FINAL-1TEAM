@@ -20,8 +20,10 @@ async def ping(ctx: dict) -> str:
 class WorkerSettings:
     # 작업은 한 줄에 하나씩 더한다
     functions: ClassVar[list] = [
+        directory_tasks.check_homepages,
         directory_tasks.import_sangga_csv,
         directory_tasks.sync_kiscon,
+        directory_tasks.verify_biz_status,
         ping,
     ]
     redis_settings = RedisSettings.from_dsn(settings.redis_url)

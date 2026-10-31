@@ -14,15 +14,16 @@ from pathlib import Path
 from app.config import settings
 from app.db import SessionLocal
 from app.directory import client, service
+from app.directory.site import SiteChecker
 from app.shared.clock import now_utc, today_seoul
 
 log = logging.getLogger(__name__)
 _DAY = re.compile(r"^\d{8}$")
 
 
-def _http(ctx: dict):
+def _http(ctx: dict, timeout: float = client.API_TIMEOUT_S):
     given = ctx.get("http")
-    return nullcontext(given) if given is not None else client.http_client()
+    return nullcontext(given) if given is not None else client.http_client(timeout)
 
 
 async def import_sangga_csv(ctx: dict, path: str) -> dict:
@@ -55,3 +56,24 @@ async def sync_kiscon(ctx: dict, start: str | None = None, end: str | None = Non
         except client.ApiError as exc:
             log.warning("KISCON 공시를 받지 못했어요 (%s)", exc.reason)
             return {"error": exc.reason}
+
+
+async def verify_biz_status(ctx: dict, limit: int = 1000) -> dict:
+    """모아 둔 사업자번호의 국세청 상태만 확인한다 (검증 전용)."""
+    if not settings.data_go_kr_key:
+        return {"skipped": "no_key"}
+    async with _http(ctx) as http, SessionLocal() as s:
+        try:
+            return await service.verify_biz(
+                s, http, settings.data_go_kr_key, now=now_utc(), limit=limit
+            )
+        except client.ApiError as exc:
+            log.warning("국세청 상태를 확인하지 못했어요 (%s)", exc.reason)
+            return {"error": exc.reason}
+
+
+async def check_homepages(ctx: dict, limit: int = 50) -> dict:
+    """업체 홈페이지에서 포트폴리오 · 견적 링크만 찾는다 (robots.txt 준수, 요청 간격)."""
+    async with _http(ctx, settings.crawl_timeout_s) as http, SessionLocal() as s:
+        site = SiteChecker(http, interval=settings.crawl_interval_s, **ctx.get("site", {}))
+        return await service.check_homepages(s, site, now=now_utc(), limit=limit)
