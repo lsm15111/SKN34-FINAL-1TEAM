@@ -5,8 +5,11 @@
 .bot { align-self: flex-start; background: var(--surface-2); color: var(--ink); }
 .me { align-self: flex-end; background: var(--accent-weak); color: var(--accent-ink); }
 .wait { color: var(--ink-sub); }
-.choices { display: flex; flex-wrap: wrap; gap: 8px; }
-.choices button { min-height: 44px; }
+.form { gap: 18px; }
+.group { display: flex; flex-direction: column; gap: 14px; padding-top: 4px; }
+.options { grid-template-columns: repeat(auto-fit, minmax(min(160px, 100%), 1fr)); }
+.chip { min-height: 44px; }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); }
 .composer { display: flex; gap: 8px; }
 .composer input { flex: 1 1 auto; min-width: 0; }
 .result { display: flex; flex-direction: column; gap: 14px; }

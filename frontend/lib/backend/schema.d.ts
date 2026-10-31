@@ -90,7 +90,7 @@ export interface paths {
         patch: operations["patch_me_me_patch"];
         trace?: never;
     };
-    "/consult/dobae": {
+    "/consult": {
         parameters: {
             query?: never;
             header?: never;
@@ -99,8 +99,8 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** 도배 상담 한 턴 */
-        post: operations["dobae_turn_consult_dobae_post"];
+        /** 도배 · 목공 상담 한 턴 */
+        post: operations["consult_turn_consult_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -324,14 +324,14 @@ export interface components {
     schemas: {
         /**
          * Answer
-         * @description 선택지 버튼으로 고른 답
+         * @description 폼에서 고른 · 적은 답
          */
         Answer: {
             /**
              * Field
              * @enum {string}
              */
-            field: "area" | "area_basis" | "grade" | "include_ceiling" | "occupied";
+            field: "area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame";
             /** Value */
             value: string;
         };
@@ -380,79 +380,103 @@ export interface components {
             /** Label */
             label: string;
         };
+        /**
+         * ConsultCard
+         * @description 요구사항 카드(도배 · 목공). 비어 있는 필수 칸은 코드가 폼으로 묻는다.
+         */
+        "ConsultCard-Input": {
+            /** Trades */
+            trades?: ("dobae" | "mokgong")[];
+            /** Area M2 */
+            area_m2?: number | string | null;
+            /** Area Basis */
+            area_basis?: ("supply" | "exclusive") | null;
+            /** Occupied */
+            occupied?: boolean | null;
+            /**
+             * Balcony Ext
+             * @default false
+             */
+            balcony_ext: boolean;
+            /** Built Year */
+            built_year?: number | null;
+            /** Grade */
+            grade?: ("economy" | "basic") | null;
+            /** Include Ceiling */
+            include_ceiling?: boolean | null;
+            /** Mok Items */
+            mok_items?: ("molding" | "base" | "door" | "flatten")[];
+            /** Mok Spaces */
+            mok_spaces?: string[];
+            /** Doors */
+            doors?: number | null;
+            /** Door Frame */
+            door_frame?: boolean | null;
+            /** To Check */
+            to_check?: ("area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame")[];
+        };
+        /**
+         * ConsultCard
+         * @description 요구사항 카드(도배 · 목공). 비어 있는 필수 칸은 코드가 폼으로 묻는다.
+         */
+        "ConsultCard-Output": {
+            /** Trades */
+            trades?: ("dobae" | "mokgong")[];
+            /** Area M2 */
+            area_m2?: string | null;
+            /** Area Basis */
+            area_basis?: ("supply" | "exclusive") | null;
+            /** Occupied */
+            occupied?: boolean | null;
+            /**
+             * Balcony Ext
+             * @default false
+             */
+            balcony_ext: boolean;
+            /** Built Year */
+            built_year?: number | null;
+            /** Grade */
+            grade?: ("economy" | "basic") | null;
+            /** Include Ceiling */
+            include_ceiling?: boolean | null;
+            /** Mok Items */
+            mok_items?: ("molding" | "base" | "door" | "flatten")[];
+            /** Mok Spaces */
+            mok_spaces?: string[];
+            /** Doors */
+            doors?: number | null;
+            /** Door Frame */
+            door_frame?: boolean | null;
+            /** To Check */
+            to_check?: ("area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame")[];
+        };
         /** ConsultIn */
         ConsultIn: {
-            card?: components["schemas"]["DobaeCard-Input"];
+            card?: components["schemas"]["ConsultCard-Input"] | null;
             /** History */
             history?: components["schemas"]["Turn"][];
             /** Message */
             message?: string | null;
-            answer?: components["schemas"]["Answer"] | null;
+            /** Answers */
+            answers?: components["schemas"]["Answer"][];
             /** Project Id */
             project_id?: string | null;
         };
         /** ConsultOut */
         ConsultOut: {
-            card: components["schemas"]["DobaeCard-Output"];
+            card: components["schemas"]["ConsultCard-Output"];
             /** Reply */
             reply: string | null;
-            question: components["schemas"]["Question"] | null;
-            quote: components["schemas"]["QuoteOut"] | null;
-            plan: components["schemas"]["PlanOut"] | null;
-            /** Plan Status */
-            plan_status: ("new" | "same" | "failed") | null;
+            /** Questions */
+            questions: components["schemas"]["Question"][];
+            /** Results */
+            results: components["schemas"]["TradeOut"][];
+            /** Schedule */
+            schedule: components["schemas"]["ScheduleStepOut"][];
+            /** Days */
+            days: string | null;
             /** Notice */
             notice: string | null;
-        };
-        /**
-         * DobaeCard
-         * @description 요구사항 카드(도배). 비어 있는 필수 칸을 코드가 하나씩 묻는다.
-         */
-        "DobaeCard-Input": {
-            /** Area M2 */
-            area_m2?: number | string | null;
-            /** Area Basis */
-            area_basis?: ("supply" | "exclusive") | null;
-            /** Grade */
-            grade?: ("economy" | "basic") | null;
-            /** Include Ceiling */
-            include_ceiling?: boolean | null;
-            /** Occupied */
-            occupied?: boolean | null;
-            /**
-             * Balcony Ext
-             * @default false
-             */
-            balcony_ext: boolean;
-            /** Built Year */
-            built_year?: number | null;
-            /** To Check */
-            to_check?: ("area" | "area_basis" | "grade" | "include_ceiling" | "occupied")[];
-        };
-        /**
-         * DobaeCard
-         * @description 요구사항 카드(도배). 비어 있는 필수 칸을 코드가 하나씩 묻는다.
-         */
-        "DobaeCard-Output": {
-            /** Area M2 */
-            area_m2?: string | null;
-            /** Area Basis */
-            area_basis?: ("supply" | "exclusive") | null;
-            /** Grade */
-            grade?: ("economy" | "basic") | null;
-            /** Include Ceiling */
-            include_ceiling?: boolean | null;
-            /** Occupied */
-            occupied?: boolean | null;
-            /**
-             * Balcony Ext
-             * @default false
-             */
-            balcony_ext: boolean;
-            /** Built Year */
-            built_year?: number | null;
-            /** To Check */
-            to_check?: ("area" | "area_basis" | "grade" | "include_ceiling" | "occupied")[];
         };
         /** DobaeIn */
         DobaeIn: {
@@ -586,7 +610,7 @@ export interface components {
         };
         /**
          * PlanOut
-         * @description 도배 공정 에이전트 의견 (AI가 만든 설명)
+         * @description 공정 에이전트 의견 (AI가 만든 설명)
          */
         PlanOut: {
             /** Summary */
@@ -711,7 +735,9 @@ export interface components {
              * Field
              * @enum {string}
              */
-            field: "area" | "area_basis" | "grade" | "include_ceiling" | "occupied";
+            field: "area" | "area_basis" | "occupied" | "grade" | "include_ceiling" | "doors" | "door_frame";
+            /** Trade */
+            trade: ("dobae" | "mokgong") | null;
             /** Text */
             text: string;
             /** Choices */
@@ -719,17 +745,11 @@ export interface components {
         };
         /**
          * QuoteOut
-         * @description 표준견적서(도배). 계산 엔진 결과 그대로, VAT 별도 합계와 VAT를 따로 둔다.
+         * @description 표준견적서. 계산 엔진 결과 그대로, VAT 별도 합계와 VAT를 따로 둔다.
          */
         QuoteOut: {
             /** Version */
             version: string;
-            /** Paper M2 */
-            paper_m2: string;
-            /** Wall M2 */
-            wall_m2: string;
-            /** Ceiling M2 */
-            ceiling_m2: string;
             /** Lines */
             lines: components["schemas"]["LineOut"][];
             /** Subtotal */
@@ -751,6 +771,20 @@ export interface components {
         RejectIn: {
             /** Reason */
             reason: string;
+        };
+        /** ScheduleStepOut */
+        ScheduleStepOut: {
+            /**
+             * Trade
+             * @enum {string}
+             */
+            trade: "dobae" | "mokgong";
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Half Days */
+            half_days: number;
         };
         /**
          * SignupIn
@@ -816,6 +850,21 @@ export interface components {
             name: string;
             /** Half Days */
             half_days: number;
+        };
+        /** TradeOut */
+        TradeOut: {
+            /**
+             * Trade
+             * @enum {string}
+             */
+            trade: "dobae" | "mokgong";
+            quote: components["schemas"]["QuoteOut"];
+            plan: components["schemas"]["PlanOut"] | null;
+            /**
+             * Plan Status
+             * @enum {string}
+             */
+            plan_status: "new" | "same" | "failed";
         };
         /** TradesIn */
         TradesIn: {
@@ -1093,7 +1142,7 @@ export interface operations {
             };
         };
     };
-    dobae_turn_consult_dobae_post: {
+    consult_turn_consult_post: {
         parameters: {
             query?: never;
             header?: never;
