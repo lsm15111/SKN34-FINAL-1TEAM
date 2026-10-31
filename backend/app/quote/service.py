@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import queue
 from app.agent import sourcing as sourcing_agent
-from app.agent.llm import LlmError
+from app.agent.llm import LlmError, pick
 from app.auth.models import User
 from app.config import settings
 from app.directory import service as directory_service
@@ -218,12 +218,11 @@ async def _explain(facts: list[str], cards: list[CandidateOut]) -> str | None:
         for k, c in zip(sourcing_agent.keys(len(head)), head, strict=True)
     ]
     routes = [r for r in sourcing_agent.DRAFT_ROUTES if any(c.route == r for c in head)]
-    key = (
-        "sourcing:"
-        + hashlib.sha256(
-            (sourcing_agent.PROMPT_VERSION + sourcing_agent.render(facts, cands, routes)).encode()
-        ).hexdigest()
-    )
+    # 모델 · 생각 깊이를 바꾸면 예전 설명을 쓰지 않는다
+    model, effort = pick("sourcing")
+    body = sourcing_agent.render(facts, cands, routes)
+    raw_key = f"{model}\n{effort}\n{sourcing_agent.PROMPT_VERSION}\n{body}"
+    key = "sourcing:" + hashlib.sha256(raw_key.encode()).hexdigest()
     notes = await _cached(key)
     if notes is None:
         try:

@@ -368,9 +368,13 @@ def _expert_text(fs: list[Fact], trade: str) -> str:
 
 
 def _same_key(c: ConsultCard, trade: str) -> tuple:
-    """공정 의견을 다시 만들지 정하는 값: 공통 칸 + 그 공정 칸 (여러 개 고른 값은 순서와 상관없이)"""
+    """공정 의견을 다시 만들지 정하는 값: 공통 칸 + 고른 공정(의견의 '같이 하는 공정' 줄) + 그 공정 칸.
+
+    공정을 더하거나 빼면 순서 이야기가 바뀌므로 모든 공정 의견을 다시 만든다 (같은 입력은 캐시가 받는다).
+    """
     vals = {k: sorted(v) if isinstance(v, list) else v for k, v in c.values.get(trade, {}).items()}
-    return (c.area_m2, c.area_basis, c.occupied, c.balcony_ext, c.built_year, vals)
+    common = (c.area_m2, c.area_basis, c.occupied, c.balcony_ext, c.built_year)
+    return (*common, tuple(c.trades), vals)
 
 
 async def _prefill(s: AsyncSession, user: User, project_id: uuid.UUID) -> ConsultCard:
