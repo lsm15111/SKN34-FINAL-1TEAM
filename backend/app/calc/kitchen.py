@@ -15,7 +15,7 @@ Layout = Literal["straight", "l_shape", "parallel"]
 Top = Literal["acrylic", "quartz"]
 LAYOUTS: tuple[Layout, ...] = ("straight", "l_shape", "parallel")
 TOPS: tuple[Top, ...] = ("acrylic", "quartz")
-LAYOUT_NAME = {"straight": "일자", "l_shape": "ㄱ자", "parallel": "11자"}
+LAYOUT_NAME = {"straight": "일자", "l_shape": "ㄱ자", "parallel": "평행형"}
 TOP_NAME = {"acrylic": "인조대리석", "quartz": "엔지니어드스톤"}
 MAX_LENGTH = Decimal(10)
 
