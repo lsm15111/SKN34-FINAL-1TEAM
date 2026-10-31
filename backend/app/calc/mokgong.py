@@ -35,14 +35,19 @@ class MokgongPrices:
     base: int  # 걸레받이 설치 원/m (재료 제외)
     base_mat: int  # 걸레받이 자재 원/m
     base_ratio: Decimal  # 걸레받이 소요량 m/m (할증 포함)
-    door_set: int  # 방문 문틀 + 문짝 교체 원/개 (철거 · 재료 · 설치 포함)
-    door_leaf: int  # 방문 문짝만 교체 원/개 (철거 · 재료 · 설치 포함)
+    door_install: int  # 방문 문틀 세우기 · 문짝 달기 원/개 (재료 제외)
+    door_leaf_install: int  # 방문 문짝만 달기 원/개 (재료 제외)
+    door_set_mat: int  # 방문 문틀 · 문짝 · 문선 자재 원/개 (경첩 · 손잡이 포함)
+    door_leaf_mat: int  # 방문 문짝 자재 원/개 (경첩 · 손잡이 포함)
+    casing: int  # 문선 설치 원/m (재료 제외)
+    casing_per_door: Decimal  # 문 하나 문선 길이 m, 양면 (가정값)
     frame: int  # 경량천장틀 원/㎡ (재료 제외)
     board: int  # 천장 석고보드 1겹 원/㎡ (석고보드 제외)
     ceiling_mat: int  # 천장틀 · 석고보드 자재 원/㎡
     md_molding: Decimal  # 내장공 품 인/m
     md_base: Decimal  # 내장공 품 인/m
     md_door: Decimal  # 창호공 품 인/개
+    md_casing: Decimal  # 창호공 품 인/m (문선)
     md_frame: Decimal  # 내장공 품 인/㎡
     md_board: Decimal  # 내장공 품 인/㎡
     molding_per_py: Decimal  # 공급 1평당 몰딩 길이 m (가정값)
@@ -138,20 +143,51 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
             ),
         ]
     if doors:
-        price = p.door_set if inp.door_frame else p.door_leaf
+        with_frame = inp.door_frame
+        install = p.door_install if with_frame else p.door_leaf_install
+        door_mat = p.door_set_mat if with_frame else p.door_leaf_mat
+        md_door = doors * p.md_door
         lines.append(
             Line(
                 "door",
-                "방문 교체 (문틀 · 문짝)" if inp.door_frame else "방문 교체 (문짝만)",
+                "방문 교체 (문틀 · 문짝)" if with_frame else "방문 교체 (문짝만)",
                 Decimal(doors),
                 "개",
-                price,
-                won(Decimal(doors * price)),
+                install,
+                won(Decimal(doors * install)),
                 "included",
-                src["door_set" if inp.door_frame else "door_leaf"],
+                src["door_install" if with_frame else "door_leaf_install"],
+                "public" if with_frame else "assumed",
             )
         )
-        md_door = doors * p.md_door
+        if with_frame:
+            casing = m2(p.casing_per_door * doors)
+            md_door += casing * p.md_casing
+            lines.append(
+                Line(
+                    "casing",
+                    "문선 설치 (문 둘레 양면)",
+                    casing,
+                    "m",
+                    p.casing,
+                    won(casing * p.casing),
+                    "included",
+                    src["casing"],
+                )
+            )
+        lines.append(
+            Line(
+                "door_mat",
+                "방문 자재 (ABS 문틀 · 문짝 · 문선)" if with_frame else "방문 자재 (ABS 문짝)",
+                Decimal(doors),
+                "개",
+                door_mat,
+                won(Decimal(doors * door_mat)),
+                "included",
+                src["door_set_mat" if with_frame else "door_leaf_mat"],
+                "assumed",
+            )
+        )
     if "molding" in items:
         molding = m2(py * p.molding_per_py)
         mat = m2(molding * p.molding_ratio)
@@ -212,6 +248,20 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
             Line(
                 "remove_ceiling",
                 "기존 등박스 · 우물천장 철거",
+                None,
+                "식",
+                None,
+                None,
+                "after_visit",
+                src["none"],
+                "none",
+            )
+        )
+    if doors and inp.door_frame:
+        lines.append(
+            Line(
+                "remove_door",
+                "기존 방문 · 문틀 철거",
                 None,
                 "식",
                 None,
@@ -284,8 +334,17 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
         assumptions.append(
             f"평탄화 면적은 전용면적의 {int(p.flatten_share * 100)}%(거실 천장 정도)로 잡았어요."
         )
-    if doors:
-        assumptions.append("방문 단가는 철거 · 설치를 포함한 공공 수선 단가(PVC 방문 기준)예요.")
+    if doors and inp.door_frame:
+        assumptions.append(
+            "방문 설치 · 문선은 표준시장단가(재료 제외)이고, 문 자재는 공공 가격이 없어 ABS 문 기준 "
+            f"팀 가정값이에요. 문선은 문 하나에 양면 {p.casing_per_door}m로 잡았어요. "
+            "기존 문 · 문틀 철거는 실측 후에 정해요."
+        )
+    elif doors:
+        assumptions.append(
+            "문짝만 다는 공공 단가가 없어 설치는 문 설치 공공 단가의 절반으로 잡았고, "
+            "문짝 자재는 ABS 문 기준 팀 가정값이에요."
+        )
     assumptions.append(f"하루 목수 {p.crew}명이 들어가는 것으로 기간을 잡았어요.")
 
     return MokgongQuote(
