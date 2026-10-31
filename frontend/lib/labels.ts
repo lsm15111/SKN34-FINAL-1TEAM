@@ -30,6 +30,32 @@ export const DOBAE_GRADES: { key: DobaeGrade; label: string }[] = [
 
 export const WHEN_LABEL = { date: "날짜가 정해졌어요", movein: "이사하는 날만 정해졌어요", months: "1~2달 안에", unknown: "아직 몰라요" } as const;
 
+// 표준견적서 줄 · 예상 공정표 (상담 결과). lib/types.ts의 LineState는 예시 데이터용이라 이름을 따로 둔다
+export type QuoteLineState = S["LineOut"]["state"];
+export type LineBasis = S["LineOut"]["basis"];
+export type Phase = S["ScheduleStepOut"]["phase"];
+
+/** 포함 상태 6종. 합계에는 '포함'과 '따로 계산'만 들어간다 */
+export const LINE_STATE: Record<QuoteLineState, string> = {
+  included: "포함", bundled: "묶음 포함", separate: "따로 계산", optional: "선택", after_visit: "실측 후", excluded: "안 함",
+};
+
+/** 줄 단가의 근거 */
+export const LINE_BASIS: Record<LineBasis, { label: string; desc: string }> = {
+  public: { label: "공공 기준", desc: "표준시장단가 · 조달청 가격 같은 공공 기준이에요" },
+  assumed: { label: "가정", desc: "공공 가격이 없어 믿집이 정한 값이에요" },
+  none: { label: "실측 후 확인", desc: "공공 단가가 없어 실측 뒤 업체 견적에서 정해요" },
+};
+
+/** 예상 공정표 단계, 현장 순서대로 */
+export const PHASES: { key: Phase; label: string; desc?: string }[] = [
+  { key: "prep", label: "짐 정리" },
+  { key: "remove", label: "철거" },
+  { key: "main", label: "본 공사" },
+  { key: "late", label: "마감 공사", desc: "장판 · 가구 · 조명" },
+  { key: "finish", label: "정리" },
+];
+
 export function sizeLabel(s: { band?: string | null; basis?: string | null; m2?: string | number | null }) {
   if (s.band) return s.band === "50" ? "50평 이상" : `${s.band}평대`;
   return `${s.basis === "exclusive" ? "전용" : "공급"} ${s.m2}㎡`;
