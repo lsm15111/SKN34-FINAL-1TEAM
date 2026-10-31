@@ -90,7 +90,7 @@ class _NoDb:
 
 
 def truth_card(t: dict) -> DobaeCard:
-    area = calc.pyeong_to_m2(Decimal(t["pyeong"])) if "pyeong" in t else Decimal(t["m2"])
+    area = calc.pyeong_to_m2(Decimal(t["pyeong"])) if "pyeong" in t else calc.m2(Decimal(t["m2"]))
     return DobaeCard(
         area_m2=area,
         area_basis=t["area_basis"],
@@ -324,6 +324,12 @@ async def main() -> None:
     ap.add_argument("--split", choices=["all", "dev", "heldout"], default="all")
     ap.add_argument("--concurrency", type=int, default=4)
     ap.add_argument("--case", help="이 id 하나만 (스크립트 점검용)")
+    ap.add_argument(
+        "--summary", help="저장된 결과 폴더의 raw.json으로 표만 다시 만든다 (호출 없음)"
+    )
+    ap.add_argument(
+        "--reuse-direct", help="그냥 묻기는 이 결과 폴더 것을 쓰고 우리 쪽만 다시 돌린다"
+    )
     args = ap.parse_args()
 
     cases = [
@@ -335,8 +341,22 @@ async def main() -> None:
         cases = [c for c in cases if c["split"] == args.split]
     if args.case:
         cases = [c for c in cases if c["id"] == args.case]
+    if args.summary:
+        d = Path(args.summary)
+        res = json.loads((d / "raw.json").read_text(encoding="utf-8"))
+        (d / "summary.md").write_text(summarize(cases, res) + "\n", encoding="utf-8")
+        print(summarize(cases, res))
+        return
+    reused = (
+        json.loads((Path(args.reuse_direct) / "raw.json").read_text(encoding="utf-8"))
+        if args.reuse_direct
+        else None
+    )
+    kinds = ("ours",) if reused else ("ours", "direct")
     n_inc = sum(1 for c in cases if c["ask"] or c.get("unknown"))
-    planned = args.runs * (2 * len(cases) + len(cases) + n_inc + len(cases))
+    planned = args.runs * 2 * len(cases)
+    if not reused:
+        planned += args.runs * (len(cases) + n_inc + len(cases))
     print(
         f"사례 {len(cases)}개 × {args.runs}회, 예상 호출 약 {planned}번 (모델 {settings.llm_model})"
     )
@@ -356,8 +376,10 @@ async def main() -> None:
             except llm.LlmError as e:
                 return {"error": e.reason}
 
-    res: dict = {c["id"]: {"ours": [], "direct": []} for c in cases}
-    jobs = [(k, c) for c in cases for k in ("ours", "direct") for _ in range(args.runs)]
+    res: dict = {
+        c["id"]: {"ours": [], "direct": reused[c["id"]]["direct"] if reused else []} for c in cases
+    }
+    jobs = [(k, c) for c in cases for k in kinds for _ in range(args.runs)]
     outs = await asyncio.gather(*(one(k, c) for k, c in jobs))
     for (k, c), o in zip(jobs, outs, strict=True):
         res[c["id"]][k].append(o)

@@ -9,7 +9,16 @@
 cd backend
 uv run python ../evaluation/dobae/run_compare.py            # 호출 수 · 예상 비용만
 uv run python ../evaluation/dobae/run_compare.py --live     # 실제 호출 (유료, .env의 ANTHROPIC_API_KEY)
+uv run python ../evaluation/dobae/run_compare.py --live --reuse-direct ../evaluation/dobae/results/<폴더>  # 우리 쪽만 다시
+uv run python ../evaluation/dobae/run_compare.py --summary ../evaluation/dobae/results/<폴더>  # 표만 다시 (호출 없음)
 ```
+
+## 결과 기록
+
+| 폴더 | 상담 프롬프트 | 비고 |
+| --- | --- | --- |
+| `20261031-1645` | consult-v1 | 처음 전체 실행. 되물음 96% (d04 '천장도 해야 하나요?'를 모름으로 읽음) |
+| `20261031-1649` | consult-v2 | 우리 쪽만 다시 실행, 그냥 묻기는 1645 결과를 씀. 되물음 100% |
 
 ## 두 방식
 
