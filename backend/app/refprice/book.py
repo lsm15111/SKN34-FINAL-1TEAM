@@ -7,6 +7,7 @@
 from decimal import Decimal
 
 from app.calc.dobae import DobaePrices, won
+from app.calc.mokgong import MokgongPrices
 
 _WAGE_HELPER = 172_698  # 보통인부 2026.9.1 시중노임단가 (대한건설협회)
 
@@ -37,6 +38,44 @@ DOBAE_2026H2 = DobaePrices(
         "primer": "조달청 가격정보 초배지 (2026-10 조회) · 소요량 표준품셈",
         "occupied": "표준품셈 · 짐 있는 집 시공량 15% 감산, 노무비에만",
         "removal": "표준품셈 벽지 떼내기 × 2026.9.1 보통인부 노임",
+        "none": "공공 단가가 없어 업체 견적에서 확인해요",
+    },
+)
+
+MOKGONG_2026H2 = MokgongPrices(
+    version="2026H2",
+    molding=8_168,
+    molding_mat=3_000,
+    molding_ratio=Decimal("1.1"),
+    base=3_757,
+    base_mat=2_000,
+    base_ratio=Decimal("1.04"),
+    door_set=430_110,
+    door_leaf=255_954,
+    frame=11_054,
+    board=12_937,
+    ceiling_mat=8_000,
+    md_molding=Decimal("0.035"),
+    md_base=Decimal(2) / Decimal(165),
+    md_door=Decimal("0.313"),
+    md_frame=Decimal("0.0323"),
+    md_board=Decimal(2) / Decimal(45),
+    molding_per_py=Decimal("2.4"),
+    base_per_py=Decimal("1.8"),
+    supply_per_exclusive=Decimal("1.2"),
+    flatten_share=Decimal("0.3"),
+    crew=2,
+    vat_rate=Decimal("0.1"),
+    sources={
+        "molding": "표준시장단가 2026 하반기 · 몰딩 설치 (재료 제외)",
+        "molding_mat": "팀 가정값 (몰딩 자재는 공공 가격이 없어요) · 소요량 표준품셈",
+        "base": "표준시장단가 2026 하반기 · 걸레받이 MDF (재료 제외)",
+        "base_mat": "팀 가정값 (걸레받이 자재는 공공 가격이 없어요) · 소요량 표준품셈",
+        "door_set": "서울시 희망의 집수리 단가 2025 · PVC 방문 문틀 + 문짝 (철거 · 설치 포함)",
+        "door_leaf": "서울시 희망의 집수리 단가 2025 · PVC 방문 문짝 (철거 · 설치 포함)",
+        "frame": "표준시장단가 2026 하반기 · 경량천장틀 BAR 간격 450 (재료 제외)",
+        "board": "표준시장단가 2026 하반기 · 천장 석고판 1겹 (석고판 제외)",
+        "ceiling_mat": "팀 가정값 (천장틀 · 석고보드 자재는 공공 가격이 없어요)",
         "none": "공공 단가가 없어 업체 견적에서 확인해요",
     },
 )
