@@ -1,0 +1,57 @@
+"""외부 업체 수집 작업 (arq). worker.py가 functions에 한 줄씩 등록한다.
+
+키가 없으면 부르지 않고 건너뛴다. 실패는 짧은 이유만 로그에 남긴다 (키 · 주소 · 업체 정보는 남기지 않는다).
+테스트는 ctx["http"]에 가짜 HTTP 클라이언트를 넣는다.
+"""
+
+import csv
+import logging
+import re
+from contextlib import nullcontext
+from datetime import timedelta
+from pathlib import Path
+
+from app.config import settings
+from app.db import SessionLocal
+from app.directory import client, service
+from app.shared.clock import now_utc, today_seoul
+
+log = logging.getLogger(__name__)
+_DAY = re.compile(r"^\d{8}$")
+
+
+def _http(ctx: dict):
+    given = ctx.get("http")
+    return nullcontext(given) if given is not None else client.http_client()
+
+
+async def import_sangga_csv(ctx: dict, path: str) -> dict:
+    """상가정보 CSV 파일 하나 (사람이 내려받아 서버에 둔 파일 경로)"""
+    p = Path(path)
+    if p.suffix.lower() != ".csv" or not p.is_file():
+        return {"error": "no_file"}
+    async with SessionLocal() as s:
+        try:
+            return await service.import_sangga_csv(s, p, now=now_utc())
+        except (ValueError, csv.Error) as exc:
+            log.warning("상가정보 CSV를 읽지 못했어요 (%s)", type(exc).__name__)
+            return {"error": "bad_csv"}
+
+
+async def sync_kiscon(ctx: dict, start: str | None = None, end: str | None = None) -> dict:
+    """KISCON 공시를 기간(YYYYMMDD)만큼 받아 반영한다. 기간을 안 주면 지난 7일."""
+    if not settings.data_go_kr_key:
+        return {"skipped": "no_key"}
+    today = today_seoul()
+    start = start or (today - timedelta(days=7)).strftime("%Y%m%d")
+    end = end or today.strftime("%Y%m%d")
+    if not (_DAY.match(start) and _DAY.match(end)) or start > end:
+        return {"error": "bad_period"}
+    async with _http(ctx) as http, SessionLocal() as s:
+        try:
+            return await service.sync_kiscon(
+                s, http, settings.data_go_kr_key, start, end, now=now_utc()
+            )
+        except client.ApiError as exc:
+            log.warning("KISCON 공시를 받지 못했어요 (%s)", exc.reason)
+            return {"error": exc.reason}

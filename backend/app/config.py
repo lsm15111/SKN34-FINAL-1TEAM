@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     session_days: int = 14
     # 올린 파일을 두는 폴더. 운영에서 객체 저장소로 바꾸면 files/storage.py만 고친다
     files_dir: str = "./data/files"
+    # ── 외부 업체 정보 (가견적) ──
+    # 공공데이터포털 서비스 키(KISCON 건설업체 · 국세청 사업자 상태). 비어 있으면 수집 작업을 건너뛴다
+    data_go_kr_key: str = ""
+    # 수집기 User-Agent에 붙일 연락 주소 (사이트 운영자가 믿집에 연락할 곳)
+    bot_contact_url: str = ""
 
     @property
     def is_https(self) -> bool:
