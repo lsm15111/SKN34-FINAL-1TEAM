@@ -9,6 +9,7 @@ from app.consult.trades import (
     electric,
     kitchen,
     mokgong,
+    window,
 )
 from app.consult.trades.base import TradeSpec
 
@@ -18,6 +19,7 @@ _SPECS: tuple[TradeSpec, ...] = (
     electric.SPEC,
     kitchen.SPEC,
     mokgong.SPEC,
+    window.SPEC,
 )
 REGISTRY: dict[str, TradeSpec] = {s.key: s for s in sorted(_SPECS, key=lambda s: s.order)}
 if len(REGISTRY) != len(_SPECS) or len({s.order for s in _SPECS}) != len(_SPECS):
