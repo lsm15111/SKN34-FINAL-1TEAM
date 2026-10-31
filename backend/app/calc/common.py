@@ -5,7 +5,7 @@
 
 from dataclasses import dataclass
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
-from typing import Literal
+from typing import Literal, Protocol
 
 AreaBasis = Literal["supply", "exclusive"]
 # 포함 상태 6종. 합계에는 included(포함) · separate(따로 계산)만 들어간다
@@ -36,6 +36,20 @@ class Step:
     key: str
     name: str
     half_days: int
+
+
+class Quote(Protocol):
+    """공정 견적이 갖출 모양. 공정마다 <공정>Quote가 이 이름들을 가지면 상담 · 요약이 그대로 읽는다."""
+
+    version: str
+    lines: list[Line]
+    subtotal: int  # VAT 별도 합계 (included · separate 줄만)
+    vat: int
+    total: int
+    man_days: Decimal
+    steps: list[Step]
+    days: Decimal  # 이 공정만 했을 때 기간
+    assumptions: list[str]
 
 
 def won(x: Decimal) -> int:
