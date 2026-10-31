@@ -137,8 +137,8 @@ class TradeAgent:
 
     def _plan_key(self, user: str) -> str:
         model, effort = llm.pick("plan")
-        system = hashlib.sha256(self.plan_system.encode()).hexdigest()
-        return cache.key("plan", model, effort, self.plan_prompt_version, system, user)
+        system_hash = hashlib.sha256(self.plan_system.encode()).hexdigest()
+        return cache.key("plan", model, effort, self.plan_prompt_version, system_hash, user)
 
     async def plan(self, card_text: str, q: Quote) -> PlanResult:
         """모델 · 프롬프트 · 지식 · 입력(집 정보 · 견적)이 같으면 캐시를 쓴다. 검사를 지난 결과만 넣는다."""

@@ -3,8 +3,9 @@
 from decimal import Decimal
 
 import pytest
+from redis.exceptions import RedisError
 
-from app.agent import llm
+from app.agent import cache, llm
 from app.agent.schemas import (
     Caution,
     Change,
@@ -447,3 +448,17 @@ def test_plan_cache_hit_skips_the_llm(api, fake_llm, monkeypatch):
     monkeypatch.setattr(settings, "llm_plan_cache_s", 0)
     turn(api, answers=answers(FORM))
     assert names(fake_llm) == ["TradePlan", "TradePlan"]
+
+
+def test_plan_cache_errors_are_ignored(api, fake_llm, monkeypatch):
+    class Down:
+        async def get(self, *_a, **_k):
+            raise RedisError("down")
+
+        async def set(self, *_a, **_k):
+            raise RedisError("down")
+
+    monkeypatch.setattr(cache, "redis", Down())
+    signup(api)
+    out = turn(api, answers=answers(FORM))
+    assert out["results"][0]["plan_status"] == "new" and names(fake_llm) == ["TradePlan"]
