@@ -60,8 +60,14 @@ def test_trade_categories_follow_router_v5(built):
             assert not set(c["expect"]["questions"]) & set(card["trades"])
         if cat == "vendor":  # 업체 소개 · 견적 요청은 범위 안 (v5)
             assert not c["expect"]["out_of_scope"] and c["expect"]["reply_has"] == ["가견적"]
+        if cat == "trade.add" and c["strata"]["form"] == "two":  # 두 공정을 한꺼번에
+            assert len(ideal["trades_add"]) == 2
+        if c["strata"].get("form") == "last_trade":  # 하나뿐인 공정 빼기 → 남긴다
+            assert cat == "no_change" and len(card["trades"]) == 1 and not c["expect"]["effect"]
     oos = {c["input"]["message"] for c in built if c["category"] == "out_of_scope"}
     assert not any("업체" in m or "방수" in m for m in oos)
+    forms = Counter(c["strata"].get("form") for c in built)
+    assert forms["two"] > 60 and forms["last_trade"] > 50  # 범주 249개를 꼴마다 나눔
 
 
 def test_share_field_phrases_name_no_trade(built):
@@ -166,6 +172,16 @@ def test_trade_add_remove_and_ask_only(built):
     s = S.score(rem, raw_of(rem, trades_remove=["nope"]))
     assert not s["checks"]["raw_trades"] and not s["checks"]["trades_exact"]
     assert s["counts"]["t_fn"] == 1
+
+    two = first(built, "trade.add", lambda c: c["strata"]["form"] == "two")
+    s = S.score(two, raw_of(two, trades_add=two["expect"]["ideal"]["trades_add"][:1]))
+    assert not s["checks"]["trades_exact"] and s["counts"]["t_fn"] == 1  # 하나만 더함
+
+    last = first(built, "no_change", lambda c: c["strata"]["form"] == "last_trade")
+    only = last["input"]["card"]["trades"]
+    for rem_ in ([], only):  # 빼라고 내도 상담 코드가 하나는 남긴다 → 둘 다 맞음
+        s = S.score(last, raw_of(last, trades_remove=rem_))
+        assert all(s["checks"].values()), s["detail"]
 
 
 def test_scoring_runs_without_trade_fields(built):
