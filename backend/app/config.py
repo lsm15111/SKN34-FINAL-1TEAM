@@ -56,6 +56,8 @@ class Settings(BaseSettings):
     contact_sender_contact: str = ""
     # 수신거부 링크를 만들 웹 주소
     web_url: str = "http://localhost:3000"
+    # worker 주기 작업(대신 연락 보내기 · 멈춘 발송 정리 · KISCON 공시 · 홈페이지 확인). false면 모두 끈다
+    cron_enabled: bool = True
 
     @property
     def is_https(self) -> bool:
