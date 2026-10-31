@@ -329,6 +329,24 @@ def count_table(rows: list[dict], key: str, title: str | None = None) -> str:
     return "\n".join(out)
 
 
+def split_report(cases: list[dict]) -> dict:
+    """무료 점검 공통: id 중복 · 같은 입력 · 범주마다 dev:held-out 2:1 · 두 나눔의 조각 겹침"""
+    ids = [c.get("id") for c in cases]
+    inputs = [json.dumps(c.get("input"), sort_keys=True, ensure_ascii=False) for c in cases]
+    cnt = Counter((c.get("category"), c.get("split")) for c in cases)
+    uneven = sorted(
+        cat for cat in {k for k, _ in cnt} if abs(cnt[cat, "dev"] - 2 * cnt[cat, "heldout"]) > 2
+    )
+    tpl = {s: {x for c in cases if c.get("split") == s for x in c.get("tpl", [])} for s in SPLITS}
+    return {
+        "n": len(cases),
+        "dup_ids": len(ids) - len(set(ids)),
+        "dup_inputs": len(inputs) - len(set(inputs)),
+        "uneven": uneven,
+        "shared_fragments": sorted(tpl["dev"] & tpl["heldout"]),
+    }
+
+
 def pair_coverage(rows: list[dict], keys: Sequence[str]) -> tuple[int, int]:
     """두 칸씩 짝지은 값 조합 중 사례에 나온 것 / 나올 수 있는 것"""
     seen = total = 0

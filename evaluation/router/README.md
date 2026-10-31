@@ -1,0 +1,58 @@
+# 라우터 평가
+
+상담 라우터(`app.agent.consult.route`)가 고객 말에서 바꿀 칸 · 공정 더하기/빼기 · 공정별 질문 · 범위 밖을
+맞게 뽑는지 본다. 기대는 라우터 v5 프롬프트(`consult_v5.md`)를 따른다.
+
+## 사례 (4,980개 · 범주 20개 × 249: dev 166 · held-out 83)
+
+| 범주 | 고객 말 | 기대 |
+| --- | --- | --- |
+| common.area · basis · occupied · balcony · year | 평수 · ㎡ · 공급/전용 · 거주 · 발코니 · 준공 연도 ('지은 지 몇 년'은 안 바꿈) | 그 공통 칸만 |
+| field.choice · multi · count · unknown · two | 공정 칸 하나 · 여러 개(정하기/더하기/빼기) · 숫자 · 모르겠어요 · 두 칸 | 그 칸만 (같이 쓰는 칸은 모두) |
+| mixed | 공통 칸 + 공정 칸 | 둘 다 |
+| question · question.other | 카드 공정 · 카드에 없는 공정 질문 | 그 공정 전문가에게, 답은 빈 글 |
+| change.question | 바꾸기 + 질문 | 둘 다 |
+| trade.add | "목공도 같이 할래요" (+ 그 공정 칸) | trades_add, 공정을 먼저 더하고 칸을 바꿈 |
+| trade.remove | "도배는 빼 주세요" (+ 남은 공정 칸) | trades_remove |
+| trade.ask | "목공도 해야 할까요?" | 더하지 않고 그 공정 전문가에게 |
+| vendor | 업체 소개 · 견적 요청 | 범위 안, 답에 '가견적 받기' 안내 |
+| out_of_scope | 중문 · 붙박이장 새로 짜기 · 단열 · 누수 원인 · 구조 변경 · 계약 · 결제 | 범위 밖 |
+| no_change | 맞장구 · 이미 같은 값 · 이미 있는 공정 더하기 | 안 바꿈 |
+
+- 레지스트리 카탈로그(칸 · 선택지 · 범위)로 만든다. 고객 말은 `phrases.py` 조각이고, 조각 3개 중 1개는
+  held-out 전용이다. 카드 상태 · 앞 대화 · 잡음(띄어쓰기 · 오타 · 반말)은 고르게 채운다.
+- 기대 바뀐 칸은 모범 출력을 상담 코드(`apply_route` · `normalize`)에 넣어 만든다.
+- 새 공정은 스펙 화면 말로 기본 말을 만든다. 실제로 돌리기 전에 `phrases.py`에 그 공정 말을 더하는 것이 좋다.
+
+## 채점 (`score.py`, 코드만)
+
+라우터 원문을 상담 코드에 넣어 바뀐 칸(effect)을 기대와 견준다. 같은 뜻의 다른 출력(multi 칸 set · add)은 같게 친다.
+
+- 바뀐 칸: 똑같음 · 지어낸 변경 없음 · 빠짐 없음, 정밀도 · 재현율
+- 공정 더하기 · 빼기: 기대와 같음(묻기만 하면 안 더함), 원문이 카드에 없는 목록 공정만 더하고 카드 공정만 뺌
+- 원문 변경: 카드 공정(이번에 더한 공정 포함) 칸만, 선택지 · 범위 안
+- 질문 나누기 · 범위 밖 판단
+- 답: 300자 이하 · 숫자 주장 없음 · '-해요'체 · 되묻지 않음 · 질문을 넘기면 빈 글 · 업체 요청이면 '가견적' 안내
+
+`trades_add` · `trades_remove`가 없는 라우터(v5 전)도 채점된다. 그때는 공정 더하기 · 빼기 사례만 틀린다.
+
+## 실행 (저장소 루트에서)
+
+```bash
+cd backend
+uv run python ../evaluation/router/make_cases.py                 # 사례 만들기 (약 20초)
+uv run python ../evaluation/check_cases.py --only router         # 무료 점검 (T0)
+uv run python ../evaluation/router/run.py --sample 20            # 호출 수 · 예상 비용만
+uv run python ../evaluation/router/run.py --sample 20 --fake      # 가짜 LLM, 무료
+uv run python ../evaluation/router/run.py --sample 20 --live      # 실제 호출 (유료, 승인 뒤)
+```
+
+## 예상 비용 (판정 LLM 없음)
+
+v5 시스템 6,111자 · 입력 345자 · 출력 300토큰(effort low) 추정. Batch 칸은 캐시 없이 셈해서 실시간보다 비싸게 나온다.
+
+| 모델 | 20개 | 150개 | 4,980개 | 4,980개 Batch |
+| --- | ---: | ---: | ---: | ---: |
+| Opus 5.5 | $0.33 | $1.47 | $43.82 | $97.91 |
+| Sonnet 5.5 | $0.16 | $0.73 | $21.91 | $48.95 |
+| Haiku 5.5 | $0.01 | $0.04 | $1.30 | $2.45 |

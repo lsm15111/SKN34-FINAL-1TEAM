@@ -14,9 +14,7 @@
 """
 
 import argparse
-import json
 import sys
-from collections import Counter
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -26,12 +24,14 @@ ROOT = HERE.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "backend")]
 
 from evaluation.common import gen, trades
+from evaluation.router import check as router_check
 from evaluation.run_agent import default_cases, ideal
 from evaluation.scorers import trade_plan
 from evaluation.scorers.expect import expect
 
 KEYS = ("id", "trade", "split", "category", "strata", "input", "expect")
-OTHER_SETS: dict = {}  # 평가 이름 → 그 평가의 check 모듈 (default_cases · check_set)
+# 평가 이름 → (표에 쓸 이름, check 모듈: default_cases · check_set)
+OTHER_SETS = {"router": ("라우터", router_check)}
 
 
 def check_case(trade: str, case: dict, sources: set[str], witness) -> list[str]:
@@ -89,26 +89,6 @@ def check_case(trade: str, case: dict, sources: set[str], witness) -> list[str]:
     return errs
 
 
-def split_report(cases: list[dict]) -> dict:
-    """나눔 · 중복 · 조각 겹침 (세 평가가 같이 쓴다)"""
-    ids = [c.get("id") for c in cases]
-    inputs = [json.dumps(c.get("input"), sort_keys=True, ensure_ascii=False) for c in cases]
-    cnt = Counter((c.get("category"), c.get("split")) for c in cases)
-    uneven = sorted(
-        cat for cat in {k for k, _ in cnt} if abs(cnt[cat, "dev"] - 2 * cnt[cat, "heldout"]) > 2
-    )
-    tpl = {
-        s: {x for c in cases if c.get("split") == s for x in c.get("tpl", [])} for s in gen.SPLITS
-    }
-    return {
-        "n": len(cases),
-        "dup_ids": len(ids) - len(set(ids)),
-        "dup_inputs": len(inputs) - len(set(inputs)),
-        "uneven": uneven,
-        "shared_fragments": sorted(tpl["dev"] & tpl["heldout"]),
-    }
-
-
 def check_set(trade: str, cases: list[dict]) -> dict:
     sources, witness = set(trades.sources(trade)), ideal(trade)
     problems = {}
@@ -116,7 +96,7 @@ def check_set(trade: str, cases: list[dict]) -> dict:
         errs = check_case(trade, c, sources, witness)
         if errs:
             problems[c.get("id", "?")] = errs
-    return split_report(cases) | {"problems": problems}
+    return gen.split_report(cases) | {"problems": problems}
 
 
 def ok(r: dict, full: bool) -> bool:
@@ -161,10 +141,10 @@ def main() -> None:
         for trade in picked:
             path = (args.cases or default_cases(trade)).resolve()
             sets.append((f"공정 의견 {trade}", path, check_set(trade, gen.read_jsonl(path))))
-    for kind, mod in OTHER_SETS.items():
+    for kind, (name, mod) in OTHER_SETS.items():
         if kind in only and not args.trade:
             path = mod.default_cases().resolve()
-            sets.append((kind, path, mod.check_set(gen.read_jsonl(path))))
+            sets.append((name, path, mod.check_set(gen.read_jsonl(path))))
     for name, path, r in sets:
         full = path.name == "cases_5k.jsonl"
         all_ok &= ok(r, full)
