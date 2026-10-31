@@ -729,9 +729,10 @@ export interface components {
             channel: "sms" | "email" | "form";
             /**
              * Status
+             * @description test_sent = 시험 발송(기록만, 실제로 보내지 않음). sent는 실제 발송만
              * @enum {string}
              */
-            status: "draft" | "queued" | "sent" | "failed" | "blocked";
+            status: "draft" | "queued" | "sending" | "sent" | "test_sent" | "failed" | "blocked";
             /** Send Enabled */
             send_enabled: boolean;
             /** Notice */
