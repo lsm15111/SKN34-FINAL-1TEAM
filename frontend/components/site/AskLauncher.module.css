@@ -11,10 +11,73 @@
 .t:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .x { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px; border: 0; border-radius: var(--radius); background: transparent; color: var(--ink-sub); cursor: pointer; }
 .x:hover { background: var(--surface); color: var(--ink); }
-.log { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; align-items: flex-start; gap: 6px; padding: 16px; }
-.soon { margin: 0; font-weight: 700; }
+.log { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; display: flex; flex-direction: column; gap: 20px; padding: 16px 14px 16px 16px; }
 .fm { display: flex; align-items: flex-end; gap: 8px; padding: 10px 12px 12px 16px; border-top: 1px solid var(--line); }
 .q { flex: 1 1 auto; min-width: 0; min-height: 48px; padding: 11px 12px; resize: none; line-height: 1.5; }
+
+/* 창 맨 위: 지금 공사의 표준견적서 합계 */
+.std { display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; margin-block: -10px -12px; font-size: var(--fs-sm); }
+.std strong { font-size: var(--fs-md); }
+.box { display: inline-flex; align-items: center; min-height: 28px; padding: 0 6px; border: 1px solid var(--line); border-radius: var(--radius-s); font-size: var(--fs-sm); font-weight: 700; color: var(--ink); white-space: nowrap; }
+
+/* 대화 */
+.intro { color: var(--ink-sub); }
+.turn { display: flex; flex-direction: column; gap: 16px; }
+.me { align-self: flex-end; max-width: 88%; padding: 10px 14px; border: 1px solid var(--accent-weak); border-radius: var(--radius-l); background: var(--surface); font-weight: 500; }
+.bot { display: flex; flex-direction: column; align-items: stretch; gap: 10px; min-width: 0; }
+.who { font-size: var(--fs-sm); font-weight: 700; }
+.busy { font-weight: 400; color: var(--ink-sub); }
+.acts { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* 고르기 버튼 */
+.choices { display: flex; flex-wrap: wrap; gap: 8px; }
+.choice { min-height: 44px; padding: 0 16px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg); color: var(--ink); font-size: var(--fs-md); font-weight: 700; cursor: pointer; }
+.choice:hover { background: var(--surface); }
+.choice[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: var(--surface); color: var(--accent-ink); }
+.choice[aria-disabled="true"] { cursor: default; }
+.choice[aria-disabled="true"]:not([aria-pressed="true"]) { color: var(--ink-mute); background: var(--bg); }
+
+/* 이렇게 정리했어요 */
+.card { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--radius-l); }
+.cardT { font-size: var(--fs-sm); font-weight: 700; color: var(--accent-ink); }
+.cardH { margin-top: 8px; font-size: var(--fs-sm); font-weight: 700; color: var(--ink-sub); }
+.sum { margin: 0; }
+.sum > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding-block: 4px; }
+.sum dt { color: var(--ink-sub); }
+.sum dd { margin: 0; font-weight: 700; text-align: right; }
+.sum dd.later { color: var(--warn); }
+
+/* 시작 안내 번호 목록 */
+.steps { margin: 0; padding: 0; list-style: none; counter-reset: st; display: flex; flex-direction: column; gap: 10px; }
+.steps li { counter-increment: st; display: flex; align-items: flex-start; gap: 10px; font-weight: 700; }
+.steps li::before { content: counter(st); flex: none; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: var(--bg); font-size: var(--fs-sm); }
+
+/* 두 공정 · 만드는 중 */
+.working { font-weight: 700; color: var(--accent-ink); }
+.prog { margin: 0; padding: 12px 16px; list-style: none; display: flex; flex-direction: column; gap: 8px; border-radius: var(--radius); background: var(--surface); }
+.prog li { display: flex; align-items: center; gap: 10px; }
+.dot, .dotOn { flex: none; width: 12px; height: 12px; border: 2px solid var(--accent); border-radius: 50%; }
+.dotOn { background: var(--accent); }
+
+/* 두 공정 · 한 번에 묻는 카드 */
+.qcard { display: flex; flex-direction: column; padding: 0 16px; border: 1px solid var(--line); border-radius: var(--radius-l); }
+.qgroup { display: flex; flex-direction: column; gap: 12px; padding-block: 14px; }
+.qgroup + .qgroup { border-top: 1px solid var(--line); }
+.qrow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; }
+.qlab { font-weight: 700; }
+.qrow .choices { margin-left: auto; justify-content: flex-end; }
+.len { flex-basis: 100%; display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.lenIn { width: 120px; min-height: 44px; }
+
+/* 견적 설명 */
+.calc { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+.calc li { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.basis { display: flex; flex-wrap: wrap; align-items: center; gap: 0 8px; }
+
+/* 질문 칩 */
+.chips { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.chip { min-height: 44px; padding: 8px 14px; border: 1px solid var(--accent-pastel); border-radius: var(--radius-l); background: var(--bg); color: var(--accent-ink); font-size: var(--fs-sm); font-weight: 700; text-align: left; cursor: pointer; }
+.chip:hover { background: var(--surface); }
 
 @media (max-width: 600px) {
   .launch { right: 16px; bottom: 16px; }
