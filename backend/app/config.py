@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     files_dir: str = "./data/files"
     # 스테이징/운영에서만 사용. 비어 있으면 기존 로컬 디스크 저장소 유지
     files_s3_bucket: str = ""
+    # true면 worker가 시연 업체(app/demo.py) 일을 몇 초마다 대신 한다. 운영에서는 켜도 돌지 않는다
+    demo_auto: bool = False
 
     @property
     def is_https(self) -> bool:

@@ -7,6 +7,8 @@ x-api-env: &api-env
   DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-mitjip}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD를 .env에 넣어 주세요}@db:5432/${POSTGRES_DB:-mitjip}
   REDIS_URL: redis://redis:6379/0
   LLM_LIVE: ${LLM_LIVE:-false}
+  # 시연 업체 자동 응답 (worker만 쓴다)
+  DEMO_AUTO: ${DEMO_AUTO:-false}
   OPENAI_API_KEY: ${OPENAI_API_KEY:-}
   # 로그인 쿠키로 상태를 바꾸는 요청을 받아 줄 화면 주소 (쉼표로 구분)
   ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000,http://localhost:3100}
@@ -82,6 +84,9 @@ services:
       target: prod
     command: ["arq", "app.worker.WorkerSettings"]
     environment: *api-env
+    # 시연 자동 응답이 올리는 견적서 파일을 api와 같은 곳에 둔다
+    volumes:
+      - files-data:/data/files
     depends_on:
       redis:
         condition: service_healthy

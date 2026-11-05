@@ -1,6 +1,6 @@
 """시연용 고객 흐름 데이터를 만든다. 운영(APP_ENV=production)에서는 돌지 않는다.
 
-시연 고객 1명과 시연 업체 3곳(도배 2 · 목공 1, 승인 · 확인한 단가까지)을 만들고,
+시연 고객 1명과 시연 업체 6곳(도배 3 · 목공 3, 승인 · 확인한 단가까지)을 만들고,
 고객 흐름 단계마다 프로젝트를 하나씩 만든다. 업체 쪽 일(견적서 보내기 · 공사 날짜 내기)은 미리 해 둔다.
   업체 고르기(pick) → 실측 요청(visit_requested) → 견적서 옴(quotes_arrived)
   → 공사 날짜 옴(dates_received) → 확정 공정표(before_work)
@@ -8,18 +8,25 @@
 업체 승인자로 남길 관리자 계정이 먼저 있어야 한다.
 비밀번호는 DEMO_PASSWORD에서 읽고 화면에 찍지 않는다. 이미 있는 계정의 비밀번호는 바꾸지 않는다.
 돌리기: docker compose exec -T -e DEMO_PASSWORD api python -m app.demo
+
+DEMO_AUTO=true면 worker가 몇 초마다 auto_reply로 시연 업체 일을 대신 한다(아래 '자동 응답').
 """
 
 import asyncio
+import logging
 import os
+from contextlib import asynccontextmanager, suppress
 from datetime import date, time, timedelta
+from pathlib import Path
 
-from sqlalchemy import select
+from redis.asyncio import Redis
+from redis.exceptions import RedisError
+from sqlalchemy import and_, or_, select
 
 from app.auth import repository as auth_repo
 from app.auth import service as auth_service
 from app.auth.models import User
-from app.calc.schedule import workdays
+from app.calc.schedule import WEEKEND, workdays
 from app.config import settings
 from app.db import SessionLocal, engine
 from app.files import service as files_service
@@ -28,15 +35,20 @@ from app.project.schemas import ProjectCreate
 from app.quote.schemas import QuoteDraftIn
 from app.refprice.holidays import days_off
 from app.schedule import service as schedule_service
+from app.schedule.models import DateProposal, DateRequest, Deal
 from app.schedule.schemas import AcceptIn, ConfirmIn, DatesIn
 from app.seed import LICENSE, sample_pdf
 from app.shared.clock import now_utc, today_seoul
+from app.shared.errors import AppError
 from app.vendor import repository as vendor_repo
 from app.vendor import service as vendor_service
 from app.vendor.models import Vendor, VendorArea, VendorReview, VendorTrade
 from app.vendor.schemas import PriceFileIn, PriceLineIn, PriceSetIn
 from app.visit import service as visit_service
+from app.visit.models import Visit
 from app.visit.schemas import VisitCreateIn
+
+log = logging.getLogger(__name__)
 
 CUSTOMER = ("demo@mitjip.test", "시연 고객", "01000000000")  # 실제로 없는 번호
 # 이메일 → (담당자, 상호, 대표, 사업자번호, 전화, 공정, 확인한 단가). 단가는 원 · 부가세 빼고
@@ -85,9 +97,70 @@ VENDORS = {
             "base_mat": 2000,
         },
     ),
+    "demo-dobae3@mitjip.test": (
+        "최시연",
+        "시연한지",
+        "최시연",
+        "9990000904",
+        "01000000904",
+        "dobae",
+        {"wall": 6900, "ceiling": 7000, "paper_basic": 3300, "paper_economy": 2500},
+    ),
+    "demo-mok2@mitjip.test": (
+        "정시연",
+        "시연목수",
+        "정시연",
+        "9990000905",
+        "01000000905",
+        "mokgong",
+        {
+            "frame": 19000,
+            "board": 12500,
+            "ceiling_mat": 9500,
+            "door": 95000,
+            "casing": 4800,
+            "door_mat": 175000,
+            "molding": 3800,
+            "molding_mat": 2400,
+            "base": 3200,
+            "base_mat": 2100,
+        },
+    ),
+    "demo-mok3@mitjip.test": (
+        "강시연",
+        "시연우드",
+        "강시연",
+        "9990000906",
+        "01000000906",
+        "mokgong",
+        {
+            "frame": 17500,
+            "board": 11500,
+            "ceiling_mat": 9000,
+            "door": 88000,
+            "casing": 4300,
+            "door_mat": 190000,
+            "molding": 3300,
+            "molding_mat": 2700,
+            "base": 2900,
+            "base_mat": 2200,
+        },
+    ),
 }
-D1, D2, MOK = VENDORS
+D1, D2, MOK = list(VENDORS)[:3]
 AREA = ("seoul", "노원구")
+# 업체마다 보내는 실측 견적서: demo_assets 이미지 · 문서에 적힌 낼 금액 · 부가세 방식 (공사 기간 3일)
+ASSETS = Path(__file__).parent / "demo_assets"
+QUOTE_DOCS = {
+    "demo-dobae1@mitjip.test": ("quote-dobae1.jpg", 3_080_000, "excluded"),
+    "demo-dobae2@mitjip.test": ("quote-dobae2.jpg", 3_300_000, "included"),
+    "demo-dobae3@mitjip.test": ("quote-dobae3.jpg", 2_980_000, "excluded"),
+    "demo-mok1@mitjip.test": ("quote-mok1.jpg", 1_450_000, "excluded"),
+    "demo-mok2@mitjip.test": ("quote-mok2.jpg", 1_540_000, "included"),
+    "demo-mok3@mitjip.test": ("quote-mok3.jpg", 1_390_000, "excluded"),
+}
+QUOTE_DAYS = 3
+QUOTE_VALID_DAYS = 14
 QUOTE_PDF = sample_pdf(b"SAMPLE QUOTE - demo data only")
 PRICE_PDF = sample_pdf(b"SAMPLE PRICE LIST - demo data only")
 
@@ -216,10 +289,15 @@ async def _ask(s, customer: User, pid, trade: str, vendors: list[User], today: d
     return [by_vendor[i] for i in ids]
 
 
-async def _quote(s, vendor: User, visit_id, amount: int, vat_mode: str, today: date) -> None:
-    f = files_service.Prepared(
-        kind="quote_doc", data=QUOTE_PDF, content_type="application/pdf", filename="실측견적서.pdf"
-    )
+async def _quote(s, vendor: User, visit_id, today: date) -> None:
+    """업체가 실측 견적서를 보낸다: 그 업체의 견적서 이미지(없으면 빈 PDF)와 문서에 적힌 금액 그대로."""
+    name, amount, vat_mode = QUOTE_DOCS[vendor.email]
+    path = ASSETS / name
+    if path.exists():
+        doc = (await asyncio.to_thread(path.read_bytes), "image/jpeg", "실측견적서.jpg")
+    else:
+        doc = (QUOTE_PDF, "application/pdf", "실측견적서.pdf")
+    f = files_service.Prepared(kind="quote_doc", data=doc[0], content_type=doc[1], filename=doc[2])
     row = await files_service.persist(s, vendor.id, f)
     await s.commit()
     data = QuoteDraftIn(
@@ -227,8 +305,8 @@ async def _quote(s, vendor: User, visit_id, amount: int, vat_mode: str, today: d
         measured_on=today,
         entered_amount=amount,
         vat_mode=vat_mode,
-        days=3,
-        valid_until=today + timedelta(days=14),
+        days=QUOTE_DAYS,
+        valid_until=today + timedelta(days=QUOTE_VALID_DAYS),
     )
     await visit_service.save_quote(s, vendor, visit_id, data, today)
     await visit_service.send_quote(s, vendor, visit_id, today)
@@ -244,10 +322,34 @@ async def _dates(s, customer: User, pid, visit_id, vendor: User, days: list[date
     return deal.id, job.proposal.id
 
 
+LOCK = "demo:auto_reply"  # worker 자동 응답이 한 번 도는 동안 · 시연 데이터를 만드는 동안 잡는다
+
+
+@asynccontextmanager
+async def _paused():
+    """시연 데이터를 만드는 동안 자동 응답을 멈춘다 (업체 일을 build가 직접 한다). Redis가 없으면 그냥 간다."""
+    r = Redis.from_url(settings.redis_url, socket_timeout=1, socket_connect_timeout=1)
+    held = False
+    try:
+        for _ in range(30):  # 자동 응답이 도는 중이면 끝날 때까지 기다린다
+            if held := bool(await r.set(LOCK, "build", nx=True, ex=600)):
+                break
+            await asyncio.sleep(1)
+    except RedisError:
+        pass
+    try:
+        yield
+    finally:
+        if held:
+            with suppress(RedisError):
+                await r.delete(LOCK)
+        await r.aclose()
+
+
 async def build(password: str, today: date) -> dict[str, str]:
     """단계 코드 → 새로 만든 프로젝트 번호(MJ-…)"""
     try:
-        async with SessionLocal() as s:
+        async with _paused(), SessionLocal() as s:
             first_admin = select(User).where(User.role == "admin").order_by(User.created_at)
             admin = await s.scalar(first_admin.limit(1))
             if admin is None:
@@ -255,7 +357,8 @@ async def build(password: str, today: date) -> dict[str, str]:
             email, name, phone = CUSTOMER
             customer = await _user(s, email, name, password, "customer", phone)
             await s.commit()
-            d1, d2, mok = [await _vendor(s, e, password, admin, today) for e in (D1, D2, MOK)]
+            vendors = {e: await _vendor(s, e, password, admin, today) for e in VENDORS}
+            d1, d2, mok = vendors[D1], vendors[D2], vendors[MOK]
             off = days_off(today, today + timedelta(days=400))
             made = {}
 
@@ -267,16 +370,19 @@ async def build(password: str, today: date) -> dict[str, str]:
             await new("pick", both=True)
 
             pid = await new("visit_requested")
-            await _ask(s, customer, pid, "dobae", [d1, d2], today)
+            for vendor, visit_id in zip(
+                (d1, d2), await _ask(s, customer, pid, "dobae", [d1, d2], today), strict=True
+            ):  # 업체가 열어 본 요청은 자동 응답이 건드리지 않는다 (이 단계를 그대로 보여 준다)
+                await visit_service.mark_seen(s, vendor, visit_id)
 
             pid = await new("quotes_arrived")
             va, vb = await _ask(s, customer, pid, "dobae", [d1, d2], today)
-            await _quote(s, d1, va, 3_080_000, "excluded", today)
-            await _quote(s, d2, vb, 3_300_000, "included", today)
+            await _quote(s, d1, va, today)
+            await _quote(s, d2, vb, today)
 
             pid = await new("dates_received")
             (va,) = await _ask(s, customer, pid, "dobae", [d1], today)
-            await _quote(s, d1, va, 3_080_000, "excluded", today)
+            await _quote(s, d1, va, today)
             await _dates(
                 s, customer, pid, va, d1, workdays(today + timedelta(days=28), 3, off), today
             )
@@ -284,8 +390,8 @@ async def build(password: str, today: date) -> dict[str, str]:
             pid = await new("before_work", both=True)
             (vm,) = await _ask(s, customer, pid, "mokgong", [mok], today)
             (vd,) = await _ask(s, customer, pid, "dobae", [d1], today)
-            await _quote(s, mok, vm, 1_450_000, "excluded", today)
-            await _quote(s, d1, vd, 3_080_000, "excluded", today)
+            await _quote(s, mok, vm, today)
+            await _quote(s, d1, vd, today)
             mok_days = workdays(today + timedelta(days=28), 2, off)
             dobae_days = workdays(mok_days[-1] + timedelta(days=3), 3, off)
             seen = 0
@@ -298,6 +404,113 @@ async def build(password: str, today: date) -> dict[str, str]:
     finally:
         await engine.dispose()  # 한 번 돌고 끝나는 스크립트 · 시험이 이벤트 루프를 새로 만든다
     return made
+
+
+# ---- 자동 응답: 시연 업체 3곳이 할 일을 업체가 누르는 것과 같은 service 함수로 대신 한다 ----
+# 실측 요청(업체가 아직 안 열어 봄) → 그 업체의 견적서 이미지 · 문서 금액으로 실측 견적서 보내기
+# 확정 → 예상 공정표 자리에 공사 날짜 내기, 고객이 다른 날짜 · 바꾸기를 요청 → 고른 첫 시작일로 다시 내기
+# 날짜는 계산 엔진, 금액은 업체 문서에 적힌 값(QUOTE_DOCS)을 그대로 쓰고, 여기서 셈하지 않는다.
+
+
+def _span(first: date, days: int, weekend: tuple[int, ...]) -> tuple[date, date]:
+    """first부터 일하는 날 days개의 첫날 · 끝날"""
+    got = workdays(first, max(days, 1), days_off(first, first + timedelta(days=400)), weekend)
+    return got[0], got[-1]
+
+
+async def _reply_quote(s, vendor: User, visit_id, today: date) -> None:
+    await _quote(s, vendor, visit_id, today)
+
+
+async def _reply_dates(s, vendor: User, deal_id, today: date) -> None:
+    job = await schedule_service.job_for(s, vendor, deal_id, today)
+    weekend = () if job.weekend_work else WEEKEND
+    tomorrow = today + timedelta(days=1)
+    if job.dates_state == "waiting":
+        crew = job.need.crew
+        start, end = _span(max(job.plan_start or tomorrow, tomorrow), job.need.days, weekend)
+        fit = (
+            await schedule_service.preview_dates(s, vendor, deal_id, start, end, crew, today)
+        ).fit
+        if fit.conflicts and fit.start_from and fit.start_from > start:  # 앞 공정이 끝난 뒤로
+            start, end = _span(fit.start_from, job.need.days, weekend)
+        data = DatesIn(start=start, end=end, crew=crew, method="app")
+    elif job.dates_state == "requested" and job.request and job.proposal:
+        start, end = _span(min(job.request.wish_dates), job.proposal.workdays, weekend)
+        data = DatesIn(
+            start=start, end=end, crew=job.proposal.crew, method="app", request_id=job.request.id
+        )
+    elif job.dates_state == "change_requested" and job.request and job.request_options:
+        o = job.request_options[0]
+        data = DatesIn(
+            start=o.start,
+            end=o.end,
+            crew=job.accepted_crew or job.need.crew,
+            method="app",
+            kind="change",
+            request_id=job.request.id,
+        )
+    else:
+        return
+    await schedule_service.propose_dates(s, vendor, deal_id, data, today)
+
+
+async def _todo(s, vendor_ids: list) -> list[tuple]:
+    """할 일 (종류, id, 업체 id, 열린 날짜 요청 id): 안 열어 본 실측 요청 · 날짜를 낼 확정"""
+    visits = select(Visit.id, Visit.vendor_id).where(
+        Visit.vendor_id.in_(vendor_ids),
+        Visit.status == "requested",
+        Visit.vendor_seen_at.is_(None),
+    )
+    pending = (
+        select(DateProposal.id)
+        .where(DateProposal.deal_id == Deal.id, DateProposal.status == "pending")
+        .exists()
+    )
+    asked = (
+        select(DateRequest.id)
+        .where(DateRequest.deal_id == Deal.id, DateRequest.status == "open")
+        .limit(1)
+        .scalar_subquery()
+    )
+    deals = select(Deal.id, Deal.vendor_id, asked).where(
+        Deal.vendor_id.in_(vendor_ids),
+        or_(
+            and_(Deal.status == "confirmed", ~pending, asked.is_(None)),
+            and_(Deal.status.in_(("confirmed", "scheduled")), asked.is_not(None)),
+        ),
+    )
+    out = [("quote", i, vid, None) for i, vid in (await s.execute(visits)).all()]
+    return out + [("dates", i, vid, r) for i, vid, r in (await s.execute(deals)).all()]
+
+
+REPLY = {"quote": _reply_quote, "dates": _reply_dates}
+
+
+async def auto_reply(today: date, skip: set) -> int:
+    """한 번 돌면서 한 일의 수. 실패한 건은 skip에 넣어 같은 상태로는 다시 시도하지 않는다."""
+    done = 0
+    async with SessionLocal() as s:
+        q = select(User).where(User.email.in_(list(VENDORS)), User.role == "vendor")
+        vendors = {u.id: u for u in (await s.scalars(q)).all()}
+        if not vendors:
+            return 0
+        for kind, row_id, vendor_id, req in await _todo(s, list(vendors)):
+            key = (kind, row_id, req)
+            if key in skip:
+                continue
+            try:
+                await REPLY[kind](s, vendors[vendor_id], row_id, today)
+                done += 1
+            except AppError as exc:  # 그사이 고객이 바꿨거나 낼 수 없는 날짜 (로그에는 코드만)
+                await s.rollback()
+                skip.add(key)
+                log.warning("시연 자동 응답을 건너뛰었어요: %s %s %s", kind, row_id, exc.code)
+            except Exception:
+                await s.rollback()
+                skip.add(key)
+                log.exception("시연 자동 응답이 실패했어요: %s %s", kind, row_id)
+    return done
 
 
 LABEL = {
