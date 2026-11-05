@@ -9,7 +9,7 @@ import { FieldError } from "@/components/auth/parts";
 import { Clock } from "@/components/confirm/DealStatus";
 import { day } from "@/components/confirm/text";
 import { isFinished, untilDay } from "@/components/schedule/text";
-import { Check, Close, WayIcon } from "@/components/vendors/icons";
+import { Check, Close } from "@/components/vendors/icons";
 import { iGa } from "@/components/vendors/text";
 import { ApiError, call, errorText, type Schemas } from "@/lib/backend/client";
 import { tradeLabel } from "@/lib/labels";
@@ -31,7 +31,7 @@ type Props = {
   tels: Record<string, string | null>;
 };
 
-export function WorkCheck({ projectId, deals, tels }: Props) {
+export function WorkCheck({ projectId, deals }: Props) {
   const router = useRouter();
   const dlg = useRef<HTMLDialogElement>(null);
   const noRef = useRef<HTMLButtonElement>(null);
@@ -118,7 +118,6 @@ export function WorkCheck({ projectId, deals, tels }: Props) {
       {shown.filter((x) => x.status !== "done").map((x) => {
         const tName = tradeLabel(x.trade);
         const v = x.vendor_name;
-        const tel = tels[x.id] ?? null;
         const e = err?.deal === x.id ? err : null;
         const errLine = e ? (e.warn ? <p role="alert" className="mj-notice mj-notice-warn"><span><b>{e.text}</b> 다시 읽은 상태를 확인해 주세요.</span></p> : <FieldError id={`wc-e-${x.id}`} alert>{e.text}</FieldError>) : null;
         if (x.status === "fixing") {
@@ -147,7 +146,6 @@ export function WorkCheck({ projectId, deals, tels }: Props) {
               <button type="button" className="mj-btn mj-btn-sec" aria-expanded={open === x.id} aria-controls={formId} onClick={() => toggle(x)}>
                 아직 남은 일이 있어요
               </button>
-              {tel ? <a className="mj-btn mj-btn-sec" href={`tel:${tel}`} aria-label={`${v}에 전화 걸기`}><WayIcon method="phone" />전화 걸기</a> : null}
             </div>
             {open === x.id ? (
               <form id={formId} aria-label={`${v}에 남은 일 알리기`} noValidate className={s.fixForm} onSubmit={(ev) => { ev.preventDefault(); void check(x, "fixing"); }}>
@@ -176,14 +174,11 @@ export function WorkCheck({ projectId, deals, tels }: Props) {
           <ul className={`mj-num ${s.doneList}`}>
             {done.map((x) => {
               const v = x.vendor_name;
-              const tel = tels[x.id] ?? null;
               return (
                 <li key={x.id}>
                   <p className={`mj-st mj-st-ok ${s.stBig}`}><Check size={16} />{tradeLabel(x.trade)} 공사 끝남{x.work_done_on ? ` · ${day(x.work_done_on)} 끝남` : ""}</p>
-                  <p>{v} 연락처는 {x.contact_until ? <b>{untilDay(x.contact_until)}</b> : "공사가 끝난 날부터 1년"}까지 보여요</p>
                   <div className={s.doneRow}>
                     <p className="mj-small">{AFTER[x.trade] ?? "문제가 생기면"} {v}에 전화해요.</p>
-                    {tel ? <a className="mj-btn mj-btn-sec" href={`tel:${tel}`} aria-label={`${v}에 전화 걸기`}><WayIcon method="phone" />전화 걸기</a> : null}
                   </div>
                 </li>
               );

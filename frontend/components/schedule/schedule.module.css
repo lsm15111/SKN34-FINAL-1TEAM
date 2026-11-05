@@ -35,7 +35,10 @@
 /* 내 공정표에 얹어 보기 */
 .ov { display: flex; flex-direction: column; gap: 14px; }
 .scroll { overflow-x: auto; max-width: 100%; border-top: 2px solid var(--ink); }
-.tbl th, .tbl td { overflow-wrap: anywhere; }
+/* 한 자씩 꺾이지 않게 낱말 단위로 줄을 바꾼다. 공정 이름은 한 줄로 두고, 넘치면 표만 옆으로 넘긴다 */
+.tbl th, .tbl td { word-break: keep-all; overflow-wrap: normal; }
+.tbl tbody th { white-space: nowrap; }
+@media (max-width: 600px) { .tbl th, .tbl td { padding-left: 8px; padding-right: 8px; } }
 .cur > th, .cur > td { background: var(--surface); font-weight: 700; }
 .note { font-size: var(--fs-md); padding: 16px 18px; }
 .note > span { flex: none; display: inline-flex; margin-top: 3px; }

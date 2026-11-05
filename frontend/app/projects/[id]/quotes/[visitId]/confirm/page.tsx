@@ -14,7 +14,7 @@ import { getQuoteCompare, type QuoteCompare } from "@/lib/api/quote";
 import { listDeals } from "@/lib/api/schedule";
 import { listProjectVisits } from "@/lib/api/visit";
 import { euro } from "@/lib/format";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "./page.module.css";
 
 export const metadata = { title: "업체 확정" };
@@ -34,7 +34,7 @@ export default async function ConfirmPage({ params, searchParams }: Params) {
   const { trade: asked } = await searchParams;
   const p = await getMyProject(id);
   if (!p) notFound();
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   if (!trades.length) notFound();
 
   // 요청이 있는 공정: 주소의 trade를 먼저 보고, 없으면 다른 공정에서 찾는다
@@ -111,20 +111,7 @@ export default async function ConfirmPage({ params, searchParams }: Params) {
 
           <QuoteSummary r={r} projectId={id} standardTotal={c.standard_total} title={mine ? "확정한 견적서" : "확정할 견적서"} />
 
-          <ConfirmBox
-            projectId={id}
-            visitId={visitId}
-            trade={trade}
-            vendorName={name}
-            seenVer={r.seen_ver}
-            others={others}
-            expired={r.expired}
-            validUntil={r.latest.valid_until}
-            deal={mine ? deal : null}
-            compareHref={compareHref}
-            other={otherTrade ? { trade: otherTrade, deal: otherDeal } : null}
-          />
-
+          {/* 확정하면 생기는 일을 확인 체크 · 확정 버튼보다 먼저 읽게 둔다 */}
           {mine ? null : (
             <section aria-labelledby="after-h" className={s.after}>
               <h2 id="after-h" className="mj-h2">확정하면</h2>
@@ -132,7 +119,7 @@ export default async function ConfirmPage({ params, searchParams }: Params) {
                 <li>
                   <span className="mj-code" aria-hidden="true">1</span>
                   <div className={s.stepBody}>
-                    <p className={s.stepT}>{iGa(name)} 공사 날짜를 내요 <span className={`mj-num ${s.stepSub}`}>· 확정하고 2일 뒤 18:00까지</span></p>
+                    <p className={s.stepT}>{iGa(name)} 공사 날짜를 내요</p>
                     <p className="mj-small">날짜가 오면 알림으로 알려 드려요. 기한이 지나면 다른 업체를 고를 수 있어요.</p>
                   </div>
                 </li>
@@ -146,9 +133,24 @@ export default async function ConfirmPage({ params, searchParams }: Params) {
               </ol>
             </section>
           )}
+
+          <ConfirmBox
+            projectId={id}
+            visitId={visitId}
+            trade={trade}
+            vendorName={name}
+            seenVer={r.seen_ver}
+            others={others}
+            expired={r.expired}
+            validUntil={r.latest.valid_until}
+            deal={mine ? deal : null}
+            compareHref={compareHref}
+            other={otherTrade ? { trade: otherTrade, deal: otherDeal } : null}
+          />
         </div>
 
-        {otherTrade ? (
+        {/* 다른 공정 칸은 이 공정을 확정한 뒤, 다른 공정도 확정했을 때만 (확정 전 결정에는 필요 없다) */}
+        {otherTrade && mine && otherDeal ? (
           <aside className={s.aside} aria-label="다른 선택">
             <OtherTrade projectId={id} trade={otherTrade} deal={otherDeal} />
           </aside>

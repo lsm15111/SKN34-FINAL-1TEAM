@@ -11,12 +11,12 @@ import { Reselect } from "@/components/confirm/Reselect";
 import { ReselectNote } from "@/components/confirm/ReselectNote";
 import { canReselect, dealReselectText, visitsReselectBody } from "@/components/confirm/text";
 import { ProjectCrumb } from "@/components/project/ProjectCrumb";
-import { isReselected, isTrade, type VTrade } from "@/components/vendors/text";
+import { isReselected, isTrade } from "@/components/vendors/text";
 import { getMyProject } from "@/lib/api/project";
 import { getQuoteCompare } from "@/lib/api/quote";
 import { listDeals } from "@/lib/api/schedule";
 import { listProjectVisits } from "@/lib/api/visit";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import { won } from "@/lib/format";
 import s from "./page.module.css";
 
@@ -27,7 +27,7 @@ export default async function QuotesPage({ params, searchParams }: { params: Pro
   const { trade: asked } = await searchParams;
   const p = await getMyProject(id);
   if (!p) notFound();
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   if (!trades.length) notFound();
   const trade = isTrade(asked) && trades.includes(asked) ? asked : trades[0];
   const c = await getQuoteCompare(id, trade);
@@ -102,7 +102,7 @@ export default async function QuotesPage({ params, searchParams }: { params: Pro
                   body={visitsReselectBody(live.map((v) => v.vendor_name), live.filter((v) => v.latest).length)}
                 />
               ) : null}
-              <Link className="mj-lnk" href={pickHref}>다른 업체에 실측 더 요청하기</Link>
+              <Link className="mj-lnk" href={pickHref}>업체 더 담기</Link>
             </div>
           ) : null}
         </section>

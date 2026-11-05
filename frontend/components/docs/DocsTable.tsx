@@ -48,6 +48,12 @@ function Files({ v, name }: { v: Version; name: string }) {
   );
 }
 
+/** 파일이 하나뿐이면 그 주소 (줄 제목을 링크로 하고 파일 이름 줄은 두지 않는다) */
+function onlyFile(v: Version): string | null {
+  const links = v.file_links.filter(Boolean);
+  return v.files.length === 1 && links.length === 1 ? links[0] : null;
+}
+
 /** 보이는 버전: 고객이 확정한 버전, 없으면 가장 나중 버전 */
 function mainVersion(q: QuoteDoc): Version {
   return q.versions.find((v) => v.confirmed) ?? q.versions.reduce((a, b) => (b.version > a.version ? b : a));
@@ -125,13 +131,14 @@ export function DocsTable({ docs, trades, deals }: { docs: ApiDocs; trades: stri
     const v = mainVersion(q);
     const old = q.versions.filter((x) => x.id !== v.id);
     const name = `${q.vendor_name} 실측 견적서`;
+    const one = onlyFile(v);
     count += 1;
     rows.push(
       <tr key={q.visit_id} className={q.closed ? s.closed : undefined}>
         <th scope="row">
-          <span className={s.doc}>{name}</span>
+          {one ? <a className={s.doc} href={one} target="_blank" rel="noopener">{name}<span className="mj-sr"> · 새 창</span></a> : <span className={s.doc}>{name}</span>}
           <span className={s.sub}>{quoteSub(q.trade, q.closed, v.confirmed)}</span>
-          <Files v={v} name={name} />
+          {one ? null : <Files v={v} name={name} />}
           {old.length ? (
             <Past n={old.length} what="견적서">
               {old.map((x) => (

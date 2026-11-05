@@ -21,7 +21,8 @@
 /* 알림 종: 44×44, 안 읽은 수는 빨간 배지 */
 /* 공용 .mj-btn보다 앞서게 요소 이름을 붙인다 */
 a.bell { position: relative; width: 44px; min-height: 44px; padding: 0; }
-.badge { position: absolute; top: 2px; right: 0; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: var(--danger); color: #fff; font-size: var(--fs-xs); font-weight: 700; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
+/* 배지는 종 그림 오른쪽 위 밖에 둔다 (두 자리여도 그림을 덮지 않게) */
+.badge { position: absolute; top: 0; left: 28px; min-width: 20px; box-shadow: 0 0 0 2px var(--bg); height: 20px; padding: 0 6px; border-radius: 10px; background: var(--danger); color: #fff; font-size: var(--fs-xs); font-weight: 700; line-height: 20px; text-align: center; font-variant-numeric: tabular-nums; }
 
 /* 계정 메뉴: 이름 버튼 + 펼침 목록(줄 48) */
 .acct { position: relative; }

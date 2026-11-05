@@ -68,12 +68,12 @@ export function StateBars({ days, rows, label }: { days: Day[]; rows: BarRow[]; 
   );
 }
 
-const LEGEND: Record<Exclude<Tone, "now">, string> = { confirmed: "수락함", pending: "수락 전", expected: "예상 자리 · 건조 · 청소" };
+const LEGEND: Record<Exclude<Tone, "now">, string> = { confirmed: "날짜 수락함", pending: "수락 전", expected: "예상 자리 · 건조 · 청소" };
 
 /** 범례: 줄에 있는 색만 (수락함 · 수락 전 · 예상 자리 · 건조 · 청소 · 휴일). 미리 보기는 지금 · 새 날짜를 덧붙인다 */
 export function StateLegend({ rows, days, change }: { rows: BarRow[]; days: Day[]; change?: boolean }) {
   const has = (t: Tone) => rows.some((r) => r.tone === t);
-  const text = (t: Exclude<Tone, "now">) => (change && t === "confirmed" && has("now") ? "수락함 · 지금 날짜" : change && t === "pending" ? "새 날짜 · 수락 전" : LEGEND[t]);
+  const text = (t: Exclude<Tone, "now">) => (change && t === "confirmed" && has("now") ? "날짜 수락함 · 지금 날짜" : change && t === "pending" ? "새 날짜 · 수락 전" : LEGEND[t]);
   const tones = (["confirmed", "pending", "expected"] as const).filter((t) => has(t) || (t === "confirmed" && has("now")));
   return (
     <ul className={s.legend} aria-hidden="true">

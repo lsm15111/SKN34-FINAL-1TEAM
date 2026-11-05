@@ -4,6 +4,7 @@
 .main { flex: 1.9 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
 .side { flex: 1 1 340px; min-width: 0; display: flex; flex-direction: column; gap: 28px; }
 .sec { display: flex; flex-direction: column; gap: 12px; }
+.cmp { align-self: flex-start; }
 .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(320px, 100%), 1fr)); gap: 16px; }
 .card { display: flex; flex-direction: column; gap: 10px; min-width: 0; padding: 16px clamp(16px, 2.5vw, 24px) 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
 .empty { display: flex; flex-direction: column; align-items: flex-start; gap: 12px; padding: 8px 0; }

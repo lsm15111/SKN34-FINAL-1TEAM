@@ -7,6 +7,8 @@ import type { VTrade } from "./text";
 export type Pick = { ids: string[]; msg: string };
 const key = (projectId: string, trade: VTrade) => `mj_visit_pick_${projectId}_${trade}`;
 export const PICK_EVENT = "mj-visit-pick";
+/** 업체 자세히 창의 '실측 요청 보내기': 목록(VendorBoard)이 받아 확인 창을 연다 */
+export const SEND_EVENT = "mj-visit-send";
 
 export function readPick(projectId: string, trade: VTrade): Pick {
   try {

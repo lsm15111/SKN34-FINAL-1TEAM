@@ -3,11 +3,9 @@
 import Link from "next/link";
 import type { ApiProjectItem } from "@/lib/api/project";
 import { dateSeoul, md } from "@/lib/format";
-import { gradeLabel, projectTitle, sizeLabel, tradeLabel } from "@/lib/labels";
+import { gradeLabel, projectTitle, sizeLabel, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import { STEP_NAMES, stepNote } from "./text";
 import s from "./my.module.css";
-
-const TRADES = ["dobae", "mokgong"];
 
 function Check() {
   return <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M2.5 6.3l2.3 2.3L9.5 3.8" /></svg>;
@@ -37,7 +35,7 @@ function Steps({ p }: { p: ApiProjectItem }) {
 
 function Card({ p }: { p: ApiProjectItem }) {
   const title = projectTitle(p.region, p.trades);
-  const trades = TRADES.filter((t) => p.trades.includes(t)).map((t) => {
+  const trades = TRADE_ORDER.filter((t) => p.trades.includes(t)).map((t) => {
     const grade = t === "dobae" ? p.grades[t] : null;
     return grade ? `${tradeLabel(t)} ${gradeLabel(grade)}` : tradeLabel(t);
   });
@@ -47,11 +45,10 @@ function Card({ p }: { p: ApiProjectItem }) {
       <div className={s.pjH}>
         <div className={s.pjT}>
           <h2 className="mj-h2"><Link className={s.tl} href={home}>{title}</Link></h2>
-          <p className="mj-sub">{[`아파트 ${sizeLabel(p.size)}`, ...trades].join(" · ")} · <span className="mj-num">{md(dateSeoul(p.updated_at))}</span>에 바뀜</p>
+          <p className="mj-sub"><span className="mj-code">{p.code}</span> · {[`아파트 ${sizeLabel(p.size)}`, ...trades].join(" · ")} · <span className="mj-num">{md(dateSeoul(p.updated_at))}</span>에 바뀜</p>
         </div>
         <div className={s.acts}>
           {p.todo ? <Link className="mj-btn mj-btn-pri" href={p.todo.link}>{p.todo.action}<span className="mj-sr"> · {title}</span></Link> : null}
-          <Link className="mj-btn mj-btn-sec" href={home}>공사 화면<span className="mj-sr"> · {title}</span></Link>
         </div>
       </div>
       <Steps p={p} />

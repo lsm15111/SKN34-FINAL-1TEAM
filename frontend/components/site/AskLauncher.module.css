@@ -80,7 +80,10 @@
 .chip:hover { background: var(--surface); }
 
 @media (max-width: 600px) {
-  .launch { right: 16px; bottom: 16px; }
+  /* 폰에서는 말풍선 그림만 남겨 오른쪽 버튼을 덜 가리고, 페이지 맨 아래에 버튼 자리만큼 여백을 둔다 */
+  .launch { right: 16px; bottom: 16px; width: 52px; padding: 0; justify-content: center; }
+  .lbl { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  :global(body:has([data-ask-launch])) { padding-bottom: 76px; }
   /* 업체 고르기 아래 막대(담은 업체 · 실측 요청 보내기)가 있으면 그 위로 올린다 */
   :global(body:has([data-pick-bar])) .launch { bottom: 88px; }
   .win { left: 0; right: 0; bottom: 0; width: auto; max-width: none; height: 80dvh; border-radius: 12px 12px 0 0; }

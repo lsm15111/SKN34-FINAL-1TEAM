@@ -5,14 +5,14 @@ import Link from "next/link";
 import { DealNote } from "@/components/confirm/DealNote";
 import { ContactCard } from "@/components/vendors/ContactCard";
 import { BizInfo, ContactFacts, Estimate, Faqs, Photos, Verified } from "@/components/vendors/Detail";
-import { Lock, VisitState } from "@/components/vendors/icons";
+import { VisitState } from "@/components/vendors/icons";
 import { PickButton } from "@/components/vendors/PickButton";
 import { VendorPanel } from "@/components/vendors/VendorPanel";
-import { areasText, eunNeun, iGa, isLive, isTrade, shutKind, type VTrade } from "@/components/vendors/text";
+import { areasText, eunNeun, iGa, isLive, isTrade, shutKind } from "@/components/vendors/text";
 import { getMyProject } from "@/lib/api/project";
 import { listDeals } from "@/lib/api/schedule";
 import { getProjectVendor, listProjectVendors, listProjectVisits } from "@/lib/api/visit";
-import { tradeLabel } from "@/lib/labels";
+import { tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "@/components/vendors/VendorPanel.module.css";
 
 export const metadata = { title: "업체 고르기" };
@@ -26,7 +26,7 @@ export default async function VendorPanelPage({ params, searchParams }: { params
   const { trade: asked } = await searchParams;
   const p = await getMyProject(id);
   if (!p) return null;
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   const trade = isTrade(asked) && trades.includes(asked) ? asked : trades[0];
   if (!trade) return null;
   const [d, visits, deals, list] = await Promise.all([getProjectVendor(id, vid, trade), listProjectVisits(id, trade), listDeals(id, trade), listProjectVendors(id, trade)]);
@@ -52,7 +52,7 @@ export default async function VendorPanelPage({ params, searchParams }: { params
   ) : deal ? (
     <p className="mj-small">{eunNeun(tradeLabel(trade))} 업체를 확정했어요.</p>
   ) : (
-    <PickButton projectId={id} trade={trade} vendorId={vid} name={name} slotsLeft={slotsLeft} again={!!mine && shutKind(mine, false) === "past"} hintId="vd-pick-h" />
+    <PickButton projectId={id} trade={trade} vendorId={vid} name={name} slotsLeft={slotsLeft} again={!!mine && shutKind(mine, false) === "past"} hintId="vd-pick-h" sendFrom={listHref} />
   );
 
   return (
@@ -80,7 +80,7 @@ export default async function VendorPanelPage({ params, searchParams }: { params
         ) : (
           <>
             <ContactFacts d={d} />
-            {deal ? <DealNote d={deal} projectId={id} /> : <p className={`mj-small ${s.lock}`}><Lock />실측을 요청하면 연락처가 보여요.</p>}
+            {deal ? <DealNote d={deal} projectId={id} /> : null}
           </>
         )}
       </section>
@@ -90,12 +90,15 @@ export default async function VendorPanelPage({ params, searchParams }: { params
         <Estimate d={d} />
       </section>
 
-      <section className={s.sec} aria-labelledby="vd-pt">
-        <div className={s.secH}><h3 id="vd-pt" className="mj-h3">시공 사례</h3>{pr.portfolio.length ? <span className="mj-small mj-num">{pr.portfolio.length}장</span> : null}</div>
-        <Photos d={d} projectId={id} max={PHOTOS} />
-        {/* 사진을 다 보려면 전체 화면(같은 주소를 새로 연다) */}
-        {pr.portfolio.length > PHOTOS ? <a className={`mj-lnk ${s.more}`} href={`${href(vid)}#pt-t`}>사진 {pr.portfolio.length}장 모두 보기</a> : null}
-      </section>
+      {/* 시공 사진이 없으면 칸을 두지 않는다 (빈 칸이 창을 길게 만든다) */}
+      {pr.portfolio.length ? (
+        <section className={s.sec} aria-labelledby="vd-pt">
+          <div className={s.secH}><h3 id="vd-pt" className="mj-h3">시공 사례</h3><span className="mj-small mj-num">{pr.portfolio.length}장</span></div>
+          <Photos d={d} projectId={id} max={PHOTOS} />
+          {/* 사진을 다 보려면 전체 화면(같은 주소를 새로 연다) */}
+          {pr.portfolio.length > PHOTOS ? <a className={`mj-lnk ${s.more}`} href={`${href(vid)}#pt-t`}>사진 {pr.portfolio.length}장 모두 보기</a> : null}
+        </section>
+      ) : null}
 
       <section className={s.sec} aria-labelledby="vd-fq">
         <div className={s.secH}><h3 id="vd-fq" className="mj-h3">자주 묻는 5가지</h3><span className="mj-small">{iGa(name)} 적은 답</span></div>

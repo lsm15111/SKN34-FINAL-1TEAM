@@ -30,11 +30,12 @@ function what(d: Day, blocks: Block[]) {
   return blocks.find((b) => b.kind === d.kind)?.label ?? "";
 }
 
-export function FinalDays({ plan }: { plan: Plan }) {
+/** quiet: 모든 공정을 수락함 → 줄마다 '날짜 수락함'을 쓰지 않는다 */
+export function FinalDays({ plan, quiet = false }: { plan: Plan; quiet?: boolean }) {
   return (
     <div className={s.tblBox}>
       <table className={`mj-table mj-num ${s.days}`}>
-        <caption className={s.cap}>날짜별 할 일 · {md(plan.start)} ~ {md(plan.end)}</caption>
+        <caption className={s.cap}>날짜별 할 일 · {md(plan.start)} ~ {md(plan.end)} (입주 청소까지)</caption>
         <thead><tr><th scope="col">날짜</th><th scope="col">공정</th><th scope="col" className={s.vCol}>업체</th><th scope="col">하는 일</th></tr></thead>
         <tbody>
           {plan.days.map((d) =>
@@ -49,7 +50,7 @@ export function FinalDays({ plan }: { plan: Plan }) {
               <tr key={d.day}>
                 <th scope="row">{md(d.day)}</th>
                 <td>
-                  <span className={s.what}>{what(d, plan.blocks)} <StateMark state={d.state} /></span>
+                  <span className={s.what}>{what(d, plan.blocks)} {quiet && d.state === "confirmed" ? null : <StateMark state={d.state} />}</span>
                   <span className={`mj-small ${s.vIn}`}>{who(d, plan.blocks)}</span>
                 </td>
                 <td className={s.vCol}>{who(d, plan.blocks)}</td>

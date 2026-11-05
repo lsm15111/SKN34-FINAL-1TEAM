@@ -13,7 +13,7 @@ import { isLive, isReselected, isTrade, type VTrade, type Visit } from "@/compon
 import { getMyProject } from "@/lib/api/project";
 import { listDeals } from "@/lib/api/schedule";
 import { listProjectVisits } from "@/lib/api/visit";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "./page.module.css";
 
 export const metadata = { title: "실측 요청 · 업체 연락" };
@@ -36,7 +36,7 @@ export default async function VisitsPage({ params, searchParams }: { params: Pro
   const { trade: asked } = await searchParams;
   const p = await getMyProject(id);
   if (!p) notFound();
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   if (!trades.length) notFound();
   const trade = isTrade(asked) && trades.includes(asked) ? asked : trades[0];
   const [all, deals] = await Promise.all([listProjectVisits(id), listDeals(id, trade)]);
@@ -50,6 +50,8 @@ export default async function VisitsPage({ params, searchParams }: { params: Pro
   const tName = tradeLabel(trade);
   const pickHref = `/projects/${id}/vendors?trade=${trade}`;
   const again = !deal && all.visits.some((v) => v.trade === trade && isReselected(v));
+  // 견적서가 온 업체: 카드마다 두지 않고 목록 위에 비교하기 하나
+  const quoted = deal ? 0 : rows.filter((v) => v.status === "quoted").length;
 
   return (
     <main id="main">
@@ -65,6 +67,9 @@ export default async function VisitsPage({ params, searchParams }: { params: Pro
           {deal ? <DealNote d={deal} projectId={id} /> : null}
           {again ? <ReselectNote trade={trade} again={!rows.some((v) => isLive(v.status))} /> : null}
 
+          {quoted ? (
+            <Link className={`mj-btn mj-btn-pri ${s.cmp}`} href={`/projects/${id}/quotes?trade=${trade}`}>{tName} 견적서 <span className="mj-num">{quoted}</span>개 비교하기</Link>
+          ) : null}
           <section aria-labelledby="vd-t" className={s.sec}>
             <h2 id="vd-t" className="mj-h3">요청한 업체 <span className="mj-num">{rows.length}</span><span className="mj-sr">곳</span></h2>
             {rows.length ? (
@@ -82,25 +87,10 @@ export default async function VisitsPage({ params, searchParams }: { params: Pro
               </div>
             )}
             {rows.length && !deal && (all.slots_left[trade] ?? 0) > 0 ? (
-              <p className="mj-small">{all.slots_left[trade]}곳 더 요청할 수 있어요 · <Link className={`mj-lnk ${s.sm}`} href={pickHref}>다른 업체 담기</Link></p>
+              <p className="mj-small">{all.slots_left[trade]}곳 더 요청할 수 있어요 · <Link className={`mj-lnk ${s.sm}`} href={pickHref}>업체 더 담기</Link></p>
             ) : null}
           </section>
         </div>
-
-        <aside className={s.side} aria-label="실측 진행 안내">
-          <section aria-labelledby="hw-t" className={s.how}>
-            <h2 id="hw-t" className="mj-h3">실측은 이렇게 해요</h2>
-            <ol className={s.steps}>
-              <li><span className="mj-code">1</span><span>업체가 다녀가서 견적서를 올려요.</span></li>
-              <li><span className="mj-code">2</span><span>견적서가 오면 표준견적서와 같이 보고 골라요.</span></li>
-            </ol>
-          </section>
-          <section aria-labelledby="sh-t" className={s.sent}>
-            <h2 id="sh-t" className="mj-h3">업체에 간 것</h2>
-            <p>요청 번호 · 공정 · 평형 · 지역(구) · 희망 시기 · 빈 집인지 · 남긴 말</p>
-            <p className="mj-small">이름 · 휴대폰 · 주소는 보내기로 고른 업체에만 가요. 요청이 닫히면 바로 지워져요.</p>
-          </section>
-        </aside>
       </div>
     </main>
   );

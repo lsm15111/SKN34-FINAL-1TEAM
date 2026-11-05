@@ -65,12 +65,14 @@ export function ConfirmBox({ projectId, visitId, trade, vendorName, seenVer, oth
     const late = done ? done.quote_expired : expired;
     return (
       <div ref={doneRef} tabIndex={-1} className={s.done} role="status" aria-label={`${tName} 업체 확정`}>
-        <DealStatus d={shown} />
+        <DealStatus d={shown} titled />
         {late ? (
           <p className={`mj-notice mj-notice-warn ${s.notice}`}><Warn /><span>유효기간이 지난 견적서로 확정했어요. 금액이 그대로인지 {vendorName}에 확인해 주세요.</span></p>
         ) : null}
         <div className={s.btns}>
           <Link className="mj-btn mj-btn-pri" href={`/projects/${projectId}`}>내 공사로 가기</Link>
+          {/* 다른 공정을 아직 확정하지 않았으면 그 비교가 다음 할 일 */}
+          {other && !other.deal ? <Link className="mj-btn mj-btn-sec" href={`/projects/${projectId}/quotes?trade=${other.trade}`}>{tradeLabel(other.trade)} 견적서 비교하기</Link> : null}
           {canReselect(shown) ? <Reselect projectId={projectId} trade={trade} dealId={shown.id} {...dealReselectText(shown, other)} /> : null}
         </div>
       </div>
@@ -163,11 +165,8 @@ export function ConfirmBox({ projectId, visitId, trade, vendorName, seenVer, oth
 
       <dialog ref={dlg} className={d.dlg} aria-labelledby="cf-q" onClose={() => opener.current?.focus()}>
         <button type="button" className={d.x} aria-label="닫기" onClick={() => dlg.current?.close()}><Close /></button>
-        <h2 id="cf-q" className="mj-h3">{euro(vendorName)} {tName} 업체를 확정할까요?</h2>
-        <p>
-          {others.length ? `${names}의 실측 요청은 바로 닫히고 연락처가 가려져요. ` : ""}
-          확정한 견적서는 바꿀 수 없어요.
-        </p>
+        <h2 id="cf-q" className="mj-h3">마지막으로 확인해요</h2>
+        <p>확정한 견적서는 바꿀 수 없어요.</p>
         <p className="mj-small">공사 날짜를 수락하기 전까지는 &lsquo;다시 고르기&rsquo;로 업체를 새로 고를 수 있어요. 다만 실측부터 새로 요청해요.</p>
         <div className={d.btns}>
           <button type="button" className="mj-btn mj-btn-pri" onClick={() => { dlg.current?.close(); void go(); }}>확정하기</button>

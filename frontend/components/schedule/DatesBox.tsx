@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { FieldError } from "@/components/auth/parts";
 import { Reselect } from "@/components/confirm/Reselect";
 import { day } from "@/components/confirm/text";
-import { Check, Close, Warn, WayIcon } from "@/components/vendors/icons";
+import { Check, Close, Warn } from "@/components/vendors/icons";
 import { iGa } from "@/components/vendors/text";
 import { ApiError, call, errorText } from "@/lib/backend/client";
 import { eulReul } from "@/lib/format";
@@ -54,6 +54,8 @@ type Props = {
   reselect: { title: string; body: string; note?: string } | null;
   /** 확정 공정표 */
   finalHref: string;
+  /** 수락한 뒤 다음 할 일 (다른 공정 날짜 확인 · 확정 공정표). 없으면 보조 버튼만 */
+  next?: { href: string; label: string } | null;
 };
 
 type Err = { text: string; code?: string; from?: string; retry?: "accept" | "request" };
@@ -155,7 +157,8 @@ export function DatesBox(p: Props) {
   if (p.accepted || done) {
     return (
       <div className={s.box}>
-        {done ? <p ref={doneRef} tabIndex={-1} role="status" className={`mj-st mj-st-ok ${s.stLine} ${s.stBig} ${s.focusT}`}><Check size={16} />수락했어요. 확정 공정표에 넣었어요.</p> : null}
+        {/* 수락했다는 말은 화면 제목이 한다. 이 줄은 화면 읽기 프로그램에만 알린다 */}
+        {done ? <p ref={doneRef} tabIndex={-1} role="status" className="mj-sr">수락했어요. 확정 공정표에 넣었어요.</p> : null}
         {p.accepted ? (
           <ChangeBox
             projectId={p.projectId}
@@ -173,9 +176,10 @@ export function DatesBox(p: Props) {
             tel={p.tel}
             seenVersion={p.seenVersion}
             planHref={p.finalHref}
+            next={p.next}
           />
         ) : (
-          <div className={s.btns}><Link className="mj-btn mj-btn-sec" href={p.finalHref}>확정 공정표 보기</Link></div>
+          <div className={s.btns}><Link className={`mj-btn ${p.next ? "mj-btn-pri" : "mj-btn-sec"}`} href={p.next?.href ?? p.finalHref}>{p.next?.label ?? "확정 공정표 보기"}</Link></div>
         )}
       </div>
     );
@@ -201,7 +205,6 @@ export function DatesBox(p: Props) {
       <div className={s.box}>
         {errLine}
         <div className={s.btns}>
-          {p.overdue && p.tel ? <a className="mj-btn mj-btn-pri" href={`tel:${p.tel}`} aria-label={`${p.vendorName}에 전화 걸기`}><WayIcon method="phone" />전화 걸기</a> : null}
           {p.reselect ? <Reselect projectId={p.projectId} trade={p.trade} dealId={p.dealId} {...p.reselect} /> : null}
         </div>
         {p.reselect ? <p className="mj-small">업체를 다시 고르면 실측부터 다시 해요. 공사 날짜를 수락하기 전까지만 다시 고를 수 있어요.</p> : null}

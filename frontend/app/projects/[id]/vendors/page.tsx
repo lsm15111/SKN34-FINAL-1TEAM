@@ -10,11 +10,11 @@ import { ReselectNote } from "@/components/confirm/ReselectNote";
 import { ProjectCrumb } from "@/components/project/ProjectCrumb";
 import { VendorBoard } from "@/components/vendors/VendorBoard";
 import { VTabs } from "@/components/vendors/VTabs";
-import { isLive, isReselected, isTrade, type VTrade } from "@/components/vendors/text";
+import { isLive, isReselected, isTrade } from "@/components/vendors/text";
 import { getMyProject } from "@/lib/api/project";
 import { listDeals } from "@/lib/api/schedule";
 import { listProjectVendors, listProjectVisits } from "@/lib/api/visit";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import { eulReul, won } from "@/lib/format";
 import s from "./page.module.css";
 
@@ -25,7 +25,7 @@ export default async function VendorsPage({ params, searchParams }: { params: Pr
   const { trade: asked } = await searchParams;
   const p = await getMyProject(id);
   if (!p) notFound();
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   if (!trades.length) notFound();
   const trade = isTrade(asked) && trades.includes(asked) ? asked : trades[0];
 

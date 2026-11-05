@@ -73,7 +73,7 @@ export function vsText(vs: string | null | undefined, dir: string | null | undef
 export const VISIT_LABEL: Record<string, string> = {
   requested: "요청함 · 견적서 기다림",
   quoted: "견적서 옴",
-  chosen: "확정함",
+  chosen: "업체 확정",
   cancelled: "요청 취소함",
   declined: "못 받음",
   closed: "닫힘",

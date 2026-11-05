@@ -4,12 +4,10 @@
 // 수락한 공사 날짜가 있고 공사 시작 전이면 '금액과 날짜' 아래에 공사 전에 할 일(PreWorkCheck)을 둔다. 상담 묻기는 넣지 않는다.
 import Link from "next/link";
 import { PreWorkCheck } from "@/components/project/PreWorkCheck";
-import { span, untilDay } from "@/components/schedule/text";
-import { telDigits } from "@/components/vendors/text";
+import { span } from "@/components/schedule/text";
 import { budgetLabel, phoneText, projectTitle, tradeLabel } from "@/lib/labels";
 import { decText, md, todaySeoul, won } from "@/lib/format";
-import { CopyPhone } from "./CopyPhone";
-import { Chev, Phone, State } from "./icons";
+import { Chev, State } from "./icons";
 import { tradeDates, tradeState, type Overview as Ov } from "./text";
 import s from "./Overview.module.css";
 
@@ -20,10 +18,6 @@ export function Overview({ ov }: { ov: Ov }) {
   const contacts = early ? [] : ov.contacts.filter((c) => c.contact.phone);
   const todo = ov.todo;
   const finished = todo ? todo.code === "done" : ov.phase === "done";
-  const doneTel = (() => {
-    const c = contacts.find((x) => x.trade === todo?.trade) ?? contacts[0];
-    return c ? { tel: telDigits(c.contact.phone), name: c.vendor_name } : null;
-  })();
   const { money, period } = ov;
   const allStandard = money.by_trade.every((m) => m.source === "standard");
   const notAccepted = ov.trades.filter((t) => !t.start_date).map((t) => tradeLabel(t.trade));
@@ -50,7 +44,6 @@ export function Overview({ ov }: { ov: Ov }) {
             {finished ? (
               contacts.length ? (
                 <p className={s.todoActs}>
-                  {doneTel?.tel ? <a className="mj-btn mj-btn-sec" href={`tel:${doneTel.tel}`} aria-label={`${doneTel.name}에 전화 걸기`}><Phone />전화 걸기</a> : null}
                   <a className={s.lnkG} href="#contacts">연락처 보기</a>
                 </p>
               ) : null
@@ -75,7 +68,6 @@ export function Overview({ ov }: { ov: Ov }) {
                 <p className={s.lnDates}>
                   {dt ? <><span className="mj-sr">{dt.accepted ? "공사 날짜 " : "수락 기다리는 날짜 "}</span>{span(dt.start, dt.end)}</> : null}
                 </p>
-                <p className={s.lnLink}>{t.start_date ? <Link className={s.lnkG} href={`/projects/${id}/plan`}>공정표 보기</Link> : null}</p>
               </li>
             );
           })}
@@ -130,20 +122,13 @@ export function Overview({ ov }: { ov: Ov }) {
             <ul className={`mj-num ${s.ctList}`}>
               {contacts.map((c) => {
                 const phone = phoneText(c.contact.phone ?? "");
-                const tel = telDigits(c.contact.phone);
-                const numId = `ct-${c.trade}`;
                 return (
                   <li key={c.trade}>
                     <p className={s.ctTrade}>{tradeLabel(c.trade)}</p>
                     <p className={s.ctMain}>
                       {c.vendor_name}{c.contact.owner_name ? ` · 대표 ${c.contact.owner_name}` : ""}<br />
-                      <b id={numId} className={s.phone}>{phone}</b>
-                      {c.contact_until ? <span className={s.until}>{untilDay(c.contact_until)}까지 보여요</span> : null}
+                      <b className={s.phone}>{phone}</b>
                     </p>
-                    <div className={s.ctActs}>
-                      <CopyPhone phone={phone} targetId={numId} aria={`${c.vendor_name} 번호 복사`} />
-                      {tel ? <a className={`mj-btn mj-btn-sec ${s.ctBtn}`} href={`tel:${tel}`} aria-label={`${c.vendor_name}에 전화 걸기`}><Phone />전화 걸기</a> : null}
-                    </div>
                   </li>
                 );
               })}

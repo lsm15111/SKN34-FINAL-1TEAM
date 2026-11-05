@@ -9,7 +9,7 @@ import { ProjectCrumb } from "@/components/project/ProjectCrumb";
 import { getMyProject } from "@/lib/api/project";
 import { getOverview, getPlan, getSchedule, type ApiSchedule } from "@/lib/api/schedule";
 import { listProjectVisits } from "@/lib/api/visit";
-import { projectTitle } from "@/lib/labels";
+import { projectTitle, TRADE_ORDER } from "@/lib/labels";
 import { dateSeoul, dotDate, md, todaySeoul } from "@/lib/format";
 import s from "./page.module.css";
 
@@ -33,7 +33,7 @@ export default async function PlanPage({ params, searchParams }: { params: Promi
   const want = kind === "expected" ? "expected" : undefined;
   const [p, plan] = await Promise.all([getMyProject(id), getPlan(id, want)]);
   if (!p || !plan) notFound();
-  const title = projectTitle(p.region, (["dobae", "mokgong"] as const).filter((t) => p.trades[t]));
+  const title = projectTitle(p.region, TRADE_ORDER.filter((t) => p.trades[t]));
   if (plan.kind === "final") {
     // 공사 전에 할 일: 체크 목록 · 시작일은 한 공사 화면 API 값 (시작일은 그 공정표가 확정일 때만)
     const [sch, ov] = await Promise.all([getSchedule(id), getOverview(id)]);

@@ -3,7 +3,7 @@ import { DocsTable } from "@/components/docs/DocsTable";
 import { ProjectCrumb } from "@/components/project/ProjectCrumb";
 import { getMyProject } from "@/lib/api/project";
 import { getDocs, listDeals } from "@/lib/api/schedule";
-import { projectTitle, sizeLabel } from "@/lib/labels";
+import { projectTitle, sizeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "@/components/docs/docs.module.css";
 
 export const metadata = { title: "서류" };
@@ -14,7 +14,7 @@ export default async function DocsPage({ params }: { params: Promise<{ id: strin
   const { id } = await params;
   const [p, docs] = await Promise.all([getMyProject(id), getDocs(id)]);
   if (!p || !docs) notFound();
-  const trades = (["dobae", "mokgong"] as const).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   const title = projectTitle(p.region, trades);
   // 확정 공정표 줄 아래 '목공 확정 · 도배 날짜 수락 전'은 공정별 업체 확정의 수락한 날짜로 쓴다
   const deals = docs.plans.some((x) => x.kind === "final") ? (await listDeals(id)) ?? [] : [];

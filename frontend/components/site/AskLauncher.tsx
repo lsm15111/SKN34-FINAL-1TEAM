@@ -121,8 +121,8 @@ export function AskLauncher() {
           </form>
         </section>
       ) : null}
-      <button ref={btn} type="button" className={s.launch} aria-expanded={open} aria-controls="ask-win" onClick={() => (open ? close() : setOpen(true))}>
-        <Bubble />공사 상담
+      <button ref={btn} type="button" className={s.launch} aria-expanded={open} aria-controls="ask-win" data-ask-launch="" onClick={() => (open ? close() : setOpen(true))}>
+        <Bubble /><span className={s.lbl}>공사 상담</span>
       </button>
     </>
   );

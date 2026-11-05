@@ -4,7 +4,7 @@
 .h { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 24px; }
 .line { font-size: var(--fs-lg); }
 .views { padding-top: 28px; }
-.under { display: flex; flex-wrap: wrap; align-items: center; gap: 0 24px; padding-top: 8px; }
+.under { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding-top: 12px; }
 .lnkG { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink-sub); font-weight: 500; text-decoration: none; }
 .lnkG:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
 .foot { display: flex; flex-direction: column; gap: 40px; padding-block: 56px 96px; }

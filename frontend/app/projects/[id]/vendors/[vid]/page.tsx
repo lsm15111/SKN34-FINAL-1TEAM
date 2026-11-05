@@ -10,11 +10,11 @@ import { ContactCard } from "@/components/vendors/ContactCard";
 import { BizInfo, ContactFacts, Estimate, Faqs, Photos, Verified } from "@/components/vendors/Detail";
 import { Lock, VisitState } from "@/components/vendors/icons";
 import { PickButton } from "@/components/vendors/PickButton";
-import { areasText, declineText, iGa, isLive, isTrade, shutKind, when, type VTrade } from "@/components/vendors/text";
+import { areasText, declineText, iGa, isLive, isTrade, shutKind, when } from "@/components/vendors/text";
 import { getMyProject } from "@/lib/api/project";
 import { listDeals } from "@/lib/api/schedule";
 import { getProjectVendor, listProjectVisits } from "@/lib/api/visit";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "./page.module.css";
 
 export const metadata = { title: "업체 자세히" };
@@ -24,7 +24,7 @@ export default async function VendorDetailPage({ params, searchParams }: { param
   const { trade: asked } = await searchParams;
   const p = await getMyProject(id);
   if (!p) notFound();
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   if (!trades.length) notFound();
   const trade = isTrade(asked) && trades.includes(asked) ? asked : trades[0];
   const [d, visits, deals] = await Promise.all([getProjectVendor(id, vid, trade), listProjectVisits(id, trade), listDeals(id, trade)]);

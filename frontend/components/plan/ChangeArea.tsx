@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { FieldError } from "@/components/auth/parts";
 import { day } from "@/components/confirm/text";
 import { span } from "@/components/schedule/text";
-import { Check, Close, Warn, WayIcon } from "@/components/vendors/icons";
+import { Check, Close, Warn } from "@/components/vendors/icons";
 import { eunNeun, iGa } from "@/components/vendors/text";
 import { ApiError, call, errorText } from "@/lib/backend/client";
 import { md } from "@/lib/format";
@@ -134,7 +134,7 @@ export function ChangeArea({ projectId, version, items, lead }: Props) {
         )
       ) : null}
 
-      {items.map(({ change: c, preview, requestsLeft, requestOpen, tel }) => {
+      {items.map(({ change: c, preview, requestsLeft, requestOpen }) => {
         const tName = tradeLabel(c.trade);
         const x = c.proposal;
         const hid = `pc-${c.trade}`;
@@ -160,7 +160,6 @@ export function ChangeArea({ projectId, version, items, lead }: Props) {
                 </button>
               )}
               {canRequest ? <Link className="mj-btn mj-btn-sec" href={`/projects/${projectId}/schedule?trade=${c.trade}`}>다른 날짜 요청하기</Link> : null}
-              {tel ? <a className="mj-btn mj-btn-sec" href={`tel:${tel}`} aria-label={`${c.vendor_name}에 전화 걸기`}><WayIcon method="phone" />전화 걸기</a> : null}
             </div>
             <p className="mj-small">수락하기 전까지는 지금 날짜가 그대로예요.{canRequest || requestOpen ? "" : ` 다른 날짜 요청은 2번까지라 더 요청할 수 없어요. 날짜를 바꿔야 하면 ${c.vendor_name}에 전화해 주세요.`}</p>
           </section>

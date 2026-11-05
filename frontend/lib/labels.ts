@@ -56,9 +56,12 @@ export function priceVerLabel(v: string) {
   return m ? `${m[1]} ${m[2] === "1" ? "상반기" : "하반기"}` : v;
 }
 
-/** 이동 경로 · 서류 머리의 공사 이름: "서울 노원구 · 도배 · 목공" */
+/** 고객 화면의 공정 순서: 공사 순서(목공 → 도배). 탭 · 공정별 상태 · 공정표 · 공사 이름이 같이 쓴다 */
+export const TRADE_ORDER = ["mokgong", "dobae"] as const;
+
+/** 이동 경로 · 서류 머리의 공사 이름: "서울 노원구 · 목공 · 도배" */
 export function projectTitle(region: string, trades: string[]) {
-  const t = ["dobae", "mokgong"].filter((k) => trades.includes(k)).map(tradeLabel);
+  const t = TRADE_ORDER.filter((k) => trades.includes(k)).map(tradeLabel);
   return [region, ...t].join(" · ");
 }
 

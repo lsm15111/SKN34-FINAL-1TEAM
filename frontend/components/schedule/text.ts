@@ -40,19 +40,19 @@ export function stateOf(t: TradeDates | undefined): { text: string; tone: Tone }
   if (isAccepted(t)) {
     // 수락한 뒤 날짜 바꾸기(확정 공정표에서 다룬다)
     if (t.dates_state === "change_requested") return { text: "날짜 바꾸기 요청함", tone: "wait" };
-    if (t.dates_state === "change_proposed") return { text: "바꿀 날짜 옴 · 수락 전", tone: "now" };
+    if (t.dates_state === "change_proposed") return { text: "바꿀 날짜 옴 · 확인할 차례", tone: "now" };
     if (t.deal.status === "checking") return { text: WORK_TEXT.checking, tone: "now" };
     if (t.deal.status === "fixing") return { text: WORK_TEXT.fixing, tone: "wait" };
-    return { text: t.deal.status === "scheduled" ? "수락함" : (WORK_TEXT[t.deal.status] ?? DEAL_LABEL[t.deal.status] ?? "수락함"), tone: "ok" };
+    return { text: t.deal.status === "scheduled" ? "날짜 수락함" : (WORK_TEXT[t.deal.status] ?? DEAL_LABEL[t.deal.status] ?? "날짜 수락함"), tone: "ok" };
   }
   switch (t.dates_state) {
     case "waiting":
-      return t.deal.overdue ? { text: "기한 지남", tone: "bad" } : { text: "날짜 기다림", tone: "wait" };
+      return t.deal.overdue ? { text: "기한 지남", tone: "bad" } : { text: "업체 확정 · 날짜 기다림", tone: "wait" };
     case "proposed":
-      return { text: t.proposal?.changed ? "새 날짜 · 수락 전" : "날짜 옴 · 수락 전", tone: "now" };
+      return { text: t.proposal?.changed ? "새 날짜 옴 · 확인할 차례" : "날짜 옴 · 확인할 차례", tone: "now" };
     case "requested":
       return t.request?.overdue ? { text: "요청 답 기한 지남", tone: "bad" } : { text: "다른 날짜 요청함", tone: "wait" };
     default:
-      return { text: "날짜 기다림", tone: "wait" };
+      return { text: "업체 확정 · 날짜 기다림", tone: "wait" };
   }
 }

@@ -18,10 +18,10 @@ const STEP_NOW: Record<number, string> = {
 /** 할 일(서버 todo.code)마다 짧은 말과 그 일이 속한 단계. 단계가 없으면 공사 날짜를 정한 뒤의 일이다 */
 const TODO_NOTE: Record<string, { step?: number; text: string }> = {
   pick: { step: 3, text: "업체를 고를 차례" },
-  visit_requested: { step: 4, text: "실측 날짜를 정할 차례" },
+  visit_requested: { step: 4, text: "업체에 연락할 차례" },
   quotes_partial: { step: 4, text: "견적서가 오는 중" },
-  quotes_arrived: { step: 4, text: "견적서를 비교할 차례" },
-  dates_received: { step: 6, text: "날짜를 확인할 차례" },
+  quotes_arrived: { step: 4, text: "견적서 옴 · 비교할 차례" },
+  dates_received: { step: 6, text: "날짜 옴 · 확인할 차례" },
   dates_overdue: { step: 6, text: "날짜를 낼 기한이 지났어요" },
   dates_waiting: { step: 6, text: "업체가 날짜를 정하는 중" },
   dates_requested: { step: 6, text: "업체 답을 기다리는 중" },

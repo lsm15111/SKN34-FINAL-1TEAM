@@ -12,7 +12,7 @@ export type PlanChange = Schemas["PlanChangeOut"];
 export type CellState = Block["state"];
 
 /** 칸 상태 말: 수락함 · 수락 전 · 예상 */
-export const STATE_TEXT: Record<CellState, string> = { confirmed: "수락함", pending: "수락 전", expected: "예상" };
+export const STATE_TEXT: Record<CellState, string> = { confirmed: "날짜 수락함", pending: "수락 전", expected: "예상" };
 
 /** 막대 색: 수락함 · 수락 전(새 날짜) · 예상 자리 · 지금(바꾸기 전 날짜) */
 export type Tone = CellState | "now";

@@ -6,7 +6,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FieldError } from "@/components/auth/parts";
-import { Check, Close, WayIcon } from "@/components/vendors/icons";
+import { Check, Close } from "@/components/vendors/icons";
 import { iGa } from "@/components/vendors/text";
 import { ApiError, call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateSeoul, md, won } from "@/lib/format";
@@ -172,7 +172,6 @@ export function PlanExtras({ projectId, groups, deals, multi }: Props) {
                       aria-label={`${x.title} 추가 금액 이야기하고 싶어요`} onClick={(e) => ask(g, x, "talk", e.currentTarget)}>
                       {busy === `${x.id}|talk` ? "보내는 중이에요…" : "이야기하고 싶어요"}
                     </button>
-                    {deal.tel ? <a className="mj-btn mj-btn-sec" href={`tel:${deal.tel}`} aria-label={`${g.vendor_name}에 전화 걸기`}><WayIcon method="phone" />전화 걸기</a> : null}
                   </div>
                 </div>
               );

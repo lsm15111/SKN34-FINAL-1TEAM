@@ -11,11 +11,16 @@ export const Clock = () => (
   <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><circle cx="7" cy="7" r="5.5" /><path d="M7 4v3.2l2 1.3" /></svg>
 );
 
-export function DealStatus({ d }: { d: Deal }) {
+/** titled: 화면 제목이 이미 '확정했어요'라고 말함 → 첫 줄은 확정한 때만 */
+export function DealStatus({ d, titled = false }: { d: Deal; titled?: boolean }) {
   const tName = tradeLabel(d.trade);
   return (
     <div className={s.dealLines}>
-      <p className={`mj-st mj-st-ok mj-num ${s.stLine} ${s.stBig}`}><Check size={16} />{eunNeun(tName)} {euro(d.vendor_name)} 확정했어요 · {when(d.confirmed_at)}</p>
+      {titled ? (
+        <p className="mj-small mj-num">{when(d.confirmed_at)}에 확정</p>
+      ) : (
+        <p className={`mj-st mj-st-ok mj-num ${s.stLine} ${s.stBig}`}><Check size={16} />{eunNeun(tName)} {euro(d.vendor_name)} 확정했어요 · {when(d.confirmed_at)}</p>
+      )}
       {d.status !== "confirmed" ? (
         <p className={`mj-st mj-st-ok mj-num ${s.stLine}`}>{dates(d) ? `공사 날짜 ${dates(d)} · ` : ""}{DEAL_LABEL[d.status] ?? "확정함"}</p>
       ) : d.overdue ? (

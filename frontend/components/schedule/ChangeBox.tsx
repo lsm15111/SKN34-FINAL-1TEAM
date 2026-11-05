@@ -9,7 +9,7 @@ import { useRouter } from "next/navigation";
 import { FieldError } from "@/components/auth/parts";
 import { spanRo as ro } from "@/components/plan/text";
 import { day } from "@/components/confirm/text";
-import { Check, Close, Warn, WayIcon } from "@/components/vendors/icons";
+import { Check, Close, Warn } from "@/components/vendors/icons";
 import { iGa } from "@/components/vendors/text";
 import { ApiError, call, errorText } from "@/lib/backend/client";
 import { tradeLabel } from "@/lib/labels";
@@ -43,6 +43,8 @@ type Props = {
   /** 화면이 본 확정 공정표 버전 (API final_version) */
   seenVersion: number;
   planHref: string;
+  /** 다음 할 일 (다른 공정 날짜 확인 · 확정 공정표): 새 날짜가 없을 때 맨 앞 주 버튼 */
+  next?: { href: string; label: string } | null;
 };
 
 type Err = { text: string; code?: string; retry?: "accept" | "request" };
@@ -168,6 +170,7 @@ export function ChangeBox(p: Props) {
       {errLine}
 
       <div className={s.btns}>
+        {!x && p.next ? <Link className="mj-btn mj-btn-pri" href={p.next.href}>{p.next.label}</Link> : null}
         {x && !p.conflict ? (
           <button ref={opener} type="button" className={`mj-btn mj-btn-pri ${busy === "accept" ? s.busy : ""}`} aria-disabled={busy ? true : undefined} aria-haspopup="dialog" onClick={ask}>
             {busy === "accept" ? <><Spin />수락하는 중이에요…</> : "새 날짜 수락하기"}
@@ -179,8 +182,7 @@ export function ChangeBox(p: Props) {
             <svg className={open ? s.up : undefined} width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M3.5 5.5L7 9l3.5-3.5" /></svg>
           </button>
         ) : null}
-        {x && p.tel ? <a className="mj-btn mj-btn-sec" href={`tel:${p.tel}`} aria-label={`${p.vendorName}에 전화 걸기`}><WayIcon method="phone" />전화 걸기</a> : null}
-        <Link className="mj-btn mj-btn-sec" href={p.planHref}>확정 공정표 보기</Link>
+        {!x && p.next?.href === p.planHref ? null : <Link className="mj-btn mj-btn-sec" href={p.planHref}>확정 공정표 보기</Link>}
       </div>
       <p className="mj-sr" role="status">{busy === "accept" ? "수락하는 중이에요" : busy === "request" ? "요청을 보내는 중이에요" : ""}</p>
 

@@ -4,7 +4,7 @@ import { ProjectCrumb } from "@/components/project/ProjectCrumb";
 import { StandardDoc } from "@/components/project/StandardDoc";
 import { getMyProject } from "@/lib/api/project";
 import { getStandard } from "@/lib/api/quote";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "./page.module.css";
 
 export const metadata = { title: "표준견적서" };
@@ -22,7 +22,7 @@ export default async function StandardPage({ params, searchParams }: { params: P
   const { done, trade } = await searchParams;
   const [p, q] = await Promise.all([getMyProject(id), getStandard(id)]);
   if (!p || !q) notFound();
-  const title = projectTitle(p.region, (["dobae", "mokgong"] as const).filter((t) => p.trades[t]));
+  const title = projectTitle(p.region, TRADE_ORDER.filter((t) => p.trades[t]));
   // 업체 고르기의 '표준견적서 보기'로 왔으면(?trade=) 그 공정 업체 고르기로 돌아가는 버튼을 둔다
   const back = (trade === "dobae" || trade === "mokgong") && p.trades[trade] ? trade : null;
   const notice = done === "new" ? DONE[p.photos.length || p.plans.length ? "newPhoto" : "new"] : done === "edit" || done === "economy" ? DONE[done] : undefined;

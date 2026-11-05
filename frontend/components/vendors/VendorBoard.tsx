@@ -10,7 +10,7 @@ import { usePathname, useRouter } from "next/navigation";
 import { CONTACT_LABEL, tradeLabel } from "@/lib/labels";
 import { won } from "@/lib/format";
 import { Check, Close, Picked, Plus, VisitState } from "./icons";
-import { PICK_EVENT, markFromList, readPick, writePick } from "./pick";
+import { PICK_EVENT, SEND_EVENT, markFromList, readPick, writePick } from "./pick";
 import { RequestDialog } from "./RequestDialog";
 import { FAILED_TEXT, areasText, asMethod, declineText, feeText, isLive, shutKind, vsText, when, type Created, type VendorRow, type VTrade } from "./text";
 import s from "./VendorBoard.module.css";
@@ -30,7 +30,8 @@ type Props = {
   locked?: boolean;
 };
 
-type Sent = { ok: string[]; failed: { name: string; code: string }[] };
+/** 방금 보낸 결과. shared: 내 연락처를 보낸 업체가 있음(업체가 먼저 연락할 수 있다) */
+type Sent = { ok: string[]; shared: boolean; failed: { name: string; code: string }[] };
 
 function Estimate({ v }: { v: VendorRow }) {
   if (v.estimate_total == null) {
@@ -69,6 +70,12 @@ export function VendorBoard({ head, projectId, trade, areaName, slotsLeft, conse
     window.addEventListener(PICK_EVENT, read);
     return () => window.removeEventListener(PICK_EVENT, read);
   }, [projectId, trade]);
+  // 오른쪽 창에서 '실측 요청 보내기'를 눌렀을 때: 담은 업체가 있으면 확인 창을 연다
+  useEffect(() => {
+    const ask = () => { if (readPick(projectId, trade).ids.length) { setSent(null); setOpen(true); } };
+    window.addEventListener(SEND_EVENT, ask);
+    return () => window.removeEventListener(SEND_EVENT, ask);
+  }, [projectId, trade]);
   // 오른쪽 창으로 보고 있는 업체 (주소 /vendors/[vid]). 창을 닫으면 눌렀던 업체 이름으로 돌아간다
   const viewing = pathname.match(/\/vendors\/([^/]+)$/)?.[1] ?? null;
   const lastView = useRef<string | null>(null);
@@ -78,7 +85,6 @@ export function VendorBoard({ head, projectId, trade, areaName, slotsLeft, conse
   }, [viewing]);
 
   const byId = new Map(vendors.map((v) => [v.vendor_id, v]));
-  const live = vendors.filter((v) => v.visit && isLive(v.visit.status));
   // 담은 것: 목록에 있고 아직 열린 요청이 없는 업체만, 남은 칸까지
   const picked = ids.filter((id) => { const v = byId.get(id); return v && !(v.visit && isLive(v.visit.status)); }).slice(0, Math.max(0, slotsLeft));
   const room = Math.max(0, slotsLeft - picked.length);
@@ -102,6 +108,7 @@ export function VendorBoard({ head, projectId, trade, areaName, slotsLeft, conse
     save(rest, "");
     setSent({
       ok: r.created.map((c) => c.vendor_name),
+      shared: r.created.some((c) => c.share_contact),
       failed: r.failed.map((f) => ({ name: byId.get(f.vendor_id)?.biz_name ?? "업체", code: f.code })),
     });
     router.refresh();
@@ -114,10 +121,30 @@ export function VendorBoard({ head, projectId, trade, areaName, slotsLeft, conse
     : `${room}곳 더 담을 수 있어요 (3곳까지)`;
   const backTo = `${base}/vendors?trade=${trade}`;
 
+  // 보낸 결과: 목록 위(공정 탭 아래)에 두고 그리로 초점을 옮긴다. 폰에서도 창이 닫힌 자리에서 바로 보인다
+  const sentBox = sent ? (
+    <div ref={sentRef} tabIndex={-1} role="status" className={s.sent}>
+      {sent.ok.length ? (
+        <>
+          <p className={s.sentLine}><span className="mj-st mj-st-ok"><Check />보냈어요</span><b>{sent.ok.join(" · ")}에 요청했어요.</b></p>
+          <p className="mj-small">{sent.shared ? "업체가 먼저 연락할 수 있어요. 먼저 전화해도 돼요." : "업체에 먼저 연락해 방문 날짜를 정해 주세요."}</p>
+          <Link className={`mj-btn mj-btn-pri ${s.self}`} href={`${base}/visits?trade=${trade}`}>연락처 보기</Link>
+        </>
+      ) : null}
+      {sent.failed.map((f) => (
+        <p key={f.name + f.code} className={s.sentLine}>
+          <span className="mj-st mj-st-bad"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" /></svg>못 보냈어요</span>
+          <b>{f.name}</b><span className="mj-small">{FAILED_TEXT[f.code] ?? "요청하지 못했어요."}</span>
+        </p>
+      ))}
+    </div>
+  ) : null;
+
   return (
     <div className={s.layout}>
       <div className={s.main}>
         {head}
+        {locked ? null : sentBox}
         <div role="group" aria-label="목록 거르기" className={s.filter}>
           <p className={`mj-small ${s.area}`}>{areaName}에서 일하는 업체만 보여요 · 가견적 낮은 순</p>
           <label className={s.ck}><input type="checkbox" checked={onlyEst} onChange={(e) => setOnlyEst(e.target.checked)} />가견적이 있는 업체만</label>
@@ -189,23 +216,6 @@ export function VendorBoard({ head, projectId, trade, areaName, slotsLeft, conse
       </div>
 
       {locked ? null : <aside className={s.side} aria-labelledby="pk-t">
-        {sent ? (
-          <div ref={sentRef} tabIndex={-1} role="status" className={s.sent}>
-            {sent.ok.length ? (
-              <>
-                <p className={s.sentLine}><span className="mj-st mj-st-ok"><Check />보냈어요</span><b>{sent.ok.join(" · ")}에 요청했어요. 업체에 먼저 연락해 주세요.</b></p>
-                <Link className={`mj-btn mj-btn-pri ${s.self}`} href={`${base}/visits?trade=${trade}`}>연락하러 가기</Link>
-              </>
-            ) : null}
-            {sent.failed.map((f) => (
-              <p key={f.name + f.code} className={s.sentLine}>
-                <span className="mj-st mj-st-bad"><svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3.5 3.5l7 7M10.5 3.5l-7 7" /></svg>못 보냈어요</span>
-                <b>{f.name}</b><span className="mj-small">{FAILED_TEXT[f.code] ?? "요청하지 못했어요."}</span>
-              </p>
-            ))}
-          </div>
-        ) : null}
-
         <form className={s.form} onSubmit={(e) => { e.preventDefault(); if (picked.length) setOpen(true); }} noValidate>
           <h2 id="pk-t" className="mj-h3">{tName} 실측 요청할 업체{picked.length ? <> <span className="mj-num">{picked.length}<span className="mj-sr">곳</span></span></> : null}</h2>
           {picked.length ? (
@@ -226,14 +236,15 @@ export function VendorBoard({ head, projectId, trade, areaName, slotsLeft, conse
             </ul>
           ) : null}
           <p id="pk-room" className="mj-hint">{roomText}</p>
-          {live.length ? <p className="mj-small">이미 요청한 업체 {live.length}곳 · <Link className={`mj-lnk ${s.sm}`} href={`${base}/visits?trade=${trade}`}>연락하러 가기</Link></p> : null}
+          {/* 담은 업체가 없으면 남길 말 · 보내기 칸을 접는다 */}
+          {picked.length ? <>
           <div className="mj-field">
             <label className="mj-label" htmlFor="pk-memo">업체에 남길 말 <span className="mj-opt">(선택)</span></label>
             <textarea id="pk-memo" className="mj-textarea" rows={3} maxLength={300} value={msg} aria-describedby="pk-memo-h" placeholder="예: 평일 오후나 주말 오전이 좋아요." onChange={(e) => { setMsg(e.target.value); writePick(projectId, trade, { ids: picked, msg: e.target.value }); }} />
             <p id="pk-memo-h" className="mj-hint mj-num">{msg.length}/300자 · 담은 업체 모두에게 가요</p>
           </div>
-          <p id="pk-share" className={s.share}>요청하면 업체 연락처가 보여요.</p>
-          <button type="submit" className="mj-btn mj-btn-pri" aria-haspopup="dialog" aria-describedby="pk-share" disabled={!picked.length}>실측 요청 보내기</button>
+          <button type="submit" className="mj-btn mj-btn-pri" aria-haspopup="dialog">실측 요청 보내기</button>
+          </> : null}
         </form>
       </aside>}
 

@@ -1801,7 +1801,7 @@ def _todo_out(pid: uuid.UUID, code: str, trade: str, d: Deal | None, ctx: dict) 
             f"{base}/plan",
         ),
         "dates_received": (
-            f"{who} {label} 공사 날짜를 보냈어요 — {_md(x.start_date)} ~ {_md(x.end_date)}"
+            f"{who} {label} 공사 날짜를 냈어요 — {_md(x.start_date)} ~ {_md(x.end_date)}"
             if x
             else "",
             "날짜 확인하기",
@@ -1839,7 +1839,7 @@ def _todo_out(pid: uuid.UUID, code: str, trade: str, d: Deal | None, ctx: dict) 
             f"{base}/vendors?trade={trade}",
         ),
         "visit_requested": (
-            f"업체에 연락해 실측 날짜를 정하세요 · {label}",
+            f"업체에 연락할 차례예요 · {label}",
             "연락처 보기",
             f"{base}/visits?trade={trade}",
         ),

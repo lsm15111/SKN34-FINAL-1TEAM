@@ -20,8 +20,8 @@ export default async function NotificationsPage({ searchParams }: { searchParams
   const customer = session.role === "customer";
   const [page, projects] = await Promise.all([listNotifications(project), customer ? listMyProjects() : Promise.resolve([])]);
 
-  // 거르기 칩: 전체 + 내 공사(고객). 업체이거나 목록에 없는 공사를 고른 때는 '이 공사 소식' 칩 하나
-  const chips = projects.map((p) => ({ id: p.id, label: `${p.region} · ${sizeLabel(p.size)}` }));
+  // 거르기 칩: 전체 + 내 공사(고객, 공사 번호로 나눔). 업체이거나 목록에 없는 공사를 고른 때는 '이 공사 소식' 칩 하나
+  const chips = projects.map((p) => ({ id: p.id, label: `${p.code} · ${p.region} · ${sizeLabel(p.size)}` }));
   if (project && !chips.some((c) => c.id === project)) chips.push({ id: project, label: "이 공사 소식" });
 
   return (

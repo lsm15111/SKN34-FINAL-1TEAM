@@ -21,7 +21,7 @@ import { iGa, isTrade, telDigits, type VTrade } from "@/components/vendors/text"
 import { getMyProject } from "@/lib/api/project";
 import { getSchedule } from "@/lib/api/schedule";
 import { listProjectVisits } from "@/lib/api/visit";
-import { projectTitle, tradeLabel } from "@/lib/labels";
+import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import s from "./page.module.css";
 
 export const metadata = { title: "공사 날짜" };
@@ -58,7 +58,7 @@ export default async function SchedulePage({ params, searchParams }: { params: P
   const { trade: asked } = await searchParams;
   const [p, sch] = await Promise.all([getMyProject(id), getSchedule(id)]);
   if (!p || !sch) notFound();
-  const trades = (["dobae", "mokgong"] as VTrade[]).filter((t) => p.trades[t]);
+  const trades = TRADE_ORDER.filter((t) => p.trades[t]);
   if (!trades.length) notFound();
   const trade = pick(trades, sch.trades, asked);
   const tName = tradeLabel(trade);
@@ -78,6 +78,12 @@ export default async function SchedulePage({ params, searchParams }: { params: P
   const otherDeal = otherTrade ? sch.trades.find((r) => r.deal.trade === otherTrade)?.deal ?? null : null;
   const base = deal && canReselect(deal) ? dealReselectText(deal, otherTrade ? { trade: otherTrade, deal: otherDeal } : null) : null;
   const gone = deal && x ? ` ${iGa(deal.vendor_name)} 낸 공사 날짜${t?.request ? "와 보낸 다른 날짜 요청" : ""}도 없어져요.` : "";
+  // 다음 할 일(주 버튼): 다른 공정에 수락할 날짜가 왔으면 그 공정 날짜 확인, 모든 공정을 수락했으면 확정 공정표
+  const waitingOther = trades.find((o) => o !== trade && sch.trades.some((r) => r.deal.trade === o && !isAccepted(r) && !!r.proposal));
+  const allAccepted = trades.every((o) => sch.trades.some((r) => r.deal.trade === o && isAccepted(r)));
+  const next = waitingOther
+    ? { href: `/projects/${id}/schedule?trade=${waitingOther}`, label: `${tradeLabel(waitingOther)} 날짜 확인하기` }
+    : allAccepted ? { href: `/projects/${id}/plan`, label: "확정 공정표 보기" } : null;
   const reselect = base && deal
     ? { ...base, body: `${deal.vendor_name} 견적서가 닫히고 서로 보이던 연락처 · 주소가 바로 가려져요.${gone} 되돌릴 수 없어요.` }
     : null;
@@ -105,7 +111,7 @@ export default async function SchedulePage({ params, searchParams }: { params: P
               <>
                 <div className={s.lines}>
                   {deal.start_date && deal.end_date ? <p className={`mj-st mj-st-ok mj-num ${s.st}`}><Check size={16} />{x || t.request ? "지금 공사 날짜" : "공사 날짜"} {span(deal.start_date, deal.end_date)}</p> : null}
-                  <p className="mj-small">{deal.vendor_name} 확정</p>
+                  <p className="mj-small">업체 확정 · {deal.vendor_name}</p>
                 </div>
                 {t.request ? <RequestLines r={t.request} vendorName={deal.vendor_name} left={t.requests_left} after /> : null}
                 {x && deal.start_date && deal.end_date ? (
@@ -151,6 +157,7 @@ export default async function SchedulePage({ params, searchParams }: { params: P
               seenVersion={sch.final_version}
               reselect={reselect}
               finalHref={`/projects/${id}/plan`}
+              next={next}
             />
 
             <PlanExtras projectId={id} groups={[t.extras]} deals={{ [deal.id]: { total: deal.quote.total, tel } }} multi={false} />

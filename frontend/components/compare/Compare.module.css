@@ -9,7 +9,9 @@
 .card { display: flex; flex-direction: column; gap: 16px; min-width: 0; padding: 20px clamp(16px, 2.5vw, 24px) 24px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
 .wait { gap: 12px; background: var(--surface); }
 .cardTop { display: flex; flex-direction: column; gap: 0; }
-.vn { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; overflow-wrap: anywhere; }
+/* 업체 이름 → 업체 자세히: 업체 고르기 목록과 같은 검정 글자 + 회색 밑줄 */
+.vn { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px; overflow-wrap: anywhere; }
+.vn:hover { color: var(--accent-ink); text-decoration-color: currentColor; }
 .b { font-weight: 700; }
 .big { font-size: var(--fs-h2); font-weight: 700; line-height: 1.3; }
 

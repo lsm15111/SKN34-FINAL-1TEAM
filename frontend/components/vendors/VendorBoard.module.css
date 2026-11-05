@@ -54,7 +54,7 @@
 .rmv:hover { background: var(--surface); color: var(--ink); }
 .share { font-size: var(--fs-sm); font-weight: 500; }
 
-.sent { display: flex; flex-direction: column; gap: 10px; padding: 16px; border-radius: var(--radius); background: var(--surface); }
+.sent { display: flex; flex-direction: column; gap: 10px; margin-top: 16px; padding: 16px; border-radius: var(--radius); background: var(--surface); }
 .sent:focus { outline: none; }
 .sent:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 .sentLine { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; }

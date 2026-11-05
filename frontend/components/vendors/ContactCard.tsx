@@ -1,5 +1,5 @@
 // 실측 요청한 업체 카드 (시안 WVisit 카드 · WVendorDetail '요청한 뒤'). 연락처는 API가 공개 규칙을 지난 때만 준다.
-// 연락 방식 버튼은 업체가 정한 하나만: 전화 걸기 · 문자 보내기 · 카카오톡 채널 열기 · 홈페이지 상담 열기.
+// 번호는 글자로만 보인다(복사 · 전화 걸기 · 문자 버튼 없음). 카카오톡 채널 · 홈페이지 상담만 여는 버튼을 둔다.
 // 확정한 업체는 연락처가 계속 보이고, 닫힌 업체는 shutKind로 '다른 업체로 정했어요'(확정이 살아 있을 때) · '지난 실측 닫힘'을 나눈다.
 // 확정한 업체 연락처는 공사가 끝난 날부터 1년까지 보이고, 업체가 공사를 끝냈다고 올렸으면 그 기한(until, 확정의 contact_until)을 보인다.
 import Link from "next/link";
@@ -7,43 +7,38 @@ import type { ReactNode } from "react";
 import { untilDay } from "@/components/schedule/text";
 import { phoneText } from "@/lib/labels";
 import { CancelVisit } from "./CancelVisit";
-import { CopyButton } from "./CopyButton";
 import { Check, Lock, VisitState, WayIcon } from "./icons";
-import { contactLine, declineText, iGa, isLive, shutKind, telDigits, webUrl, when, type VTrade, type Visit } from "./text";
+import { contactLine, declineText, iGa, isLive, shutKind, webUrl, when, type VTrade, type Visit } from "./text";
 import c from "./ContactCard.module.css";
 
-const OPEN_LABEL: Record<string, string> = { phone: "전화 걸기", sms: "문자 보내기", kakao: "카카오톡 채널 열기", web: "홈페이지 상담 열기" };
+const OPEN_LABEL: Record<string, string> = { kakao: "카카오톡 채널 열기", web: "홈페이지 상담 열기" };
 const OPEN_HINT: Record<string, string> = { kakao: "카카오톡 채널이 새 창으로 열려요", web: "홈페이지 상담 창이 새 창으로 열려요" };
 
 function Way({ v }: { v: Visit }) {
+  // 견적서를 기다리는 동안은 연락이 할 일이라 주 버튼, 견적서가 온 뒤(비교가 할 일)에는 보조 버튼
+  const btnCls = v.status === "requested" ? "mj-btn mj-btn-pri" : "mj-btn mj-btn-sec";
   const ct = v.contact;
   if (!ct) return null;
   const m = ct.contact_method ?? "";
   const label = OPEN_LABEL[m];
-  const tel = telDigits(ct.phone);
   const url = webUrl(ct.contact_url);
   const hintId = `way-${v.id}`;
   let btn: ReactNode = null;
-  if ((m === "phone" || m === "sms") && tel) {
-    btn = <a className="mj-btn mj-btn-pri" href={`${m === "phone" ? "tel" : "sms"}:${tel}`} aria-label={`${v.vendor_name}에 ${label}`}><WayIcon method={m} />{label}</a>;
-  } else if ((m === "kakao" || m === "web") && url) {
-    btn = <a className="mj-btn mj-btn-pri" href={url} target="_blank" rel="noopener noreferrer" aria-describedby={hintId}><WayIcon method={m} />{label}</a>;
+  if ((m === "kakao" || m === "web") && url) {
+    btn = <a className={btnCls} href={url} target="_blank" rel="noopener noreferrer" aria-describedby={hintId}><WayIcon method={m} />{label}</a>;
   }
+  if (!btn) return null;
   return (
     <>
-      <div className={c.acts}>
-        {btn}
-        {ct.phone ? <CopyButton text={ct.phone} label="번호 복사" aria={`${v.vendor_name} 번호 복사`} /> : null}
-      </div>
-      {btn && url && (m === "kakao" || m === "web") ? <p id={hintId} className={`mj-small ${c.url}`}>{OPEN_HINT[m]} · {url}</p> : null}
+      <div className={c.acts}>{btn}</div>
+      <p id={hintId} className={`mj-small ${c.url}`}>{OPEN_HINT[m]} · {url}</p>
     </>
   );
 }
 
-/** 열린 요청(요청함 · 견적서 옴)의 연락처 · 버튼 · 내 연락처 줄. until: 확정한 업체의 연락처 기한 (API 값) */
-function Open({ v, until }: { v: Visit; until?: string | null }) {
+/** 열린 요청(요청함 · 견적서 옴 · 확정)의 연락처 · 버튼 · 내 연락처 줄 */
+function Open({ v }: { v: Visit }) {
   const ct = v.contact;
-  const keep = until ? `${untilDay(until)}까지` : "공사가 끝난 날부터 1년까지";
   return (
     <>
       {ct ? (
@@ -56,8 +51,8 @@ function Open({ v, until }: { v: Visit; until?: string | null }) {
       <p className={`mj-small ${c.ln}`}>
         {v.status === "chosen"
           ? v.share_contact
-            ? <><span className={c.ok}><Check /></span>내 연락처를 보냈어요 · <span className="mj-num">{keep}</span> 서로 보여요</>
-            : <><Lock />내 연락처는 보내지 않았어요 · 업체 연락처는 <span className="mj-num">{keep}</span> 보여요</>
+            ? <><span className={c.ok}><Check /></span>내 연락처를 보냈어요</>
+            : <><Lock />내 연락처는 보내지 않았어요</>
           : v.share_contact
             ? <><span className={c.ok}><Check /></span>내 연락처를 보냈어요 · 업체가 먼저 연락할 수도 있어요</>
             : <><Lock />내 연락처는 보내지 않았어요 · 먼저 연락해 주세요</>}
@@ -92,7 +87,7 @@ function Shut({ v, pickHref, locked }: { v: Visit; pickHref: string; locked?: bo
       )}
       {locked ? null : (
         <Link className={`mj-lnk ${c.sm}`} href={pickHref}>
-          {kind === "past" ? <>업체 고르기에서 다시 담기<span className="mj-sr">, {name}</span></> : "다른 업체 담기"}
+          {kind === "past" ? <>업체 고르기에서 다시 담기<span className="mj-sr">, {name}</span></> : "업체 더 담기"}
         </Link>
       )}
     </>
@@ -126,10 +121,10 @@ export function ContactCard({ v, projectId, trade, titled, allHref, locked, unti
         <VisitState status={v.status} past={shutKind(v, !!locked) === "past"} />
         {titled ? null : <span className="mj-small mj-num">{when(v.created_at)}</span>}
       </div>
-      {v.status === "quoted" ? (
+      {v.status === "quoted" && !titled ? (
         <Link className={`mj-btn mj-btn-pri ${c.cmp}`} href={`/projects/${projectId}/quotes?trade=${trade}`}>비교하기<span className="mj-sr">, {v.vendor_name} 실측 견적서</span></Link>
       ) : null}
-      {open ? <Open v={v} until={v.status === "chosen" ? until : null} /> : isLive(v.status) ? <p className="mj-small mj-num">{v.status === "chosen" && until ? `연락처는 ${untilDay(until)}까지 보였어요. 지금은 가려졌어요.` : "연락처를 보일 수 있는 때가 지났어요."}</p> : <Shut v={v} pickHref={pickHref} locked={locked} />}
+      {open ? <Open v={v} /> : isLive(v.status) ? <p className="mj-small mj-num">{v.status === "chosen" && until ? `연락처는 ${untilDay(until)}까지 보였어요. 지금은 가려졌어요.` : "연락처를 보일 수 있는 때가 지났어요."}</p> : <Shut v={v} pickHref={pickHref} locked={locked} />}
       <div className={c.foot}>
         {allHref ? <Link className={`mj-lnk ${c.sm}`} href={allHref}>요청한 업체 모두 보기</Link> : <span className="mj-small mj-num">{when(v.created_at)} 요청</span>}
         {v.status === "requested" ? <CancelVisit projectId={projectId} visitId={v.id} name={v.vendor_name} shared={v.share_contact} /> : null}

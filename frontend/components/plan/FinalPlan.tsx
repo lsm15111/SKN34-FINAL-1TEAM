@@ -51,8 +51,11 @@ function RequestLine({ t }: { t: TradeDates }) {
 }
 
 export function FinalPlan({ id, title, plan, rows, contacts, checks, start }: Props) {
-  const bars = blockRows(plan.blocks);
+  // 모든 공정을 수락했으면 막대마다 '날짜 수락함'을 쓰지 않는다 (범례 색으로 안다)
+  const allOk = plan.blocks.filter((b) => b.kind === "work").every((b) => b.state === "confirmed");
+  const bars = blockRows(plan.blocks).map((r) => (allOk && r.tone === "confirmed" ? { ...r, text: "" } : r));
   const end = workEnd(plan);
+  const clean = plan.blocks.find((b) => b.kind === "clean");
   const byTrade = (t: string) => rows.find((r) => r.deal.trade === t);
   const tel = (t: string) => telDigits(contacts.find((c) => c.trade === t)?.ct.phone) || null;
   const items: ChangeItem[] = plan.changes.map((c) => ({
@@ -86,7 +89,7 @@ export function FinalPlan({ id, title, plan, rows, contacts, checks, start }: Pr
             <h1 className="mj-h1">확정 공정표</h1>
           </div>
           <p className="mj-sub">{stateLine(plan.blocks)}</p>
-          <p className={`mj-num ${s.line}`}>일하는 날 <b>{plan.work_days}일</b> · <b>{md(plan.start)} ~ {md(end)}</b> · {plan.weekend_work ? "주말에도 공사" : "주말 휴일"}</p>
+          <p className={`mj-num ${s.line}`}>일하는 날 <b>{plan.work_days}일</b> · 공사 <b>{md(plan.start)} ~ {md(end)}</b>{clean ? <> · 입주 청소 <b>{md(clean.end)}</b></> : null} · {plan.weekend_work ? "주말에도 공사" : "주말 휴일"}</p>
           {extraWait ? (
             <p className={s.exLead}><span className="mj-st mj-st-now mj-num">업체가 알린 추가 금액 {extraWait}건 · 확인 기다림</span><a className="mj-lnk" href="#extras">추가 금액 보기</a></p>
           ) : null}
@@ -104,13 +107,13 @@ export function FinalPlan({ id, title, plan, rows, contacts, checks, start }: Pr
         <h2 id="fp-t" className="mj-sr">확정 공정표</h2>
         <PlanTabs
           bars={<><StateBars days={plan.days} rows={bars} label="확정 공정표 막대, 옆으로 넘겨 볼 수 있어요. 같은 내용은 날짜별 표에 있어요" /><StateLegend rows={bars} days={plan.days} /></>}
-          list={<FinalDays plan={plan} />}
+          list={<FinalDays plan={plan} quiet={allOk} />}
         />
         {pending.length || movable.length ? (
           <div className={s.under}>
-            {pending.map((b) => <Link key={b.trade} className="mj-lnk" href={`/projects/${id}/schedule?trade=${b.trade}`}>{tradeLabel(b.trade ?? "")} 날짜 확인하기</Link>)}
+            {pending.map((b) => <Link key={b.trade} className="mj-btn mj-btn-pri" href={`/projects/${id}/schedule?trade=${b.trade}`}>{tradeLabel(b.trade ?? "")} 날짜 확인하기</Link>)}
             {movable.length ? (
-              <Link className={s.lnkG} href={`/projects/${id}/schedule${movable.length === 1 ? `?trade=${movable[0].deal.trade}` : ""}`}>공사 날짜 바꾸기 요청</Link>
+              <Link className="mj-btn mj-btn-sec" href={`/projects/${id}/schedule${movable.length === 1 ? `?trade=${movable[0].deal.trade}` : ""}`}>공사 날짜 바꾸기 요청</Link>
             ) : null}
           </div>
         ) : null}

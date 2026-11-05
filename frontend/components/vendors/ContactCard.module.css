@@ -1,6 +1,8 @@
 /* 실측 요청한 업체 카드 (시안 WVisit .cc · WVendorDetail '요청한 뒤') */
 .head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px; }
-.vn { display: inline-flex; align-items: center; min-height: 44px; color: var(--accent-ink); text-decoration: underline; text-underline-offset: 3px; }
+/* 업체 이름 → 업체 자세히: 업체 고르기 목록과 같은 검정 글자 + 회색 밑줄 */
+.vn { display: inline-flex; align-items: center; min-height: 44px; color: var(--ink); text-decoration: underline; text-decoration-color: var(--line-strong); text-underline-offset: 4px; }
+.vn:hover { color: var(--accent-ink); text-decoration-color: currentColor; }
 .phone { font-size: var(--fs-lg); }
 .acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .url { overflow-wrap: anywhere; }
