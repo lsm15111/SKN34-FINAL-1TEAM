@@ -30,6 +30,7 @@ from app.calc.schedule import WEEKEND, workdays
 from app.config import settings
 from app.db import SessionLocal, engine
 from app.files import service as files_service
+from app.notify import service as notify_service
 from app.project import service as project_service
 from app.project.schemas import ProjectCreate
 from app.quote.schemas import QuoteDraftIn
@@ -42,7 +43,7 @@ from app.shared.clock import now_utc, today_seoul
 from app.shared.errors import AppError
 from app.vendor import repository as vendor_repo
 from app.vendor import service as vendor_service
-from app.vendor.models import Vendor, VendorArea, VendorReview, VendorTrade
+from app.vendor.models import Vendor, VendorArea, VendorFaq, VendorReview, VendorTrade
 from app.vendor.schemas import PriceFileIn, PriceLineIn, PriceSetIn
 from app.visit import service as visit_service
 from app.visit.models import Visit
@@ -159,6 +160,30 @@ QUOTE_DOCS = {
     "demo-mok2@mitjip.test": ("quote-mok2.jpg", 1_540_000, "included"),
     "demo-mok3@mitjip.test": ("quote-mok3.jpg", 1_390_000, "excluded"),
 }
+# 시연 업체가 적은 자주 묻는 5가지 (업체가 쓴 글이라 금액은 넣지 않는다)
+FAQS = {
+    "dobae": {
+        "process": "전화로 방문 날을 잡고 벽 상태와 면적을 재요. 실측 견적서를 보내 드리고, "
+        "확정하면 공사 날짜를 올려요. 공사는 기존 벽지 제거 → 초배 → 정배 순서예요.",
+        "pricing": "실측한 벽 · 천장 면적과 고르신 벽지 유형으로 계산해요. "
+        "자재비와 인건비를 나눠 견적서에 적어 드려요.",
+        "extra_cost": "곰팡이 · 들뜸이 심해 벽 보수가 필요하거나, 실측 뒤 벽지를 바꾸시면 "
+        "금액이 달라질 수 있어요. 생기면 공사 전에 먼저 알려 드려요.",
+        "duration": "빈 집 기준 보통 2~3일이에요. 짐이 있거나 천장까지 하면 하루 더 걸릴 수 있어요.",
+        "as_refund": "공사 뒤 1년 안에 들뜸 · 이음새 벌어짐이 생기면 다시 붙여 드려요. "
+        "자재를 주문하기 전에 취소하시면 받은 돈을 모두 돌려 드려요.",
+    },
+    "mokgong": {
+        "process": "방문해 몰딩 · 걸레받이 길이와 벽 상태를 재요. 실측 견적서를 보내 드리고, "
+        "확정하면 공사 날짜를 올려요. 목공은 도배 전에 끝내요.",
+        "pricing": "실측한 길이(m)와 고르신 자재로 계산해요. 자재비와 인건비를 나눠 적어 드려요.",
+        "extra_cost": "벽이 많이 휘었거나 기존 몰딩을 떼다 벽이 상하면 보수비가 더 들 수 있어요. "
+        "생기면 먼저 알려 드려요.",
+        "duration": "몰딩 · 걸레받이는 보통 1~2일이에요.",
+        "as_refund": "공사 뒤 1년 안에 들뜸 · 벌어짐은 고쳐 드려요. "
+        "자재를 주문하기 전에 취소하시면 받은 돈을 모두 돌려 드려요.",
+    },
+}
 QUOTE_DAYS = 3
 QUOTE_VALID_DAYS = 14
 QUOTE_PDF = sample_pdf(b"SAMPLE QUOTE - demo data only")
@@ -248,6 +273,9 @@ async def _vendor(s, email: str, password: str, admin: User, today: date) -> Use
             files_service.discard(row)  # 업체 행을 못 만들었으면 등록증 파일도 남기지 않는다
             raise
     else:
+        await s.commit()
+    if await s.scalar(select(VendorFaq.key).where(VendorFaq.vendor_id == user.id).limit(1)) is None:
+        s.add_all(VendorFaq(vendor_id=user.id, key=k, answer=a) for k, a in FAQS[trade].items())
         await s.commit()
     if not await vendor_repo.price_sets(s, [user.id], trade, ("confirmed",)):
         if not await vendor_repo.price_files(
@@ -401,6 +429,9 @@ async def build(password: str, today: date) -> dict[str, str]:
                     s, customer, pid, deal_id, prop_id, AcceptIn(seen_version=seen), today
                 )
                 seen = out.final_version
+            # 미리 만든 공사의 알림은 읽음으로 둔다 (시연을 시작할 때 종 숫자가 0이고, 이번 시연 알림만 새로 쌓인다)
+            for user in (customer, *vendors.values()):
+                await notify_service.mark_all_read(s, user.id)
     finally:
         await engine.dispose()  # 한 번 돌고 끝나는 스크립트 · 시험이 이벤트 루프를 새로 만든다
     return made
