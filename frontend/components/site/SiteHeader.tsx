@@ -1,5 +1,5 @@
 // 모든 화면 맨 위 머리. 로그인한 사람의 역할(비로그인 · 고객 · 업체 · 관리자)마다 머리 하나를 쓴다.
-// variant="admin"은 관리자 화면 레이아웃이 넘긴다. 고객 화면에는 오른쪽 아래 '묻기' 버튼(틀만)을 같이 붙인다.
+// variant="admin"은 관리자 화면 레이아웃이 넘긴다. 고객 화면에는 오른쪽 아래 '공사 상담' 버튼(예시 답변)을 같이 붙인다.
 import { getSession } from "@/lib/session";
 import { getUnread } from "@/lib/api/notify";
 import { AskLauncher } from "./AskLauncher";

@@ -1,4 +1,4 @@
-/* 오른쪽 아래 '묻기' 버튼 · 떠 있는 창 (시안 WProjectBChat .launch · .ask-win) */
+/* 오른쪽 아래 '공사 상담' 버튼 · 떠 있는 창 (시안 WProjectBChat .launch · .ask-win) */
 .launch { position: fixed; right: 24px; bottom: 24px; z-index: 30; display: inline-flex; align-items: center; gap: 8px; min-height: 52px; padding: 0 22px 0 18px; border: 1px solid var(--focus); border-radius: 26px; background: var(--focus); color: #fff; font-size: var(--fs-md); font-weight: 700; cursor: pointer; box-shadow: var(--shadow-sm); }
 .launch:hover { background: var(--accent-ink); }
 /* 업체 자세히 오른쪽 창이 열려 있으면 창 왼쪽으로 비킨다 */

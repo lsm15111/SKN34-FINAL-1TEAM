@@ -23,7 +23,6 @@ export const WHO: Record<Reply, string> = {
 };
 
 export const INTRO = "궁금한 공사 질문을 적어 보내거나 아래 질문을 눌러 보세요.";
-export const MORE = "다른 질문도 눌러 볼 수 있어요";
 const AFTER_VISIT = "실측 후";
 export const NO_ROOM = "정하지 않았어요";
 export const CARD_TITLE = "이렇게 정리했어요";

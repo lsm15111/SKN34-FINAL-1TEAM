@@ -1,8 +1,8 @@
 "use client";
-// 오른쪽 아래 '묻기' 버튼과 떠 있는 창 (시안 WProjectBChat · B안). 상담 API가 없어서 예시 데이터(lib/mock/ask.ts)로 답한다.
+// 오른쪽 아래 '공사 상담' 버튼과 떠 있는 창 (시안 WProjectBChat · B안). 상담 API가 없어서 예시 데이터(lib/mock/ask.ts)로 답한다.
 // 질문 칩이나 입력한 말로 장면을 고른다. 공사 화면이면 창 맨 위에 표준견적서 합계를 보이고, 견적 설명의 숫자는 지금 공사의 저장된 표준견적서(GET /projects/{id}/standard)를
 // 읽어 그대로 보이기만 하고 화면에서 계산하지 않는다.
-// 창은 380 × 560, 폰(600px 아래)에서는 아래에서 올라오는 창. 닫기(X) · Esc로 닫고 '묻기' 버튼으로 돌아간다.
+// 창은 380 × 560, 폰(600px 아래)에서는 아래에서 올라오는 창. 닫기(X) · Esc로 닫고 '공사 상담' 버튼으로 돌아간다.
 // 업체 자세히 오른쪽 창이 열려 있으면 버튼이 창 왼쪽으로 비킨다(AskLauncher.module.css).
 import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import Link from "next/link";
@@ -10,7 +10,7 @@ import { usePathname } from "next/navigation";
 import { call, type Schemas } from "@/lib/backend/client";
 import { decText, won, wonFull } from "@/lib/format";
 import {
-  ASK_CHIPS, BOTH, BOTH_QS, BOTH_SUM, CARD_TITLE, DOBAE, GUIDE, INTRO, MORE, NO_ROOM, NONE_TEXT, OUT_TEXT, PRICE, WALL, WHO,
+  ASK_CHIPS, BOTH, BOTH_QS, BOTH_SUM, CARD_TITLE, DOBAE, GUIDE, INTRO, NO_ROOM, NONE_TEXT, OUT_TEXT, PRICE, WALL, WHO,
   pickReply, roomOf, type BothKey, type Reply, type Wall,
 } from "@/lib/mock/ask";
 import s from "./AskLauncher.module.css";
@@ -88,10 +88,10 @@ export function AskLauncher() {
       {open ? (
         <section id="ask-win" className={s.win} aria-labelledby="ask-t">
           <div className={s.hd}>
-            <h2 id="ask-t" ref={title} tabIndex={-1} className={s.t}>묻기</h2>
-            <button type="button" className={s.x} aria-label="묻기 창 닫기" onClick={close}><X /></button>
+            <h2 id="ask-t" ref={title} tabIndex={-1} className={s.t}>공사 상담</h2>
+            <button type="button" className={s.x} aria-label="공사 상담 창 닫기" onClick={close}><X /></button>
           </div>
-          <div ref={log} className={s.log} role="log" aria-live="polite" aria-label="묻기 대화">
+          <div ref={log} className={s.log} role="log" aria-live="polite" aria-label="공사 상담 대화">
             {pid && cur ? (
               <div className={s.std}>
                 <span className={s.box}>표준견적서</span>
@@ -99,12 +99,16 @@ export function AskLauncher() {
                 <Link className="mj-lnk" href={`/projects/${pid}/standard`} aria-label="표준견적서 보기">보기</Link>
               </div>
             ) : null}
-            {turns.length ? null : <p className={s.intro}>{INTRO}</p>}
+            {/* 안내 문장 · 예시 질문은 첫 질문 전에만 보인다 */}
+            {turns.length ? null : (
+              <>
+                <p className={s.intro}>{INTRO}</p>
+                <div className={s.chips} role="group" aria-label="질문 예시">
+                  {ASK_CHIPS.map((c) => <button key={c.q} type="button" className={s.chip} onClick={() => ask(c.q)}>{c.q}</button>)}
+                </div>
+              </>
+            )}
             {turns.map((t) => <TurnView key={t.id} t={t} pid={pid} std={cur} grow={grow} />)}
-            <div className={s.chips} role="group" aria-label="질문 예시">
-              {turns.length ? <p className="mj-small">{MORE}</p> : null}
-              {ASK_CHIPS.map((c) => <button key={c.q} type="button" className={s.chip} onClick={() => ask(c.q)}>{c.q}</button>)}
-            </div>
           </div>
           <form className={s.fm} onSubmit={(e) => { e.preventDefault(); submit(); }} aria-label="질문 보내기">
             <label className="mj-sr" htmlFor="ask-q">질문</label>
@@ -118,7 +122,7 @@ export function AskLauncher() {
         </section>
       ) : null}
       <button ref={btn} type="button" className={s.launch} aria-expanded={open} aria-controls="ask-win" onClick={() => (open ? close() : setOpen(true))}>
-        <Bubble />묻기
+        <Bubble />공사 상담
       </button>
     </>
   );
