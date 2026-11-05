@@ -10,9 +10,13 @@ SK Networks Family AICAMP 34기 1팀 최종 프로젝트 **믿집**: 반셀프 �
 ```bash
 cp .env.example .env   # SEED_PASSWORD에 시험 계정 비밀번호(8자 이상)를 넣는다
 docker compose up -d --build
+docker compose watch web   # 화면 코드를 고치면 바로 반영한다 (이 창은 켜 둔다)
 ```
 
 - 웹 http://localhost:3000 · API 문서 http://localhost:8000/docs
+- 화면(web)은 폴더를 연결하지 않고, `docker compose watch`가 바뀐 파일만 컨테이너로 복사해요. 고치면 1초 안팎에 반영돼요(Turbopack). watch 없이 `up`만 하면 이미지를 만든 때의 화면 코드로 떠요.
+- 컨테이너에서 만든 파일은 PC로 돌아오지 않아요. `pnpm gen:api`처럼 파일을 만드는 명령은 PC의 `frontend`에서 돌립니다.
+- 화면을 더 빨리 고치려면 웹만 PC에서 띄워요: `docker compose stop web` 뒤 `cd frontend && pnpm dev --port 3100` (http://localhost:3100)
 - `port is already allocated` 오류가 나면 그 포트를 이미 다른 프로그램이 쓰는 거예요. `.env`의 `*_HOST_PORT`를 바꾸고 다시 실행합니다.
 - 시험 계정(로컬 전용, 자동 생성): `admin@` · `customer@` · `vendor@` · `vendor-pending@mitjip.local`, 비밀번호는 `.env`의 `SEED_PASSWORD`. 다시 만들 때 `docker compose exec api python -m app.seed`
 - 실제 관리자 계정: `docker compose exec api python -m app.auth.cli create-admin --email <메일> --name 관리자`

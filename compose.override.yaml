@@ -1,6 +1,6 @@
 # 로컬 개발용. `docker compose up` 하면 자동으로 덧붙는다.
-# 코드를 컨테이너에 바인드 마운트하고, 고치면 자동으로 다시 뜬다.
-# Windows 폴더를 마운트하면 파일 변경 알림이 안 오므로 폴링을 켠다.
+# api · worker는 코드를 컨테이너에 바인드 마운트하고, 고치면 자동으로 다시 뜬다.
+# Windows 폴더를 마운트하면 파일 변경 알림이 안 오므로 폴링을 켠다. 화면(web)은 아래처럼 파일을 복사한다(docker compose watch).
 # 내 PC에서 쓰는 포트와 겹치면 .env의 *_HOST_PORT 값을 바꾼다 (DB는 기본 5433: PC에 깔린 PostgreSQL과 안 겹치게).
 services:
   db:
@@ -46,18 +46,27 @@ services:
     environment:
       WATCHFILES_FORCE_POLLING: "true"
 
+  # 화면은 폴더를 마운트하지 않는다. `docker compose watch`(또는 `docker compose up --watch`)가 바뀐 파일만 컨테이너 안으로 복사하고,
+  # 컨테이너 안에서 파일이 바뀌니 변경 알림이 와서 폴링 없이 Turbopack(next dev 기본값)으로 바로 다시 컴파일한다.
+  # watch 없이 `up`만 하면 이미지를 만든 때의 화면 코드로 뜬다. package.json · 잠금 파일이 바뀌면 이미지를 다시 만든다.
+  # 컨테이너 안에서 만든 파일은 PC로 돌아오지 않으니 `pnpm gen:api`는 PC에서 돌린다.
   web:
     image: skn34-final/web:dev
     build:
       target: dev
-    # Turbopack은 마운트된 Windows 폴더의 변경을 못 잡아서 Docker 안에서는 webpack + 폴링으로 띄운다.
-    # PC에서 바로 띄울 때(pnpm dev)는 기본값 Turbopack을 그대로 쓴다.
-    command: ["pnpm", "exec", "next", "dev", "--webpack", "--hostname", "0.0.0.0", "--port", "3000"]
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
-    environment:
-      WATCHPACK_POLLING: "true"
+    command: ["pnpm", "exec", "next", "dev", "--hostname", "0.0.0.0", "--port", "3000"]
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend
+          target: /app
+          initial_sync: true
+          ignore:
+            - node_modules/
+            - .next/
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/pnpm-lock.yaml
     ports:
       - "127.0.0.1:${WEB_HOST_PORT:-3000}:3000"
