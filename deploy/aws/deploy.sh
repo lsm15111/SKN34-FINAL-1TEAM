@@ -81,6 +81,8 @@ print("FILES_S3_BUCKET=" + os.environ["MITJIP_S3_BUCKET"])
 print("AWS_DEFAULT_REGION=ap-northeast-2")
 print("ALLOWED_ORIGINS=https://" + os.environ["MITJIP_HOST"])
 print("LLM_LIVE=false")
+# 시연 업체 자동 응답(worker). 시연 계정(app/demo.py)에만 하고, 끄려면 false로 바꾼다
+print("DEMO_AUTO=true")
 ' > .env.runtime.new
 chmod 600 .env.runtime.new
 
