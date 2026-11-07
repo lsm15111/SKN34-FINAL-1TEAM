@@ -118,12 +118,17 @@ def test_triggers_from_project_state():
     soon = tg.triggers(ctx(step="dates", work_start=date(2026, 12, 2)))
     assert "d_minus_14" not in soon and "winter_work" in soon
     near = tg.triggers(ctx(step="dates", work_start=date(2026, 11, 10)))
-    assert "d_minus_3" in near
+    assert {"d_minus_3", "d_minus_7", "d_minus_14"} <= near  # 기간이라 겹친다(D-2)
     assert tg.triggers(ctx(working=True, events=frozenset({"mokgong_done"}))) >= {
         "stage_work",
         "mokgong_done",
     }
-    assert set(tg.triggers(ctx())) <= set(tg.TRIGGERS)
+    mok = tg.triggers(
+        ctx(trades=frozenset({"mokgong"}), flatten=True, door=True, molding_style="none")
+    )
+    assert {"flatten_selected", "door_selected", "moldless_selected"} <= mok
+    assert "door_selected" not in tg.triggers(ctx(door=True))  # 목공을 안 골랐으면 꺼짐
+    assert set(tg.triggers(ctx())) <= set(tg.TRIGGERS) and set(mok) <= set(tg.TRIGGERS)
 
 
 def test_pick_one_unseen_card_by_priority():
@@ -146,6 +151,9 @@ def test_pick_one_unseen_card_by_priority():
         {"key": "mokgong.d", "trade": "mokgong", "trigger": "trade_mokgong", "priority": 95},
     ]
     on = {"silk_selected", "trade_mokgong", "on_question"}
-    assert [c["key"] for c in tg.pick(cards, on)] == ["mokgong.d"]
-    assert [c["key"] for c in tg.pick(cards, on, muted=["mokgong"])] == ["dobae.b"]
-    assert [c["key"] for c in tg.pick(cards, on, seen=["mokgong.d", "dobae.b"])] == ["dobae.a"]
+    both = {"dobae", "mokgong"}
+    assert [c["key"] for c in tg.pick(cards, on, both)] == ["mokgong.d"]
+    assert [c["key"] for c in tg.pick(cards, on, both, muted=["mokgong"])] == ["dobae.b"]
+    assert [c["key"] for c in tg.pick(cards, on, {"dobae"})] == ["dobae.b"]  # 고른 공정만
+    seen = ["mokgong.d", "dobae.b"]
+    assert [c["key"] for c in tg.pick(cards, on, both, seen=seen)] == ["dobae.a"]

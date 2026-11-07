@@ -2,6 +2,11 @@
 
 카드 본문은 사람이 검수한 데이터(knowledge/data/cards.jsonl)이고, 여기서는 고르기만 한다.
 LLM이 실패해도 카드는 보인다. docs/agent/05-coaching.md 3절.
+
+- 트리거는 '그 상태가 이어지는 동안' 참이다. 이벤트(견적서 도착 등)도 한 번 울리고 끝나지 않고, 그 상태인 동안
+  켜져 있어서 같은 트리거의 2위 이하 카드도 다음 방문 때 차례로 보인다(본 카드는 다시 안 보임).
+- D-14 · D-7 · D-3은 그날부터 공사 전까지 참인 기간이다(D-2면 셋 다 참).
+- 카드의 공정은 한 번 더 거른다: common · oos는 늘, dobae · mokgong은 고른 공정일 때만.
 """
 
 from collections.abc import Iterable, Mapping, Sequence
@@ -41,6 +46,9 @@ TRIGGERS = (
     "hapji_selected",
     "ceiling_unknown",
     "balcony_ext",
+    "flatten_selected",
+    "moldless_selected",
+    "door_selected",
     *EVENTS,
     "d_minus_14",
     "d_minus_7",
@@ -64,10 +72,12 @@ class CardContext:
     balcony_ext: bool = False
     ceiling: str | None = None  # 도배 브리프 천장 포함 슬롯 yes · no · after_visit · None
     flatten: bool = False  # 목공 항목에 천장 평탄화
+    door: bool = False  # 목공 항목에 방문 교체
+    molding_style: str | None = None  # 목공 브리프 몰딩 모양(keep · flat · step · minus · none)
     work_start: date | None = None  # 첫 공사 날짜(수락한 것)
     working: bool = False  # 공사 중
     finished: bool = False  # 공사 끝냄
-    events: frozenset[str] = field(default_factory=frozenset)  # 이번에 생긴 일(EVENTS)
+    events: frozenset[str] = field(default_factory=frozenset)  # 지금 이어지는 상태 이벤트(EVENTS)
 
 
 def triggers(ctx: CardContext) -> set[str]:
@@ -96,13 +106,19 @@ def triggers(ctx: CardContext) -> set[str]:
         on.add("ceiling_unknown")
     if ctx.balcony_ext:
         on.add("balcony_ext")
+    if "mokgong" in ctx.trades:
+        if ctx.flatten:
+            on.add("flatten_selected")
+        if ctx.molding_style in ("minus", "none"):
+            on.add("moldless_selected")
+        if ctx.door:
+            on.add("door_selected")
     on |= set(ctx.events) & set(EVENTS)
     if ctx.work_start and not ctx.working and not ctx.finished:
         left = (ctx.work_start - ctx.today).days
-        for n in (3, 7, 14):  # 가장 가까운 기준 하나만
+        for n in (14, 7, 3):  # 그날부터 공사 전까지 참인 기간이라 겹칠 수 있다
             if 0 <= left <= n:
                 on.add(f"d_minus_{n}")
-                break
         if ctx.work_start.month in WINTER:
             on.add("winter_work")
     return on
@@ -111,18 +127,21 @@ def triggers(ctx: CardContext) -> set[str]:
 def pick(
     cards: Sequence[Mapping],
     on: Iterable[str],
+    trades: Iterable[str],
     seen: Iterable[str] = (),
     muted: Iterable[str] = (),
     limit: int = 1,
 ) -> list[Mapping]:
-    """켜진 트리거의 카드 중 안 본 것 · 끄지 않은 공정의 것을 priority 높은 순 · 쉬운 것(level 낮은) 먼저 limit장.
+    """켜진 트리거의 카드 중 안 본 것을 priority 높은 순 · 쉬운 것(level 낮은) 먼저 limit장.
+    공정 카드는 고른 공정(trades)만, common · oos는 늘. muted는 고객이 '그만 보기'한 공정 묶음.
     on_question 카드는 물었을 때만(코치가 검색으로) 쓰므로 여기서는 고르지 않는다."""
     active = set(on) - {"on_question"}
-    done, off = set(seen), set(muted)
+    allowed = ({"common", "oos"} | set(trades)) - set(muted)
+    done = set(seen)
     rows = [
         c
         for c in cards
-        if c.get("trigger") in active and c.get("key") not in done and c.get("trade") not in off
+        if c.get("trigger") in active and c.get("key") not in done and c.get("trade") in allowed
     ]
     rows.sort(key=lambda c: (-int(c.get("priority", 0)), int(c.get("level", 2)), c.get("key", "")))
     return rows[:limit]
