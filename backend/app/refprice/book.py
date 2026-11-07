@@ -4,6 +4,7 @@
 견적에는 version을 고정해서 나중에 값이 바뀌어도 만든 때의 기준을 알 수 있게 한다.
 """
 
+from dataclasses import replace
 from decimal import Decimal
 
 from app.calc.common import won
@@ -89,4 +90,40 @@ MOKGONG_2026H2 = MokgongPrices(
         "ceiling_mat": "팀 가정값 (천장틀 · 석고보드 자재는 공공 가격이 없어요)",
         "none": "공공 단가가 없어 업체 견적에서 확인해요",
     },
+)
+
+
+# ── 2026 하반기 r2: 표준품셈 · 표준시장단가 원문과 대조해 고친 값 (docs/research/T2 · T3) ──
+# 기본값으로 쓰는 것은 아직 위의 r1이다. 바꿀 때는 quote.service가 r2를 쓰게 하고 FORMULA_VERSION을 올린다.
+_WAGE_PAPERER = 229_833  # 도배공 2026.9.1 시중노임단가 (대한건설협회)
+_REMOVE_WALL = won(Decimal("0.008") * _WAGE_PAPERER + Decimal("0.005") * _WAGE_HELPER)  # 2,702원/㎡
+_REMOVE_CEILING = won(Decimal("0.010") * _WAGE_PAPERER + Decimal("0.007") * _WAGE_HELPER)  # 3,507
+_CEILING_SHARE_R2 = Decimal("0.30")
+
+DOBAE_2026H2_R2 = replace(
+    DOBAE_2026H2,
+    version="2026H2-r2",
+    # 업계 배수(공급 × 2.5 · 전용 × 3.0)는 벽 + 천장 합계다. 공급 × 2.5에 확장 1.08을 같이 쓰면 24 · 34평형에서
+    # 10~18% 많아서 공급은 2.3으로 둔다. AI Hub 도면 벽 면적(전용 × 2.15)과 맞는다(T2 4.4)
+    area_factor={"supply": Decimal("2.3"), "exclusive": Decimal("3.0")},
+    ceiling_share=_CEILING_SHARE_R2,  # 합계 중 천장 28~33%(T2 4.4)
+    # 표준품셈 건축 5-3-7 도배바름: 도배공 2 + 보통인부 1이 콘크리트 벽 95㎡ · 석고보드면 85㎡/일, 천장은 23% 감.
+    # 단가 짝(벽 = 콘크리트 5,993원, 천장 = 석고보드 8,531원)에 맞춰 품도 같은 바탕으로 잡고, 천장 감은 한 번만(÷0.77)
+    md_wall=Decimal(2) / Decimal(95),
+    md_ceiling=Decimal(2) / (Decimal(85) * Decimal("0.77")),
+    # 표준품셈 유지관리 3-2-7 도배 해체(벽 2,702 · 천장 3,507원/㎡)를 천장 30%로 섞은 값
+    removal=won((1 - _CEILING_SHARE_R2) * _REMOVE_WALL + _CEILING_SHARE_R2 * _REMOVE_CEILING),
+    sources={
+        **DOBAE_2026H2.sources,
+        "removal": "표준품셈 도배 해체(벽 도배공 0.008 + 보통인부 0.005, 천장 0.010 + 0.007인/㎡) × "
+        "2026.9.1 노임, 천장 30%로 섞음",
+    },
+)
+
+MOKGONG_2026H2_R2 = replace(
+    MOKGONG_2026H2,
+    version="2026H2-r2",
+    # 공급 ÷ 전용: 24평형 1.34 · 32평형 1.26 · 34평형 1.34 · 43평형 1.25(T2 4.4), 시장 통칭 1.31~1.40(T3)
+    supply_per_exclusive=Decimal("1.3"),
+    casing_per_door=Decimal("11.0"),  # 문 하나 문선 양면(T3 권장, 가정값)
 )
