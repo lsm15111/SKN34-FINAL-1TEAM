@@ -1,0 +1,30 @@
+{"id": "R01", "query": "실크로 바꾸면 기존 벽지 다 뜯어야 돼요? 합지 위에 덧방은 안 되나요", "relevant": ["dobae.rule.overlay_condition", "dobae.recipe.hapji_overlay", "dobae.change.hapji_to_silk"], "split": "dev", "note": "덧방 조건·실크 철거", "reviewed": false}
+{"id": "R02", "query": "띄움시공 해준다는데 그게 정확히 뭐임?", "relevant": ["dobae.recipe.floating"], "split": "dev", "note": "용어 질문, 구어", "reviewed": false}
+{"id": "R03", "query": "도배 끝나면 바로 가구 들이고 이사 들어가도 돼요?", "relevant": ["dobae.rule.move_in_wait", "common.sequence.waits"], "split": "dev", "note": "건조 대기, 상충 고지", "reviewed": false}
+{"id": "R04", "query": "12월에 도배 잡혔는데 추우면 벽지 잘 안 붙지 않아요?", "relevant": ["dobae.rule.winter", "dobae.rule.temperature_humidity"], "split": "dev", "note": "겨울 온도 기준", "reviewed": false}
+{"id": "R05", "query": "베란다 쪽 벽에 곰팡이 폈는데 그 위에 그냥 도배해도 되나요", "relevant": ["dobae.rule.mold_condensation", "dobae.defect.mold_stain"], "split": "dev", "note": "곰팡이 선처리", "reviewed": false}
+{"id": "R06", "query": "도배한 지 이틀 됐는데 실크 이음새가 벌어졌어요ㅠ", "relevant": ["dobae.defect.seam_open", "common.dispute.defect_report"], "split": "dev", "note": "하자 원인·접수", "reviewed": false}
+{"id": "R08", "query": "천장 도배는 빼면 얼마나 싸져요? 천장은 깨끗한 편이라", "relevant": ["dobae.change.ceiling_include"], "split": "dev", "note": "금액은 엔진, 비중 상충", "reviewed": false}
+{"id": "R09", "query": "견적서에 초배가 따로 잡혀 있던데 원래 이거 받는 거 맞아요?", "relevant": ["dobae.faq.primer_needed", "dobae.quote.extra_items"], "split": "dev", "note": "추가금 판단", "reviewed": false}
+{"id": "R10", "query": "평당 얼마라고 하던데 그 평이 우리집 34평 말하는 거예요?", "relevant": ["dobae.quote.pyeong_unit", "common.quote.pyeong_trap"], "split": "dev", "note": "평 단위 혼동", "reviewed": false}
+{"id": "R11", "query": "꽃무늬 벽지 하고 싶은데 롤 더 사야 돼요?", "relevant": ["dobae.change.plain_to_pattern", "dobae.pattern.match_types", "dobae.pattern.extra_rolls"], "split": "dev", "note": "무늬 로스", "reviewed": false}
+{"id": "R16", "query": "몰딩만 싹 바꾸고 싶은데 그러면 벽지도 새로 해야 되나요", "relevant": ["mokgong.molding.removal_wallpaper", "common.sequence.mokgong_before_dobae"], "split": "dev", "note": "몰딩-도배 연계", "reviewed": false}
+{"id": "R17", "query": "무몰딩이랑 마이너스몰딩 중에 하자 덜 나는 게 뭐예요", "relevant": ["mokgong.molding.none", "mokgong.molding.minus", "mokgong.defect.minus_none_crack"], "split": "dev", "note": "골든 요점 G6", "reviewed": false}
+{"id": "R18", "query": "20년 넘은 구축인데 무몰딩 해도 괜찮을까요? 벽이 좀 울퉁불퉁해요", "relevant": ["mokgong.change.flat_to_none", "mokgong.molding.none", "mokgong.rule.old_apartment"], "split": "dev", "note": "구축 리스크", "reviewed": false}
+{"id": "R19", "query": "걸레받이 아예 없애도 돼요? 깔끔해 보이고 싶어서", "relevant": ["mokgong.change.bb_minus_none", "mokgong.baseboard.types"], "split": "dev", "note": "범위 밖 플래그", "reviewed": false}
+{"id": "R20", "query": "걸레받이는 마루 깔고 나서 붙여요 아니면 목공 때 같이 해요?", "relevant": ["mokgong.baseboard.order", "common.sequence.dobae_floor"], "split": "dev", "note": "공정 순서", "reviewed": false}
+{"id": "R21", "query": "문짝만 갈아도 되는지 문틀까지 해야 하는지 헷갈려요", "relevant": ["mokgong.door.leaf_vs_set", "mokgong.change.leaf_to_set"], "split": "dev", "note": "방문 범위", "reviewed": false}
+{"id": "R22", "query": "화장실 문도 바꾸는데 물에 안 붓는 재질이 뭐예요", "relevant": ["mokgong.door.bathroom", "mokgong.door.materials"], "split": "dev", "note": "ABS·4방틀", "reviewed": false}
+{"id": "R23", "query": "우물천장 평평하게 메우면 천장 높이 낮아져요?", "relevant": ["mokgong.ceiling.height_loss"], "split": "dev", "note": "수치 근거 약함", "reviewed": false}
+{"id": "R24", "query": "업체가 거실 천장 평탄화 하자는데 우리 집도 꼭 해야 되는 건지 모르겠어요", "relevant": ["mokgong.ceiling.coffered_basic", "mokgong.ceiling.flatten_types", "mokgong.ceiling.old_ceiling_signs"], "split": "dev", "note": "골든 요점 G8", "reviewed": false}
+{"id": "R25", "query": "커튼박스 도배 다 끝나고 나중에 만들어도 되나요", "relevant": ["mokgong.boundary.curtain_box"], "split": "dev", "note": "목공 단계 결정", "reviewed": false}
+{"id": "R31", "query": "도배랑 목공만 하는데 구청에 신고해야 하나요", "relevant": ["common.admin.minor_act", "common.admin.ceiling_permit"], "split": "dev", "note": "경미한 행위", "reviewed": false}
+{"id": "R32", "query": "관리실에서 동의서 받아 오라는데 몇 집이나 받아야 해요", "relevant": ["common.admin.consent", "common.admin.office_questions"], "split": "dev", "note": "동의율 상충, G12", "reviewed": false}
+{"id": "R33", "query": "견적서에 도배 일식 이렇게만 적혀 있는데 괜찮은 거예요?", "relevant": ["common.quote.lump_sum"], "split": "dev", "note": "견적 읽기", "reviewed": false}
+{"id": "R34", "query": "제일 싼 데랑 계약하면 나중에 추가금 폭탄 맞나요", "relevant": ["common.quote.cheapest_risk", "common.quote.include_exclude"], "split": "dev", "note": "누락 위험", "reviewed": false}
+{"id": "R35", "query": "업체가 하자 아니라고 우기는데 어디다 도움 요청해요", "relevant": ["common.dispute.path", "common.dispute.defect_report"], "split": "dev", "note": "분쟁 경로", "reviewed": false}
+{"id": "R36", "query": "목공 업체가 하루 늦는대요 도배 날짜도 미뤄야 하나요", "relevant": ["common.schedule.delay_chain"], "split": "dev", "note": "골든 요점 G10", "reviewed": false}
+{"id": "R37", "query": "마루랑 도배 뭐부터 해요? 업체마다 말이 달라요", "relevant": ["common.sequence.dobae_floor", "oos.floor.maru_vs_sheet"], "split": "dev", "note": "순서 상충", "reviewed": false}
+{"id": "R42", "query": "문이랑 몰딩에 필름 붙일 건데 도배 전에 해요 후에 해요?", "relevant": ["common.sequence.film_paint_dobae", "oos.film.process"], "split": "dev", "note": "범위 밖 공정 순서", "reviewed": false}
+{"id": "R43", "query": "욕실 타일도 바꿀 건데 방수하고 며칠 기다려야 돼요", "relevant": ["oos.bath.waterproof_tile", "common.sequence.waits"], "split": "dev", "note": "범위 밖, 대기시간", "reviewed": false}
+{"id": "R44", "query": "콘센트 위치 옮기고 싶은데 언제까지 말해야 해요", "relevant": ["common.sequence.elec_before_mokgong", "oos.elec.two_stage"], "split": "dev", "note": "전기 1차 시점", "reviewed": false}

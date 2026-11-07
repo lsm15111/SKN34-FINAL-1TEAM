@@ -11,6 +11,8 @@ import sys
 from collections.abc import Iterable
 from pathlib import Path
 
+from app.knowledge.triggers import TRIGGERS
+
 DATA = Path(__file__).resolve().parent / "data"
 
 TRADES = ("common", "dobae", "mokgong", "oos")
@@ -21,7 +23,8 @@ KINDS = ("guide", "faq", "recipe", "defect", "rule", "check")
 RELIABILITY = ("official", "industry", "news", "community")
 RAG_POLICY = ("full", "summary", "facts", "link", "blocked")
 INTENTS = ("style", "texture", "color", "function", "budget", "schedule", "scope", "structure")
-SOURCE_KEY = re.compile(r"^S-T[1-7]-[0-9A-Z]{1,8}$")
+# T1~T7 = 조사 트랙 번호, T0 = 메인 세션이 원문을 직접 확인한 출처(docs/research/verify_log.md)
+SOURCE_KEY = re.compile(r"^S-T[0-7]-[0-9A-Z]{1,8}$")
 CARD_KEY = re.compile(r"^(common|dobae|mokgong|oos)\.[a-z0-9_]{2,40}$")
 CHUNK_KEY = re.compile(r"^(common|dobae|mokgong|oos)\.[a-z0-9_.]{2,57}$")
 
@@ -87,8 +90,8 @@ def _check_cards(rows: list[dict], known: set[str]) -> list[str]:
             bad.append(f"cards: {k} 제목 40자 · 본문 300자")
         if not isinstance(r.get("priority"), int) or not 0 <= r["priority"] <= 100:
             bad.append(f"cards: {k} priority 0~100")
-        if not r.get("trigger"):
-            bad.append(f"cards: {k} trigger 없음")
+        if r.get("trigger") not in TRIGGERS:
+            bad.append(f"cards: {k} 모르는 trigger {r.get('trigger')!r}")
         bad += _check_refs("cards", k, r.get("sources", []), known)
     return bad
 
