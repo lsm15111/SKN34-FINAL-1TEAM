@@ -2,14 +2,14 @@
 
 from tests.conftest import query
 from tests.helpers import signup, vendor_signup
-from tests.test_project import body
+from tests.test_project import body, whole
 
 
 def test_standard_is_saved_once_and_counts_only_included(api):
     signup(api)
     p = api.post(
         "/projects",
-        json=body(size={"basis": "supply", "m2": "105.8"}, occupied=False, balcony_ext=False),
+        json=whole(size={"basis": "supply", "m2": "105.8"}, occupied=False, balcony_ext=False),
     ).json()
     r = api.get(f"/projects/{p['id']}/standard")
     assert r.status_code == 200, r.text
@@ -49,3 +49,17 @@ def test_only_owner_sees_the_standard(api):
     assert api.get(f"/projects/{p['id']}/standard").status_code == 404
     assert vendor_signup(api).status_code == 201
     assert api.get(f"/projects/{p['id']}/standard").status_code == 404
+
+
+def test_new_formula_recalculates_unless_the_home_is_locked(api):
+    signup(api)
+    p = api.post("/projects", json=body()).json()
+    assert api.get(f"/projects/{p['id']}/standard").json()["trades"][0]["version"] == 1
+    query("update standard_quotes set formula_ver = '2026.11.1', price_ver = '2026H2'")
+    again = api.get(f"/projects/{p['id']}/standard").json()
+    assert {t["version"] for t in again["trades"]} == {2}  # 산식 · 단가가 바뀌면 새 버전
+
+    query("update standard_quotes set formula_ver = '2026.11.1' where project_id = $1", p["id"])
+    query("update projects set locked_at = now() where id = $1", p["id"])  # 실측 요청 뒤
+    kept = api.get(f"/projects/{p['id']}/standard").json()
+    assert {t["version"] for t in kept["trades"]} == {2} and kept["formula_ver"] == "2026.11.1"

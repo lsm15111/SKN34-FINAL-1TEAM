@@ -7,18 +7,20 @@ from app.calc.schedule import years_since
 from app.shared.clock import today_seoul
 from tests.conftest import query
 from tests.helpers import JPEG, PASSWORD, PDF, make_admin, signup, upload, use, vendor_signup
+from tests.test_project import ALL, SIX
 from tests.test_project import body as project_body
 from tests.test_vendor_price import maru, ready_vendor
 from tests.test_vendor_profile import URL as PROFILE
 from tests.test_vendor_profile import approved_vendor, vendor_id
 from tests.test_vendor_profile import body as profile_body
 
-NOWON_32 = {  # 노원구 32평(공급 105.8㎡) 빈 집 · 도배 기본형: 시안 예시와 같은 집
+NOWON_32 = {  # 노원구 32평(공급 105.8㎡) 빈 집 · 도배 기본형 · 기본 공간 6곳(집 전체): 시안 예시와 같은 집
     "sgg": "노원구",
     "size": {"basis": "supply", "m2": "105.8"},
     "occupied": False,
     "balcony_ext": False,
-    "trades": {"dobae": {"spaces": ["a", "b", "c"], "grade": "basic"}},
+    "spaces": SIX,
+    "trades": {"dobae": {"spaces": ALL, "grade": "basic"}},
 }
 
 

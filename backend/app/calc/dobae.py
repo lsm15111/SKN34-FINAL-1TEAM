@@ -17,6 +17,7 @@ from app.calc.common import (
     half_days,
     half_up,
     m2,
+    pct,
     won,
 )
 
@@ -57,6 +58,7 @@ class DobaeInput:
     include_ceiling: bool
     occupied: bool
     balcony_ext: bool = False
+    share: Decimal = Decimal(1)  # 고른 공간 몫 (집 전체 도배 면적 중, calc.spaces)
 
 
 @dataclass(frozen=True)
@@ -78,9 +80,12 @@ class DobaeQuote:
 def quote(inp: DobaeInput, p: DobaePrices) -> DobaeQuote:
     if inp.area_m2 <= 0:
         raise ValueError("면적은 0보다 커야 해요")
+    if not 0 < inp.share <= 1:
+        raise ValueError("고른 공간 몫은 0보다 크고 1 이하여야 해요")
     gross = inp.area_m2 * p.area_factor[inp.area_basis]
     if inp.balcony_ext:
         gross *= p.balcony_factor
+    gross *= inp.share
     ceiling = m2(gross * p.ceiling_share)
     wall = m2(gross) - ceiling
     ceil_used = ceiling if inp.include_ceiling else Decimal(0)
@@ -203,6 +208,10 @@ def quote(inp: DobaeInput, p: DobaePrices) -> DobaeQuote:
     ]
     if inp.balcony_ext:
         assumptions.append(f"발코니 확장은 도배 면적을 {p.balcony_factor}배로 잡았어요.")
+    if inp.share < 1:
+        assumptions.append(
+            f"고른 공간만 하니 집 전체 도배 면적의 {pct(inp.share)}%로 잡았어요(흔한 평면 기준)."
+        )
     return DobaeQuote(
         version=p.version,
         paper_m2=paper_area,

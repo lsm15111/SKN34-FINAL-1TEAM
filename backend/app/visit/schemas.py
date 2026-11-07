@@ -5,7 +5,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
-from app.quote.schemas import QuoteBriefOut, VendorQuoteOut
+from app.quote.schemas import QuoteBriefOut, RangeOut, VendorQuoteOut
 from app.vendor.schemas import AreaOut, ContactOut, EstimateOut, PublicProfileOut
 
 Direction = Literal["less", "more", "same"]  # 표준견적서보다 적어요 · 많아요 · 같아요
@@ -42,6 +42,10 @@ class VendorRowOut(BaseModel):
     )
     vs_standard: Decimal | None = Field(description="표준견적서 대비 % (음수면 적어요)")
     vs_direction: Direction | None
+    estimate_range: RangeOut | None = Field(
+        default=None,
+        description="실측 뒤 예상 범위: 가견적 + 실측 보정 + '실측 후' 줄 (가견적이 없으면 비어 있다)",
+    )
     visit: VisitBrief | None = Field(description="최근 실측 요청 (없으면 비어 있다)")
 
 
@@ -53,6 +57,9 @@ class VendorListOut(BaseModel):
     region: str = Field(description="이 집 지역 (서울 노원구)")
     area_name: str = Field(description="이 집 시 · 군 · 구 (노원구)")
     standard_total: int = Field(description="그 공정 표준견적서 합계 (부가세 포함)")
+    standard_range: RangeOut = Field(
+        description="그 공정 표준견적서 예상 범위 (업체 단가를 모를 때)"
+    )
     slots_left: int = Field(description="그 공정에 더 담을 수 있는 업체 수 (3곳까지)")
     consent_ver: str = Field(description="연락처 보내기 동의 문구 버전 (요청할 때 그대로 보낸다)")
     vendors: list[VendorRowOut]
@@ -67,6 +74,7 @@ class EstimateDetailOut(EstimateOut):
     exempt: bool = Field(description="면세 업체면 부가세 0")
     vs_standard: Decimal | None
     vs_direction: Direction | None
+    range: RangeOut = Field(description="실측 뒤 예상 범위와 그 폭의 이유")
 
 
 class VendorDetailOut(BaseModel):

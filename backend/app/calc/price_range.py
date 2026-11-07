@@ -7,7 +7,9 @@
 
 본체(수량 · 단가)는 로그 정규로 보고 σ² = σ수량² + σ단가²로 묶는다(둘은 독립으로 본다).
 수량은 줄을 수량 근거(면적 · 둘레 · 천장 · 문)로 묶는다. 같은 근거의 줄은 같이 틀리고(금액 비율로 σ를 더함),
-다른 근거끼리는 독립이다(제곱합). 조건 줄 금액은 [하한, 상한] 균등으로 보고 칸으로 나눠 본체와 섞는다.
+다른 근거끼리는 독립이다(제곱합). 일부 공간만 고르면 '고른 공간 몫'(calc.spaces)도 가정값이라 그 σ를 따로 더한다.
+조건 줄 금액은 [하한, 상한] 균등으로 보고 칸으로 나눠 본체와 섞는다.
+여러 공정의 합계는 본체를 평균 · 분산이 같은 로그 정규 하나로 묶고(공정끼리 상관 trade_corr), 조건 줄은 모두 섞는다.
 구간은 섞은 분포의 10% · 50% · 90% 지점을 이분법으로 찾는다. 무작위를 쓰지 않아 같은 입력이면 같은 구간이다.
 금액은 원 정수이고, 보이는 끝값은 만 원 단위로 하한 내림 · 중간 반올림 · 상한 올림한다.
 """
@@ -36,25 +38,29 @@ QTY_DRIVER: dict[str, dict[str, str]] = {
 
 MAN = Decimal(10_000)
 GRID = 8  # 조건 줄 금액 [하한, 상한]을 나누는 칸 수
-STEPS = 80  # 분위수 이분법 반복 수
+STEPS = 48  # 분위수 이분법 반복 수 (상한 수천만 원 ÷ 2^48 → 1원보다 훨씬 작다)
 
 
 @dataclass(frozen=True)
 class CondRule:
     """'실측 후' 줄 하나의 시장 범위(부가세 빼고). per가 lump면 한 번(식), qty면 수량(㎡ · m · 개)당.
-    p는 할지 모를 때 쓰는 '할 확률' 사전값이다."""
+    p는 할지 모를 때 쓰는 '할 확률' 사전값이다. min_scale이 있으면 한 번(식) 금액도 공사 크기(고른 공간 몫)를
+    따라 줄이되 이 비율 밑으로는 줄이지 않는다(폐기물 · 짐 이동처럼 양에 따라 늘지만 최소 한 번은 드는 것)."""
 
     per: Literal["lump", "qty"]
     low: int
     high: int
     p: Decimal
     source: str
+    min_scale: Decimal | None = None
 
     def __post_init__(self) -> None:
         if not 0 <= self.low <= self.high:
             raise ValueError("조건 줄 범위는 0 ≤ 하한 ≤ 상한이어야 해요")
         if not 0 <= self.p <= 1:
             raise ValueError("할 확률은 0~1이어야 해요")
+        if self.min_scale is not None and not 0 < self.min_scale <= 1:
+            raise ValueError("최소 비율은 0보다 크고 1 이하여야 해요")
 
 
 @dataclass(frozen=True)
@@ -72,6 +78,9 @@ class RangeRules:
     conds: Mapping[str, Mapping[str, CondRule]]  # 공정 → '실측 후' 줄 키 → 범위
     vat_rate: Decimal
     sources: Mapping[str, str]
+    # 고른 공간 몫의 σ. 키는 고른 공간 수(1 · 2 · 3, 3은 셋 이상). 집 전체면 0
+    share_sigma: Mapping[str, Decimal] = field(default_factory=dict)
+    trade_corr: Decimal = Decimal("0.5")  # 합계 범위: 공정끼리 본체가 같이 움직이는 정도(0~1)
 
 
 @dataclass(frozen=True)
@@ -85,13 +94,16 @@ class RangeInput:
     cond_p: Mapping[str, Decimal] = field(default_factory=dict)  # 모름일 때 할 확률(사전값 대신)
     vendor_priced: bool = False  # 가견적이면 True(업체 단가를 앎)
     exempt: bool = False  # 면세 업체
+    share_sigma: Mapping[str, Decimal] = field(default_factory=dict)  # 수량 근거 → 고른 공간 몫 σ
+    # 집 전체 대비 공사 크기(고른 공간 몫). min_scale이 있는 조건 줄 금액에 쓴다
+    job_share: Decimal = Decimal(1)
 
 
 @dataclass(frozen=True)
 class Part:
     """구간 폭을 만든 이유 하나. share는 '이걸 알면 줄어드는 폭(기대값)'의 몫이다."""
 
-    driver: str  # qty:area · qty:edge · price · visit · cond:removal …
+    driver: str  # qty:area · qty:edge · share:area · price · visit · cond:removal …
     share: Decimal  # 0~1, 소수 둘째 자리
     better: Precision | None = None  # 수량: 한 단계 더 알면 되는 정밀도
     low_if: int | None = None  # 수량은 한 단계 더 알 때, 단가는 가견적을 받을 때, 조건은 하게 될 때
@@ -122,16 +134,21 @@ class _Mix:
     k: float  # 1 + 부가세율
 
 
+def _won(x: float) -> Decimal:
+    """float 계산 끝값을 원 단위로 먼저 반올림한다(220000.00000000003 → 220000)"""
+    return Decimal(round(x))
+
+
 def _floor_man(x: float) -> int:
-    return int((Decimal(x) / MAN).to_integral_value(rounding=ROUND_FLOOR) * MAN)
+    return int((_won(x) / MAN).to_integral_value(rounding=ROUND_FLOOR) * MAN)
 
 
 def _ceil_man(x: float) -> int:
-    return int((Decimal(x) / MAN).to_integral_value(rounding=ROUND_CEILING) * MAN)
+    return int((_won(x) / MAN).to_integral_value(rounding=ROUND_CEILING) * MAN)
 
 
 def _round_man(x: float) -> int:
-    return int((Decimal(x) / MAN).to_integral_value(rounding=ROUND_HALF_UP) * MAN)
+    return int((_won(x) / MAN).to_integral_value(rounding=ROUND_HALF_UP) * MAN)
 
 
 def _pick(table: Mapping[str, Decimal], trade: str, grade: str | None):
@@ -162,6 +179,20 @@ def _qty_var(inp: RangeInput, r: RangeRules) -> dict[str, float]:
     return out
 
 
+def _share_var(inp: RangeInput) -> dict[str, float]:
+    """고른 공간 몫 σ의 분산 몫 (그 근거 줄 금액 비중 × σ)². 일부 공간만 골랐을 때만 있다."""
+    t = inp.trade
+    supply = sum(inp.amounts.values())
+    out: dict[str, float] = {}
+    for g, sig in inp.share_sigma.items():
+        if sig < 0:
+            raise ValueError("고른 공간 몫 σ는 0 이상이어야 해요")
+        w = sum(a for k, a in inp.amounts.items() if QTY_DRIVER[t].get(k) == g)
+        if sig and w:
+            out[g] = (w / supply * float(sig)) ** 2
+    return out
+
+
 def _cond_dist(
     inp: RangeInput, r: RangeRules, fixed: Mapping[str, float] | None = None
 ) -> tuple[tuple[tuple[float, float], ...], float]:
@@ -178,6 +209,10 @@ def _cond_dist(
             if q is None or q < 0:
                 raise ValueError(f"{key} 줄의 수량이 있어야 해요")
             n = float(q)
+        elif rule.min_scale is not None:
+            if not 0 < inp.job_share <= 1:
+                raise ValueError("공사 크기 몫은 0보다 크고 1 이하여야 해요")
+            n = float(max(inp.job_share, rule.min_scale))
         if state == "yes":
             p = 1.0
         elif state == "open":
@@ -219,11 +254,12 @@ def _mix(
     if supply <= 0 and not inp.conds:
         raise ValueError("금액이 있는 줄이 없어요")
     q = _qty_var(inp, r)
+    sh = _share_var(inp)
     if price_sigma is None:
         table = r.visit_sigma if inp.vendor_priced else r.price_sigma
         price_sigma = float(_pick(table, t, inp.grade))
     center = supply * (1.0 if inp.vendor_priced else float(_pick(r.price_center, t, inp.grade)))
-    sigma = sqrt(sum(q.values()) + price_sigma**2)
+    sigma = sqrt(sum(q.values()) + sum(sh.values()) + price_sigma**2)
     shifts, _ = _cond_dist(inp, r, fixed)
     k = 1.0 if inp.exempt else 1.0 + float(r.vat_rate)
     return _Mix(center, sigma, shifts, float(_pick(r.min_job, t, inp.grade)), k)
@@ -285,6 +321,15 @@ def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> Pric
             continue
         lo, hi = narrowed(inp=replace(inp, precision={**inp.precision, g: nxt}), r=r)
         gains.append((Part(f"qty:{g}", Decimal(0), nxt, lo, hi), max(width - (hi - lo), 0)))
+    for g in _share_var(inp) if explain else ():
+        # 고른 공간을 재면 몫 가정과 집 크기 가정이 함께 사라진다(셀프 실측)
+        table = r.qty_sigma[t][g]
+        nxt = "self" if "self" in table else _better(table, inp.precision[g])
+        prec = {**inp.precision, g: nxt} if nxt else inp.precision
+        lo, hi = narrowed(
+            inp=replace(inp, precision=prec, share_sigma={**inp.share_sigma, g: Decimal(0)}), r=r
+        )
+        gains.append((Part(f"share:{g}", Decimal(0), nxt, lo, hi), max(width - (hi - lo), 0)))
     if not explain:
         pass
     elif inp.vendor_priced:
@@ -333,5 +378,67 @@ def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> Pric
         extra_max=_ceil_man(extra * m.k) if extra else 0,
         sigma=Decimal(m.sigma).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
         parts=tuple(parts),
+        notes=tuple(notes),
+    )
+
+
+def _merge_shifts(
+    a: tuple[tuple[float, float], ...], b: tuple[tuple[float, float], ...]
+) -> tuple[tuple[float, float], ...]:
+    out: dict[float, float] = defaultdict(float)
+    for s1, w1 in a:
+        for s2, w2 in b:
+            out[float(round((s1 + s2) / 10_000) * 10_000)] += w1 * w2
+    return tuple(sorted(out.items()))
+
+
+def price_range_total(inps: list[RangeInput], r: RangeRules) -> PriceRange:
+    """여러 공정을 합친 예상 범위(부가세 포함). 폭의 이유는 공정마다 따로 본다(parts는 비움).
+
+    본체: 공정마다 로그 정규(중심 c, σ)의 평균 · 분산을 더하고(상관 trade_corr) 같은 평균 · 분산의 로그 정규로 묶는다.
+    조건 줄: 공정마다 분포를 서로 독립으로 보고 모두 섞는다. 최소 금액은 공정별 최소 금액의 합이다."""
+    if not inps:
+        raise ValueError("공정이 하나 이상 있어야 해요")
+    if len({inp.trade for inp in inps}) != len(inps):
+        raise ValueError("공정이 겹쳐요")
+    if len(inps) == 1:
+        return replace(price_range(inps[0], r, explain=False), trade="total")
+    mixes = [_mix(inp, r) for inp in inps]
+    if len({m.k for m in mixes}) != 1:
+        raise ValueError("부가세 방식이 같은 공정끼리만 합쳐요")
+    means = [m.center * exp(m.sigma**2 / 2) for m in mixes]
+    vars_ = [mu**2 * (exp(m.sigma**2) - 1) for mu, m in zip(means, mixes, strict=True)]
+    rho = float(r.trade_corr)
+    mean = sum(means)
+    var = sum(vars_) + 2 * rho * sum(
+        sqrt(vars_[i] * vars_[j]) for i in range(len(vars_)) for j in range(i + 1, len(vars_))
+    )
+    s2 = log(1 + var / mean**2) if mean > 0 else 0.0
+    shifts: tuple[tuple[float, float], ...] = ((0.0, 1.0),)
+    for m in mixes:
+        shifts = _merge_shifts(shifts, m.shifts)
+    total = _Mix(
+        center=mean * exp(-s2 / 2),
+        sigma=sqrt(s2),
+        shifts=shifts,
+        floor=sum(m.floor for m in mixes),
+        k=mixes[0].k,
+    )
+    low, mid, high, floor = _bounds(total, float(r.z))
+    extra = sum(_cond_dist(inp, r)[1] for inp in inps)
+    notes = [
+        "공정마다 범위를 낸 뒤 합쳤어요. 두 공정 단가는 지역 · 시기에 따라 함께 오르내릴 수 있어 일부 같이 움직이는 것으로 봤어요."
+    ]
+    if floor:
+        notes.append("작은 공사라 업체가 보통 받는 최소 금액을 아래쪽 끝으로 잡았어요.")
+    return PriceRange(
+        version=r.version,
+        trade="total",
+        low=low,
+        mid=mid,
+        high=high,
+        extra_max=_ceil_man(extra * total.k) if extra else 0,
+        sigma=Decimal(total.sigma).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
+        parts=(),
         notes=tuple(notes),
     )

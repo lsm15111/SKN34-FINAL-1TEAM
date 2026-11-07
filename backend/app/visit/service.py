@@ -22,9 +22,10 @@ from app.files import service as files_service
 from app.notify import service as notify_service
 from app.project import service as project_service
 from app.project.schemas import ProjectBrief, ProjectOut, WhenIn
+from app.quote import ranges
 from app.quote import service as quote_service
 from app.quote.models import QUOTE_FILES_MAX, VAT_MODES, StandardQuote, StandardQuoteLine
-from app.quote.schemas import QuoteBriefOut, QuoteDraftIn
+from app.quote.schemas import QuoteBriefOut, QuoteDraftIn, RangeOut
 from app.shared.clock import SEOUL, now_utc
 from app.shared.errors import AppError
 from app.shared.ids import uuid7
@@ -133,6 +134,24 @@ def _estimate(
     return None if e.missing or not e.lines else e
 
 
+def _vendor_range(
+    trade: str,
+    std: StandardQuote,
+    lines: list[StandardQuoteLine],
+    k: ranges.Known,
+    e: EstimateOut,
+    exempt: bool,
+    *,
+    explain: bool,
+) -> RangeOut:
+    """가견적의 실측 뒤 예상 범위: 업체 단가는 알고(실측 보정만), 수량 · '실측 후' 줄은 표준견적서와 같다"""
+    amounts = {ln.key: ln.amount for ln in e.lines}
+    inp = ranges.range_input(
+        trade, std.grade, lines, k, amounts=amounts, vendor_priced=True, exempt=exempt
+    )
+    return ranges.trade_range(inp, k, explain=explain)
+
+
 def _vs(total: int, standard: int) -> tuple[Decimal | None, Direction | None]:
     if standard <= 0:
         return None, None
@@ -149,10 +168,16 @@ async def vendors_for(
     ids = [c.vendor_id for c in cards]
     prices = await vendor_service.confirmed_prices(s, ids, trade)
     visits = await repo.latest_by_vendor(s, p.id, trade, ids) if ids else {}
+    k = quote_service.known(p, trade)
     rows = []
     for c in cards:
-        e = _estimate(trade, std, lines, prices.get(c.vendor_id))
+        cp = prices.get(c.vendor_id)
+        e = _estimate(trade, std, lines, cp)
         pct, way = _vs(e.total, std.total) if e else (None, None)
+        vr = None
+        if e is not None and cp is not None:
+            exempt = cp.tax_kind == "exempt"
+            vr = _vendor_range(trade, std, lines, k, e, exempt, explain=False)
         rows.append(
             VendorRowOut(
                 vendor_id=c.vendor_id,
@@ -168,6 +193,7 @@ async def vendors_for(
                 estimate_total=e.total if e else None,
                 vs_standard=pct,
                 vs_direction=way,
+                estimate_range=vr,
                 visit=_brief(visits.get(c.vendor_id)),
             )
         )
@@ -178,6 +204,9 @@ async def vendors_for(
         region=p.region,
         area_name=p.sgg,
         standard_total=std.total,
+        standard_range=ranges.trade_range(
+            ranges.range_input(trade, std.grade, lines, k), k, explain=False
+        ),
         slots_left=SLOTS - len(await repo.live(s, p.id, trade)),
         consent_ver=CONSENT_VER,
         vendors=rows,
@@ -201,14 +230,17 @@ async def vendor_detail(
     estimate = None
     if e is not None and cp is not None:
         pct, way = _vs(e.total, std.total)
+        exempt = cp.tax_kind == "exempt"
+        k = quote_service.known(p, trade)
         estimate = EstimateDetailOut(
             **e.model_dump(),
             set_id=cp.set_id,
             confirmed_on=_day(cp.confirmed_at),
             confirmed_at=cp.confirmed_at,
-            exempt=cp.tax_kind == "exempt",
+            exempt=exempt,
             vs_standard=pct,
             vs_direction=way,
+            range=_vendor_range(trade, std, lines, k, e, exempt, explain=True),
         )
     left = set(e.left_out) if e else set()
     not_included = [ln.name for ln in lines if ln.state == "after_visit" or ln.key in left]

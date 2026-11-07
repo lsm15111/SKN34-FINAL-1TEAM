@@ -7,7 +7,7 @@ import pytest
 
 from app.calc import dobae, mokgong
 from app.calc.common import COUNTED, pyeong_to_m2
-from app.calc.price_range import QTY_DRIVER, RangeInput, price_range
+from app.calc.price_range import QTY_DRIVER, RangeInput, price_range, price_range_total
 from app.refprice.book import DOBAE_2026H2, MOKGONG_2026H2
 from app.refprice.market import RANGE_2026H2 as R
 
@@ -169,3 +169,47 @@ def test_bad_input_is_rejected(bad):
 def test_condition_state_must_be_known():
     with pytest.raises(ValueError):
         price_range(replace(d(), conds={"waste": "maybe"}), R)
+
+
+def test_chosen_space_share_widens_and_measuring_rooms_narrows():
+    whole = price_range(d("area"), R)
+    part = price_range(d("area", share_sigma={"area": Decimal("0.2")}), R)
+    assert span(part) > span(whole)
+    sh = next(p for p in part.parts if p.driver == "share:area")
+    assert sh.better == "self" and sh.high_if - sh.low_if < span(part)  # 고른 방을 재면 좁아진다
+    with pytest.raises(ValueError):
+        price_range(d("area", share_sigma={"area": Decimal(-1)}), R)
+
+
+def test_small_job_scales_lump_conditions_with_a_floor():
+    scaled = replace(R.conds["dobae"]["waste"], min_scale=Decimal("0.3"))
+    rules = replace(R, conds={**R.conds, "dobae": {**R.conds["dobae"], "waste": scaled}})
+    full = price_range(d("area", conds={"waste": "open"}), rules)
+    small = price_range(d("area", conds={"waste": "open"}, job_share=Decimal("0.1")), rules)
+    # 폐기물 최대 20만 원 → 공사 몫 0.1이어도 최소 비율 0.3: 6만 원 × 부가세 = 6만 6천 → 만 원 올림
+    assert full.extra_max == 220_000 and small.extra_max == 70_000
+    with pytest.raises(ValueError):
+        price_range(d("area", conds={"waste": "open"}, job_share=Decimal(0)), rules)
+
+
+def test_total_range_sits_between_independent_and_added_ranges():
+    dob = d("area")
+    mok = RangeInput(
+        "mokgong", mokgong_amounts(), {"edge": "area", "flat": "guess", "door": "self"}
+    )
+    a, b = price_range(dob, R), price_range(mok, R)
+    tot = price_range_total([dob, mok], R)
+    assert tot.trade == "total" and tot.parts == ()
+    # 오른쪽으로 긴 분포라 합의 가운데는 가운데끼리 더한 값보다 조금 크다
+    assert a.mid + b.mid - 10_000 <= tot.mid <= (a.mid + b.mid) * 1.03
+    assert span(tot) <= span(a) + span(b)  # 둘이 늘 같이 움직이지는 않는다
+    assert span(tot) >= max(span(a), span(b))
+    loose = price_range_total([dob, mok], replace(R, trade_corr=Decimal(0)))
+    tight = price_range_total([dob, mok], replace(R, trade_corr=Decimal(1)))
+    assert span(loose) <= span(tot) <= span(tight)
+    one = price_range_total([dob], R)
+    assert (one.low, one.mid, one.high) == (a.low, a.mid, a.high)
+    with pytest.raises(ValueError):
+        price_range_total([dob, dob], R)
+    with pytest.raises(ValueError):
+        price_range_total([], R)

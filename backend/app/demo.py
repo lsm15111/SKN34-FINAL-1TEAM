@@ -160,16 +160,27 @@ QUOTE_DOCS = {
     "demo-mok3@mitjip.test": ("quote-mok3.jpg", 1_390_000, "excluded"),
 }
 QUOTE_DAYS = 3
+# 견적 받기 화면의 기본 공간 6곳 (다 고르면 표준견적서가 집 전체로 계산한다)
+DEMO_SPACES = (
+    ("a", "거실"),
+    ("b", "주방"),
+    ("c", "안방"),
+    ("d", "작은방 1"),
+    ("e", "작은방 2"),
+    ("f", "복도"),
+)
 QUOTE_VALID_DAYS = 14
 QUOTE_PDF = sample_pdf(b"SAMPLE QUOTE - demo data only")
 PRICE_PDF = sample_pdf(b"SAMPLE PRICE LIST - demo data only")
 
 
 def _project(today: date, both: bool) -> ProjectCreate:
-    """노원구 32평(공급 105.8㎡) 빈 집. both면 목공(몰딩 · 걸레받이)도 한다."""
-    trades = {"dobae": {"spaces": ["a", "b", "c"], "grade": "basic"}}
+    """노원구 32평(공급 105.8㎡) 빈 집 전체(기본 공간 6곳). both면 목공(몰딩 · 걸레받이)도 한다.
+    시연 업체 실측 견적서(도배 약 300만 · 목공 약 150만 원)가 집 전체 금액이라 공간도 집 전체로 고른다."""
+    keys = [k for k, _ in DEMO_SPACES]
+    trades = {"dobae": {"spaces": keys, "grade": "basic"}}
     if both:
-        trades["mokgong"] = {"spaces": ["a"], "items": ["molding", "base"]}
+        trades["mokgong"] = {"spaces": keys, "items": ["molding", "base"]}
     return ProjectCreate.model_validate(
         {
             "sido": AREA[0],
@@ -184,11 +195,7 @@ def _project(today: date, both: bool) -> ProjectCreate:
             },
             "occupied": False,
             "budget": "500-700",
-            "spaces": [
-                {"key": "a", "name": "거실"},
-                {"key": "b", "name": "안방"},
-                {"key": "c", "name": "작은방"},
-            ],
+            "spaces": [{"key": k, "name": n} for k, n in DEMO_SPACES],
             "trades": trades,
         }
     )

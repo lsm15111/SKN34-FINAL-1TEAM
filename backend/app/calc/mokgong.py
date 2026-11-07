@@ -17,6 +17,7 @@ from app.calc.common import (
     half_days,
     half_up,
     m2,
+    pct,
     won,
 )
 
@@ -67,6 +68,9 @@ class MokgongInput:
     occupied: bool
     doors: int = 0
     door_frame: bool = True  # 문틀까지 바꾸는지 (아니면 문짝만)
+    share: Decimal = Decimal(1)  # 고른 공간 몫 (집 전체 몰딩 · 걸레받이 길이 중, calc.spaces)
+    flat_share: Decimal | None = None  # 평탄화 면적 = 전용 × 이 값. None이면 가정값(flatten_share)
+    flat_living: bool = True  # 평탄화를 거실 천장으로 잡았는지 (아니면 고른 공간 천장)
 
 
 @dataclass(frozen=True)
@@ -94,6 +98,9 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
         raise ValueError("목공 항목을 하나 이상 골라야 해요")
     if "door" in items and inp.doors < 1:
         raise ValueError("방문 개수를 넣어야 해요")
+    if not 0 < inp.share <= 1 or (inp.flat_share is not None and not 0 < inp.flat_share <= 1):
+        raise ValueError("고른 공간 몫은 0보다 크고 1 이하여야 해요")
+    flat_share = p.flatten_share if inp.flat_share is None else inp.flat_share
     src = p.sources
     if inp.area_basis == "supply":
         supply, exclusive = inp.area_m2, m2(inp.area_m2 / p.supply_per_exclusive)
@@ -107,7 +114,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
     doors = inp.doors if "door" in items else 0
 
     if "flatten" in items:
-        flatten = m2(exclusive * p.flatten_share)
+        flatten = m2(exclusive * flat_share)
         md_ceiling = flatten * (p.md_frame + p.md_board)
         lines += [
             Line(
@@ -189,7 +196,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
             )
         )
     if "molding" in items:
-        molding = m2(py * p.molding_per_py)
+        molding = m2(py * p.molding_per_py * inp.share)
         mat = m2(molding * p.molding_ratio)
         md_trim += molding * p.md_molding
         lines += [
@@ -216,7 +223,7 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
             ),
         ]
     if "base" in items:
-        base = m2(py * p.base_per_py)
+        base = m2(py * p.base_per_py * inp.share)
         mat = m2(base * p.base_ratio)
         md_trim += base * p.md_base
         lines += [
@@ -322,18 +329,18 @@ def quote(inp: MokgongInput, p: MokgongPrices) -> MokgongQuote:
     assumptions = []
     if inp.area_basis == "exclusive":
         assumptions.append(f"공급면적은 전용면적 × {p.supply_per_exclusive}로 환산했어요.")
+    part = f"에서 고른 공간 몫 {pct(inp.share)}%만" if inp.share < 1 else "를"
     if molding:
         assumptions.append(
-            f"몰딩 길이는 공급 1평에 {p.molding_per_py}m로 집 전체를 잡았어요. 실측 때 방마다 다시 재요."
+            f"몰딩 길이는 공급 1평에 {p.molding_per_py}m로 집 전체{part} 잡았어요. 실측 때 방마다 다시 재요."
         )
     if base:
         assumptions.append(
-            f"걸레받이 길이는 공급 1평에 {p.base_per_py}m로 집 전체를 잡았어요. 실측 때 방마다 다시 재요."
+            f"걸레받이 길이는 공급 1평에 {p.base_per_py}m로 집 전체{part} 잡았어요. 실측 때 방마다 다시 재요."
         )
     if flatten:
-        assumptions.append(
-            f"평탄화 면적은 전용면적의 {int(p.flatten_share * 100)}%(거실 천장 정도)로 잡았어요."
-        )
+        where = "거실 천장" if inp.flat_living else "고른 공간 천장"
+        assumptions.append(f"평탄화 면적은 전용면적의 {pct(flat_share)}%({where})로 잡았어요.")
     if doors and inp.door_frame:
         assumptions.append(
             "방문 설치 · 문선은 표준시장단가(재료 제외)이고, 문 자재는 공공 가격이 없어 ABS 문 기준 "

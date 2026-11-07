@@ -6,6 +6,19 @@ from tests.helpers import PDF, make_admin, signup, upload, use, vendor_signup
 # 오늘 기준 한 달 뒤 (2년 넘는 날짜는 받지 않는다)
 SOON = (date.today() + timedelta(days=30)).isoformat()
 SOON_END = (date.today() + timedelta(days=34)).isoformat()
+# 견적 받기 화면의 기본 공간 6곳. 다 고르면 표준견적서는 집 전체로 계산한다(calc.spaces)
+SIX_NAMES = ("거실", "주방", "안방", "작은방 1", "작은방 2", "복도")
+SIX = [{"key": k, "name": n} for k, n in zip("abcdef", SIX_NAMES, strict=True)]
+ALL = list("abcdef")
+
+
+def whole(**over) -> dict:
+    """기본 공간 6곳을 모두 고른 집(집 전체). 도배 기본형 + 목공(몰딩 · 걸레받이)"""
+    trades = {
+        "dobae": {"spaces": ALL, "grade": "basic"},
+        "mokgong": {"spaces": ALL, "items": ["molding", "base"]},
+    }
+    return body(**{"spaces": SIX, "trades": trades, **over})
 
 
 def body(photo_ids=(), plan_ids=(), **over) -> dict:

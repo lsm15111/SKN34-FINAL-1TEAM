@@ -23,6 +23,42 @@ class StandardLineOut(BaseModel):
     source: str
 
 
+class RangePartOut(BaseModel):
+    driver: str = Field(
+        description="폭의 이유: qty:area · qty:edge · qty:flat · qty:door(수량) · share:area · share:edge"
+        "(고른 공간 몫) · price(업체 단가) · visit(실측 보정) · cond:removal …('실측 후' 줄)"
+    )
+    share: Decimal = Decimal(0)
+    better: str | None = Field(
+        default=None, description="수량: 이만큼 알면 폭이 줄어요 (area 면적 입력 · self 셀프 실측)"
+    )
+    low_if: int | None = Field(
+        default=None,
+        description="수량은 더 알 때, 단가는 가견적을 받을 때, 조건 줄은 하게 될 때 범위",
+    )
+    high_if: int | None = None
+    low_if_no: int | None = Field(default=None, description="조건 줄: 안 하게 될 때 범위")
+    high_if_no: int | None = None
+
+
+class RangeOut(BaseModel):
+    """예상 범위 (믿집 계산, 부가세 포함, 만 원 단위). 이 집 금액이 10곳 중 8곳쯤 들어갈 구간"""
+
+    version: str
+    low: int
+    mid: int
+    high: int
+    extra_max: int = Field(
+        description="모르는 '실측 후' 줄을 다 하게 되면 더 들 수 있는 최대 (구간과 따로 보인다)"
+    )
+    precision: str = Field(description="집 크기를 얼마나 아는지: band(평형대) · area(면적 입력)")
+    whole: bool = Field(description="집 전체인지 (아니면 고른 공간 몫으로 잡았어요)")
+    parts: list[RangePartOut] = Field(
+        description="폭을 만든 이유, 몫이 큰 순 (목록에서는 비어 있다)"
+    )
+    notes: list[str]
+
+
 class StandardTradeOut(BaseModel):
     trade: str
     version: int
@@ -34,6 +70,8 @@ class StandardTradeOut(BaseModel):
     man_day: Decimal
     crew: int
     notes: list[str]
+    space_share: Decimal = Field(description="고른 공간 몫 (집 전체 수량 대비, 1이면 집 전체)")
+    range: RangeOut
 
 
 class BudgetOut(BaseModel):
@@ -56,6 +94,7 @@ class StandardOut(BaseModel):
     supply: int
     vat: int
     total: int
+    range: RangeOut = Field(description="공정을 합친 예상 범위 (공정이 하나면 그 공정 범위)")
     budget: BudgetOut | None
 
 

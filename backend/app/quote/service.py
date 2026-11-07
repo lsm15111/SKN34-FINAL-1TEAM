@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.calc import dobae, mokgong
+from app.calc import spaces as space_calc
 from app.calc.common import FORMULA_VERSION, Step, from_entered
 from app.calc.quote_diff import budget_gap
 from app.calc.standard_quote import house_area, house_pyeong
@@ -24,6 +25,7 @@ from app.files import service as files_service
 from app.files.models import File
 from app.project import service as project_service
 from app.project.schemas import ProjectOut
+from app.quote import ranges
 from app.quote.models import (
     StandardQuote,
     StandardQuoteLine,
@@ -42,12 +44,13 @@ from app.quote.schemas import (
 )
 from app.refprice.book import DOBAE, MOKGONG
 from app.refprice.house import HOUSE
+from app.refprice.spaces import SPACES
 from app.shared.clock import now_utc
 from app.shared.errors import AppError
 from app.shared.ids import uuid7
 
-PRICE_VER = DOBAE.version
-ROOM = "방"  # 방문 개수: 목공을 고른 공간 중 이름에 '방'이 든 곳
+# 저장한 표준견적서가 쓴 기준 한 벌: 단가 버전 + 공간 몫 버전 (둘 중 하나가 바뀌면 다시 계산)
+PRICE_VER = f"{DOBAE.version}+{SPACES.version}"
 
 
 @dataclass(frozen=True)
@@ -70,6 +73,39 @@ def _area(p: ProjectOut) -> tuple[Decimal, str]:
     return house_area(p.size.band, p.size.m2, p.size.basis, HOUSE)
 
 
+def _pyeong(p: ProjectOut) -> Decimal:
+    return house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE)
+
+
+def space_pick(p: ProjectOut, trade: str) -> tuple[space_calc.SpacePick, list[str]]:
+    """그 공정에 고른 공간 → 수량 몫(calc.spaces)과 고른 공간 이름"""
+    t = p.trades.dobae if trade == "dobae" else p.trades.mokgong
+    if t is None:
+        raise ValueError("고른 공정이 아니에요")
+    names = {sp.id: sp.name for sp in p.spaces}
+    picked = [names[sid] for sid in t.spaces if sid in names]
+    band = p.size.band or space_calc.band_of(_pyeong(p))
+    return space_calc.pick(picked, band, SPACES), picked
+
+
+def known(p: ProjectOut, trade: str) -> ranges.Known:
+    """범위 계산에 넣을 '이 집을 얼마나 아는지'"""
+    pk, picked = space_pick(p, trade)
+    return ranges.Known(ranges.size_precision(p), pk, len(picked))
+
+
+def _space_note(pk: space_calc.SpacePick, picked: list[str]) -> list[str]:
+    """고른 공간 몫(%)은 계산 엔진 가정 문구에 있고, 여기서는 어떤 공간을 셌는지만 남긴다"""
+    if pk.whole:
+        return []
+    notes = [f"고른 공간: {' · '.join(picked)}"]
+    if pk.guessed:
+        notes.append(f"{' · '.join(pk.guessed)}은(는) 어떤 공간인지 몰라 작은방 크기로 잡았어요.")
+    if pk.zero:
+        notes.append(f"{' · '.join(pk.zero)}은(는) 보통 이 공정을 하지 않아 수량에 넣지 않았어요.")
+    return notes
+
+
 def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[TradeCalc]:
     """이 집 정보로 고른 공정을 계산한다(목공 → 도배 순서). 공정표도 이 결과를 쓴다.
     crews를 주면 그 공정의 하루 인원을 바꿔 기간을 센다(업체가 적은 인원)."""
@@ -79,18 +115,25 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
     area, basis = _area(p)
     out: list[TradeCalc] = []
     if p.trades.mokgong:
-        names = {sp.id: sp.name for sp in p.spaces}
-        rooms = sum(1 for sid in p.trades.mokgong.spaces if ROOM in names.get(sid, ""))
+        pk, picked = space_pick(p, "mokgong")
+        rooms = max(pk.doors, 1)
         items = tuple(p.trades.mokgong.items)
         m = mokgong.quote(
             mokgong.MokgongInput(
-                area, basis, items, p.occupied, doors=max(rooms, 1) if "door" in items else 0
+                area,
+                basis,
+                items,
+                p.occupied,
+                doors=rooms if "door" in items else 0,
+                share=pk.edge,
+                flat_share=pk.flat_m2_share or None,
+                flat_living="living" in pk.kinds,
             ),
             mp,
         )
-        notes = list(m.assumptions)
+        notes = list(m.assumptions) + _space_note(pk, picked)
         if "door" in items:
-            notes.append(f"방문은 목공을 고른 방 수({max(rooms, 1)}개)로 잡았어요.")
+            notes.append(f"방문은 목공을 고른 방 수({rooms}개)로 잡았어요.")
         out.append(
             TradeCalc(
                 "mokgong",
@@ -106,8 +149,11 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
             )
         )
     if p.trades.dobae:
+        pk, picked = space_pick(p, "dobae")
         d = dobae.quote(
-            dobae.DobaeInput(area, basis, p.trades.dobae.grade, True, p.occupied, p.balcony_ext),
+            dobae.DobaeInput(
+                area, basis, p.trades.dobae.grade, True, p.occupied, p.balcony_ext, share=pk.paper
+            ),
             dp,
         )
         out.append(
@@ -121,7 +167,7 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
                 d.man_days,
                 dp.crew,
                 d.steps,
-                list(d.assumptions),
+                list(d.assumptions) + _space_note(pk, picked),
             )
         )
     return out
@@ -142,11 +188,11 @@ async def _latest(s: AsyncSession, project_id: uuid.UUID) -> dict[str, StandardQ
 
 
 def _fresh(row: StandardQuote, p: ProjectOut) -> bool:
-    return (
-        row.project_rev == p.rev
-        and row.formula_ver == FORMULA_VERSION
-        and row.price_ver == PRICE_VER
-    )
+    """집 정보가 그대로면 저장본을 쓴다. 산식 · 단가 버전이 바뀌어도 실측을 요청해 잠긴 집은 그대로 둔다
+    (업체에 보낸 가견적 · 견적 비교가 같은 표준견적서를 보게)."""
+    if row.project_rev != p.rev:
+        return False
+    return p.locked or (row.formula_ver == FORMULA_VERSION and row.price_ver == PRICE_VER)
 
 
 async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQuote]:
@@ -157,7 +203,7 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
     if not stale:
         return {t: latest[t] for t in wanted}
     area, basis = _area(p)
-    pyeong = house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE)
+    pyeong = _pyeong(p)
     try:
         for trade in stale:
             c = wanted[trade]
@@ -262,6 +308,8 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
     rows = await ensure_standard(s, p)
     order = [t for t in ("mokgong", "dobae") if t in rows]
     lines = await _lines(s, [rows[t].id for t in order])
+    ks = {t: known(p, t) for t in order}
+    inps = {t: ranges.range_input(t, rows[t].grade, lines[rows[t].id], ks[t]) for t in order}
     trades = [
         StandardTradeOut(
             trade=t,
@@ -286,6 +334,8 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
             man_day=rows[t].man_day,
             crew=rows[t].crew,
             notes=list(rows[t].notes),
+            space_share=ks[t].pick.paper if t == "dobae" else ks[t].pick.edge,
+            range=ranges.trade_range(inps[t], ks[t]),
         )
         for t in order
     ]
@@ -311,6 +361,7 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
         supply=supply,
         vat=vat,
         total=total,
+        range=ranges.total_range([inps[t] for t in order], [ks[t] for t in order]),
         budget=budget,
     )
 

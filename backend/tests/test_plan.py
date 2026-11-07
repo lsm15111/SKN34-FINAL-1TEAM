@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from app.refprice.holidays import days_off
 from tests.helpers import signup
-from tests.test_project import body
+from tests.test_project import body, whole
 
 
 def _next_monday(after_days: int = 30) -> date:
@@ -21,7 +21,7 @@ def test_plan_follows_the_chosen_start_date(api):
     start = _next_monday()
     p = api.post(
         "/projects",
-        json=body(
+        json=whole(
             size={"basis": "supply", "m2": "105.8"},
             occupied=False,
             balcony_ext=False,
