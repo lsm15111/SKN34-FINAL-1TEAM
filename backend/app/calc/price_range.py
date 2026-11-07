@@ -3,19 +3,20 @@
 폭은 세 가지에서 나온다.
 - 수량: 면적 · 길이를 얼마나 정확히 아는지. 가정값 → 평형대 → 면적 입력 → 고객이 잼 → 업체가 잼(실측).
 - 단가: 업체마다 다른 값. 업체 단가를 모르면 시장 흩어짐, 가견적(업체 단가를 앎)이면 실측 보정만 남는다.
-- 조건: '실측 후' 줄(철거 · 폐기물 · 짐 이동 …). 하기로 정했으면 하한 · 상한에 다 넣고,
-  아직 모르면 상한에만 넣는다(안 할 수도 있어서).
+- 조건: '실측 후' 줄(철거 · 폐기물 · 짐 이동 …). 하기로 정했으면 늘 더하고, 모르면 '할 확률' p만큼 섞는다.
 
-수량 · 단가는 로그 정규로 보고 σ² = σ수량² + σ단가²로 묶는다(둘은 독립으로 본다).
+본체(수량 · 단가)는 로그 정규로 보고 σ² = σ수량² + σ단가²로 묶는다(둘은 독립으로 본다).
 수량은 줄을 수량 근거(면적 · 둘레 · 천장 · 문)로 묶는다. 같은 근거의 줄은 같이 틀리고(금액 비율로 σ를 더함),
-다른 근거끼리는 독립이다(제곱합).
-구간 = 중심 × exp(±z·σ). 무작위를 쓰지 않아 같은 입력이면 같은 구간이다.
+다른 근거끼리는 독립이다(제곱합). 조건 줄 금액은 [하한, 상한] 균등으로 보고 칸으로 나눠 본체와 섞는다.
+구간은 섞은 분포의 10% · 50% · 90% 지점을 이분법으로 찾는다. 무작위를 쓰지 않아 같은 입력이면 같은 구간이다.
 금액은 원 정수이고, 보이는 끝값은 만 원 단위로 하한 내림 · 중간 반올림 · 상한 올림한다.
 """
 
+from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
+from math import erf, exp, log, sqrt
 from typing import Literal
 
 Precision = Literal["guess", "band", "area", "self", "visit"]
@@ -34,33 +35,40 @@ QTY_DRIVER: dict[str, dict[str, str]] = {
 }
 
 MAN = Decimal(10_000)
+GRID = 8  # 조건 줄 금액 [하한, 상한]을 나누는 칸 수
+STEPS = 80  # 분위수 이분법 반복 수
 
 
 @dataclass(frozen=True)
 class CondRule:
-    """'실측 후' 줄 하나의 시장 범위(부가세 빼고). per가 lump면 한 번(식), qty면 수량(㎡ · m · 개)당."""
+    """'실측 후' 줄 하나의 시장 범위(부가세 빼고). per가 lump면 한 번(식), qty면 수량(㎡ · m · 개)당.
+    p는 할지 모를 때 쓰는 '할 확률' 사전값이다."""
 
     per: Literal["lump", "qty"]
     low: int
     high: int
+    p: Decimal
     source: str
 
     def __post_init__(self) -> None:
         if not 0 <= self.low <= self.high:
             raise ValueError("조건 줄 범위는 0 ≤ 하한 ≤ 상한이어야 해요")
+        if not 0 <= self.p <= 1:
+            raise ValueError("할 확률은 0~1이어야 해요")
 
 
 @dataclass(frozen=True)
 class RangeRules:
-    """범위 계산에 쓰는 가정값 한 벌. refprice가 버전별로 만들어 넘긴다."""
+    """범위 계산에 쓰는 가정값 한 벌. refprice가 버전별로 만들어 넘긴다.
+    price_* · visit_sigma · min_job의 키는 공정(dobae) 또는 공정.등급(dobae.basic). 등급 키가 먼저다."""
 
     version: str
     z: Decimal  # 1.2816 = 10~90% 구간
     qty_sigma: Mapping[str, Mapping[str, Mapping[str, Decimal]]]  # 공정 → 수량 근거 → 정밀도 → σ
-    price_sigma: Mapping[str, Decimal]  # 공정 → 업체 단가 흩어짐 σ
-    price_center: Mapping[str, Decimal]  # 공정 → 시장 중심 ÷ 공공 기준
-    visit_sigma: Mapping[str, Decimal]  # 공정 → 가견적 → 실측 견적 보정 σ
-    min_job: Mapping[str, int]  # 공정 → 작은 공사도 드는 최소 금액(부가세 빼고)
+    price_sigma: Mapping[str, Decimal]  # 업체 단가 흩어짐 σ
+    price_center: Mapping[str, Decimal]  # 시장 중심 ÷ 공공 기준
+    visit_sigma: Mapping[str, Decimal]  # 가견적 → 실측 견적 보정 σ
+    min_job: Mapping[str, int]  # 작은 공사도 드는 최소 금액(부가세 빼고)
     conds: Mapping[str, Mapping[str, CondRule]]  # 공정 → '실측 후' 줄 키 → 범위
     vat_rate: Decimal
     sources: Mapping[str, str]
@@ -71,21 +79,25 @@ class RangeInput:
     trade: str
     amounts: Mapping[str, int]  # 합계에 들어간 줄 키 → 금액(부가세 빼고). 표준견적서 또는 가견적
     precision: Mapping[str, Precision]  # 수량 근거 → 정밀도
+    grade: str | None = None  # 도배 등급(economy · basic). 시장 중심 · 흩어짐을 등급별로 고른다
     conds: Mapping[str, CondState] = field(default_factory=dict)  # '실측 후' 줄 → 하기로 함 · 모름
     cond_qty: Mapping[str, Decimal] = field(default_factory=dict)  # per=qty 줄의 수량
+    cond_p: Mapping[str, Decimal] = field(default_factory=dict)  # 모름일 때 할 확률(사전값 대신)
     vendor_priced: bool = False  # 가견적이면 True(업체 단가를 앎)
     exempt: bool = False  # 면세 업체
 
 
 @dataclass(frozen=True)
 class Part:
-    """구간 폭을 만든 이유 하나."""
+    """구간 폭을 만든 이유 하나. share는 '이걸 알면 줄어드는 폭(기대값)'의 몫이다."""
 
     driver: str  # qty:area · qty:edge · price · visit · cond:removal …
-    share: Decimal  # 폭 중 이 이유의 몫(0~1, 소수 둘째 자리)
+    share: Decimal  # 0~1, 소수 둘째 자리
     better: Precision | None = None  # 수량: 한 단계 더 알면 되는 정밀도
-    low_if: int | None = None  # 한 단계 더 알 때(수량) · 가견적을 받을 때(단가)의 구간
+    low_if: int | None = None  # 수량은 한 단계 더 알 때, 단가는 가견적을 받을 때, 조건은 하게 될 때
     high_if: int | None = None
+    low_if_no: int | None = None  # 조건: 안 하게 될 때
+    high_if_no: int | None = None
 
 
 @dataclass(frozen=True)
@@ -95,97 +107,157 @@ class PriceRange:
     low: int  # 부가세 포함, 만 원 단위
     mid: int
     high: int
-    sigma: Decimal  # 수량 · 단가를 묶은 σ (조건 줄 제외)
+    extra_max: int  # 모르는 '실측 후' 줄을 다 하게 되면 더 들 수 있는 최대(부가세 포함). 구간과 따로 보인다
+    sigma: Decimal  # 본체(수량 · 단가) σ
     parts: tuple[Part, ...]
     notes: tuple[str, ...]
 
 
 @dataclass(frozen=True)
-class _Core:
-    lo: Decimal  # 부가세 빼고, 최소 금액 적용 전
-    mid: Decimal
-    hi: Decimal
-    sigma: Decimal
-    ln_width: Decimal  # 로그 정규 부분의 폭
-    q_var: dict[str, Decimal]  # 수량 근거 → 분산 몫(σ²)
-    p_var: Decimal
-    cond_width: dict[str, Decimal]  # 조건 줄 → 폭
-    floor: bool  # 최소 금액을 적용했는지
-    out: tuple[int, int, int]  # 부가세 포함, 만 원 단위
+class _Mix:
+    center: float  # 본체 중심(부가세 빼고)
+    sigma: float
+    shifts: tuple[tuple[float, float], ...]  # (조건 줄 금액 합, 확률)
+    floor: float  # 최소 금액(부가세 빼고)
+    k: float  # 1 + 부가세율
 
 
-def _floor_man(x: Decimal) -> int:
-    return int((x / MAN).to_integral_value(rounding=ROUND_FLOOR) * MAN)
+def _floor_man(x: float) -> int:
+    return int((Decimal(x) / MAN).to_integral_value(rounding=ROUND_FLOOR) * MAN)
 
 
-def _ceil_man(x: Decimal) -> int:
-    return int((x / MAN).to_integral_value(rounding=ROUND_CEILING) * MAN)
+def _ceil_man(x: float) -> int:
+    return int((Decimal(x) / MAN).to_integral_value(rounding=ROUND_CEILING) * MAN)
 
 
-def _round_man(x: Decimal) -> int:
-    return int((x / MAN).to_integral_value(rounding=ROUND_HALF_UP) * MAN)
+def _round_man(x: float) -> int:
+    return int((Decimal(x) / MAN).to_integral_value(rounding=ROUND_HALF_UP) * MAN)
 
 
-def _core(inp: RangeInput, r: RangeRules) -> _Core:
+def _pick(table: Mapping[str, Decimal], trade: str, grade: str | None):
+    if grade and f"{trade}.{grade}" in table:
+        return table[f"{trade}.{grade}"]
+    if trade in table:
+        return table[trade]
+    raise ValueError("공정을 다시 확인해 주세요")
+
+
+def _qty_var(inp: RangeInput, r: RangeRules) -> dict[str, float]:
+    """수량 근거별 분산 몫 (금액 비중 × σ)²"""
     t = inp.trade
-    if t not in QTY_DRIVER or t not in r.price_sigma:
-        raise ValueError("공정을 다시 확인해 주세요")
-    if any(a < 0 for a in inp.amounts.values()):
-        raise ValueError("금액은 0 이상이어야 해요")
-    supply = Decimal(sum(inp.amounts.values()))
-    if supply <= 0 and not inp.conds:
-        raise ValueError("금액이 있는 줄이 없어요")
-
-    weight: dict[str, Decimal] = {}
+    supply = sum(inp.amounts.values())
+    weight: dict[str, int] = defaultdict(int)
     for key, amount in inp.amounts.items():
         g = QTY_DRIVER[t].get(key)
         if g is None:
             raise ValueError(f"수량 근거를 모르는 줄이에요: {key}")
-        weight[g] = weight.get(g, Decimal(0)) + Decimal(amount)
-    q_var: dict[str, Decimal] = {}
+        weight[g] += amount
+    out: dict[str, float] = {}
     for g, w in weight.items():
         prec = inp.precision.get(g)
         sig = r.qty_sigma.get(t, {}).get(g, {}).get(prec) if prec else None
         if sig is None:
             raise ValueError(f"{g} 수량을 얼마나 정확히 아는지 다시 확인해 주세요")
-        term = w / supply * sig if supply else Decimal(0)
-        q_var[g] = term * term
+        out[g] = (w / supply * float(sig)) ** 2 if supply else 0.0
+    return out
 
-    p_sig = r.visit_sigma[t] if inp.vendor_priced else r.price_sigma[t]
-    center = supply if inp.vendor_priced else supply * r.price_center[t]
-    p_var = p_sig * p_sig
-    sigma = (sum(q_var.values(), Decimal(0)) + p_var).sqrt()
-    lo = center * (-r.z * sigma).exp()
-    hi = center * (r.z * sigma).exp()
 
-    c_lo = c_mid = c_hi = Decimal(0)
-    cond_width: dict[str, Decimal] = {}
+def _cond_dist(
+    inp: RangeInput, r: RangeRules, fixed: Mapping[str, float] | None = None
+) -> tuple[tuple[tuple[float, float], ...], float]:
+    """조건 줄 금액 합의 분포(만 원 단위로 묶음)와 '다 하면' 최대. fixed는 조건별 확률을 덮어쓴다."""
+    dist: dict[float, float] = {0.0: 1.0}
+    extra = 0.0
     for key, state in inp.conds.items():
-        rule = r.conds.get(t, {}).get(key)
+        rule = r.conds.get(inp.trade, {}).get(key)
         if rule is None:
             raise ValueError(f"범위를 모르는 조건 줄이에요: {key}")
-        n = Decimal(1)
+        n = 1.0
         if rule.per == "qty":
-            n = inp.cond_qty.get(key, Decimal(-1))
-            if n < 0:
+            q = inp.cond_qty.get(key)
+            if q is None or q < 0:
                 raise ValueError(f"{key} 줄의 수량이 있어야 해요")
-        a, b = Decimal(rule.low) * n, Decimal(rule.high) * n
+            n = float(q)
         if state == "yes":
-            c_lo, c_mid, c_hi = c_lo + a, c_mid + (a + b) / 2, c_hi + b
-            cond_width[key] = b - a
+            p = 1.0
         elif state == "open":
-            c_hi += b
-            cond_width[key] = b
+            raw = inp.cond_p.get(key, rule.p)
+            if not 0 <= raw <= 1:
+                raise ValueError("할 확률은 0~1이어야 해요")
+            p = float(raw)
+            extra += rule.high * n
         else:
             raise ValueError("조건은 '하기로 함' 또는 '모름'이어야 해요")
+        if fixed and key in fixed:
+            p = fixed[key]
+        a, b = rule.low * n, rule.high * n
+        points = [a + (b - a) * (i + 0.5) / GRID for i in range(GRID)]
+        nxt: dict[float, float] = defaultdict(float)
+        for s, w in dist.items():
+            if p < 1:
+                nxt[s] += w * (1 - p)
+            if p > 0:
+                for v in points:
+                    nxt[float(round((s + v) / 10_000) * 10_000)] += w * p / GRID
+        dist = dict(nxt)
+    return tuple(sorted(dist.items())), extra
 
-    low, mid, high = lo + c_lo, center + c_mid, hi + c_hi
-    m = Decimal(r.min_job[t])
-    floor = low < m
-    low, mid, high = max(low, m), max(mid, m), max(high, m)
-    k = 1 + (Decimal(0) if inp.exempt else r.vat_rate)
-    out = (_floor_man(low * k), _round_man(mid * k), _ceil_man(high * k))
-    return _Core(lo, mid, hi, sigma, hi - lo, q_var, p_var, cond_width, floor, out)
+
+def _mix(
+    inp: RangeInput,
+    r: RangeRules,
+    *,
+    price_sigma: float | None = None,
+    fixed: Mapping[str, float] | None = None,
+) -> _Mix:
+    t = inp.trade
+    if t not in QTY_DRIVER:
+        raise ValueError("공정을 다시 확인해 주세요")
+    if any(a < 0 for a in inp.amounts.values()):
+        raise ValueError("금액은 0 이상이어야 해요")
+    supply = sum(inp.amounts.values())
+    if supply <= 0 and not inp.conds:
+        raise ValueError("금액이 있는 줄이 없어요")
+    q = _qty_var(inp, r)
+    if price_sigma is None:
+        table = r.visit_sigma if inp.vendor_priced else r.price_sigma
+        price_sigma = float(_pick(table, t, inp.grade))
+    center = supply * (1.0 if inp.vendor_priced else float(_pick(r.price_center, t, inp.grade)))
+    sigma = sqrt(sum(q.values()) + price_sigma**2)
+    shifts, _ = _cond_dist(inp, r, fixed)
+    k = 1.0 if inp.exempt else 1.0 + float(r.vat_rate)
+    return _Mix(center, sigma, shifts, float(_pick(r.min_job, t, inp.grade)), k)
+
+
+def _cdf(m: _Mix, x: float) -> float:
+    total = 0.0
+    for s, w in m.shifts:
+        y = x - s
+        if m.center <= 0 or m.sigma == 0:
+            total += w if y >= m.center else 0.0
+        elif y > 0:
+            total += w * 0.5 * (1 + erf((log(y) - log(m.center)) / (m.sigma * sqrt(2))))
+    return total
+
+
+def _quantile(m: _Mix, prob: float) -> float:
+    lo, hi = 0.0, m.center * exp(6 * m.sigma) + (m.shifts[-1][0] if m.shifts else 0.0) + 1.0
+    for _ in range(STEPS):
+        mid = (lo + hi) / 2
+        if _cdf(m, mid) < prob:
+            lo = mid
+        else:
+            hi = mid
+    return hi
+
+
+def _bounds(m: _Mix, z: float) -> tuple[int, int, int, bool]:
+    """부가세 포함 · 만 원 단위 (하한, 중간, 상한)과 최소 금액을 적용했는지"""
+    p_lo = 0.5 * (1 + erf(-z / sqrt(2)))
+    lo, mid, hi = (_quantile(m, p) for p in (p_lo, 0.5, 1 - p_lo))
+    floor = lo < m.floor
+    lo, mid, hi = (max(v, m.floor) for v in (lo, mid, hi))
+    return _floor_man(lo * m.k), _round_man(mid * m.k), _ceil_man(hi * m.k), floor
 
 
 def _better(table: Mapping[str, Decimal], now: Precision) -> Precision | None:
@@ -193,41 +265,73 @@ def _better(table: Mapping[str, Decimal], now: Precision) -> Precision | None:
     return next((p for p in later if p in table), None)
 
 
-def price_range(inp: RangeInput, r: RangeRules) -> PriceRange:
-    c = _core(inp, r)
+def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> PriceRange:
+    """explain=False면 폭의 이유(parts)를 계산하지 않는다(업체 목록처럼 범위만 필요할 때)."""
+    z = float(r.z)
+    m = _mix(inp, r)
+    low, mid, high, floor = _bounds(m, z)
+    width = high - low
     t = inp.trade
-    var = sum(c.q_var.values(), Decimal(0)) + c.p_var
-    total = c.ln_width + sum(c.cond_width.values(), Decimal(0))
 
-    def share(width: Decimal) -> Decimal:
-        x = width / total if total > 0 else Decimal(0)
-        return x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    def narrowed(**kw) -> tuple[int, int]:
+        lo, _, hi, _ = _bounds(_mix(**kw), z)
+        return lo, hi
 
-    parts: list[Part] = []
-    for g, v in c.q_var.items():
-        now = inp.precision[g]
-        nxt = _better(r.qty_sigma[t][g], now)
-        low_if = high_if = None
-        if nxt is not None:
-            low_if, _, high_if = _core(replace(inp, precision={**inp.precision, g: nxt}), r).out
-        width = c.ln_width * v / var if var > 0 else Decimal(0)
-        parts.append(Part(f"qty:{g}", share(width), nxt, low_if, high_if))
-    p_width = c.ln_width * c.p_var / var if var > 0 else Decimal(0)
-    if inp.vendor_priced:
-        parts.append(Part("visit", share(p_width)))
+    gains: list[tuple[Part, float]] = []
+    for g in _qty_var(inp, r) if explain else ():
+        nxt = _better(r.qty_sigma[t][g], inp.precision[g])
+        if nxt is None:
+            gains.append((Part(f"qty:{g}", Decimal(0)), 0.0))
+            continue
+        lo, hi = narrowed(inp=replace(inp, precision={**inp.precision, g: nxt}), r=r)
+        gains.append((Part(f"qty:{g}", Decimal(0), nxt, lo, hi), max(width - (hi - lo), 0)))
+    if not explain:
+        pass
+    elif inp.vendor_priced:
+        lo, hi = narrowed(inp=inp, r=r, price_sigma=0.0)
+        gains.append((Part("visit", Decimal(0)), max(width - (hi - lo), 0)))
     else:
-        low_if, _, high_if = _core(replace(inp, vendor_priced=True), r).out
-        parts.append(Part("price", share(p_width), None, low_if, high_if))
-    parts += [Part(f"cond:{k}", share(w)) for k, w in c.cond_width.items()]
+        visit = float(_pick(r.visit_sigma, t, inp.grade))
+        lo, hi = narrowed(inp=inp, r=r, price_sigma=visit)
+        gains.append((Part("price", Decimal(0), None, lo, hi), max(width - (hi - lo), 0)))
+    for key, state in inp.conds.items() if explain else ():
+        if state == "yes":
+            continue
+        p = float(inp.cond_p.get(key, r.conds[t][key].p))
+        y_lo, y_hi = narrowed(inp=inp, r=r, fixed={key: 1.0})
+        n_lo, n_hi = narrowed(inp=inp, r=r, fixed={key: 0.0})
+        expected = p * (y_hi - y_lo) + (1 - p) * (n_hi - n_lo)
+        part = Part(f"cond:{key}", Decimal(0), None, y_lo, y_hi, n_lo, n_hi)
+        gains.append((part, max(width - expected, 0)))
+
+    total = sum(g for _, g in gains)
+    parts = [
+        replace(
+            part,
+            share=Decimal(g / total if total > 0 else 0).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            ),
+        )
+        for part, g in gains
+    ]
     parts.sort(key=lambda p: p.share, reverse=True)
 
+    _, extra = _cond_dist(inp, r)
     notes: list[str] = []
     if not inp.vendor_priced:
         notes.append("업체 단가를 아직 몰라 업체마다 다른 단가를 범위에 넣었어요.")
-    opened = [k for k, s in inp.conds.items() if s == "open"]
-    if opened:
-        notes.append(f"'실측 후' 줄 {len(opened)}개는 할지 몰라 범위 위쪽에만 넣었어요.")
-    if c.floor:
+    if any(s == "open" for s in inp.conds.values()):
+        notes.append("할지 모르는 '실측 후' 줄은 할 가능성만큼 범위에 섞었어요.")
+    if floor:
         notes.append("작은 공사라 업체가 보통 받는 최소 금액을 아래쪽 끝으로 잡았어요.")
-    low, mid, high = c.out
-    return PriceRange(r.version, t, low, mid, high, c.sigma, tuple(parts), tuple(notes))
+    return PriceRange(
+        version=r.version,
+        trade=t,
+        low=low,
+        mid=mid,
+        high=high,
+        extra_max=_ceil_man(extra * m.k) if extra else 0,
+        sigma=Decimal(m.sigma).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
+        parts=tuple(parts),
+        notes=tuple(notes),
+    )
