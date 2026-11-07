@@ -10,6 +10,8 @@
 다른 근거끼리는 독립이다(제곱합). 일부 공간만 고르면 '고른 공간 몫'(calc.spaces)도 가정값이라 그 σ를 따로 더한다.
 조건 줄 금액은 [하한, 상한] 균등으로 보고 칸으로 나눠 본체와 섞는다.
 여러 공정의 합계는 본체를 평균 · 분산이 같은 로그 정규 하나로 묶고(공정끼리 상관 trade_corr), 조건 줄은 모두 섞는다.
+작은 공사는 출장 · 최소 인건비 같은 고정비가 면적에 비례해 줄지 않는다. 그래서 중심에 고정비 × (1 − 공사 몫)을
+더하고(집 전체 단가에는 이미 녹아 있음), 업체 단가 흩어짐도 공사가 작을수록 넓힌다(small_sigma).
 구간은 섞은 분포의 10% · 50% · 90% 지점을 이분법으로 찾는다. 무작위를 쓰지 않아 같은 입력이면 같은 구간이다.
 금액은 원 정수이고, 보이는 끝값은 만 원 단위로 하한 내림 · 중간 반올림 · 상한 올림한다.
 """
@@ -81,6 +83,10 @@ class RangeRules:
     # 고른 공간 몫의 σ. 키는 고른 공간 수(1 · 2 · 3, 3은 셋 이상). 집 전체면 0
     share_sigma: Mapping[str, Decimal] = field(default_factory=dict)
     trade_corr: Decimal = Decimal("0.5")  # 합계 범위: 공정끼리 본체가 같이 움직이는 정도(0~1)
+    # 작은 공사 고정비(부가세 빼고, 원). 키는 공정 · 공정.등급 · mokgong.door(방문만). 집 전체 단가에 녹아 있는 몫
+    fixed_cost: Mapping[str, int] = field(default_factory=dict)
+    # (공사 몫 상한, 업체 단가 σ 배수) 작은 것부터. 공사 몫이 상한 미만이면 그 배수를 쓴다
+    small_sigma: tuple[tuple[Decimal, Decimal], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -95,8 +101,9 @@ class RangeInput:
     vendor_priced: bool = False  # 가견적이면 True(업체 단가를 앎)
     exempt: bool = False  # 면세 업체
     share_sigma: Mapping[str, Decimal] = field(default_factory=dict)  # 수량 근거 → 고른 공간 몫 σ
-    # 집 전체 대비 공사 크기(고른 공간 몫). min_scale이 있는 조건 줄 금액에 쓴다
+    # 집 전체 대비 공사 크기(고른 공간 몫). 고정비 · 작은 공사 흩어짐 · min_scale 조건 줄에 쓴다
     job_share: Decimal = Decimal(1)
+    fixed_key: str | None = None  # 고정비 키(RangeRules.fixed_cost). 없으면 고정비를 더하지 않는다
 
 
 @dataclass(frozen=True)
@@ -123,6 +130,7 @@ class PriceRange:
     sigma: Decimal  # 본체(수량 · 단가) σ
     parts: tuple[Part, ...]
     notes: tuple[str, ...]
+    fixed_add: int = 0  # 작은 공사라 중심에 더한 고정비(부가세 포함, 만 원 단위). 집 전체면 0
 
 
 @dataclass(frozen=True)
@@ -238,6 +246,23 @@ def _cond_dist(
     return tuple(sorted(dist.items())), extra
 
 
+def _small(inp: RangeInput, r: RangeRules) -> float:
+    """작은 공사일수록 업체마다 고정비가 달라 단가 흩어짐이 넓다(방 1칸 × 1.3, 벽 한 면 × 1.8)"""
+    for upper, mult in r.small_sigma:
+        if inp.job_share < upper:
+            return float(mult)
+    return 1.0
+
+
+def _fixed(inp: RangeInput, r: RangeRules) -> float:
+    """작은 공사에 붙는 고정비(부가세 빼고). 집 전체 단가에 이미 녹아 있는 몫이라 (1 − 공사 몫)만큼만 더한다"""
+    if inp.fixed_key is None or inp.job_share >= 1:
+        return 0.0
+    if inp.fixed_key not in r.fixed_cost:
+        raise ValueError("고정비 키를 다시 확인해 주세요")
+    return r.fixed_cost[inp.fixed_key] * (1 - float(inp.job_share))
+
+
 def _mix(
     inp: RangeInput,
     r: RangeRules,
@@ -253,16 +278,24 @@ def _mix(
     supply = sum(inp.amounts.values())
     if supply <= 0 and not inp.conds:
         raise ValueError("금액이 있는 줄이 없어요")
+    if not 0 < inp.job_share <= 1:
+        raise ValueError("공사 크기 몫은 0보다 크고 1 이하여야 해요")
     q = _qty_var(inp, r)
     sh = _share_var(inp)
     if price_sigma is None:
         table = r.visit_sigma if inp.vendor_priced else r.price_sigma
-        price_sigma = float(_pick(table, t, inp.grade))
+        price_sigma = float(_pick(table, t, inp.grade)) * _small(inp, r)
     center = supply * (1.0 if inp.vendor_priced else float(_pick(r.price_center, t, inp.grade)))
+    center += _fixed(inp, r)
     sigma = sqrt(sum(q.values()) + sum(sh.values()) + price_sigma**2)
     shifts, _ = _cond_dist(inp, r, fixed)
     k = 1.0 if inp.exempt else 1.0 + float(r.vat_rate)
-    return _Mix(center, sigma, shifts, float(_pick(r.min_job, t, inp.grade)), k)
+    # 최소 금액도 고정비 키(방문만 바꾸는 공사 등)에 따로 있으면 그것을 쓴다
+    if inp.fixed_key in r.min_job:
+        floor = float(r.min_job[inp.fixed_key])
+    else:
+        floor = float(_pick(r.min_job, t, inp.grade))
+    return _Mix(center, sigma, shifts, floor, k)
 
 
 def _cdf(m: _Mix, x: float) -> float:
@@ -367,6 +400,9 @@ def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> Pric
         notes.append("업체 단가를 아직 몰라 업체마다 다른 단가를 범위에 넣었어요.")
     if any(s == "open" for s in inp.conds.values()):
         notes.append("할지 모르는 '실측 후' 줄은 할 가능성만큼 범위에 섞었어요.")
+    fixed = _fixed(inp, r)
+    if fixed:
+        notes.append("작은 공사라 출장 · 최소 인건비 같은 고정비를 더해 잡았어요.")
     if floor:
         notes.append("작은 공사라 업체가 보통 받는 최소 금액을 아래쪽 끝으로 잡았어요.")
     return PriceRange(
@@ -379,6 +415,7 @@ def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> Pric
         sigma=Decimal(m.sigma).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
         parts=tuple(parts),
         notes=tuple(notes),
+        fixed_add=_round_man(fixed * m.k) if fixed else 0,
     )
 
 
@@ -426,6 +463,7 @@ def price_range_total(inps: list[RangeInput], r: RangeRules) -> PriceRange:
     )
     low, mid, high, floor = _bounds(total, float(r.z))
     extra = sum(_cond_dist(inp, r)[1] for inp in inps)
+    fixed = sum(_fixed(inp, r) for inp in inps)
     notes = [
         "공정마다 범위를 낸 뒤 합쳤어요. 두 공정 단가는 지역 · 시기에 따라 함께 오르내릴 수 있어 일부 같이 움직이는 것으로 봤어요."
     ]
@@ -441,4 +479,5 @@ def price_range_total(inps: list[RangeInput], r: RangeRules) -> PriceRange:
         sigma=Decimal(total.sigma).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP),
         parts=(),
         notes=tuple(notes),
+        fixed_add=_round_man(fixed * total.k) if fixed else 0,
     )

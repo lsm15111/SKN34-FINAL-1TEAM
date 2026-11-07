@@ -73,6 +73,9 @@ class SpaceShares:
     edge: Mapping[str, Mapping[SpaceKind, Decimal]]
     ceiling: Mapping[str, Mapping[SpaceKind, Decimal]]
     doors: Mapping[SpaceKind, int]  # 종류 → 방문 수
+    doors_whole: Mapping[
+        str, int
+    ]  # 평형대 → 흔한 평면의 방문 수(방문만 바꾸는 공사의 크기 몫에 쓴다)
     whole_at: Decimal  # 고른 몫 합이 이 이상이면 집 전체로 본다
     fallback: SpaceKind  # 이름으로 종류를 모를 때 쓰는 종류(작은방)
     sources: Mapping[str, str]
@@ -87,6 +90,7 @@ class SpacePick:
     edge: Decimal  # 몰딩 · 걸레받이 길이에 곱할 몫 (0~1)
     flat_m2_share: Decimal  # 천장 평탄화 면적 = 전용면적 × 이 값 (고른 공간 중 거실 천장, 없으면 고른 공간 천장)
     doors: int  # 고른 공간의 방문 수
+    door_share: Decimal  # 방문 수 ÷ 흔한 평면의 방문 수 (0~1, 방문만 바꿀 때 공사 크기)
     kinds: tuple[SpaceKind, ...]
     guessed: tuple[str, ...]  # 종류를 몰라 fallback으로 본 이름
     zero: tuple[str, ...]  # 그 공정을 보통 하지 않는 공간(욕실 · 다용도실) 이름
@@ -126,12 +130,15 @@ def pick(names: Sequence[str], band: str, r: SpaceShares) -> SpacePick:
     # 평탄화는 보통 거실 천장(우물천장 · 등박스)이다. 거실이 없으면 고른 공간 천장, 그것도 없으면 작은방 하나
     flat = ceil_t.get("living", Decimal(0)) if "living" in kinds else _share(ceil_t, kinds)
     flat = flat or ceil_t.get(r.fallback, Decimal(0))
+    doors = sum(r.doors.get(k, 0) for k in kinds)
+    door_share = min(Decimal(max(doors, 1)) / Decimal(r.doors_whole[band]), Decimal(1))
     return SpacePick(
         whole=whole,
         paper=Decimal(1) if whole else _q(min(paper, Decimal(1))),
         edge=Decimal(1) if whole else _q(min(edge, Decimal(1))),
         flat_m2_share=_q(flat),
-        doors=sum(r.doors.get(k, 0) for k in kinds),
+        doors=doors,
+        door_share=Decimal(1) if whole else _q(door_share),
         kinds=tuple(kinds),
         guessed=tuple(guessed),
         zero=tuple(zero),

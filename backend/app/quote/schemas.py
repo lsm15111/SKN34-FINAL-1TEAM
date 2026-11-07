@@ -51,6 +51,9 @@ class RangeOut(BaseModel):
     extra_max: int = Field(
         description="모르는 '실측 후' 줄을 다 하게 되면 더 들 수 있는 최대 (구간과 따로 보인다)"
     )
+    fixed_add: int = Field(
+        description="작은 공사라 출장 · 최소 인건비 같은 고정비로 더한 금액 (집 전체면 0)"
+    )
     precision: str = Field(description="집 크기를 얼마나 아는지: band(평형대) · area(면적 입력)")
     whole: bool = Field(description="집 전체인지 (아니면 고른 공간 몫으로 잡았어요)")
     parts: list[RangePartOut] = Field(

@@ -29,6 +29,8 @@ from app.refprice.market import RANGE
 
 # 공정 → 고른 공간 몫이 곱해지는 수량 근거(calc.price_range.QTY_DRIVER의 근거 이름)
 SHARE_DRIVER = {"dobae": "area", "mokgong": "edge"}
+# 목공에서 몰딩 · 걸레받이 · 천장 줄이 하나라도 있으면 목공 고정비, 방문 줄만 있으면 방문 고정비
+EDGE_KEYS = {"molding", "molding_mat", "base", "base_mat", "frame", "board", "ceiling_mat"}
 # 조건 줄 수량을 다른 줄에서 가져오는 것: 방문 철거 개수 = 방문 줄 수량
 COND_QTY_FROM = {("mokgong", "remove_door"): "door"}
 
@@ -66,8 +68,16 @@ def _share_sigma(trade: str, k: Known) -> dict[str, Decimal]:
     return {SHARE_DRIVER[trade]: sig} if sig else {}
 
 
-def _job_share(trade: str, pick: SpacePick) -> Decimal:
-    return pick.paper if trade == "dobae" else pick.edge
+def _job_share(trade: str, pick: SpacePick, keys: set[str]) -> Decimal:
+    if trade == "dobae":
+        return pick.paper
+    return pick.edge if keys & EDGE_KEYS else pick.door_share
+
+
+def _fixed_key(trade: str, grade: str | None, keys: set[str]) -> str:
+    if trade == "dobae":
+        return f"dobae.{grade}" if f"dobae.{grade}" in RANGE.fixed_cost else "dobae"
+    return "mokgong" if keys & EDGE_KEYS else "mokgong.door"
 
 
 def range_input(
@@ -85,9 +95,12 @@ def range_input(
     qty = {ln.key: ln.qty for ln in lines}
     conds: dict[str, CondState] = {}
     cond_qty: dict[str, Decimal] = {}
+    door_only = trade == "mokgong" and not ({ln.key for ln in lines} & EDGE_KEYS)
     for ln in lines:
         if ln.state != "after_visit" or ln.key not in rules:
             continue
+        if door_only and ln.key == "waste":
+            continue  # 방문만 바꾸면 폐문 수거는 문 철거 줄에 들어 있다고 본다
         conds[ln.key] = "open"
         if rules[ln.key].per == "qty":
             q = ln.qty if ln.qty is not None else qty.get(COND_QTY_FROM.get((trade, ln.key), ""))
@@ -99,6 +112,7 @@ def range_input(
         amounts = {
             ln.key: ln.amount for ln in lines if ln.state in COUNTED and ln.amount is not None
         }
+    keys = set(amounts)
     return RangeInput(
         trade=trade,
         amounts=dict(amounts),
@@ -109,7 +123,8 @@ def range_input(
         vendor_priced=vendor_priced,
         exempt=exempt,
         share_sigma=_share_sigma(trade, k),
-        job_share=_job_share(trade, k.pick),
+        job_share=_job_share(trade, k.pick, keys),
+        fixed_key=_fixed_key(trade, grade, keys),
     )
 
 
@@ -120,6 +135,7 @@ def out(r: PriceRange, k: Known | None, *, whole: bool | None = None) -> RangeOu
         mid=r.mid,
         high=r.high,
         extra_max=r.extra_max,
+        fixed_add=r.fixed_add,
         precision=k.precision if k else "band",
         whole=k.pick.whole if k else bool(whole),
         parts=[

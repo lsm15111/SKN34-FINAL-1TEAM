@@ -213,3 +213,23 @@ def test_total_range_sits_between_independent_and_added_ranges():
         price_range_total([dob, dob], R)
     with pytest.raises(ValueError):
         price_range_total([], R)
+
+
+def test_small_job_adds_fixed_cost_and_wider_price_spread():
+    amounts = dobae_amounts()
+    part = {k: v * 14 // 100 for k, v in amounts.items()}  # 작은방 하나(집 전체의 14%)
+    base = RangeInput("dobae", part, {"area": "area"}, grade="basic")
+    small = replace(base, job_share=Decimal("0.14"), fixed_key="dobae.basic")
+    a, b = price_range(base, R), price_range(small, R)
+    # 고정비 19만 × (1 − 0.14) × 부가세 1.1 = 약 18만 원을 중심에 더한다
+    assert b.fixed_add == 180_000 and b.mid - a.mid >= 150_000
+    assert any("고정비" in n for n in b.notes)
+    assert (b.high - b.low) / b.mid > (a.high - a.low) / a.mid  # 방 1칸 단가 흩어짐 × 1.3
+    whole = price_range(replace(d("area"), fixed_key="dobae.basic"), R)
+    assert (
+        whole.fixed_add == 0 and whole.mid == price_range(d("area"), R).mid
+    )  # 집 전체엔 이미 녹아 있다
+    vendor = price_range(replace(small, vendor_priced=True), R)
+    assert vendor.fixed_add == 180_000  # 업체 단가 × 수량에도 고정비는 빠져 있다
+    with pytest.raises(ValueError):
+        price_range(replace(small, fixed_key="nope"), R)

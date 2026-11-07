@@ -3493,6 +3493,11 @@ export interface components {
              */
             extra_max: number;
             /**
+             * Fixed Add
+             * @description 작은 공사라 출장 · 최소 인건비 같은 고정비로 더한 금액 (집 전체면 0)
+             */
+            fixed_add: number;
+            /**
              * Precision
              * @description 집 크기를 얼마나 아는지: band(평형대) · area(면적 입력)
              */

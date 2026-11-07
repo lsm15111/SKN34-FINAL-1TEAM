@@ -81,6 +81,9 @@ export function RangeCard({ id, r, title, point, areaHref, vendorsHref, compact 
       {!compact ? (
         <div className={s.foot}>
           <p className="mj-small">{precisionText(r)}</p>
+          {r.fixed_add > 0 ? (
+            <p className="mj-small mj-num">작은 공사라 출장 · 최소 인건비 같은 고정비 약 {won(r.fixed_add)}을 더해 잡았어요. 방 1칸은 집 전체보다 ㎡당 1.5배 안팎이 보통이에요.</p>
+          ) : null}
           {r.extra_max > 0 ? (
             <p className="mj-small mj-num">철거 · 폐기물 같은 &lsquo;실측 후&rsquo; 줄은 할 가능성만큼 범위에 넣었어요. 모두 하게 되면 그 줄만 최대 {won(r.extra_max)}이에요.</p>
           ) : null}

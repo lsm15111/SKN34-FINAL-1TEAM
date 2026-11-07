@@ -40,6 +40,7 @@ SPACES_2026H2 = SpaceShares(
     edge={b: _EDGE_30 for b in ("10", "20", "30", "40", "50")},
     ceiling={b: _CEIL_30 for b in ("10", "20", "30", "40", "50")},
     doors={"master": 1, "room": 1},
+    doors_whole={"10": 2, "20": 3, "30": 3, "40": 4, "50": 4},
     whole_at=_D("0.85"),
     fallback="room",
     sources={"all": "팀 가정값 초안"},

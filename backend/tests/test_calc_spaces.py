@@ -17,6 +17,7 @@ T = SpaceShares(
     edge={"30": {"living": _D("0.25"), "room": _D("0.2"), "master": _D("0.2"), "hall": _D("0.15")}},
     ceiling={"30": {"living": _D("0.25"), "room": _D("0.1"), "master": _D("0.15")}},
     doors={"master": 1, "room": 1},
+    doors_whole={"30": 3},
     whole_at=_D("0.9"),
     fallback="room",
     sources={},
@@ -68,8 +69,9 @@ def test_shares_add_up_and_doors_follow_rooms():
     got = pick(["거실", "작은방 1"], "30", T)
     assert not got.whole and (got.paper, got.edge) == (_D("0.500"), _D("0.450"))
     assert got.doors == 1 and got.flat_m2_share == _D("0.250")  # 평탄화는 거실 천장
+    assert got.door_share == _D("0.333")
     two = pick(["작은방 1", "작은방 2"], "30", T)
-    assert two.paper == _D("0.400") and two.doors == 2
+    assert two.paper == _D("0.400") and two.doors == 2 and two.door_share == _D("0.667")
     assert two.flat_m2_share == _D("0.200")  # 거실이 없으면 고른 방 천장
 
 
