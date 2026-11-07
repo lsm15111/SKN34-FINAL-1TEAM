@@ -80,8 +80,6 @@ class RangeRules:
     conds: Mapping[str, Mapping[str, CondRule]]  # 공정 → '실측 후' 줄 키 → 범위
     vat_rate: Decimal
     sources: Mapping[str, str]
-    # 고른 공간 몫의 σ. 키는 고른 공간 수(1 · 2 · 3, 3은 셋 이상). 집 전체면 0
-    share_sigma: Mapping[str, Decimal] = field(default_factory=dict)
     trade_corr: Decimal = Decimal("0.5")  # 합계 범위: 공정끼리 본체가 같이 움직이는 정도(0~1)
     # 작은 공사 고정비(부가세 빼고, 원). 키는 공정 · 공정.등급 · mokgong.door(방문만). 집 전체 단가에 녹아 있는 몫
     fixed_cost: Mapping[str, int] = field(default_factory=dict)

@@ -14,8 +14,14 @@ _D = Decimal
 T = SpaceShares(
     version="t",
     paper={"30": {"living": _D("0.3"), "room": _D("0.2"), "master": _D("0.25"), "hall": _D("0.1")}},
-    edge={"30": {"living": _D("0.25"), "room": _D("0.2"), "master": _D("0.2"), "hall": _D("0.15")}},
+    molding={
+        "30": {"living": _D("0.3"), "room": _D("0.2"), "master": _D("0.2"), "hall": _D("0.1")}
+    },
+    base={"30": {"living": _D("0.2"), "room": _D("0.2"), "master": _D("0.2"), "hall": _D("0.2")}},
     ceiling={"30": {"living": _D("0.25"), "room": _D("0.1"), "master": _D("0.15")}},
+    cv={"living": _D("0.1"), "room": _D("0.1"), "master": _D("0.1"), "hall": _D("0.3")},
+    cv_guess=_D("0.3"),
+    base_ratio=_D(1),
     doors={"master": 1, "room": 1},
     doors_whole={"30": 3},
     whole_at=_D("0.9"),
@@ -67,7 +73,8 @@ def test_band_from_pyeong():
 
 def test_shares_add_up_and_doors_follow_rooms():
     got = pick(["거실", "작은방 1"], "30", T)
-    assert not got.whole and (got.paper, got.edge) == (_D("0.500"), _D("0.450"))
+    assert not got.whole and (got.paper, got.molding, got.base) == (_D("0.5"), _D("0.5"), _D("0.4"))
+    assert got.edge == _D("0.450")  # 몰딩 · 걸레받이를 길이 비율(1:1)로 묶은 몫
     assert got.doors == 1 and got.flat_m2_share == _D("0.250")  # 평탄화는 거실 천장
     assert got.door_share == _D("0.333")
     two = pick(["작은방 1", "작은방 2"], "30", T)
@@ -77,7 +84,7 @@ def test_shares_add_up_and_doors_follow_rooms():
 
 def test_almost_everything_is_whole_house():
     got = pick(["거실", "안방", "작은방 1", "작은방 2", "복도"], "30", T)
-    assert got.whole and got.paper == got.edge == 1
+    assert got.whole and got.paper == got.edge == got.base == 1 and got.paper_sigma == 0
 
 
 def test_bath_only_and_unknown_names_are_guessed_not_zero():
@@ -87,6 +94,7 @@ def test_bath_only_and_unknown_names_are_guessed_not_zero():
     assert mixed.paper == _D("0.300") and mixed.zero == ("공용 욕실",)
     odd = pick(["우리 집 거기"], "30", T)
     assert odd.guessed == ("우리 집 거기",) and odd.paper == _D("0.200")
+    assert odd.paper_sigma == _D("0.300")  # 어떤 공간인지 모르면 크기 차이를 크게 본다
     with pytest.raises(ValueError):
         pick([], "30", T)
     with pytest.raises(ValueError):
@@ -134,3 +142,32 @@ def test_mokgong_share_scales_trim_and_flatten_follows_spaces():
     assert part.flatten_m2 < whole.flatten_m2
     assert any("고른 공간 몫 30%" in a for a in part.assumptions)
     assert any("고른 공간 천장" in a for a in part.assumptions)
+
+
+def test_share_sigma_follows_space_kinds_and_shrinks_with_more_spaces():
+    one = pick(["작은방 1"], "30", T)
+    assert one.paper_sigma == _D("0.100")
+    two = pick(["작은방 1", "작은방 2"], "30", T)
+    assert two.paper_sigma < one.paper_sigma  # 방 크기 차이가 서로 상쇄된다(÷√2)
+    hall = pick(["복도"], "30", T)
+    assert hall.paper_sigma == _D("0.300")  # 복도 · 현관 · 드레스룸은 집마다 크기 차이가 크다
+
+
+def test_real_table_matches_research_checks():
+    six = ["거실", "주방", "안방", "작은방 1", "작은방 2", "복도"]
+    full = [*six, "드레스룸", "현관"]
+    for band in ("20", "30", "40"):
+        rooms = {"20": 2, "30": 2, "40": 3}[band]
+        names = [*full, *(f"방 {i}" for i in range(rooms - 2))]
+        for name, table in (("paper", SPACES.paper), ("molding", SPACES.molding)):
+            got = pick(names, band, SPACES)
+            total = sum(table[band][k] for k in got.kinds)
+            assert abs(total - 1) <= _D("0.05"), (
+                band,
+                name,
+                total,
+            )  # 흔한 평면을 다 고르면 합이 약 1
+    entry = pick(["현관"], "30", SPACES)
+    assert entry.base == 0 and entry.molding > 0  # 현관은 타일 바닥이라 걸레받이가 없다
+    living = pick(["거실"], "30", SPACES)
+    assert _D("0.17") <= living.paper <= _D("0.20")  # 거실 단독(확장 후 20~23㎡)

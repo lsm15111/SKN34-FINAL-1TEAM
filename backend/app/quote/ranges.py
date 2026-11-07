@@ -1,8 +1,8 @@
 """표준견적서 · 가견적의 예상 범위: 저장한 줄 금액 + 이 집을 얼마나 아는지 + '실측 후' 줄 → calc.price_range.
 
 - 정밀도는 지금 집 정보로 정한다: 면적을 넣었으면 area, 평형대만 골랐으면 band. 천장 평탄화 · 방문 개수는 가정값(guess).
-- 일부 공간만 고르면 '고른 공간 몫'도 가정값이라 그 σ(RANGE.share_sigma)를 더하고, 철거 · 폐기물 같은
-  한 번(식) 금액도 공사 크기만큼 줄인다(조건 줄 min_scale).
+- 일부 공간만 고르면 '고른 공간 몫'도 가정값이라 그 σ(calc.spaces: 공간 종류별 크기 차이)를 더하고,
+  철거 · 폐기물 같은 한 번(식) 금액도 공사 크기만큼 줄인다(조건 줄 min_scale).
 - '실측 후' 줄은 고객이 아직 모르는 것으로 보고(open) 할 확률만큼 섞는다.
 - 범위는 저장하지 않고 볼 때마다 계산한다. 입력이 같으면 늘 같은 값이다.
 """
@@ -48,7 +48,6 @@ class Known:
 
     precision: Precision  # 집 크기: band(평형대) · area(면적 입력)
     pick: SpacePick
-    spaces: int  # 그 공정에 고른 공간 수
 
 
 def size_precision(p: ProjectOut) -> Precision:
@@ -64,7 +63,7 @@ def _precision(trade: str, base: Precision) -> dict[str, Precision]:
 def _share_sigma(trade: str, k: Known) -> dict[str, Decimal]:
     if k.pick.whole:
         return {}
-    sig = RANGE.share_sigma.get(str(min(k.spaces, 3)), Decimal(0))
+    sig = k.pick.paper_sigma if trade == "dobae" else k.pick.edge_sigma
     return {SHARE_DRIVER[trade]: sig} if sig else {}
 
 

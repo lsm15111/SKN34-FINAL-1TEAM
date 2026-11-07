@@ -90,8 +90,8 @@ def space_pick(p: ProjectOut, trade: str) -> tuple[space_calc.SpacePick, list[st
 
 def known(p: ProjectOut, trade: str) -> ranges.Known:
     """범위 계산에 넣을 '이 집을 얼마나 아는지'"""
-    pk, picked = space_pick(p, trade)
-    return ranges.Known(ranges.size_precision(p), pk, len(picked))
+    pk, _ = space_pick(p, trade)
+    return ranges.Known(ranges.size_precision(p), pk)
 
 
 def _space_note(pk: space_calc.SpacePick, picked: list[str]) -> list[str]:
@@ -125,7 +125,8 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
                 items,
                 p.occupied,
                 doors=rooms if "door" in items else 0,
-                share=pk.edge,
+                share=pk.molding,
+                base_share=pk.base,
                 flat_share=pk.flat_m2_share or None,
                 flat_living="living" in pk.kinds,
             ),
