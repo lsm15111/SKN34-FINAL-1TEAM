@@ -5,6 +5,8 @@ import type { ApiProject } from "@/lib/api/project";
 import type { ApiStandard } from "@/lib/api/quote";
 import { budgetLabel, gradeLabel, lineStateLabel, mokLabel, outsideTotal, sizeLabel, tradeLabel } from "@/lib/labels";
 import { dateSeoul, decText, dotDate, numText, won } from "@/lib/format";
+import { shareText } from "@/lib/range";
+import { RangeCard } from "./RangeCard";
 import { RegradeButton } from "./RegradeButton";
 import s from "./StandardDoc.module.css";
 
@@ -47,6 +49,9 @@ export function StandardDoc({ p, q, title }: { p: ApiProject; q: ApiStandard; ti
   const area = `${q.area_basis === "exclusive" ? "전용" : "공급"} ${decText(q.area_m2)}㎡ · ${decText(q.pyeong)}평형${p.size.band ? ` (${sizeLabel(p.size)} 대표 평형)` : ""}`;
   const b = q.budget;
   const canEdit = !p.locked;
+  const areaHref = canEdit ? `/start?edit=${p.id}` : undefined;
+  const vendorsHref = `/projects/${p.id}/vendors`;
+  const one = q.trades.length === 1;
 
   return (
     <article className={`mj-paper ${s.paper}`} aria-labelledby="doc-t">
@@ -94,6 +99,13 @@ export function StandardDoc({ p, q, title }: { p: ApiProject; q: ApiStandard; ti
         ) : null}
       </div>
 
+      {/* 공정이 하나면 그 공정 카드(폭의 이유 포함)를 여기 두고, 둘이면 합계 범위만 둔다 */}
+      {one ? (
+        <RangeCard id="rg-one" r={q.trades[0].range} title="예상 범위" point={{ label: "표준견적서", amount: q.total }} areaHref={areaHref} vendorsHref={`${vendorsHref}?trade=${q.trades[0].trade}`} />
+      ) : (
+        <RangeCard id="rg-total" r={q.range} title="합계 예상 범위" point={{ label: "표준견적서", amount: q.total }} compact />
+      )}
+
       {q.trades.map((t, i) => {
         const name = tradeLabel(t.trade);
         return (
@@ -129,7 +141,12 @@ export function StandardDoc({ p, q, title }: { p: ApiProject; q: ApiStandard; ti
               </table>
             </div>
             {/* 계산할 때 잡은 것(notes)은 저장만 하고, 화면에는 한 줄로 알린다 */}
-            <p className={`mj-small ${s.est}`}>수량은 평형으로 어림했어요. 실측 때 다시 재요.</p>
+            <p className={`mj-small ${s.est}`}>
+              {Number(t.space_share) < 1 ? `고른 공간만 집 전체의 약 ${shareText(t.space_share)}로 잡았어요. ` : ""}수량은 평형으로 어림했어요. 실측 때 다시 재요.
+            </p>
+            {one ? null : (
+              <RangeCard id={`rg-${t.trade}`} r={t.range} title={`${name} 예상 범위`} point={{ label: "표준견적서", amount: t.total }} areaHref={areaHref} vendorsHref={`${vendorsHref}?trade=${t.trade}`} />
+            )}
           </section>
         );
       })}

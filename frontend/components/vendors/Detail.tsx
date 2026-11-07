@@ -1,6 +1,7 @@
 // 업체 자세히 조각 (시안 WVendorDetail · WVendorsPanel). 전체 화면(/vendors/[vid])과 업체 고르기 오른쪽 창이 같이 쓴다.
 // 가견적 줄은 API(계산 엔진) 값을 그대로 보이고 화면에서 곱하거나 더하지 않는다.
 // 고객이 보는 금액은 모두 부가세 포함이라 금액 옆에 따로 적지 않는다.
+import { RangeCard } from "@/components/project/RangeCard";
 import type { ProjectVendorDetail } from "@/lib/api/visit";
 import { CONTACT_LABEL, bizNoText } from "@/lib/labels";
 import { dotDate, won } from "@/lib/format";
@@ -34,7 +35,7 @@ export function ContactFacts({ d }: { d: D }) {
   );
 }
 
-/** 가견적 금액 · 표준견적서 대비 */
+/** 가견적 금액 · 표준견적서 대비 · 실측 뒤 예상 범위 (전체 화면은 폭의 이유까지, 오른쪽 창은 범위만) */
 export function Estimate({ d, big = false }: { d: D; big?: boolean }) {
   const e = d.estimate;
   if (!e) return <p className={s.none}>가견적 없음</p>;
@@ -43,6 +44,7 @@ export function Estimate({ d, big = false }: { d: D; big?: boolean }) {
     <div className={s.est}>
       <p className={`mj-num ${big ? s.totalBig : s.total}`}>{won(e.total)}</p>
       {vs ? <p className="mj-small mj-num">{vs}</p> : null}
+      <RangeCard id={big ? "rg-vd" : "rg-vp"} r={e.range} title="실측 뒤 예상" point={{ label: "가견적", amount: e.total }} compact={!big} />
     </div>
   );
 }

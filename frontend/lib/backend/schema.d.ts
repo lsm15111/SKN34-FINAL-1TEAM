@@ -1755,6 +1755,8 @@ export interface components {
             vs_standard: string | null;
             /** Vs Direction */
             vs_direction: ("less" | "more" | "same") | null;
+            /** @description 실측 뒤 예상 범위와 그 폭의 이유 */
+            range: components["schemas"]["RangeOut"];
         };
         /** EstimateLineOut */
         EstimateLineOut: {
@@ -3473,6 +3475,74 @@ export interface components {
             file_links: string[];
         };
         /**
+         * RangeOut
+         * @description 예상 범위 (믿집 계산, 부가세 포함, 만 원 단위). 이 집 금액이 10곳 중 8곳쯤 들어갈 구간
+         */
+        RangeOut: {
+            /** Version */
+            version: string;
+            /** Low */
+            low: number;
+            /** Mid */
+            mid: number;
+            /** High */
+            high: number;
+            /**
+             * Extra Max
+             * @description 모르는 '실측 후' 줄을 다 하게 되면 더 들 수 있는 최대 (구간과 따로 보인다)
+             */
+            extra_max: number;
+            /**
+             * Precision
+             * @description 집 크기를 얼마나 아는지: band(평형대) · area(면적 입력)
+             */
+            precision: string;
+            /**
+             * Whole
+             * @description 집 전체인지 (아니면 고른 공간 몫으로 잡았어요)
+             */
+            whole: boolean;
+            /**
+             * Parts
+             * @description 폭을 만든 이유, 몫이 큰 순 (목록에서는 비어 있다)
+             */
+            parts: components["schemas"]["RangePartOut"][];
+            /** Notes */
+            notes: string[];
+        };
+        /** RangePartOut */
+        RangePartOut: {
+            /**
+             * Driver
+             * @description 폭의 이유: qty:area · qty:edge · qty:flat · qty:door(수량) · share:area · share:edge(고른 공간 몫) · price(업체 단가) · visit(실측 보정) · cond:removal …('실측 후' 줄)
+             */
+            driver: string;
+            /**
+             * Share
+             * @default 0
+             */
+            share: string;
+            /**
+             * Better
+             * @description 수량: 이만큼 알면 폭이 줄어요 (area 면적 입력 · self 셀프 실측)
+             */
+            better?: string | null;
+            /**
+             * Low If
+             * @description 수량은 더 알 때, 단가는 가견적을 받을 때, 조건 줄은 하게 될 때 범위
+             */
+            low_if?: number | null;
+            /** High If */
+            high_if?: number | null;
+            /**
+             * Low If No
+             * @description 조건 줄: 안 하게 될 때 범위
+             */
+            low_if_no?: number | null;
+            /** High If No */
+            high_if_no?: number | null;
+        };
+        /**
          * ReapplyIn
          * @description 거절된 업체가 같은 계정 · 같은 사업자등록번호로 다시 신청. 새 등록증은 먼저 POST /files (kind=license).
          */
@@ -3778,6 +3848,8 @@ export interface components {
             vat: number;
             /** Total */
             total: number;
+            /** @description 공정을 합친 예상 범위 (공정이 하나면 그 공정 범위) */
+            range: components["schemas"]["RangeOut"];
             budget: components["schemas"]["BudgetOut"] | null;
         };
         /** StandardTradeOut */
@@ -3802,6 +3874,12 @@ export interface components {
             crew: number;
             /** Notes */
             notes: string[];
+            /**
+             * Space Share
+             * @description 고른 공간 몫 (집 전체 수량 대비, 1이면 집 전체)
+             */
+            space_share: string;
+            range: components["schemas"]["RangeOut"];
         };
         /** StartOptionOut */
         StartOptionOut: {
@@ -4253,6 +4331,8 @@ export interface components {
              * @description 그 공정 표준견적서 합계 (부가세 포함)
              */
             standard_total: number;
+            /** @description 그 공정 표준견적서 예상 범위 (업체 단가를 모를 때) */
+            standard_range: components["schemas"]["RangeOut"];
             /**
              * Slots Left
              * @description 그 공정에 더 담을 수 있는 업체 수 (3곳까지)
@@ -4366,6 +4446,8 @@ export interface components {
             vs_standard: string | null;
             /** Vs Direction */
             vs_direction: ("less" | "more" | "same") | null;
+            /** @description 실측 뒤 예상 범위: 가견적 + 실측 보정 + '실측 후' 줄 (가견적이 없으면 비어 있다) */
+            estimate_range?: components["schemas"]["RangeOut"] | null;
             /** @description 최근 실측 요청 (없으면 비어 있다) */
             visit: components["schemas"]["VisitBrief"] | null;
         };

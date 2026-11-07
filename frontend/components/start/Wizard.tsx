@@ -170,14 +170,14 @@ function toBody(a: Answers, photoIds: { space: string; file_id: string }[], plan
   };
 }
 
-/** 시연용 예시 답: 노원구 공급 105.8㎡(32평) 빈 집 · 도배 기본형 + 목공(몰딩 · 걸레받이) · 거실 · 안방 · 작은방 1 */
+/** 시연용 예시 답: 노원구 공급 105.8㎡(32평) 빈 집 · 도배 기본형 + 목공(몰딩 · 걸레받이) · 기본 공간 6곳(집 전체) */
 function demoAnswers(today: string): Answers {
   const after = (n: number) => { const d = new Date(`${today}T00:00:00Z`); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
   return {
     ...EMPTY, sido: "seoul", sgg: "노원구", builtYear: "2009",
     size: "manual", manualBasis: "supply", manualM2: "105.8", occupied: "no",
     trades: { dobae: true, mokgong: true }, grade: "basic", items: ["molding", "base"],
-    picked: ["sp-d0", "sp-d2", "sp-d3"],
+    picked: DEFAULT_SPACES.map((sp) => sp.id),
     when: "date", whenDate: after(28), whenEnd: after(42), budget: "500-700",
   };
 }

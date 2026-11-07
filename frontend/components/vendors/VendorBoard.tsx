@@ -9,6 +9,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { CONTACT_LABEL, tradeLabel } from "@/lib/labels";
 import { won } from "@/lib/format";
+import { spanText } from "@/lib/range";
 import { Check, Close, Picked, Plus, VisitState } from "./icons";
 import { PICK_EVENT, SEND_EVENT, markFromList, readPick, writePick } from "./pick";
 import { RequestDialog } from "./RequestDialog";
@@ -42,6 +43,7 @@ function Estimate({ v }: { v: VendorRow }) {
     <>
       <p className={`mj-num ${s.total}`}>{won(v.estimate_total)}</p>
       {vs ? <p className={`mj-num ${s.vs}`}>{vs} {v.vs_direction === "same" ? null : <span aria-hidden="true">{v.vs_direction === "less" ? "▼" : "▲"}</span>}</p> : null}
+      {v.estimate_range ? <p className={`mj-num ${s.after}`}>실측 뒤 예상 {spanText(v.estimate_range.low, v.estimate_range.high)}{v.estimate_range.extra_max > 0 ? " (철거 등 포함)" : ""}</p> : null}
     </>
   );
 }

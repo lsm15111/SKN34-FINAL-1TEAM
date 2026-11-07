@@ -1,0 +1,27 @@
+/* 예상 범위 카드 */
+.card { display: flex; flex-direction: column; gap: 8px; padding: 16px 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.compact { padding: 12px 14px; gap: 6px; }
+.head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; }
+.title { font-size: var(--fs-md); font-weight: 700; }
+.tag { font-size: var(--fs-xs); color: var(--ink-sub); }
+.span { font-size: var(--fs-h2); font-weight: 700; }
+.compact .span { font-size: var(--fs-lg); }
+.span > span { font-weight: 400; }
+
+/* 범위 막대: 하한 ~ 상한, 가운데(진한 선) · 표준견적서(원) */
+.bar { position: relative; height: 12px; margin: 4px 6px; }
+.fill { position: absolute; inset: 3px 0; border-radius: 3px; background: var(--accent-pastel); }
+.mid { position: absolute; top: -2px; bottom: -2px; width: 3px; margin-left: -1.5px; border-radius: 2px; background: var(--accent-ink); }
+.pt { position: absolute; top: 0; width: 12px; height: 12px; margin-left: -6px; border: 2px solid var(--ink); border-radius: 50%; background: var(--bg); }
+.legend { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 16px; }
+.item { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.keyMid { flex: none; width: 3px; height: 12px; border-radius: 2px; background: var(--accent-ink); }
+.keyPt { flex: none; width: 10px; height: 10px; border: 2px solid var(--ink); border-radius: 50%; background: var(--bg); }
+
+.block { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.sub { font-size: var(--fs-sm); font-weight: 700; }
+.parts, .hints { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--fs-sm); }
+.parts li { display: flex; justify-content: space-between; gap: 12px; }
+.share { flex: none; color: var(--ink-sub); }
+.hints li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 12px; }
+.foot { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line-soft); }

@@ -16,6 +16,7 @@ import { listDeals } from "@/lib/api/schedule";
 import { listProjectVendors, listProjectVisits } from "@/lib/api/visit";
 import { projectTitle, tradeLabel, TRADE_ORDER } from "@/lib/labels";
 import { eulReul, won } from "@/lib/format";
+import { spanText } from "@/lib/range";
 import s from "./page.module.css";
 
 export const metadata = { title: "업체 고르기" };
@@ -43,7 +44,7 @@ export default async function VendorsPage({ params, searchParams }: { params: Pr
     <>
       <VTabs base={`/projects/${id}/vendors`} trades={trades} current={trade} counts={counts} />
       <div className={s.std}>
-        <p>{tName} 표준견적서 <strong className="mj-num">{won(cur.standard_total)}</strong></p>
+        <p>{tName} 표준견적서 <strong className="mj-num">{won(cur.standard_total)}</strong> <span className="mj-small mj-num">· 예상 범위 {spanText(cur.standard_range.low, cur.standard_range.high)}</span></p>
         <Link className={`mj-lnk ${s.sm}`} href={`/projects/${id}/standard?trade=${trade}#t-${trade}`}>표준견적서 보기</Link>
       </div>
       {deal ? <div className={s.deal}><DealNote d={deal} projectId={id} /></div> : null}
