@@ -76,7 +76,7 @@ def test_request_creates_visits_locks_home_and_notifies(api):
     got = {v["vendor_id"]: v for v in out["created"]}
     assert (got[a]["slot"], got[b]["slot"]) == (1, 2)
     assert got[a]["share_contact"] is True and got[b]["share_contact"] is False
-    assert got[a]["estimate_total"] == a_total == 3_132_800  # 14번 계산과 같은 사본
+    assert got[a]["estimate_total"] == a_total == 2_883_865  # 14번 계산과 같은 사본
     assert got[b]["estimate_total"] is None  # 가견적 없음
     assert got[a]["contact"]["phone"] == "01059372210" and got[a]["contact_visible"] is True
     assert got[a]["message"] == "평일 오후가 좋아요" and got[a]["vendor_name"] == "마루와벽"

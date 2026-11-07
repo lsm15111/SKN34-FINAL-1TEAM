@@ -83,7 +83,7 @@ def test_resend_and_compare(api):
     r = api.get(f"/projects/{p['id']}/quotes", params={"trade": "dobae"})
     assert r.status_code == 200, r.text
     c = r.json()
-    assert c["standard_total"] == 3_166_556 and c["sent_counts"] == {"dobae": 2}
+    assert c["standard_total"] == 2_945_656 and c["sent_counts"] == {"dobae": 2}
     assert c["formula_ver"] and c["price_ver"] and c["computed_at"]
     names = [(x["vendor_name"], x["status"]) for x in c["vendors"]]
     assert names == [("결도배", "quoted"), ("마루와벽", "quoted"), ("한결인테리어", "requested")]
@@ -96,9 +96,9 @@ def test_resend_and_compare(api):
     assert maru["latest"]["total"] == 3_421_000 and maru["latest"]["supply"] == 3_110_000
     assert [h["total"] for h in maru["history"]] == [3_388_000]  # 처음 금액
     assert maru["changed"] == ["total", "days"]
-    assert maru["vs_standard"] == str(percent_vs(3_421_000, 3_166_556))
+    assert maru["vs_standard"] == str(percent_vs(3_421_000, 2_945_656))
     assert (
-        maru["estimate_total"] == 3_132_800
+        maru["estimate_total"] == 2_883_865
         and maru["latest"]["files"][0]["filename"] == "견적_고침.pdf"
     )
     assert waiting["latest"] is None and waiting["seen_ver"] is None and waiting["expired"] is False

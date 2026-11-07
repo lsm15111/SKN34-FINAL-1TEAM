@@ -18,7 +18,7 @@ Basis = Literal["public", "assumed", "none"]
 PYEONG_M2 = Decimal("3.3058")
 BASIS_LABEL = {"supply": "공급면적", "exclusive": "전용면적"}
 # 계산 산식 버전. 공정 계산 · 공정표 잇기 · 평 계산이 바뀌면 올린다. 저장한 표준견적서 · 공정표에 같이 남긴다
-FORMULA_VERSION = "2026.11.1"
+FORMULA_VERSION = "2026.11.2"
 
 
 @dataclass(frozen=True)

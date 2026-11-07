@@ -40,13 +40,13 @@ from app.quote.schemas import (
     StandardTradeOut,
     VendorQuoteOut,
 )
-from app.refprice.book import DOBAE_2026H2, MOKGONG_2026H2
-from app.refprice.house import HOUSE_2026H2
+from app.refprice.book import DOBAE, MOKGONG
+from app.refprice.house import HOUSE
 from app.shared.clock import now_utc
 from app.shared.errors import AppError
 from app.shared.ids import uuid7
 
-PRICE_VER = DOBAE_2026H2.version
+PRICE_VER = DOBAE.version
 ROOM = "방"  # 방문 개수: 목공을 고른 공간 중 이름에 '방'이 든 곳
 
 
@@ -67,15 +67,15 @@ class TradeCalc:
 
 
 def _area(p: ProjectOut) -> tuple[Decimal, str]:
-    return house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    return house_area(p.size.band, p.size.m2, p.size.basis, HOUSE)
 
 
 def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[TradeCalc]:
     """이 집 정보로 고른 공정을 계산한다(목공 → 도배 순서). 공정표도 이 결과를 쓴다.
     crews를 주면 그 공정의 하루 인원을 바꿔 기간을 센다(업체가 적은 인원)."""
     crews = crews or {}
-    mp = replace(MOKGONG_2026H2, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG_2026H2
-    dp = replace(DOBAE_2026H2, crew=crews["dobae"]) if "dobae" in crews else DOBAE_2026H2
+    mp = replace(MOKGONG, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG
+    dp = replace(DOBAE, crew=crews["dobae"]) if "dobae" in crews else DOBAE
     area, basis = _area(p)
     out: list[TradeCalc] = []
     if p.trades.mokgong:
@@ -157,7 +157,7 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
     if not stale:
         return {t: latest[t] for t in wanted}
     area, basis = _area(p)
-    pyeong = house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    pyeong = house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE)
     try:
         for trade in stale:
             c = wanted[trade]
@@ -175,7 +175,8 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
                 supply=c.supply,
                 vat=c.vat,
                 total=c.total,
-                man_day=c.man_day,
+                # 다시 읽은 저장본(Numeric 소수 한 자리)과 같은 모양: 6 → 6.0
+                man_day=c.man_day.quantize(Decimal("0.1")),
                 crew=c.crew,
                 notes=c.notes,
             )

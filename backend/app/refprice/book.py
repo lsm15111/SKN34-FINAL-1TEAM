@@ -94,7 +94,7 @@ MOKGONG_2026H2 = MokgongPrices(
 
 
 # ── 2026 하반기 r2: 표준품셈 · 표준시장단가 원문과 대조해 고친 값 (docs/research/T2 · T3) ──
-# 기본값으로 쓰는 것은 아직 위의 r1이다. 바꿀 때는 quote.service가 r2를 쓰게 하고 FORMULA_VERSION을 올린다.
+# 지금 계산에 쓰는 한 벌은 맨 아래 DOBAE · MOKGONG이다. 버전을 바꿀 때는 그 두 줄과 FORMULA_VERSION을 함께 바꾼다.
 _WAGE_PAPERER = 229_833  # 도배공 2026.9.1 시중노임단가 (대한건설협회)
 _REMOVE_WALL = won(Decimal("0.008") * _WAGE_PAPERER + Decimal("0.005") * _WAGE_HELPER)  # 2,702원/㎡
 _REMOVE_CEILING = won(Decimal("0.010") * _WAGE_PAPERER + Decimal("0.007") * _WAGE_HELPER)  # 3,507
@@ -127,3 +127,7 @@ MOKGONG_2026H2_R2 = replace(
     supply_per_exclusive=Decimal("1.3"),
     casing_per_door=Decimal("11.0"),  # 문 하나 문선 양면(T3 권장, 가정값)
 )
+
+# 지금 계산에 쓰는 기준 단가 (2026-11-08 r2로 바꿈. r1은 버전 기록 · 비교용으로 남긴다)
+DOBAE = DOBAE_2026H2_R2
+MOKGONG = MOKGONG_2026H2_R2

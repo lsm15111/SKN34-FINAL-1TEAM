@@ -39,7 +39,7 @@ def test_plan_follows_the_chosen_start_date(api):
     assert [b["trade"] for b in work] == ["mokgong", "dobae"]
     assert work[0]["start"] == start.isoformat() and work[0]["days"] == 3
     assert [b["kind"] for b in plan["blocks"]][-2:] == ["dry", "clean"]
-    assert plan["work_days"] == 6 and plan["version"] == 1
+    assert plan["work_days"] == 5 and plan["version"] == 1
     assert plan["days"][0]["day"] == start.isoformat()
     assert api.get(f"/projects/{p['id']}/plan").json()["version"] == 1  # 저장본을 쓴다
 

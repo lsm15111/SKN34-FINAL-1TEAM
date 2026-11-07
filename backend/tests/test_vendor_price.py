@@ -73,8 +73,8 @@ def test_save_confirm_and_edit_again(api):
     assert (
         draft["version"] == 1 and draft["status"] == "draft" and saved.json()["confirmed"] is None
     )
-    ex = draft["example"]  # 32평 아파트 예: 시안과 같은 값
-    assert (ex["supply"], ex["vat"], ex["total"]) == (2_848_000, 284_800, 3_132_800)
+    ex = draft["example"]  # 32평 아파트 예 · r2 단가
+    assert (ex["supply"], ex["vat"], ex["total"]) == (2_621_695, 262_170, 2_883_865)
     primer = next(x for x in ex["lines"] if x["key"] == "primer")
     assert primer["amount"] == 0 and primer["included_in_name"] == "도배지 (실크)"
     assert next(x for x in ex["lines"] if x["key"] == "wall")["source"] == "견적서_2026-09.pdf"
@@ -128,7 +128,7 @@ def test_two_confirms_at_the_same_time_only_one_wins(api):
 def test_exempt_vendor_example_has_no_vat(api):
     fid = ready_vendor(api, tax_kind="exempt")
     r = api.put(f"{PRICES}/dobae", json=maru(fid)).json()
-    assert (r["draft"]["example"]["vat"], r["draft"]["example"]["total"]) == (0, 2_848_000)
+    assert (r["draft"]["example"]["vat"], r["draft"]["example"]["total"]) == (0, 2_621_695)
 
 
 def test_only_approved_vendor_for_its_trades(api):

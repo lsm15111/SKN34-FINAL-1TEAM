@@ -24,7 +24,7 @@ from app.calc.schedule import days_since
 from app.files import service as files_service
 from app.files.models import File
 from app.notify import service as notify_service
-from app.refprice.book import DOBAE_2026H2, MOKGONG_2026H2
+from app.refprice.book import DOBAE, MOKGONG
 from app.shared.clock import now_utc
 from app.shared.errors import AppError
 from app.shared.ids import uuid7
@@ -700,9 +700,9 @@ def _example_lines(trade: str) -> list:
     """고객에게 보이는 모습 예: 32평 아파트 · 빈 집 · 도배 기본형(천장 포함) · 목공 몰딩 · 걸레받이"""
     if trade == "dobae":
         inp = dobae.DobaeInput(EXAMPLE_M2, "supply", "basic", True, False)
-        return dobae.quote(inp, DOBAE_2026H2).lines
+        return dobae.quote(inp, DOBAE).lines
     inp = mokgong.MokgongInput(EXAMPLE_M2, "supply", ("molding", "base"), False)
-    return mokgong.quote(inp, MOKGONG_2026H2).lines
+    return mokgong.quote(inp, MOKGONG).lines
 
 
 def _prices_of(lines: list) -> dict[str, estimate.VendorPrice]:

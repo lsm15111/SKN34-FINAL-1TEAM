@@ -20,3 +20,6 @@ HOUSE_2026H2_R2 = replace(
     supply_per_exclusive=Decimal("1.3"),
     source="팀 가정값 (평형대는 흔한 평형으로, 전용면적은 × 1.3으로 공급면적을 잡아요)",
 )
+
+# 지금 계산에 쓰는 집 크기 가정값
+HOUSE = HOUSE_2026H2_R2
