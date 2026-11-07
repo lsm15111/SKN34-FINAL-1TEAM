@@ -52,8 +52,8 @@ flowchart TB
 | --- | --- | --- |
 | `docs-agent-design` | 이 문서들, 조사 원자료, AGENTS.md 사실 오류 수정 | 문서 |
 | `feat-price-range` | 예상 범위 계산 엔진(혼합 분위수) · 가정값 r2 · 기준 단가 r2 상수 · 테스트 28개 | 로컬 계산 테스트 84개 통과, CI 검증 대기 |
-| `feat-agent-knowledge` | 지식 데이터 초안(카드 · 용어 · 검색 조각 · 표현 사전 · 출처) · 평가 세트 초안 · 데이터 검사(`knowledge/ingest.py`) | AI 초안, **사람 검수 필요** |
 | `feat-agent-foundation` | LLM · DB 없는 에이전트 바탕: 출력 모양(`agent/schemas.py`) · 숫자 슬롯 검사기(`agent/guards.py`) · 도배 · 목공 슬롯과 다음 질문 고르기(`agent/trades`) · 선제 안내 트리거(`knowledge/triggers.py`) · 테스트 17개 | 로컬 통과, CI 검증 대기 |
+| `feat-agent-knowledge` (`feat-agent-foundation` 위에 쌓음) | 지식 데이터: 출처 387 · 선제 안내 카드 159 · 용어 117 · 표현 사전 73 · 검색 조각 212. 평가 세트: 의도 213 + 변형 60 · 가이드 50 · 오케스트레이터 30 · 상담 10 · 검색 45. 데이터 검사(`knowledge/ingest.py`) · L0 지표(`evaluation/run.py`) · 테스트 5개 | AI 초안(줄마다 `reviewed: false`), **사람 검수 필요** |
 
 - 팀 PR로 올릴 때는 [10 문서](10-roadmap.md)의 이슈 단위(400줄 이하)로 나눈다.
 
