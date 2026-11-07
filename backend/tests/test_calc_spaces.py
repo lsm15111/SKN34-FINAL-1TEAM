@@ -94,8 +94,13 @@ def test_bath_only_and_unknown_names_are_guessed_not_zero():
 
 
 def test_real_table_typical_layout_is_whole_and_one_room_is_small():
+    six = ["거실", "주방", "안방", "작은방 1", "작은방 2", "복도"]
+    for band in ("10", "20", "30"):
+        assert pick(six, band, SPACES).whole
+    big = pick(six, "40", SPACES)  # 40평대는 작은방이 셋이라 기본 6곳이면 집 전체가 아니다
+    assert not big.whole and _D("0.7") < big.paper < _D("0.85")
+    assert pick([*six, "작은방 3", "드레스룸"], "40", SPACES).whole
     for band in ("20", "30", "40"):
-        assert pick(["거실", "주방", "안방", "작은방 1", "작은방 2", "복도"], band, SPACES).whole
         one = pick(["작은방"], band, SPACES)
         assert _D("0.05") < one.paper < _D("0.2") and _D("0.05") < one.edge < _D("0.2")
     for band, table in SPACES.paper.items():
