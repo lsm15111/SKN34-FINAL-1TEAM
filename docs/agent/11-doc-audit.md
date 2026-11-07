@@ -17,6 +17,8 @@ dev `6507699`(2026-11-06) 기준으로 문서와 코드를 대조했다. AI 코�
 | F9 | README 기술 스택 AI | "LLM 공급자 / 프레임워크 확정 후 기입" | `.env.example`은 이미 OpenAI(`gpt-6.1-terra`)로 정함 | 팀이 확정하면 기입(02 · 03 문서 추천: OpenAI Agents SDK 0.24.0) |
 | F10 | docs/v2/features.md · structure.md | 상담 챗 보류, chat · knowledge · agent · mcp_server.py는 빈 뼈대 그대로 | README 일정은 11/20 에이전트 1차 | v2 문서가 끝났다고 표시하고 에이전트 문서(docs/agent)로 넘김 |
 | F11 | AGENTS.md §2 프런트 구조 | 영역에 `chat` | `components/chat/`은 `.gitkeep`뿐, 상담 창은 `components/site/AskLauncher.tsx`(목업) | 채팅 화면을 만들 때 chat으로 옮긴다고 적음 |
+| F13 | README 문제 정의 5. 업체 선정 | "인테리어 업체 **70~80%** 가 실내건축공사업 면허 없음 (서울신문 2026.04.01)" | 기사에 출처 기관 표기가 없고, 같은 수치는 2006년 창원 한 단지 기사에 '알려진 바'로만 나온다. 공식 통계를 찾지 못함(T1 5.7) | 수치를 빼거나 "업계 추정"으로 낮춘다. 소비자원 통계(2023~2026 상반기 피해구제 2,243건, 하자보수 불만 56.9%)로 바꾸는 것을 권장 |
+| F14 | README 문제 정의 · 데이터 | "1,500만 원 미만은 건설업 등록 없이 시공 가능" | 맞음(시행령 제8조, 2026-06-23 시행본 원문). 다만 같은 업체 분할 계약은 합산하고(대법원 2018도3821), 고객이 산 자재의 시장가격도 넣는다 | 근거 한 줄을 붙인다 |
 | F12 | AGENTS.md §2 · README 아키텍처 | PostgreSQL 17 **+ pgvector** | 로컬 `compose.yaml`은 `postgres:17-alpine`(pgvector 없음), 확장을 만드는 migration도 없음. 스테이징 RDS는 17.6(AWS 표 기준 `vector` 0.8.0 · `pg_bigm` 1.2_20240606 지원) | 지식 검색 이슈에서 로컬 DB 이미지를 pgvector + pg_bigm으로 바꾸고, `CREATE EXTENSION`을 migration으로 더한다(04 문서 5절) |
 
 ## 2. 팀 결정이 필요한 충돌
@@ -47,6 +49,13 @@ dev `6507699`(2026-11-06) 기준으로 문서와 코드를 대조했다. AI 코�
 | `arq` 유지보수 전용 주석 | 맞음(T6 확인) | `arq==0.28.0` 고정 |
 | (없음) `OPENAI_AGENTS_DISABLE_TRACING` | 추가 권장 | Agents SDK 트레이싱은 기본 켜짐 · 민감 데이터 포함 기본 True. CI는 1, 운영은 민감 데이터 끔 |
 | (없음) 일정 MCP 내부 토큰 키 | 추가 권장 | 03 문서 8절: 백엔드가 5분짜리 내부 JWT 발급 |
+
+## 3.1 이 브랜치에서 고친 것
+
+- AGENTS.md §2 백엔드 구조: 구현된 패키지(notify · quote · visit · schedule · calc · refprice)를 넣고, 빈 뼈대와 '아직 없음(jobs)'을 나눴다(F1 · F2).
+- AGENTS.md §2 표: pgvector가 아직 켜지지 않았다고 적었다(F12).
+- AGENTS.md §4 끝: 설계 제안 문서를 읽고, 다르면 §4를 따르고 팀에 묻는다는 한 줄.
+- README · docs/v2는 팀 소개 보존 원칙이 있어 고치지 않았다. 위 표의 F3~F10 · F13 · F14를 팀이 반영한다.
 
 ## 4. CLAUDE.md
 

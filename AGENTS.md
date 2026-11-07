@@ -45,7 +45,7 @@
 | `backend/app/` (FastAPI) | 유일한 공개 API. 기능 패키지 + 계산 엔진 `calc` + 에이전트 `agent` |
 | `backend/app/worker.py` (arq) | 대화 밖 LLM · 기준 단가 수집 · 알림 같은 느린 일 |
 | `backend/app/mcp_server.py` | 믿집 일정 MCP 서버 |
-| PostgreSQL 17 + pgvector | 원본 데이터와 지식 검색. Redis는 큐 · 요청 제한 · 짧은 캐시만 (지워져도 되는 것) |
+| PostgreSQL 17 + pgvector | 원본 데이터와 지식 검색. Redis는 큐 · 요청 제한 · 짧은 캐시만 (지워져도 되는 것). pgvector는 아직 켜지 않았다(로컬 이미지 `postgres:17-alpine`에 없음, 확장 migration 없음) |
 | Cloudflare (운영) | DNS · 사용자 쪽 HTTPS · 방화벽. EC2 앞단 |
 | Caddy (운영) | 서버 쪽 HTTPS, `/api/*` → API, 나머지 → web |
 
@@ -75,10 +75,17 @@ shared/                  errors · clock · ids · ratelimit · regions · reque
 auth/                    가입 · 로그인 · 세션 · 권한(deps) · 관리자 계정 만들기(cli)
 account/                 탈퇴
 files/                   올리기 · 사진 처리(images) · 저장(storage)
-project/                 프로젝트 만들기 · 보기
-vendor/                  업체 가입 신청 · 관리자 승인
+notify/                  화면 알림 쓰기 · 목록 · 읽음
+project/                 프로젝트 만들기 · 보기 · 고치기 · 체크
+vendor/                  업체 가입 · 심사 · 업체 정보 · 가견적 단가 묶음
+quote/                   표준견적서 버전 · 업체 실측 견적서
+visit/                   업체 목록(가견적) · 실측 요청 · 견적 비교
+schedule/                예상 · 확정 공정표 · 업체 확정 · 공사 날짜 · 추가 금액 · 지금 할 일
+calc/                    계산 엔진(도배 · 목공 · 가견적 · 공정표 · 진행 단계 · 견적 차이)
+refprice/                기준 단가 · 집 크기 가정값 · 공휴일(코드 상수, 버전)
 migrations/              Alembic. 0001(처음 표 12개)부터 하나씩 더한다
-아직 없음: quote · visit · schedule · refprice · jobs · calc · agent · chat · knowledge · mcp_server.py
+빈 뼈대: agent · chat · knowledge · mcp_server.py · calc/vendor_score.py
+아직 없음: jobs(표 · 패키지 모두. 아래 '느린 일'은 설계만 있다)
 ```
 
 - 기능 안 파일은 필요한 것만 둔다: `router.py`(HTTP), `service.py`(업무 흐름 · 상태 · commit), `repository.py`(DB), `schemas.py`, `models.py`, `client.py`(외부 API).
@@ -153,6 +160,7 @@ migrations/              Alembic. 0001(처음 표 12개)부터 하나씩 더한�
 - LLM이 실패하면 계산 결과만 보여 주고 "설명을 만들지 못했어요"라고 알린다. 규칙으로 만든 가짜 설명으로 채우지 않는다.
 - 프롬프트는 버전을 붙이고, 바꾸는 PR은 커밋 type `prompt`로 하고 eval 결과를 붙인다. eval 세트(공정표 15 · 의도 분류 200 · RAG 30 · 상담 10 · 오케스트레이터 30 · 가이드 50 · 견적 설명 문제 행 시나리오)는 `evaluation/`에 두고 dev와 held-out을 2:1로 나눈다.
 - CI에서 유료 호출은 0회다(`LLM_LIVE=false` 스텁). 스텁 통과를 에이전트 품질 확인으로 말하지 않는다.
+- 에이전트 작업 전에 설계 제안 [docs/agent/README.md](docs/agent/README.md)를 읽는다. 제안과 이 절이 다르면 이 절을 따르고 팀에 묻는다.
 
 ## 5. 코드 작성
 
