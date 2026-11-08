@@ -9,8 +9,8 @@ README 일정(~11/13 계산 · 데이터, ~11/20 에이전트 1차, ~11/27 기�
 | # | 이슈 제목(커밋 형식) | 내용 | 제안 담당 |
 | --- | --- | --- | --- |
 | 1 | `feat: 견적 예상 범위 계산 엔진` | `calc/price_range.py` · `refprice/market.py` · 테스트(`feat-price-range` 브랜치에 있음) | 이성민 |
-| 2 | `fix: 표준견적서를 고른 공간만큼 계산` | 공간 종류별 면적 몫 표 + `calc_trades` + `FORMULA_VERSION` 올림 | 이현준 · 이성민 |
-| 3 | `feat: 표준견적서 · 업체 목록에 예상 범위` | `quote.service.standard_for` · `visit.service.vendors_for` 응답에 `range` + `pnpm gen:api` | 이현준 |
+| 2 | `fix: 표준견적서를 고른 공간만큼 계산` | 공간 종류별 몫 표(`calc/spaces.py` · `refprice/spaces.py`) + `calc_trades` + `FORMULA_VERSION` 2026.11.3. **`feat-price-range`에 구현됨(검증 대기)** | 이현준 · 이성민 |
+| 3 | `feat: 표준견적서 · 업체 목록에 예상 범위` | `standard_for`(공정별 · 합계) · `vendors_for`(표준 · 업체별 실측 뒤 예상) · `vendor_detail`(폭의 이유) 응답에 `range` + 타입 재생성. **`feat-price-range`에 구현됨(검증 대기)** | 이현준 |
 | 4 | `chore: 로컬 DB에 pgvector · pg_bigm` | DB 이미지 · `CREATE EXTENSION` migration · RDS `rds.allowed_extensions` 확인 | 이성민 |
 | 5 | `feat: 지식 표와 적재 명령` | `kb_sources · kb_chunks · kb_cards · kb_terms` + `python -m app.knowledge.ingest` + 하이브리드 검색 | 이현준 |
 | 6 | `feat: 지식 데이터 초안` | `feat-agent-knowledge` 브랜치의 데이터 파일(카드 · 용어 · 조각 · 표현 · 출처) 검수 후 | 채정석 · 전진환 |
@@ -34,7 +34,7 @@ README 일정(~11/13 계산 · 데이터, ~11/20 에이전트 1차, ~11/27 기�
 | --- | --- | --- | --- |
 | 15 | `feat: 도배 설정과 오케스트레이터` | `trades/dobae.py` + 두 공정 병렬 · 합치기 · 상한 | 임형준 |
 | 16 | `feat: 코치와 선제 안내 카드` | 코치 에이전트 + `knowledge/triggers.py` + 카드 화면 · 학습자 상태 | 임형준 · 채정석 |
-| 17 | `feat: 견적 설명과 범위 카드` | 견적 설명(worker 포함) + 범위 카드 · 폭의 이유 · 차이 설명 화면 | 임형준 · 이성민 |
+| 17 | `feat: 견적 설명과 범위 카드` | 견적 설명(worker 포함) + 차이 설명 화면. 범위 카드 · 폭의 이유 · '알면 좁아져요' 안내는 **`feat-price-range`에 구현됨**(`components/project/RangeCard.tsx`) | 임형준 · 이성민 |
 | 18 | `feat: 업체 추천 3곳` | `calc/vendor_score.py` + 템플릿 사유(README 약속) | 이현준 |
 | 19 | `eval: CI 지표와 야간 판정` | L0 pytest 지표 + L1 promptfoo 설정 · 결과 표 | 전진환 |
 | 20 | (선택) `feat: 사진 판독 초안` | worker + 확인 칩(08 문서) | 전진환 · 이성민 |
@@ -50,7 +50,7 @@ README 일정(~11/13 계산 · 데이터, ~11/20 에이전트 1차, ~11/27 기�
 | A | 에이전트 구성(코드 오케스트레이터 + LLM 다섯) 채택 | 채택. 에이전트 담당과 먼저 맞춘다 | 02 |
 | B | 범위 밖 **공정**은 코치가 일반 지식만 안내 | **결정: 허용**(2026-11-08). AGENTS.md §4 반영, 팀 PR에서 확인 | 11 D5 |
 | C | 코치 답의 지식 숫자(기간 · 비율) 허용 규칙 | 인용 조각 안의 숫자만 허용, 금액은 계속 금지 | 11 D6 |
-| D | 기준 단가 r2를 기본값으로 | **결정: 전환**(2026-11-08). `feat-price-range`에서 기본값 교체 · 산식 버전 올림 · DB 테스트 기대값 갱신 | 06 3.4 |
+| D | 기준 단가 r2를 기본값으로 | **결정: 전환**(2026-11-08). `feat-price-range` b066d65에서 기본값 교체 · 산식 버전 2026.11.2 · DB 테스트 400개 통과(로컬) | 06 3.4 |
 | E | 업체 단가 행에 '실측 후' 줄 응답 · 범위 밖 사유 코드 | 2주차 이후 migration | 06 5 · 6 |
 | F | 사진 판독을 MVP에 | 3주차 여유가 있으면, 없으면 발표 '확장'으로 | 08 |
 | G | 임베딩 모델 | RAG 30으로 te3-small vs te3-large vs bge-m3 · KURE-v1 비교 후 | 04 5 |
