@@ -58,6 +58,24 @@ def test_one_room_is_a_small_share_with_a_wider_range(api):
     assert (r["high"] - r["low"]) / r["mid"] > (w["high"] - w["low"]) / w["mid"]
 
 
+def test_one_room_range_follows_how_vendors_price_small_jobs(api):
+    # 일부 공간 도배는 롤 · 하루 품 · 부자재로 가운데를 잡고, 철거 · 폐기물은 그 금액에 든 것으로 본다
+    signup(api)
+    room = _std(api, _project(api, ["작은방 1"])["id"])["trades"][0]["range"]
+    assert room["version"] == "2026H2-r4"
+    assert any("롤" in n for n in room["notes"]) and room["fixed_add"] > 0
+    assert room["extra_max"] == 0 and not any(
+        p["driver"].startswith("cond:") for p in room["parts"]
+    )
+    assert 350_000 <= room["mid"] <= 550_000  # 실크 방 1칸 실견적 28만~50만(T10)
+    signup(api, "living@mitjip.test")
+    living = _std(api, _project(api, ["거실"])["id"])["trades"][0]["range"]
+    assert living["mid"] > room["mid"] + 250_000  # 거실 천장은 2명이 붙어 최소 2품
+    signup(api, "whole@mitjip.test")
+    whole = _std(api, _project(api, SIX)["id"])["trades"][0]["range"]
+    assert not any("롤" in n for n in whole["notes"]) and whole["extra_max"] > 0  # 집 전체는 그대로
+
+
 def test_band_only_points_to_entering_the_area(api):
     signup(api)
     p = _project(api, SIX, size={"band": "30"})

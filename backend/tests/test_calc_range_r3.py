@@ -33,8 +33,9 @@ def width(r) -> float:
     return (r.high - r.low) / r.mid
 
 
-def test_r3_is_the_default_and_r2_is_kept():
-    assert RANGE is R3 and R3.version == "2026H2-r3"
+def test_r2_and_r3_are_kept():
+    # 지금 기본값은 r4(r3 + 일부 공간 도배 견적 구조, test_calc_range_r4). r2 · r3는 비교용으로 남는다
+    assert RANGE.version == "2026H2-r4" and R3.version == "2026H2-r3"
     assert R2.version == "2026H2-r2" and R2.price_center["dobae.economy"] == Decimal("0.65")
 
 

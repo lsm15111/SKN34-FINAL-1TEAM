@@ -3,6 +3,7 @@
 - 정밀도는 지금 집 정보로 정한다: 면적을 넣었으면 area, 평형대만 골랐으면 band. 천장 평탄화 · 방문 개수는 가정값(guess).
 - 일부 공간만 고르면 '고른 공간 몫'도 가정값이라 그 σ(calc.spaces: 공간 종류별 크기 차이)를 더하고,
   철거 · 폐기물 같은 한 번(식) 금액도 공사 크기만큼 줄인다(조건 줄 min_scale).
+- 일부 공간 도배는 벽 · 천장 면적 · 거실 천장 여부를 넘겨 업체가 받는 방식(롤 · 하루 품 · 부자재)으로 중심을 잡게 한다.
 - '실측 후' 줄은 고객이 아직 모르는 것으로 보고(open) 할 확률만큼 섞는다.
 - 범위는 저장하지 않고 볼 때마다 계산한다. 입력이 같으면 늘 같은 값이다.
 """
@@ -16,6 +17,7 @@ from app.calc.common import COUNTED
 from app.calc.price_range import (
     LADDER,
     CondState,
+    JobQty,
     Precision,
     PriceRange,
     RangeInput,
@@ -79,6 +81,25 @@ def _fixed_key(trade: str, grade: str | None, keys: set[str]) -> str:
     return "mokgong" if keys & EDGE_KEYS else "mokgong.door"
 
 
+def _job_qty(trade: str, lines: Sequence[LineLike], k: Known) -> JobQty | None:
+    """일부 공간 도배: 벽 · 천장 면적(천장은 할 때만), 거실 천장이 드는지, 표준견적서 공급가"""
+    if trade != "dobae" or k.pick.whole:
+        return None
+    by = {ln.key: ln for ln in lines}
+    wall, ceiling = by.get("wall"), by.get("ceiling")
+    if wall is None or wall.qty is None:
+        return None
+    ceil_m2 = Decimal(0)
+    if ceiling is not None and ceiling.state in COUNTED and ceiling.qty is not None:
+        ceil_m2 = ceiling.qty
+    return JobQty(
+        wall_m2=wall.qty,
+        ceiling_m2=ceil_m2,
+        living_ceiling="living" in k.pick.kinds and ceil_m2 > 0,
+        base_supply=sum(ln.amount for ln in lines if ln.state in COUNTED and ln.amount is not None),
+    )
+
+
 def range_input(
     trade: str,
     grade: str | None,
@@ -124,6 +145,7 @@ def range_input(
         share_sigma=_share_sigma(trade, k),
         job_share=_job_share(trade, k.pick, keys),
         fixed_key=_fixed_key(trade, grade, keys),
+        job_qty=_job_qty(trade, lines, k),
     )
 
 

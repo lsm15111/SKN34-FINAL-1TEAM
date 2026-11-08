@@ -1,4 +1,5 @@
 """예상 범위 가정값 (2026 하반기). r2는 공공 기준 · 시장 관측으로 잡았고, r3는 실견적 백테스트로 고쳤다.
+r4는 일부 공간 도배를 업체 견적 구조(롤 · 하루 품 · 부자재)로 잡는다.
 가견적 · 실측 견적이 쌓이면 같은 백테스트(evaluation/price)로 다시 고친다. 지금 쓰는 한 벌은 맨 아래 RANGE다.
 
 값마다 근거를 sources에 적는다. 범위에는 version을 고정해 나중에 값이 바뀌어도 만든 때의 기준을 알 수 있게 한다.
@@ -8,7 +9,7 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from app.calc.price_range import CondRule, RangeRules
+from app.calc.price_range import CondRule, JobRule, RangeRules
 
 _D = Decimal
 
@@ -154,5 +155,37 @@ RANGE_2026H2_R3 = replace(
     },
 )
 
-# 지금 범위 계산에 쓰는 가정값 (2026-11-08 r3로 바꿈. r2는 버전 기록 · 백테스트 비교용으로 남긴다)
-RANGE = RANGE_2026H2_R3
+# ── 2026 하반기 r4: 일부 공간 도배를 업체 견적 구조로 (docs/research/T10 7절, evaluation/price) ──
+# 영진벽지 견적 내역(롤 · 품 · 부자재)의 dev 2/3로 값을 잡고 heldout 1/3으로 확인했다.
+# 일부 공간 도배 heldout 범위 안 67% → 80%, 방 1칸(전체 16건) 62% → 88%. 집 전체 · 목공은 r3와 같다.
+RANGE_2026H2_R4 = replace(
+    RANGE_2026H2_R3,
+    version="2026H2-r4",
+    job_rule={
+        "dobae": JobRule(
+            roll_m2=_D("16.5"),  # 실크 · 광폭 합지 1롤
+            loss=_D("1.12"),  # 집 전체 롤 수 ↔ 엔진 면적이 맞는 값(T10, 280건 중앙값 1.00)
+            roll_price={"basic": 45_000, "economy": 21_000},
+            rolls_per_day={"basic": _D("3.3"), "economy": _D("6.5")},
+            day_rate=250_000,
+            sub_min=30_000,
+            sub_per_roll=10_000,
+            living_ceiling_days=2,
+            included=("removal", "waste"),
+        )
+    },
+    sources={
+        **RANGE_2026H2_R3.sources,
+        "job_rule": "영진벽지 견적 내역 dev 206건(2025~26년 113건): 도배사 일당 25만, 롤 단가(롤 가중 중앙값) "
+        "실크 4.5만 · 합지 2.1만, 품 = 롤 수 ÷ 하루 롤 수(실크 3.3 · 합지 6.5)를 하루 단위로 올림, "
+        "부자재 = max(3만, 롤당 1만). heldout 73건도 같은 값(일당 25만, 실크 4.4만 · 3.5롤, 합지 2.1만 · 6.5롤). "
+        "롤은 견적처럼 벽 · 천장을 따로 세어 올리고, 거실 천장이 들면 최소 2품(거실 · 주방 천장 견적은 거의 다 2품 이상). "
+        "일부 공간 견적에서 철거 여부가 적힌 15건 중 13건이 '포함'이라 철거 · 폐기물은 이 금액에 든 것으로 본다. "
+        "견적의 품은 모두 하루 단위(1 · 2 · 3 …)였다. 짐 있는 집은 '짐 이동 · 보양' 줄로만 본다"
+        "(작업량 15% 감을 넣으면 방 1칸이 하루를 넘겨 2품이 되는데, 짐 있는 일부 공간 견적은 5건뿐이다). "
+        "일부 공간 로스를 1.25로 키우면 dev는 나아지지만 heldout이 나빠져 집 전체와 같은 1.12로 둔다(T10)",
+    },
+)
+
+# 지금 범위 계산에 쓰는 가정값 (2026-11-08 r4로 바꿈. r2 · r3는 버전 기록 · 백테스트 비교용으로 남긴다)
+RANGE = RANGE_2026H2_R4

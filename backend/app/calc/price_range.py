@@ -12,6 +12,8 @@
 여러 공정의 합계는 본체를 평균 · 분산이 같은 로그 정규 하나로 묶고(공정끼리 상관 trade_corr), 조건 줄은 모두 섞는다.
 작은 공사는 출장 · 최소 인건비 같은 고정비가 면적에 비례해 줄지 않는다. 그래서 중심에 고정비 × (1 − 공사 몫)을
 더하고(집 전체 단가에는 이미 녹아 있음), 업체 단가 흩어짐도 공사가 작을수록 넓힌다(small_sigma).
+일부 공간 도배는 업체가 받는 방식 그대로 중심을 잡는다(job_rule): 벽지 롤 수 × 롤 단가 + 도배사 품(하루 단위) × 일당
++ 부자재. 철거 · 폐기물은 보통 이 금액에 들어 있어 따로 섞지 않는다. 가견적이면 이 금액과 면적 비례 금액의 차이를 더한다.
 구간은 섞은 분포의 10% · 50% · 90% 지점을 이분법으로 찾는다. 무작위를 쓰지 않아 같은 입력이면 같은 구간이다.
 금액은 원 정수이고, 보이는 끝값은 만 원 단위로 하한 내림 · 중간 반올림 · 상한 올림한다.
 """
@@ -66,6 +68,43 @@ class CondRule:
 
 
 @dataclass(frozen=True)
+class JobRule:
+    """일부 공간 공사의 시장 견적 구조(부가세 빼고). 업체는 작은 공사를 면적에 비례해 받지 않고
+    벽지 롤 수 × 롤 단가 + 도배사 품 × 일당 + 부자재로 받는다. 롤은 벽 · 천장을 따로 세어 올리고,
+    품은 하루 단위로 올린다. included는 이 금액에 보통 들어 있는 '실측 후' 줄이다(범위에 따로 섞지 않는다)."""
+
+    roll_m2: Decimal  # 1롤이 바르는 면적
+    loss: Decimal  # 롤 수에 든 로스(무늬 · 자투리)
+    roll_price: Mapping[str, int]  # 등급 → 원/롤
+    rolls_per_day: Mapping[str, Decimal]  # 등급 → 도배사 1품이 바르는 롤 수
+    day_rate: int  # 도배사 일당(원)
+    sub_min: int  # 부자재 최소(원)
+    sub_per_roll: int  # 부자재 롤당(원)
+    living_ceiling_days: int  # 거실 천장이 들어가면 최소 품(넓은 천장은 2명이 붙는다)
+    included: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.roll_m2 <= 0 or self.loss < 1 or self.day_rate <= 0:
+            raise ValueError("롤 면적 · 로스 · 일당을 다시 확인해 주세요")
+        if self.living_ceiling_days < 1:
+            raise ValueError("최소 품은 1 이상이어야 해요")
+        if any(v <= 0 for v in self.rolls_per_day.values()):
+            raise ValueError("하루 롤 수는 0보다 커야 해요")
+        if min(self.sub_min, self.sub_per_roll, *self.roll_price.values()) < 0:
+            raise ValueError("금액은 0 이상이어야 해요")
+
+
+@dataclass(frozen=True)
+class JobQty:
+    """일부 공간 공사의 시장 견적 구조에 쓰는 수량(표준견적서 줄에서). 집 전체면 넣지 않는다."""
+
+    wall_m2: Decimal
+    ceiling_m2: Decimal  # 천장을 안 하면 0
+    living_ceiling: bool = False  # 고른 공간에 거실이 있고 천장도 한다
+    base_supply: int = 0  # 표준견적서 공급가(부가세 빼고). 면적 비례 시장 금액 = 이 값 × 시장 중심
+
+
+@dataclass(frozen=True)
 class RangeRules:
     """범위 계산에 쓰는 가정값 한 벌. refprice가 버전별로 만들어 넘긴다.
     price_* · visit_sigma · min_job의 키는 공정(dobae) 또는 공정.등급(dobae.basic). 등급 키가 먼저다."""
@@ -85,6 +124,8 @@ class RangeRules:
     fixed_cost: Mapping[str, int] = field(default_factory=dict)
     # (공사 몫 상한, 업체 단가 σ 배수) 작은 것부터. 공사 몫이 상한 미만이면 그 배수를 쓴다
     small_sigma: tuple[tuple[Decimal, Decimal], ...] = ()
+    # 공정 → 일부 공간 시장 견적 구조. 있으면 그 공정의 일부 공간 공사는 고정비 대신 이 구조로 중심을 잡는다
+    job_rule: Mapping[str, JobRule] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -102,6 +143,9 @@ class RangeInput:
     # 집 전체 대비 공사 크기(고른 공간 몫). 고정비 · 작은 공사 흩어짐 · min_scale 조건 줄에 쓴다
     job_share: Decimal = Decimal(1)
     fixed_key: str | None = None  # 고정비 키(RangeRules.fixed_cost). 없으면 고정비를 더하지 않는다
+    job_qty: JobQty | None = (
+        None  # 일부 공간 수량. 공정에 job_rule이 있으면 시장 견적 구조로 중심을 잡는다
+    )
 
 
 @dataclass(frozen=True)
@@ -261,6 +305,53 @@ def _fixed(inp: RangeInput, r: RangeRules) -> float:
     return r.fixed_cost[inp.fixed_key] * (1 - float(inp.job_share))
 
 
+def _rolls(m2: Decimal, rule: JobRule) -> int:
+    if m2 <= 0:
+        return 0
+    return int((m2 * rule.loss / rule.roll_m2).to_integral_value(rounding=ROUND_CEILING))
+
+
+def _job(inp: RangeInput, r: RangeRules) -> tuple[float, float] | None:
+    """일부 공간 시장 견적 구조 금액과 같은 공간의 면적 비례 시장 금액(둘 다 부가세 빼고). 해당 없으면 None"""
+    rule = r.job_rule.get(inp.trade)
+    q = inp.job_qty
+    if rule is None or q is None or inp.job_share >= 1:
+        return None
+    if q.wall_m2 < 0 or q.ceiling_m2 < 0 or q.base_supply < 0:
+        raise ValueError("공사 수량은 0 이상이어야 해요")
+    g = inp.grade
+    if g not in rule.roll_price or g not in rule.rolls_per_day:
+        return None
+    rolls = _rolls(q.wall_m2, rule) + _rolls(q.ceiling_m2, rule)
+    if rolls == 0:
+        return None
+    md = Decimal(rolls) / rule.rolls_per_day[g]
+    least = rule.living_ceiling_days if q.living_ceiling and q.ceiling_m2 > 0 else 1
+    days = max(int(md.to_integral_value(rounding=ROUND_CEILING)), least)
+    sub = max(rule.sub_min, rule.sub_per_roll * rolls)
+    amount = rolls * rule.roll_price[g] + days * rule.day_rate + sub
+    linear = q.base_supply * float(_pick(r.price_center, inp.trade, g))
+    return float(amount), linear
+
+
+def _effective(inp: RangeInput, r: RangeRules) -> RangeInput:
+    """시장 견적 구조로 잡는 일부 공간 공사는 그 금액에 든 '실측 후' 줄(철거 · 폐기물)을 따로 섞지 않는다"""
+    if _job(inp, r) is None:
+        return inp
+    drop = set(r.job_rule[inp.trade].included)
+    if not drop & set(inp.conds):
+        return inp
+    return replace(inp, conds={k: v for k, v in inp.conds.items() if k not in drop})
+
+
+def _added(inp: RangeInput, r: RangeRules) -> float:
+    """작은 공사라 면적 비례 금액보다 더 드는 몫(부가세 빼고): 시장 견적 구조와의 차이, 없으면 고정비"""
+    job = _job(inp, r)
+    if job is not None:
+        return max(job[0] - job[1], 0.0)
+    return _fixed(inp, r)
+
+
 def _mix(
     inp: RangeInput,
     r: RangeRules,
@@ -283,8 +374,12 @@ def _mix(
     if price_sigma is None:
         table = r.visit_sigma if inp.vendor_priced else r.price_sigma
         price_sigma = float(_pick(table, t, inp.grade)) * _small(inp, r)
-    center = supply * (1.0 if inp.vendor_priced else float(_pick(r.price_center, t, inp.grade)))
-    center += _fixed(inp, r)
+    job = None if inp.vendor_priced else _job(inp, r)
+    if job is not None:
+        center = job[0]  # 일부 공간: 업체가 받는 방식(롤 · 품 · 부자재) 그대로
+    else:
+        pc = 1.0 if inp.vendor_priced else float(_pick(r.price_center, t, inp.grade))
+        center = supply * pc + _added(inp, r)
     sigma = sqrt(sum(q.values()) + sum(sh.values()) + price_sigma**2)
     shifts, _ = _cond_dist(inp, r, fixed)
     k = 1.0 if inp.exempt else 1.0 + float(r.vat_rate)
@@ -313,7 +408,7 @@ def price_cdf(inp: RangeInput, r: RangeRules, amount: int) -> Decimal:
     최소 금액 아래는 0으로 본다(범위 하한을 최소 금액으로 올린 것과 같은 기준)."""
     if amount < 0:
         raise ValueError("금액은 0 이상이어야 해요")
-    m = _mix(inp, r)
+    m = _mix(_effective(inp, r), r)
     x = amount / m.k
     p = 0.0 if x < m.floor else _cdf(m, x)
     return Decimal(min(max(p, 0.0), 1.0)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
@@ -346,6 +441,7 @@ def _better(table: Mapping[str, Decimal], now: Precision) -> Precision | None:
 
 def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> PriceRange:
     """explain=False면 폭의 이유(parts)를 계산하지 않는다(업체 목록처럼 범위만 필요할 때)."""
+    inp = _effective(inp, r)
     z = float(r.z)
     m = _mix(inp, r)
     low, mid, high, floor = _bounds(m, z)
@@ -410,8 +506,13 @@ def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> Pric
         notes.append("업체 단가를 아직 몰라 업체마다 다른 단가를 범위에 넣었어요.")
     if any(s == "open" for s in inp.conds.values()):
         notes.append("할지 모르는 '실측 후' 줄은 할 가능성만큼 범위에 섞었어요.")
-    fixed = _fixed(inp, r)
-    if fixed:
+    fixed = _added(inp, r)
+    if _job(inp, r) is not None:
+        notes.append(
+            "일부 공간이라 업체가 보통 받는 방식(벽지 롤 수 × 롤 단가 + 도배사 하루 품 + 부자재)으로 잡았어요. "
+            "기존 벽지 철거 · 폐기물은 보통 이 금액에 들어 있어요."
+        )
+    elif fixed:
         notes.append("작은 공사라 출장 · 최소 인건비 같은 고정비를 더해 잡았어요.")
     if floor:
         notes.append("작은 공사라 업체가 보통 받는 최소 금액을 아래쪽 끝으로 잡았어요.")
@@ -450,6 +551,7 @@ def price_range_total(inps: list[RangeInput], r: RangeRules) -> PriceRange:
         raise ValueError("공정이 겹쳐요")
     if len(inps) == 1:
         return replace(price_range(inps[0], r, explain=False), trade="total")
+    inps = [_effective(inp, r) for inp in inps]
     mixes = [_mix(inp, r) for inp in inps]
     if len({m.k for m in mixes}) != 1:
         raise ValueError("부가세 방식이 같은 공정끼리만 합쳐요")
@@ -473,7 +575,7 @@ def price_range_total(inps: list[RangeInput], r: RangeRules) -> PriceRange:
     )
     low, mid, high, floor = _bounds(total, float(r.z))
     extra = sum(_cond_dist(inp, r)[1] for inp in inps)
-    fixed = sum(_fixed(inp, r) for inp in inps)
+    fixed = sum(_added(inp, r) for inp in inps)
     notes = [
         "공정마다 범위를 낸 뒤 합쳤어요. 두 공정 단가는 지역 · 시기에 따라 함께 오르내릴 수 있어 일부 같이 움직이는 것으로 봤어요."
     ]

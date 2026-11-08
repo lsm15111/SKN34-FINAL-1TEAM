@@ -32,11 +32,13 @@ from app.calc.common import COUNTED, PYEONG_M2, pyeong_to_m2
 from app.calc.price_range import price_cdf, price_range
 from app.quote import ranges
 from app.refprice.book import DOBAE, MOKGONG
-from app.refprice.market import RANGE, RANGE_2026H2, RANGE_2026H2_R3
+from app.refprice.market import RANGE, RANGE_2026H2, RANGE_2026H2_R3, RANGE_2026H2_R4
 from app.refprice.spaces import SPACES
 
 DATA = HERE / "real_quotes.jsonl"
-RULES = {x.version: x for x in (RANGE_2026H2, RANGE_2026H2_R3)}  # 견줄 수 있는 범위 가정값
+RULES = {
+    x.version: x for x in (RANGE_2026H2, RANGE_2026H2_R3, RANGE_2026H2_R4)
+}  # 견줄 수 있는 범위 가정값
 ALPHA = 0.2  # 80% 구간(10~90%)의 바깥 몫. 구간 점수에 쓴다
 ROLL_M2 = {"silk": Decimal("16.5"), "hapji": Decimal("16.5")}  # 실크 · 광폭 합지 1롤
 SOPOK_M2 = Decimal("5.3")  # 소폭 합지 1롤
