@@ -7,7 +7,7 @@ import pytest
 
 from app.calc import dobae, mokgong
 from app.calc.common import COUNTED, pyeong_to_m2
-from app.calc.price_range import QTY_DRIVER, RangeInput, price_range, price_range_total
+from app.calc.price_range import QTY_DRIVER, RangeInput, price_cdf, price_range, price_range_total
 from app.refprice.book import DOBAE_2026H2, MOKGONG_2026H2
 from app.refprice.market import RANGE_2026H2 as R
 
@@ -233,3 +233,15 @@ def test_small_job_adds_fixed_cost_and_wider_price_spread():
     assert vendor.fixed_add == 140_000  # 업체 단가 × 수량에도 고정비는 빠져 있다
     with pytest.raises(ValueError):
         price_range(replace(small, fixed_key="nope"), R)
+
+
+def test_cdf_places_an_amount_inside_the_range():
+    inp = d("area")
+    r = price_range(inp, R)
+    assert price_cdf(inp, R, r.low) < Decimal("0.15") and price_cdf(inp, R, r.high) > Decimal(
+        "0.85"
+    )
+    assert Decimal("0.45") <= price_cdf(inp, R, r.mid) <= Decimal("0.55")
+    assert price_cdf(inp, R, 0) == 0 and price_cdf(inp, R, 10**9) == 1
+    with pytest.raises(ValueError):
+        price_cdf(inp, R, -1)

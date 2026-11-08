@@ -307,6 +307,18 @@ def _cdf(m: _Mix, x: float) -> float:
     return total
 
 
+def price_cdf(inp: RangeInput, r: RangeRules, amount: int) -> Decimal:
+    """실제 금액(부가세 포함, 면세면 그대로)이 이 분포의 몇 % 지점인지(0~1, 소수 셋째 자리).
+    실측 견적이 범위의 어디쯤인지 보이거나(범위 밖 차이 설명) 실견적으로 범위를 검증할 때 쓴다.
+    최소 금액 아래는 0으로 본다(범위 하한을 최소 금액으로 올린 것과 같은 기준)."""
+    if amount < 0:
+        raise ValueError("금액은 0 이상이어야 해요")
+    m = _mix(inp, r)
+    x = amount / m.k
+    p = 0.0 if x < m.floor else _cdf(m, x)
+    return Decimal(min(max(p, 0.0), 1.0)).quantize(Decimal("0.001"), rounding=ROUND_HALF_UP)
+
+
 def _quantile(m: _Mix, prob: float) -> float:
     lo, hi = 0.0, m.center * exp(6 * m.sigma) + (m.shifts[-1][0] if m.shifts else 0.0) + 1.0
     for _ in range(STEPS):
