@@ -8,6 +8,7 @@
   uv run python ../evaluation/price/backtest.py              # 요약
   uv run python ../evaluation/price/backtest.py --csv out.csv  # 건별 결과
   --ext: 확장 여부를 모르면 확장으로 본다 / --vat: 부가세 여부를 모르면 포함으로 본다
+  --rules 2026H2-r2: 예전 범위 가정값으로 돌려 지금 값과 견준다 / --since 2025: 그해 이후 자료만
 """
 
 from __future__ import annotations
@@ -31,10 +32,12 @@ from app.calc.common import COUNTED, PYEONG_M2, pyeong_to_m2
 from app.calc.price_range import price_cdf, price_range
 from app.quote import ranges
 from app.refprice.book import DOBAE, MOKGONG
-from app.refprice.market import RANGE
+from app.refprice.market import RANGE, RANGE_2026H2, RANGE_2026H2_R3
 from app.refprice.spaces import SPACES
 
 DATA = HERE / "real_quotes.jsonl"
+RULES = {x.version: x for x in (RANGE_2026H2, RANGE_2026H2_R3)}  # 견줄 수 있는 범위 가정값
+ALPHA = 0.2  # 80% 구간(10~90%)의 바깥 몫. 구간 점수에 쓴다
 ROLL_M2 = {"silk": Decimal("16.5"), "hapji": Decimal("16.5")}  # 실크 · 광폭 합지 1롤
 SOPOK_M2 = Decimal("5.3")  # 소폭 합지 1롤
 LOSS = Decimal("1.12")  # 롤 수에 든 로스(무늬 · 자투리 · 방마다 올림)
@@ -115,7 +118,7 @@ def _conds(r: dict, inp, trade: str):
     return replace(inp, conds=conds)
 
 
-def engine(r: dict, ext_default: bool, vat_default: bool) -> dict:
+def engine(r: dict, ext_default: bool, vat_default: bool, rules=RANGE) -> dict:
     trade = r["trade"]
     area, basis, band, known = _size(r)
     occupied = bool(r.get("occupied"))
@@ -163,7 +166,7 @@ def engine(r: dict, ext_default: bool, vat_default: bool) -> dict:
     with_vat = vat == "included" or (vat == "unknown" and vat_default)
     lines = [_Line(x) for x in q.lines]
     inp = _conds(r, ranges.range_input(trade, grade, lines, k, exempt=not with_vat), trade)
-    pr = price_range(inp, RANGE, explain=False)
+    pr = price_range(inp, rules, explain=False)
     price = int(r["price"])
     supply = sum(ln.amount for ln in q.lines if ln.state in COUNTED and ln.amount is not None)
     std = q.total if with_vat else supply
@@ -172,7 +175,7 @@ def engine(r: dict, ext_default: bool, vat_default: bool) -> dict:
         "low": pr.low,
         "mid": pr.mid,
         "high": pr.high,
-        "pit": float(price_cdf(inp, RANGE, price)),
+        "pit": float(price_cdf(inp, rules, price)),
         "sigma": float(pr.sigma),
         "inside": pr.low <= price <= pr.high,
         "ratio_mid": price / pr.mid,
@@ -218,7 +221,22 @@ def summary(rows: list[dict], label: str) -> str:
     return (
         f"{label}: {n}건 | 범위 안 {inside:.0%} (아래 {below:.0%} · 위 {above:.0%}) | "
         f"실견적 ÷ 범위 가운데 {rmid:.2f} | 실견적 ÷ 표준견적서 {rstd:.2f} | "
-        f"|log 오차| 중앙값 {err:.2f} | PIT 평균 {pit:.2f}"
+        f"|log 오차| 중앙값 {err:.2f} | PIT 평균 {pit:.2f} | 구간 점수 {interval_score(rows):.2f}"
+    )
+
+
+def interval_score(rows: list[dict]) -> float:
+    """구간 점수(작을수록 좋음): 폭 + 범위 밖으로 벗어난 만큼 × 2/α, 실견적 대비 평균.
+    좁기만 한 범위(자주 벗어남)와 넓기만 한 범위(늘 맞지만 쓸모없음)를 함께 벌한다."""
+    k = 2 / ALPHA
+    return statistics.mean(
+        (
+            (x["high"] - x["low"])
+            + k * max(x["low"] - x["price"], 0)
+            + k * max(x["price"] - x["high"], 0)
+        )
+        / x["price"]
+        for x in rows
     )
 
 
@@ -244,17 +262,28 @@ def main() -> None:
     ap.add_argument("--vat", action="store_true", help="부가세 여부를 모르면 포함으로")
     ap.add_argument("--split", choices=("all", "dev", "heldout"), default="all")
     ap.add_argument("--fit", action="store_true", help="구간별 중심 치우침 · 흩어짐 보정 힌트")
+    ap.add_argument(
+        "--rules",
+        choices=tuple(RULES),
+        default=RANGE.version,
+        help="범위 가정값(기본: 지금 쓰는 값)",
+    )
+    ap.add_argument("--since", type=int, help="이 해 이후 자료만(날짜 없는 자료는 뺀다)")
     a = ap.parse_args()
+    rules = RULES[a.rules]
     rows = load(Path(a.data))
     out, skipped = [], {}
     for r in rows:
         why = usable(r)
         if not why and a.split != "all" and split_of(r["id"]) != a.split:
             why = "다른 나눔"
+        year = str(r.get("date") or "")[:4]
+        if not why and a.since and not (year.isdigit() and int(year) >= a.since):
+            why = f"{a.since}년 전 · 날짜 없음"
         if why:
             skipped[why] = skipped.get(why, 0) + 1
             continue
-        e = engine(r, a.ext, a.vat)
+        e = engine(r, a.ext, a.vat, rules)
         rec = {
             "id": r["id"],
             "split": split_of(r["id"]),
@@ -277,7 +306,7 @@ def main() -> None:
             "qty_ratio": quantity(r, e),
         }
         out.append(rec)
-    print(f"자료 {len(rows)}건 · 비교 {len(out)}건 · 제외 {skipped}")
+    print(f"가정값 {rules.version} · 자료 {len(rows)}건 · 비교 {len(out)}건 · 제외 {skipped}")
     real = [x for x in out if x["price_kind"] != "posted"]
     print(summary(real, "실제 견적 · 낸 금액(게시가 제외)"))
     for trade, name in (("dobae", "도배"), ("mokgong", "목공")):
@@ -313,8 +342,10 @@ def main() -> None:
     if q:
         print(f"수량: 보고 ÷ 엔진 중앙값 {statistics.median(q):.2f} ({len(q)}건)")
     if a.csv:
+        # 도배(paper_m2)와 목공(molding_m · doors_calc) 칸이 달라 모든 행의 칸을 모은다
+        fields = list(dict.fromkeys(k for x in out for k in x))
         with open(a.csv, "w", encoding="utf-8-sig", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=list(out[0]))
+            w = csv.DictWriter(f, fieldnames=fields)
             w.writeheader()
             w.writerows(out)
 
