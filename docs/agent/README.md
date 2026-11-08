@@ -51,7 +51,7 @@ flowchart TB
 | 브랜치 | 담은 것 | 상태 |
 | --- | --- | --- |
 | `docs-agent-design` | 이 문서들, 조사 원자료, AGENTS.md 사실 오류 수정 | 문서 |
-| `feat-price-range` | 예상 범위 계산 엔진(혼합 분위수 · 공정 합계) · 가정값 r4(실견적 보정 · 일부 공간 도배 견적 구조, 기본값) · 기준 단가 r2(기본값) · **공간별 수량** · 표준견적서 · 업체 목록 · 업체 자세히 API의 범위 · **범위 카드 화면** · 실견적 585건 백테스트(`evaluation/price/`) | 로컬 DB 테스트 460개 통과 · typecheck · lint · build 통과, CI 검증 대기 |
+| `feat-price-range` | 예상 범위 계산 엔진(혼합 분위수 · 공정 합계) · 가정값 r4(실견적 보정 · 일부 공간 도배 견적 구조, 기본값) · 기준 단가 r2(기본값) · **공간별 수량** · 표준견적서 · 업체 목록 · 업체 자세히 API의 범위 · **범위 카드 화면** · 실견적 1,135건 백테스트(`evaluation/price/`, 2차 550건은 새 자료 확인) | 로컬 DB 테스트 460개 통과 · typecheck · lint · build 통과, CI 검증 대기 |
 | `feat-agent-foundation` | LLM · DB 없는 에이전트 바탕: 출력 모양(`agent/schemas.py`) · 숫자 슬롯 검사기(`agent/guards.py`) · 도배 · 목공 슬롯과 다음 질문 고르기(`agent/trades`) · 선제 안내 트리거(`knowledge/triggers.py`) · 테스트 17개 | 로컬 통과, CI 검증 대기 |
 | `feat-agent-knowledge` (`feat-agent-foundation` 위에 쌓음) | 지식 데이터: 출처 387 · 선제 안내 카드 159 · 용어 117 · 표현 사전 73 · 검색 조각 212. 평가 세트: 의도 213 + 변형 60 · 가이드 50 · 오케스트레이터 30 · 상담 10 · 검색 45. 데이터 검사(`knowledge/ingest.py`) · L0 지표(`evaluation/run.py`) · 테스트 5개 | AI 초안(줄마다 `reviewed: false`), **사람 검수 필요** |
 
