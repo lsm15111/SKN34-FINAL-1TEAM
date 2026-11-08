@@ -40,6 +40,7 @@ RULES = {
     x.version: x for x in (RANGE_2026H2, RANGE_2026H2_R3, RANGE_2026H2_R4)
 }  # 견줄 수 있는 범위 가정값
 ALPHA = 0.2  # 80% 구간(10~90%)의 바깥 몫. 구간 점수에 쓴다
+FIRST_BATCH = "2026-11-08"  # batch 칸이 없는 자료(첫 수집 585건)
 ROLL_M2 = {"silk": Decimal("16.5"), "hapji": Decimal("16.5")}  # 실크 · 광폭 합지 1롤
 SOPOK_M2 = Decimal("5.3")  # 소폭 합지 1롤
 LOSS = Decimal("1.12")  # 롤 수에 든 로스(무늬 · 자투리 · 방마다 올림)
@@ -78,6 +79,9 @@ def usable(r: dict) -> str:
         return "다른 공정 · 누수 보수 포함"
     if r.get("scope") not in ("whole", "partial"):
         return "범위(집 전체 · 일부) 모름"
+    door_only = set(r.get("items") or []) == {"door"} and r.get("doors")
+    if r.get("scope") == "partial" and not r.get("spaces") and not door_only:
+        return "일부 공간인데 공간 모름"  # 방문만 고친 목공은 짝 수로 계산해 공간이 없어도 된다
     if any(w in s for s in r.get("spaces") or [] for w in SUB_ROOM):
         return "방 안 일부(천장만 · 벽 한 면)"
     if r.get("price_parts") in ("material_only", "labour_only"):
@@ -271,6 +275,7 @@ def main() -> None:
         help="범위 가정값(기본: 지금 쓰는 값)",
     )
     ap.add_argument("--since", type=int, help="이 해 이후 자료만(날짜 없는 자료는 뺀다)")
+    ap.add_argument("--batch", help=f"이 수집 묶음만(batch 칸, 없으면 첫 수집 {FIRST_BATCH})")
     a = ap.parse_args()
     rules = RULES[a.rules]
     rows = load(Path(a.data))
@@ -282,6 +287,8 @@ def main() -> None:
         year = str(r.get("date") or "")[:4]
         if not why and a.since and not (year.isdigit() and int(year) >= a.since):
             why = f"{a.since}년 전 · 날짜 없음"
+        if not why and a.batch and (r.get("batch") or FIRST_BATCH) != a.batch:
+            why = "다른 수집 묶음"
         if why:
             skipped[why] = skipped.get(why, 0) + 1
             continue
