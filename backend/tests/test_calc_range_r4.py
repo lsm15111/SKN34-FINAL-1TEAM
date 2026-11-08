@@ -7,7 +7,6 @@ from decimal import Decimal
 import pytest
 
 from app.calc.price_range import JobQty, RangeInput, price_cdf, price_range, price_range_total
-from app.refprice.market import RANGE
 from app.refprice.market import RANGE_2026H2_R3 as R3
 from app.refprice.market import RANGE_2026H2_R4 as R4
 
@@ -42,8 +41,9 @@ def same_as_r3(inp: RangeInput) -> bool:
     return price_range(inp, R4) == replace(price_range(inp, R3), version=R4.version)
 
 
-def test_r4_is_the_default_and_adds_only_the_job_rule():
-    assert RANGE is R4 and R4.version == "2026H2-r4"
+def test_r4_adds_only_the_job_rule():
+    # 지금 기본값은 r5(r4 + 방마다 롤, test_calc_range_r5). r4는 비교용으로 남는다
+    assert R4.version == "2026H2-r4"
     assert replace(R4, version=R3.version, job_rule=R3.job_rule, sources=R3.sources) == R3
     assert set(R4.job_rule) == {"dobae"} and "job_rule" in R4.sources
 

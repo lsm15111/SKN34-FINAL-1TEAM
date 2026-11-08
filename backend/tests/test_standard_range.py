@@ -62,7 +62,7 @@ def test_one_room_range_follows_how_vendors_price_small_jobs(api):
     # 일부 공간 도배는 롤 · 하루 품 · 부자재로 가운데를 잡고, 철거 · 폐기물은 그 금액에 든 것으로 본다
     signup(api)
     room = _std(api, _project(api, ["작은방 1"])["id"])["trades"][0]["range"]
-    assert room["version"] == "2026H2-r4"
+    assert room["version"] == "2026H2-r5"
     assert any("롤" in n for n in room["notes"]) and room["fixed_add"] > 0
     assert room["extra_max"] == 0 and not any(
         p["driver"].startswith("cond:") for p in room["parts"]

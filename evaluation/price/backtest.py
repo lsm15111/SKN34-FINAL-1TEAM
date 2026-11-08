@@ -32,12 +32,18 @@ from app.calc.common import COUNTED, PYEONG_M2, pyeong_to_m2
 from app.calc.price_range import price_cdf, price_range
 from app.quote import ranges
 from app.refprice.book import DOBAE, MOKGONG
-from app.refprice.market import RANGE, RANGE_2026H2, RANGE_2026H2_R3, RANGE_2026H2_R4
+from app.refprice.market import (
+    RANGE,
+    RANGE_2026H2,
+    RANGE_2026H2_R3,
+    RANGE_2026H2_R4,
+    RANGE_2026H2_R5,
+)
 from app.refprice.spaces import SPACES
 
 DATA = HERE / "real_quotes.jsonl"
 RULES = {
-    x.version: x for x in (RANGE_2026H2, RANGE_2026H2_R3, RANGE_2026H2_R4)
+    x.version: x for x in (RANGE_2026H2, RANGE_2026H2_R3, RANGE_2026H2_R4, RANGE_2026H2_R5)
 }  # 견줄 수 있는 범위 가정값
 ALPHA = 0.2  # 80% 구간(10~90%)의 바깥 몫. 구간 점수에 쓴다
 FIRST_BATCH = "2026-11-08"  # batch 칸이 없는 자료(첫 수집 585건)

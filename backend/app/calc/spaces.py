@@ -101,6 +101,9 @@ class SpacePick:
     kinds: tuple[SpaceKind, ...]
     guessed: tuple[str, ...]  # 종류를 몰라 fallback으로 본 이름
     zero: tuple[str, ...]  # 그 공정을 보통 하지 않는 공간(욕실 · 다용도실) 이름
+    # 고른 공간(이름)마다 도배 몫. 업체는 벽지 롤을 방마다 따로 세어 올린다(calc.price_range JobRule.per_room).
+    # 도배를 보통 안 하는 곳은 빼고, whole이면 비운다
+    paper_rooms: tuple[Decimal, ...] = ()
 
 
 def _share(table: Mapping[SpaceKind, Decimal], kinds: Sequence[SpaceKind]) -> Decimal:
@@ -131,19 +134,24 @@ def pick(names: Sequence[str], band: str, r: SpaceShares) -> SpacePick:
     cvs: list[Decimal] = []  # kinds와 같은 순서
     guessed: list[str] = []
     zero: list[str] = []
+    rooms: list[Decimal] = []  # 이름마다 도배 몫('거실 · 주방'처럼 묶은 이름은 한 곳)
     for n in names:
         ks = kinds_of(n)
         guess = ks == ("other",)
         if guess:
             guessed.append(n)
             ks = (r.fallback,)
-        if all(paper_t.get(k, Decimal(0)) == 0 for k in ks):
+        room = _share(paper_t, ks)
+        if room == 0:
             zero.append(n)
+        else:
+            rooms.append(room)
         kinds.extend(ks)
         cvs.extend(r.cv_guess if guess else r.cv.get(k, Decimal(0)) for k in ks)
     # 욕실 · 다용도실만 골랐어도 0원 견적은 내지 않는다: 작은방 하나로 본다(크기는 모름)
     if len(zero) == len(names):
         kinds, cvs = [r.fallback], [r.cv_guess]
+        rooms = [paper_t.get(r.fallback, Decimal(0))]
     paper = _share(paper_t, kinds)
     molding, base = _share(mold_t, kinds), _share(base_t, kinds)
     edge = (molding + r.base_ratio * base) / (1 + r.base_ratio)
@@ -177,4 +185,5 @@ def pick(names: Sequence[str], band: str, r: SpaceShares) -> SpacePick:
         kinds=tuple(kinds),
         guessed=tuple(guessed),
         zero=tuple(zero),
+        paper_rooms=() if whole else tuple(rooms),
     )

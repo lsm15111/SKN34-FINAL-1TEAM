@@ -13,7 +13,8 @@
 작은 공사는 출장 · 최소 인건비 같은 고정비가 면적에 비례해 줄지 않는다. 그래서 중심에 고정비 × (1 − 공사 몫)을
 더하고(집 전체 단가에는 이미 녹아 있음), 업체 단가 흩어짐도 공사가 작을수록 넓힌다(small_sigma).
 일부 공간 도배는 업체가 받는 방식 그대로 중심을 잡는다(job_rule): 벽지 롤 수 × 롤 단가 + 도배사 품(하루 단위) × 일당
-+ 부자재. 철거 · 폐기물은 보통 이 금액에 들어 있어 따로 섞지 않는다. 가견적이면 이 금액과 면적 비례 금액의 차이를 더한다.
++ 부자재. 롤은 업체처럼 방마다 벽 · 천장을 따로 세어 올린다(per_room).
+철거 · 폐기물은 보통 이 금액에 들어 있어 따로 섞지 않는다. 가견적이면 이 금액과 면적 비례 금액의 차이를 더한다.
 구간은 섞은 분포의 10% · 50% · 90% 지점을 이분법으로 찾는다. 무작위를 쓰지 않아 같은 입력이면 같은 구간이다.
 금액은 원 정수이고, 보이는 끝값은 만 원 단위로 하한 내림 · 중간 반올림 · 상한 올림한다.
 """
@@ -70,8 +71,9 @@ class CondRule:
 @dataclass(frozen=True)
 class JobRule:
     """일부 공간 공사의 시장 견적 구조(부가세 빼고). 업체는 작은 공사를 면적에 비례해 받지 않고
-    벽지 롤 수 × 롤 단가 + 도배사 품 × 일당 + 부자재로 받는다. 롤은 벽 · 천장을 따로 세어 올리고,
-    품은 하루 단위로 올린다. included는 이 금액에 보통 들어 있는 '실측 후' 줄이다(범위에 따로 섞지 않는다)."""
+    벽지 롤 수 × 롤 단가 + 도배사 품 × 일당 + 부자재로 받는다. 롤은 벽 · 천장을 따로 세어 올리고
+    (per_room이면 방마다도 따로), 품은 하루 단위로 올린다.
+    included는 이 금액에 보통 들어 있는 '실측 후' 줄이다(범위에 따로 섞지 않는다)."""
 
     roll_m2: Decimal  # 1롤이 바르는 면적
     loss: Decimal  # 롤 수에 든 로스(무늬 · 자투리)
@@ -82,6 +84,8 @@ class JobRule:
     sub_per_roll: int  # 부자재 롤당(원)
     living_ceiling_days: int  # 거실 천장이 들어가면 최소 품(넓은 천장은 2명이 붙는다)
     included: tuple[str, ...] = ()
+    # 롤을 방마다 따로 세어 올린다(JobQty.rooms). False면 고른 공간을 합쳐 한 번 올린다
+    per_room: bool = False
 
     def __post_init__(self) -> None:
         if self.roll_m2 <= 0 or self.loss < 1 or self.day_rate <= 0:
@@ -102,6 +106,8 @@ class JobQty:
     ceiling_m2: Decimal  # 천장을 안 하면 0
     living_ceiling: bool = False  # 고른 공간에 거실이 있고 천장도 한다
     base_supply: int = 0  # 표준견적서 공급가(부가세 빼고). 면적 비례 시장 금액 = 이 값 × 시장 중심
+    # 방마다 (벽, 천장) 면적. 비면 합친 면적으로 센다
+    rooms: tuple[tuple[Decimal, Decimal], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -317,12 +323,15 @@ def _job(inp: RangeInput, r: RangeRules) -> tuple[float, float] | None:
     q = inp.job_qty
     if rule is None or q is None or inp.job_share >= 1:
         return None
-    if q.wall_m2 < 0 or q.ceiling_m2 < 0 or q.base_supply < 0:
+    if min(q.wall_m2, q.ceiling_m2, q.base_supply, *(m2 for room in q.rooms for m2 in room)) < 0:
         raise ValueError("공사 수량은 0 이상이어야 해요")
     g = inp.grade
     if g not in rule.roll_price or g not in rule.rolls_per_day:
         return None
-    rolls = _rolls(q.wall_m2, rule) + _rolls(q.ceiling_m2, rule)
+    if rule.per_room and q.rooms:
+        rolls = sum(_rolls(w, rule) + _rolls(c, rule) for w, c in q.rooms)
+    else:
+        rolls = _rolls(q.wall_m2, rule) + _rolls(q.ceiling_m2, rule)
     if rolls == 0:
         return None
     md = Decimal(rolls) / rule.rolls_per_day[g]
@@ -508,9 +517,12 @@ def price_range(inp: RangeInput, r: RangeRules, *, explain: bool = True) -> Pric
         notes.append("할지 모르는 '실측 후' 줄은 할 가능성만큼 범위에 섞었어요.")
     fixed = _added(inp, r)
     if _job(inp, r) is not None:
+        rooms = inp.job_qty.rooms if inp.job_qty else ()
+        each = r.job_rule[t].per_room and len(rooms) > 1
         notes.append(
             "일부 공간이라 업체가 보통 받는 방식(벽지 롤 수 × 롤 단가 + 도배사 하루 품 + 부자재)으로 잡았어요. "
             "기존 벽지 철거 · 폐기물은 보통 이 금액에 들어 있어요."
+            + (" 벽지 롤은 업체처럼 방마다 따로 세었어요." if each else "")
         )
     elif fixed:
         notes.append("작은 공사라 출장 · 최소 인건비 같은 고정비를 더해 잡았어요.")
