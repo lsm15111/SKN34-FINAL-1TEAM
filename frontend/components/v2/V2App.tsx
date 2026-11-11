@@ -16,6 +16,8 @@ import s from "./v2.module.css";
 export const start = { mode: null as null | "resume" | "quick" | "ask" | "tool" | "look", ask: "", tool: "", look: "", style: "" };
 export function goChat(mode: typeof start.mode = null, extra: Partial<typeof start> = {}) {
   Object.assign(start, { mode }, extra);
+  // v10처럼 새로 시작하면 대화를 새로 그린다(고른 값 S는 그대로)
+  if (chat.built) resetFeed();
   chat.built = false;
   location.hash = "chat";
 }
@@ -204,6 +206,7 @@ function ChatView() {
     resetFeed();
     resetState();
     F.resetLocal?.();
+    F.resetMaterials?.();
     chat.built = false;
     window.scrollTo(0, 0);
     setKey((k) => k + 1);

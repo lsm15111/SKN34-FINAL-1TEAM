@@ -24,7 +24,10 @@
   --fs-xs: 13px; --fs-sm: 14px; --fs-md: 15px; --fs-lg: 17px; --fs-h3: 20px; --fs-h2: 24px; --fs-h1: 30px;
   --r-sm: 8px; --r-md: 10px; --r-lg: 14px; --r-xl: 20px; }
 .root :global(*) { box-sizing: border-box; }
-.root, .root { background: var(--bg); color: var(--ink); }
+.root :global([hidden]) { display: none !important; }
+.root :global(img) { max-width: 100%; }
+
+.root { background: var(--bg); color: var(--ink); }
 .root { font-family: var(--font); font-size: var(--fs-md); line-height: 1.6; word-break: keep-all; overflow-wrap: anywhere; -webkit-font-smoothing: antialiased; }
 .root :global(button), .root :global(input), .root :global(select), .root :global(textarea) { font: inherit; color: inherit; }
 .root :global(input), .root :global(textarea) { font-size: 16px; }
