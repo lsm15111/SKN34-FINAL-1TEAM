@@ -12,6 +12,7 @@ from app.account.router import router as account_router
 from app.auth.router import router as auth_router
 from app.config import settings
 from app.files.router import router as files_router
+from app.mvp.router import router as mvp_router
 from app.notify.router import router as notify_router
 from app.project.router import router as project_router
 from app.quote.router import router as quote_router
@@ -56,6 +57,7 @@ ROUTERS = [
     account_router,
     auth_router,
     files_router,
+    mvp_router,
     notify_router,
     project_router,
     quote_router,

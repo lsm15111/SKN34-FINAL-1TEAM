@@ -124,6 +124,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mvp/plans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 예시 평면도 목록 */
+        get: operations["plans_mvp_plans_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mvp/plans/{plan_id}/qty": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 평면도 수량 */
+        get: operations["plan_qty_mvp_plans__plan_id__qty_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mvp/materials": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 목공 자재 · 정해진 단가 항목 */
+        get: operations["materials_mvp_materials_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mvp/projects/{project_id}/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 견적 미리 보기 (도면 · 목공 자재 · 시장 범위, 저장하지 않음) */
+        post: operations["preview_mvp_projects__project_id__preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -2323,6 +2391,411 @@ export interface components {
             all_confirmed: boolean;
             /** @description 넣은 예산과 견줌 (예산을 안 넣었으면 비어 있다) */
             budget: components["schemas"]["BudgetOut"] | null;
+        };
+        /** MvpCountIn */
+        MvpCountIn: {
+            /**
+             * N
+             * @default 0
+             */
+            n: number;
+            /** Pick */
+            pick?: string | null;
+        };
+        /** MvpDoorIn */
+        MvpDoorIn: {
+            /**
+             * Mode
+             * @default none
+             * @enum {string}
+             */
+            mode: "none" | "replace" | "overlay" | "leaf";
+            /** Pick */
+            pick?: string | null;
+            /** Count */
+            count?: number | null;
+        };
+        /** MvpExtraOut */
+        MvpExtraOut: {
+            /** Key */
+            key: string;
+            /** Group */
+            group: string;
+            /** Ko */
+            ko: string;
+            /** What */
+            what: string;
+            /** Unit */
+            unit: string;
+            /** Price */
+            price: number;
+            /** Basis */
+            basis: string;
+            /** Src */
+            src: string;
+            /** Auto */
+            auto: string | null;
+        };
+        /** MvpGapStepOut */
+        MvpGapStepOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Why */
+            why: string;
+            /** D */
+            d: number;
+        };
+        /** MvpGradeInitOut */
+        MvpGradeInitOut: {
+            /** Molding Type */
+            molding_type: string;
+            /** Molding */
+            molding: string;
+            /** Base */
+            base: string;
+            /** Leaf */
+            leaf: string;
+            /** Door Set */
+            door_set: string;
+        };
+        /** MvpLineOut */
+        MvpLineOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Qty */
+            qty: string | null;
+            /** Unit */
+            unit: string;
+            /** Unit Price */
+            unit_price: number | null;
+            /** Amount */
+            amount: number | null;
+            /** State */
+            state: string;
+            /** Source */
+            source: string;
+            /** Price Basis */
+            price_basis: string;
+            /** Calc */
+            calc: string;
+        };
+        /** MvpMarketLineOut */
+        MvpMarketLineOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Qty */
+            qty: string | null;
+            /** Unit */
+            unit: string;
+            /** Unit Price */
+            unit_price: number | null;
+            /** Amount */
+            amount: number;
+            /** Note */
+            note: string;
+        };
+        /** MvpMarketOut */
+        MvpMarketOut: {
+            /** Version */
+            version: string;
+            /** Supply */
+            supply: number;
+            /** Lo */
+            lo: number;
+            /** Hi */
+            hi: number;
+            /** Band Lo */
+            band_lo: string;
+            /** Band Hi */
+            band_hi: string;
+            /** N */
+            n: number;
+            /** Lines */
+            lines: components["schemas"]["MvpMarketLineOut"][];
+            /** Gap Start */
+            gap_start: number;
+            /** Gap */
+            gap: components["schemas"]["MvpGapStepOut"][];
+        };
+        /** MvpMaterialsOut */
+        MvpMaterialsOut: {
+            /** Version */
+            version: string;
+            /** Products */
+            products: components["schemas"]["MvpProductOut"][];
+            /** Extras */
+            extras: components["schemas"]["MvpExtraOut"][];
+            /** Grades */
+            grades: {
+                [key: string]: components["schemas"]["MvpGradeInitOut"];
+            };
+        };
+        /** MvpMokSelIn */
+        MvpMokSelIn: {
+            /**
+             * @default {
+             *       "mode": "none"
+             *     }
+             */
+            door: components["schemas"]["MvpDoorIn"];
+            /**
+             * @default {
+             *       "n": 0
+             *     }
+             */
+            slide: components["schemas"]["MvpCountIn"];
+            /**
+             * @default {
+             *       "n": 0
+             *     }
+             */
+            hidden: components["schemas"]["MvpCountIn"];
+            /**
+             * Molding Type
+             * @default none
+             * @enum {string}
+             */
+            molding_type: "flat" | "step" | "minus" | "none";
+            /** Molding */
+            molding?: string | null;
+            /** Base */
+            base?: string | null;
+            /**
+             * Extras
+             * @default {}
+             */
+            extras: {
+                [key: string]: boolean | number | string;
+            };
+        };
+        /** MvpPlanBriefOut */
+        MvpPlanBriefOut: {
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /** Region */
+            region: string;
+            /** Type */
+            type: string;
+            /** Supply M2 */
+            supply_m2: string;
+            /** Excl M2 */
+            excl_m2: string | null;
+            /** Supply Py */
+            supply_py: number;
+            /** Rooms */
+            rooms: number;
+            /** Baths */
+            baths: number;
+            /** Layout */
+            layout: string;
+            /** Year */
+            year: number | null;
+            /** Stage */
+            stage: string | null;
+            /** Src */
+            src: string;
+            /** Src Url */
+            src_url: string;
+            /** Img */
+            img: string;
+            /** Drawn */
+            drawn: string;
+            /** Has Ext */
+            has_ext: boolean;
+        };
+        /** MvpPlanQtyOut */
+        MvpPlanQtyOut: {
+            /** Plan Id */
+            plan_id: string;
+            /** Rules Version */
+            rules_version: string;
+            /** Expanded */
+            expanded: boolean;
+            /** Ceiling */
+            ceiling: boolean;
+            /** Kinds */
+            kinds: string[] | null;
+            /** Spaces */
+            spaces: components["schemas"]["MvpPlanSpaceOut"][];
+            /** Wall M2 */
+            wall_m2: string;
+            /** Ceiling M2 */
+            ceiling_m2: string;
+            /** Paper M2 */
+            paper_m2: string;
+            /** Primer M2 */
+            primer_m2: string;
+            /** Rolls */
+            rolls: components["schemas"]["MvpRollOut"][];
+            /** Molding M */
+            molding_m: string;
+            /** Molding Pcs */
+            molding_pcs: number;
+            /** Base M */
+            base_m: string;
+            /** Base Pcs */
+            base_pcs: number;
+            /** Doors */
+            doors: number;
+            /** Casing M */
+            casing_m: string;
+            /** Windows M */
+            windows_m: string;
+            /** Low */
+            low: string[];
+            /** Assumptions */
+            assumptions: string[];
+        };
+        /** MvpPlanSpaceOut */
+        MvpPlanSpaceOut: {
+            /** Id */
+            id: string;
+            /** Ko */
+            ko: string;
+            /** Kind */
+            kind: string;
+            /** W M */
+            w_m: string;
+            /** D M */
+            d_m: string;
+            /** Floor M2 */
+            floor_m2: string;
+            /** Wall M2 */
+            wall_m2: string;
+            /** Ceiling M2 */
+            ceiling_m2: string;
+            /** Molding M */
+            molding_m: string;
+            /** Base M */
+            base_m: string;
+            /** Own Door */
+            own_door: boolean;
+            /** Papered */
+            papered: boolean;
+            /** Sure */
+            sure: string;
+            /** Ext */
+            ext: boolean;
+        };
+        /** MvpPreviewIn */
+        MvpPreviewIn: {
+            /** Plan Id */
+            plan_id?: string | null;
+            /**
+             * Expanded
+             * @default true
+             */
+            expanded: boolean;
+            /** Kinds */
+            kinds?: ("room" | "living" | "kitchen" | "entry" | "hall" | "dress" | "bath" | "balcony" | "utility")[] | null;
+            /** Grade */
+            grade?: ("economy" | "basic" | "premium") | null;
+            mok?: components["schemas"]["MvpMokSelIn"] | null;
+        };
+        /** MvpPreviewOut */
+        MvpPreviewOut: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Project Rev */
+            project_rev: number;
+            /** Area M2 */
+            area_m2: string;
+            /** Area Basis */
+            area_basis: string;
+            /**
+             * Grade
+             * @enum {string}
+             */
+            grade: "economy" | "basic" | "premium";
+            plan: components["schemas"]["MvpPlanBriefOut"] | null;
+            plan_qty: components["schemas"]["MvpPlanQtyOut"] | null;
+            /** Trades */
+            trades: components["schemas"]["MvpTradePreviewOut"][];
+            /** Supply */
+            supply: number;
+            /** Vat */
+            vat: number;
+            /** Total */
+            total: number;
+        };
+        /** MvpProductOut */
+        MvpProductOut: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Name */
+            name: string;
+            /** Price */
+            price: number;
+            /** Why */
+            why: string;
+            /** Len M */
+            len_m: string | null;
+            /** Type */
+            type: string | null;
+        };
+        /** MvpRollOut */
+        MvpRollOut: {
+            /** Kind */
+            kind: string;
+            /** Ko */
+            ko: string;
+            /** Size */
+            size: string;
+            /** Per Roll */
+            per_roll: number;
+            /** Rolls */
+            rolls: number;
+        };
+        /** MvpStepOut */
+        MvpStepOut: {
+            /** Key */
+            key: string;
+            /** Name */
+            name: string;
+            /** Half Days */
+            half_days: number;
+        };
+        /** MvpTradePreviewOut */
+        MvpTradePreviewOut: {
+            /**
+             * Trade
+             * @enum {string}
+             */
+            trade: "dobae" | "mokgong";
+            /** Version */
+            version: string;
+            /** Grade */
+            grade: string | null;
+            /** Lines */
+            lines: components["schemas"]["MvpLineOut"][];
+            /** Supply */
+            supply: number;
+            /** Vat */
+            vat: number;
+            /** Total */
+            total: number;
+            /** Man Day */
+            man_day: string;
+            /** Days */
+            days: string;
+            /** Steps */
+            steps: components["schemas"]["MvpStepOut"][];
+            /** Notes */
+            notes: string[];
+            market: components["schemas"]["MvpMarketOut"];
         };
         /**
          * MyProjectOut
@@ -4833,6 +5306,115 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    plans_mvp_plans_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MvpPlanBriefOut"][];
+                };
+            };
+        };
+    };
+    plan_qty_mvp_plans__plan_id__qty_get: {
+        parameters: {
+            query?: {
+                expanded?: boolean;
+                kinds?: ("room" | "living" | "kitchen" | "entry" | "hall" | "dress" | "bath" | "balcony" | "utility")[] | null;
+            };
+            header?: never;
+            path: {
+                plan_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MvpPlanQtyOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    materials_mvp_materials_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MvpMaterialsOut"];
+                };
+            };
+        };
+    };
+    preview_mvp_projects__project_id__preview_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MvpPreviewIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MvpPreviewOut"];
                 };
             };
             /** @description Validation Error */
