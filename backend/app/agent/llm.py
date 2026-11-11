@@ -88,6 +88,80 @@ async def structured[T: BaseModel](
         raise LLMError(f"{role} 호출 실패") from e
 
 
+CHAT_STUB_TEXT = "지금은 AI 답변을 쓸 수 없어요. 버튼으로 이어서 진행해 주세요."
+
+
+async def chat_tools(system: str, messages: list[dict], tools: list[dict]) -> dict:
+    """대화 한 번(도구 부르기 포함). 도구는 부르는 쪽이 실행하고 결과를 messages에 붙여 다시 부른다.
+
+    messages: [{role: user | assistant | tool, content: 글 | [{type: text, text} | {type: image, data}],
+    tool_calls?: [{id, name, arguments}], tool_call_id?}], tools: [{name, description, parameters}].
+    돌려주는 것: {text, tool_calls: [{id, name, arguments}], stop: tool_calls | stop | refusal}.
+    """
+    if not settings.llm_live:
+        return {"text": CHAT_STUB_TEXT, "tool_calls": [], "stop": "stop"}
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+    from langchain_openai import ChatOpenAI
+
+    def parts(content):
+        if isinstance(content, str):
+            return content
+        return [
+            {"type": "text", "text": p["text"]}
+            if p["type"] == "text"
+            else {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{p['data']}"}}
+            for p in content
+        ]
+
+    msgs: list = [SystemMessage(system)]
+    for m in messages:
+        if m["role"] == "user":
+            msgs.append(HumanMessage(parts(m["content"])))
+        elif m["role"] == "assistant":
+            calls = [
+                {"id": c["id"], "name": c["name"], "args": c["arguments"]}
+                for c in m.get("tool_calls") or []
+            ]
+            msgs.append(AIMessage(parts(m["content"]), tool_calls=calls))
+        else:
+            msgs.append(ToolMessage(parts(m["content"]), tool_call_id=m.get("tool_call_id") or ""))
+    model = ChatOpenAI(
+        model=settings.openai_agent_model,
+        api_key=settings.openai_api_key,
+        reasoning_effort=settings.openai_reasoning_effort,
+        timeout=30,
+        max_retries=1,
+    )
+    if tools:
+        model = model.bind_tools(
+            [
+                {
+                    "type": "function",
+                    "function": {
+                        "name": t["name"],
+                        "description": t.get("description", ""),
+                        "parameters": t.get("parameters") or {"type": "object", "properties": {}},
+                    },
+                }
+                for t in tools
+            ]
+        )
+    try:  # 공급자 오류 · 시간 초과를 한곳에서 LLMError로. 입력값은 남기지 않음
+        r = await model.ainvoke(msgs)
+    except Exception as e:
+        raise LLMError("chat 호출 실패") from e
+    calls = [
+        {"id": c.get("id") or "", "name": c["name"], "arguments": c.get("args") or {}}
+        for c in r.tool_calls
+    ]
+    text = r.content if isinstance(r.content, str) else r.text
+    refusal = r.additional_kwargs.get("refusal")
+    if refusal and not text:
+        text = refusal
+    stop = "tool_calls" if calls else "refusal" if refusal else "stop"
+    return {"text": text or "", "tool_calls": calls, "stop": stop}
+
+
 def _stub[T: BaseModel](role: Role, schema: type[T]) -> T:
     stub = _stubs.get(role)
     try:

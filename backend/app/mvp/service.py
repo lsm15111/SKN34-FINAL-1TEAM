@@ -13,6 +13,7 @@ from app.calc.common import sum_won
 from app.calc.mvp_common import Grade, MvpLine
 from app.calc.plan_qty import PlanOptions, PlanQty, from_plan
 from app.calc.standard_quote import house_area
+from app.calc.v2_plan_est import plan_est
 from app.mvp.schemas import (
     MvpExtraOut,
     MvpGapStepOut,
@@ -21,8 +22,10 @@ from app.mvp.schemas import (
     MvpMarketLineOut,
     MvpMarketOut,
     MvpMaterialsOut,
+    MvpMokFixedOut,
     MvpMokSelIn,
     MvpPlanBriefOut,
+    MvpPlanEstOut,
     MvpPlanQtyOut,
     MvpPlanSpaceOut,
     MvpPreviewIn,
@@ -44,6 +47,7 @@ from app.refprice.mvp_market import (
 )
 from app.refprice.mvp_materials import MOK_2026_11
 from app.refprice.mvp_plans import PlanInfo, plans
+from app.refprice.v2_ref import PRODUCT_PER
 from app.shared.errors import AppError
 
 
@@ -62,8 +66,9 @@ def _plan(plan_id: str) -> PlanInfo:
     return p
 
 
-def _qty_out(plan_id: str, q: PlanQty) -> MvpPlanQtyOut:
+def _qty_out(plan_id: str, q: PlanQty, est: MvpPlanEstOut | None = None) -> MvpPlanQtyOut:
     return MvpPlanQtyOut(
+        est=est,
         plan_id=plan_id,
         expanded=q.options.expanded,
         ceiling=q.options.ceiling,
@@ -76,20 +81,24 @@ def _qty_out(plan_id: str, q: PlanQty) -> MvpPlanQtyOut:
         **{
             k: getattr(q, k)
             for k in MvpPlanQtyOut.model_fields
-            if k not in ("plan_id", "expanded", "ceiling", "kinds", "spaces", "rolls")
+            if k not in ("plan_id", "expanded", "ceiling", "kinds", "spaces", "rolls", "est")
         },
     )
 
 
-def _qty(plan_id: str, expanded: bool, kinds: list[str] | None) -> tuple[PlanInfo, PlanQty]:
+def _qty(
+    plan_id: str, expanded: bool, kinds: list[str] | None, ceiling: bool = True
+) -> tuple[PlanInfo, PlanQty]:
     p = _plan(plan_id)
-    opts = PlanOptions(expanded=expanded, kinds=tuple(kinds) if kinds else None)
+    opts = PlanOptions(expanded=expanded, ceiling=ceiling, kinds=tuple(kinds) if kinds else None)
     return p, from_plan(p.plan, opts)
 
 
-def plan_qty(plan_id: str, expanded: bool, kinds: list[str] | None) -> MvpPlanQtyOut:
-    _, q = _qty(plan_id, expanded, kinds)
-    return _qty_out(plan_id, q)
+def plan_qty(
+    plan_id: str, expanded: bool, kinds: list[str] | None, ceiling: bool = True
+) -> MvpPlanQtyOut:
+    p, q = _qty(plan_id, expanded, kinds, ceiling)
+    return _qty_out(plan_id, q, MvpPlanEstOut(**plan_est(p.supply_m2).__dict__))
 
 
 def materials() -> MvpMaterialsOut:
@@ -98,12 +107,20 @@ def materials() -> MvpMaterialsOut:
         version=b.version,
         products=[
             MvpProductOut(
-                id=k, **{f: getattr(p, f) for f in MvpProductOut.model_fields if f != "id"}
+                id=k,
+                per=PRODUCT_PER.get(p.kind),
+                **{f: getattr(p, f) for f in MvpProductOut.model_fields if f not in ("id", "per")},
             )
             for k, p in b.products.items()
         ],
         extras=[MvpExtraOut(**x.__dict__) for x in b.extras],
         grades={g: MvpGradeInitOut(**i.__dict__) for g, i in b.init.items()},
+        fixed=MvpMokFixedOut(
+            minus_mult=b.fixed.minus_mult,
+            hidden_mult=b.fixed.hidden_mult,
+            molding_per_py=b.fixed.molding_per_py,
+            base_per_py=b.fixed.base_per_py,
+        ),
     )
 
 

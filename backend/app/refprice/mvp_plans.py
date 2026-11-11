@@ -35,6 +35,7 @@ class PlanInfo:
     drawn: str  # 그린 평면: basic(확장 전) · expanded(확장)
     has_ext: bool  # 확장 여부로 수량이 달라지는 공간이 있음
     plan: Plan
+    sup_note: str | None = None  # 공급면적 출처 글 (어림했으면 그 방법)
 
 
 def _plan(p: dict) -> Plan:
@@ -87,5 +88,6 @@ def plans() -> dict[str, PlanInfo]:
             drawn=p["drawn"],
             has_ext=any(s.ext_mm for s in plan.spaces),
             plan=plan,
+            sup_note=p.get("sup_note"),
         )
     return out

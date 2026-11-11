@@ -30,6 +30,7 @@ class MvpPlanBriefOut(BaseModel):
     img: str
     drawn: str
     has_ext: bool
+    sup_note: str | None  # 공급면적 출처 글
 
 
 class MvpPlanSpaceOut(BaseModel):
@@ -57,6 +58,16 @@ class MvpRollOut(BaseModel):
     rolls: int
 
 
+class MvpPlanEstOut(BaseModel):
+    """평형으로 어림한 값 (v10 CALC9 est): 도면 수량과 비교용."""
+
+    py: Decimal
+    wall_m2: Decimal
+    ceiling_m2: Decimal
+    molding_m: Decimal
+    base_m: Decimal
+
+
 class MvpPlanQtyOut(BaseModel):
     plan_id: str
     rules_version: str
@@ -78,6 +89,7 @@ class MvpPlanQtyOut(BaseModel):
     windows_m: Decimal
     low: list[str]
     assumptions: list[str]
+    est: MvpPlanEstOut | None = None
 
 
 class MvpProductOut(BaseModel):
@@ -88,6 +100,7 @@ class MvpProductOut(BaseModel):
     why: str
     len_m: Decimal | None
     type: str | None
+    per: str | None = None  # 한 개 단위: 짝 · 세트 (v10 MOK10.prod per)
 
 
 class MvpExtraOut(BaseModel):
@@ -110,11 +123,21 @@ class MvpGradeInitOut(BaseModel):
     door_set: str
 
 
+class MvpMokFixedOut(BaseModel):
+    """화면 문구에 쓰는 정해진 값 (v10 MOK10.fixed)."""
+
+    minus_mult: Decimal  # 무몰딩 시공 배수
+    hidden_mult: Decimal  # 히든 걸레받이 시공 배수
+    molding_per_py: Decimal
+    base_per_py: Decimal
+
+
 class MvpMaterialsOut(BaseModel):
     version: str
     products: list[MvpProductOut]
     extras: list[MvpExtraOut]
     grades: dict[str, MvpGradeInitOut]
+    fixed: MvpMokFixedOut | None = None
 
 
 class MvpDoorIn(BaseModel):
