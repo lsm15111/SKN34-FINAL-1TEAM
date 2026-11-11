@@ -1,0 +1,58 @@
+/* 도면 · 자재로 견적 보기. 색 · 글자 크기는 globals.css 토큰만 쓴다 */
+.board { display: grid; gap: 24px; margin-top: 24px; }
+.choose, .result { display: grid; gap: 24px; align-content: start; min-width: 0; }
+@media (min-width: 960px) {
+  .board { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .result { position: sticky; top: 16px; max-height: calc(100vh - 32px); overflow-y: auto; }
+}
+
+.card { display: grid; gap: 12px; padding: 20px; border: 1px solid var(--line); border-radius: var(--radius-l); background: var(--bg); min-width: 0; }
+.card h2, .card h3 { margin: 0; }
+.card h3 { margin-top: 8px; }
+
+/* 평면도 목록 */
+.planList { display: block; max-height: 360px; overflow-y: auto; border: 1px solid var(--line-soft); border-radius: var(--radius); }
+.planRow { display: flex; gap: 12px; align-items: flex-start; min-height: 44px; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); cursor: pointer; }
+.planRow:last-child { border-bottom: 0; }
+.planRow:has(input:checked) { background: var(--surface-2); }
+.planRow input { margin-top: 4px; width: 20px; height: 20px; flex: none; }
+.planRow > span { display: grid; gap: 2px; min-width: 0; }
+.planRow b { font-size: var(--fs-md); }
+.planPicked { display: grid; gap: 8px; }
+
+/* 둘 중 하나 고르기 버튼 묶음 */
+.seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 8px; }
+.seg button { display: grid; gap: 2px; min-height: 44px; padding: 8px 10px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--bg); color: var(--ink); font: inherit; font-size: var(--fs-md); text-align: center; cursor: pointer; }
+.seg button[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-weak); color: var(--accent-ink); box-shadow: inset 0 0 0 1px var(--accent); }
+.seg button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.num { max-width: 140px; }
+
+.check { display: flex; gap: 10px; align-items: flex-start; min-height: 40px; font-size: var(--fs-md); cursor: pointer; }
+.check input { width: 20px; height: 20px; margin-top: 2px; flex: none; }
+
+.extras { display: grid; gap: 8px; margin: 0; padding: 12px 0 0; border: 0; border-top: 1px solid var(--line-soft); min-width: 0; }
+.extras legend { padding: 0; margin-bottom: 4px; }
+.extraRow { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; min-height: 40px; }
+.extraRow label { flex: 1 1 180px; min-width: 0; font-size: var(--fs-md); }
+
+/* 결과 */
+.trade { display: grid; gap: 12px; padding: 16px 0; border-top: 1px solid var(--line); }
+.tradeHead { display: grid; gap: 4px; }
+.big { margin: 0; font-size: var(--fs-h2); font-weight: 700; }
+.market { display: grid; gap: 4px; padding: 12px; border-radius: var(--radius); background: var(--surface); }
+.market p { margin: 0; }
+.gap { display: grid; gap: 8px; margin: 8px 0 0; padding: 0; list-style: none; }
+.gap li { display: flex; gap: 12px; justify-content: space-between; align-items: flex-start; }
+.gap li > span { display: grid; gap: 2px; min-width: 0; }
+.gap b { white-space: nowrap; }
+.lines :global(.mj-small) { display: block; }
+.basis { display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: var(--radius-s); background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 400; vertical-align: middle; }
+.off { color: var(--ink-mute); }
+.notes { display: grid; gap: 4px; margin: 8px 0 0; padding-left: 18px; }
+.sum { margin: 0; padding-top: 12px; border-top: 2px solid var(--ink); font-size: var(--fs-lg); }
+.stale { opacity: 0.6; }
+.card summary { min-height: 40px; display: flex; align-items: center; cursor: pointer; color: var(--accent-ink); font-weight: 500; }
+.more { display: grid; gap: 8px; }
+.more > summary { font-size: var(--fs-lg); color: var(--ink); font-weight: 700; }
