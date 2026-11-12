@@ -2888,6 +2888,10 @@ export interface components {
             sure: string;
             /** Ext */
             ext: boolean;
+            /** Plan W M */
+            plan_w_m?: string | null;
+            /** Plan D M */
+            plan_d_m?: string | null;
         };
         /** MvpPreviewIn */
         MvpPreviewIn: {

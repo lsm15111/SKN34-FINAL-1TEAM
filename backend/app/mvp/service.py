@@ -4,6 +4,7 @@ DB에 쓰지 않는다. 프로젝트는 project.service 공개 함수로만 읽�
 """
 
 import uuid
+from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,7 +12,7 @@ from app.auth.models import User
 from app.calc import market_band, mvp_dobae, mvp_mokgong
 from app.calc.common import sum_won
 from app.calc.mvp_common import Grade, MvpLine
-from app.calc.plan_qty import PlanOptions, PlanQty, from_plan
+from app.calc.plan_qty import Plan, PlanOptions, PlanQty, from_plan
 from app.calc.standard_quote import house_area
 from app.calc.v2_plan_est import plan_est
 from app.mvp.schemas import (
@@ -66,7 +67,17 @@ def _plan(plan_id: str) -> PlanInfo:
     return p
 
 
-def _qty_out(plan_id: str, q: PlanQty, est: MvpPlanEstOut | None = None) -> MvpPlanQtyOut:
+def _qty_out(
+    plan_id: str, q: PlanQty, est: MvpPlanEstOut | None = None, plan: Plan | None = None
+) -> MvpPlanQtyOut:
+    raw = {sp.id: sp for sp in plan.spaces} if plan else {}
+
+    def dims(sid: str) -> dict[str, Decimal]:
+        sp = raw.get(sid)
+        return (
+            {"plan_w_m": Decimal(sp.w_mm) / 1000, "plan_d_m": Decimal(sp.d_mm) / 1000} if sp else {}
+        )
+
     return MvpPlanQtyOut(
         est=est,
         plan_id=plan_id,
@@ -74,7 +85,10 @@ def _qty_out(plan_id: str, q: PlanQty, est: MvpPlanEstOut | None = None) -> MvpP
         ceiling=q.options.ceiling,
         kinds=list(q.options.kinds) if q.options.kinds is not None else None,
         spaces=[
-            MvpPlanSpaceOut(**{k: getattr(s, k) for k in MvpPlanSpaceOut.model_fields})
+            MvpPlanSpaceOut(
+                **{k: getattr(s, k) for k in MvpPlanSpaceOut.model_fields if hasattr(s, k)},
+                **dims(s.id),
+            )
             for s in q.spaces
         ],
         rolls=[MvpRollOut(**r.__dict__) for r in q.rolls.values()],
@@ -98,7 +112,7 @@ def plan_qty(
     plan_id: str, expanded: bool, kinds: list[str] | None, ceiling: bool = True
 ) -> MvpPlanQtyOut:
     p, q = _qty(plan_id, expanded, kinds, ceiling)
-    return _qty_out(plan_id, q, MvpPlanEstOut(**plan_est(p.supply_m2).__dict__))
+    return _qty_out(plan_id, q, MvpPlanEstOut(**plan_est(p.supply_m2).__dict__), p.plan)
 
 
 def materials() -> MvpMaterialsOut:
@@ -279,7 +293,7 @@ async def preview(
         area_basis=basis,
         grade=grade,
         plan=_brief(info) if info else None,
-        plan_qty=_qty_out(info.id, plan_q) if info and plan_q else None,
+        plan_qty=_qty_out(info.id, plan_q, plan=info.plan) if info and plan_q else None,
         trades=trades,
         supply=sum_won(t.supply for t in trades),
         vat=sum_won(t.vat for t in trades),

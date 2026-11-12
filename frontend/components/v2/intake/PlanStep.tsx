@@ -22,6 +22,7 @@ import {
   pp9Fmt,
   pp9Guess,
   pp9Kinds,
+  pp9Num,
   pp9ScopeKo,
   pp9Sub,
   pp9Title,
@@ -75,14 +76,14 @@ function PlanOne({ p, onPick, close, back }: { p: PlanBrief; onPick?: OnPick; cl
           <dt>타입</dt>
           <dd>{p.type}</dd>
           <dt>면적</dt>
-          <dd>{`전용 ${p.excl_m2 ?? "-"}㎡ · 공급 ${p.supply_m2}㎡(${p.supply_py}평)`}</dd>
+          <dd>{`전용 ${pp9Num(p.excl_m2)}㎡ · 공급 ${pp9Num(p.supply_m2)}㎡(${p.supply_py}평)`}</dd>
           <dt>구조</dt>
           <dd>{pp9Sub(p)}</dd>
         </dl>
         <div className="pp9-rooms">
           <b>
             {`도면에서 읽은 공간 ${rooms.length}곳`}
-            <small className="muted"> · 안쪽 길이(벽 두께 뺌)</small>
+            <small className="muted"> · 벽 가운데 기준 길이</small>
           </b>
           {r?.err ? <p className="err">{r.err}</p> : !r ? <p className="muted">불러오는 중이에요…</p> : null}
           <ul>
@@ -90,7 +91,7 @@ function PlanOne({ p, onPick, close, back }: { p: PlanBrief; onPick?: OnPick; cl
               <li key={s.id}>
                 <span>{s.ko}</span>
                 <span className="pp9-num">
-                  {`${pp9Fmt(s.w_m)} × ${pp9Fmt(s.d_m)}m`}
+                  {`${pp9Fmt(s.plan_w_m ?? s.w_m)} × ${pp9Fmt(s.plan_d_m ?? s.d_m)}m`}
                   {s.sure === "low" ? <em> 추정</em> : null}
                 </span>
               </li>
@@ -106,7 +107,7 @@ function PlanOne({ p, onPick, close, back }: { p: PlanBrief; onPick?: OnPick; cl
         ) : (
           <p className="muted">확장 전 기본형 도면이에요. 발코니를 확장했다면 실측 때 늘어난 만큼 더해요.</p>
         )}
-        <p className="muted">{`출처: ${p.src}${p.stage ? " · 사업시행인가 단계 도면이라 실제 준공 평면과 다를 수 있어요" : " 공고 평면도"}. 치수는 벽 가운데 기준이라 안쪽 길이로 바꿔 계산해요.`}</p>
+        <p className="muted">{`출처: ${p.src}${p.stage ? " · 사업시행인가 단계 도면이라 실제 준공 평면과 다를 수 있어요" : " 공고 평면도"}. 치수는 벽 가운데 기준이라 안쪽 길이로 바꿔 계산해요.${p.sup_note ? ` ${p.sup_note}했어요.` : ""}`}</p>
         <div className="row">
           <button
             type="button"

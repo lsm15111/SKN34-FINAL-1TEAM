@@ -25,6 +25,9 @@ def test_plans_and_plan_qty(api):
     assert areas == sorted(areas)
     q = api.get("/mvp/plans/fp04/qty").json()
     assert q["expanded"] is True and q["doors"] > 0 and float(q["paper_m2"]) > 0
+    # 도면 치수(벽 가운데 기준)는 안쪽 길이보다 길다
+    sp = q["spaces"][0]
+    assert float(sp["plan_w_m"]) > float(sp["w_m"]) and float(sp["plan_d_m"]) > 0
     narrow = api.get("/mvp/plans/fp04/qty", params={"kinds": ["kitchen"], "expanded": "false"})
     assert narrow.status_code == 200 and narrow.json()["doors"] == 0
     assert float(narrow.json()["wall_m2"]) < float(q["wall_m2"])

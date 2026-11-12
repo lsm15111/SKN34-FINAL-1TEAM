@@ -48,6 +48,8 @@ class MvpPlanSpaceOut(BaseModel):
     papered: bool
     sure: str
     ext: bool
+    plan_w_m: Decimal | None = None  # 도면 치수 (벽 가운데 기준, 확장 전)
+    plan_d_m: Decimal | None = None
 
 
 class MvpRollOut(BaseModel):
