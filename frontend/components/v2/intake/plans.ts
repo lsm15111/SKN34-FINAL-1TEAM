@@ -58,16 +58,18 @@ export function loadPlans(): Promise<PlanBrief[]> {
 export const planById = (id: string | undefined) => (id ? plansState.list?.find((p) => p.id === id) ?? null : null);
 
 /* ---------- 도면 수량 (받은 값을 기억해 둔다) ---------- */
-const qtyKey = (id: string, expanded: boolean, kinds: string[] | null) => `${id}|${expanded ? 1 : 0}|${kinds ? [...kinds].sort().join(",") : "*"}`;
+const qtyKey = (id: string, expanded: boolean, kinds: string[] | null, ceiling = true) =>
+  `${id}|${expanded ? 1 : 0}|${kinds ? [...kinds].sort().join(",") : "*"}${ceiling ? "" : "|c0"}`;
 const qtyCache = new Map<string, PlanQty>();
 const failed = new Set<string>();
 let loading: string | null = null;
 
-export async function fetchQty(id: string, expanded: boolean, kinds: string[] | null): Promise<PlanQty> {
-  const key = qtyKey(id, expanded, kinds);
+export async function fetchQty(id: string, expanded: boolean, kinds: string[] | null, ceiling = true): Promise<PlanQty> {
+  const key = qtyKey(id, expanded, kinds, ceiling);
   const hit = qtyCache.get(key);
   if (hit) return hit;
   const qs = new URLSearchParams({ expanded: String(expanded) });
+  if (!ceiling) qs.set("ceiling", "false");
   for (const k of kinds || []) qs.append("kinds", k);
   const q = await mvpGet<PlanQty>(`plans/${encodeURIComponent(id)}/qty?${qs}`);
   qtyCache.set(key, q);

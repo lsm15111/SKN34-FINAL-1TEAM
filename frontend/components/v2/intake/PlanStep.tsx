@@ -32,12 +32,12 @@ type PickOpts = { expanded: boolean };
 type OnPick = (p: PlanBrief, o: PickOpts) => void;
 
 /** 백엔드 수량을 받아 오는 작은 훅 */
-function useQty(id: string, expanded: boolean, kinds: string[] | null) {
+function useQty(id: string, expanded: boolean, kinds: string[] | null, ceiling = true) {
   const [r, setR] = useState<{ key: string; q?: PlanQty; err?: string } | null>(null);
-  const key = `${id}|${expanded}|${kinds?.join(",") ?? ""}`;
+  const key = `${id}|${expanded}|${kinds?.join(",") ?? ""}|${ceiling}`;
   useEffect(() => {
     let on = true;
-    fetchQty(id, expanded, kinds).then(
+    fetchQty(id, expanded, kinds, ceiling).then(
       (q) => on && setR({ key, q }),
       (e) => on && setR({ key, err: errorText(e) }),
     );
@@ -241,13 +241,52 @@ export function pp9Apply(p: PlanBrief, o: PickOpts) {
   flashBoard();
 }
 
+/* 평형으로 어림한 값과 도면 수량 비교 (v10 qtyCard '평형으로 어림한 값과 비교'). 두 값 모두 API 값, 차이는 비율 표시만 */
+function EstCompare({ t, est }: { t: PlanQty; est: NonNullable<PlanQty["est"]> }) {
+  const diff = (a: number, b: number) => {
+    if (!b) return "";
+    const d = Math.round(((a - b) / b) * 100);
+    return d === 0 ? "같아요" : `${d > 0 ? "+" : ""}${d}%`;
+  };
+  const cmp: [string, string, string, string][] = [
+    ["벽 도배", t.wall_m2, est.wall_m2, "㎡"],
+    ["천장 도배", t.ceiling_m2, est.ceiling_m2, "㎡"],
+    ["천장 몰딩", t.molding_m, est.molding_m, "m"],
+    ["걸레받이", t.base_m, est.base_m, "m"],
+  ];
+  return (
+    <details className="pp9-more">
+      <summary>평형으로 어림한 값과 비교</summary>
+      <div className="tbl">
+        <table>
+          <thead>
+            <tr>{["", "평형으로 어림", "도면으로", "차이"].map((x) => <th key={x}>{x}</th>)}</tr>
+          </thead>
+          <tbody>
+            {cmp.map(([k, a, b, u]) => (
+              <tr key={k}>
+                <td>{k}</td>
+                <td className="num">{`${pp9Fmt(b)}${u}`}</td>
+                <td className="num">{`${pp9Fmt(a)}${u}`}</td>
+                <td className="num">{diff(Number(a), Number(b))}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="muted">{`평형으로 어림: 공급 ${pp9Fmt(est.py)}평을 넣고 일반 비율로 계산한 값이에요(지금 표준견적서 방식).`}</p>
+    </details>
+  );
+}
+
 /* ---------- 도면 수량 카드 ---------- */
 function QtyCard({ p, expanded: ex0 = true, next = false }: { p: PlanBrief; expanded?: boolean; next?: boolean }) {
   const [done, setDone] = useState(false);
   const [expanded, setExpanded] = useState(ex0);
+  const [ceiling, setCeiling] = useState(true);
   const [kinds] = useState(() => pp9Kinds());
   const [scopeKo] = useState(() => pp9ScopeKo());
-  const r = useQty(p.id, expanded, kinds);
+  const r = useQty(p.id, expanded, kinds, ceiling);
   useEffect(() => {
     if (S.plan?.id === p.id && S.plan.expanded !== expanded) {
       S.plan.expanded = expanded;
@@ -268,14 +307,18 @@ function QtyCard({ p, expanded: ex0 = true, next = false }: { p: PlanBrief; expa
         <b>{pp9Title(p)}</b>
         <span className="muted">{`${pp9Area(p)} · ${!p.has_ext ? "기본형 도면" : expanded ? "발코니 확장" : "발코니 확장 안 함"} · 범위 ${scopeKo}`}</span>
       </div>
-      {p.has_ext ? (
-        <div className="pp9-opts">
+      <div className="pp9-opts">
+        {p.has_ext ? (
           <label className="chk">
             <input type="checkbox" checked={expanded} disabled={done} onChange={(e) => setExpanded(e.target.checked)} />
             발코니 확장
           </label>
-        </div>
-      ) : null}
+        ) : null}
+        <label className="chk">
+          <input type="checkbox" checked={ceiling} disabled={done} onChange={(e) => setCeiling(e.target.checked)} />
+          천장도 도배
+        </label>
+      </div>
       {!r ? (
         <p className="muted">수량을 계산하는 중이에요…</p>
       ) : r.err || !t ? (
@@ -318,6 +361,7 @@ function QtyCard({ p, expanded: ex0 = true, next = false }: { p: PlanBrief; expa
             </div>
             <p className="muted">{kinds ? `상담에서 고른 범위(${scopeKo})만 셌어요. 욕실 · 발코니 · 다용도실은 벽지를 바르지 않아 뺐어요.` : "욕실 · 발코니 · 다용도실은 벽지를 바르지 않아 뺐어요."}</p>
           </details>
+          {t.est ? <EstCompare t={t} est={t.est} /> : null}
           <details className="pp9-more">
             <summary>이렇게 계산했어요</summary>
             <ul className="pp9-assume">{t.assumptions.map((a) => <li key={a}>{a}</li>)}</ul>
