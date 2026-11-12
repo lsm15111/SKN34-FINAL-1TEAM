@@ -14,7 +14,9 @@ export const PP9_BANDS: [string, string][] = [["all", "전체"], ["20", "20평 �
 export const pp9PyBand = (py: number) => (py < 23 ? "20" : py < 28 ? "25" : py < 32 ? "30" : py < 37 ? "34" : "40");
 export const pp9Band = (p: PlanBrief) => pp9PyBand(p.supply_py);
 export const pp9Title = (p: PlanBrief) => `${p.name} ${p.type}`;
-export const pp9Area = (p: PlanBrief) => `전용 ${p.excl_m2 ?? "-"}㎡ · 공급 ${p.supply_py}평`;
+/** API 십진수 글자("49.0")를 v10처럼 숫자 그대로("49") 보인다 */
+export const pp9Num = (x: number | string | null | undefined) => (x == null ? "-" : String(Number(x)));
+export const pp9Area = (p: PlanBrief) => `전용 ${pp9Num(p.excl_m2)}㎡ · 공급 ${p.supply_py}평`;
 export const pp9Sub = (p: PlanBrief) => [`방 ${p.rooms} · 욕실 ${p.baths}`, p.layout, p.year ? `${p.year}년 입주` : p.stage].filter(Boolean).join(" · ");
 /* 상담 범위가 '일부만'이면 그 공간 종류만(거실 · 방 = 거실 · 방 · 복도 · 드레스룸) */
 export const PP9_KINDS: Record<string, string[]> = { room: ["living", "room", "hall", "dress"], kitchen: ["kitchen"], entry: ["entry"], bath: ["bath"], window: [] };
