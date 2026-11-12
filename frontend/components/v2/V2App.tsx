@@ -9,7 +9,7 @@ import { stepFn } from "./flow";
 import { Home } from "./home/Home";
 import "./modules";
 import { setImgMode, view } from "./photo";
-import { chat, DATA, loadSaved, resetState, S, store, touch, useV2 } from "./store";
+import { assetCfg, chat, DATA, loadSaved, resetState, S, store, touch, useV2 } from "./store";
 import s from "./v2.module.css";
 
 /** 첫 화면에서 상담을 어떻게 시작할지 (v10 startMode · pendingAsk · pendingTool · pendingLook) */
@@ -255,7 +255,8 @@ function Header({ inChat }: { inChat: boolean }) {
   );
 }
 
-export function V2App() {
+export function V2App({ imgBase = "" }: { imgBase?: string }) {
+  assetCfg.imgBase = imgBase;
   const hash = useHash();
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   useEffect(() => {

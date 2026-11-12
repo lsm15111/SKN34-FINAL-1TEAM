@@ -7,5 +7,7 @@ export const metadata = { title: "믿집 상담 v2" };
 // 계산 · AI는 백엔드(/mvp/v2/*)가 하고, 화면은 고른 값과 결과만 다룬다. 로그인한 고객만 쓴다.
 export default async function V2Page() {
   await requireRole("customer", "/v2");
-  return <V2App />;
+  // 사진을 S3 · CDN에 두면 그 주소(https만). 비어 있으면 저장소 안 사진(/v2/img)
+  const base = process.env.V2_IMG_BASE ?? "";
+  return <V2App imgBase={/^https:\/\/[^\s"'<>]+$/.test(base) ? base : ""} />;
 }

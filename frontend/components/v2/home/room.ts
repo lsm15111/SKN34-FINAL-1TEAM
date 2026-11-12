@@ -2,7 +2,7 @@
 // 거실 · 방은 빈 방 실사 사진에 느낌 색(바닥 · 벽 · 나무)을 입히고, 욕실 · 주방 · 현관은 같은 공간의 비슷한 사진을 빌린다.
 // 사진을 칠할 준비가 되기 전에는 SVG 그림(roomDraw)을 쓰고, 준비되면 touch()로 다시 그린다.
 import { LOOKS, type Look, mixHex, rgbOf } from "../looks";
-import { touch } from "../store";
+import { asset, touch } from "../store";
 
 type Tone = Look["tone"];
 type LookLike = { tone?: Tone; space?: string; style?: string; img?: string | null };
@@ -130,7 +130,7 @@ export function roomDraw(lk: LookLike) {
 /* 빈 방 실사 사진(Unsplash nQlVMCHPysY, 원본 1920×1280)의 바닥 · 벽 · 천장 · 걸레받이 · 문에 느낌 색을 입힌다.
    사진의 밝기 · 결 · 그림자는 그대로 두고 색만 바꾼다(영역 평균 밝기 = 고른 색) */
 type RRBase = { W: number; H: number; base: ImageData; reg: Uint8Array; up: Uint8Array; lum: Float32Array; mean: number[]; canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D };
-const RR = { src: "/v2/img/free/style-modern-white-empty-hd.jpg", cache: {} as Record<string, string>, base: null as RRBase | null, ready: null as Promise<boolean> | null };
+const RR = { src: "img/free/style-modern-white-empty-hd.jpg", cache: {} as Record<string, string>, base: null as RRBase | null, ready: null as Promise<boolean> | null };
 const segY = (pts: number[][], x: number) => {
   for (let i = 1; i < pts.length; i++) {
     const [x0, y0] = pts[i - 1], [x1, y1] = pts[i];
@@ -143,7 +143,8 @@ const segY = (pts: number[][], x: number) => {
    좌표는 720 폭 기준이고 사진 크기에 맞춰 늘려요 */
 async function rrPrepare(): Promise<boolean> {
   const im = new Image();
-  im.src = RR.src;
+  im.crossOrigin = "anonymous"; // 사진이 S3 · CDN에 있어도 canvas로 색을 읽을 수 있게 (그쪽 CORS 허용 필요)
+  im.src = asset(RR.src) ?? RR.src;
   await im.decode();
   const W = Math.min(1440, im.naturalWidth), H = Math.round((W * im.naturalHeight) / im.naturalWidth), sc = W / 720, n = W * H; /* 계산은 1440 폭까지만 */
   const c = document.createElement("canvas");

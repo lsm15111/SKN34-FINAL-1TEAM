@@ -72,8 +72,15 @@ export const V3 = {
 /** 자재 · 스타일 자료 (public/v2/data.json) */
 export const DATA: { materials: Material[]; styles: Record<string, StyleData>; ready: boolean } = { materials: [], styles: {}, ready: false };
 
-/** public/v2 아래 파일 경로. 자료 안 경로는 "img/..." 처럼 상대 경로다 */
-export const asset = (p: string | null | undefined) => (!p ? null : /^(https?:|data:|blob:|\/)/.test(p) ? p : `/v2/${p}`);
+/** 사진 주소 앞부분 (서버 설정 V2_IMG_BASE). 비어 있으면 저장소 안 /v2/img, 있으면 S3 · CDN 주소 (예 https://cdn.example.com/v2/img) */
+export const assetCfg = { imgBase: "" };
+/** public/v2 아래 파일 경로. 자료 안 경로는 "img/..." 처럼 상대 경로다. 사진(img/)만 imgBase를 따른다 */
+export const asset = (p: string | null | undefined) => {
+  if (!p) return null;
+  if (/^(https?:|data:|blob:|\/)/.test(p)) return p;
+  if (p.startsWith("img/") && assetCfg.imgBase) return `${assetCfg.imgBase.replace(/\/$/, "")}/${p.slice(4)}`;
+  return `/v2/${p}`;
+};
 
 let version = 0;
 const listeners = new Set<() => void>();
