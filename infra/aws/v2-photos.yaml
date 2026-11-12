@@ -1,0 +1,126 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Mitjip v2 consult photos - private S3 bucket served only through CloudFront with OAC.
+
+# v2 상담 화면 사진(frontend/public/v2/img)을 담는 스택. 팀 스택(staging.yaml)과 따로 둔다.
+# 올리기: deploy/aws/v2_photos_sync.sh <PhotoBucketName>
+# 화면 서버(web)의 V2_IMG_BASE = 출력 ImageBaseUrl
+
+Resources:
+  PhotoBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      Tags:
+        - Key: Project
+          Value: mitjip
+        - Key: Environment
+          Value: staging
+
+  PhotoOac:
+    Type: AWS::CloudFront::OriginAccessControl
+    Properties:
+      OriginAccessControlConfig:
+        Name: !Sub "${AWS::StackName}-oac"
+        Description: Mitjip v2 photos bucket access from CloudFront
+        OriginAccessControlOriginType: s3
+        SigningBehavior: always
+        SigningProtocol: sigv4
+
+  # 그림(canvas)이 사진을 읽을 수 있게 모든 응답에 Access-Control-Allow-Origin을 붙인다.
+  # 관리형 SimpleCORS는 요청에 Origin이 있을 때만 붙여서 쓰지 않는다. 사진은 공개 자료다.
+  CorsFunction:
+    Type: AWS::CloudFront::Function
+    Properties:
+      Name: !Sub "${AWS::StackName}-cors"
+      AutoPublish: true
+      FunctionConfig:
+        Comment: Always allow cross-origin reads of v2 photos
+        Runtime: cloudfront-js-2.0
+      FunctionCode: |
+        function handler(event) {
+          var res = event.response;
+          res.headers['access-control-allow-origin'] = { value: '*' };
+          return res;
+        }
+
+  PhotoDistribution:
+    Type: AWS::CloudFront::Distribution
+    Properties:
+      DistributionConfig:
+        Enabled: true
+        Comment: Mitjip v2 consult photos
+        HttpVersion: http2and3
+        IPV6Enabled: true
+        PriceClass: PriceClass_200
+        Origins:
+          - Id: photos
+            DomainName: !GetAtt PhotoBucket.RegionalDomainName
+            OriginAccessControlId: !GetAtt PhotoOac.Id
+            S3OriginConfig:
+              OriginAccessIdentity: ""
+        DefaultCacheBehavior:
+          TargetOriginId: photos
+          ViewerProtocolPolicy: redirect-to-https
+          AllowedMethods: [GET, HEAD, OPTIONS]
+          CachedMethods: [GET, HEAD]
+          Compress: true
+          # 관리형 CachingOptimized
+          CachePolicyId: 658327ea-f89d-4fab-a63d-7e88639e58f6
+          FunctionAssociations:
+            - EventType: viewer-response
+              FunctionARN: !GetAtt CorsFunction.FunctionMetadata.FunctionARN
+      Tags:
+        - Key: Project
+          Value: mitjip
+        - Key: Environment
+          Value: staging
+
+  PhotoBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref PhotoBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowCloudFrontRead
+            Effect: Allow
+            Principal:
+              Service: cloudfront.amazonaws.com
+            Action: s3:GetObject
+            Resource: !Sub "${PhotoBucket.Arn}/*"
+            Condition:
+              StringEquals:
+                AWS:SourceArn: !Sub "arn:aws:cloudfront::${AWS::AccountId}:distribution/${PhotoDistribution}"
+                AWS:SourceAccount: !Ref AWS::AccountId
+          - Sid: DenyInsecureTransport
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource:
+              - !GetAtt PhotoBucket.Arn
+              - !Sub "${PhotoBucket.Arn}/*"
+            Condition:
+              Bool:
+                aws:SecureTransport: "false"
+
+Outputs:
+  PhotoBucketName:
+    Value: !Ref PhotoBucket
+  DistributionId:
+    Value: !Ref PhotoDistribution
+  ImageBaseUrl:
+    Description: V2_IMG_BASE value
+    Value: !Sub "https://${PhotoDistribution.DomainName}/v2/img"
