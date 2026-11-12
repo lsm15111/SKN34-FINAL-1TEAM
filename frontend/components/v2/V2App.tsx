@@ -228,6 +228,9 @@ function ChatView() {
 
 function Header({ inChat }: { inChat: boolean }) {
   const st = useV2();
+  // 사진 종류 고르기는 시연용: 주소에 ?photos가 있을 때만 보인다 (v10과 같음)
+  const [photosOn, setPhotosOn] = useState(false);
+  useEffect(() => setPhotosOn(new URLSearchParams(location.search).has("photos")), []);
   return (
     <header className="top">
       <div className="wrap">
@@ -240,7 +243,7 @@ function Header({ inChat }: { inChat: boolean }) {
         </a>
         {inChat ? <span className="pill-ai" id="ai-pill">AI 상담</span> : null}
         <span className="spacer" />
-        <div className="seg" role="group" aria-label="사진 종류">
+        <div className="seg" role="group" aria-label="사진 종류" hidden={!photosOn}>
           {(["free", "mfg", "ai"] as const).map((m) => (
             <button key={m} type="button" data-mode={m} aria-pressed={st.imgMode === m} onClick={() => setImgMode(m)}>
               {m === "free" ? "무료 사진" : m === "mfg" ? "제조사" : "AI"}
