@@ -43,6 +43,7 @@ backend/data/
 
 # 로컬 전용 RAG 추가 자료 (저작권 있는 책 본문 등, 공개 저장소에 올리지 않음)
 frontend/public/v2/rag-local.json
+data/local/
 
 # RAG 평가 캐시 (합친 말뭉치, 로컬 추가 자료 포함 가능)
 evaluation/rag/.cache/
