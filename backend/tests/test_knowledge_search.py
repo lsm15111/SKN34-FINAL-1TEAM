@@ -14,7 +14,7 @@ from tests.helpers import knowledge_chunk, knowledge_version
 
 def _ix(*items: tuple[str, str, str, tuple[str, ...]]) -> bm25.Index:
     """(ref, kind, 본문, 공정) 목록으로 작은 색인"""
-    chunks = [bm25.Chunk(ref=r, doc=f"d{r}", text=t, trades=tr) for r, _, t, tr in items]
+    chunks = [bm25.Chunk(ref=r, doc=f"d{r}", text=t, trades=tr, rid=r) for r, _, t, tr in items]
     docs = {f"d{r}": bm25.Doc(title="", kind=kind) for r, kind, _, _ in items}
     return bm25.build(chunks, docs)
 
@@ -50,13 +50,19 @@ def test_money_question_excludes_blogs():
     assert "K1" in refs(bm25.search(ix, "도배 후기"))
 
 
-def test_field_slot_puts_trade_book_chunk_in():
+def test_trade_weight_lifts_same_trade_chunk():
     ix = _ix(
-        ("K1", "kcs", "초배 정배 순서 초배 정배 순서", ("도배",)),
-        ("K2", "kcs", "초배 정배 순서 기준", ("도배",)),
-        ("K3", "book", "현장에서 초배 정배 순서는 이렇게", ("도배",)),
+        ("K1", "kcs", "작업 순서와 확인 기준", ("목공",)),
+        ("K2", "kcs", "작업 순서와 확인 기준", ("도배",)),
     )
-    assert refs(bm25.search(ix, "초배 정배 순서", k=2))[-1] == "K3"
+    assert refs(bm25.search(ix, "작업 순서 기준", trade="목공"))[0] == "K1"
+    assert refs(bm25.search(ix, "작업 순서 기준", trade="도배"))[0] == "K2"
+
+
+def test_dense_order_brings_in_chunk_without_shared_words():
+    ix = _ix(("K1", "official", "벽지 들뜸 원인", ()), ("K2", "official", "곰팡이 결로 환기", ()))
+    assert refs(bm25.search(ix, "벽지 들뜸")) == ["K1"]
+    assert refs(bm25.search(ix, "벽지 들뜸", dense=["K2", "K1"])) == ["K1", "K2"]
 
 
 def test_enough_is_false_for_unrelated_question():
@@ -113,3 +119,19 @@ def test_service_searches_active_versions_only():
     assert set(asyncio.run(run("벽지 들뜸"))) == {"K1", "K5001"}
     query("update ref_dataset_versions set status='retired' where id in ($1, $2)", active, draft)
     assert asyncio.run(run("벽지 들뜸")) == []
+
+
+def test_service_adds_nearest_chunks_of_same_model():
+    v = knowledge_version("consult")
+    knowledge_chunk(v, "K1", "벽지 들뜸은 풀칠 부족이 원인", embedding=[0.0, 1.0, 0.0])
+    knowledge_chunk(v, "K2", "결로가 생기면 환기부터 해요", embedding=[1.0, 0.0, 0.0])
+
+    async def run(embedding) -> list[str]:
+        async with SessionLocal() as s:
+            return refs(await service.search(s, "벽지 들뜸", embedding=embedding))
+
+    assert asyncio.run(run(None)) == ["K1"]
+    assert asyncio.run(run(("test-model", [1.0, 0.1, 0.0]))) == ["K1", "K2"]
+    # 모델 · 차원이 다른 임베딩은 의미 검색에 쓰지 않는다
+    assert asyncio.run(run(("other-model", [1.0, 0.1, 0.0]))) == ["K1"]
+    assert asyncio.run(run(("test-model", [1.0, 0.1]))) == ["K1"]

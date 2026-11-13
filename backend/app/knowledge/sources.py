@@ -27,7 +27,7 @@ def _split(v: str | None) -> tuple[str, ...]:
     return tuple(x for x in (v or "").split(";") if x)
 
 
-def _own(r: dict[str, str]) -> tuple[Chunk, Doc]:
+def _own(key: str, r: dict[str, str]) -> tuple[Chunk, Doc]:
     doc = Doc(
         title=r["source"], pub=r["source_org"], date=r.get("doc_date") or "",
         kind=r["source_type"], rel=r.get("rel") or "", url=r["source_url"],
@@ -35,6 +35,7 @@ def _own(r: dict[str, str]) -> tuple[Chunk, Doc]:
     chunk = Chunk(
         ref=r["ref"], doc=r["doc"], text=r["content"], sec=r["section"],
         hints=tuple(json.loads(r.get("hints") or "[]")), trades=_split(r.get("trades")),
+        rid=f"{key}/{r['id']}",
     )  # fmt: skip
     return chunk, doc
 
@@ -51,7 +52,7 @@ def assemble(
             continue
         if "ref" in rows[0]:
             for r in rows:
-                c, d = _own(r)
+                c, d = _own(key, r)
                 docs.setdefault(c.doc, d)
                 chunks.append(c)
             continue
@@ -64,7 +65,10 @@ def assemble(
         )  # fmt: skip
         for r in rows:
             sec = " · ".join(x for x in (r["section"], f"{r['page']}쪽" if r["page"] else "") if x)
-            chunks.append(Chunk(ref=f"K{k}", doc=doc, text=r["content"], sec=sec, trades=trades))
+            chunks.append(
+                Chunk(ref=f"K{k}", doc=doc, text=r["content"], sec=sec, trades=trades,
+                      rid=f"{key}/{r['id']}")
+            )  # fmt: skip
             k += 1
     chunks.sort(key=lambda c: int(c.ref[1:]))
     refs = [c.ref for c in chunks]

@@ -9,7 +9,9 @@
   - `from`: 질문 출처 (`book` 시공 안내서, `mokgong_qa:q-…` 팀 목공 고객 질문, `written` 직접 씀)
 - `corpus.py`: 서버 적재용 CSV로 합친 말뭉치 만들기 (화면 자료 `data/consult` K1~ · 팀 자료 `data/processed` K2001~ · 로컬 추가 자료 `data/local`(git 제외) K5001~). 번호 규칙은 서버와 같은 `backend/app/knowledge/sources.py`. 결과는 `.cache/`(git 제외)
 - `rank.mjs`: 화면 검색(`rag.ts`)으로 질문마다 순위 뽑기
-- `rank_server.py`: 서버 검색(`backend/app/knowledge/bm25.py`)으로 질문마다 순위 뽑기 (DB 없이)
+- `rank_server.py`: 서버 검색(`backend/app/knowledge/bm25.py`)으로 질문마다 순위 뽑기 (DB 없이, 의미 검색 없이)
+- `dense.py`: 질문 임베딩 → DB(pgvector)에서 의미 검색 순위 (`.cache/dense.json`, 유료: 질문 90개 약 2천 토큰)
+- `hybrid.py`: 키워드 + 의미 검색 합치기 무게를 dev로 고르고(`--final`로 held-out 한 번) 확인
 - `metrics.py`: hit@1 · hit@5 · recall@5 · MRR · nDCG@5, 자료 없음 질문의 '자료 부족' 판단률
 
 ## 돌리기
@@ -31,3 +33,18 @@ python evaluation/rag/metrics.py evaluation/rag/.cache/rank_current.json evaluat
 - 공정별 hit@5 (자리 확보): 도배 0.429 · 목공 0.773 · 공통 0.600
 - 자료 없음 질문 2개는 모두 '자료 충분'으로 판단(0/2)
 - 서버 검색(`knowledge/bm25.py`, CSV로 읽음): 90문항 모두 위 20개 순위 · '자료 충분' 판단이 화면 검색(자리 확보)과 같다 (공정 넘김 있음 · 없음 둘 다)
+
+## 4단계: 키워드 + 의미 검색 (2026-11-13)
+- 조각 임베딩: text-embedding-3-small 1536차원, 2,154조각 (75만 토큰, 약 0.015달러)
+- 고른 무게(`bm25.CONF`): 의미 검색 `dense_w` 0.75(위 30개), 같은 공정 조각 `trade_w` 0.012. 공정 자리 확보는 뺐다 (무게만으로 같은 결과)
+- dev 격자: 의미 검색 0.5~1.0 × 공정 0.008~0.016이 모두 hit@5 0.72~0.76이라 가운데를 골랐다
+
+| 검색 | 나눔 | hit@1 | hit@5 | recall@5 | MRR | nDCG@5 |
+|---|---|---|---|---|---|---|
+| 키워드만 (자리 확보, 3단계까지) | dev | 0.414 | 0.603 | 0.304 | 0.669 | 0.398 |
+| 키워드 + 의미 + 공정 무게 | dev | 0.362 | 0.741 | 0.321 | 0.686 | 0.421 |
+| 키워드만 (자리 확보, 3단계까지) | held-out | 0.296 | 0.593 | 0.256 | 0.599 | 0.366 |
+| 키워드 + 의미 + 공정 무게 | held-out | 0.407 | 0.741 | 0.319 | 0.647 | 0.459 |
+- 공정별 hit@5 (held-out): 도배 0.600 → 0.800, 목공 0.400 → 0.500, 공통 0.857 → 1.000
+- dev hit@1은 내려갔다 (0.414 → 0.362). 상담은 위 6개를 함께 넘기므로 hit@5를 우선했다
+- held-out은 이 설정으로 한 번만 봤다. 다음 무게 조정은 질문 세트를 늘린 뒤 새 held-out으로 본다

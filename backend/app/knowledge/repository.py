@@ -35,3 +35,24 @@ async def chunk_rows(
     for r in rows:
         out[r.dataset_id].append({**r.provenance, "content": r.content, "section": r.section})
     return [(keys[v], rs) for v, rs in out.items()]
+
+
+async def nearest(
+    s: AsyncSession, version_ids: list[uuid.UUID], model: str, vector: list[float], limit: int
+) -> list[str]:
+    """임베딩이 가까운 조각의 행 키(dataset_key/record_key). 같은 모델 · 차원으로 만든 버전만 본다"""
+    if not version_ids:
+        return []
+    rows = await s.execute(
+        select(RefDatasetVersion.dataset_key, RagChunk.record_key)
+        .join(RefDatasetVersion, RefDatasetVersion.id == RagChunk.dataset_id)
+        .where(
+            RagChunk.dataset_id.in_(version_ids),
+            RefDatasetVersion.embedding_model == model,
+            RefDatasetVersion.embedding_dimensions == len(vector),
+            RagChunk.embedding.is_not(None),
+        )
+        .order_by(RagChunk.embedding.cosine_distance(vector))
+        .limit(limit)
+    )
+    return [f"{k}/{r}" for k, r in rows]

@@ -14,6 +14,8 @@ JEV_URL = "https://openrouter.ai/api/alpha/decisions"
 
 _stubs: dict[Role, BaseModel] = {}
 _jev_stub: list[tuple[str, float]] = []
+_embed_stub: list[tuple[str, list[float]]] = []
+EMBED_DIMENSIONS = 1536  # 지식 조각 임베딩과 같은 차원 (data_ingest 기본값)
 
 
 def model_for(role: Role) -> tuple[str, str]:
@@ -38,9 +40,36 @@ def set_jev_stub(choice: str, confidence: float = 0.9) -> None:
     _jev_stub[:] = [(choice, confidence)]
 
 
+def set_embed_stub(model: str, vector: list[float]) -> None:
+    """LLM_LIVE=false일 때 검색어 임베딩이 돌려줄 (모델, 벡터). 없으면 의미 검색 없이 찾는다."""
+    _embed_stub[:] = [(model, vector)]
+
+
 def clear_stubs() -> None:
     _stubs.clear()
     _jev_stub.clear()
+    _embed_stub.clear()
+
+
+async def embed_query(text: str) -> tuple[str, list[float]] | None:
+    """검색어 임베딩 (의미 검색용, 질문 하나에 수십 토큰). 실패하면 None: 부르는 쪽은 키워드로만 찾는다."""
+    if not settings.llm_live:
+        return _embed_stub[0] if _embed_stub else None
+    from openai import AsyncOpenAI, OpenAIError
+
+    model = settings.openai_embedding_model
+    client = AsyncOpenAI(
+        api_key=settings.openai_api_key.get_secret_value(), timeout=10, max_retries=1
+    )
+    try:  # 공급자 오류 · 시간 초과는 조용히 키워드 검색으로. 입력값은 남기지 않음
+        r = await client.embeddings.create(
+            model=model, input=text[:300], dimensions=EMBED_DIMENSIONS
+        )
+        return model, list(r.data[0].embedding)
+    except OpenAIError:
+        return None
+    finally:
+        await client.close()
 
 
 async def jev_choice(text: str, instructions: str, criteria: dict[str, str]) -> tuple[str, float]:

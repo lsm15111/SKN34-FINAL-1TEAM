@@ -297,3 +297,20 @@ def test_knowledge_periods_are_not_calc(api, fake):
     signup(api)
     out = api.post("/v2/ask", json={"message": "도배 며칠 걸려요?"}).json()
     assert out["text"] == "공정표에서 날짜를 볼 수 있어요." and len(out["dropped"]) == 1
+
+
+def test_query_embedding_adds_meaning_matches(api, fake, monkeypatch):
+    v = knowledge_version("consult")
+    knowledge_chunk(v, "K1", "합지는 종이 벽지예요.", embedding=[0.0, 1.0, 0.0])
+    knowledge_chunk(v, "K2", "곰팡이는 결로와 환기 부족에서 생겨요.", embedding=[1.0, 0.0, 0.0])
+    seen = []
+
+    async def embed(text):
+        seen.append(text)
+        return "test-model", [1.0, 0.0, 0.0]
+
+    monkeypatch.setattr(llm, "embed_query", embed)
+    f = fake({"text": "벽에 검은 얼룩은 결로 탓일 수 있어요."})
+    signup(api)
+    api.post("/v2/ask", json={"message": "벽에 검은 얼룩이 생겨요"})
+    assert seen == ["벽에 검은 얼룩이 생겨요"] and "<자료 K2" in f.seen[0]["system"]

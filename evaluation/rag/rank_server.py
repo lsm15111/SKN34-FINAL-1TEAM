@@ -31,6 +31,7 @@ def load_index(path: Path) -> bm25.Index:
             sec=c.get("sec") or "",
             hints=tuple(c.get("hints") or ()),
             trades=tuple(c.get("trades") or ()),
+            rid=c.get("rid") or c["k"],
         )
         for c in j["chunks"]
     ]

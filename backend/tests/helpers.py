@@ -108,8 +108,10 @@ def knowledge_version(key: str, status: str = "active"):
     return ident
 
 
-def knowledge_chunk(dataset, ref: str, content: str, kind: str = "official") -> None:
-    """ref 열이 있는 지식 조각 (합성)"""
+def knowledge_chunk(
+    dataset, ref: str, content: str, kind: str = "official", embedding: list[float] | None = None
+) -> None:
+    """ref 열이 있는 지식 조각 (합성). embedding은 3차원 (버전의 test-model · 3과 맞춘다)"""
     import json
 
     from conftest import query
@@ -118,7 +120,9 @@ def knowledge_chunk(dataset, ref: str, content: str, kind: str = "official") -> 
             "source_url": "", "source_type": kind, "trades": "도배", "hints": "[]"}  # fmt: skip
     query(
         """insert into rag_chunks
-        (dataset_id,dataset_kind,record_key,section,content,page_numbers,content_hash,provenance)
-        values ($1,'knowledge',$2,'',$3,'{1}',$4,$5::jsonb)""",
+        (dataset_id,dataset_kind,record_key,section,content,page_numbers,content_hash,provenance,
+         embedding)
+        values ($1,'knowledge',$2,'',$3,'{1}',$4,$5::jsonb,$6::vector)""",
         dataset, ref, content, "a" * 64, json.dumps(prov, ensure_ascii=False),
+        str(embedding) if embedding else None,
     )  # fmt: skip

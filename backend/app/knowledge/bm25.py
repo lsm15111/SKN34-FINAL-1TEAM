@@ -1,6 +1,7 @@
-"""지식 조각 키워드 검색 (글자 두 개 묶음 BM25 + RRF). DB · HTTP를 모르는 순수 함수.
+"""지식 조각 검색 점수 매기기: 글자 두 개 묶음 BM25 + 의미 검색 순위를 RRF로 합친다. DB · HTTP를 모르는 순수 함수.
 
-화면 검색(frontend/components/v2/ai/rag.ts의 ragSearch7)을 그대로 옮겼다. 같은 말뭉치 · 질문이면 순위가 같다.
+키워드 부분은 화면 검색(rag.ts ragSearch7)에서 옮겼다. 의미 검색 순위는 부르는 쪽이 DB(pgvector)에서 뽑아 넘긴다.
+무게는 evaluation/rag/hybrid.py로 dev 질문에서 골랐다 (2026-11-13).
 """
 
 import math
@@ -14,14 +15,12 @@ CONF = {
     "high_w": 0.0004,
     "enough_cov": 0.35,
     "cite_min": 0.18,
-    # 공정별 현장 자료(kind=book): 공정이 정해지면 그 공정 조각을 field_keep자리까지 넣는다 (질문 낱말이 field_cov 이상 겹칠 때만)
-    "field_keep": 2,
-    "field_cov": 0.3,
+    # 의미 검색(임베딩) 순위를 RRF에 더할 때 무게와 볼 개수
+    "dense_w": 0.75,
+    "dense_n": 30,
+    # 질문 공정과 같은 공정 조각에 더하는 점수 (RRF 1위가 1/61 ≈ 0.016)
+    "trade_w": 0.012,
 }
-# 현장 자료 겹침을 잴 때 빼는 말끝 · 물음말
-FIELD_STOP = frozenset(
-    ["있어", "어요", "되나", "나요", "뭐가", "알려", "려줘", "해요", "하나", "이는", "뭘로", "워요", "할때", "는지", "가요", "까요", "세요", "예요", "에요", "어떻", "떻게", "얼마", "하면", "려면", "인가"]
-)  # fmt: skip
 # 공정을 넘겨받지 못하면 질문 낱말로 코드가 고른다 (LLM 없이)
 TRADE_WORDS = {
     "도배": "도배|벽지|초배|정배|합지|실크|도배풀|풀자국|벽면 시공",
@@ -86,6 +85,7 @@ class Chunk:
     sec: str = ""
     hints: tuple[str, ...] = ()
     trades: tuple[str, ...] = ()
+    rid: str = ""  # DB 행: dataset_key/record_key (의미 검색 결과를 조각에 잇는다)
 
 
 @dataclass(eq=False)
@@ -103,6 +103,7 @@ class Index:
     avg: float
     version: str = ""
     by_ref: dict[str, Item] = field(default_factory=dict)
+    by_rid: dict[str, Item] = field(default_factory=dict)
 
     @property
     def n(self) -> int:
@@ -158,7 +159,9 @@ def build(chunks: list[Chunk], docs: dict[str, Doc], version: str = "") -> Index
         items.append(Item(c, d, tf, len(toks)))
         total += len(toks)
     avg = total / max(len(items), 1)
-    return Index(items, df, avg, version, {x.chunk.ref: x for x in items})
+    return Index(
+        items, df, avg, version, {x.chunk.ref: x for x in items}, {x.chunk.rid: x for x in items}
+    )
 
 
 def _uniq(xs) -> list:
@@ -202,8 +205,8 @@ def policy_of(q: str) -> tuple[list[str], set[str]]:
     return kinds, {e for k in kinds for e in POLICY[k][1]}
 
 
-def _coverage(q: str, x: Item, stop: frozenset[str] = frozenset()) -> float:
-    qs = [t for t in _uniq(grams(q)) if t not in stop]
+def _coverage(q: str, x: Item) -> float:
+    qs = _uniq(grams(q))
     return sum(1 for t in qs if t in x.tf) / len(qs) if qs else 0.0
 
 
@@ -218,27 +221,6 @@ def trade_of(q: str) -> str | None:
     return hit[0] if len(hit) == 1 else None
 
 
-def _field_hits(ix: Index, qs: list[str], trades: list[str]) -> list[tuple[float, Item]]:
-    """그 공정들의 현장 자료(kind=book) 중 질문과 잘 맞는 조각. 공정 표시 없는 조각도 포함"""
-
-    def mine(x: Item) -> bool:
-        return x.doc.kind == "book" and (
-            not x.chunk.trades or any(t in trades for t in x.chunk.trades)
-        )
-
-    fused: dict[Item, float] = {}
-    for qq in qs:
-        for r, x in enumerate(_bm25(ix, qq, None, 10, mine)):
-            fused[x] = fused.get(x, 0.0) + 1 / (CONF["rrf_k"] + r + 1)
-    keep = [
-        (s, x)
-        for x, s in fused.items()
-        if max(_coverage(qq, x, FIELD_STOP) for qq in qs) >= CONF["field_cov"]
-    ]
-    keep.sort(key=lambda p: -p[0])
-    return keep
-
-
 def search(
     ix: Index,
     q: str,
@@ -247,8 +229,10 @@ def search(
     trade: str | None = None,
     k: int = 6,
     policy_text: str | None = None,
+    dense: list[str] | tuple[str, ...] = (),
 ) -> Result:
-    """검색어 여러 개(+ 동의어)를 BM25로 찾고 RRF로 합친다. 법 · 안전 · 금액 질문은 블로그 · 후기를 뺀다"""
+    """검색어 여러 개(+ 동의어)를 BM25로 찾고, 의미 검색 순위(dense: DB 행 키 rid 목록)와 RRF로 합친다.
+    법 · 안전 · 금액 질문은 블로그 · 후기를 뺀다"""
     if not ix.items:
         return Result([], False, [])
     main = (q or "")[:80]
@@ -264,26 +248,23 @@ def search(
             if x.doc.kind in exclude:
                 continue
             fused[x] = fused.get(x, 0.0) + 1 / (CONF["rrf_k"] + r + 1)
-    ranked = [
-        (
-            s
-            + CONF["tier_w"] * TIER.get(x.doc.kind, 0.5)
-            + (CONF["high_w"] if x.doc.rel == "high" else 0),
-            x,
+    if CONF["dense_w"]:
+        near = [ix.by_rid[r] for r in dense if r in ix.by_rid][: CONF["dense_n"]]
+        for r, x in enumerate(x for x in near if x.doc.kind not in exclude):
+            fused[x] = fused.get(x, 0.0) + CONF["dense_w"] / (CONF["rrf_k"] + r + 1)
+    my_trades = [trade] if trade else trades_of(" ".join(qs_all))
+
+    def bonus(x: Item) -> float:
+        b = CONF["tier_w"] * TIER.get(x.doc.kind, 0.5) + (
+            CONF["high_w"] if x.doc.rel == "high" else 0
         )
-        for x, s in fused.items()
-    ]
+        if my_trades and any(t in my_trades for t in x.chunk.trades):
+            b += CONF["trade_w"]
+        return b
+
+    ranked = [(s + bonus(x), x) for x, s in fused.items()]
     ranked.sort(key=lambda p: -p[0])
     ranked = ranked[:k]
-    field_trades = [trade] if trade else trades_of(" ".join(qs_all))
-    if field_trades:
-        # 공정 현장 자료 자리: 이미 들어 있는 만큼 빼고 남은 자리만 아래쪽을 바꿔 넣는다
-        have = sum(1 for _, x in ranked if x.doc.kind == "book")
-        inside = {id(x) for _, x in ranked}
-        add = [p for p in _field_hits(ix, qs_all, field_trades) if id(p[1]) not in inside]
-        add = add[: max(0, CONF["field_keep"] - have)]
-        if add:
-            ranked = ranked[: max(0, k - len(add))] + add
     best = max(_coverage(qq, ranked[0][1]) for qq in qs_all) if ranked else 0.0
     hits = [
         Hit(

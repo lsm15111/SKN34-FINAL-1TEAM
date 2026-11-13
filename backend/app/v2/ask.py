@@ -271,9 +271,12 @@ SEARCH_TRADES = frozenset(RAG_TRADES)
 
 
 async def _search(q: str, *, queries: list[str] | None = None, trade: str | None = None):
-    """짧은 DB 세션으로 찾고 바로 닫는다 (LLM을 기다리는 동안 세션을 쥐지 않는다)"""
+    """검색어 임베딩을 먼저 만들고(세션 밖), 짧은 DB 세션으로 찾고 바로 닫는다"""
+    embedding = await llm.embed_query(q)
     async with SessionLocal() as s:
-        return await knowledge.search(s, q, queries=queries or [], trade=trade, k=6)
+        return await knowledge.search(
+            s, q, queries=queries or [], trade=trade, k=6, embedding=embedding
+        )
 
 
 def _remember(turn: dict, hits: list[bm25.Hit]) -> None:
