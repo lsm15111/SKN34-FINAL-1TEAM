@@ -119,6 +119,8 @@ class Hit:
     section: str
     text: str
     score: float
+    url: str = ""
+    official: bool = False  # 출처 등급 0.8 이상 (공공 · 표준 · 제조사 · 협회)
 
 
 @dataclass(frozen=True)
@@ -293,6 +295,8 @@ def search(
             section=x.chunk.sec,
             text=x.chunk.text,
             score=round(s * 1000, 1),
+            url=x.doc.url,
+            official=TIER.get(x.doc.kind, 0.5) >= 0.8,
         )
         for s, x in ranked
     ]

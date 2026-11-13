@@ -1,8 +1,6 @@
 """지식 키워드 검색(BM25)과 활성 버전 색인. LLM · 임베딩 호출 없음."""
 
 import asyncio
-import json
-import uuid
 
 import pytest
 from conftest import query
@@ -11,6 +9,7 @@ from app.db import SessionLocal
 from app.knowledge import bm25, service
 from app.knowledge.json_csv import rows as json_rows
 from app.knowledge.sources import assemble
+from tests.helpers import knowledge_chunk, knowledge_version
 
 
 def _ix(*items: tuple[str, str, str, tuple[str, ...]]) -> bm25.Index:
@@ -98,36 +97,11 @@ def test_assemble_numbers_team_rows_and_keeps_own_refs():
         assemble([("a", own), ("b", own)])
 
 
-def _version(key: str, status: str) -> uuid.UUID:
-    ident = uuid.uuid4()
-    query(
-        """insert into ref_dataset_versions
-        (id,dataset_key,kind,version,source,processed_path,processed_sha256,build_profile,
-         historical,current_rule_usable,calculation_usable,reference_usable,
-         embedding_model,embedding_dimensions,provenance,status)
-        values ($1,$2,'knowledge',1,'synthetic.pdf','synthetic.csv',$3,'test-v1',
-                false,false,false,true,'test-model',3,'{}'::jsonb,$4)""",
-        ident, key, uuid.uuid4().hex * 2, status,
-    )  # fmt: skip
-    return ident
-
-
-def _chunk(dataset: uuid.UUID, ref: str, content: str) -> None:
-    prov = {"id": ref, "ref": ref, "doc": "d", "source": "안내", "source_org": "믿집",
-            "source_url": "", "source_type": "official", "trades": "도배", "hints": "[]"}  # fmt: skip
-    query(
-        """insert into rag_chunks
-        (dataset_id,dataset_kind,record_key,section,content,page_numbers,content_hash,provenance)
-        values ($1,'knowledge',$2,'',$3,'{1}',$4,$5::jsonb)""",
-        dataset, ref, content, "a" * 64, json.dumps(prov, ensure_ascii=False),
-    )  # fmt: skip
-
-
 def test_service_searches_active_versions_only():
-    active = _version("consult", "active")
-    draft = _version("book", "draft")
-    _chunk(active, "K1", "벽지 들뜸은 풀칠 부족이 원인")
-    _chunk(draft, "K5001", "벽지 들뜸 현장 보수 순서")
+    active = knowledge_version("consult", "active")
+    draft = knowledge_version("book", "draft")
+    knowledge_chunk(active, "K1", "벽지 들뜸은 풀칠 부족이 원인")
+    knowledge_chunk(draft, "K5001", "벽지 들뜸 현장 보수 순서")
 
     async def run(q: str) -> list[str]:
         async with SessionLocal() as s:

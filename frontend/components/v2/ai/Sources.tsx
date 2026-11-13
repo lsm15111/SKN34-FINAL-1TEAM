@@ -1,32 +1,31 @@
 "use client";
-// AI 답 아래 '근거 n개' (v10 ragSourcesEl + v7 덧씌움: 인용 검증 · 출처 종류 표시)
-import { rag, RAG7, ragDoc, ragRefs, verifyCites } from "./rag";
+// AI 답 아래 '근거 n개'. 근거는 서버가 인용 검사(이번 턴에 보여 준 자료 · 문장과 맞는 것)를 마치고 보낸다
+import type { AskOut } from "./llm";
 
-export function ragSources(text: string) {
-  if (!rag.index) return null;
-  const v = verifyCites(text);
-  const refs = ragRefs(v.text).map((k) => ragDoc(k)).filter((x) => !!x);
-  if (!refs.length) return v.dropped ? <p className="muted src-drop">{`근거와 맞지 않는 표시 ${v.dropped}개를 뺐어요`}</p> : null;
+export function ragSources(out: AskOut | null) {
+  const refs = out?.sources || [];
+  const dropped = out?.cites_dropped || 0;
+  if (!refs.length) return dropped ? <p className="muted src-drop">{`근거와 맞지 않는 표시 ${dropped}개를 뺐어요`}</p> : null;
   return (
     <details className="srcs">
       <summary>
         {`근거 ${refs.length}개`}
-        {v.dropped ? ` · 맞지 않는 표시 ${v.dropped}개 뺌` : null}
+        {dropped ? ` · 맞지 않는 표시 ${dropped}개 뺌` : null}
       </summary>
       <ol>
         {refs.map((x) => (
-          <li key={x.c.k}>
-            <span className={"src-type t-" + ((RAG7.tier[x.d.kind || ""] ?? 0.5) >= 0.8 ? "hi" : "lo")}>{RAG7.type_ko[x.d.kind || ""] || "기타"}</span>
-            <b>{x.c.k}</b>{" "}
-            {x.d.url ? (
-              <a href={x.d.url} target="_blank" rel="noopener">
-                {x.d.title || x.d.pub || "출처"}
+          <li key={x.ref}>
+            <span className={"src-type t-" + (x.official ? "hi" : "lo")}>{x.source_type || "기타"}</span>
+            <b>{x.ref}</b>{" "}
+            {x.url ? (
+              <a href={x.url} target="_blank" rel="noopener">
+                {x.title || x.publisher || "출처"}
               </a>
             ) : (
-              x.d.title || ""
+              x.title || ""
             )}
-            {x.d.pub ? <span className="muted">{` · ${x.d.pub}${x.d.date ? " · " + x.d.date : ""}`}</span> : null}
-            {x.c.sec ? <span className="muted">{` · ${x.c.sec}`}</span> : null}
+            {x.publisher ? <span className="muted">{` · ${x.publisher}${x.date ? " · " + x.date : ""}`}</span> : null}
+            {x.section ? <span className="muted">{` · ${x.section}`}</span> : null}
           </li>
         ))}
       </ol>

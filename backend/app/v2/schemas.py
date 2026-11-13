@@ -589,16 +589,6 @@ class V2AskMaterial(BaseModel):
     tags: list[Annotated[str, Field(max_length=20)]] = Field(default=[], max_length=8)
 
 
-class V2AskRef(BaseModel):
-    ref: str = Field(pattern=r"^K\d{1,5}$")
-    source_type: Short = ""
-    title: Short = ""
-    section: Short = ""
-    publisher: Short = ""
-    date: Annotated[str, Field(max_length=20)] = ""
-    text: str = Field(default="", max_length=2_000)
-
-
 class V2AskIn(BaseModel):
     kind: AskKind = "chat"
     message: str = Field(min_length=1, max_length=1_000)
@@ -606,8 +596,6 @@ class V2AskIn(BaseModel):
     quote: V2QuoteIn | None = None  # 금액 도구 · 견적 설명이 서버에서 다시 계산한다
     plan: V2PlanIn | None = None  # 공정표 상담
     materials: list[V2AskMaterial] = Field(default=[], max_length=24)
-    refs: list[V2AskRef] = Field(default=[], max_length=6)
-    refs_enough: bool = True
     images: list[B64] = Field(default=[], max_length=2)
 
 
@@ -632,6 +620,19 @@ class V2IntentOut(BaseModel):
     source: str
 
 
+class V2AskSource(BaseModel):
+    """답에 붙은 근거 조각. 서버 지식 자료에서 이번 턴에 보여 준 것만"""
+
+    ref: str
+    source_type: str
+    title: str
+    publisher: str
+    date: str
+    section: str
+    url: str
+    official: bool  # 공공 · 표준 · 제조사 · 협회 자료
+
+
 class V2AskOut(BaseModel):
     done: bool
     turn: str | None = None  # 화면 도구를 실행하고 /v2/ask/{turn}로 결과를 보낸다
@@ -642,6 +643,8 @@ class V2AskOut(BaseModel):
     intent: V2IntentOut | None = None
     dropped: list[str] = []  # 숫자 검사로 뺀 문장의 이유
     cons: V2ConsIn | None = None  # 공정표 상담이 바꾼 조건
+    sources: list[V2AskSource] = []  # 답에 남은 [K번호] 근거
+    cites_dropped: int = 0  # 보여 주지 않았거나 문장과 맞지 않아 뗀 [K번호] 수
 
 
 class V2AskHealthOut(BaseModel):

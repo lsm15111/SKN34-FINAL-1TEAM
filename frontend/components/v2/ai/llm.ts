@@ -1,6 +1,6 @@
 // AI 상담 한 턴 (POST /v2/ask). 지시문 · 도구 정의 · 반복 횟수 · 숫자 검사는 서버가 한다.
-// 서버가 화면 도구(고객 상태 저장 · 단계 카드 · 자료 검색 · 이어 물을 질문)를 부르면 여기서 실행하고
-// 결과를 POST /v2/ask/{turn}로 보낸다. 답은 숫자 검사를 마친 뒤 한 번에 온다.
+// 서버가 화면 도구(고객 상태 저장 · 단계 카드 · 이어 물을 질문)를 부르면 여기서 실행하고
+// 결과를 POST /v2/ask/{turn}로 보낸다. 답은 숫자 · 인용 검사를 마친 뒤 근거와 함께 한 번에 온다. 자료 검색은 서버가 한다.
 import { v2Get, v2Post } from "../api";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -17,8 +17,10 @@ export type AskOut = {
   intent: { label: string; confidence: number; source: string } | null;
   dropped: string[];
   cons: Cons | null;
+  sources: AskSource[];
+  cites_dropped: number;
 };
-export type AskRef = { ref: string; source_type: string; title: string; section: string; publisher: string; date: string; text: string };
+export type AskSource = { ref: string; source_type: string; title: string; publisher: string; date: string; section: string; url: string; official: boolean };
 export type AskBody = {
   kind: "chat" | "quote_explanation" | "schedule";
   message: string;
@@ -26,8 +28,6 @@ export type AskBody = {
   quote?: unknown;
   plan?: unknown;
   materials?: unknown[];
-  refs?: AskRef[];
-  refs_enough?: boolean;
   images?: string[];
 };
 

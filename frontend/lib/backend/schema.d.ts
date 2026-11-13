@@ -4336,16 +4336,6 @@ export interface components {
              */
             materials: components["schemas"]["V2AskMaterial"][];
             /**
-             * Refs
-             * @default []
-             */
-            refs: components["schemas"]["V2AskRef"][];
-            /**
-             * Refs Enough
-             * @default true
-             */
-            refs_enough: boolean;
-            /**
              * Images
              * @default []
              */
@@ -4423,6 +4413,16 @@ export interface components {
              */
             dropped: string[];
             cons?: components["schemas"]["V2ConsIn"] | null;
+            /**
+             * Sources
+             * @default []
+             */
+            sources: components["schemas"]["V2AskSource"][];
+            /**
+             * Cites Dropped
+             * @default 0
+             */
+            cites_dropped: number;
         };
         /**
          * V2AskProfile
@@ -4484,41 +4484,6 @@ export interface components {
              */
             plan_name: string;
         };
-        /** V2AskRef */
-        V2AskRef: {
-            /** Ref */
-            ref: string;
-            /**
-             * Source Type
-             * @default
-             */
-            source_type: string;
-            /**
-             * Title
-             * @default
-             */
-            title: string;
-            /**
-             * Section
-             * @default
-             */
-            section: string;
-            /**
-             * Publisher
-             * @default
-             */
-            publisher: string;
-            /**
-             * Date
-             * @default
-             */
-            date: string;
-            /**
-             * Text
-             * @default
-             */
-            text: string;
-        };
         /** V2AskResultIn */
         V2AskResultIn: {
             /** Id */
@@ -4530,6 +4495,28 @@ export interface components {
         V2AskResumeIn: {
             /** Results */
             results: components["schemas"]["V2AskResultIn"][];
+        };
+        /**
+         * V2AskSource
+         * @description 답에 붙은 근거 조각. 서버 지식 자료에서 이번 턴에 보여 준 것만
+         */
+        V2AskSource: {
+            /** Ref */
+            ref: string;
+            /** Source Type */
+            source_type: string;
+            /** Title */
+            title: string;
+            /** Publisher */
+            publisher: string;
+            /** Date */
+            date: string;
+            /** Section */
+            section: string;
+            /** Url */
+            url: string;
+            /** Official */
+            official: boolean;
         };
         /** V2BandOut */
         V2BandOut: {

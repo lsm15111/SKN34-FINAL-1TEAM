@@ -10,10 +10,10 @@ import { DATA, S } from "../store";
 import { quoteBody } from "../doc/api";
 import { materialsFor, profileOf } from "./context";
 import { type AskOut, localClaude, runAsk, toImageBlock } from "./llm";
-import { ragReady, ragSearch7, relatedQs } from "./rag";
+import { ragReady, relatedQs } from "./rag";
 import { cleanMarks, nextStepOf } from "./route";
 import { ragSources } from "./Sources";
-import { type After, claudeTools, searchTool7 } from "./tools";
+import { type After, claudeTools } from "./tools";
 
 type Bub = { text: string; typing: boolean };
 type Live = { use: () => Bub; set: (b: Bub) => void };
@@ -84,16 +84,6 @@ function errMsg(e: AskErr) {
         : "답을 만들지 못했어요. 다시 물어봐 주세요.";
 }
 
-/** 화면 쪽 자료 검색 결과를 서버에 넘길 자료로 (자료 글은 지시가 아니라 데이터) */
-function refsOf(q: string) {
-  const r = ragSearch7(q, { k: 6 });
-  const cut = (t: string | undefined, n: number) => String(t || "").slice(0, n);
-  return {
-    refs: r.hits.map((x) => ({ ref: x.ref, source_type: cut(x.source_type, 200), title: cut(x.title, 200), section: cut(x.section, 200), publisher: cut(x.publisher, 200), date: cut(x.date, 20), text: cut(x.text, 2000) })),
-    refs_enough: r.enough,
-  };
-}
-
 /** 서버 숫자 검사로 뺀 문장이 있으면 이유를 접어서 보인다 */
 function droppedNote(el: MsgHandle, dropped: string[]) {
   if (!dropped.length) return;
@@ -136,7 +126,6 @@ export async function askClaude(q: string, { label, images, withPhotos }: { labe
     lv.set({ text: t, typing: false });
   };
   try {
-    await ragReady();
     const sendPhotos = images || (withPhotos && (S.photos.length || S.refs.length));
     const files = sendPhotos ? [...S.photos, ...S.refs].map((p) => p.file).slice(0, 2) : [];
     const imgs: string[] = [];
@@ -145,7 +134,7 @@ export async function askClaude(q: string, { label, images, withPhotos }: { labe
         imgs.push(await toImageBlock(f));
       } catch {}
     }
-    const body = { kind: "chat" as const, message: q, profile: profileOf(), quote: quoteBody(), materials: materialsFor(q), ...refsOf(q), images: imgs };
+    const body = { kind: "chat" as const, message: q, profile: profileOf(), quote: quoteBody(), materials: materialsFor(q), images: imgs };
     out = await runAsk(body, claudeTools(applied, after), ctl.signal);
     show(cleanMarks(out.text));
   } catch (err) {
@@ -163,7 +152,7 @@ export async function askClaude(q: string, { label, images, withPhotos }: { labe
     return;
   }
   if (out) droppedNote(el, out.dropped);
-  const src = ragSources(out?.text || "");
+  const src = ragSources(out);
   if (src) el.append(src);
   const nb = nextButton(shown, after.step);
   if (nb) el.append(nb);
@@ -171,6 +160,7 @@ export async function askClaude(q: string, { label, images, withPhotos }: { labe
   const it = out?.intent;
   if (!images && it && it.confidence >= 0.7 && INTENT_KO[it.label]) el.append(<p className="route-chip muted">{`질문 종류: ${INTENT_KO[it.label]}`}</p>);
   if (!after.suggest?.length && !images) {
+    await ragReady(); // 이어 물을 질문 예비(화면 자료 예시 질문). 추천 질문을 서버로 옮기면 뺀다
     const rq = relatedQs(q);
     if (rq.length) after.suggest = rq;
   }
@@ -226,8 +216,7 @@ export async function agentAnswer({ label, ask, kind, quote, plan }: {
   const after: After = {};
   let out: AskOut | null = null;
   try {
-    await ragReady();
-    out = await runAsk({ kind, message: ask, quote, plan, ...refsOf(ask) }, [searchTool7(after)], ctl.signal);
+    out = await runAsk({ kind, message: ask, quote, plan }, [], ctl.signal);
   } catch {
     out = null;
   } finally {
@@ -237,7 +226,7 @@ export async function agentAnswer({ label, ask, kind, quote, plan }: {
   if (ctl.signal.aborted) return;
   lv.set({ text: out ? cleanMarks(out.text) : fail, typing: false });
   if (out) droppedNote(el, out.dropped);
-  const src = ragSources(out?.text || "");
+  const src = ragSources(out);
   if (src) el.append(src);
   return { text: out?.text || "", after, cons: out?.cons ?? null, failed: !out || out.failed };
 }
