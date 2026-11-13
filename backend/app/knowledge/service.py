@@ -65,7 +65,7 @@ async def verify_cites(s: AsyncSession, text: str) -> tuple[str, int]:
     return bm25.verify_cites(await index(s), text)
 
 
-async def suggest_questions(
+async def suggest_candidates(
     s: AsyncSession,
     question: str,
     *,
@@ -73,6 +73,21 @@ async def suggest_questions(
     cited: set[str],
     llm: list[str] | tuple[str, ...] = (),
 ) -> list[suggest.Pick]:
-    """이어 물을 질문 0~3개 (답할 수 있는 것만). 후보마다 키워드 검색을 돌려 작업 스레드로 넘긴다"""
+    """이어 물을 질문 후보 (질문 은행 + LLM). 고르기는 suggest_questions"""
     ix = await index(s)
-    return await asyncio.to_thread(suggest.pick, ix, question, shown=shown, cited=cited, llm=llm)
+    return await asyncio.to_thread(
+        suggest.candidates, ix, question, shown=shown, cited=cited, llm=llm
+    )
+
+
+async def suggest_questions(
+    s: AsyncSession,
+    question: str,
+    *,
+    cands: list[suggest.Pick],
+    cited: set[str],
+    sims: dict[str, float] | None = None,
+) -> list[suggest.Pick]:
+    """후보에서 답할 수 있고 이어지는 것만 0~3개. sims = 후보 글 → 방금 질문과 뜻 가까움(없으면 글자 규칙)"""
+    ix = await index(s)
+    return await asyncio.to_thread(suggest.pick, ix, question, cands=cands, cited=cited, sims=sims)

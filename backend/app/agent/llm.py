@@ -51,25 +51,33 @@ def clear_stubs() -> None:
     _embed_stub.clear()
 
 
-async def embed_query(text: str) -> tuple[str, list[float]] | None:
-    """검색어 임베딩 (의미 검색용, 질문 하나에 수십 토큰). 실패하면 None: 부르는 쪽은 키워드로만 찾는다."""
+async def embed_texts(texts: list[str]) -> tuple[str, list[list[float]]] | None:
+    """글 여러 개 임베딩 (검색어 · 추천 질문 후보, 한 번에 수백 토큰). 실패하면 None: 부르는 쪽은 임베딩 없이 간다."""
+    if not texts:
+        return None
     if not settings.llm_live:
-        return _embed_stub[0] if _embed_stub else None
+        return (_embed_stub[0][0], [_embed_stub[0][1]] * len(texts)) if _embed_stub else None
     from openai import AsyncOpenAI, OpenAIError
 
     model = settings.openai_embedding_model
     client = AsyncOpenAI(
         api_key=settings.openai_api_key.get_secret_value(), timeout=10, max_retries=1
     )
-    try:  # 공급자 오류 · 시간 초과는 조용히 키워드 검색으로. 입력값은 남기지 않음
+    try:  # 공급자 오류 · 시간 초과는 조용히 임베딩 없이. 입력값은 남기지 않음
         r = await client.embeddings.create(
-            model=model, input=text[:300], dimensions=EMBED_DIMENSIONS
+            model=model, input=[t[:300] for t in texts], dimensions=EMBED_DIMENSIONS
         )
-        return model, list(r.data[0].embedding)
+        return model, [list(d.embedding) for d in sorted(r.data, key=lambda d: d.index)]
     except OpenAIError:
         return None
     finally:
         await client.close()
+
+
+async def embed_query(text: str) -> tuple[str, list[float]] | None:
+    """검색어 임베딩 (의미 검색용). 실패하면 None: 부르는 쪽은 키워드로만 찾는다."""
+    r = await embed_texts([text])
+    return (r[0], r[1][0]) if r else None
 
 
 async def jev_choice(text: str, instructions: str, criteria: dict[str, str]) -> tuple[str, float]:

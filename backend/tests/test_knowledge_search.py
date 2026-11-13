@@ -137,22 +137,46 @@ def test_service_adds_nearest_chunks_of_same_model():
     assert asyncio.run(run(("test-model", [1.0, 0.1]))) == ["K1"]
 
 
-def test_suggest_pick_filters_form_money_dup_and_answered():
+def _suggest_ix() -> bm25.Index:
     chunks = [
         bm25.Chunk(ref="K1", doc="d", text="합지는 종이 벽지예요", hints=("합지 벽지는 뭐예요?",), rid="K1"),
         bm25.Chunk(
             ref="K2", doc="d", text="실크 벽지는 물걸레로 닦을 수 있어요",
-            hints=("실크 벽지는 닦아도 돼요?", "실크 벽지 비싸요?", "3) 실크 시공"), rid="K2",
+            hints=("실크 벽지는 닦아도 돼요?", "실크 벽지 비싸요?", "3) 실크 시공", "실크 벽지 브랜드 추천해요?"),
+            rid="K2",
         ),
         bm25.Chunk(ref="K3", doc="d", text="초배지는 벽을 고르게 해요", hints=("초배지는 왜 발라요?",), rid="K3"),
+        bm25.Chunk(ref="K4", doc="d", text="욕실 벽지는 습기에 약해요", hints=("욕실 벽지도 돼요?",), rid="K4"),
     ]  # fmt: skip
-    ix = bm25.build(chunks, {"d": bm25.Doc(title="벽지 안내", kind="official")})
-    out = suggest.pick(ix, "합지 벽지 특징이 뭐예요?", shown=["K1", "K2"], cited={"K1"})
-    texts = [p.text for p in out]
-    assert "실크 벽지는 닦아도 돼요?" in texts and "초배지는 왜 발라요?" in texts
-    assert "합지 벽지는 뭐예요?" not in texts  # 인용한 조각 질문 = 이미 답함
-    assert "실크 벽지 비싸요?" not in texts and "3) 실크 시공" not in texts
-    llm = suggest.pick(
-        ix, "합지 벽지 특징이 뭐예요?", shown=[], cited=set(), llm=["합지 벽지 특징은 뭐예요?"]
-    )
-    assert "합지 벽지 특징은 뭐예요?" not in [p.text for p in llm]  # 방금 질문과 겹침
+    return bm25.build(chunks, {"d": bm25.Doc(title="벽지 안내", kind="official")})
+
+
+def test_suggest_pick_filters_form_money_out_and_answered():
+    ix = _suggest_ix()
+    q = "합지 벽지 특징이 뭐예요?"
+    cands = suggest.candidates(ix, q, shown=["K1", "K2"], cited={"K1"})
+    texts = [p.text for p in suggest.pick(ix, q, cands=cands, cited={"K1"})]
+    assert texts == ["실크 벽지는 닦아도 돼요?"]
+    # 빠진 것: 인용한 조각 질문(이미 답함) · 금액 · 제목 · 추천 · 범위 밖(욕실) · 이어지지 않음(초배)
+    llm = suggest.candidates(ix, q, shown=[], cited=set(), llm=["합지 벽지 특징은 뭐예요?"])
+    assert "합지 벽지 특징은 뭐예요?" not in [
+        p.text for p in suggest.pick(ix, q, cands=llm, cited=set())
+    ]
+
+
+def test_suggest_pick_uses_meaning_closeness_when_given():
+    ix = _suggest_ix()
+    q = "합지 벽지 특징이 뭐예요?"
+    cands = suggest.candidates(ix, q, shown=["K1", "K2", "K3"], cited={"K1"})
+    sims = {
+        "실크 벽지는 닦아도 돼요?": 0.45,
+        "초배지는 왜 발라요?": 0.55,
+        "합지 벽지는 뭐예요?": 0.9,
+    }
+    texts = [p.text for p in suggest.pick(ix, q, cands=cands, cited={"K1"}, sims=sims)]
+    # 가까운 순, 글자가 안 겹쳐도 뜻이 가까우면 남는다
+    assert texts == ["초배지는 왜 발라요?", "실크 벽지는 닦아도 돼요?"]
+    far = {t: 0.2 for t in sims} | {
+        "초배지는 왜 발라요?": 0.7
+    }  # 너무 멀거나 되풀이에 가까우면 뺀다
+    assert suggest.pick(ix, q, cands=cands, cited={"K1"}, sims=far) == []

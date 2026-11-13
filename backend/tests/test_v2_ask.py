@@ -336,3 +336,26 @@ def test_suggest_keeps_only_answerable_questions(api, fake):
     assert out["done"] and out["turn"] is None  # 추천 질문 도구도 서버에서 끝난다
     # 은행 질문(K2)만 남고, '그럼'으로 시작 · 금액 질문 · 자료로 답할 수 없는 질문은 빠진다
     assert out["suggest"] == [{"text": "실크 벽지는 물걸레로 닦아도 돼요?", "ref": "K2"}]
+
+
+def test_suggest_uses_embedding_closeness(api, fake, monkeypatch):
+    v = knowledge_version("consult")
+    knowledge_chunk(v, "K1", "합지는 종이 벽지라 값이 싸고 숨을 쉬지만 오염에 약해요.")
+    knowledge_chunk(v, "K2", "초배지는 벽을 고르게 해서 벽지가 잘 붙게 해요.")
+    query(
+        """update rag_chunks set provenance = jsonb_set(provenance, '{hints}', to_jsonb($1::text))
+        where record_key = 'K2'""",
+        json.dumps(["초배지는 왜 발라요?"], ensure_ascii=False),
+    )
+    seen = []
+
+    async def embed(texts):
+        seen.append(texts)
+        return "test-model", [[1.0, 0.0]] + [[0.5, 0.866]] * (len(texts) - 1)  # 가까움 0.5
+
+    monkeypatch.setattr(llm, "embed_texts", embed)
+    fake({"text": "합지는 종이 벽지예요 [K1]"})
+    signup(api)
+    out = api.post("/v2/ask", json={"message": "합지 벽지 특징이 뭐예요?"}).json()
+    assert seen[-1][0] == "합지 벽지 특징이 뭐예요?"  # 질문과 후보를 한 번에
+    assert out["suggest"] == [{"text": "초배지는 왜 발라요?", "ref": "K2"}]
