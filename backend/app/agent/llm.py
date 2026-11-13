@@ -16,6 +16,14 @@ _stubs: dict[Role, BaseModel] = {}
 _jev_stub: list[tuple[str, float]] = []
 
 
+def model_for(role: Role) -> tuple[str, str]:
+    """역할에 맞는 (모델, 추론 effort). 짧은 구조화 출력 역할은 작은 모델로 비용을 줄인다."""
+    light = {r.strip() for r in settings.openai_light_roles.split(",") if r.strip()}
+    if settings.openai_light_model and role in light:
+        return settings.openai_light_model, settings.openai_light_effort
+    return settings.openai_agent_model, settings.openai_reasoning_effort
+
+
 class LLMError(Exception):
     """LLM 실패 · 시간 초과 · 스텁 없음. 받는 쪽은 FAILED_TEXT로 알린다."""
 
@@ -78,10 +86,11 @@ async def structured[T: BaseModel](
     from langchain_openai import ChatOpenAI
 
     # 설정 오류(빠진 키 이름 · 틀린 값)는 LLMError로 가리지 않고 그대로 낸다
+    name, effort = model_for(role)
     model = ChatOpenAI(
-        model=settings.openai_agent_model,
+        model=name,
         api_key=settings.openai_api_key,
-        reasoning_effort=settings.openai_reasoning_effort,
+        reasoning_effort=effort,
         timeout=30,
         max_retries=1,
     ).with_structured_output(schema, method="json_schema", strict=True)

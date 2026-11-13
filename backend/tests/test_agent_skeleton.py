@@ -136,3 +136,20 @@ def test_llm_stub_without_live_call():
         assert asyncio.run(llm.structured("orchestrator", Plan, msgs)).reply == "처음이시군요"
     finally:
         llm.clear_stubs()
+
+
+def test_light_model_only_for_listed_roles(monkeypatch):
+    """짧은 구조화 출력 역할만 작은 모델, 나머지와 대화는 기본 모델."""
+    from app.agent import llm
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "openai_agent_model", "big")
+    monkeypatch.setattr(settings, "openai_reasoning_effort", "low")
+    monkeypatch.setattr(settings, "openai_light_model", "small")
+    monkeypatch.setattr(settings, "openai_light_effort", "none")
+    monkeypatch.setattr(settings, "openai_light_roles", "trade, schedule")
+    assert llm.model_for("trade") == ("small", "none")
+    assert llm.model_for("schedule") == ("small", "none")
+    assert llm.model_for("orchestrator") == ("big", "low")
+    monkeypatch.setattr(settings, "openai_light_model", "")
+    assert llm.model_for("trade") == ("big", "low")

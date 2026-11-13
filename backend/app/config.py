@@ -30,6 +30,10 @@ class Settings(BaseSettings):
     # 에이전트 LLM. agent/llm.py만 읽는다
     openai_agent_model: str = "gpt-6.1-terra"
     openai_reasoning_effort: str = "low"
+    # 짧은 구조화 출력(공정 에이전트 등)에 쓰는 작은 모델. 비우면 openai_agent_model을 쓴다
+    openai_light_model: str = "gpt-6-luna"
+    openai_light_effort: str = "none"
+    openai_light_roles: str = "trade"  # 작은 모델을 쓸 역할 (쉼표로)
     # 입구 관문. 학습 모델 신뢰도가 이보다 낮으면 Jev에 한 번 묻는다 (#70에서 0.7로 정함)
     intent_confidence_threshold: float = 0.7
     # Jev는 입구 분류에만 쓴다. 키는 repr·오류에 표시하지 않는다
