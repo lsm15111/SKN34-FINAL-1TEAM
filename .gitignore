@@ -40,3 +40,6 @@ Thumbs.db
 
 # 올린 파일 (API를 PC에서 바로 띄울 때 생김)
 backend/data/
+
+# 로컬 전용 RAG 추가 자료 (저작권 있는 책 본문 등, 공개 저장소에 올리지 않음)
+frontend/public/v2/rag-local.json

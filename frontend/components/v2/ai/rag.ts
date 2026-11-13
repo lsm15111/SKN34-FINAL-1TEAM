@@ -1,6 +1,6 @@
 // 지식 검색(RAG): 공공 기준 · 시공 기준 · 자재 · 분쟁 자료 (v10 grams · ragIndex · RAG7 · ragSearch7 · verifyCites).
 // 한국어는 띄어쓰기가 흔들려서 글자 두 개씩(바이그램)으로 BM25 점수를 낸다. 돈 계산이 아니라 화면에서 한다.
-// 자료: public/v2/rag5.json
+// 자료: public/v2/rag5.json + 있으면 public/v2/rag-local.json(로컬 전용 추가 자료, git에 올리지 않음. 예: 시공 안내서 책)
 
 export type RagChunk = { k: string; doc: string; text: string; sec?: string; hints?: string[]; trades?: string[] };
 export type RagDoc = { title?: string; pub?: string; url?: string; kind?: string; date?: string; rel?: string };
@@ -24,14 +24,24 @@ export const RAG7 = {
   high_w: 0.0004,
   enough_cov: 0.35,
   cite_min: 0.18,
+  // 공정별 현장 자료(kind=book): 공정이 정해지면 그 공정 조각을 field_keep자리까지 꼭 넣는다 (질문 낱말이 field_cov 이상 겹칠 때만)
+  field_keep: 2,
+  field_cov: 0.3,
+  // 현장 자료 겹침을 잴 때 빼는 말끝 · 물음말 (글자 두 개 묶음)
+  field_stop: ["있어", "어요", "되나", "나요", "뭐가", "알려", "려줘", "해요", "하나", "이는", "뭘로", "워요", "할때", "는지", "가요", "까요", "세요", "예요", "에요", "어떻", "떻게", "얼마", "하면", "려면", "인가"],
+  // 공정을 넘겨받지 못하면 질문 낱말로 코드가 고른다 (LLM 없이)
+  trade_words: {
+    도배: "도배|벽지|초배|정배|합지|실크|도배풀|풀자국|벽면 시공",
+    목공: "목공|몰딩|문틀|문선|방문|도어|석고|다루끼|각재|가벽|칸막이|천장틀|걸레받이|단열|웨인스코팅|분리대",
+  } as Record<string, string>,
   tier: {
     law: 1, gov_notice: 1, gov_guide: 1, gov_qa: 1, kcs: 1, pumsem: 1, standard_contract: 1, consumer_agency: 1, official: 1, public_data: 1,
-    gov: 0.9, maker: 0.8, maker_guide: 0.8, industry: 0.8, guide: 0.8, news: 0.5, experience: 0.5, platform: 0.4, blog: 0.3, community: 0.3,
+    gov: 0.9, maker: 0.8, maker_guide: 0.8, industry: 0.8, guide: 0.8, book: 0.7, news: 0.5, experience: 0.5, platform: 0.4, blog: 0.3, community: 0.3,
   } as Record<string, number>,
   type_ko: {
     law: "법령", gov_notice: "정부 고시", gov_guide: "정부 안내", gov_qa: "정부 안내", kcs: "표준시방서", pumsem: "표준품셈", standard_contract: "표준계약서",
     consumer_agency: "소비자원", official: "공공기관", public_data: "공공 자료", gov: "공공기관", maker: "제조사", maker_guide: "제조사", industry: "학회 · 협회",
-    guide: "공공기관", news: "뉴스", experience: "경험담 · 후기", platform: "후기 · 문답", blog: "블로그", community: "후기 · 문답",
+    guide: "공공기관", book: "시공 안내서", news: "뉴스", experience: "경험담 · 후기", platform: "후기 · 문답", blog: "블로그", community: "후기 · 문답",
   } as Record<string, string>,
   policy: {
     law: { re: "법|계약|하자|분쟁|소송|보증|배상|위약|등록|신고|허가|규약|민원|책임|환불|지체상금", exclude: ["blog", "community", "platform", "experience"] },
@@ -71,17 +81,22 @@ function ragIndex(j: { chunks: RagChunk[]; docs: Record<string, RagDoc>; version
   return { N, df, docs, avg: total / Math.max(N, 1), version: j.version };
 }
 
+type RagFile = { chunks: RagChunk[]; docs: Record<string, RagDoc>; version?: string };
+const getJson = (url: string): Promise<RagFile | null> =>
+  fetch(url)
+    .then((r) => (r.ok ? r.json() : null))
+    .catch(() => null);
+
 let loading: Promise<Index | null> | null = null;
-/** 자료를 한 번만 읽는다. 실패하면 검색은 빈 결과 */
+/** 자료를 한 번만 읽는다. 로컬 추가 자료는 없으면 건너뛴다. 기본 자료를 못 읽으면 검색은 빈 결과 */
 export function ragReady() {
   if (!loading) {
-    loading = fetch("/v2/rag5.json")
-      .then((r) => (r.ok ? r.json() : null))
-      .then((j) => {
-        if (j?.chunks?.length) rag.index = ragIndex(j);
-        return rag.index;
-      })
-      .catch(() => null);
+    loading = Promise.all([getJson("/v2/rag5.json"), getJson("/v2/rag-local.json")]).then(([j, extra]) => {
+      if (!j?.chunks?.length) return rag.index;
+      const add = extra?.chunks?.length ? extra : null;
+      rag.index = ragIndex(add ? { version: `${j.version}+${add.version}`, docs: { ...j.docs, ...add.docs }, chunks: [...j.chunks, ...add.chunks] } : j);
+      return rag.index;
+    });
   }
   return loading;
 }
@@ -89,11 +104,12 @@ if (typeof window !== "undefined") ragReady();
 
 export const ragDoc = (k: string) => rag.index?.docs.find((x) => x.c.k === k) || null;
 
-function bm25List(q: string, trade?: string, n = 30) {
+function bm25List(q: string, trade?: string, n = 30, only?: (x: Indexed) => boolean) {
   const R = rag.index;
   if (!R) return [];
   const qs = [...new Set(grams(q))], K1 = 1.2, B = 0.75, out: [number, Indexed][] = [];
   for (const x of R.docs) {
+    if (only && !only(x)) continue;
     let s = 0;
     for (const t of qs) {
       const f = x.tf.get(t);
@@ -125,6 +141,32 @@ function coverage(q: string, x: Indexed) {
   const qs = [...new Set(grams(q))];
   return qs.length ? qs.filter((t) => x.tf.has(t)).length / qs.length : 0;
 }
+/** 질문 낱말에 걸리는 공정들 (LLM 없이) */
+export function tradesOf(q: string) {
+  return Object.entries(RAG7.trade_words)
+    .filter(([, re]) => new RegExp(re).test(q || ""))
+    .map(([t]) => t);
+}
+/** 공정 하나만 걸리면 그 공정. 둘 다 걸리거나 안 걸리면 고르지 않는다 */
+export function tradeOf(q: string) {
+  const hit = tradesOf(q);
+  return hit.length === 1 ? hit[0] : undefined;
+}
+/** 그 공정들의 현장 자료(kind=book) 중 질문과 잘 맞는 조각. 공통 조각(공정 표시 없음)도 포함 */
+function fieldHits(qs: string[], trades: string[]) {
+  const mine = (x: Indexed) => x.d.kind === "book" && (!(x.c.trades || []).length || (x.c.trades || []).some((t) => trades.includes(t)));
+  const fused = new Map<Indexed, number>();
+  for (const qq of qs) bm25List(qq, undefined, 10, mine).forEach((x, r) => fused.set(x, (fused.get(x) || 0) + 1 / (RAG7.rrf_k + r + 1)));
+  const stop = new Set(RAG7.field_stop);
+  const cov = (qq: string, x: Indexed) => {
+    const g = [...new Set(grams(qq))].filter((t) => !stop.has(t));
+    return g.length ? g.filter((t) => x.tf.has(t)).length / g.length : 0;
+  };
+  return [...fused]
+    .filter(([x]) => Math.max(...qs.map((qq) => cov(qq, x))) >= RAG7.field_cov)
+    .sort((a, b) => b[1] - a[1])
+    .map(([x, s]) => [s, x] as [number, Indexed]);
+}
 
 /** v7 검색: 검색어 여러 개(+ 동의어)를 BM25로 찾고 RRF로 합친다. 법 · 안전 · 금액 질문은 블로그 · 후기를 뺀다 */
 export function ragSearch7(q: string, { queries = [], trade, k = 6, policyText }: { queries?: string[]; trade?: string; k?: number; policyText?: string } = {}) {
@@ -134,16 +176,26 @@ export function ragSearch7(q: string, { queries = [], trade, k = 6, policyText }
   const syn = synQuery(main);
   if (syn && !qsAll.includes(syn)) qsAll.push(syn);
   const pol = policyOf(policyText || main);
+  const tr = trade || tradeOf(qsAll.join(" "));
   const fused = new Map<Indexed, number>();
   for (const qq of qsAll)
-    bm25List(qq, trade).forEach((x, r) => {
+    bm25List(qq, tr).forEach((x, r) => {
       if (pol.exclude.has(x.d.kind || "")) return;
       fused.set(x, (fused.get(x) || 0) + 1 / (RAG7.rrf_k + r + 1));
     });
-  const ranked = [...fused]
+  let ranked = [...fused]
     .map(([x, s]) => [s + RAG7.tier_w * (RAG7.tier[x.d.kind || ""] ?? 0.5) + (x.d.rel === "high" ? RAG7.high_w : 0), x] as [number, Indexed])
     .sort((a, b) => b[0] - a[0])
     .slice(0, k);
+  const fieldTrades = trade ? [trade] : tradesOf(qsAll.join(" "));
+  if (fieldTrades.length) {
+    // 공정 현장 자료 자리: 이미 들어 있는 만큼 빼고 남은 자리만 아래쪽을 바꿔 넣는다
+    const have = ranked.filter(([, x]) => x.d.kind === "book").length;
+    const add = fieldHits(qsAll, fieldTrades)
+      .filter(([, x]) => !ranked.some(([, y]) => y === x))
+      .slice(0, Math.max(0, RAG7.field_keep - have));
+    if (add.length) ranked = [...ranked.slice(0, Math.max(0, k - add.length)), ...add];
+  }
   const best = ranked.length ? Math.max(...qsAll.map((qq) => coverage(qq, ranked[0][1]))) : 0;
   return {
     enough: best >= RAG7.enough_cov,
