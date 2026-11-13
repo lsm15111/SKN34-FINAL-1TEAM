@@ -137,10 +137,16 @@ async def chat_tools(system: str, messages: list[dict], tools: list[dict]) -> di
 
     messages: [{role: user | assistant | tool, content: 글 | [{type: text, text} | {type: image, data}],
     tool_calls?: [{id, name, arguments}], tool_call_id?}], tools: [{name, description, parameters}].
-    돌려주는 것: {text, tool_calls: [{id, name, arguments}], stop: tool_calls | stop | refusal}.
+    돌려주는 것: {text, tool_calls: [{id, name, arguments}], stop: tool_calls | stop | refusal,
+    usage: {input, cached, output}} (usage는 비용 기록용, 모르면 0).
     """
     if not settings.llm_live:
-        return {"text": CHAT_STUB_TEXT, "tool_calls": [], "stop": "stop"}
+        return {
+            "text": CHAT_STUB_TEXT,
+            "tool_calls": [],
+            "stop": "stop",
+            "usage": {"input": 0, "cached": 0, "output": 0},
+        }
     from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
     from langchain_openai import ChatOpenAI
 
@@ -200,7 +206,13 @@ async def chat_tools(system: str, messages: list[dict], tools: list[dict]) -> di
     if refusal and not text:
         text = refusal
     stop = "tool_calls" if calls else "refusal" if refusal else "stop"
-    return {"text": text or "", "tool_calls": calls, "stop": stop}
+    u = r.usage_metadata or {}
+    usage = {
+        "input": u.get("input_tokens", 0),
+        "cached": (u.get("input_token_details") or {}).get("cache_read", 0),
+        "output": u.get("output_tokens", 0),
+    }
+    return {"text": text or "", "tool_calls": calls, "stop": stop, "usage": usage}
 
 
 def _stub[T: BaseModel](role: Role, schema: type[T]) -> T:
