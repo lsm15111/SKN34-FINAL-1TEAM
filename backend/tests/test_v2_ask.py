@@ -3,6 +3,7 @@
 import json
 
 import pytest
+from conftest import query
 
 from app.agent import llm
 from app.v2 import ask
@@ -84,12 +85,12 @@ def test_system_and_tools_come_from_server(api, fake):
 
 def test_client_tool_round_trip_and_owner(api, fake):
     fake(
-        {"tool_calls": [call("suggest_questions", {"questions": ["벽지 고르기"]})]},
+        {"tool_calls": [call("show_step", {"step": "quote"})]},
         {"text": "실크는 닦기 쉬워요."},
     )
     signup(api)
     out = api.post("/v2/ask", json={"message": "실크 벽지 관리는 어때요?"}).json()
-    assert not out["done"] and out["tool_calls"][0]["name"] == "suggest_questions"
+    assert not out["done"] and out["tool_calls"][0]["name"] == "show_step"
     turn = out["turn"]
     # 틀린 도구 결과 id
     bad = api.post(f"/v2/ask/{turn}", json={"results": [{"id": "x", "content": "{}"}]})
@@ -103,7 +104,7 @@ def test_client_tool_round_trip_and_owner(api, fake):
 
 
 def test_resume_finishes(api, fake):
-    fake({"tool_calls": [call("suggest_questions")]}, {"text": "실크는 닦기 쉬워요."})
+    fake({"tool_calls": [call("show_step", {"step": "quote"})]}, {"text": "실크는 닦기 쉬워요."})
     signup(api)
     turn = api.post("/v2/ask", json={"message": "실크 벽지 관리는 어때요?"}).json()["turn"]
     out = api.post(
@@ -145,7 +146,7 @@ def test_numbers_in_customer_message_are_allowed(api, fake):
 
 def test_tool_rounds_are_capped(api, fake):
     f = fake(
-        *[{"tool_calls": [call("suggest_questions", i=f"c{i}")]} for i in range(4)],
+        *[{"tool_calls": [call("show_step", {"step": "quote"}, i=f"c{i}")]} for i in range(4)],
         {"text": "답이에요."},
     )
     signup(api)
@@ -314,3 +315,24 @@ def test_query_embedding_adds_meaning_matches(api, fake, monkeypatch):
     signup(api)
     api.post("/v2/ask", json={"message": "벽에 검은 얼룩이 생겨요"})
     assert seen == ["벽에 검은 얼룩이 생겨요"] and "<자료 K2" in f.seen[0]["system"]
+
+
+def test_suggest_keeps_only_answerable_questions(api, fake):
+    v = knowledge_version("consult")
+    knowledge_chunk(v, "K1", "합지는 종이 벽지라 값이 싸고 숨을 쉬지만 오염에 약해요.")
+    knowledge_chunk(v, "K2", "실크 벽지는 PVC 코팅이라 물걸레로 닦기 쉬워요.")
+    query(
+        """update rag_chunks set provenance = jsonb_set(provenance, '{hints}', to_jsonb($1::text))
+        where record_key = 'K2'""",
+        json.dumps(["실크 벽지는 물걸레로 닦아도 돼요?"], ensure_ascii=False),
+    )
+    asks = {"questions": ["그럼 합지는요?", "도배 비용은 얼마예요?", "우주선 수리도 해요?"]}
+    fake(
+        {"tool_calls": [call("suggest_questions", asks)]},
+        {"text": "합지는 종이 벽지예요 [K1]"},
+    )
+    signup(api)
+    out = api.post("/v2/ask", json={"message": "합지 벽지 특징이 뭐예요?"}).json()
+    assert out["done"] and out["turn"] is None  # 추천 질문 도구도 서버에서 끝난다
+    # 은행 질문(K2)만 남고, '그럼'으로 시작 · 금액 질문 · 자료로 답할 수 없는 질문은 빠진다
+    assert out["suggest"] == [{"text": "실크 벽지는 물걸레로 닦아도 돼요?", "ref": "K2"}]

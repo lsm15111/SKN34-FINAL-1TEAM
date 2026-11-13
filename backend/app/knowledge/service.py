@@ -9,7 +9,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.knowledge import bm25, repository
+from app.knowledge import bm25, repository, suggest
 from app.knowledge.sources import assemble
 
 _cache: tuple[tuple[str, ...], bm25.Index] | None = None
@@ -63,3 +63,16 @@ async def search(
 async def verify_cites(s: AsyncSession, text: str) -> tuple[str, int]:
     """[K번호] 인용 중 문장과 맞지 않는 것을 뗀다. (고친 글, 뗀 수)"""
     return bm25.verify_cites(await index(s), text)
+
+
+async def suggest_questions(
+    s: AsyncSession,
+    question: str,
+    *,
+    shown: list[str],
+    cited: set[str],
+    llm: list[str] | tuple[str, ...] = (),
+) -> list[suggest.Pick]:
+    """이어 물을 질문 0~3개 (답할 수 있는 것만). 후보마다 키워드 검색을 돌려 작업 스레드로 넘긴다"""
+    ix = await index(s)
+    return await asyncio.to_thread(suggest.pick, ix, question, shown=shown, cited=cited, llm=llm)

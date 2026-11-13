@@ -1,6 +1,7 @@
 // AI가 화면을 움직이는 도구의 실행 부분 (v10 claudeTools).
 // 도구 이름 · 설명 · 입력 모양은 서버(backend/app/v2/ask_tools.py)가 정한다. 여기서는 받은 값을 검사하고 실행만 한다.
-// 공사비(price_reference) · 공정표 조건(set_schedule_constraints) · 지식 검색(search_knowledge)은 서버가 실행한다.
+// 공사비(price_reference) · 공정표 조건(set_schedule_constraints) · 지식 검색(search_knowledge) ·
+// 이어 물을 질문(suggest_questions)은 서버가 실행한다.
 import { flashBoard } from "../Board";
 import { CATS, manwon, SPACES, STYLES, TIER_ORDER, TIERS } from "../data";
 import { moveLabel } from "../dates";
@@ -8,7 +9,7 @@ import { autoPick, fillPicks, STEP_NAMES, tierFromBudget } from "../flow";
 import { DATA, S, touch, type Tier } from "../store";
 import type { AiTool } from "./llm";
 
-export type After = { step?: string; suggest?: string[] };
+export type After = { step?: string };
 
 /** show_step이 고를 수 있는 단계 */
 const stepKeys = () => [...new Set(["styles", "guide", ...Object.keys(STEP_NAMES)])];
@@ -114,13 +115,6 @@ export function claudeTools(applied: string[], after: After): AiTool[] {
       execute: ({ step }: { step: string }) => {
         if (!stepKeys().includes(step)) throw new Error("없는 단계");
         after.step = step;
-        return { ok: true };
-      },
-    },
-    {
-      name: "suggest_questions",
-      execute: ({ questions }: { questions?: unknown[] }) => {
-        after.suggest = (Array.isArray(questions) ? questions : []).map((q) => String(q).slice(0, 30)).slice(0, 3);
         return { ok: true };
       },
     },

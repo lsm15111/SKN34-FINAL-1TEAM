@@ -4423,6 +4423,11 @@ export interface components {
              * @default 0
              */
             cites_dropped: number;
+            /**
+             * Suggest
+             * @default []
+             */
+            suggest: components["schemas"]["V2AskSuggest"][];
         };
         /**
          * V2AskProfile
@@ -4517,6 +4522,16 @@ export interface components {
             url: string;
             /** Official */
             official: boolean;
+        };
+        /**
+         * V2AskSuggest
+         * @description 입력창 위 버튼으로 보일 이어 물을 질문. 서버가 답할 수 있는지 검색해 본 것만
+         */
+        V2AskSuggest: {
+            /** Text */
+            text: string;
+            /** Ref */
+            ref?: string | null;
         };
         /** V2BandOut */
         V2BandOut: {

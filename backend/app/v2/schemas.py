@@ -633,6 +633,13 @@ class V2AskSource(BaseModel):
     official: bool  # 공공 · 표준 · 제조사 · 협회 자료
 
 
+class V2AskSuggest(BaseModel):
+    """입력창 위 버튼으로 보일 이어 물을 질문. 서버가 답할 수 있는지 검색해 본 것만"""
+
+    text: str
+    ref: str | None = None  # 질문 은행 질문이 묶인 조각
+
+
 class V2AskOut(BaseModel):
     done: bool
     turn: str | None = None  # 화면 도구를 실행하고 /v2/ask/{turn}로 결과를 보낸다
@@ -645,6 +652,7 @@ class V2AskOut(BaseModel):
     cons: V2ConsIn | None = None  # 공정표 상담이 바꾼 조건
     sources: list[V2AskSource] = []  # 답에 남은 [K번호] 근거
     cites_dropped: int = 0  # 보여 주지 않았거나 문장과 맞지 않아 뗀 [K번호] 수
+    suggest: list[V2AskSuggest] = []  # 이어 물을 질문 0~3개 (일반 상담만)
 
 
 class V2AskHealthOut(BaseModel):

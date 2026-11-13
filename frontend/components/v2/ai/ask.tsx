@@ -10,7 +10,6 @@ import { DATA, S } from "../store";
 import { quoteBody } from "../doc/api";
 import { materialsFor, profileOf } from "./context";
 import { type AskOut, localClaude, runAsk, toImageBlock } from "./llm";
-import { ragReady, relatedQs } from "./rag";
 import { cleanMarks, nextStepOf } from "./route";
 import { ragSources } from "./Sources";
 import { type After, claudeTools } from "./tools";
@@ -159,12 +158,9 @@ export async function askClaude(q: string, { label, images, withPhotos }: { labe
   if (applied.length) el.append(<p className="applied">{"✓ 보드에 담았어요 · " + [...new Set(applied)].join(" · ")}</p>);
   const it = out?.intent;
   if (!images && it && it.confidence >= 0.7 && INTENT_KO[it.label]) el.append(<p className="route-chip muted">{`질문 종류: ${INTENT_KO[it.label]}`}</p>);
-  if (!after.suggest?.length && !images) {
-    await ragReady(); // 이어 물을 질문 예비(화면 자료 예시 질문). 추천 질문을 서버로 옮기면 뺀다
-    const rq = relatedQs(q);
-    if (rq.length) after.suggest = rq;
-  }
-  if (after.suggest?.length) quick(after.suggest.map((t) => [t, () => askClaude(t)] as [string, () => void]));
+  // 이어 물을 질문: 서버가 답할 수 있는지 검색해 본 것만 보낸다 (없으면 버튼을 띄우지 않는다)
+  const sug = images ? [] : out?.suggest || [];
+  if (sug.length) quick(sug.map((x) => [x.text, () => askClaude(x.text)] as [string, () => void]));
   if (after.step && hasStep(after.step)) stepFn(after.step)();
 }
 
