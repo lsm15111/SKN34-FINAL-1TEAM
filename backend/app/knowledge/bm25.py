@@ -1,7 +1,7 @@
 """지식 조각 검색 점수 매기기: 글자 두 개 묶음 BM25 + 의미 검색 순위를 RRF로 합친다. DB · HTTP를 모르는 순수 함수.
 
 키워드 부분은 화면 검색(rag.ts ragSearch7)에서 옮겼다. 의미 검색 순위는 부르는 쪽이 DB(pgvector)에서 뽑아 넘긴다.
-무게는 evaluation/rag/hybrid.py로 dev 질문에서 골랐다 (2026-11-13).
+무게는 evaluation/rag/hybrid.py로 dev 질문(90 + 300 세트의 dev)에서 골랐다 (2026-11-13).
 """
 
 import math
@@ -19,7 +19,7 @@ CONF = {
     "dense_w": 0.75,
     "dense_n": 30,
     # 질문 공정과 같은 공정 조각에 더하는 점수 (RRF 1위가 1/61 ≈ 0.016)
-    "trade_w": 0.012,
+    "trade_w": 0.002,
 }
 # 공정을 넘겨받지 못하면 질문 낱말로 코드가 고른다 (LLM 없이)
 TRADE_WORDS = {

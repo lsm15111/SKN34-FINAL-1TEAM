@@ -8,7 +8,8 @@
 - recall@5: grade 1 이상 정답 중 위 5개에 든 비율의 평균
 - mrr: grade 1 이상 첫 정답 순위의 역수 평균 (10위까지)
 - ndcg@5: grade를 점수로 쓴 nDCG
-- 답 없음(no_source) 질문은 위 지표에서 빼고, 검색이 '자료 부족(enough=false)'이라고 한 비율을 따로 본다
+- 답 없음(no_source) 질문과 정답 조각이 없는 질문은 위 지표에서 빼고, 검색이 '자료 부족(enough=false)'이라고 한 비율을 따로 본다
+- 계산 엔진(engine) 질문은 검색으로 재지 않는다 (금액 · 기간은 계산 엔진이 답한다)
 """
 
 import argparse
@@ -46,6 +47,8 @@ def report(rank: dict, qs: list[dict], splits: set[str]) -> dict:
     groups: dict[str, list[dict]] = {}
     nosrc = []
     for q in rows:
+        if q["expect"] == "engine":
+            continue
         gold = {g["ref"]: g["grade"] for g in q["gold"]}
         if q["expect"] == "no_source" or not gold:
             nosrc.append(not rank["enough"].get(q["id"], True))

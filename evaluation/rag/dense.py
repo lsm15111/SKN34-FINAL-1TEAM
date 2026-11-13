@@ -45,6 +45,7 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--questions", type=Path, default=HERE / "questions.jsonl")
     ap.add_argument("--k", type=int, default=50)
+    ap.add_argument("--out", type=Path, default=CACHE / "dense.json")
     a = ap.parse_args()
     qs = [json.loads(x) for x in a.questions.read_text(encoding="utf-8").splitlines() if x.strip()]
     path = CACHE / "qvec.json"
@@ -70,8 +71,8 @@ async def main() -> None:
                 .limit(a.k)
             )
             out[q["id"]] = [ref_of[f"{k}/{r}"] for k, r in rows]
-    (CACHE / "dense.json").write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
-    print(f"dense.json · {len(out)}문항 · 위 {a.k}개")
+    a.out.write_text(json.dumps(out, ensure_ascii=False), encoding="utf-8")
+    print(f"{a.out.name} · {len(out)}문항 · 위 {a.k}개")
 
 
 if __name__ == "__main__":
