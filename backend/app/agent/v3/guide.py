@@ -6,6 +6,7 @@
 
 from app.agent.v3 import templates
 from app.agent.v3.answer import KB, Part, Task, calc_box, drop_promise, knowledge
+from app.agent.v3.gate import START
 from app.agent.v3.schemas import UiCard
 
 GENERAL_PRICE = (
@@ -46,7 +47,18 @@ def run(task: Task, kb: KB) -> Part:
         lines.append(templates.MY_HOUSE)
     if lines:
         part.add(templates.section(lines, route="guide"), "\n".join([*lines, templates.ALLOWED]))
-    how = knowledge(part, kb, task.text, trade="common", route="guide", facts=f, policy=task.policy)
+    if START.search(task.text) and not flags - {"my_house"}:
+        # 시작 순서 질문: 믿집 흐름을 단계로 보여 주고, 지식 검색은 하지 않아요(엉뚱한 공종 조각이 섞여서)
+        steps = [*templates.START_STEPS, *([templates.START_HERE[f.stage]] if f else [])]
+        part.add(
+            templates.section(steps, title="[시작 순서]", route="guide"),
+            "\n".join([*steps, templates.ALLOWED]),
+        )
+        how = "template"
+    else:
+        how = knowledge(
+            part, kb, task.text, trade="common", route="guide", facts=f, policy=task.policy
+        )
     if how == "unknown" and lines:
         part.unknown = [u for u in part.unknown if u != templates.UNKNOWN]
         drop_promise(part)

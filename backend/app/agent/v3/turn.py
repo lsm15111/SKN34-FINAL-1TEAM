@@ -149,6 +149,12 @@ async def run_turn(
     )  # fmt: skip
     ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
     ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
+    if ans.sections and ans.sections[0].title == "[시작 순서]":
+        ans.brief = None  # 단계 목록은 잘라 보이면 순서가 끊겨서 통째로 보여요
+    if photo and ans.brief and ans.sections and ans.sections[0].sentences[:1]:
+        first = ans.sections[0].sentences[0]
+        if first.text == PHOTO_LINE and first not in ans.brief.lines:
+            ans.brief.lines = [first, *ans.brief.lines][:3]  # 사진 안내는 짧은 답에도 맨 앞에
     new_wait = None
     if ans.ask is not None:
         new_wait = {"route": "trade", "trade": ans.ask.trade, "slot": ans.ask.slot, "q": masked}

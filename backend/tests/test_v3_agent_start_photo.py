@@ -27,3 +27,10 @@ def test_photo_pattern_is_linear_on_long_spaces():
     t = time.perf_counter()
     PHOTO.search("사진" + " " * 50_000 + "x")
     assert time.perf_counter() - t < 0.5
+
+
+def test_start_steps_template_has_no_amount_or_period():
+    from app.agent.v3 import templates
+
+    text = " ".join(templates.START_STEPS + list(templates.START_HERE.values()))
+    assert "원" not in text and "일 " not in text  # 금액 · 기간은 계산 엔진 화면으로만
