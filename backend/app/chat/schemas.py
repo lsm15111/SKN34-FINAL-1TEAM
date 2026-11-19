@@ -56,6 +56,14 @@ class AiSection(BaseModel):
     sources: list[AiSource] = []
 
 
+class AiBrief(BaseModel):
+    """짧은 답: 먼저 보일 문장 1~3개(sections · unknown에서 고른 것). 나머지는 '자세히'에서 sections로 보여요."""
+
+    form: str = "other"
+    lines: list[str] = []
+    more: int = 0
+
+
 class AiAnswer(BaseModel):
     notice: str = NOTICE
     sections: list[AiSection] = []
@@ -65,6 +73,7 @@ class AiAnswer(BaseModel):
     unknown: list[str] = []
     suggest: list[str] = []
     failed: bool = False
+    brief: AiBrief | None = None
 
 
 class AiTurnOut(BaseModel):

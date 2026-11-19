@@ -8,7 +8,7 @@ DB · HTTP를 모른다: 프로젝트 사실(ProjectFacts)과 지식(KB)은 chat
 import re
 from dataclasses import dataclass
 
-from app.agent.v3 import check, llm_mode, orchestrator, policy, templates
+from app.agent.v3 import brief, check, llm_mode, orchestrator, policy, templates
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3.answer import KB, T_HIGH, Part, Task
 from app.agent.v3.schemas import (
@@ -137,6 +137,7 @@ async def run_turn(
         ),
     )  # fmt: skip
     ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
+    ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
     new_wait = None
     if ans.ask is not None:
         new_wait = {"route": "trade", "trade": ans.ask.trade, "slot": ans.ask.slot, "q": masked}

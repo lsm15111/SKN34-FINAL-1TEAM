@@ -8,5 +8,5 @@ case "$ROLE" in
   b1a) N=1 ;; b1b) N=2 ;; b5|agent) N=3 ;; b6|data) N=4 ;; b7|security) N=5 ;; b8) N=6 ;; lead) N=8 ;; b2) N=9 ;; b3) N=10 ;; b4|design) N=11 ;; dev) N=14 ;; *) N=12 ;;
 esac
 export TEST_DB_NAME="mitjip_test_${ROLE}" TEST_REDIS_URL="redis://127.0.0.1:${REDIS_HOST_PORT:-6379}/${N}"
-cd /c/Workspace/SKN34/wt-v3/backend
+cd "$(cd "$(dirname "$0")/.." && pwd)/backend"  # 이 작업 폴더의 backend
 exec uv run pytest "$@"

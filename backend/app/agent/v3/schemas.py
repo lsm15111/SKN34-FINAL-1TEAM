@@ -248,6 +248,14 @@ class Trace(BaseModel):
     dropped: list[str] = []  # 출력 검사가 뺀 이유(문장 원문 없음)
 
 
+class Brief(BaseModel):
+    """짧은 답(brief.py): 질문 꼴에 맞춰 먼저 보일 문장 1~3개. 새 글이 아니라 sections · unknown에서 고른 것."""
+
+    form: str = "other"  # 질문 꼴(brief.FORM_KO)
+    lines: list[Sentence] = []
+    more: int = 0  # '자세히'에만 있는 문장 수(주의 · 팁 포함)
+
+
 class AgentAnswer(BaseModel):
     sections: list[Section] = []
     calc: list[CalcBox] = []
@@ -256,6 +264,7 @@ class AgentAnswer(BaseModel):
     unknown: list[str] = []
     suggest: list[str] = []
     failed: bool = False
+    brief: Brief | None = None
     trace: Trace = Trace()
 
     def plain(self) -> str:

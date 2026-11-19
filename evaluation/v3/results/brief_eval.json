@@ -1,0 +1,223 @@
+{
+  "bank": {
+    "n": 493,
+    "content": 100,
+    "full_chars_med_p90": [
+      237.5,
+      333
+    ],
+    "brief_chars_med_p90": [
+      109.0,
+      137
+    ],
+    "head_chars_med_p90": [
+      109.5,
+      145
+    ],
+    "brief_over_200": 1,
+    "full_over_200": 73,
+    "over_budget": 0,
+    "folded(more>0)": 94,
+    "yesno_n": 61,
+    "yesno_conclusion_first_brief": 17,
+    "yesno_conclusion_first_head": 13,
+    "brief_differs_from_head": 45,
+    "forms": {
+      "yesno": 256,
+      "other": 47,
+      "price": 44,
+      "howto": 35,
+      "compare": 32,
+      "period": 22,
+      "order": 19,
+      "defect": 18,
+      "cause": 8,
+      "reco": 8,
+      "define": 4
+    }
+  },
+  "bank:dev": {
+    "n": 330,
+    "content": 80,
+    "full_chars_med_p90": [
+      254.0,
+      335
+    ],
+    "brief_chars_med_p90": [
+      109.0,
+      137
+    ],
+    "head_chars_med_p90": [
+      109.0,
+      145
+    ],
+    "brief_over_200": 1,
+    "full_over_200": 61,
+    "over_budget": 0,
+    "folded(more>0)": 76,
+    "yesno_n": 48,
+    "yesno_conclusion_first_brief": 12,
+    "yesno_conclusion_first_head": 10,
+    "brief_differs_from_head": 33,
+    "forms": {
+      "yesno": 175,
+      "price": 30,
+      "other": 27,
+      "howto": 23,
+      "compare": 18,
+      "order": 17,
+      "period": 16,
+      "defect": 11,
+      "reco": 6,
+      "cause": 6,
+      "define": 1
+    }
+  },
+  "bank:heldout": {
+    "n": 163,
+    "content": 20,
+    "full_chars_med_p90": [
+      211.0,
+      321
+    ],
+    "brief_chars_med_p90": [
+      109.5,
+      145
+    ],
+    "head_chars_med_p90": [
+      112.5,
+      163
+    ],
+    "brief_over_200": 0,
+    "full_over_200": 12,
+    "over_budget": 0,
+    "folded(more>0)": 18,
+    "yesno_n": 13,
+    "yesno_conclusion_first_brief": 5,
+    "yesno_conclusion_first_head": 3,
+    "brief_differs_from_head": 12,
+    "forms": {
+      "yesno": 81,
+      "other": 20,
+      "compare": 14,
+      "price": 14,
+      "howto": 12,
+      "defect": 7,
+      "period": 6,
+      "define": 3,
+      "cause": 2,
+      "reco": 2,
+      "order": 2
+    }
+  },
+  "beginner": {
+    "n": 227,
+    "content": 97,
+    "full_chars_med_p90": [
+      217,
+      321
+    ],
+    "brief_chars_med_p90": [
+      109,
+      141
+    ],
+    "head_chars_med_p90": [
+      111,
+      160
+    ],
+    "brief_over_200": 0,
+    "full_over_200": 61,
+    "over_budget": 0,
+    "folded(more>0)": 92,
+    "yesno_n": 48,
+    "yesno_conclusion_first_brief": 13,
+    "yesno_conclusion_first_head": 10,
+    "brief_differs_from_head": 57,
+    "forms": {
+      "yesno": 116,
+      "compare": 26,
+      "price": 19,
+      "other": 19,
+      "howto": 17,
+      "order": 10,
+      "define": 8,
+      "cause": 5,
+      "reco": 3,
+      "period": 2,
+      "defect": 2
+    }
+  },
+  "beginner:dev": {
+    "n": 152,
+    "content": 85,
+    "full_chars_med_p90": [
+      217,
+      321
+    ],
+    "brief_chars_med_p90": [
+      109,
+      136
+    ],
+    "head_chars_med_p90": [
+      111,
+      158
+    ],
+    "brief_over_200": 0,
+    "full_over_200": 53,
+    "over_budget": 0,
+    "folded(more>0)": 81,
+    "yesno_n": 46,
+    "yesno_conclusion_first_brief": 12,
+    "yesno_conclusion_first_head": 9,
+    "brief_differs_from_head": 49,
+    "forms": {
+      "yesno": 77,
+      "compare": 16,
+      "other": 14,
+      "price": 13,
+      "howto": 12,
+      "define": 6,
+      "order": 6,
+      "cause": 4,
+      "defect": 2,
+      "reco": 1,
+      "period": 1
+    }
+  },
+  "beginner:heldout": {
+    "n": 75,
+    "content": 12,
+    "full_chars_med_p90": [
+      222.5,
+      267
+    ],
+    "brief_chars_med_p90": [
+      109.5,
+      168
+    ],
+    "head_chars_med_p90": [
+      111.5,
+      174
+    ],
+    "brief_over_200": 0,
+    "full_over_200": 8,
+    "over_budget": 0,
+    "folded(more>0)": 11,
+    "yesno_n": 2,
+    "yesno_conclusion_first_brief": 1,
+    "yesno_conclusion_first_head": 1,
+    "brief_differs_from_head": 8,
+    "forms": {
+      "yesno": 39,
+      "compare": 10,
+      "price": 6,
+      "other": 5,
+      "howto": 5,
+      "order": 4,
+      "reco": 2,
+      "define": 2,
+      "period": 1,
+      "cause": 1
+    }
+  }
+}

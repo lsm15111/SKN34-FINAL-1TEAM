@@ -9,6 +9,7 @@
 .tip { color: var(--ink-sub); font-size: var(--fs-sm); }
 .sources { color: var(--ink-mute); font-size: var(--fs-xs); }
 .unknown { color: var(--ink-sub); font-size: var(--fs-sm); }
+.more { align-self: flex-start; }
 .calcNote { color: var(--ink-sub); font-size: var(--fs-sm); background: var(--surface-2); border-radius: var(--radius-s); padding: 6px 10px; }
 .ask { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line-soft); padding-top: 8px; }
 .choices { display: flex; flex-wrap: wrap; gap: 6px; }

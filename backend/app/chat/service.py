@@ -18,6 +18,7 @@ from app.chat import repository
 from app.chat.models import Chat
 from app.chat.schemas import (
     AiAnswer,
+    AiBrief,
     AiFaqOut,
     AiMessageOut,
     AiSource,
@@ -134,6 +135,7 @@ async def _set_json(key: str, value: dict | None, ttl: int) -> None:
 
 
 def _public(ans) -> AiAnswer:
+    b = ans.brief
     return AiAnswer(
         sections=[section_out(x) for x in ans.sections],
         calc=ans.calc,
@@ -142,6 +144,7 @@ def _public(ans) -> AiAnswer:
         unknown=ans.unknown,
         suggest=ans.suggest,
         failed=ans.failed,
+        brief=AiBrief(form=b.form, lines=[x.text for x in b.lines], more=b.more) if b else None,
     )
 
 

@@ -7,5 +7,5 @@ NAME="${1:?이름}"; NOW="${2:?시각}"
 export APP_ENV=local
 export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER:-mitjip}:${POSTGRES_PASSWORD}@127.0.0.1:${DB_HOST_PORT:-5433}/mitjip_v3_${NAME}"
 export REDIS_URL="redis://127.0.0.1:${REDIS_HOST_PORT:-6379}/6" REALTIME_PREFIX="mj:local:${NAME}"
-cd /c/Workspace/SKN34/wt-v3/backend
+cd "$(cd "$(dirname "$0")/.." && pwd)/backend"
 exec uv run python -m app.run_due --now "$NOW"

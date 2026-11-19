@@ -68,6 +68,9 @@ def test_turn_streams_sentences_then_done_and_saves_masked_question(api):
     assert sec and sec[0]["source"] == "card"
     assert all("url" not in s for x in sec for s in x["sources"])  # 출처는 이름 · 종류만
     assert "trace" not in out["answer"]
+    # 짧은 답: 먼저 보일 문장은 sections에서 고른 그대로(새 글 없음)
+    brief = out["answer"]["brief"]
+    assert brief["lines"] and set(brief["lines"]) <= {t for x in sec for t in x["sentences"]}
     rows = query("select role, text from chat_messages order by role desc")
     assert [r["role"] for r in rows] == ["user", "assistant"]
     assert "010-1234-5678" not in rows[0]["text"]
