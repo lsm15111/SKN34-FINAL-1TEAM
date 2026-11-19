@@ -9,6 +9,7 @@
   (답은 '계산 없음' 정해 둔 글로). 업체끼리 줄 차이는 계산 엔진 함수가 생기기 전까지 넘기지 않는다(여기서 빼기 계산 안 함).
 """
 
+import re
 import uuid
 from collections.abc import Sequence
 from datetime import date
@@ -17,11 +18,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agent.v3.schemas import (
     EstimateFacts,
+    GeneralFacts,
     PlanBlockFact,
     PlanFacts,
     ProjectFacts,
+    SizeCalcFact,
     StandardFacts,
     StandardLineFact,
+    VendorPickFact,
     VendorRangeFact,
     VisitDraftFacts,
     VisitRecommendFact,
@@ -66,6 +70,9 @@ async def project_facts(
         d.basis_start = d.basis_start or picked[2]
         facts.visit_draft = d
     facts.estimates = await _estimates(s, user, project_id)
+    facts.vendors = await _vendor_picks(
+        s, user, project_id, "dobae" if dobae else trades[0] if trades else "dobae"
+    )
     stage = await _stage(s, user, project_id, today)
     if stage:
         facts.stage = stage  # type: ignore[assignment]
@@ -101,6 +108,136 @@ async def _estimates(s: AsyncSession, user: User, project_id: uuid.UUID) -> list
         for c in picked[:3]
         if c.estimate_total is not None
     ]
+
+
+async def _vendor_picks(
+    s: AsyncSession, user: User, project_id: uuid.UUID, trade: str
+) -> list[VendorPickFact]:
+    """업체 추천(코드): 업체 고르기 화면과 같은 카드(이 구 · 가까운 구)에서 계산 엔진 점수로 3곳.
+    별점 · 공사 수 · 가견적 · 표준 대비 %는 화면 값 그대로 옮기고, 고르기는 calc.vendor_pick이 한다."""
+    from app.calc import vendor_pick
+    from app.visit import service as visit_service
+
+    try:
+        lst = await visit_service.vendors_for(s, user, project_id, trade)
+    except AppError:
+        return []
+    cands = [
+        vendor_pick.Candidate(
+            vendor_id=str(c.vendor_id),
+            name=c.name,
+            local=local,
+            estimate_total=c.estimate_total,
+            vs_standard_pct=None if c.vs_standard_pct is None else int(c.vs_standard_pct),
+            rating=c.rating,
+            review_count=c.review_count or 0,
+            done_count=c.done_count or 0,
+            instant=bool(c.instant_badge),
+        )
+        for local, cards in ((True, lst.local), (False, lst.nearby))
+        for c in cards
+    ]
+    out = []
+    for p in vendor_pick.pick(cands):
+        c = p.c
+        out.append(
+            VendorPickFact(
+                vendor_id=c.vendor_id,
+                name=c.name,
+                local=c.local,
+                estimate_total=c.estimate_total,
+                vs_standard_pct=c.vs_standard_pct,
+                rating=c.rating,
+                review_count=c.review_count,
+                done_count=c.done_count,
+                instant=c.instant,
+                score=p.score,
+                reasons=vendor_pick.reasons(p),
+            )
+        )
+    return out
+
+
+# 질문에 나온 평수 · ㎡(가정 계산). 공백 반복에 상한을 둬요(CodeQL ReDoS)
+PYEONG = re.compile(r"(?<![\d.])(\d{1,3}(?:\.\d)?)\s{0,2}평")
+SQM = re.compile(r"(?<![\d.])(\d{2,3}(?:\.\d{1,2})?)\s{0,2}(?:㎡|m2|m²|제곱미터|평방미터|헤베)")
+PY_M2 = 3.3058  # 1평 = 3.3058㎡ (표시 · 가정 계산용 환산)
+EXAMPLE_PY = (24, 34, 44)
+
+
+def asked_area(text: str) -> tuple[float, str, str] | None:
+    """질문에 나온 면적 → (㎡, 기준, 화면 이름). 'N평'은 공급 평형으로, '㎡'는 '공급'이라고 쓰지 않으면 전용으로 봐요
+    (84㎡ · 59㎡처럼 ㎡로 말하는 건 보통 전용면적이에요). 공급 10~80평(33~265㎡) 밖은 None."""
+    t = text or ""
+    m = PYEONG.search(t)
+    if m:
+        py = float(m.group(1))
+        if not 10 <= py <= 80:
+            return None
+        return round(py * PY_M2, 1), "supply", f"{m.group(1)}평"
+    m = SQM.search(t)
+    if not m:
+        return None
+    v = float(m.group(1))
+    if not 33 <= v <= 265:
+        return None
+    basis = "supply" if "공급" in t else "exclusive"
+    return v, basis, f"{'공급' if basis == 'supply' else '전용'} {m.group(1)}㎡"
+
+
+def _size_calc(m2v: float, basis: str, label: str) -> SizeCalcFact:
+    """면적 하나를 도배 · 목공 계산 엔진으로 센다(빈집 · 벽 + 천장 · 전체 · 방 개수는 평형 기본값)."""
+    from decimal import Decimal
+
+    from app.calc import dobae, mokgong
+    from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
+    from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+    from app.refprice.house import HOUSE_2026H2
+    from app.refprice.wallpaper_market import paper_market
+
+    m2 = Decimal(str(m2v)).quantize(Decimal("0.1"))
+
+    def std(grade: str, occupied: bool):
+        h = dobae.HomeV3(m2, basis, grade, occupied)  # type: ignore[arg-type]
+        return dobae.standard_v3(
+            h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+        )
+
+    basic, eco, occ = std("basic", False), std("economy", False), std("basic", True)
+    mk = mokgong.quote(mokgong.MokgongInput(m2, basis, ("molding", "base"), False), MOKGONG_2026H2)  # type: ignore[arg-type]
+    return SizeCalcFact(
+        label=label, pyeong=float(basic.pyeong), area_m2=float(m2), area_basis=basis,  # type: ignore[arg-type]
+        rooms=basic.rooms or 0, dobae_total=basic.quote.total,
+        dobae_total_economy=eco.quote.total, dobae_days=float(basic.quote.days),
+        dobae_days_occupied=float(occ.quote.days), mokgong_total=mk.total,
+        mokgong_days=float(mk.days),
+    )  # fmt: skip
+
+
+def general_facts(text: str) -> GeneralFacts:
+    """질문만 보고 센 계산 엔진 값(DB 없음, 순수 계산). 질문 평수 · 예시 평수 3개 · 방문 1개."""
+    from decimal import Decimal
+
+    from app.calc import mokgong
+    from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+
+    area = asked_area(text)
+    one = Decimal("79.3")  # 방문 값은 집 크기와 상관없어서 24평 집으로 센다(폐기물 등 최소 줄 포함)
+
+    def door(frame: bool) -> int:
+        q = mokgong.quote(
+            mokgong.MokgongInput(one, "supply", ("door",), False, doors=1, door_frame=frame),
+            MOKGONG_2026H2,
+        )
+        return q.total
+
+    return GeneralFacts(
+        asked=_size_calc(*area) if area else None,
+        examples=[_size_calc(round(x * PY_M2, 1), "supply", f"{x}평") for x in EXAMPLE_PY],
+        door_set=door(True),
+        door_leaf=door(False),
+        price_ver=DOBAE_V3_2026_11.version,
+    )
 
 
 async def _standard(s: AsyncSession, user: User, project_id: uuid.UUID) -> StandardFacts | None:

@@ -32,3 +32,9 @@
 .draftAnswer { display: flex; flex-direction: column; gap: 4px; opacity: 0.85; }
 .step { display: flex; gap: 8px; align-items: baseline; }
 .stepNum { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 10px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 700; }
+.reco { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
+.recoList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.recoItem { display: flex; gap: 8px; align-items: flex-start; }
+.recoBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.recoName { font-weight: 700; color: var(--ink); }
+.recoWhy { color: var(--ink-sub); font-size: var(--fs-sm); overflow-wrap: anywhere; }

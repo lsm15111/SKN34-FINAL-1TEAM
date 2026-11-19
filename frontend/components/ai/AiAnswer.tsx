@@ -81,7 +81,36 @@ function Choices({ choices, projectId, onPick }: { choices: AiChoice[]; projectI
   );
 }
 
+// 코드가 고른 추천 업체(조건 필터 + 점수). 금액은 계산 엔진 가견적, 사유는 서버 틀 그대로예요
+function VendorReco({ card, projectId, onPick }: { card: AiCard; projectId?: string; onPick?: (text: string, b?: AiButton) => void }) {
+  const list = card.vendors ?? [];
+  return (
+    <div className={s.reco}>
+      <p className={s.draftTitle}>{card.title || "추천 업체"}</p>
+      <ol className={s.recoList}>
+        {list.map((v, i) => (
+          <li key={v.vendor_id} className={s.recoItem}>
+            <span className={s.stepNum} aria-hidden="true">{i + 1}</span>
+            <div className={s.recoBody}>
+              {projectId ? (
+                <a className={s.recoName} href={`/projects/${projectId}/vendors/${encodeURIComponent(v.vendor_id)}?trade=dobae`}>{v.name}</a>
+              ) : (
+                <span className={s.recoName}>{v.name}</span>
+              )}
+              {v.estimate_total != null ? <span className={`${s.mute} mj-num`}>가견적 {v.estimate_total.toLocaleString("ko-KR")}원</span> : null}
+              {v.reasons.length ? <span className={s.recoWhy}>{v.reasons.join(" · ")}</span> : null}
+            </div>
+          </li>
+        ))}
+      </ol>
+      {card.text ? <p className={s.sources}>{card.text}</p> : null}
+      <Choices choices={card.choices} projectId={projectId} onPick={onPick} />
+    </div>
+  );
+}
+
 function UiCard({ card, projectId, onPick }: { card: AiCard; projectId?: string; onPick?: (text: string, b?: AiButton) => void }) {
+  if (card.kind === "vendor_reco") return <VendorReco card={card} projectId={projectId} onPick={onPick} />;
   if (card.kind === "visit_draft" && card.draft) {
     const d = card.draft;
     return (

@@ -260,8 +260,17 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut
         if on_draft is not None:
             await on_draft(_public(a))
 
+    # 질문의 평수 · 예시 평수 · 방문 1개를 계산 엔진으로 미리 센다(DB 없음, 약 20ms). 기간 · 비용 답이 쓴다
+    general = tools.general_facts(check.mask(body.text))
     res = await run_turn(
-        body.text, ctx, kb=kb, facts=facts, waiting=waiting, button=body.button, on_draft=draft
+        body.text,
+        ctx,
+        kb=kb,
+        facts=facts,
+        waiting=waiting,
+        button=body.button,
+        on_draft=draft,
+        general=general,
     )
     ans = res.answer
     chat_id, new_rev = body.chat_id, None

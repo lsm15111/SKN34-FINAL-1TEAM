@@ -4,8 +4,8 @@
 - 답: 정책 글 → 서비스 카드 · 공통 카드(없으면 다른 공종 카드도) → 조각 문장 → 모름 + 단계별 다음 할 일.
 """
 
-from app.agent.v3 import templates
-from app.agent.v3.answer import KB, Part, Task, calc_box, drop_promise, knowledge
+from app.agent.v3 import calc_lines, templates
+from app.agent.v3.answer import KB, Part, Task, drop_promise, knowledge
 from app.agent.v3.gate import START
 from app.agent.v3.schemas import UiCard
 
@@ -19,24 +19,24 @@ def run(task: Task, kb: KB) -> Part:
     f = task.facts
     flags = set(task.policy)
     lines: list[str] = []
+    # 계산 엔진 값(기간 · 비용 · 추천 업체). 공종 없는 일반 질문은 도배 기준으로 센다
+    nums = calc_lines.Lines()
     if "price" in flags:
-        if f and f.standard:
-            lines.append(templates.PRICE_DEEP)
-            box = calc_box("standard.total", f)
-            if box:
-                part.calc.append(box)
-        else:
+        nums.add(calc_lines.price("common", f, task.general, task.text))
+        if not nums.lines:
             lines.append(GENERAL_PRICE)
     if "period" in flags:
-        if f and f.plan:
-            lines.append(templates.PERIOD_PLAN)
-            box = calc_box("plan.range", f)
-            if box:
-                part.calc.append(box)
-        else:
-            lines.append(templates.PERIOD_NO_PROJECT)
+        nums.add(calc_lines.period("common", f, task.general))
     if "vendor_reco" in flags:
-        lines.append(templates.VENDOR_RECO)
+        nums.add(calc_lines.vendors(f))
+    if nums.lines:
+        part.add(
+            templates.section(nums.lines, route="guide", source="calc"),
+            f"{nums.calc_text}\n{templates.ALLOWED}",
+            calc_text=nums.calc_text,
+        )
+        part.calc += nums.boxes
+        part.cards += nums.cards
     if "brand_reco" in flags:
         lines.append(templates.BRAND_RECO)
     if "defect_judgement" in flags:

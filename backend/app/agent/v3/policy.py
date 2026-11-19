@@ -75,8 +75,16 @@ CALC_REQUEST = re.compile(
 )
 
 
+# '얼마'만 있고 돈 낱말이 없는 기간 질문('공사 기간이 얼마나 돼요')은 비용 질문이 아니에요
+MONEY = re.compile(r"비용|가격|금액|평당|단가|시세|예산|비싸|저렴|싸게|싼|돈|견적|만\s{0,2}원|원이")
+
+
 def policy_of(text: str) -> list[PolicyFlag]:
-    return [k for k, p in FLAGS.items() if p.search(text or "")]  # type: ignore[misc]
+    t = text or ""
+    got = [k for k, p in FLAGS.items() if p.search(t)]
+    if "price" in got and "period" in got and not MONEY.search(t):
+        got.remove("price")
+    return got  # type: ignore[return-value]
 
 
 def out_of_scope(text: str, has_trade: bool = False) -> bool:

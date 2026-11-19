@@ -39,6 +39,10 @@ GUIDE_WORDS = re.compile(
     r"하자|업체\s*(?:고르|선택)|고르는|준비|체크|확인할\s*것|안녕|반갑|영수증|세금계산서"  # 영수증 · 세금계산서: 계약 · 비용(공통)
 )
 # 처음 고객의 시작 순서 질문('도배 처음인데 뭐부터'): 공종 낱말이 하나 있어도 가이드가 시작 순서로 답해요(ChatGPT 비교 G1)
+# 업체를 고르는 법 · 기준을 묻는 말('좋은 도배 업체 고르는 법'): 공종 낱말이 있어도 공통(가이드) 지식이에요
+CHOOSE = re.compile(
+    r"업체\s{0,2}(?:고르|선택|찾는|비교|고를)|(?:좋은|괜찮은|믿을\s{0,2}만한)\s{0,2}\S{0,6}\s{0,2}업체"
+)
 START = re.compile(
     r"처음\s{0,2}(?:해|하|이라|인데|이에요|이예요)|뭐부터|무엇부터|어디서부터|어떻게\s{0,2}시작"
 )
@@ -145,7 +149,11 @@ def gate(
     model_route = LABEL_ROUTE.get(label) if label else None
 
     def done(route: Route, source: str, c: float = conf, keep: bool = False) -> GateResult:
-        start = START.search(plain) is not None and len(found) <= 1
+        start = (
+            (START.search(plain) is not None or CHOOSE.search(plain) is not None)
+            and len(found) <= 1
+            and "vendor_reco" not in flags
+        )
         if route == "guide" and found and not start:
             route = "trade"  # 공종이 분명하면 그 공종 담당이 답한다(가이드는 공통 · 처음 안내). 이음말 복합은 위에서 multi
         if route == "trade" and start:

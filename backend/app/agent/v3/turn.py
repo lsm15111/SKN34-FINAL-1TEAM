@@ -17,6 +17,7 @@ from app.agent.v3.schemas import (
     TEXT_MAX,
     AgentAnswer,
     Button,
+    GeneralFacts,
     ProjectFacts,
     Trace,
     TurnContext,
@@ -101,6 +102,7 @@ async def run_turn(
     waiting: dict | None = None,
     button: Button | None = None,
     on_draft: Callable[[AgentAnswer], Awaitable[None]] | None = None,
+    general: GeneralFacts | None = None,
 ) -> TurnResult:
     masked = check.mask(text or "").strip()[:TEXT_MAX]
     photo = PHOTO.search(masked) is not None
@@ -121,7 +123,7 @@ async def run_turn(
         if waiting.get("trade"):
             g = g.model_copy(update={"route": "trade", "trades": [waiting["trade"]]})
     task = Task(text=masked, route=g.route, trades=g.trades, policy=g.policy, ctx=ctx, facts=facts,
-                slot=slot, value=value, asked=asked)  # fmt: skip
+                slot=slot, value=value, asked=asked, general=general)  # fmt: skip
     names: list[str] = []
     failed_parts = 0
     if g.route == "out_of_scope":
@@ -139,8 +141,9 @@ async def run_turn(
 
     def finish(p: Part, routes: list[str]) -> AgentAnswer:
         prompts = [llm_mode.VERSION[r] for r in routes]
+        boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
         ans = AgentAnswer(
-            sections=p.sections, calc=p.calc, cards=p.cards, ask=p.ask,
+            sections=p.sections, calc=boxes, cards=p.cards, ask=p.ask,
             unknown=p.unknown, suggest=p.suggest[:3],
             trace=Trace(
                 route=g.route, source=g.source, confidence=g.confidence, trades=g.trades,

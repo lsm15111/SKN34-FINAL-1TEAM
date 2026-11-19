@@ -122,6 +122,48 @@ class EstimateFacts(BaseModel):
     separate: list[str] = []  # 따로 받는 줄 이름
 
 
+class VendorPickFact(BaseModel):
+    """업체 추천(코드): 조건 필터 + 계산 엔진 점수로 고른 업체 한 곳. 사유는 정해 둔 틀로 쓴다(LLM 아님)."""
+
+    vendor_id: str
+    name: str
+    local: bool = True  # 이 구 업체
+    estimate_total: int | None = None  # 가견적(계산 엔진)
+    vs_standard_pct: int | None = None  # 표준견적서 대비 %(계산 엔진, 음수 = 낮음)
+    rating: float | None = None
+    review_count: int = 0
+    done_count: int = 0
+    instant: bool = False  # 바로 확정 가능
+    score: float = 0.0  # 계산 엔진 점수(0~1)
+    reasons: list[str] = []  # 사유 1~3줄(틀)
+
+
+class SizeCalcFact(BaseModel):
+    """평수 하나로 센 계산 엔진 값(프로젝트가 없거나 질문에 다른 평수가 나올 때). 빈집 · 벽 + 천장 · 전체 기준."""
+
+    label: str  # 화면 이름: '34평' · '전용 84㎡'
+    pyeong: float  # 계산 엔진이 센 평(공급 기준)
+    area_m2: float
+    area_basis: Literal["supply", "exclusive"] = "supply"
+    rooms: int
+    dobae_total: int  # 기본형(실크) 부가세 포함
+    dobae_total_economy: int  # 저가형(합지)
+    dobae_days: float  # 반나절 단위 작업 일수
+    dobae_days_occupied: float  # 살면서 할 때
+    mokgong_total: int | None = None  # 몰딩 + 걸레받이
+    mokgong_days: float | None = None
+
+
+class GeneralFacts(BaseModel):
+    """질문만 보고 코드가 미리 센 계산 엔진 값. 숫자는 모두 calc 결과 그대로."""
+
+    asked: SizeCalcFact | None = None  # 질문에 나온 평수 · ㎡
+    examples: list[SizeCalcFact] = []  # 24 · 34 · 44평
+    door_set: int | None = None  # 방문 1개 문틀까지(목공 계산, 부가세 포함)
+    door_leaf: int | None = None  # 방문 1개 문짝만
+    price_ver: str = ""
+
+
 class ProjectFacts(BaseModel):
     """에이전트에 넘기는 프로젝트 칸. 동 · 호 · 연락처는 넣지 않는다."""
 
@@ -136,6 +178,7 @@ class ProjectFacts(BaseModel):
     plan: PlanFacts | None = None
     visit_draft: VisitDraftFacts | None = None
     estimates: list[EstimateFacts] = []
+    vendors: list[VendorPickFact] = []  # 코드가 고른 추천 업체(조건 필터 + 점수), 최대 3곳
     brief: dict[str, str] = {}  # 지금까지 모은 조건(도배 · 목공 브리프 칸)
 
 
@@ -214,13 +257,15 @@ class DraftCard(BaseModel):
 
 class UiCard(BaseModel):
     kind: Literal[
-        "calc", "visit_draft", "open_calendar", "grade_preview", "faq", "choices", "next_step"
-    ]
+        "calc", "visit_draft", "open_calendar", "grade_preview", "faq", "choices", "next_step",
+        "vendor_reco",
+    ]  # fmt: skip
     title: str = ""
     text: str = ""
     choices: list[Choice] = []
     calc: list[CalcBox] = []
     draft: DraftCard | None = None
+    vendors: list[VendorPickFact] = []  # vendor_reco: 코드가 고른 업체와 사유
 
 
 class AskSlot(BaseModel):

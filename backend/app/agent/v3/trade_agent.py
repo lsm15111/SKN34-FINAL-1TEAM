@@ -7,9 +7,9 @@
 - 하지 않는 일: 하자 판정, 브랜드 · 업체 추천, 10공종 금액, 다른 공종 부르기(필요하면 관문이 multi로 정함).
 """
 
-from app.agent.v3 import templates
-from app.agent.v3.answer import KB, Part, Task, calc_box, drop_promise, knowledge
-from app.agent.v3.schemas import Choice, UiCard
+from app.agent.v3 import calc_lines, templates
+from app.agent.v3.answer import KB, Part, Task, drop_promise, knowledge
+from app.agent.v3.schemas import UiCard
 from app.agent.v3.trades import BY_CODE
 
 
@@ -26,33 +26,37 @@ def run(task: Task, kb: KB) -> Part:
     lines: list[str] = []
     ko = spec.ko
 
+    nums = (
+        calc_lines.Lines()
+    )  # 계산 엔진 값으로 쓴 답(기간 · 비용 · 추천 업체), 묶음 하나로 맨 앞에
     if "price" in flags:
-        if spec.calc and facts and facts.standard:
-            lines.append(templates.PRICE_DEEP)
-            box = calc_box("standard.total", facts)
-            if box:
-                part.calc.append(box)
-        elif spec.calc:
+        if spec.calc or code == "common":
+            nums.add(calc_lines.price(code, facts, task.general, task.text))
+        if not nums.lines and spec.calc:
             lines.append(templates.PRICE_DEEP_NO_PROJECT)
             part.cards.append(UiCard(kind="next_step", choices=list(templates.NO_PROJECT_NEXT)))
-        elif code != "common":
+        elif not nums.lines and code != "common":
             lines.append(templates.PRICE_KNOWLEDGE.format(ko=ko))
     if "period" in flags:
-        if spec.calc and facts and facts.plan:
-            lines.append(templates.PERIOD_PLAN)
-            box = calc_box("plan.range", facts)
-            if box:
-                part.calc.append(box)
-        elif spec.calc:
-            lines.append(templates.PERIOD_NO_PROJECT)
-        elif code != "common":
+        before = len(nums.lines)
+        if spec.calc or code == "common":
+            nums.add(calc_lines.period(code, facts, task.general))
+        if len(nums.lines) == before and not spec.calc and code != "common":
             lines.append(templates.PERIOD_KNOWLEDGE.format(ko=ko))
-    if "vendor_reco" in flags:
+    if "vendor_reco" in flags and (spec.calc or code == "common"):
+        nums.add(calc_lines.vendors(facts))
+    elif "vendor_reco" in flags:
         lines.append(templates.VENDOR_RECO)
-        if spec.calc:
-            part.cards.append(
-                UiCard(kind="next_step", choices=[Choice(text="업체 보기", action="vendors")])
-            )
+    if nums.lines:
+        part.add(
+            templates.section(
+                nums.lines, title=f"[{ko}]", route="trade", trade=code, source="calc"
+            ),
+            f"{nums.calc_text}\n{templates.ALLOWED}",
+            calc_text=nums.calc_text,
+        )
+        part.calc += nums.boxes
+        part.cards += nums.cards
     if "brand_reco" in flags:
         lines.append(templates.BRAND_RECO)
     if "defect_judgement" in flags:

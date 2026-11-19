@@ -16,6 +16,7 @@ from app.agent.v3 import check, templates
 from app.agent.v3.schemas import (
     AskSlot,
     CalcBox,
+    GeneralFacts,
     PolicyFlag,
     ProjectFacts,
     Route,
@@ -63,6 +64,9 @@ class Task:
     slot: str | None = None
     value: str | None = None
     asked: str = ""  # 되물은 담당이 남긴 원래 질문(칸 답일 때)
+    general: GeneralFacts | None = (
+        None  # 질문의 평수 · 예시 평수로 센 계산 엔진 값(프로젝트와 별개)
+    )
 
 
 @dataclass

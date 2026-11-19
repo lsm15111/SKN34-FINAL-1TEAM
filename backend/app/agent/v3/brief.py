@@ -170,7 +170,9 @@ def make(ans: AgentAnswer, question: str) -> Brief:
         return Brief(form=form, lines=lines, more=0)
 
     fold = _fold_lines(ans)
-    first = _first(form, ans)
+    # 계산 엔진 값 묶음(source=calc: 기간 · 비용 · 추천 업체)은 질문의 답 그 자체라 맨 앞에 통째로(3줄까지) 보여요
+    calc = [x for s in ans.sections if s.source == "calc" for x in s.sentences][:3]
+    first = calc or _first(form, ans)
     chosen: list[Sentence] = list(first)
     taken = {x.text for x in chosen} | {x.text for x in fold}
     q = _grams(question)
@@ -195,6 +197,10 @@ def make(ans: AgentAnswer, question: str) -> Brief:
         ranked = sorted(pool, key=lambda it: -score(it))
 
     used = sum(len(x.text) for x in chosen) + sum(len(x.text) for x in fold)
+    if calc:
+        # 기간 · 비용은 계산 줄로 끝(근거 문장은 '자세히'에), 추천 등은 근거 한 줄까지
+        n_max = len(calc) if form in ("price", "period") else max(n_max, len(calc) + 1)
+        used = 0
     picked: list[tuple[int, int, Sentence]] = []
     for it in ranked:
         if len(chosen) + len(picked) >= n_max:

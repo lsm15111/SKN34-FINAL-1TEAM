@@ -12,8 +12,8 @@
 import itertools
 import re
 
+from app.agent.v3 import calc_lines, guide, quote_explain, schedule_agent, templates, trade_agent
 from app.agent.v3 import gate as gate_mod
-from app.agent.v3 import guide, quote_explain, schedule_agent, templates, trade_agent
 from app.agent.v3.answer import KB, Part, Task
 from app.agent.v3.schemas import Route, Section, Sentence, TradeCode
 from app.agent.v3.trades import BY_CODE, ORDER_CITES, ORDER_RULES, mention_spans, rules, trades_in
@@ -48,12 +48,12 @@ def split(task: Task) -> list[Task]:
                 out.extend(_per_trade(task, p, tr, g.policy))
             else:
                 out.append(Task(text=p, route=route, trades=tr[:1] if route == "trade" else tr,
-                                policy=g.policy, ctx=task.ctx, facts=task.facts))  # fmt: skip
+                                policy=g.policy, ctx=task.ctx, facts=task.facts, general=task.general))  # fmt: skip
     else:
         out.extend(_per_trade(task, task.text, task.trades, task.policy))
     if not out:
         out.append(Task(text=task.text, route="guide", trades=[], policy=task.policy, ctx=task.ctx,
-                        facts=task.facts))  # fmt: skip
+                        facts=task.facts, general=task.general))  # fmt: skip
     # 같은 담당 · 같은 공종 조각은 하나로(같은 호출 되풀이 막기)
     seen: set[tuple] = set()
     uniq = []
@@ -68,11 +68,19 @@ def split(task: Task) -> list[Task]:
 def _per_trade(task: Task, text: str, tr: list[TradeCode], policy) -> list[Task]:
     if not tr:
         return [
-            Task(text=text, route="guide", trades=[], policy=policy, ctx=task.ctx, facts=task.facts)
+            Task(
+                text=text,
+                route="guide",
+                trades=[],
+                policy=policy,
+                ctx=task.ctx,
+                facts=task.facts,
+                general=task.general,
+            )
         ]
     return [
         Task(text=focus(text, t, tr), route="trade", trades=[t], policy=policy, ctx=task.ctx,
-             facts=task.facts, asked=text)
+             facts=task.facts, asked=text, general=task.general)
         for t in tr
     ]  # fmt: skip
 
@@ -187,7 +195,28 @@ def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
 def run(task: Task, kb: KB) -> tuple[Part, list[str], int]:
     """(합친 몫, 조각 담당 이름들, 실패한 조각 수)"""
     tasks = split(task)
+    both = {"dobae", "mokgong"} <= {t for x in tasks for t in x.trades}
+    pair = None
+    if both and "period" in task.policy:
+        # 두 공정 기간은 공정표(또는 평수별 계산) 한 묶음으로. 조각마다 같은 공정표 줄이 되풀이되지 않게 기간 표시를 뗀다
+        pair = calc_lines.pair_period(task.facts, task.general)
+        for t in tasks:
+            t.policy = [f for f in t.policy if f != "period"]
     parts = [AGENTS[t.route](t, kb) for t in tasks]
     failed = sum(1 for p in parts if not p.sections and not p.calc)
     names = [f"{t.route}:{t.trades[0] if t.trades else '-'}" for t in tasks]
-    return merge(parts, kb, asked=task.text), names, failed
+    out = merge(parts, kb, asked=task.text)
+    if pair is not None and pair.lines:
+        tail = templates.PART_FAILED_WHICH.split("{which}")[1]
+        # 기간은 계산 묶음이 답했으니 '… 쪽은 확인하지 못했어요' 한 줄은 빼요(조각 지식이 없을 뿐이에요)
+        out.sections = [
+            sec for sec in out.sections
+            if not (sec.route == "multi" and sec.source == "template" and sec.sentences
+                    and all(x.text.endswith(tail) or x.text == templates.PART_FAILED for x in sec.sentences))
+        ]  # fmt: skip
+        out.sections.insert(
+            0, templates.section(pair.lines, title="[기간]", route="multi", source="calc")
+        )
+        out.calc = [*pair.boxes, *out.calc]
+        out.cards = [*pair.cards, *out.cards]
+    return out, names, failed

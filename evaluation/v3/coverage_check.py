@@ -240,6 +240,7 @@ def summarize(rows: list[dict]) -> dict:
 async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--dense", action="store_true")
+    ap.add_argument("--tag", default="", help="결과를 .cache/<tag>/에 따로 남겨요(여럿이 같이 돌릴 때)")
     a = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -284,8 +285,8 @@ async def main() -> None:
             for r in wrong
         ).most_common(30)
     )
-    out = HERE / ".cache"  # git 밖
-    out.mkdir(exist_ok=True)
+    out = HERE / ".cache" / a.tag if a.tag else HERE / ".cache"  # git 밖
+    out.mkdir(parents=True, exist_ok=True)
     (out / "coverage_check.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8"
     )
