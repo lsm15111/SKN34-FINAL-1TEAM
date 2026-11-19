@@ -214,8 +214,67 @@ def _size_calc(m2v: float, basis: str, label: str) -> SizeCalcFact:
     )  # fmt: skip
 
 
-def general_facts(text: str) -> GeneralFacts:
-    """질문만 보고 센 계산 엔진 값(DB 없음, 순수 계산). 질문 평수 · 예시 평수 3개 · 방문 1개."""
+# 시작 날짜: '12월 1일' · '12/1부터' · '내일' · '모레' · '다음 주 월요일'. 길이에 상한을 둬요(ReDoS)
+MONTH_DAY = re.compile(r"(?<!\d)(\d{1,2})\s{0,2}월\s{0,2}(\d{1,2})\s{0,2}일")
+SLASH_DAY = re.compile(
+    r"(?<![\d./])(\d{1,2})/(\d{1,2})(?![\d./])\s{0,2}(?:일\s{0,2})?(?:부터|에|시작)"
+)
+# 화면이 쓰는 꼴 '12.1(화)'. '2.5일' 같은 기간을 날짜로 읽지 않게 요일 괄호를 요구해요
+DOT_DAY = re.compile(r"(?<![\d.])(\d{1,2})\.(\d{1,2})\s{0,1}\([월화수목금토일]\)")
+REL_DAY = re.compile(r"내일|모레|(이번|다음)\s{0,2}주\s{0,2}([월화수목금토일])요일")
+WEEKDAY_KO = "월화수목금토일"
+
+
+def asked_start(text: str, today: date) -> date | None:
+    """질문에 나온 시작 날짜. 지난 월 · 일이면 다음 해로 봐요. 없거나 잘못된 날짜면 None."""
+    from datetime import timedelta
+
+    t = text or ""
+    m = MONTH_DAY.search(t) or SLASH_DAY.search(t) or DOT_DAY.search(t)
+    if m:
+        mo, d = int(m.group(1)), int(m.group(2))
+        for y in (today.year, today.year + 1):
+            try:
+                got = date(y, mo, d)
+            except ValueError:
+                return None
+            if got >= today:
+                return got
+        return None
+    r = REL_DAY.search(t)
+    if not r:
+        return None
+    if r.group(0) == "내일":
+        return today + timedelta(days=1)
+    if r.group(0) == "모레":
+        return today + timedelta(days=2)
+    want = WEEKDAY_KO.index(r.group(2))
+    monday = today - timedelta(days=today.weekday())
+    if r.group(1) == "다음":
+        monday += timedelta(days=7)
+    got = monday + timedelta(days=want)
+    return got if got >= today else None
+
+
+def _with_dates(x: SizeCalcFact, start: date) -> SizeCalcFact:
+    """시작 날짜부터 일하는 날(주말 · 공휴일 빼고)에 빈집 기준 일을 놓는다(계산 엔진 schedule.span)."""
+    from datetime import timedelta
+
+    from app.calc import schedule
+    from app.refprice.holidays import days_off
+
+    off = days_off(start, start + timedelta(days=60))
+    d0, d1, _ = schedule.span(start, x.dobae_days, off)
+    up = {"dobae_dates": (d0, d1)}
+    if x.mokgong_days:
+        m0, m1, _ = schedule.span(start, x.mokgong_days, off)
+        up["mokgong_dates"] = (m0, m1)
+    return x.model_copy(update=up)
+
+
+def general_facts(text: str, today: date | None = None) -> GeneralFacts:
+    """질문만 보고 센 계산 엔진 값(DB 없음, 순수 계산). 질문 평수 · 예시 평수 3개 · 방문 1개.
+    today를 주면 질문의 시작 날짜('12월 1일부터')로 끝나는 날도 센다."""
     from decimal import Decimal
 
     from app.calc import mokgong
@@ -231,12 +290,19 @@ def general_facts(text: str) -> GeneralFacts:
         )
         return q.total
 
+    asked = _size_calc(*area) if area else None
+    examples = [_size_calc(round(x * PY_M2, 1), "supply", f"{x}평") for x in EXAMPLE_PY]
+    start = asked_start(text, today) if today else None
+    if start is not None:
+        asked = _with_dates(asked, start) if asked else None
+        examples = [_with_dates(x, start) for x in examples]
     return GeneralFacts(
-        asked=_size_calc(*area) if area else None,
-        examples=[_size_calc(round(x * PY_M2, 1), "supply", f"{x}평") for x in EXAMPLE_PY],
+        asked=asked,
+        examples=examples,
         door_set=door(True),
         door_leaf=door(False),
         price_ver=DOBAE_V3_2026_11.version,
+        start=start,
     )
 
 

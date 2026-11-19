@@ -146,3 +146,31 @@ def test_free_answers_for_core_questions():
     assert a.sections[0].source == "calc" and not a.unknown
     a = ask("도배 계약금은 얼마나 줘야 해요?")
     assert not any(s.source == "calc" for s in a.sections) and not a.calc  # 시세 예시로 새지 않아요
+
+
+def test_start_date_in_question_gives_end_date():
+    from app.calc import schedule
+    from app.chat.tools import asked_start
+
+    today = date(2026, 11, 19)  # 목요일
+    assert asked_start("12월 1일부터 하면 언제 끝나요?", today) == date(2026, 12, 1)
+    assert asked_start("1/4부터 도배하면요?", today) == date(2027, 1, 4)
+    assert asked_start("다음 주 월요일에 시작하면?", today) == date(2026, 11, 23)
+    assert asked_start("내일 시작해요", today) == date(2026, 11, 20)
+    assert asked_start("도배는 2.5일에 끝나요?", today) is None  # 기간을 날짜로 읽지 않아요
+    assert asked_start("11월 3일에 했어요", today) == date(2027, 11, 3)  # 지난 날짜는 다음 해
+    assert asked_start("2월 30일", today) is None
+    # 반나절 단위 2.5일 → 일하는 날 3일, 주말은 건너뛰어요(11.27 금 → 11.30 월 · 12.1 화)
+    assert schedule.span(date(2026, 11, 27), 2.5) == (date(2026, 11, 27), date(2026, 12, 1), 3)
+    g = general_facts("12월 1일부터 34평 도배하면 언제 끝나요?", today)
+    assert g.start == date(2026, 12, 1) and g.asked is not None and g.asked.dobae_dates
+    out = calc_lines.period("dobae", None, g)
+    assert any("12.1(화)에 시작하면 34평 도배는 12.1(화) ~ " in x for x in out.lines), out.lines
+    _ok(out)
+    g = general_facts("다음 주 월요일부터 도배하면 며칠 걸려요?", today)
+    out = calc_lines.period("dobae", None, g)
+    assert any(x.startswith("11.23(월)에 시작하면 도배는 24평") for x in out.lines), out.lines
+    _ok(out)
+    t0 = time.perf_counter()
+    asked_start("1" * 5000 + "월" + "2" * 5000, today)  # 긴 입력에도 빨라요(ReDoS)
+    assert time.perf_counter() - t0 < 0.5

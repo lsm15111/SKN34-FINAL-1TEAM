@@ -152,6 +152,9 @@ class SizeCalcFact(BaseModel):
     dobae_days_occupied: float  # 살면서 할 때
     mokgong_total: int | None = None  # 몰딩 + 걸레받이
     mokgong_days: float | None = None
+    # 질문에 시작 날짜가 있을 때: 빈집 기준 일을 그날부터 일하는 날(주말 · 공휴일 빼고)에 놓은 첫날 · 끝날
+    dobae_dates: tuple[date, date] | None = None
+    mokgong_dates: tuple[date, date] | None = None
 
 
 class GeneralFacts(BaseModel):
@@ -162,6 +165,7 @@ class GeneralFacts(BaseModel):
     door_set: int | None = None  # 방문 1개 문틀까지(목공 계산, 부가세 포함)
     door_leaf: int | None = None  # 방문 1개 문짝만
     price_ver: str = ""
+    start: date | None = None  # 질문에 나온 시작 날짜(서울 기준, 지난 날짜면 다음 해)
 
 
 class ProjectFacts(BaseModel):

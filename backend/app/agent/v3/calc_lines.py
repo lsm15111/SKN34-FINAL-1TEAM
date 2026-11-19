@@ -94,11 +94,43 @@ def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None)
             out.add(_period_size(trade, asked, lead=plan is None))
         elif plan is None:
             out.add(_period_examples(trade, g))
+        if g.start is not None:
+            out.add(_period_dates(trade, g))
     if plan is None and asked is None:
-        out.lines.append("평수를 알려 주시면 그 집으로 다시 계산해 드려요.")
+        out.lines.append(
+            "평수를 알려 주시면 그 집으로 다시 계산해 드려요."
+            if g is not None and g.start is not None
+            else "평수와 시작 날짜를 알려 주시면 끝나는 날짜까지 계산해 드려요."
+        )
         out.cards.append(
             UiCard(kind="next_step", choices=[Choice(text="기본 정보 넣기", action="start")])
         )
+    return out
+
+
+def _period_dates(trade: str, g: GeneralFacts) -> Lines:
+    """질문의 시작 날짜부터 일하는 날에 놓은 날짜(계산 엔진 schedule.span 결과, tools가 셈)."""
+    out = Lines()
+    start = g.start
+    key = "mokgong_dates" if trade == "mokgong" else "dobae_dates"
+    ko = "목공" if trade == "mokgong" else "도배"
+    rows = [g.asked] if g.asked is not None else list(g.examples)
+    rows = [x for x in rows if getattr(x, key) is not None]
+    if start is None or not rows:
+        return out
+    if len(rows) == 1:
+        d0, d1 = getattr(rows[0], key)
+        out.lines.append(
+            f"{md(start)}에 시작하면 {rows[0].label} {josa(ko, '은', '는')} {md(d0)} ~ {md(d1)}이에요(빈집 · 주말 · 공휴일 빼고)."
+        )
+        out.numbers += [md(d0), md(d1)]
+    else:
+        parts = [f"{x.label} {md(getattr(x, key)[1])}" for x in rows]
+        out.lines.append(
+            f"{md(start)}에 시작하면 {josa(ko, '은', '는')} {', '.join(parts)}에 끝나요(빈집 · 주말 · 공휴일 빼고)."
+        )
+        out.numbers += [md(getattr(x, key)[1]) for x in rows]
+    out.numbers.append(md(start))
     return out
 
 

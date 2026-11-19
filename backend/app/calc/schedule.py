@@ -89,6 +89,19 @@ def workdays(
     return out
 
 
+def span(
+    start: date,
+    days: float,
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = WEEKEND,
+) -> tuple[date, date, int]:
+    """반나절 단위 작업 일수(2.5일 등)를 start부터 일하는 날에 놓은 (첫날, 끝날, 일하는 날 수).
+    반나절이 남으면 하루로 올린다(마지막 날은 오전에 끝날 수 있어요)."""
+    n = max(1, -(-round(days * 2) // 2))
+    got = workdays(start, n, days_off, weekend)
+    return got[0], got[-1], n
+
+
 def trade_days(steps: Sequence[Step]) -> int:
     """단계 반나절을 더해 하루 단위로 올린다."""
     halves = sum(s.half_days for s in steps)
