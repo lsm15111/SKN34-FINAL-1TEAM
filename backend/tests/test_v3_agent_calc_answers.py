@@ -117,3 +117,32 @@ def test_choosing_a_vendor_goes_to_guide_but_recommendation_stays_trade():
     t = time.perf_counter()
     gate("좋은" + " " * 40_000 + "업체")
     assert time.perf_counter() - t < 1.0
+
+
+def test_payment_question_is_not_price():
+    assert "price" not in policy_of("도배 계약금은 얼마나 줘야 해요?")
+    assert "price" not in policy_of("잔금은 언제 줘요?")
+    assert "price" in policy_of(
+        "도배 평당 단가랑 계약금은 얼마예요?"
+    )  # 시세 말이 같이 있으면 금액 질문
+
+
+def test_free_answers_for_core_questions():
+    """계산 답 뒤에 '모름' 줄이 붙지 않고, 계약금 질문은 금액 예시로 가지 않아요(유료 호출 0회)."""
+    import asyncio
+    import uuid
+
+    from v3_kb import repo_kb
+
+    from app.agent.v3.schemas import TurnContext
+    from app.agent.v3.turn import run_turn
+
+    ctx = TurnContext(user_id=uuid.UUID(int=0), today=date(2026, 11, 19), mode="free")
+
+    def ask(q: str):
+        return asyncio.run(run_turn(q, ctx, kb=repo_kb(), general=general_facts(q))).answer
+
+    a = ask("도배 공사 며칠 걸려요?")
+    assert a.sections[0].source == "calc" and not a.unknown
+    a = ask("도배 계약금은 얼마나 줘야 해요?")
+    assert not any(s.source == "calc" for s in a.sections) and not a.calc  # 시세 예시로 새지 않아요

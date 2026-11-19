@@ -82,10 +82,13 @@ def run(task: Task, kb: KB) -> Part:
     )  # fmt: skip
     if task.slot:
         part.ask = None  # 한 칸은 한 번만 묻는다(되묻기 반복 막기)
-    if how == "unknown" and lines:
+    if how == "unknown" and nums.lines:
+        part.unknown = []  # 계산 엔진 값으로 이미 답했으면 '모름' 줄을 붙이지 않아요
+        drop_promise(part)
+    elif how == "unknown" and lines:
         part.unknown = [
             u for u in part.unknown if u != templates.UNKNOWN
-        ]  # 정책 글로 이미 답했으면 '모름'은 확인할 곳만
+        ]  # 정책 글로 답했으면 확인할 곳만
         drop_promise(part)
     if spec.calc and not any(c.kind == "next_step" for c in part.cards):
         stage = facts.stage if facts else None

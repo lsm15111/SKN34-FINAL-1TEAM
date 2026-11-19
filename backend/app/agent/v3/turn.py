@@ -152,7 +152,7 @@ async def run_turn(
                 card_set=kb.cards.version, parts=names, failed_parts=failed_parts, dropped=p.dropped,
             ),
         )  # fmt: skip
-        texts = [composer.prompt() if r == "composer" else llm_mode.prompt(r) for r in routes]
+        texts = [composer.rules() if r == "composer" else llm_mode.prompt(r) for r in routes]
         ans = check.final(ans, prompt="\n".join(texts) or None)
         ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
         if "composer" in routes:

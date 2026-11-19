@@ -92,8 +92,24 @@ def test_composer_keeps_calc_section_first(stub):
     from app.chat.tools import general_facts
 
     q = "34평 도배하면 며칠 걸려요?"
-    lead = CItem(text="믿집 계산으로 34평 빈집 도배는 약 2.5일이에요.", cites=[])
+    lead = CItem(text="짐이 많으면 옮기는 시간만큼 더 걸려요.", cites=[])
     stub(Composed(verdict="answer", lead=lead, blocks=[], follow=[]))
     a = turn(q, general=general_facts(q)).answer
     assert a.sections[0].source == "calc"
     assert any(x.text == lead.text for s in a.sections for x in s.sentences)
+
+
+def test_composer_sentence_repeating_calc_numbers_is_dropped(stub):
+    from app.chat.tools import general_facts
+
+    q = "34평 도배하면 며칠 걸려요?"
+    lead = CItem(
+        text="믿집 계산으로 34평 빈집 도배는 약 2.5일이에요.", cites=[]
+    )  # 계산 묶음 되풀이
+    body = CItem(text="짐이 많으면 옮기는 시간만큼 더 걸려요.", cites=[])
+    stub(Composed(verdict="answer", lead=lead, blocks=[CBlock(kind="body", items=[body], rows=[])], follow=[]))  # fmt: skip
+    a = turn(q, general=general_facts(q)).answer
+    texts = [x.text for s in a.sections for x in s.sentences]
+    assert a.sections[0].source == "calc" and a.trace.prompts == ["composer_v1"]
+    assert lead.text not in texts and body.text in texts
+    assert "계산 되풀이" in a.trace.dropped

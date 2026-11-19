@@ -52,6 +52,12 @@ def prompt() -> str:
     return (PROMPTS / f"{VERSION}.md").read_text(encoding="utf-8")
 
 
+@cache
+def rules() -> str:
+    """누출 검사에 쓰는 지시문 앞부분(규칙). 예시 답은 고객 답과 비슷한 게 정상이라 뺀다."""
+    return prompt().split("## 예시")[0]
+
+
 def _clean(s: str) -> str:
     return llm_mode._data(s)  # 경계 문자 · 숨은 글자 떼기(LLM 모드와 같은 규칙)
 
@@ -143,16 +149,29 @@ def to_sections(
                     cites += _card_chunks(part, x)
         return Sentence(text=it.text.strip(), cites=list(dict.fromkeys(cites)))
 
+    calc_nums = check.guard.numbers(calc) if calc else set()
+
     def checked(sec: Section) -> Section | None:
-        kept, why = check.section(sec, allowed, calc_text=calc or None, shown=None, prompt=prompt())
+        if calc_nums:  # 계산 묶음이 이미 보이는 숫자만 든 문장은 되풀이라서 뺀다
+            keep = []
+            for x in sec.sentences:
+                n = check.guard.numbers(x.text)
+                if n and n <= calc_nums:
+                    dropped.append("계산 되풀이")
+                else:
+                    keep.append(x)
+            if not keep:
+                return None
+            sec = sec.model_copy(update={"sentences": keep})
+        kept, why = check.section(sec, allowed, calc_text=calc or None, shown=None, prompt=rules())
         dropped.extend(why)
         return kept
 
     used: set[str] = set()
     lead = checked(Section(sentences=[sent(c.lead)], source="llm", route=route, trade=trade))
-    if lead is None:
-        return None
-    out = [lead]
+    if lead is None and not calc:
+        return None  # 계산 묶음이 있으면 그 묶음이 첫 줄 노릇을 해서 lead가 빠져도 이어 간다
+    out = [lead] if lead else []
     for b in c.blocks[:MAX_BLOCKS]:
         items = [sent(x) for x in b.items[:MAX_ITEMS] if x.text.strip()]
         if b.kind == "caution":
@@ -168,7 +187,7 @@ def to_sections(
                     continue
                 cells = [Sentence(text=x.strip()) for x in r]
                 ok = [
-                    check.sentence_ok(x, check.guard.numbers(allowed), None, None, prompt())[0]
+                    check.sentence_ok(x, check.guard.numbers(allowed), None, None, rules())[0]
                     for x in cells
                 ]
                 if all(ok):
@@ -198,6 +217,8 @@ def to_sections(
         )
         if sec is not None:
             out.append(sec)
+    if not out:
+        return None
     for sec in out:
         used |= {x for s in sec.sentences for x in s.cites}
         if sec.caution:

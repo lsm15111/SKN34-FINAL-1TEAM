@@ -77,6 +77,9 @@ CALC_REQUEST = re.compile(
 
 # '얼마'만 있고 돈 낱말이 없는 기간 질문('공사 기간이 얼마나 돼요')은 비용 질문이 아니에요
 MONEY = re.compile(r"비용|가격|금액|평당|단가|시세|예산|비싸|저렴|싸게|싼|돈|견적|만\s{0,2}원|원이")
+PAYMENT = re.compile(r"계약금|중도금|잔금|착수금|선금|선급금")
+# 대금 말과 함께 시세를 묻는 말(평당 · 단가 · 시세)이 있으면 금액 질문으로 둔다
+PAY_PRICE = re.compile(r"평당|단가|시세|공사비\s{0,2}(?:얼마|가격)")
 
 
 def policy_of(text: str) -> list[PolicyFlag]:
@@ -84,6 +87,8 @@ def policy_of(text: str) -> list[PolicyFlag]:
     got = [k for k, p in FLAGS.items() if p.search(t)]
     if "price" in got and "period" in got and not MONEY.search(t):
         got.remove("price")
+    if "price" in got and PAYMENT.search(t) and not PAY_PRICE.search(t):
+        got.remove("price")  # '계약금은 얼마나 줘요?'는 시세가 아니라 나눠 내는 방법(계약 카드)
     return got  # type: ignore[return-value]
 
 

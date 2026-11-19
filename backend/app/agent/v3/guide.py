@@ -59,8 +59,13 @@ def run(task: Task, kb: KB) -> Part:
         how = knowledge(
             part, kb, task.text, trade="common", route="guide", facts=f, policy=task.policy
         )
-    if how == "unknown" and lines:
-        part.unknown = [u for u in part.unknown if u != templates.UNKNOWN]
+    if how == "unknown" and nums.lines:
+        part.unknown = []  # 계산 엔진 값으로 이미 답했으면 '모름' 줄을 붙이지 않아요
+        drop_promise(part)
+    elif how == "unknown" and lines:
+        part.unknown = [
+            u for u in part.unknown if u != templates.UNKNOWN
+        ]  # 정책 글로 답했으면 확인할 곳만
         drop_promise(part)
     nxt = templates.NEXT.get(f.stage, []) if f else templates.NO_PROJECT_NEXT
     if nxt:

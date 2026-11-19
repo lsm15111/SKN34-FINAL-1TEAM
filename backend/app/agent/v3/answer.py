@@ -35,6 +35,7 @@ B3, B8 = 0.10, 0.05  # 카드 근거 조각이 검색 위 3개 · 위 8개에 �
 # 근거 조각이 의미 검색 위 D_LOCK개에 있으면 의미 맞물림 + 덤 BD(dense-cards.md, dev로 고름)
 D_LOCK, BD = 3, 0.15
 NEAR = 0.05  # 1등과 이만큼 가까운 카드는 '이것도 궁금하세요?'로
+T_NEAR_ASK = 0.40  # 모름일 때 이 점수 이상인 카드 열쇠 질문을 '이걸 물으셨나요?' 버튼으로
 # 정해 둔 글로 답하는 정책 질문은 조각 문장을 붙이지 않는다(추천 · 금액 · 법률은 원문 한 줄이 오해를 부름)
 NO_EXTRACT = frozenset({"price", "vendor_reco", "brand_reco", "legal_case"})
 
@@ -243,6 +244,8 @@ def knowledge(
                 return "extract"
     where = BY_CODE[trade].check_where if trade and trade in BY_CODE else "실측 때 업체"
     part.unknown.extend([templates.UNKNOWN, templates.UNKNOWN_WHERE.format(where=where)])
+    # 받지 못한 가까운 카드는 '이걸 물으셨나요?' 버튼으로(열쇠 질문 그대로, 답은 누르면 그 카드로)
+    part.suggest.extend(m.card.keys[0] for m in matches[:2] if m.score >= T_NEAR_ASK)
     return "unknown"
 
 
