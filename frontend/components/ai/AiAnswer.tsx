@@ -34,11 +34,16 @@ function calcLine(c: AiCalc): CalcLine | null {
   return null;
 }
 
+const STEP = /^(\d)\.\s(.+)$/; // 서버가 쓴 단계 문장('1. …')은 번호 동그라미로 그려요
+
 function Line({ text, nums, refs, lead }: { text: string; nums?: number[]; refs: AiSource[]; lead?: boolean }) {
   const ok = (nums ?? []).filter((n) => refs[n - 1]);
+  const step = STEP.exec(text);
   return (
-    <p className={lead ? s.lead : undefined}>
-      {text}
+    <p className={step ? s.step : lead ? s.lead : undefined}>
+      {step ? <span className={s.stepNum} aria-hidden="true">{step[1]}</span> : null}
+      {step ? <span className="mj-sr">{step[1]}단계 </span> : null}
+      {step ? step[2] : text}
       {ok.map((n) => (
         <sup key={n} className={s.cite} title={refs[n - 1].title} aria-label={`출처 ${n}`}>{n}</sup>
       ))}

@@ -30,3 +30,5 @@
 .guestTitle { font-weight: 700; font-size: var(--fs-lg); }
 .embed { display: flex; flex-direction: column; gap: 8px; }
 .draftAnswer { display: flex; flex-direction: column; gap: 4px; opacity: 0.85; }
+.step { display: flex; gap: 8px; align-items: baseline; }
+.stepNum { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 10px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 700; }
