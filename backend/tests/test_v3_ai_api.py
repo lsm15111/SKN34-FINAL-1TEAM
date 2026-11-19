@@ -196,3 +196,27 @@ def test_someone_elses_project_is_404_and_writes_no_chat(api):
     assert ask(api, context={"screen": "standard", "project_id": pid}).status_code == 404
     assert query("select count(*) as n from chats")[0]["n"] == before
     assert api.get(f"/ai/threads?project_id={pid}").status_code == 404
+
+
+def test_llm_mode_sends_free_draft_first_then_done(api, monkeypatch):
+    """LLM 모드: 글을 다시 쓰기 전에 검사를 통과한 무료 답을 draft로 먼저 보내고, 저장 뒤 done으로 끝낸다."""
+    from app.agent import llm
+    from app.agent.v3.llm_mode import LlmSection
+    from app.chat import service
+
+    monkeypatch.setattr(service, "mode", lambda: "llm")
+    monkeypatch.setattr(llm, "_stubs", {})  # 이 시험의 스텁은 끝나면 되돌려요
+    llm.set_stub("trade", LlmSection(sentences=[]))  # 다시 쓰기 실패 → 무료 묶음 그대로
+    use(api, signup(api))
+    ev = events(ask(api).text)
+    names = [e for e, _ in ev]
+    assert names[0] == "draft" and names[-1] == "done"
+    draft, out = ev[0][1], ev[-1][1]
+    assert out["mode"] == "llm"
+    assert draft["sections"] and draft["sections"][0]["sentences"]
+    assert len(query("select 1 from chat_messages")) == 2  # 저장은 한 번(draft는 저장하지 않음)
+
+
+def test_free_mode_sends_no_draft(api):
+    use(api, signup(api))
+    assert "draft" not in [e for e, _ in events(ask(api).text)]

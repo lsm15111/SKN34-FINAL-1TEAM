@@ -29,3 +29,4 @@
 .guestHead { display: flex; flex-direction: column; gap: 4px; }
 .guestTitle { font-weight: 700; font-size: var(--fs-lg); }
 .embed { display: flex; flex-direction: column; gap: 8px; }
+.draftAnswer { display: flex; flex-direction: column; gap: 4px; opacity: 0.85; }

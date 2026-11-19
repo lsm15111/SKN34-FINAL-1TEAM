@@ -8,7 +8,7 @@ import { useEffect, useState } from "react";
 import { AsidePanel } from "@/components/site/AsideSlot";
 import { Button } from "@/components/ui/Button";
 import { errorText } from "@/lib/backend/client";
-import { askAi, newClientKey, type AiButton, type AiScreen, type AiTurnOut } from "@/lib/api/chat";
+import { askAi, newClientKey, type AiAnswer as AiAnswerT, type AiButton, type AiScreen, type AiTurnOut } from "@/lib/api/chat";
 import { AiAnswer } from "./AiAnswer";
 import s from "./ai.module.css";
 
@@ -53,6 +53,7 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [draft, setDraft] = useState<AiAnswerT | null>(null); // LLM이 글을 다듬는 동안 먼저 보이는 무료 답
   const [notice, setNotice] = useState(false); // 서버 그림과 같게 시작하고, 열린 뒤 이 기기 기록을 봐요
   useEffect(() => {
     if (!seenNotice()) setNotice(true);
@@ -78,12 +79,13 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
       const out = await askAi({
         client_key: newClientKey(), text: t, chat_id: chatId,
         context: { screen, project_id: projectId ?? null, ids: ids?.slice(0, 5) ?? [] }, button: button ?? null,
-      });
+      }, { onDraft: setDraft });
       if (out.chat_id) setChatId(out.chat_id);
       setMsgs((m) => [...m, { role: "ai", out }]);
     } catch (e) {
       setError(errorText(e));
     } finally {
+      setDraft(null);
       setBusy(false);
     }
   }
@@ -124,6 +126,12 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
             <AiAnswer key={i} answer={m.out.answer} projectId={projectId} onPick={(q, b) => void send(q, b)} />
           ),
         )}
+        {draft ? (
+          <div className={s.draftAnswer} aria-busy="true">
+            <AiAnswer answer={draft} projectId={projectId} />
+            <p className={s.mute}>답을 다듬고 있어요</p>
+          </div>
+        ) : null}
       </div>
   );
   if (embed) {

@@ -178,8 +178,10 @@ def _public(ans) -> AiAnswer:
     )
 
 
-async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
-    """POST /ai/turns. 남의 대화 · 남의 프로젝트는 404, 같은 대화 동시 저장은 409."""
+async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut:
+    """POST /ai/turns. 남의 대화 · 남의 프로젝트는 404, 같은 대화 동시 저장은 409.
+
+    on_draft(AiAnswer): LLM 모드에서 글을 다시 쓰기 전에 무료 답(검사 통과본)을 먼저 받는 쪽. 저장은 하지 않아요."""
     from app.agent.llm import embed_query
     from app.agent.v3 import check
     from app.agent.v3.answer import KB
@@ -227,7 +229,14 @@ async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
         mode=mode(),  # type: ignore[arg-type]
         today=today,
     )
-    res = await run_turn(body.text, ctx, kb=kb, facts=facts, waiting=waiting, button=body.button)
+
+    async def draft(a) -> None:
+        if on_draft is not None:
+            await on_draft(_public(a))
+
+    res = await run_turn(
+        body.text, ctx, kb=kb, facts=facts, waiting=waiting, button=body.button, on_draft=draft
+    )
     ans = res.answer
     chat_id, new_rev = body.chat_id, None
     if not ans.failed:

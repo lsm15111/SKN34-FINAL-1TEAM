@@ -30,7 +30,7 @@ export function newClientKey(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID().replace(/-/g, "") : `${Date.now()}${Math.random().toString(36).slice(2)}`;
 }
 
-type Handlers = { onToken?: (text: string, section: number | null) => void; onCard?: (card: AiCard) => void };
+type Handlers = { onToken?: (text: string, section: number | null) => void; onCard?: (card: AiCard) => void; onDraft?: (answer: AiAnswer) => void };
 
 /** POST /ai/turns. 오류(401 · 404 · 409 · 422 · 429)는 스트림을 열기 전에 ApiError로 와요. */
 export async function askAi(body: AiTurnIn, on: Handlers = {}): Promise<AiTurnOut> {
@@ -65,7 +65,8 @@ export async function askAi(body: AiTurnIn, on: Handlers = {}): Promise<AiTurnOu
       const raw = /^data: (.*)$/m.exec(block)?.[1];
       if (name && raw) {
         const data = JSON.parse(raw);
-        if (name === "token") on.onToken?.(data.text, data.section);
+        if (name === "draft") on.onDraft?.(data as AiAnswer);
+        else if (name === "token") on.onToken?.(data.text, data.section);
         else if (name === "card") on.onCard?.(data as AiCard);
         else if (name === "done") done = data as AiTurnOut;
         else if (name === "error") throw new ApiError(500, data.code ?? "unknown", data.message ?? "답을 만들지 못했어요.");

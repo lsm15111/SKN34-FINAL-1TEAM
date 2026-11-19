@@ -5,7 +5,9 @@ DB · HTTP를 모른다: 프로젝트 사실(ProjectFacts)과 지식(KB)은 chat
 돌려주는 waiting은 되물은 담당의 칸(다음 턴의 짧은 답을 그 담당이 받게). 저장은 chat.service가 한다.
 """
 
+import copy
 import re
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from app.agent.v3 import brief, check, llm_mode, orchestrator, policy, templates
@@ -98,6 +100,7 @@ async def run_turn(
     facts: ProjectFacts | None = None,
     waiting: dict | None = None,
     button: Button | None = None,
+    on_draft: Callable[[AgentAnswer], Awaitable[None]] | None = None,
 ) -> TurnResult:
     masked = check.mask(text or "").strip()[:TEXT_MAX]
     photo = PHOTO.search(masked) is not None
@@ -133,28 +136,36 @@ async def run_turn(
         part = orchestrator.AGENTS[g.route](task, kb)
     if photo and g.route not in ("out_of_scope", "ask_back"):
         part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
+
+    def finish(p: Part, routes: list[str]) -> AgentAnswer:
+        prompts = [llm_mode.VERSION[r] for r in routes]
+        ans = AgentAnswer(
+            sections=p.sections, calc=p.calc, cards=p.cards, ask=p.ask,
+            unknown=p.unknown, suggest=p.suggest[:3],
+            trace=Trace(
+                route=g.route, source=g.source, confidence=g.confidence, trades=g.trades,
+                policy=g.policy, mode=ctx.mode, cards=list(dict.fromkeys(p.used_cards)),
+                chunks=list(dict.fromkeys(p.used_chunks)), prompts=prompts,
+                card_set=kb.cards.version, parts=names, failed_parts=failed_parts, dropped=p.dropped,
+            ),
+        )  # fmt: skip
+        ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
+        ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
+        if ans.sections and ans.sections[0].title == "[시작 순서]":
+            ans.brief = None  # 단계 목록은 잘라 보이면 순서가 끊겨서 통째로 보여요
+        if photo and ans.brief and ans.sections and ans.sections[0].sentences[:1]:
+            first = ans.sections[0].sentences[0]
+            if first.text == PHOTO_LINE and first not in ans.brief.lines:
+                ans.brief.lines = [first, *ans.brief.lines][:3]  # 사진 안내는 짧은 답에도 맨 앞에
+        return ans
+
     routes: list[str] = []
     if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
+        if on_draft is not None:
+            # LLM을 기다리기 전에 무료 답(검사 통과본)을 먼저 보낸다. 글을 다시 쓴 답은 done으로 바꿔 보여요
+            await on_draft(finish(copy.deepcopy(part), []))
         part, routes = await _llm(part, kb, masked)
-    prompts = [llm_mode.VERSION[r] for r in routes]
-    ans = AgentAnswer(
-        sections=part.sections, calc=part.calc, cards=part.cards, ask=part.ask,
-        unknown=part.unknown, suggest=part.suggest[:3],
-        trace=Trace(
-            route=g.route, source=g.source, confidence=g.confidence, trades=g.trades, policy=g.policy,
-            mode=ctx.mode, cards=list(dict.fromkeys(part.used_cards)),
-            chunks=list(dict.fromkeys(part.used_chunks)), prompts=prompts, card_set=kb.cards.version,
-            parts=names, failed_parts=failed_parts, dropped=part.dropped,
-        ),
-    )  # fmt: skip
-    ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
-    ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
-    if ans.sections and ans.sections[0].title == "[시작 순서]":
-        ans.brief = None  # 단계 목록은 잘라 보이면 순서가 끊겨서 통째로 보여요
-    if photo and ans.brief and ans.sections and ans.sections[0].sentences[:1]:
-        first = ans.sections[0].sentences[0]
-        if first.text == PHOTO_LINE and first not in ans.brief.lines:
-            ans.brief.lines = [first, *ans.brief.lines][:3]  # 사진 안내는 짧은 답에도 맨 앞에
+    ans = finish(part, routes)
     new_wait = None
     if ans.ask is not None:
         new_wait = {"route": "trade", "trade": ans.ask.trade, "slot": ans.ask.slot, "q": masked}
