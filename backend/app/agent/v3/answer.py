@@ -153,11 +153,15 @@ def knowledge(
     facts: ProjectFacts | None = None,
     allow_extract: bool = True,
     policy: list[PolicyFlag] | tuple = (),
+    also: list[TradeCode] | tuple = (),
 ) -> str:
-    """카드 → 조각 문장 → 모름 순서로 part에 담는다. 어느 길로 답했는지 돌려준다(card · extract · unknown)."""
+    """카드 → 조각 문장 → 모름 순서로 part에 담는다. 어느 길로 답했는지 돌려준다(card · extract · unknown).
+
+    also: 관문이 함께 고른 다른 공종. 카드는 trade + also + 공통에서 찾는다(검색 무게는 trade만).
+    """
     hits = search(kb, q, trade)
     top = [h.ref for h in hits.hits[:8]]
-    want = [trade] if trade and trade != "common" else None
+    want = [trade, *(t for t in also if t != trade)] if trade and trade != "common" else None
     matches = cards.find(kb.cards, q, trades=want, intents=intents, k=4)
     # 검색 맞물림 후보: 위 조각을 인용한 카드(열쇠 말이 달라도 근거가 같은 카드)
     seen = {m.card.id for m in matches}
@@ -174,7 +178,9 @@ def knowledge(
         part.used_cards.append(c.tag)
         part.used_chunks.extend(c.cites())
         part.scores[c.tag] = best.score
-        part.add(card_section(c, route=route, trade=trade), card_allowed(kb, c))
+        # 함께 고른 공종의 카드면 묶음 공종도 그 공종으로
+        own = c.trade if c.trade in also and c.trade != trade else trade
+        part.add(card_section(c, route=route, trade=own), card_allowed(kb, c))  # type: ignore[arg-type]
         _card_extras(part, c, facts)
         part.suggest.extend(
             m.card.keys[0] for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD

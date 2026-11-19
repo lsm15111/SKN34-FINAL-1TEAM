@@ -25,6 +25,7 @@ for p in (ROOT / "backend", ROOT / "backend/tests", ROOT / "evaluation", HERE):
 
 from app.agent import llm
 from app.agent.v3 import gate as gate_mod
+from app.agent.v3 import templates
 from app.agent.v3.schemas import (
     EstimateFacts,
     PlanFacts,
@@ -155,6 +156,7 @@ async def one(q: dict, kb) -> dict:
             "has_cites": any(c for s in a.sections for x in s.sentences for c in x.cites),
             "parts": a.trace.parts, "failed_parts": a.trace.failed_parts,
             "first": next((x.text for s in a.sections for x in s.sentences), (a.unknown or [""])[0])[:80],
+            "says_unknown": templates.UNKNOWN in a.unknown,  # 화면에 '확인하지 못했어요'가 실제로 나오는가
         }  # fmt: skip
     except Exception as e:  # noqa: BLE001
         r["turn_error"] = f"{type(e).__name__}: {e}"

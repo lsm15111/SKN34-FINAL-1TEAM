@@ -72,7 +72,10 @@ def run(task: Task, kb: KB) -> Part:
     q = task.text
     if task.slot and task.value:  # 되물은 칸의 답: 원래 질문 + 고른 값으로 다시 찾는다
         q = f"{task.asked} {task.value}".strip()
-    how = knowledge(part, kb, q, trade=code, route="trade", facts=facts, policy=task.policy)  # type: ignore[arg-type]
+    how = knowledge(
+        part, kb, q, trade=code, route="trade", facts=facts, policy=task.policy,  # type: ignore[arg-type]
+        also=task.trades[1:],  # 관문이 함께 고른 공종의 카드도 찾는다(검색 무게는 첫 공종)
+    )  # fmt: skip
     if task.slot:
         part.ask = None  # 한 칸은 한 번만 묻는다(되묻기 반복 막기)
     if how == "unknown" and lines:
