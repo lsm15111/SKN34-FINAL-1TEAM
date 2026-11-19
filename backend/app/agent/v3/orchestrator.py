@@ -15,7 +15,7 @@ import re
 from app.agent.v3 import calc_lines, guide, quote_explain, schedule_agent, templates, trade_agent
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3.answer import KB, Part, Task
-from app.agent.v3.schemas import Route, Section, Sentence, TradeCode
+from app.agent.v3.schemas import Route, Section, Sentence, TradeCode, UiCard
 from app.agent.v3.trades import BY_CODE, ORDER_CITES, ORDER_RULES, mention_spans, rules, trades_in
 
 MAX_PARTS = 3
@@ -175,6 +175,7 @@ def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
                 out.cards.append(c)
         out.ask = out.ask or p.ask
         out.suggest.extend(x for x in p.suggest if x not in out.suggest)
+        out.near.extend(x for x in p.near if x not in out.near)
         out.used_cards.extend(p.used_cards)
         out.used_chunks.extend(p.used_chunks)
         out.dropped.extend(p.dropped)
@@ -219,4 +220,26 @@ def run(task: Task, kb: KB) -> tuple[Part, list[str], int]:
         )
         out.calc = [*pair.boxes, *out.calc]
         out.cards = [*pair.cards, *out.cards]
+        out.unknown = []  # 기간은 계산 묶음이 답했어요
+    out.cards = one_next(out.cards)
     return out, names, failed
+
+
+def one_next(cards: list[UiCard]) -> list[UiCard]:
+    """조각마다 붙은 '다음 할 일' 카드를 하나로(버튼은 처음 나온 순서대로 한 번씩)."""
+    nexts = [c for c in cards if c.kind == "next_step"]
+    if len(nexts) < 2:
+        return cards
+    seen: dict[tuple, object] = {}
+    for c in nexts:
+        for ch in c.choices:
+            seen.setdefault((ch.action, ch.text), ch)
+    first = nexts[0].model_copy(update={"choices": list(seen.values())})
+    out, put = [], False
+    for c in cards:
+        if c.kind != "next_step":
+            out.append(c)
+        elif not put:
+            out.append(first)
+            put = True
+    return out

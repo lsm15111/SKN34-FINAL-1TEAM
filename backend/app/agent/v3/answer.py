@@ -9,6 +9,7 @@
 - 카드 · 조각 · 계산 결과 밖의 말은 하지 않는다. 못 찾으면 '확인하지 못했어요' + 확인할 곳 + 다음 할 일.
 """
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
@@ -80,6 +81,9 @@ class Part:
     ask: AskSlot | None = None
     unknown: list[str] = field(default_factory=list)
     suggest: list[str] = field(default_factory=list)
+    near: list[str] = field(
+        default_factory=list
+    )  # 모름일 때만 보일 가까운 카드 질문(turn.finish가 고름)
     used_cards: list[str] = field(default_factory=list)
     used_chunks: list[str] = field(default_factory=list)
     dropped: list[str] = field(default_factory=list)
@@ -242,11 +246,31 @@ def knowledge(
             part.add(sec, allowed)
             if part.sections:
                 return "extract"
-    where = BY_CODE[trade].check_where if trade and trade in BY_CODE else "실측 때 업체"
-    part.unknown.extend([templates.UNKNOWN, templates.UNKNOWN_WHERE.format(where=where)])
-    # 받지 못한 가까운 카드는 '이걸 물으셨나요?' 버튼으로(열쇠 질문 그대로, 답은 누르면 그 카드로)
-    part.suggest.extend(m.card.keys[0] for m in matches[:2] if m.score >= T_NEAR_ASK)
+    part.unknown.extend(
+        [templates.UNKNOWN, templates.UNKNOWN_WHERE.format(where=where_for(q, trade))]
+    )
+    # 받지 못한 가까운 카드는 '이걸 물으셨나요?' 버튼 후보로(열쇠 질문 그대로). 답 전체가 모름일 때만 보여요
+    part.near.extend(m.card.keys[0] for m in matches[:2] if m.score >= T_NEAR_ASK)
     return "unknown"
+
+
+# 공통 질문의 '확인할 곳'은 주제로 고른다(늘 '관리사무소 · 1372'면 실측 · 일정 질문에 엉뚱해요)
+APT_WORDS = re.compile(
+    r"관리사무소|이웃|소음|엘리베이터|승강기|동의서|공사\s{0,2}시간|주차|입주민|게시"
+)
+DISPUTE_WORDS = re.compile(
+    r"하자|분쟁|환불|위약금|피해|소비자|보상|배상|사기|폐업|연락이?\s{0,2}(?:안|끊)|계약\s{0,2}(?:해제|해지|취소)"
+)
+
+
+def where_for(q: str, trade: TradeCode | None) -> str:
+    if trade and trade in BY_CODE and trade != "common":
+        return BY_CODE[trade].check_where
+    if APT_WORDS.search(q):
+        return "관리사무소"
+    if DISPUTE_WORDS.search(q):
+        return "1372 소비자상담센터"
+    return "실측 때 업체"
 
 
 def drop_promise(part: Part) -> None:

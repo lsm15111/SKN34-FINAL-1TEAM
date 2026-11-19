@@ -258,7 +258,7 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
     new = Part(
         sections=[*calc, *secs], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
         unknown=[] if c.verdict == "answer" else list(part.unknown),
-        suggest=_follow(c.follow, ev) or list(part.suggest), used_cards=list(part.used_cards),
+        suggest=_follow(c.follow, ev) or list(part.suggest), near=list(part.near), used_cards=list(part.used_cards),
         used_chunks=list(part.used_chunks), dropped=list(part.dropped), route=part.route,
         trade=part.trade, scores=dict(part.scores),
     )  # fmt: skip

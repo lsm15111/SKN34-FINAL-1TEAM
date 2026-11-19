@@ -42,6 +42,14 @@ class TurnResult:
     source: str
 
 
+def suggest_of(p: Part) -> list[str]:
+    """이어 묻기 버튼. 가까운 카드 질문(near)은 답 전체가 '확인하지 못했어요'일 때만 붙여요."""
+    out = list(p.suggest)
+    if templates.UNKNOWN in p.unknown:
+        out += [x for x in p.near if x not in out]
+    return out
+
+
 def ignore_words(facts: ProjectFacts | None) -> list[str]:
     """업체 이름(예: '마루와벽')을 공종 낱말로 읽지 않게."""
     if facts is None:
@@ -144,7 +152,7 @@ async def run_turn(
         boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
         ans = AgentAnswer(
             sections=p.sections, calc=boxes, cards=p.cards, ask=p.ask,
-            unknown=p.unknown, suggest=p.suggest[:3],
+            unknown=p.unknown, suggest=suggest_of(p)[:3],
             trace=Trace(
                 route=g.route, source=g.source, confidence=g.confidence, trades=g.trades,
                 policy=g.policy, mode=ctx.mode, cards=list(dict.fromkeys(p.used_cards)),
