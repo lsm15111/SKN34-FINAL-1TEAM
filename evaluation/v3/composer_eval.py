@@ -5,7 +5,7 @@
 
 - 지식: DB 적재본(knowledge.index) + 질문 임베딩 의미 순위(knowledge.nearest), 계산 값: chat.tools.general_facts
 - 프로젝트 있음 맥락: coverage_check.FACTS(69.4㎡ · 표준견적서 · 예상 공정표 · 실측 초안 · 가견적) + 예시 추천 업체 2곳
-- 남기는 것: .cache/<tag>/composer_answers.jsonl (공개 답 · 걸린 초 · 작성기 사용 · 뺀 이유 · 입력 토큰 어림)
+- 남기는 것: .cache/<tag>/composer_answers.jsonl (공개 답 · 걸린 초 · 작성기 사용 · 뺀 이유 · 실제 토큰(입력 · 캐시 읽기 · 출력 · 추론) · 값)
 """
 
 import argparse
@@ -21,9 +21,16 @@ import tiktoken
 
 HERE = Path(__file__).resolve().parent
 PRICE = {
-    "gpt-6.1-terra": (1.00, 5.00),
-    "gpt-6-luna": (0.10, 0.50),
-}  # 100만 토큰당 입력 · 출력 (agent-web C15)
+    "gpt-6.1-terra": (1.00, 5.00, 0.05),
+    "gpt-6-luna": (0.10, 0.50, 0.01),
+}  # 100만 토큰당 입력 · 출력 · 캐시 읽기 (agent-web C15, OpenAI 공식 값)
+
+
+def usd(u: dict) -> float:
+    """실제 사용량(llm.USAGE_HOOK)으로 센 값. 캐시 읽은 입력은 캐시 단가, 추론 토큰은 출력에 들어 있어요."""
+    pin, pout, pcache = PRICE.get(u["model"], (1.0, 5.0, 0.05))
+    fresh = max(u["input"] - u["cached"], 0)
+    return (fresh * pin + u["cached"] * pcache + u["output"] * pout) / 1e6
 
 
 async def main() -> None:
@@ -57,15 +64,14 @@ async def main() -> None:
     enc = tiktoken.get_encoding("o200k_base")
     usage: list[dict] = []
     real = llm.structured
+    llm.USAGE_HOOK = usage.append  # 실제 사용량(입력 · 캐시 읽기 · 출력 · 추론 토큰)
 
     async def counted(role, schema, messages):
-        name, effort = llm.model_for(role)
-        tin = sum(len(enc.encode(t)) for _, t in messages)
         t0 = time.perf_counter()
         out = await real(role, schema, messages)
-        tout = len(enc.encode(out.model_dump_json()))
-        usage.append({"role": role, "model": name, "effort": effort, "in": tin, "out": tout,
-                      "s": round(time.perf_counter() - t0, 2)})  # fmt: skip
+        if usage:  # 어림(o200k)도 같이 남겨 실제와 견줘요
+            usage[-1]["est_in"] = sum(len(enc.encode(t)) for _, t in messages)
+            usage[-1]["s"] = round(time.perf_counter() - t0, 2)
         return out
 
     llm.structured = counted  # type: ignore[assignment]
@@ -89,7 +95,7 @@ async def main() -> None:
     ctxs = [c for c in a.contexts.split(",") if c]
     n_turn = len(qs) * len(ctxs)
     model = llm.model_for("composer")[0]
-    pin, pout = PRICE.get(model, (1.0, 5.0))
+    pin, pout, _ = PRICE.get(model, (1.0, 5.0, 0.05))
     est = n_turn * (2600 * pin + 600 * pout) / 1e6
     print(f"턴 {n_turn}개 · 작성기 {model} · 어림 비용 ${est:.3f} (+ 질문 임베딩 ≈ $0.0001)")
     out_dir = HERE / ".cache" / a.tag
@@ -108,8 +114,7 @@ async def main() -> None:
                 r = await run_turn(q["q"], ctx, kb=kb, facts=f, general=general_facts(q["q"]))
                 secs = round(time.perf_counter() - t0, 2)
                 pub = _public(r.answer)
-                cost = sum(u["in"] / 1e6 * PRICE.get(u["model"], (1, 5))[0]
-                           + u["out"] / 1e6 * PRICE.get(u["model"], (1, 5))[1] for u in usage)  # fmt: skip
+                cost = sum(usd(u) for u in usage)
                 rows.append({"id": q["id"], "q": q["q"], "context": c, "route": r.answer.trace.route,
                              "prompts": r.answer.trace.prompts, "dropped": r.answer.trace.dropped,
                              "s": secs, "usage": list(usage), "usd": round(cost, 6),
@@ -122,8 +127,14 @@ async def main() -> None:
             fh.write(json.dumps(x, ensure_ascii=False) + "\n")
     tot = sum(x["usd"] for x in rows)
     used = sum(1 for x in rows if "composer_v1" in x["prompts"])
+    calls = [u for x in rows for u in x["usage"]]
+    tin = sum(u["input"] for u in calls)
+    tcache = sum(u["cached"] for u in calls)
     print(
-        f"작성기 쓴 턴 {used}/{len(rows)} · 어림 합계 ${tot:.4f} · 평균 {sum(x['s'] for x in rows) / max(len(rows), 1):.2f}초"
+        f"작성기 쓴 턴 {used}/{len(rows)} · 실제 사용량 합계 ${tot:.4f} · 평균 {sum(x['s'] for x in rows) / max(len(rows), 1):.2f}초"
+    )
+    print(
+        f"LLM 호출 {len(calls)}번 · 입력 {tin:,} (캐시 읽기 {tcache:,}, {tcache / max(tin, 1):.0%}) · 출력 {sum(u['output'] for u in calls):,} · 추론 {sum(u['reasoning'] for u in calls):,} 토큰"
     )
 
 

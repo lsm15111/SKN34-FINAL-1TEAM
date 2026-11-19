@@ -1,7 +1,8 @@
 """LLM SDK 호출은 이 파일 한 곳 (AGENTS.md 4절). LLM_LIVE=false면 스텁만 써서 유료 호출 0회."""
 
 import math
-from typing import Literal
+from collections.abc import Callable
+from typing import Any, Literal
 
 import httpx
 from pydantic import BaseModel, ValidationError
@@ -16,6 +17,20 @@ _stubs: dict[Role, BaseModel] = {}
 _jev_stub: list[tuple[str, float]] = []
 _embed_stub: list[tuple[str, list[float]]] = []
 EMBED_DIMENSIONS = 1536  # 지식 조각 임베딩과 같은 차원 (data_ingest 기본값)
+# 평가 · 비용 기록용: structured 호출마다 {role, model, input, cached, output, reasoning} 토큰을 받아요(값만, 글 없음)
+USAGE_HOOK: Callable[[dict], None] | None = None
+
+
+def _usage(role: str, name: str, raw: Any) -> dict:
+    um = getattr(raw, "usage_metadata", None) or {}
+    return {
+        "role": role,
+        "model": name,
+        "input": int(um.get("input_tokens") or 0),
+        "cached": int((um.get("input_token_details") or {}).get("cache_read") or 0),
+        "output": int(um.get("output_tokens") or 0),
+        "reasoning": int((um.get("output_token_details") or {}).get("reasoning") or 0),
+    }
 
 
 def model_for(role: Role) -> tuple[str, str]:
@@ -130,11 +145,17 @@ async def structured[T: BaseModel](
         reasoning_effort=effort,
         timeout=30,
         max_retries=1,
-    ).with_structured_output(schema, method="json_schema", strict=True)
+    ).with_structured_output(schema, method="json_schema", strict=True, include_raw=True)
     try:  # 공급자 오류 · 시간 초과 · 모양 틀림을 한곳에서 LLMError로. 입력값은 남기지 않음
-        return schema.model_validate(await model.ainvoke(messages))
+        out = await model.ainvoke(messages)
+        if out.get("parsing_error") is not None or out.get("parsed") is None:
+            raise ValueError("모양 틀림")
+        parsed = schema.model_validate(out["parsed"])
     except Exception as e:
         raise LLMError(f"{role} 호출 실패") from e
+    if USAGE_HOOK is not None:  # 토큰 수(캐시 읽기 포함)만 넘겨요
+        USAGE_HOOK(_usage(role, name, out.get("raw")))
+    return parsed
 
 
 CHAT_STUB_TEXT = "지금은 AI 답변을 쓸 수 없어요. 버튼으로 이어서 진행해 주세요."
