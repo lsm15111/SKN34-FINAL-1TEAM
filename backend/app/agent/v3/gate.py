@@ -144,7 +144,8 @@ def gate(
         if route == "guide" and found:
             route = "trade"  # 공종이 분명하면 그 공종 담당이 답한다(가이드는 공통 · 처음 안내). 이음말 복합은 위에서 multi
         if route in NEED_PROJECT and not has_project:
-            route = "guide"  # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요
+            # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요. 견적서 줄을 묻지 않은 공종 질문('도배 비용')은 공종 담당
+            route = "trade" if found and not QUOTE_MINE.search(plain) else "guide"
         if route == "out_of_scope" and found and not keep:
             route = "trade"  # v3: 다른 공종은 범위 밖이 아니라 공종 지식 답
         if route == "out_of_scope" or route == "ask_back":
