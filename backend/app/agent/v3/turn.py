@@ -22,6 +22,11 @@ from app.agent.v3.schemas import (
 )
 from app.agent.v3.trades import BY_CODE, trades_in
 
+# 사진 · 그림을 보여 달라는 말: 아직 그림 자료가 없어 안내 한 줄을 앞에 두고, 나머지 질문으로 답해요(ChatGPT 비교 G6)
+PHOTO = re.compile(
+    r"(?:사진|이미지|그림|영상)\s{0,3}(?:으로|로)?\s{0,3}(?:좀\s{0,2})?(?:보여|볼\s{0,2}수)\S{0,6}"
+)
+PHOTO_LINE = "사진은 아직 보여 드리지 못해요. 대신 글로 알려 드릴게요."
 CHITCHAT = re.compile(r"로또|주식|코인|집값|영화|점심|저녁\s*뭐|강아지|번역|날씨|심심|노래|게임")
 
 
@@ -95,6 +100,10 @@ async def run_turn(
     button: Button | None = None,
 ) -> TurnResult:
     masked = check.mask(text or "").strip()[:TEXT_MAX]
+    photo = PHOTO.search(masked) is not None
+    if photo:
+        rest = PHOTO.sub(" ", masked).strip(" ,.?")
+        masked = rest or masked
     w_route = waiting.get("route") if waiting else None
     g = gate_mod.gate(
         masked, view=ctx.view, waiting=w_route, button=button, has_project=facts is not None,
@@ -122,6 +131,8 @@ async def run_turn(
         part, names, failed_parts = orchestrator.run(task, kb)
     else:
         part = orchestrator.AGENTS[g.route](task, kb)
+    if photo and g.route not in ("out_of_scope", "ask_back"):
+        part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
     routes: list[str] = []
     if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
         part, routes = await _llm(part, kb, masked)

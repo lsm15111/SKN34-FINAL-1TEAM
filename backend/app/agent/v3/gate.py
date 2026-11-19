@@ -38,6 +38,10 @@ GUIDE_WORDS = re.compile(
     r"처음|순서|뭐부터|어떻게\s*진행|믿집|가입|뜻이|뭐예요|뭔가요|뭐에요|무슨\s*뜻|계약|관리사무소|"
     r"하자|업체\s*(?:고르|선택)|고르는|준비|체크|확인할\s*것|안녕|반갑|영수증|세금계산서"  # 영수증 · 세금계산서: 계약 · 비용(공통)
 )
+# 처음 고객의 시작 순서 질문('도배 처음인데 뭐부터'): 공종 낱말이 하나 있어도 가이드가 시작 순서로 답해요(ChatGPT 비교 G1)
+START = re.compile(
+    r"처음\s{0,2}(?:해|하|이라|인데|이에요|이예요)|뭐부터|무엇부터|어디서부터|어떻게\s{0,2}시작"
+)
 WHEN = re.compile(r"언제|날짜|며칠|몇\s*시|오전|오후|주말")
 VAGUE = re.compile(r"^\s*(?:이거|이건|저거|여기|이\s*줄|이\s*금액|이게|왜)")
 # 문장 나누기: 물음 · 이음말. '하고 · 랑'은 공종 낱말 사이에 있을 때만 나눈다(orchestrator.split)
@@ -141,8 +145,11 @@ def gate(
     model_route = LABEL_ROUTE.get(label) if label else None
 
     def done(route: Route, source: str, c: float = conf, keep: bool = False) -> GateResult:
-        if route == "guide" and found:
+        start = START.search(plain) is not None and len(found) <= 1
+        if route == "guide" and found and not start:
             route = "trade"  # 공종이 분명하면 그 공종 담당이 답한다(가이드는 공통 · 처음 안내). 이음말 복합은 위에서 multi
+        if route == "trade" and start:
+            route = "guide"  # 처음 고객의 '뭐부터'는 공종 지식보다 시작 순서가 먼저예요
         if route in NEED_PROJECT and not has_project:
             # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요. 견적서 줄을 묻지 않은 공종 질문('도배 비용')은 공종 담당
             route = "trade" if found and not QUOTE_MINE.search(plain) else "guide"
