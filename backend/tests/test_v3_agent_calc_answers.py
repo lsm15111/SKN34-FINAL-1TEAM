@@ -108,6 +108,16 @@ def test_vendor_answer_with_and_without_project():
     out = calc_lines.vendors(ProjectFacts(vendors=[v]))
     assert out.cards[0].kind == "vendor_reco" and out.cards[0].vendors[0].name == "마루와벽"
     assert "고르는 건 고객님" in out.lines[0] and "광고로 순서를 바꾸지 않아요" in out.cards[0].text
+    # 보인 기준 = 실제 계산(무게를 계산 엔진 상수에서 읽어요) · 가견적 부가세 포함 · 빠진 비용
+    w = vendor_pick
+    for x in (
+        f"{w.W_RATING:.0%}",
+        f"{w.W_DONE:.0%}",
+        f"{w.W_PRICE:.0%}",
+        "가까운 구",
+        "부가세 포함",
+    ):
+        assert x in out.cards[0].text, x
     _ok(out)
     none = calc_lines.vendors(None)
     assert none.cards[0].choices[0].action == "start"

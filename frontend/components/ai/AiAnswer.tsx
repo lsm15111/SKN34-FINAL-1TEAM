@@ -97,7 +97,7 @@ function VendorReco({ card, projectId, onPick }: { card: AiCard; projectId?: str
               ) : (
                 <span className={s.recoName}>{v.name}</span>
               )}
-              {v.estimate_total != null ? <span className={`${s.mute} mj-num`}>가견적 {v.estimate_total.toLocaleString("ko-KR")}원</span> : null}
+              {v.estimate_total != null ? <span className={`${s.mute} mj-num`}>가견적 {v.estimate_total.toLocaleString("ko-KR")}원(부가세 포함)</span> : null}
               {v.reasons.length ? <span className={s.recoWhy}>{v.reasons.join(" · ")}</span> : null}
             </div>
           </li>

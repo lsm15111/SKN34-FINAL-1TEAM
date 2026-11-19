@@ -390,10 +390,15 @@ def _price_examples(trade: str, g: GeneralFacts) -> Lines:
 
 
 # ---- 업체 추천 (코드가 고른 업체) ----
-CRITERIA = (
-    "고른 기준: 이 구에서 일하고 단가를 확인한 업체 중 별점(리뷰 수 반영) · 믿집 공사 수 · "
-    "가견적(표준견적서 대비) 점수 순이에요. 광고로 순서를 바꾸지 않아요."
-)
+def criteria() -> str:
+    """화면에 적는 고른 기준. 무게는 계산 엔진 상수에서 바로 읽어, 보인 기준과 실제 계산이 늘 같아요(전자상거래법 제21조)."""
+    from app.calc import vendor_pick as vp
+
+    return (
+        f"고른 기준: 이 구(3곳보다 적으면 가까운 구까지)에서 가견적이 있는 업체를 별점(리뷰 수 반영) {vp.W_RATING:.0%} · "
+        f"믿집 공사 수 {vp.W_DONE:.0%} · 가견적(표준견적서 대비) {vp.W_PRICE:.0%}로 센 점수에 이 구 업체 덤을 더해 높은 순으로 골라요. "
+        "광고로 순서를 바꾸지 않아요. 가견적은 부가세 포함이고, 철거처럼 실측 뒤 정하는 비용은 빠져 있어요. 계약은 업체와 직접 해요."
+    )
 
 
 def vendors(facts: ProjectFacts | None) -> Lines:
@@ -421,7 +426,7 @@ def vendors(facts: ProjectFacts | None) -> Lines:
     )
     for p in picks:
         out.numbers += [p.name, *p.reasons, str(p.estimate_total or "")]
-    out.cards.append(UiCard(kind="vendor_reco", title="추천 업체", text=CRITERIA, vendors=list(picks),
+    out.cards.append(UiCard(kind="vendor_reco", title="추천 업체", text=criteria(), vendors=list(picks),
                             choices=[Choice(text="업체 모두 보기", action="vendors")]))  # fmt: skip
     return out
 
