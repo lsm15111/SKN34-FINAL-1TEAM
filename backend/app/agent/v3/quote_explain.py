@@ -116,7 +116,7 @@ def run(task: Task, kb: KB) -> Part:
         if ln is not None:
             key = (ln.key, ln.state)
             text = templates.LINE_STATE_SPECIAL.get(key) or templates.LINE_STATE[ln.state].format(
-                name=ln.name
+                name=ln.name, eun=templates.josa(ln.name, "은", "는")
             )
             lines.append(text)
             part.calc.append(line_box(ln))
