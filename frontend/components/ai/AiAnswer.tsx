@@ -151,7 +151,29 @@ export function AiAnswer({ answer, projectId, onPick }: { answer: Answer; projec
         answer.sections.map((sec, i) => (
           <div key={i} className={s.section}>
             {many && sec.title ? <p className={s.secTitle}>{sec.title}</p> : null}
-            {sec.sentences.map((t, j) => <Line key={j} text={t} nums={sec.cites?.[j]} refs={refs} lead={isLead()} />)}
+            {sec.steps ? (
+              <ol className={s.steps}>
+                {sec.sentences.map((t, j) => (
+                  <li key={j} className={s.step}>
+                    <span className={s.stepNum} aria-hidden="true">{j + 1}</span>
+                    <Line text={t} nums={sec.cites?.[j]} refs={refs} />
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              sec.sentences.map((t, j) => <Line key={j} text={t} nums={sec.cites?.[j]} refs={refs} lead={isLead()} />)
+            )}
+            {sec.table?.length ? (
+              <div className={s.tableWrap}>
+                <table className={s.table}>
+                  <tbody>
+                    {sec.table.map((r, j) => (
+                      <tr key={j}><th scope="row">{r[0]}</th><td>{r[1]}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : null}
             {sec.caution ? <p className={s.caution}>주의: {sec.caution}</p> : null}
             {sec.tip ? <p className={s.tip}>팁: {sec.tip}</p> : null}
             {!refs.length && sec.sources.length ? (

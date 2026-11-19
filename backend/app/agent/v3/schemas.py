@@ -230,6 +230,8 @@ class Section(BaseModel):
     route: Route = "guide"
     trade: TradeCode | None = None
     sources: list[dict] = []  # 인용 조각 출처 {ref, title, kind_ko, publisher} (원문 없음)
+    table: list[list[str]] = []  # 비교 블록(2칸 줄). 칸 글도 출력 검사를 지난 것만
+    steps: bool = False  # 단계 블록(문장이 순서대로인 단계)
 
 
 class CalcBox(BaseModel):

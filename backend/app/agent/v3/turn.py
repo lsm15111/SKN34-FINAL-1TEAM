@@ -10,7 +10,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.agent.v3 import brief, check, llm_mode, orchestrator, policy, templates
+from app.agent.v3 import brief, check, composer, llm_mode, orchestrator, policy, templates
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3.answer import KB, T_HIGH, Part, Task
 from app.agent.v3.schemas import (
@@ -140,7 +140,7 @@ async def run_turn(
         part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
 
     def finish(p: Part, routes: list[str]) -> AgentAnswer:
-        prompts = [llm_mode.VERSION[r] for r in routes]
+        prompts = [composer.VERSION if r == "composer" else llm_mode.VERSION[r] for r in routes]
         boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
         ans = AgentAnswer(
             sections=p.sections, calc=boxes, cards=p.cards, ask=p.ask,
@@ -152,8 +152,11 @@ async def run_turn(
                 card_set=kb.cards.version, parts=names, failed_parts=failed_parts, dropped=p.dropped,
             ),
         )  # fmt: skip
-        ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
+        texts = [composer.prompt() if r == "composer" else llm_mode.prompt(r) for r in routes]
+        ans = check.final(ans, prompt="\n".join(texts) or None)
         ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
+        if "composer" in routes:
+            ans.brief = None  # 작성기 답은 블록 한 벌이 이미 짧아서 통째로 보여요
         if ans.sections and ans.sections[0].title == "[시작 순서]":
             ans.brief = None  # 단계 목록은 잘라 보이면 순서가 끊겨서 통째로 보여요
         if photo and ans.brief and ans.sections and ans.sections[0].sentences[:1]:
@@ -167,7 +170,10 @@ async def run_turn(
         if on_draft is not None:
             # LLM을 기다리기 전에 무료 답(검사 통과본)을 먼저 보낸다. 글을 다시 쓴 답은 done으로 바꿔 보여요
             await on_draft(finish(copy.deepcopy(part), []))
-        part, routes = await _llm(part, kb, masked)
+        # 답 작성기 한 번(근거 묶음 → 블록). 근거가 질문에 안 맞거나 실패하면 무료 답 그대로
+        composed = await composer.compose(part, kb, masked, trade=g.trades[0] if g.trades else None)
+        if composed is not None:
+            part, routes = composed, ["composer"]
     ans = finish(part, routes)
     new_wait = None
     if ans.ask is not None:

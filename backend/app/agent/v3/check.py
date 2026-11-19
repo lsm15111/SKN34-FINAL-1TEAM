@@ -140,8 +140,11 @@ def final(ans: AgentAnswer, prompt: str | None = None) -> AgentAnswer:
                 dropped.append(why)
                 continue
             kept.append(x.model_copy(update={"text": t}))
-        if kept:
-            sections.append(sec.model_copy(update={"sentences": kept}))
+        table = [
+            [mask(c) for c in r] for r in sec.table
+        ]  # 비교 표 칸도 가림(숫자는 묶음 검사에서 봤어요)
+        if kept or table:
+            sections.append(sec.model_copy(update={"sentences": kept, "table": table}))
     unknown = [mask(u) for u in ans.unknown]
     failed = ans.failed or not (sections or ans.cards or ans.calc or unknown)
     trace = ans.trace.model_copy(update={"dropped": dropped})

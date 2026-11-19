@@ -55,6 +55,8 @@ class AiSection(BaseModel):
     trade: str | None = None
     sources: list[AiSource] = []
     cites: list[list[int]] = []  # 문장마다 출처 번호(AiAnswer.refs의 1부터). sentences와 같은 길이
+    table: list[list[str]] = []  # 비교 블록 2칸 줄
+    steps: bool = False  # 단계 블록
 
 
 class AiBrief(BaseModel):
@@ -139,4 +141,6 @@ def section_out(s: Section) -> AiSection:
         route=s.route,
         trade=s.trade,
         sources=src,
+        table=[list(r) for r in s.table],
+        steps=s.steps,
     )
