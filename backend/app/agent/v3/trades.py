@@ -49,7 +49,7 @@ SPECS: tuple[TradeSpec, ...] = (
         "dobae",
         "도배",
         "deep",
-        r"도배|벽지|초배|정배|합지|실크|도배풀|풀자국|퍼티|빠데|광폭|소폭|띠벽지|덧방\s*도배",
+        r"도배|도베|벽지|초배|정배|합지|실크|도배풀|풀자국|퍼티|빠데|광폭|소폭|띠벽지|덧방\s*도배|wallpaper",
         ("도배",),
         7,
         cautions=(
@@ -92,7 +92,8 @@ SPECS: tuple[TradeSpec, ...] = (
         "mokgong",
         "목공",
         "deep",
-        r"목공|목수|목재|몰딩|걸레받이|굽도리|문틀|문선|(?<!사전)(?<!실측 )방문(?!판매)|문짝|경첩|석고|"
+        r"목공|목수|목재|몰딩|걸레받이|걸래받이|굽도리|문틀|문선|molding|moulding|"
+        r"(?:화장실|욕실|안방|작은방|현관|베란다)\s{0,2}문(?![제의자서구장])|(?<!사전)(?<!실측 )방문(?!판매)|문짝|경첩|석고|"
         r"도어(?!락|록)|다루끼|각재|가벽|칸막이|천장틀|평탄화|단내림|커튼박스|단열|웨인스코팅|템바보드|분리대",
         ("목공",),
         4,
@@ -297,7 +298,7 @@ def rules() -> dict[str, dict[str, str]]:
 # (예: '욕실 타일' → 타일, '붙박이장 필름' → 필름, '방문 칠' → 도장). E1 dev 질문 은행에서 고른 규칙(held-out 안 봄)
 CONTEXT = {"bath": 2, "kitchen": 2, "mokgong": 1, "window": 1}
 WORK_OVER = {
-    "bath": ("tile", "electric", "plumbing", "demolition", "film", "paint"),
+    "bath": ("tile", "electric", "plumbing", "demolition", "film", "paint", "mokgong"),
     "kitchen": ("film", "demolition", "electric", "tile", "paint"),
     "mokgong": ("paint", "film"),
     "window": ("film",),
