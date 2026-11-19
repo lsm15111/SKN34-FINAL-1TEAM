@@ -54,6 +54,7 @@ class AiSection(BaseModel):
     route: Route
     trade: str | None = None
     sources: list[AiSource] = []
+    cites: list[list[int]] = []  # 문장마다 출처 번호(AiAnswer.refs의 1부터). sentences와 같은 길이
 
 
 class AiBrief(BaseModel):
@@ -62,6 +63,7 @@ class AiBrief(BaseModel):
     form: str = "other"
     lines: list[str] = []
     more: int = 0
+    cites: list[list[int]] = []  # 줄마다 출처 번호
 
 
 class AiAnswer(BaseModel):
@@ -74,6 +76,9 @@ class AiAnswer(BaseModel):
     suggest: list[str] = []
     failed: bool = False
     brief: AiBrief | None = None
+    refs: list[
+        AiSource
+    ] = []  # 이 답의 출처. 번호는 코드가 처음 나온 순서로 매겨요(LLM이 매기지 않음)
 
 
 class AiTurnOut(BaseModel):

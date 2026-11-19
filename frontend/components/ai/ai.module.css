@@ -8,6 +8,11 @@
 .caution { color: var(--warn); font-size: var(--fs-sm); }
 .tip { color: var(--ink-sub); font-size: var(--fs-sm); }
 .sources { color: var(--ink-mute); font-size: var(--fs-xs); }
+.lead { font-weight: 700; color: var(--ink); }
+.cite { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; margin-left: 3px; padding: 0 4px; border-radius: 8px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 600; line-height: 1; vertical-align: 2px; cursor: default; }
+.refs { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; color: var(--ink-mute); font-size: var(--fs-xs); }
+.refs li { display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
+.refNum { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; border-radius: 8px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 600; }
 .unknown { color: var(--ink-sub); font-size: var(--fs-sm); }
 .more { align-self: flex-start; }
 .calcNote { color: var(--ink-sub); font-size: var(--fs-sm); background: var(--surface-2); border-radius: var(--radius-s); padding: 6px 10px; }

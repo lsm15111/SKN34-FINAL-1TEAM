@@ -134,17 +134,47 @@ async def _set_json(key: str, value: dict | None, ttl: int) -> None:
         return  # 지워져도 되는 값(되묻기 칸 · 같은 요청 되돌림)이라 Redis가 멈춰도 답은 낸다
 
 
+def _numbered(pairs: list[tuple[list[AiSource], list]], brief) -> tuple[list[AiSource], list, list]:
+    """출처 번호: 묶음 출처(ref가 있는 조각)의 문서마다 처음 나온 순서로 1, 2, 3을 매기고, 문장마다 인용한 번호를 단다.
+    pairs: (화면 묶음 출처, 그 묶음의 문장들). 카드 표시(card:…)처럼 묶음 출처에 없는 인용은 번호가 없어요."""
+    refs: list[AiSource] = []
+    at: dict[str, int] = {}  # 조각 ref → 번호. 같은 문서(이름)의 조각은 번호 하나로 묶어요
+    doc: dict[str, int] = {}
+    for sources, _ in pairs:
+        for src in sources:
+            key = src.title or src.ref
+            if key not in doc:
+                refs.append(src)
+                doc[key] = len(refs)
+            at.setdefault(src.ref, doc[key])
+
+    def nums(cites: list[str]) -> list[int]:
+        return sorted({at[c] for c in cites if c in at})
+
+    per = [[nums(x.cites) for x in sents] for _, sents in pairs]
+    lines = [nums(x.cites) for x in brief.lines] if brief else []
+    return refs, per, lines
+
+
 def _public(ans) -> AiAnswer:
     b = ans.brief
+    secs = [section_out(x) for x in ans.sections]
+    pairs = [(o.sources, i.sentences) for o, i in zip(secs, ans.sections, strict=True)]
+    refs, per, lines = _numbered(pairs, b)
+    for sec, c in zip(secs, per, strict=True):
+        sec.cites = c
     return AiAnswer(
-        sections=[section_out(x) for x in ans.sections],
+        refs=refs,
+        sections=secs,
         calc=ans.calc,
         cards=ans.cards,
         ask=ans.ask,
         unknown=ans.unknown,
         suggest=ans.suggest,
         failed=ans.failed,
-        brief=AiBrief(form=b.form, lines=[x.text for x in b.lines], more=b.more) if b else None,
+        brief=AiBrief(form=b.form, lines=[x.text for x in b.lines], more=b.more, cites=lines)
+        if b
+        else None,
     )
 
 
