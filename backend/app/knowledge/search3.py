@@ -34,10 +34,12 @@ def search(
     k: int = 6,
     policy_text: str | None = None,
     exclude_kinds: frozenset[str] = frozenset(),
+    dense: list[str] | tuple[str, ...] = (),
 ) -> bm25.Result:
     """검색어(+ 동의어)를 BM25로 찾아 RRF로 합치고 출처 등급 · 공종 무게를 더한다.
 
     법 · 안전 · 금액 질문은 블로그 · 후기를 뺀다(bm25.POLICY). exclude_kinds: 더 뺄 출처 종류(예: 책).
+    dense: 의미 검색 순위(DB 행 키 rid, 가까운 순). 있으면 bm25.search와 같은 무게(dense_w)로 RRF에 더한다.
     """
     if not ix.items:
         return bm25.Result([], False, [])
@@ -56,6 +58,10 @@ def search(
             if x.doc.kind in exclude:
                 continue
             fused[x] = fused.get(x, 0.0) + 1 / (bm25.CONF["rrf_k"] + r + 1)
+    if dense and bm25.CONF["dense_w"]:
+        near = [ix.by_rid[r] for r in dense if r in ix.by_rid][: bm25.CONF["dense_n"]]
+        for r, x in enumerate(x for x in near if x.doc.kind not in exclude):
+            fused[x] = fused.get(x, 0.0) + bm25.CONF["dense_w"] / (bm25.CONF["rrf_k"] + r + 1)
 
     def bonus(x: bm25.Item) -> float:
         b = bm25.CONF["tier_w"] * bm25.TIER.get(x.doc.kind, 0.5)

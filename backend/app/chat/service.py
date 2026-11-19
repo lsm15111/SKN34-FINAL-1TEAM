@@ -180,6 +180,8 @@ def _public(ans) -> AiAnswer:
 
 async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
     """POST /ai/turns. 남의 대화 · 남의 프로젝트는 404, 같은 대화 동시 저장은 409."""
+    from app.agent.llm import embed_query
+    from app.agent.v3 import check
     from app.agent.v3.answer import KB
     from app.agent.v3.schemas import TurnContext
     from app.agent.v3.turn import run_turn
@@ -198,6 +200,8 @@ async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
         return AiTurnOut.model_validate(old)
     rev, waiting_label = 1, None
     facts = None
+    # 의미 검색 벡터는 DB 세션을 열기 전에 만든다(LLM 모드만, 실패하면 None → 키워드로만)
+    emb = await embed_query(check.mask(body.text)[:300]) if settings.llm_live else None
     async with SessionLocal() as s:  # 짧게 열고 닫는다. 답을 만드는 동안 세션을 쥐지 않는다
         if body.chat_id is not None:
             chat = await get_for(s, user.id, body.chat_id)
@@ -206,7 +210,11 @@ async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
             facts = await tools.project_facts(
                 s, user, body.context.project_id, today, body.context.ids
             )
-        kb = KB(ix=await knowledge.index(s), cards=cards.default())
+        kb = KB(
+            ix=await knowledge.index(s),
+            cards=cards.default(),
+            dense=await knowledge.nearest(s, emb),
+        )
     wait_key = _key("wait", str(body.chat_id)) if body.chat_id else None
     waiting = await _get_json(wait_key) if wait_key and waiting_label else None
     if waiting is None and waiting_label:

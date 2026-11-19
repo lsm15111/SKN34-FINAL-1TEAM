@@ -40,6 +40,9 @@ class KB:
     ix: bm25.Index
     cards: cards.CardSet
     tags: Mapping[str, str] = field(default_factory=lambda: TAG_TO_CODE)
+    dense: tuple[
+        str, ...
+    ] = ()  # 이 턴 질문의 의미 검색 순위(rid). LLM 모드에서 chat.service가 채워요
 
 
 @dataclass
@@ -136,7 +139,7 @@ def card_allowed(kb: KB, card: cards.AnswerCard) -> str:
 
 def search(kb: KB, q: str, trade: TradeCode | None) -> bm25.Result:
     want = [trade] if trade and trade != "common" else []
-    return search3.search(kb.ix, q, trades=want, tags=kb.tags, k=8)
+    return search3.search(kb.ix, q, trades=want, tags=kb.tags, k=8, dense=kb.dense)
 
 
 def knowledge(
