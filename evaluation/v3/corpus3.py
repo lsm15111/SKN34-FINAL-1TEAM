@@ -1,4 +1,5 @@
 """v3 평가 말뭉치: 지금 말뭉치(evaluation/rag/corpus.py와 같은 CSV) + 데이터 담당 v3 지식 요지(K20001~, app.knowledge.v3_csv.START).
+개선 2회차(iter2, K21001~) · 3회차(iter3, K22001~) 묶음도 같이 넣어요.
 
     cd backend && .venv/Scripts/python.exe ../evaluation/v3/corpus3.py
 
@@ -17,12 +18,14 @@ from corpus import DIRS, _digest, read
 
 from app.knowledge.json_csv import EXTRA, REQUIRED
 from app.knowledge.sources import assemble
-from app.knowledge.v3_csv import START2, rows
+from app.knowledge.v3_csv import START2, START3, rows
 
 SRC = ROOT / "data/v3/knowledge/chunks.jsonl"
 CSV_OUT = CACHE / "v3_knowledge_rag.csv"
 SRC2 = ROOT / "data/v3/knowledge/iter2/chunks.jsonl"  # 개선 2회차(K21001~)
 CSV_OUT2 = CACHE / "v3_knowledge_iter2_rag.csv"
+SRC3 = ROOT / "data/v3/knowledge/iter3/chunks.jsonl"  # 개선 3회차(K22001~)
+CSV_OUT3 = CACHE / "v3_knowledge_iter3_rag.csv"
 OUT = CACHE / "corpus3.json"
 
 
@@ -37,14 +40,16 @@ def main() -> None:
         w.writeheader()
         w.writerows(v3)
     extra = [read(CSV_OUT)]
-    if SRC2.exists():
-        raw2 = SRC2.read_bytes()
+    for src, csv_out, start in ((SRC2, CSV_OUT2, START2), (SRC3, CSV_OUT3, START3)):
+        if not src.exists():
+            continue
+        raw2 = src.read_bytes()
         lines2 = [json.loads(x) for x in raw2.decode("utf-8-sig").splitlines() if x.strip()]
-        with CSV_OUT2.open("w", encoding="utf-8-sig", newline="") as f:
+        with csv_out.open("w", encoding="utf-8-sig", newline="") as f:
             w = csv.DictWriter(f, fieldnames=REQUIRED + EXTRA, lineterminator="\n")
             w.writeheader()
-            w.writerows(rows(lines2, hashlib.sha256(raw2).hexdigest(), START2))
-        extra.append(read(CSV_OUT2))
+            w.writerows(rows(lines2, hashlib.sha256(raw2).hexdigest(), start))
+        extra.append(read(csv_out))
     datasets = [read(p) for d in DIRS for p in sorted(d.glob("*_rag.csv"))] + extra
     chunks, docs = assemble(datasets)
     versions = sorted(

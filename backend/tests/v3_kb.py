@@ -12,13 +12,14 @@ from pathlib import Path
 from app.agent.v3.answer import KB
 from app.knowledge import bm25, cards
 from app.knowledge.sources import assemble
-from app.knowledge.v3_csv import START2
+from app.knowledge.v3_csv import START2, START3
 from app.knowledge.v3_csv import rows as v3_rows
 
 ROOT = Path(__file__).resolve().parents[2]
 CSV_DIRS = [ROOT / "data/processed", ROOT / "data/consult"]
 V3 = ROOT / "data/v3/knowledge/chunks.jsonl"
 V3_ITER2 = ROOT / "data/v3/knowledge/iter2/chunks.jsonl"  # 개선 2회차(K21001~)
+V3_ITER3 = ROOT / "data/v3/knowledge/iter3/chunks.jsonl"  # 개선 3회차(K22001~)
 
 
 def datasets() -> list[tuple[str, list[dict[str, str]]]]:
@@ -31,12 +32,14 @@ def datasets() -> list[tuple[str, list[dict[str, str]]]]:
         raw = V3.read_bytes()
         lines = [json.loads(x) for x in raw.decode("utf-8-sig").splitlines() if x.strip()]
         out.append(("v3_knowledge_rag", v3_rows(lines, hashlib.sha256(raw).hexdigest())))
-    if V3_ITER2.exists():
-        raw = V3_ITER2.read_bytes()
-        lines = [json.loads(x) for x in raw.decode("utf-8-sig").splitlines() if x.strip()]
-        out.append(
-            ("v3_knowledge_iter2_rag", v3_rows(lines, hashlib.sha256(raw).hexdigest(), START2))
-        )
+    for key, path, start in (
+        ("v3_knowledge_iter2_rag", V3_ITER2, START2),
+        ("v3_knowledge_iter3_rag", V3_ITER3, START3),
+    ):
+        if path.exists():
+            raw = path.read_bytes()
+            lines = [json.loads(x) for x in raw.decode("utf-8-sig").splitlines() if x.strip()]
+            out.append((key, v3_rows(lines, hashlib.sha256(raw).hexdigest(), start)))
     return out
 
 

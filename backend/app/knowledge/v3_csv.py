@@ -2,7 +2,8 @@
 
     python -m app.knowledge.v3_csv ../data/v3/knowledge/chunks.jsonl ../evaluation/v3/.cache/v3_knowledge_rag.csv
 
-- 번호(ref): 파일 줄 순서대로 K20001부터(개선 2회차 묶음 `iter2/chunks.jsonl`은 K21001부터). 다른 자료와 안 겹치는 자리예요:
+- 번호(ref): 파일 줄 순서대로 K20001부터(개선 2회차 묶음 `iter2/chunks.jsonl`은 K21001부터, 3회차 `iter3/chunks.jsonl`은
+  K22001부터). 다른 자료와 안 겹치는 자리예요:
   상담 K1~ · 팀 K2001~ · 책 K5001~ · 시공일지 K6000 + 쪽×50 + 순번(218쪽 → K16949까지, data/sigong_ilji/SPEC.md).
   (처음 정한 K7001~은 시공일지 K7154 등과 겹쳐서 옮겼어요.) 번호 칸은 다섯 자리까지(bm25.REF)라 K99999가 끝이에요.
   새 조각은 파일 끝에 더해요. 중간에 넣으면 뒤 번호가 밀려 카드 인용이 틀어져요(cards_check가 잡아요).
@@ -17,12 +18,15 @@ import argparse
 import csv
 import hashlib
 import json
+import re
 from pathlib import Path
 
+from app.knowledge.bm25 import TYPE_KO
 from app.knowledge.json_csv import EXTRA, REQUIRED
 
 START = 20001
 START2 = 21001  # 개선 2회차(iter2) 조각. v3 첫 묶음(K20001~K20190)과 안 겹쳐요
+START3 = 22001  # 개선 3회차(iter3) 조각. 2회차(K21001~K21140)와 안 겹쳐요
 DOC_HOME = ("pumsem", "lhcs", "kcs")  # 주소가 문서 첫 화면뿐이라 링크로 안 보이는 출처
 SIGONG_MAX = 6000 + 218 * 50 + 49  # 시공일지 마지막 번호(SPEC.md 규칙)
 TAG = {
@@ -32,7 +36,18 @@ TAG = {
 }  # fmt: skip
 
 
-def kind_of(name: str, license_: str) -> str:
+# 제조사 안내서(이름에 회사 · 브랜드가 있으면). 'guide'(기본값)로 두면 화면에 공공 자료처럼 보였어요
+MAKER = re.compile(
+    r"LX\s{0,1}하우시스|LX Z:IN|LX지인|KCC|신한벽지|개나리벽지|영림|예림|LG전자|한샘|제품\s{0,1}PDF"
+)
+
+
+def kind_of(name: str, license_: str, kind: str = "") -> str:
+    """출처 종류. 조각에 적은 종류(kind)가 아는 값이면 그대로 써요(3회차부터 적어 둠)."""
+    if kind and kind in TYPE_KO:
+        return kind
+    if MAKER.search(name):
+        return "maker"
     if "KCS" in name:
         return "kcs"
     if "품셈" in name:
@@ -57,8 +72,8 @@ def kind_of(name: str, license_: str) -> str:
 
 
 def start_for(path: Path) -> int:
-    """파일 자리로 첫 번호를 정해요: data/v3/knowledge/iter2/… → START2, 그 밖 → START."""
-    return START2 if path.parent.name == "iter2" else START
+    """파일 자리로 첫 번호를 정해요: data/v3/knowledge/iter2/… → START2, iter3/… → START3, 그 밖 → START."""
+    return {"iter2": START2, "iter3": START3}.get(path.parent.name, START)
 
 
 def _url(c: dict) -> str:
@@ -89,7 +104,7 @@ def rows(lines: list[dict], sha: str, start: int = START) -> list[dict[str, str]
                 "trade": ";".join(tags),
                 "source_org": "",
                 "source_url": _url(c),
-                "source_type": kind_of(name, c.get("license") or ""),
+                "source_type": kind_of(name, c.get("license") or "", c.get("kind") or ""),
                 "ref": f"K{start + i}",
                 "doc": f"v3:{c.get('doc_key') or c['id']}",
                 "trades": ";".join(tags),
