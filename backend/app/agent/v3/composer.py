@@ -1,4 +1,4 @@
-"""답 작성기 (LLM 모드, 지시문 composer_v1). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
+"""답 작성기 (LLM 모드, 지시문 composer_v2). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
 
 흐름: 무료 몫(Part) → 근거 묶음(카드 · 조각 · 검색 위 조각 · 계산 결과 · 정해 둔 글, 모두 코드가 고름)
 → LLM 1회(JSON: verdict · lead · blocks · follow) → 블록을 Section으로 → 출력 검사(숫자 · 인용 · 금지 표현 · 누출)
@@ -9,7 +9,9 @@
 """
 
 import json
+import math
 import re
+from collections.abc import Callable
 from functools import cache
 from pathlib import Path
 from typing import Literal
@@ -18,12 +20,12 @@ from pydantic import BaseModel
 
 from app.agent import llm
 from app.agent.v3 import check, llm_mode, templates
-from app.agent.v3.answer import KB, Part, search
+from app.agent.v3.answer import KB, T_HIGH, Part, search
 from app.agent.v3.schemas import Section, Sentence, TradeCode
-from app.knowledge import bm25
+from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
-VERSION = "composer_v1"
+VERSION = "composer_v2"
 TOP_CHUNKS = 6  # 검색 위 조각을 몇 개 더 넣을지
 CHUNK_CHARS = 420  # 조각 글 앞 몇 글자
 MAX_BLOCKS = 4
@@ -144,14 +146,45 @@ def to_sections(
     refs: set[str] = ev["refs"]
     allowed, calc = ev["allowed"], ev["calc"]
 
-    def sent(it: CItem) -> Sentence:
+    card_text = {c["ref"]: c["글"] for c in ev.get("data", {}).get("카드", [])}
+    weight = _idf(kb) if kb is not None else None
+
+    def support(text: str, ref: str) -> float:
+        """문장과 인용(조각 · 카드)의 글자 묶음 겹침을 드문 묶음에 무게를 줘서 잰 값(0~1)."""
+        sg = _grams(text)
+        if ref.startswith("card:"):
+            other = _grams(card_text.get(ref, ""))
+        else:
+            it = kb.ix.by_ref.get(ref) if kb is not None else None
+            other = set(it.tf) if it is not None else set()
+        if not sg or weight is None:
+            return 1.0 if weight is None else 0.0
+        tot = sum(weight(g) for g in sg)
+        return sum(weight(g) for g in sg if g in other) / tot
+
+    def sent(it: CItem) -> Sentence | None:
+        """인용이 문장과 맞는지 본다(c2 답으로 고른 기준 SUPPORT). 맞는 인용만 남기고, 다 안 맞으면
+        근거 묶음에서 가장 맞는 조각으로 고쳐요. 어느 조각과도 맞지 않으면 None(근거 없는 문장이라 뺌)."""
         cites: list[str] = []
-        for x in it.cites[:3]:
-            if x in refs:
+        for x in [x for x in it.cites[:3] if x in refs]:
+            if support(it.text, x) >= SUPPORT:
                 cites.append(x)
-                if x.startswith("card:"):
-                    cites += _card_chunks(part, x)
+        if not cites and weight is not None and refs:
+            best = max(sorted(refs), key=lambda r: support(it.text, r))
+            if support(it.text, best) >= SUPPORT:
+                cites = [best]
+                if it.cites:
+                    dropped.append("인용 고침")
+            else:
+                dropped.append("인용 안 맞음")
+                return None
+        for x in list(cites):
+            if x.startswith("card:"):
+                cites += _card_chunks(part, x)
         return Sentence(text=it.text.strip(), cites=list(dict.fromkeys(cites)))
+
+    def sents(items: list[CItem]) -> list[Sentence]:
+        return [x for x in (sent(i) for i in items) if x is not None]
 
     calc_nums = check.guard.numbers(calc) if calc else set()
     shown = [
@@ -184,12 +217,15 @@ def to_sections(
         return kept
 
     used: set[str] = set()
-    lead = checked(Section(sentences=[sent(c.lead)], source="llm", route=route, trade=trade))
+    first = sents([c.lead])
+    lead = (
+        checked(Section(sentences=first, source="llm", route=route, trade=trade)) if first else None
+    )
     if lead is None and not calc:
         return None  # 계산 묶음이 있으면 그 묶음이 첫 줄 노릇을 해서 lead가 빠져도 이어 간다
     out = [lead] if lead else []
     for b in c.blocks[:MAX_BLOCKS]:
-        items = [sent(x) for x in b.items[:MAX_ITEMS] if x.text.strip()]
+        items = sents([x for x in b.items[:MAX_ITEMS] if x.text.strip()])
         if b.kind == "caution":
             if items and out:
                 one = checked(Section(sentences=items[:1], source="llm", route=route, trade=trade))
@@ -280,7 +316,7 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
         sections=[*calc, *secs], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
         # 일부만 답했으면 '확인하지 못했어요'는 빼고 확인할 곳 줄만 둬요(답 뒤에 모름이 붙으면 앞뒤가 안 맞아요)
         unknown=[] if c.verdict == "answer" else [u for u in part.unknown if u != templates.UNKNOWN],
-        suggest=_follow(c.follow, ev) or list(part.suggest), near=list(part.near), used_cards=list(part.used_cards),
+        suggest=_follow(c.follow, kb) or list(part.suggest), near=list(part.near), used_cards=list(part.used_cards),
         used_chunks=list(part.used_chunks), dropped=list(part.dropped), route=part.route,
         trade=part.trade, scores=dict(part.scores),
     )  # fmt: skip
@@ -288,6 +324,27 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
 
 
 SAME = 0.5  # 정해 둔 글 · 계산 문장과 글자 묶음이 이만큼 겹치면 되풀이로 봐요
+# 인용 지지 기준(IDF 무게 겹침). c2 답 인용 154쌍: 맞는 짝 86% 통과 · 섞은 짝 6.5% 통과(support_cal)
+SUPPORT = 0.18
+
+
+_IDF: dict[int, tuple[object, dict[str, float], float]] = {}  # 색인 하나만 들고 있어요
+
+
+def _idf(kb: KB) -> Callable[[str], float]:
+    """색인의 글자 묶음 IDF(흔한 '해요' · '에서'는 가볍게). 색인이 바뀔 때만 다시 셈."""
+    ix = kb.ix
+    hit = _IDF.get(id(ix))
+    if hit is None or hit[0] is not ix:
+        n = len(ix.items)
+        table = {g: math.log((n + 1) / (d + 1)) + 1 for g, d in ix.df.items()}
+        hit = (ix, table, math.log(n + 1) + 1)
+        _IDF.clear()
+        _IDF[id(ix)] = hit
+    _, table, top = hit
+    return lambda g: table.get(g, top)
+
+
 META = re.compile(
     r"자료(?:로|에서|에는|에|상|만으로)|확인하지\s{0,2}못했|확인하기\s{0,2}어렵|근거(?:가|로|에)"
 )
@@ -301,11 +358,22 @@ def _overlap(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
-def _follow(qs: list[str], ev: dict) -> list[str]:
-    """이어 물을 질문: 짧고 숫자 없는 것만 3개까지(숫자는 검사가 볼 근거가 없어요)."""
-    out = []
+ASK_USER = re.compile(r"(?:실래요|주실|주세요|알려\s{0,2}주|말씀해|인가요\?$|이신가요|하시나요)")
+
+
+def _follow(qs: list[str], kb: KB | None) -> list[str]:
+    """이어 물을 질문: 답할 수 있는 카드의 열쇠 질문으로만(누르면 그 카드가 답해요).
+    고객에게 되묻는 말 · 숫자 든 말 · 카드와 멀리 떨어진 말은 버려요."""
+    if kb is None:
+        return []
+    out: list[str] = []
     for q in qs[:3]:
         q = q.strip()
-        if 4 <= len(q) <= 30 and not re.search(r"\d", q) and q not in out:
-            out.append(q)
+        if not (4 <= len(q) <= 30) or re.search(r"\d", q) or ASK_USER.search(q):
+            continue
+        best = cards.find(kb.cards, q, k=1)
+        if best and best[0].score >= T_HIGH:
+            key = best[0].card.keys[0]
+            if key not in out:
+                out.append(key)
     return out

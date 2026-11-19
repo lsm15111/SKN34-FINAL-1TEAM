@@ -1,4 +1,5 @@
 """LLM 모드(답 작성기) 실제 호출 평가: 핵심 질문 32개 × (프로젝트 있음 · 없음). 유료 — 실행 전에 어림 비용을 찍어요.
+--mode free면 운영 무료 모드와 같게 돌려요(DB 색인 + 질문 임베딩, LLM 0회).
 
     cd backend && PYTHONPATH=".;tests;../evaluation;../evaluation/v3" LLM_LIVE=true \
       DATABASE_URL=...mitjip_v3 uv run python ../evaluation/v3/composer_eval.py --tag c1 [--model luna|terra]
@@ -40,6 +41,10 @@ async def main() -> None:
     ap.add_argument("--model", default="", choices=["", "luna", "terra"])
     ap.add_argument("--only", default="", help="쉼표로 질문 id만(예: C02,C11)")
     ap.add_argument("--contexts", default="project,none")
+    ap.add_argument(
+        "--mode", default="llm", choices=["llm", "free"],
+        help="free = 운영 무료 모드와 같게(DB 색인 + 질문 임베딩 의미 순위, LLM 0회)",
+    )  # fmt: skip
     a = ap.parse_args()
 
     import coverage_check as cc
@@ -97,7 +102,11 @@ async def main() -> None:
     model = llm.model_for("composer")[0]
     pin, pout, _ = PRICE.get(model, (1.0, 5.0, 0.05))
     est = n_turn * (2600 * pin + 600 * pout) / 1e6
-    print(f"턴 {n_turn}개 · 작성기 {model} · 어림 비용 ${est:.3f} (+ 질문 임베딩 ≈ $0.0001)")
+    if a.mode == "free":
+        est = 0.0
+    print(
+        f"턴 {n_turn}개 · {a.mode} · 작성기 {model} · 어림 비용 ${est:.3f} (+ 질문 임베딩 ≈ $0.0001)"
+    )
     out_dir = HERE / ".cache" / a.tag
     out_dir.mkdir(parents=True, exist_ok=True)
     rows = []
@@ -109,9 +118,12 @@ async def main() -> None:
                 t0 = time.perf_counter()
                 emb = await llm.embed_query(q["q"])
                 kb = KB(ix=ix, cards=cards.default(), dense=await knowledge.nearest(s, emb))
-                ctx = TurnContext(user_id=uuid.UUID(int=0), today=date(2026, 11, 19), mode="llm")
+                today = date(2026, 11, 19)
+                ctx = TurnContext(user_id=uuid.UUID(int=0), today=today, mode=a.mode)  # type: ignore[arg-type]
                 f = facts if c == "project" else None
-                r = await run_turn(q["q"], ctx, kb=kb, facts=f, general=general_facts(q["q"]))
+                r = await run_turn(
+                    q["q"], ctx, kb=kb, facts=f, general=general_facts(q["q"], today)
+                )
                 secs = round(time.perf_counter() - t0, 2)
                 pub = _public(r.answer)
                 cost = sum(usd(u) for u in usage)
@@ -126,7 +138,7 @@ async def main() -> None:
         for x in rows:
             fh.write(json.dumps(x, ensure_ascii=False) + "\n")
     tot = sum(x["usd"] for x in rows)
-    used = sum(1 for x in rows if "composer_v1" in x["prompts"])
+    used = sum(1 for x in rows if any(p.startswith("composer_") for p in x["prompts"]))
     calls = [u for x in rows for u in x["usage"]]
     tin = sum(u["input"] for u in calls)
     tcache = sum(u["cached"] for u in calls)

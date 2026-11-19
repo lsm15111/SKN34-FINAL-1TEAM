@@ -59,18 +59,21 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
                 CBlock(kind="body", items=body, rows=[]),
                 CBlock(kind="caution", items=[CItem(text="초배를 꼭 해요.", cites=[k])], rows=[]),
             ],
-            follow=["광폭 합지는 뭐예요?", "실크 3배 비싸요?"],
+            follow=["광폭 합지는 뭐예요?", "실크 3배 비싸요?", "몇 평인지 알려 주실래요?"],
         )
     )
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v1"] and a.brief is None
+    assert a.trace.prompts == ["composer_v2"] and a.brief is None
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
     assert "실크는 합지보다 37% 비싸요." not in texts
     assert any(s.table == [["관리", "실크가 쉬움"], ["값", "합지가 쌈"]] for s in a.sections)
     assert a.sections[0].sources, "인용한 조각의 출처가 붙어요"
-    assert a.suggest == ["광폭 합지는 뭐예요?"]  # 숫자 든 질문은 뺌
-    assert any("숫자" in d for d in a.trace.dropped)
+    # 이어 묻기는 답할 수 있는 카드의 열쇠 질문으로 바꾸고, 숫자 든 말 · 고객에게 되묻는 말은 빼요
+    assert a.suggest == ["광폭 합지와 소폭 합지는 뭐가 달라요?"]
+    assert any(
+        "숫자" in d or "인용" in d for d in a.trace.dropped
+    )  # 근거에 없는 숫자 · 맞지 않는 인용
 
 
 def test_unknown_verdict_keeps_free_answer(stub):
@@ -134,3 +137,16 @@ def test_composer_drops_repeats_and_data_talk():
     texts = [x.text for s in secs or [] for x in s.sentences]
     assert texts == ["짐이 많으면 옮기는 시간만큼 더 걸려요."]
     assert {"계산 되풀이", "정해 둔 글 되풀이", "자료 말"} <= set(dropped)
+
+
+def test_composer_drops_sentence_whose_cites_do_not_match(stub):
+    """인용을 달았는데 그 조각과 글이 전혀 안 맞으면(겹침 0.18 미만) 문장을 빼요(장식용 출처 막기)."""
+    _, refs = free_refs()
+    k = refs[0]
+    lead = CItem(text="실크는 코팅이 있어 관리가 쉽고, 합지는 값이 싸요.", cites=[k])
+    odd = CItem(text="주차장 차단기는 관리사무소에서 등록해요.", cites=[k])  # 조각과 상관없는 글
+    stub(Composed(verdict="answer", lead=lead, blocks=[CBlock(kind="body", items=[odd], rows=[])], follow=[]))  # fmt: skip
+    a = turn(Q).answer
+    texts = [x.text for s in a.sections for x in s.sentences]
+    assert lead.text in texts and odd.text not in texts
+    assert "인용 안 맞음" in a.trace.dropped

@@ -79,6 +79,10 @@ def _area_far(facts: ProjectFacts | None, x: SizeCalcFact | None) -> bool:
     return not same_basis or abs(x.area_m2 - facts.area_m2) / facts.area_m2 > 0.10
 
 
+# 계산 엔진 도배 일수는 바르기 · 마감(살면서면 짐 정리)만 세요. 기존 벽지 철거는 실측 후 줄이에요(calc.dobae)
+REMOVAL = "기존 벽지를 뜯는 시간은 들어 있지 않아요. 실측 뒤 업체가 정해요."
+
+
 # ---- 기간 ----
 def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None) -> Lines:
     """'며칠 걸려요'. 이 집 공정표 → 질문 평수 → 예시 평수 순으로 숫자를 준다(도배 · 목공만)."""
@@ -93,6 +97,8 @@ def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None)
             if b.trade == trade or (trade == "common" and b.trade in ("dobae", "mokgong")):
                 out.lines.append(f"{josa(b.ko, '은', '는')} {md(b.start)} ~ {md(b.end)}에 해요.")
                 out.numbers += [md(b.start), md(b.end)]
+        if plan.kind == "expected" and trade in ("dobae", "common"):
+            out.lines.append(REMOVAL)
         out.boxes.append(
             CalcBox(
                 label="예상 공정표",
@@ -168,7 +174,7 @@ def _period_size(trade: str, x: SizeCalcFact, lead: bool) -> Lines:
         f"{head} 도배는 빈집이면 약 {days(x.dobae_days)}, 살면서 하면 약 {days(x.dobae_days_occupied)}이에요."
     )
     out.lines.append(
-        "벽 + 천장 전체를 반나절 단위로 센 작업 일수예요. 실측 뒤 업체가 정확히 정해요."
+        "벽 + 천장 전체를 반나절 단위로 센 바르는 일수예요. 기존 벽지를 뜯는 시간은 들어 있지 않아서 실측 뒤 업체가 정해요."
     )
     out.boxes.append(
         CalcBox(
@@ -203,9 +209,13 @@ def _period_examples(trade: str, g: GeneralFacts) -> Lines:
                 out.numbers += [md(d0), md(d1)]
         out.numbers.append(md(g.start))
         if not mk:
-            out.lines.append("살면서 하면 짐을 옮기며 해서 더 걸려요.")
+            out.lines.append(
+                "살면서 하면 짐을 옮기며 해서 더 걸리고, 기존 벽지를 뜯는 시간은 들어 있지 않아요."
+            )
     else:
         out.lines.append(f"믿집 계산으로 빈집 {ko}는 평수에 따라 약 {span_days(vals)}이에요.")
+        if not mk:
+            out.lines.append(REMOVAL)  # 계산 엔진 일수는 바르기 · 마감만(철거는 실측 후 줄)
         for x, v in zip(g.examples, vals, strict=True):
             cell = (
                 f"약 {days(v)}"
