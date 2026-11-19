@@ -220,3 +220,20 @@ def test_llm_mode_sends_free_draft_first_then_done(api, monkeypatch):
 def test_free_mode_sends_no_draft(api):
     use(api, signup(api))
     assert "draft" not in [e for e, _ in events(ask(api).text)]
+
+
+def test_llm_daily_cap_falls_back_to_free_mode(api, monkeypatch):
+    """LLM 모드 하루 상한을 넘으면 막지 않고 무료 모드로 답해요(비용 상한)."""
+    from app.agent import llm
+    from app.agent.v3.llm_mode import LlmSection
+    from app.chat import service
+
+    monkeypatch.setattr(service, "mode", lambda: "llm")
+    monkeypatch.setattr(service, "AI_LLM_PER_DAY", 1)
+    monkeypatch.setattr(llm, "_stubs", {})
+    llm.set_stub("trade", LlmSection(sentences=[]))
+    use(api, signup(api))
+    assert done(ask(api))["mode"] == "llm"
+    second = ask(api)
+    assert done(second)["mode"] == "free"
+    assert "draft" not in [e for e, _ in events(second.text)]

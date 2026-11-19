@@ -86,6 +86,25 @@ async def save_turn(
 AI_PER_HOUR = 60  # 사용자별 시간당 질문 수(APP_ENV=local이면 세지 않음, v2와 같음)
 FAQ_PER_MIN = 60  # 로그인 전 자주 묻는 질문: IP 해시별 분당
 TOO_MANY = "AI에게 너무 많이 물었어요. 잠시 뒤에 다시 해 주세요."
+# LLM 모드 하루 상한(사용자별 턴 수, 서울 날짜). 넘으면 막지 않고 무료 모드(카드 · 근거 문장)로 답해요.
+# 한 턴 = 다시 쓰기 1~3회 + 질문 임베딩 1회(gpt-compare: 약 $0.005~0.01) → 하루 상한 약 $1 이하/사용자(추정)
+AI_LLM_PER_DAY = 100
+
+
+async def llm_budget_ok(user_id, today: date) -> bool:
+    """이 턴을 LLM 모드로 해도 되는지 한 번 센다. Redis가 안 되면 통과(무료 상한은 시간당 한도가 지켜요)."""
+    from app.shared import ratelimit
+    from app.shared.errors import AppError
+
+    try:
+        await ratelimit.hit(
+            ratelimit.key("ai-llm-day", str(user_id), today.isoformat()), AI_LLM_PER_DAY, 86400, ""
+        )
+    except AppError:
+        return False
+    return True
+
+
 WAIT_TTL = 1800  # 되물은 칸은 30분 뒤 비운다(agents.md 5절)
 REPLAY_TTL = 600  # 같은 client_key는 10분 동안 처음 답을 그대로 돌려준다
 THREAD_MESSAGES = 30
@@ -202,8 +221,11 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut
         return AiTurnOut.model_validate(old)
     rev, waiting_label = 1, None
     facts = None
+    turn_mode = mode()
+    if turn_mode == "llm" and not await llm_budget_ok(user.id, today):
+        turn_mode = "free"  # 오늘 LLM 상한을 넘으면 무료 모드로 답해요(비용 상한)
     # 의미 검색 벡터는 DB 세션을 열기 전에 만든다(LLM 모드만, 실패하면 None → 키워드로만)
-    emb = await embed_query(check.mask(body.text)[:300]) if settings.llm_live else None
+    emb = await embed_query(check.mask(body.text)[:300]) if turn_mode == "llm" else None
     async with SessionLocal() as s:  # 짧게 열고 닫는다. 답을 만드는 동안 세션을 쥐지 않는다
         if body.chat_id is not None:
             chat = await get_for(s, user.id, body.chat_id)
@@ -226,7 +248,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut
         chat_id=body.chat_id,
         project_id=body.context.project_id,
         view=body.context.screen,
-        mode=mode(),  # type: ignore[arg-type]
+        mode=turn_mode,  # type: ignore[arg-type]
         today=today,
     )
 
