@@ -1,7 +1,10 @@
 """담당들이 같이 쓰는 무료 모드 답 단계 (agents.md 10.2~10.4): 검증된 카드 → 조각 문장 뽑기 → 정직한 모름.
 
-- 받아들이기: 카드 점수 ≥ T_CARD 이고 카드 근거 조각이 같은 질문의 검색 위 5개에 있음(맞물림), 또는 점수 ≥ T_HIGH.
+- 받아들이기: 카드 점수 ≥ T_CARD 이고 카드 근거 조각이 같은 질문의 검색 위 8개에 있음(맞물림), 또는 점수 ≥ T_HIGH.
   기준값은 E3 dev에서 골랐다(evaluation/v3/e3_answers.py, docs/v3/verification/b5.md).
+- 의미 검색 순위(KB.dense)가 있고 위 규칙으로 못 받았으면: 근거 조각이 의미 순위 위 D_LOCK개에 있는 카드를
+  맞물림으로 보고 덤 BD를 더해 한 번 더 본다. 이미 받을 카드가 있으면 순서를 바꾸지 않는다.
+  값은 dev로만 골랐다(docs/v3/verification/dense-cards.md).
 - 숫자 검사 허용 글: 카드 글 + 인용 조각 원문(카드는 오프라인 검사를 통과한 글), 조각 문장은 그 조각 원문.
 - 카드 · 조각 · 계산 결과 밖의 말은 하지 않는다. 못 찾으면 '확인하지 못했어요' + 확인할 곳 + 다음 할 일.
 """
@@ -28,6 +31,8 @@ from app.knowledge import bm25, cards, extract, search3
 T_CARD = 0.55  # 맞물림이 있을 때 받는 점수(열쇠 점수 + 덤). E3 dev 격자에서 고름(b5.md 표)
 T_HIGH = 0.62  # 맞물림이 없어도 받는 열쇠 점수
 B3, B8 = 0.10, 0.05  # 카드 근거 조각이 검색 위 3개 · 위 8개에 있을 때 덤(E3 dev로 고름)
+# 근거 조각이 의미 검색 위 D_LOCK개에 있으면 의미 맞물림 + 덤 BD(dense-cards.md, dev로 고름)
+D_LOCK, BD = 3, 0.15
 NEAR = 0.05  # 1등과 이만큼 가까운 카드는 '이것도 궁금하세요?'로
 # 정해 둔 글로 답하는 정책 질문은 조각 문장을 붙이지 않는다(추천 · 금액 · 법률은 원문 한 줄이 오해를 부름)
 NO_EXTRACT = frozenset({"price", "vendor_reco", "brand_reco", "legal_case"})
@@ -42,7 +47,7 @@ class KB:
     tags: Mapping[str, str] = field(default_factory=lambda: TAG_TO_CODE)
     dense: tuple[
         str, ...
-    ] = ()  # 이 턴 질문의 의미 검색 순위(rid). LLM 모드에서 chat.service가 채워요
+    ] = ()  # 이 턴 질문의 의미 검색 순위(rid). chat.service가 임베딩을 만들 수 있을 때 채워요
 
 
 @dataclass
@@ -94,21 +99,36 @@ class Part:
 
 
 def accept(
-    matches: list[cards.Match], top: list[str]
+    matches: list[cards.Match], top: list[str], near: list[str] | None = None
 ) -> tuple[cards.Match | None, list[cards.Match]]:
     """(받아들인 카드, 점수 순 후보). 점수 = 열쇠 점수 + 검색 맞물림 덤(인용 조각이 위 3개 B3 · 위 8개 B8).
-    맞물림이 없으면 열쇠 점수 ≥ T_HIGH일 때만 받는다."""
-    ranked: list[tuple[float, cards.Match]] = []
-    for m in matches:
-        cites = set(m.card.cites())
-        bonus = B3 if cites & set(top[:3]) else (B8 if cites & set(top) else 0.0)
-        ranked.append((m.score + bonus if bonus else m.score, m))
-    ranked.sort(key=lambda p: -p[0])
-    for s, m in ranked:
-        locked = bool(set(m.card.cites()) & set(top))
-        if (locked and s >= T_CARD) or m.score >= T_HIGH:
-            return m, [x for _, x in ranked]
-        break
+    맞물림이 없으면 열쇠 점수 ≥ T_HIGH일 때만 받는다.
+
+    near: 의미 검색 순위(조각 ref, 가까운 순). 위 규칙으로 못 받았을 때만 쓴다: 인용 조각이 near 위 D_LOCK개에
+    있는 카드에 덤 BD를 더해 다시 줄 세우고, 1등이 그 카드이고 점수 ≥ T_CARD면 받는다."""
+
+    def rank(dlock: set[str]) -> list[tuple[float, cards.Match]]:
+        out = []
+        for m in matches:
+            cites = set(m.card.cites())
+            bonus = B3 if cites & set(top[:3]) else (B8 if cites & set(top) else 0.0)
+            if cites & dlock:
+                bonus = max(bonus, BD)
+            out.append((m.score + bonus if bonus else m.score, m))
+        return sorted(out, key=lambda p: -p[0])
+
+    ranked = rank(set())
+    if not ranked:
+        return None, []
+    s, m = ranked[0]
+    if (set(m.card.cites()) & set(top) and s >= T_CARD) or m.score >= T_HIGH:
+        return m, [x for _, x in ranked]
+    dlock = set((near or ())[:D_LOCK])
+    if dlock:
+        again = rank(dlock)
+        s, m = again[0]
+        if set(m.card.cites()) & dlock and s >= T_CARD:
+            return m, [x for _, x in again]
     return None, [x for _, x in ranked]
 
 
@@ -161,18 +181,20 @@ def knowledge(
     """
     hits = search(kb, q, trade)
     top = [h.ref for h in hits.hits[:8]]
+    by_rid = kb.ix.by_rid
+    near = [by_rid[r].chunk.ref for r in kb.dense if r in by_rid] if kb.dense else None
     want = [trade, *(t for t in also if t != trade)] if trade and trade != "common" else None
     matches = cards.find(kb.cards, q, trades=want, intents=intents, k=4)
     # 검색 맞물림 후보: 위 조각을 인용한 카드(열쇠 말이 달라도 근거가 같은 카드)
     seen = {m.card.id for m in matches}
     allow = set(want or ()) | {"common"} if want else None
     extra = [
-        i for r in top for i in kb.cards.by_cite.get(r, [])
+        i for r in [*top, *(near or ())[:D_LOCK]] for i in kb.cards.by_cite.get(r, [])
         if kb.cards.cards[i].id not in seen and (allow is None or kb.cards.cards[i].trade in allow)
         and (intents is None or kb.cards.cards[i].intent in intents)
     ]  # fmt: skip
     matches += cards.score(kb.cards, q, list(dict.fromkeys(extra)))
-    best, matches = accept(matches, top)
+    best, matches = accept(matches, top, near)
     if best is not None:
         c = best.card
         part.used_cards.append(c.tag)

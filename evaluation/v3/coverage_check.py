@@ -1,14 +1,17 @@
 """질문 세트 커버리지 점검: 모든 질문을 입구 관문(gate.gate)과 무료 모드 한 턴(run_turn, LLM_LIVE=false)에 넣어 센다.
 
-    cd backend && LLM_LIVE=false OPENAI_API_KEY= uv run python ../evaluation/v3/coverage_check.py
+    cd backend && LLM_LIVE=false OPENAI_API_KEY= uv run python ../evaluation/v3/coverage_check.py [--dense]
 
 - 지식: 저장소 CSV + v3 지식 요지로 만든 색인(tests/v3_kb.repo_kb, DB 없음)과 카드 파일
 - 유료 호출 0회: settings.llm_live가 켜져 있으면 멈추고, llm.structured · jev_choice · embed는 부르면 오류
 - 세는 것: 담당 분포 · 되묻기 · 범위 밖 · 예외 · 출력 검사에서 빠진 문장 · 답 출처(카드 · 조각 · 정해 둔 글 · 모름)
   · 정답 라벨이 있으면 정확도 · 틀린 예시
+- --dense: 질문마다 의미 검색 순위(KB.dense)를 넣는다. 순위는 dense_prep.py가 만든 .cache/q_dense.json(유료 호출 없음)
 """
 
+import argparse
 import asyncio
+import dataclasses
 import json
 import sys
 import traceback
@@ -135,7 +138,17 @@ def answer_kind(ans) -> str:
     return "empty"
 
 
-async def one(q: dict, kb) -> dict:
+def with_dense(kb, text: str, ranks: dict | None):
+    """질문 하나의 KB: 서비스처럼 이 턴 질문의 의미 검색 순위를 채운다(ranks가 없으면 키워드만)."""
+    if not ranks:
+        return kb
+    from app.agent.v3 import check
+
+    return dataclasses.replace(kb, dense=ranks.get(check.mask(text)[:300], ()))
+
+
+async def one(q: dict, kb, ranks: dict | None = None) -> dict:
+    kb = with_dense(kb, q["text"], ranks)
     r = {k: q.get(k) for k in ("set", "id", "text", "gold_route", "gold_trade", "cat", "expect")}
     facts = FACTS if q["has_project"] else None
     try:
@@ -225,6 +238,9 @@ def summarize(rows: list[dict]) -> dict:
 
 
 async def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--dense", action="store_true")
+    a = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
     if settings.llm_live:
@@ -235,17 +251,23 @@ async def main() -> None:
     from v3_kb import repo_kb
 
     kb = repo_kb()
+    ranks = None
+    if a.dense:
+        from dense_prep import load
+
+        ranks = load()
     qs = load_sets()
     rows = []
     for q in qs:
-        r = await one(q, kb)
+        r = await one(q, kb, ranks)
         if "gold_ask" in q:
             r["gold_ask"] = q["gold_ask"]
         if "ok_routes" in q:
             r["ok_routes"] = q["ok_routes"]
         rows.append(r)
     sets = list(dict.fromkeys(r["set"] for r in rows))
-    report = {"kb": {"chunks": kb.ix.n, "cards": len(kb.cards.cards), "card_set": kb.cards.version}}
+    report = {"kb": {"chunks": kb.ix.n, "cards": len(kb.cards.cards), "card_set": kb.cards.version,
+                     "dense": a.dense}}  # fmt: skip
     report["sets"] = {s: summarize([r for r in rows if r["set"] == s]) for s in sets}
     report["all"] = summarize(rows)
     cov = [r for r in rows if r["set"] == "coverage"]

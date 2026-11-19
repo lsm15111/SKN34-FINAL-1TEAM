@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     # 수동 임베딩 CLI와 에이전트 LLM(agent/llm.py)이 쓴다. 키는 repr·오류에 표시하지 않는다.
     openai_api_key: SecretStr = SecretStr("")
     openai_embedding_model: str = "text-embedding-3-small"
+    # true면 v3 AI 무료 모드도 질문 임베딩(의미 검색)으로 카드 · 조각을 다시 확인한다. 키가 없으면 키워드만
+    ai_embed_free: bool = True
     # 상태를 바꾸는 요청(POST 등)에서 허용할 브라우저 Origin, 쉼표로 구분
     allowed_origins: str = "http://localhost:3000,http://localhost:3100"
     # 로그인 세션 유지 기간(일)

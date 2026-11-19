@@ -224,8 +224,12 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut
     turn_mode = mode()
     if turn_mode == "llm" and not await llm_budget_ok(user.id, today):
         turn_mode = "free"  # 오늘 LLM 상한을 넘으면 무료 모드로 답해요(비용 상한)
-    # 의미 검색 벡터는 DB 세션을 열기 전에 만든다(LLM 모드만, 실패하면 None → 키워드로만)
-    emb = await embed_query(check.mask(body.text)[:300]) if turn_mode == "llm" else None
+    # 의미 검색 벡터는 DB 세션을 열기 전에 만든다. 무료 모드도 키가 있고 ai_embed_free면 만든다
+    # (임베딩만, 하루 LLM 상한과 별개). 실패하거나 LLM_LIVE=false(스텁)면 None → 키워드로만
+    use_emb = turn_mode == "llm" or (
+        settings.ai_embed_free and bool(settings.openai_api_key.get_secret_value())
+    )
+    emb = await embed_query(check.mask(body.text)[:300]) if use_emb else None
     async with SessionLocal() as s:  # 짧게 열고 닫는다. 답을 만드는 동안 세션을 쥐지 않는다
         if body.chat_id is not None:
             chat = await get_for(s, user.id, body.chat_id)

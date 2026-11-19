@@ -1,6 +1,6 @@
 """'모름'으로 끝나는 답의 원인 나누기 + 전후 비교 숫자 (무료 모드, 유료 호출 0회).
 
-    cd backend && LLM_LIVE=false OPENAI_API_KEY= uv run python ../evaluation/v3/unknown_check.py [--split dev|heldout|all] [--tag 이름]
+    cd backend && LLM_LIVE=false OPENAI_API_KEY= uv run python ../evaluation/v3/unknown_check.py [--split dev|heldout|all] [--tag 이름] [--dense]
 
 - 질문 세트 · 한 턴은 coverage_check와 같다(load_sets · one). 질문마다 dev · held-out(split 칸)을 붙인다.
 - answer.knowledge를 감싸서 부를 때마다 카드 점수 · 맞물림 · 검색 덮음(enough) · 조각 문장 점수 · 출력 검사를 남긴다.
@@ -10,6 +10,7 @@
   · display_none(위 조각이 모두 보이지 않는 출처) · no_material(카드 · 조각 모두 멀다: 맞는 자료 없음 추정)
 - gold: rag 세트(gold 조각 있음)에서 답에 쓴 조각이 gold에 드는 비율.
 - 기본은 dev만 보인다. held-out은 마지막에 한 번만(--split heldout).
+- --dense: 질문마다 의미 검색 순위를 넣는다(coverage_check --dense와 같음, dense_prep.py가 만든 캐시).
 """
 
 import argparse
@@ -93,6 +94,14 @@ def wrap(orig):
         said = [x.text for sec in part.sections[sec0:] for x in sec.sentences][:4]
         rec = {"q": q, "trade": kw.get("trade"), "route": kw.get("route"), "how": how, "used": used,
                "said": said, "card_id": part.used_cards[-1] if how == "card" else ""}  # fmt: skip
+        if how == "card":  # 받은 카드의 맞물림 · 의미 검색 순위(규칙 고르기용)
+            cites = set(part.used_chunks[used0:])  # 받은 카드의 근거 조각
+            top = [h.ref for h in answer.search(kb, q, kw.get("trade")).hits[:8]]
+            ref_of = {x.chunk.ref: rid for rid, x in kb.ix.by_rid.items()}
+            ranks = [i for i, rid in enumerate(kb.dense) if rid in {ref_of.get(c) for c in cites}]
+            rec |= {"card_score": part.scores.get(rec["card_id"]), "locked": bool(cites & set(top)),
+                    "top_pos": min((top.index(c) for c in cites if c in top), default=None),
+                    "dense_pos": ranks[0] if ranks else None, "has_dense": bool(kb.dense)}  # fmt: skip
         if how == "unknown":
             d = diagnose(kb, q, kw.get("trade"), kw.get("intents"), kw.get("policy") or (),
                          kw.get("allow_extract", True))  # fmt: skip
@@ -166,6 +175,7 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--split", default="dev", choices=["dev", "heldout", "all"])
     ap.add_argument("--tag", default="now")
+    ap.add_argument("--dense", action="store_true")
     a = ap.parse_args()
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8")
@@ -180,11 +190,16 @@ async def main() -> None:
     from v3_kb import repo_kb
 
     kb = repo_kb()
+    ranks = None
+    if a.dense:
+        from dense_prep import load
+
+        ranks = load()
     sp, gd = splits(), golds()
     rows = []
     for q in cc.load_sets():
         CALLS.clear()
-        r = await cc.one(q, kb)
+        r = await cc.one(q, kb, ranks)
         if "ok_routes" in q:
             r["ok_routes"] = q["ok_routes"]
         sid = q["id"]
