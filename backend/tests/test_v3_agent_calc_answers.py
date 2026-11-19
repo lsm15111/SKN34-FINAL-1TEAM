@@ -196,3 +196,13 @@ def test_vendor_pick_accepts_decimal_rating():
     c = vendor_pick.Candidate("a", "가업체", True, 2_000_000, -6, Decimal("4.8"), 12, 30)  # type: ignore[arg-type]
     (p,) = vendor_pick.pick([c], n=1)
     assert p.rating_shrunk == 4.56 and 0 < p.score <= 1.05  # (4.8 × 12 + 4.0 × 5) ÷ 17
+
+
+def test_card_synonyms_find_bathroom_cards():
+    """'화장실'로 물어도 '욕실' 열쇠 카드를 찾아요(카드 찾기 전용 같은 뜻 말, 좁게)."""
+    from app.knowledge import cards
+
+    cs = cards.default()
+    a = cards.find(cs, "화장실 리모델링은 덧방이 나아요, 전체 철거가 나아요?", trades=["bath"], k=1)
+    b = cards.find(cs, "욕실 리모델링은 덧방이 나아요, 전체 철거가 나아요?", trades=["bath"], k=1)
+    assert a and b and a[0].card.id == b[0].card.id and a[0].score >= b[0].score - 0.01

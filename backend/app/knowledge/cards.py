@@ -166,6 +166,24 @@ def _tf(text: str) -> Counter[str]:
     return Counter(g for g in bm25.grams(text) if g not in STOP)
 
 
+# 카드 찾기에만 쓰는 같은 뜻 말(좁게). 질문에 앞말이 있으면 뒷말로 바꾼 질문으로도 재서 더 높은 점수를 써요
+CARD_SYN = (
+    ("화장실", "욕실"),
+    ("욕실", "화장실"),
+    ("굽도리", "걸레받이"),
+    ("관리실", "관리사무소"),
+    ("섀시", "샷시"),
+)
+
+
+def _variants(q: str) -> list[str]:
+    out = [q]
+    for a, b in CARD_SYN:
+        if a in q and b not in q:
+            out.append(q.replace(a, b))
+    return out
+
+
 def _vec(tf: Counter[str], idf: dict[str, float]) -> tuple[dict[str, float], float]:
     v = {g: (1 + math.log(c)) * idf.get(g, 0.0) for g, c in tf.items() if g in idf}
     return v, math.sqrt(sum(x * x for x in v.values())) or 1.0
@@ -220,8 +238,8 @@ def find(
     k: int = 3,
 ) -> list[Match]:
     """질문과 가장 가까운 카드(카드마다 가장 가까운 열쇠 하나). trades를 주면 그 공종 + 공통 카드만."""
-    qv, qn = _vec(_tf(q), cs.idf)
-    if not qv:
+    qvs = [x for x in (_vec(_tf(t), cs.idf) for t in _variants(q)) if x[0]]
+    if not qvs:
         return []
     allow = set(trades or ()) | {"common"} if trades else None
     best: dict[int, tuple[float, int]] = {}
@@ -234,8 +252,7 @@ def find(
             continue
         if intents is not None and c.intent not in intents:
             continue
-        dot = sum(w * v.get(g, 0.0) for g, w in qv.items())
-        s = dot / (qn * n)
+        s = max(sum(w * v.get(g, 0.0) for g, w in qv.items()) / (qn * n) for qv, qn in qvs)
         if s > best.get(i, (-1.0, 0))[0]:
             best[i] = (s, j)
     ranked = sorted(best.items(), key=lambda p: -p[1][0])[:k]
@@ -244,16 +261,16 @@ def find(
 
 def score(cs: CardSet, q: str, idxs: list[int]) -> list[Match]:
     """정한 카드들만 질문과의 열쇠 점수를 잰다(검색 맞물림 후보용)."""
-    qv, qn = _vec(_tf(q), cs.idf)
+    qvs = [x for x in (_vec(_tf(t), cs.idf) for t in _variants(q)) if x[0]]
     want = set(idxs)
     best: dict[int, tuple[float, int]] = {}
     pos: dict[int, int] = {}
     for i, v, n in cs.vecs:
         j = pos.get(i, -1) + 1
         pos[i] = j
-        if i not in want or not qv:
+        if i not in want or not qvs:
             continue
-        s = sum(w * v.get(g, 0.0) for g, w in qv.items()) / (qn * n)
+        s = max(sum(w * v.get(g, 0.0) for g, w in qv.items()) / (qn * n) for qv, qn in qvs)
         if s > best.get(i, (-1.0, 0))[0]:
             best[i] = (s, j)
     return [Match(cs.cards[i], round(s, 4), cs.cards[i].keys[j]) for i, (s, j) in best.items()]
