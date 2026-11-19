@@ -216,7 +216,10 @@ def run(task: Task, kb: KB) -> tuple[Part, list[str], int]:
                     and all(x.text.endswith(tail) or x.text == templates.PART_FAILED for x in sec.sentences))
         ]  # fmt: skip
         out.sections.insert(
-            0, templates.section(pair.lines, title="[기간]", route="multi", source="calc")
+            0,
+            templates.section(
+                pair.lines, title="[기간]", route="multi", source="calc", table=pair.table
+            ),
         )
         out.calc = [*pair.boxes, *out.calc]
         out.cards = [*pair.cards, *out.cards]

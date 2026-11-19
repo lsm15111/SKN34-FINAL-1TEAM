@@ -29,10 +29,13 @@ def md(d: date) -> str:
     return f"{d.month}.{d.day}({WEEK[d.weekday()]})"
 
 
-def section(lines: list[str], *, title: str = "", route="guide", trade=None, source="template"):
+def section(
+    lines: list[str], *, title: str = "", route="guide", trade=None, source="template", table=None
+):
     return Section(
-        title=title, sentences=[s(x) for x in lines], source=source, route=route, trade=trade
-    )
+        title=title, sentences=[s(x) for x in lines], source=source, route=route, trade=trade,
+        table=[list(r) for r in table or []],
+    )  # fmt: skip
 
 
 # ---- 범위 밖 ----

@@ -161,7 +161,8 @@ export function AiAnswer({ answer, projectId, onPick }: { answer: Answer; projec
                 ))}
               </ol>
             ) : (
-              sec.sentences.map((t, j) => <Line key={j} text={t} nums={sec.cites?.[j]} refs={refs} lead={isLead()} />)
+              // 표가 있으면 첫 문장(결론) → 표 → 나머지 문장 순서로 그려요
+              sec.sentences.slice(0, sec.table?.length ? 1 : undefined).map((t, j) => <Line key={j} text={t} nums={sec.cites?.[j]} refs={refs} lead={isLead()} />)
             )}
             {sec.table?.length ? (
               <div className={s.tableWrap}>
@@ -174,6 +175,9 @@ export function AiAnswer({ answer, projectId, onPick }: { answer: Answer; projec
                 </table>
               </div>
             ) : null}
+            {!sec.steps && sec.table?.length
+              ? sec.sentences.slice(1).map((t, j) => <Line key={j + 1} text={t} nums={sec.cites?.[j + 1]} refs={refs} lead={isLead()} />)
+              : null}
             {sec.caution ? <p className={s.caution}>주의: {sec.caution}</p> : null}
             {sec.tip ? <p className={s.tip}>팁: {sec.tip}</p> : null}
             {!refs.length && sec.sources.length ? (

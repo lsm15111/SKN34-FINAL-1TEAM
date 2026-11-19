@@ -47,7 +47,8 @@ def score(c: Candidate) -> tuple[float, float | None]:
     """(점수, 리뷰 수로 당긴 별점). 가견적이 없으면 고르지 않으므로 부르는 쪽이 거른다."""
     shrunk = None
     if c.rating is not None and c.review_count > 0:
-        shrunk = (c.rating * c.review_count + PRIOR * PRIOR_N) / (c.review_count + PRIOR_N)
+        r = float(c.rating)  # Decimal이 와도 같은 계산(Decimal + float은 오류)
+        shrunk = (r * c.review_count + PRIOR * PRIOR_N) / (c.review_count + PRIOR_N)
     s_rating = (shrunk if shrunk is not None else PRIOR) / 5
     s_done = _clamp(c.done_count / DONE_FULL)
     pct = c.vs_standard_pct if c.vs_standard_pct is not None else 0

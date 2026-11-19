@@ -129,7 +129,7 @@ async def _vendor_picks(
             local=local,
             estimate_total=c.estimate_total,
             vs_standard_pct=None if c.vs_standard_pct is None else int(c.vs_standard_pct),
-            rating=c.rating,
+            rating=None if c.rating is None else float(c.rating),  # 화면 값은 Decimal이라 float으로
             review_count=c.review_count or 0,
             done_count=c.done_count or 0,
             instant=bool(c.instant_badge),

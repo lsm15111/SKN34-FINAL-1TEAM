@@ -50,7 +50,12 @@ def run(task: Task, kb: KB) -> Part:
     if nums.lines:
         part.add(
             templates.section(
-                nums.lines, title=f"[{ko}]", route="trade", trade=code, source="calc"
+                nums.lines,
+                title=f"[{ko}]",
+                route="trade",
+                trade=code,
+                source="calc",
+                table=nums.table,
             ),
             f"{nums.calc_text}\n{templates.ALLOWED}",
             calc_text=nums.calc_text,

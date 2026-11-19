@@ -167,6 +167,8 @@ async def run_turn(
             ans.brief = None  # 작성기 답은 블록 한 벌이 이미 짧아서 통째로 보여요
         if ans.sections and ans.sections[0].title == "[시작 순서]":
             ans.brief = None  # 단계 목록은 잘라 보이면 순서가 끊겨서 통째로 보여요
+        if any(s.table for s in ans.sections):
+            ans.brief = None  # 표는 짧은 답에 들어가지 않아서, 표가 있는 답은 통째로 보여요
         if photo and ans.brief and ans.sections and ans.sections[0].sentences[:1]:
             first = ans.sections[0].sentences[0]
             if first.text == PHOTO_LINE and first not in ans.brief.lines:

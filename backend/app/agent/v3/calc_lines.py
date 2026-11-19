@@ -26,6 +26,7 @@ class Lines:
     boxes: list[CalcBox] = field(default_factory=list)
     cards: list[UiCard] = field(default_factory=list)
     numbers: list[str] = field(default_factory=list)  # 검사에 넘길 숫자 글(계산 엔진 값)
+    table: list[list[str]] = field(default_factory=list)  # 평수별 값 같은 2열 표(첫 표만 써요)
 
     @property
     def calc_text(self) -> str:
@@ -36,6 +37,8 @@ class Lines:
         self.boxes += other.boxes
         self.cards += other.cards
         self.numbers += other.numbers
+        if other.table and not self.table:
+            self.table = other.table
 
 
 def man(won: int) -> str:
@@ -46,6 +49,18 @@ def man(won: int) -> str:
 def days(v: float) -> str:
     """반나절 단위 일수 글: 2.0 → '2일', 2.5 → '2.5일'"""
     return f"{int(v)}일" if float(v).is_integer() else f"{v:g}일"
+
+
+def span_days(vals: list[float]) -> str:
+    """여러 평수 일수의 범위 글: [2, 2.5, 3] → '2~3일', 모두 같으면 '2일'"""
+    lo, hi = min(vals), max(vals)
+    return days(lo) if lo == hi else f"{days(lo)[:-1]}~{days(hi)}"
+
+
+def span_man(vals: list[int]) -> str:
+    """여러 평수 금액의 범위 글(만 원 반올림): '224만~373만 원'"""
+    lo, hi = man(min(vals)), man(max(vals))
+    return lo if lo == hi else f"{lo[:-2]}~{hi}"
 
 
 def _size_numbers(x: SizeCalcFact) -> list[str]:
@@ -92,10 +107,10 @@ def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None)
     if g is not None and (plan is None or _area_far(facts, asked)):
         if asked is not None:
             out.add(_period_size(trade, asked, lead=plan is None))
+            if g.start is not None:
+                out.add(_period_dates(trade, g))
         elif plan is None:
-            out.add(_period_examples(trade, g))
-        if g.start is not None:
-            out.add(_period_dates(trade, g))
+            out.add(_period_examples(trade, g))  # 시작 날짜가 있으면 표에 끝나는 날까지
     if plan is None and asked is None:
         out.lines.append(
             "평수를 알려 주시면 그 집으로 다시 계산해 드려요."
@@ -168,26 +183,43 @@ def _period_size(trade: str, x: SizeCalcFact, lead: bool) -> Lines:
 
 
 def _period_examples(trade: str, g: GeneralFacts) -> Lines:
+    """평수를 모를 때: 결론 한 줄(범위) + 평수별 2열 표. 시작 날짜가 있으면 표에 끝나는 날을 넣어요."""
     out = Lines()
     for x in g.examples:
         out.numbers += _size_numbers(x)
-    if trade == "mokgong":
-        parts = [f"{x.label} 약 {days(x.mokgong_days or 0)}" for x in g.examples]
+    mk = trade == "mokgong"
+    ko = "몰딩 · 걸레받이 목공" if mk else "도배(벽 + 천장)"
+    vals = [(x.mokgong_days or 0) if mk else x.dobae_days for x in g.examples]
+    if g.start is not None:
+        key = "mokgong_dates" if mk else "dobae_dates"
+        rows = [x for x in g.examples if getattr(x, key)]
         out.lines.append(
-            f"믿집 계산으로 몰딩 · 걸레받이 목공은 {', '.join(parts)}이에요(빈집 기준)."
+            f"{md(g.start)}에 시작하면 빈집 {ko}는 평수에 따라 이렇게 끝나요(주말 · 공휴일 빼고)."
         )
+        for x, v in zip(g.examples, vals, strict=True):
+            if x in rows:
+                d0, d1 = getattr(x, key)
+                out.table.append([x.label, f"{md(d0)} ~ {md(d1)} · 약 {days(v)}"])
+                out.numbers += [md(d0), md(d1)]
+        out.numbers.append(md(g.start))
+        if not mk:
+            out.lines.append("살면서 하면 짐을 옮기며 해서 더 걸려요.")
     else:
-        parts = [f"{x.label} 약 {days(x.dobae_days)}" for x in g.examples]
-        out.lines.append(f"믿집 계산으로 도배(벽 + 천장 · 빈집)는 {', '.join(parts)}이에요.")
-        occ = [f"{x.label} 약 {days(x.dobae_days_occupied)}" for x in g.examples]
-        out.lines.append(f"살면서 하면 짐을 옮기며 해서 {', '.join(occ)}이에요.")
-    for x in g.examples:
-        q = x.mokgong_days if trade == "mokgong" else x.dobae_days
+        out.lines.append(f"믿집 계산으로 빈집 {ko}는 평수에 따라 약 {span_days(vals)}이에요.")
+        for x, v in zip(g.examples, vals, strict=True):
+            cell = (
+                f"약 {days(v)}"
+                if mk
+                else f"빈집 약 {days(v)} · 살면서 약 {days(x.dobae_days_occupied)}"
+            )
+            out.table.append([x.label, cell])
+        out.numbers.append(span_days(vals))
+    for x, v in zip(g.examples, vals, strict=True):
         out.boxes.append(
             CalcBox(
-                label=f"{x.label} {'목공' if trade == 'mokgong' else '도배'} 기간",
+                label=f"{x.label} {'목공' if mk else '도배'} 기간",
                 ref=f"general.examples.{x.label}",
-                qty=q,
+                qty=v,
                 unit="일",
                 note="빈집 기준",
             )
@@ -260,7 +292,7 @@ def price(
         if asked is not None:
             out.add(_price_size(trade, asked, lead=st is None))
         elif st is None:
-            out.add(_price_examples(trade, g, both=grade_q))
+            out.add(_price_examples(trade, g))
     if st is None:
         out.cards.append(
             UiCard(kind="next_step", choices=[Choice(text="내 집으로 계산하기", action="start")])
@@ -321,23 +353,28 @@ def _grade_question(text: str) -> bool:
     return any(w in (text or "") for w in GRADE_WORDS)
 
 
-def _price_examples(trade: str, g: GeneralFacts, both: bool = False) -> Lines:
+def _price_examples(trade: str, g: GeneralFacts) -> Lines:
+    """평수를 모를 때: 결론 한 줄(범위) + 평수별 2열 표(도배는 실크 · 합지 둘 다)."""
     out = Lines()
     for x in g.examples:
         out.numbers += _size_numbers(x)
     if trade == "mokgong":
-        parts = [f"{x.label} 약 {man(x.mokgong_total or 0)}" for x in g.examples]
+        vals = [x.mokgong_total or 0 for x in g.examples]
         out.lines.append(
-            f"믿집 계산으로 몰딩 · 걸레받이 목공은 {', '.join(parts)}이에요(부가세 포함)."
+            f"믿집 계산으로 몰딩 · 걸레받이 목공은 평수에 따라 약 {span_man(vals)}이에요(부가세 포함)."
         )
+        out.table = [[x.label, f"약 {man(v)}"] for x, v in zip(g.examples, vals, strict=True)]
+        out.numbers.append(span_man(vals))
     else:
-        parts = [f"{x.label} 약 {man(x.dobae_total)}" for x in g.examples]
+        vals = [x.dobae_total for x in g.examples]
         out.lines.append(
-            f"믿집 표준견적서 계산으로 실크 전체 도배는 {', '.join(parts)}이에요(부가세 포함 · 빈집)."
+            f"믿집 표준견적서 계산으로 실크 전체 도배는 평수에 따라 약 {span_man(vals)}이에요(부가세 포함 · 빈집)."
         )
-        if both:
-            eco = [f"{x.label} 약 {man(x.dobae_total_economy)}" for x in g.examples]
-            out.lines.append(f"합지로 하면 {', '.join(eco)}이에요.")
+        out.table = [
+            [x.label, f"실크 약 {man(x.dobae_total)} · 합지 약 {man(x.dobae_total_economy)}"]
+            for x in g.examples
+        ]
+        out.numbers.append(span_man(vals))
     out.lines.append("평수를 알려 주시거나 기본 정보를 넣으면 그 집으로 계산해 드려요.")
     return out
 
@@ -407,11 +444,11 @@ def pair_period(facts: ProjectFacts | None, general: GeneralFacts | None) -> Lin
     sizes = [general.asked] if general.asked else general.examples
     for x in sizes:
         out.numbers += _size_numbers(x)
-    parts = [
-        f"{x.label} 목공 약 {days(x.mokgong_days or 0)} · 도배 약 {days(x.dobae_days)}"
+    out.lines.append("믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 빈집 기준 이만큼 걸려요.")
+    out.table = [
+        [x.label, f"목공 약 {days(x.mokgong_days or 0)} · 도배 약 {days(x.dobae_days)}"]
         for x in sizes
     ]
-    out.lines.append(f"믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 {', '.join(parts)}이에요(빈집).")
     out.lines.append(
         "목공을 먼저 끝내고 도배를 해요. 기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."
     )

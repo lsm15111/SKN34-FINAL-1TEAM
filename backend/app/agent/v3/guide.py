@@ -31,7 +31,7 @@ def run(task: Task, kb: KB) -> Part:
         nums.add(calc_lines.vendors(f))
     if nums.lines:
         part.add(
-            templates.section(nums.lines, route="guide", source="calc"),
+            templates.section(nums.lines, route="guide", source="calc", table=nums.table),
             f"{nums.calc_text}\n{templates.ALLOWED}",
             calc_text=nums.calc_text,
         )

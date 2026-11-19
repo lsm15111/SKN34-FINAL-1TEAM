@@ -118,9 +118,16 @@ def section(
             extra[name] = ok
             if why:
                 dropped.append(why)
-    if not kept:
+    table = []
+    for row in sec.table:  # 표 칸도 문장과 같은 숫자 · 금지 표현 검사를 지나야 해요
+        whys = [_why(mask(c), allowed, periods, prompt) for c in row]
+        if any(whys):
+            dropped.extend(w for w in whys if w)
+        else:
+            table.append([mask(c) for c in row])
+    if not kept and not table:
         return None, dropped
-    return sec.model_copy(update={"sentences": kept, **extra}), dropped
+    return sec.model_copy(update={"sentences": kept, "table": table, **extra}), dropped
 
 
 def final(ans: AgentAnswer, prompt: str | None = None) -> AgentAnswer:

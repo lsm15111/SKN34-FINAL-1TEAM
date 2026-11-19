@@ -17,9 +17,10 @@ from typing import Literal
 from pydantic import BaseModel
 
 from app.agent import llm
-from app.agent.v3 import check, llm_mode
+from app.agent.v3 import check, llm_mode, templates
 from app.agent.v3.answer import KB, Part, search
 from app.agent.v3.schemas import Section, Sentence, TradeCode
+from app.knowledge import bm25
 
 PROMPTS = Path(__file__).with_name("prompts")
 VERSION = "composer_v1"
@@ -83,9 +84,12 @@ def evidence(part: Part, kb: KB, question: str, trade: TradeCode | None) -> dict
                         "제목": it.doc.title[:60],
                         "글": it.chunk.text[:CHUNK_CHARS],
                     }
+    own = trade in (None, "common", "dobae", "mokgong")
     for h in search(kb, question, trade).hits[:TOP_CHUNKS]:
         if h.ref in kb.ix.by_ref and h.ref not in chunks:
             it = kb.ix.by_ref[h.ref]
+            if own and it.scope == (bm25.OUT,):
+                continue  # 도배 · 목공 · 공통 질문에 다른 공종(창호 등) 조각은 넣지 않아요
             chunks[h.ref] = {
                 "ref": h.ref,
                 "제목": it.doc.title[:60],
@@ -150,19 +154,31 @@ def to_sections(
         return Sentence(text=it.text.strip(), cites=list(dict.fromkeys(cites)))
 
     calc_nums = check.guard.numbers(calc) if calc else set()
+    shown = [
+        _grams(x.text)
+        for s in part.sections
+        if s.source in ("calc", "template")
+        for x in s.sentences
+    ]
 
     def checked(sec: Section) -> Section | None:
-        if calc_nums:  # 계산 묶음이 이미 보이는 숫자만 든 문장은 되풀이라서 뺀다
-            keep = []
-            for x in sec.sentences:
-                n = check.guard.numbers(x.text)
-                if n and n <= calc_nums:
-                    dropped.append("계산 되풀이")
-                else:
-                    keep.append(x)
-            if not keep:
-                return None
-            sec = sec.model_copy(update={"sentences": keep})
+        keep = []
+        for x in sec.sentences:
+            n = check.guard.numbers(x.text)
+            g = _grams(x.text)
+            if calc_nums and n and n <= calc_nums:
+                dropped.append("계산 되풀이")  # 계산 묶음이 이미 보이는 숫자만 든 문장
+            elif any(_overlap(g, h) >= SAME for h in shown):
+                dropped.append("정해 둔 글 되풀이")
+            elif META.search(x.text):
+                dropped.append(
+                    "자료 말"
+                )  # '자료로 확인하지 못했어요' 같은 말은 답 문장에 두지 않아요
+            else:
+                keep.append(x)
+        if not keep:
+            return None
+        sec = sec.model_copy(update={"sentences": keep})
         kept, why = check.section(sec, allowed, calc_text=calc or None, shown=None, prompt=rules())
         dropped.extend(why)
         return kept
@@ -230,7 +246,12 @@ def to_sections(
 
 
 async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None) -> Part | None:
-    """작성기 한 번. 쓸 수 없으면 None(부르는 쪽은 무료 답 그대로)."""
+    """작성기 한 번. 쓸 수 없으면 None(부르는 쪽은 무료 답 그대로).
+    계산 엔진 값으로만 답한 턴(카드 · 조각 없음)은 부르지 않아요: 같은 말을 되풀이하고 숫자는 어차피 계산 그대로예요."""
+    kinds = {s.source for s in part.sections}
+    if "calc" in kinds and not kinds & {"card", "extract"}:
+        part.dropped.append("작성기: 계산 답만")
+        return None
     ev = evidence(part, kb, question, trade)
     if not (ev["data"]["카드"] or ev["data"]["근거"] or ev["data"]["계산 결과"]):
         return None
@@ -257,12 +278,27 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
     calc = [s for s in part.sections if s.source == "calc"]
     new = Part(
         sections=[*calc, *secs], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
-        unknown=[] if c.verdict == "answer" else list(part.unknown),
+        # 일부만 답했으면 '확인하지 못했어요'는 빼고 확인할 곳 줄만 둬요(답 뒤에 모름이 붙으면 앞뒤가 안 맞아요)
+        unknown=[] if c.verdict == "answer" else [u for u in part.unknown if u != templates.UNKNOWN],
         suggest=_follow(c.follow, ev) or list(part.suggest), near=list(part.near), used_cards=list(part.used_cards),
         used_chunks=list(part.used_chunks), dropped=list(part.dropped), route=part.route,
         trade=part.trade, scores=dict(part.scores),
     )  # fmt: skip
     return new
+
+
+SAME = 0.5  # 정해 둔 글 · 계산 문장과 글자 묶음이 이만큼 겹치면 되풀이로 봐요
+META = re.compile(
+    r"자료(?:로|에서|에는|에|상|만으로)|확인하지\s{0,2}못했|확인하기\s{0,2}어렵|근거(?:가|로|에)"
+)
+
+
+def _grams(t: str) -> set[str]:
+    return set(bm25.grams(t))
+
+
+def _overlap(a: set[str], b: set[str]) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
 
 
 def _follow(qs: list[str], ev: dict) -> list[str]:

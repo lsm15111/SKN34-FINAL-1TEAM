@@ -18,7 +18,7 @@ STD = StandardFacts(total=1974069, supply=1794608, vat=179461)
 def _ok(lines: calc_lines.Lines) -> None:
     """문장 숫자가 모두 계산 값 글(calc_text)에 있어서 출력 검사를 지나는지."""
     allowed = guard.numbers(lines.calc_text)
-    for t in lines.lines:
+    for t in [*lines.lines, *(c for r in lines.table for c in r)]:  # 표 칸도 같은 검사
         assert guard._why(t, allowed, allowed) is None, t
 
 
@@ -41,7 +41,9 @@ def test_period_with_project_plan_gives_dates():
 
 def test_period_without_project_uses_examples_or_asked_size():
     ex = calc_lines.period("dobae", None, general_facts("도배 공사 며칠 걸려요?"))
-    assert "24평" in ex.lines[0] and "34평" in ex.lines[0] and "44평" in ex.lines[0]
+    assert ex.lines[0] == "믿집 계산으로 빈집 도배(벽 + 천장)는 평수에 따라 약 2~3일이에요."
+    assert [r[0] for r in ex.table] == ["24평", "34평", "44평"]  # 평수별 2열 표
+    assert ex.table[1][1] == "빈집 약 2.5일 · 살면서 약 3일"
     assert ex.cards and ex.cards[0].choices[0].action == "start"
     _ok(ex)
     one = calc_lines.period("dobae", None, general_facts("34평 도배하면 며칠 걸려요?"))
@@ -76,7 +78,7 @@ def test_door_price_comes_from_carpentry_calc():
 
 def test_pair_period_does_not_add_numbers():
     out = calc_lines.pair_period(None, general_facts("도배랑 몰딩 같이 하면 며칠?"))
-    assert "목공 약" in out.lines[0] and "도배 약" in out.lines[0]
+    assert all("목공 약" in r[1] and "도배 약" in r[1] for r in out.table)  # 더하지 않고 따로
     _ok(out)
 
 
@@ -169,8 +171,18 @@ def test_start_date_in_question_gives_end_date():
     _ok(out)
     g = general_facts("다음 주 월요일부터 도배하면 며칠 걸려요?", today)
     out = calc_lines.period("dobae", None, g)
-    assert any(x.startswith("11.23(월)에 시작하면 도배는 24평") for x in out.lines), out.lines
+    assert out.lines[0].startswith("11.23(월)에 시작하면 빈집 도배(벽 + 천장)는 평수에 따라")
+    assert out.table[0] == ["24평", "11.23(월) ~ 11.24(화) · 약 2일"], out.table
     _ok(out)
     t0 = time.perf_counter()
     asked_start("1" * 5000 + "월" + "2" * 5000, today)  # 긴 입력에도 빨라요(ReDoS)
     assert time.perf_counter() - t0 < 0.5
+
+
+def test_vendor_pick_accepts_decimal_rating():
+    """업체 카드 별점은 Decimal로 와요(visit.schemas). float과 섞여도 점수를 내야 해요."""
+    from decimal import Decimal
+
+    c = vendor_pick.Candidate("a", "가업체", True, 2_000_000, -6, Decimal("4.8"), 12, 30)  # type: ignore[arg-type]
+    (p,) = vendor_pick.pick([c], n=1)
+    assert p.rating_shrunk == 4.56 and 0 < p.score <= 1.05  # (4.8 × 12 + 4.0 × 5) ÷ 17

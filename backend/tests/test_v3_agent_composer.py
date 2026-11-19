@@ -88,28 +88,49 @@ def test_lead_with_made_up_number_falls_back_to_free(stub):
     assert turn(Q).answer.trace.prompts == []
 
 
-def test_composer_keeps_calc_section_first(stub):
+def test_composer_skips_calc_only_answer(stub):
+    """계산 엔진 값으로만 답한 턴은 작성기를 부르지 않아요(되풀이 막기 · 숫자는 계산 그대로)."""
     from app.chat.tools import general_facts
 
     q = "34평 도배하면 며칠 걸려요?"
-    lead = CItem(text="짐이 많으면 옮기는 시간만큼 더 걸려요.", cites=[])
-    stub(Composed(verdict="answer", lead=lead, blocks=[], follow=[]))
+    stub(Composed(verdict="answer", lead=CItem(text="짐이 많으면 더 걸려요.", cites=[]), blocks=[], follow=[]))  # fmt: skip
     a = turn(q, general=general_facts(q)).answer
-    assert a.sections[0].source == "calc"
-    assert any(x.text == lead.text for s in a.sections for x in s.sentences)
+    assert a.sections[0].source == "calc" and a.trace.prompts == []
+    assert "작성기: 계산 답만" in a.trace.dropped
 
 
-def test_composer_sentence_repeating_calc_numbers_is_dropped(stub):
-    from app.chat.tools import general_facts
+def test_composer_drops_repeats_and_data_talk():
+    """계산 숫자 되풀이 · 정해 둔 글 되풀이 · '자료로 확인하지 못했어요' 말은 빼고, 계산 묶음이 있으면 lead가 빠져도 이어 가요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
 
-    q = "34평 도배하면 며칠 걸려요?"
-    lead = CItem(
-        text="믿집 계산으로 34평 빈집 도배는 약 2.5일이에요.", cites=[]
-    )  # 계산 묶음 되풀이
-    body = CItem(text="짐이 많으면 옮기는 시간만큼 더 걸려요.", cites=[])
-    stub(Composed(verdict="answer", lead=lead, blocks=[CBlock(kind="body", items=[body], rows=[])], follow=[]))  # fmt: skip
-    a = turn(q, general=general_facts(q)).answer
-    texts = [x.text for s in a.sections for x in s.sentences]
-    assert a.sections[0].source == "calc" and a.trace.prompts == ["composer_v1"]
-    assert lead.text not in texts and body.text in texts
-    assert "계산 되풀이" in a.trace.dropped
+    calc = Section(
+        sentences=[Sentence(text="믿집 계산으로 34평 도배는 빈집이면 약 2.5일이에요.")],
+        source="calc",
+    )
+    fixed = Section(
+        sentences=[Sentence(text="벽 + 천장 전체를 반나절 단위로 센 작업 일수예요.")],
+        source="template",
+    )
+    part = Part(sections=[calc, fixed], route="trade", trade="dobae")
+    ev = {
+        "refs": set(),
+        "allowed": "믿집 계산으로 34평 도배는 빈집이면 약 2.5일이에요.",
+        "calc": calc.sentences[0].text,
+    }
+    c = Composed(
+        verdict="partial",
+        lead=CItem(text="34평은 약 2.5일이에요.", cites=[]),  # 계산 숫자 되풀이
+        blocks=[CBlock(kind="body", rows=[], items=[
+            CItem(text="벽과 천장 전체를 반나절 단위로 센 작업 일수예요.", cites=[]),  # 정해 둔 글 되풀이
+            CItem(text="문 교체 순서는 자료로 확인하지 못했어요.", cites=[]),  # 자료 말
+            CItem(text="짐이 많으면 옮기는 시간만큼 더 걸려요.", cites=[]),
+        ])],
+        follow=[],
+    )  # fmt: skip
+    dropped: list[str] = []
+    secs = composer.to_sections(c, ev, part, None, route="trade", trade="dobae", dropped=dropped)  # type: ignore[arg-type]
+    texts = [x.text for s in secs or [] for x in s.sentences]
+    assert texts == ["짐이 많으면 옮기는 시간만큼 더 걸려요."]
+    assert {"계산 되풀이", "정해 둔 글 되풀이", "자료 말"} <= set(dropped)
