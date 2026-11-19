@@ -85,21 +85,25 @@ REMOVAL = "기존 벽지를 뜯는 시간은 들어 있지 않아요. 실측 뒤
 
 # ---- 기간 ----
 def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None) -> Lines:
-    """'며칠 걸려요'. 이 집 공정표 → 질문 평수 → 예시 평수 순으로 숫자를 준다(도배 · 목공만)."""
+    """'며칠 걸려요'. 이 집 공정표 · 질문 평수 · 예시 평수로 숫자를 준다(도배 · 목공만).
+    질문 평수가 이 집과 다르면 질문 평수 줄을 먼저, 이 집 공정표는 '참고로'로 뒤에 둬요."""
     out = Lines()
     plan = facts.plan if facts else None
+    g = general
+    asked = g.asked if g else None
+    far = asked is not None and (plan is None or _area_far(facts, asked))
+    mine = Lines()  # 이 집 예상 공정표
     if plan is not None:
-        out.lines.append(
-            f"이 집 예상 공정표로는 {md(plan.start)} ~ {md(plan.end)}, 일하는 날 {plan.work_days}일이에요."
+        pre = "참고로 " if far else ""
+        mine.lines.append(
+            f"{pre}이 집 예상 공정표로는 {md(plan.start)} ~ {md(plan.end)}, 일하는 날 {plan.work_days}일이에요."
         )
-        out.numbers += [md(plan.start), md(plan.end), f"{plan.work_days}일"]
+        mine.numbers += [md(plan.start), md(plan.end), f"{plan.work_days}일"]
         for b in plan.blocks:
             if b.trade == trade or (trade == "common" and b.trade in ("dobae", "mokgong")):
-                out.lines.append(f"{josa(b.ko, '은', '는')} {md(b.start)} ~ {md(b.end)}에 해요.")
-                out.numbers += [md(b.start), md(b.end)]
-        if plan.kind == "expected" and trade in ("dobae", "common"):
-            out.lines.append(REMOVAL)
-        out.boxes.append(
+                mine.lines.append(f"{josa(b.ko, '은', '는')} {md(b.start)} ~ {md(b.end)}에 해요.")
+                mine.numbers += [md(b.start), md(b.end)]
+        mine.boxes.append(
             CalcBox(
                 label="예상 공정표",
                 ref="plan.range",
@@ -108,15 +112,20 @@ def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None)
                 note=f"{md(plan.start)} ~ {md(plan.end)}",
             )
         )
-    g = general
-    asked = g.asked if g else None
-    if g is not None and (plan is None or _area_far(facts, asked)):
-        if asked is not None:
-            out.add(_period_size(trade, asked, lead=plan is None))
-            if g.start is not None:
-                out.add(_period_dates(trade, g))
-        elif plan is None:
-            out.add(_period_examples(trade, g))  # 시작 날짜가 있으면 표에 끝나는 날까지
+        mine.cards.append(
+            UiCard(kind="next_step", choices=[Choice(text="공정표 보기", action="plan")])
+        )
+    ask = Lines()  # 질문 평수 · 예시 평수
+    if g is not None and far:
+        ask.add(_period_size(trade, asked, lead=plan is None))  # type: ignore[arg-type]
+        if g.start is not None:
+            ask.add(_period_dates(trade, g))
+    elif g is not None and plan is None:
+        ask.add(_period_examples(trade, g))  # 시작 날짜가 있으면 표에 끝나는 날까지
+    for part in (ask, mine) if far else (mine, ask):
+        out.add(part)
+    if out.lines and trade in ("dobae", "common") and (plan is None or plan.kind == "expected"):
+        out.lines.append(REMOVAL)  # 한 번만(계산 엔진 일수는 바르기 · 마감만)
     if plan is None and asked is None:
         out.lines.append(
             "평수를 알려 주시면 그 집으로 다시 계산해 드려요."
@@ -173,9 +182,7 @@ def _period_size(trade: str, x: SizeCalcFact, lead: bool) -> Lines:
     out.lines.append(
         f"{head} 도배는 빈집이면 약 {days(x.dobae_days)}, 살면서 하면 약 {days(x.dobae_days_occupied)}이에요."
     )
-    out.lines.append(
-        "벽 + 천장 전체를 반나절 단위로 센 바르는 일수예요. 기존 벽지를 뜯는 시간은 들어 있지 않아서 실측 뒤 업체가 정해요."
-    )
+    out.lines.append("벽 + 천장 전체를 반나절 단위로 센 바르는 일수예요.")
     out.boxes.append(
         CalcBox(
             label=f"{x.label} 도배 기간",
@@ -209,13 +216,9 @@ def _period_examples(trade: str, g: GeneralFacts) -> Lines:
                 out.numbers += [md(d0), md(d1)]
         out.numbers.append(md(g.start))
         if not mk:
-            out.lines.append(
-                "살면서 하면 짐을 옮기며 해서 더 걸리고, 기존 벽지를 뜯는 시간은 들어 있지 않아요."
-            )
+            out.lines.append("살면서 하면 짐을 옮기며 해서 더 걸려요.")
     else:
         out.lines.append(f"믿집 계산으로 빈집 {ko}는 평수에 따라 약 {span_days(vals)}이에요.")
-        if not mk:
-            out.lines.append(REMOVAL)  # 계산 엔진 일수는 바르기 · 마감만(철거는 실측 후 줄)
         for x, v in zip(g.examples, vals, strict=True):
             cell = (
                 f"약 {days(v)}"
@@ -269,16 +272,21 @@ def price(
         return out
     st = facts.standard if facts else None
     grade_q = _grade_question(text)
+    asked = g.asked if g else None
+    far = asked is not None and (st is None or _area_far(facts, asked))
+    pre = "참고로 " if far else ""
+    mine = Lines()  # 이 집 표준견적서
+    own = st.trades.get(trade) if st is not None and len(st.trades) > 1 else None
     if st is not None and grade_q and facts and facts.grade:
         ko = GRADE_KO[facts.grade]
-        out.lines.append(
-            f"이 집 표준견적서는 {ko}로 계산했고 합계는 부가세 포함 약 {man(st.total)}이에요."
+        mine.lines.append(
+            f"{pre}이 집 표준견적서는 {ko}로 계산했고 합계는 부가세 포함 약 {man(st.total)}이에요."
         )
-        out.lines.append(
+        mine.lines.append(
             "실크 · 합지를 바꿔 보려면 표준견적서에서 '조건 바꾸기'를 눌러요. 바꾸면 바로 다시 계산해요."
         )
-        out.numbers += [str(st.total), str(st.supply), str(st.vat)]
-        out.boxes.append(
+        mine.numbers += [str(st.total), str(st.supply), str(st.vat)]
+        mine.boxes.append(
             CalcBox(
                 label="표준견적서 합계",
                 ref="standard.total",
@@ -287,27 +295,39 @@ def price(
             )
         )
     elif st is not None:
-        out.lines.append(f"이 집 표준견적서 합계는 부가세 포함 약 {man(st.total)}이에요.")
-        out.lines.append(
-            "업체 견적이 아니라 공공 기준 단가로 계산한 참고 금액이에요. 실측 뒤 정하는 줄(철거 등)은 합계에 없어요."
-        )
-        out.numbers += [str(st.total), str(st.supply), str(st.vat)]
-        out.boxes.append(
+        if own is not None:  # 도배 질문엔 도배 합계(공정별 합계는 계산 엔진 값)
+            ko = BY_TRADE_KO.get(trade, "")
+            mine.lines.append(
+                f"{pre}이 집 표준견적서의 {ko} 합계는 부가세 포함 약 {man(own)}이에요(전체 약 {man(st.total)})."
+            )
+            mine.numbers += [str(own)]
+        else:
+            mine.lines.append(f"{pre}이 집 표준견적서 합계는 부가세 포함 약 {man(st.total)}이에요.")
+        if not far:  # 빠진 줄 안내는 한 번만(질문 평수 줄이 따로 말해요)
+            mine.lines.append(
+                "업체 견적이 아니라 공공 기준 단가로 계산한 참고 금액이에요. 실측 뒤 정하는 줄(철거 등)은 합계에 없어요."
+            )
+        mine.numbers += [str(st.total), str(st.supply), str(st.vat)]
+        mine.boxes.append(
             CalcBox(
                 label="표준견적서 합계", ref="standard.total", amount=st.total, note="부가세 포함"
             )
         )
-    asked = g.asked if g else None
-    if g is not None and (st is None or _area_far(facts, asked)):
-        if asked is not None:
-            out.add(_price_size(trade, asked, lead=st is None))
-        elif st is None:
-            out.add(_price_examples(trade, g))
+    ask = Lines()
+    if g is not None and far:
+        ask.add(_price_size(trade, asked, lead=st is None))  # type: ignore[arg-type]
+    elif g is not None and st is None:
+        ask.add(_price_examples(trade, g))
+    for part in (ask, mine) if far else (mine, ask):
+        out.add(part)
     if st is None:
         out.cards.append(
             UiCard(kind="next_step", choices=[Choice(text="내 집으로 계산하기", action="start")])
         )
     return out
+
+
+BY_TRADE_KO = {"dobae": "도배", "mokgong": "목공"}
 
 
 DOOR = (
@@ -432,6 +452,9 @@ def vendors(facts: ProjectFacts | None) -> Lines:
 
 
 # ---- 목공 + 도배 같이 (오케스트레이터가 부름) ----
+PAIR_ORDER = "목공을 먼저 끝내고 도배를 해요."
+
+
 def pair_period(facts: ProjectFacts | None, general: GeneralFacts | None) -> Lines:
     """'도배랑 몰딩 같이 하면 며칠'. 공정표가 있으면 공정표 값만, 없으면 평수별 목공 · 도배 일수를 따로(더하지 않음)."""
     out = Lines()
@@ -465,7 +488,7 @@ def pair_period(facts: ProjectFacts | None, general: GeneralFacts | None) -> Lin
         for x in sizes
     ]
     out.lines.append(
-        "목공을 먼저 끝내고 도배를 해요. 기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."
+        f"{PAIR_ORDER} 기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."
     )
     out.cards.append(
         UiCard(kind="next_step", choices=[Choice(text="기본 정보 넣기", action="start")])

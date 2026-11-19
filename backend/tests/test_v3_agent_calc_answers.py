@@ -54,9 +54,29 @@ def test_period_without_project_uses_examples_or_asked_size():
 def test_price_project_and_asked_size_differ():
     f = ProjectFacts(area_m2=69.4, area_basis="supply", standard=STD, grade="basic")
     out = calc_lines.price("dobae", f, general_facts("33평 도배 비용 얼마예요?"), "33평 도배 비용")
-    assert out.lines[0] == "이 집 표준견적서 합계는 부가세 포함 약 197만 원이에요."
-    assert any(x.startswith("물어보신 33평이면") for x in out.lines)
+    # 질문 평수가 이 집과 다르면 질문 평수 줄이 먼저, 이 집 값은 '참고로'로 뒤에(r2 점검 C05)
+    assert out.lines[0].startswith("물어보신 33평이면")
+    assert "참고로 이 집 표준견적서 합계는 부가세 포함 약 197만 원이에요." in out.lines
+    assert sum("실측 뒤 정하는" in x for x in out.lines) == 1  # 빠진 줄 안내는 한 번
     _ok(out)
+    # 공정이 둘인 집에서 도배를 물으면 도배 합계(계산 엔진 공정별 값)
+    two = STD.model_copy(update={"trades": {"dobae": 1_500_000, "mokgong": 474_069}})
+    f2 = ProjectFacts(area_m2=69.4, area_basis="supply", standard=two, grade="basic")
+    out = calc_lines.price("dobae", f2, general_facts("도배 비용 얼마예요?"), "도배 비용")
+    assert (
+        out.lines[0]
+        == "이 집 표준견적서의 도배 합계는 부가세 포함 약 150만 원이에요(전체 약 197만 원)."
+    )
+    _ok(out)
+
+
+def test_refund_warranty_and_quote_check_are_not_price_or_period():
+    assert "price" not in policy_of("도배 하자로 분쟁조정하면 저는 얼마를 돌려받을까요?")
+    assert "period" not in policy_of("도배하고 하자가 생기면 A/S는 얼마 동안 해 줘요?")
+    assert "price" not in policy_of("도배 견적이 적정한지 어떻게 알 수 있어요?")
+    assert "price" in policy_of("도배 비용 얼마예요?") and "period" in policy_of(
+        "도배 며칠 걸려요?"
+    )
 
 
 def test_grade_question_with_project_points_to_condition_change():
@@ -206,3 +226,20 @@ def test_card_synonyms_find_bathroom_cards():
     a = cards.find(cs, "화장실 리모델링은 덧방이 나아요, 전체 철거가 나아요?", trades=["bath"], k=1)
     b = cards.find(cs, "욕실 리모델링은 덧방이 나아요, 전체 철거가 나아요?", trades=["bath"], k=1)
     assert a and b and a[0].card.id == b[0].card.id and a[0].score >= b[0].score - 0.01
+
+
+def test_where_line_by_timing_and_topic():
+    from app.agent.v3.answer import said_in, where_for
+
+    assert where_for("업체 포트폴리오 사진이 진짜인지 어떻게 확인해요?", None) is None
+    assert (
+        where_for("몰딩 이음매가 벌어졌는데 언제까지 보수 요청할 수 있어요?", "mokgong")
+        == "시공한 업체"
+    )
+    assert where_for("문틀 고정한 폼이 굳기 전에 문을 써도 돼요?", "mokgong") == "시공하는 업체"
+    assert (
+        where_for("계약서 특약에는 어떤 내용을 넣어요?", None) == "표준계약서 · 1372 소비자상담센터"
+    )
+    assert where_for("도배 비용이 궁금해요", "dobae") == "실측 때 업체"
+    assert said_in("벽에 곰팡이나 물자국이 있나요?", "곰팡이 핀 벽은 어떻게 처리해요?")
+    assert not said_in("벽에 곰팡이나 물자국이 있나요?", "도배 전에 뭘 준비해요?")

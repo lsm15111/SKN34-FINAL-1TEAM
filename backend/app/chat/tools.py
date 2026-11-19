@@ -329,7 +329,8 @@ async def _standard(s: AsyncSession, user: User, project_id: uuid.UUID) -> Stand
         for ln in t.lines
         if ln.state in STATES
     ]
-    return StandardFacts(total=st.total, supply=st.supply, vat=st.vat, lines=lines)
+    trades = {t.trade: t.total for t in st.trades if t.trade in TRADES}
+    return StandardFacts(total=st.total, supply=st.supply, vat=st.vat, trades=trades, lines=lines)
 
 
 async def _plan(

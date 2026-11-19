@@ -63,6 +63,9 @@ class StandardFacts(BaseModel):
     total: int
     supply: int
     vat: int
+    trades: dict[
+        str, int
+    ] = {}  # 공정별 합계(부가세 포함, 계산 엔진 값). 공정이 둘 이상일 때 공정 질문에 씀
     lines: list[StandardLineFact] = []
     days: int | None = None  # 계산 엔진 공정 일수(있을 때만)
 

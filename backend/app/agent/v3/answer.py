@@ -36,6 +36,9 @@ B3, B8 = 0.10, 0.05  # 카드 근거 조각이 검색 위 3개 · 위 8개에 �
 # 근거 조각이 의미 검색 위 D_LOCK개에 있으면 의미 맞물림 + 덤 BD(dense-cards.md, dev로 고름)
 D_LOCK, BD = 3, 0.15
 NEAR = 0.05  # 1등과 이만큼 가까운 카드는 '이것도 궁금하세요?'로
+DIY_PENALTY = (
+    0.10  # 셀프를 묻지 않은 질문에서 셀프 카드 열쇠 점수를 깎는 만큼(T_HIGH 0.62 → 맞물림 필요)
+)
 T_NEAR_ASK = 0.40  # 모름일 때 이 점수 이상인 카드 열쇠 질문을 '이걸 물으셨나요?' 버튼으로
 # 정해 둔 글로 답하는 정책 질문은 조각 문장을 붙이지 않는다(추천 · 금액 · 법률은 원문 한 줄이 오해를 부름)
 NO_EXTRACT = frozenset({"price", "vendor_reco", "brand_reco", "legal_case"})
@@ -203,6 +206,13 @@ def knowledge(
         and (intents is None or kb.cards.cards[i].intent in intents)
     ]  # fmt: skip
     matches += cards.score(kb.cards, q, list(dict.fromkeys(extra)))
+    if "diy" not in set(policy):
+        # 셀프를 묻지 않았으면 셀프 카드는 점수를 깎아, 검색 맞물림이 있을 때만 받게 해요(r2 점검 C16).
+        # 통째로 빼면 '곰팡이 위 덧칠'처럼 셀프 카드가 맞는 답까지 사라져서(1,511개 점검) 깎기만 해요
+        matches = [
+            cards.Match(m.card, round(m.score - DIY_PENALTY, 4), m.key) if _diy_card(m.card) else m
+            for m in matches
+        ]
     best, matches = accept(matches, top, near)
     if best is not None:
         c = best.card
@@ -212,9 +222,9 @@ def knowledge(
         # 함께 고른 공종의 카드면 묶음 공종도 그 공종으로
         own = c.trade if c.trade in also and c.trade != trade else trade
         part.add(card_section(c, route=route, trade=own), card_allowed(kb, c))  # type: ignore[arg-type]
-        _card_extras(part, c, facts)
+        _card_extras(part, c, facts, q)
         part.suggest.extend(
-            m.card.keys[0] for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD
+            m.key for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD
         )
         return "card"
     if allow_extract and hits.enough and not (NO_EXTRACT & set(policy)):
@@ -246,12 +256,17 @@ def knowledge(
             part.add(sec, allowed)
             if part.sections:
                 return "extract"
-    part.unknown.extend(
-        [templates.UNKNOWN, templates.UNKNOWN_WHERE.format(where=where_for(q, trade))]
-    )
-    # 받지 못한 가까운 카드는 '이걸 물으셨나요?' 버튼 후보로(열쇠 질문 그대로). 답 전체가 모름일 때만 보여요
-    part.near.extend(m.card.keys[0] for m in matches[:2] if m.score >= T_NEAR_ASK)
+    where = where_for(q, trade)
+    part.unknown.append(templates.UNKNOWN)
+    if where:
+        part.unknown.append(templates.UNKNOWN_WHERE.format(where=where))
+    # 받지 못한 가까운 카드는 '이걸 물으셨나요?' 버튼 후보로(맞은 열쇠 질문 그대로). 답 전체가 모름일 때만 보여요
+    part.near.extend(m.key for m in matches[:2] if m.score >= T_NEAR_ASK)
     return "unknown"
+
+
+def _diy_card(c: cards.AnswerCard) -> bool:
+    return "diy" in c.policy or c.kind == "셀프"
 
 
 # 공통 질문의 '확인할 곳'은 주제로 고른다(늘 '관리사무소 · 1372'면 실측 · 일정 질문에 엉뚱해요)
@@ -260,16 +275,36 @@ APT_WORDS = re.compile(
 )
 DISPUTE_WORDS = re.compile(
     r"하자|분쟁|환불|위약금|피해|소비자|보상|배상|사기|폐업|연락이?\s{0,2}(?:안|끊)|계약\s{0,2}(?:해제|해지|취소)"
+    r"|빼고\s{0,2}시공|다른\s{0,2}자재|내용증명"
 )
+# 확인할 곳을 고르는 말(r2 점검): 업체 고르기 · 견적 비교는 업체에 물으라고 하지 않고, 공사 뒤 · 중은 시공한 업체로
+CHOICE_WORDS = re.compile(
+    r"업체\s{0,2}(?:고르|선택|비교)|포트폴리오|제일\s{0,2}싼|싼\s{0,2}업체|실측\s{0,2}없이|사진만\s{0,2}보고|견적\s{0,2}(?:차이|비교)"
+)
+CONTRACT_WORDS = re.compile(r"계약서|특약|계약금|중도금|잔금")
+AFTER_WORDS = re.compile(
+    r"보수\s{0,2}요청|벌어졌|벌어지|들떴|들뜨|찍혀|파였|얼룩|저절로|하고\s{0,2}나서|끝나고|끝난\s{0,2}뒤|시공한|"
+    r"새로\s{0,2}단|생겼|불량"
+)
+DURING_WORDS = re.compile(r"굳기\s{0,2}전|공사\s{0,2}중|시공\s{0,2}중")
 
 
-def where_for(q: str, trade: TradeCode | None) -> str:
-    if trade and trade in BY_CODE and trade != "common":
-        return BY_CODE[trade].check_where
+def where_for(q: str, trade: TradeCode | None) -> str | None:
+    """'…에 물어보시면 정확해요'의 확인할 곳. None이면 그 줄을 빼요."""
+    if CHOICE_WORDS.search(q):
+        return None
     if APT_WORDS.search(q):
         return "관리사무소"
     if DISPUTE_WORDS.search(q):
         return "1372 소비자상담센터"
+    if CONTRACT_WORDS.search(q):
+        return "표준계약서 · 1372 소비자상담센터"
+    if AFTER_WORDS.search(q):
+        return "시공한 업체"
+    if DURING_WORDS.search(q):
+        return "시공하는 업체"
+    if trade and trade in BY_CODE and trade != "common":
+        return BY_CODE[trade].check_where
     return "실측 때 업체"
 
 
@@ -281,19 +316,46 @@ def drop_promise(part: Part) -> None:
                 x.text = templates.RECO_SHORT.get(x.text, x.text)
 
 
-def _card_extras(part: Part, c: cards.AnswerCard, facts: ProjectFacts | None) -> None:
+def _card_extras(part: Part, c: cards.AnswerCard, facts: ProjectFacts | None, q: str = "") -> None:
     """카드의 계산 상자 · 되묻기. 숫자는 facts(계산 엔진)에 있을 때만 상자로."""
     for cc in c.calc:
         box = calc_box(cc.ref, facts, label=cc.label)
         if box is not None:
             part.calc.append(box)
-    if c.ask and not slot_known(c.ask.slot, facts):
+    if c.ask and not slot_known(c.ask.slot, facts) and not said_in(c.ask.question, q):
         part.ask = AskSlot(
             trade=c.trade,
             slot=c.ask.slot,
             question=c.ask.question,
             options=c.ask.options,  # type: ignore[arg-type]
         )
+
+
+# 되묻기 질문에서 뜻 없는 말(질문 꼴 · 흔한 낱말)을 빼고, 남은 낱말이 고객 질문에 이미 있으면 묻지 않아요
+_ASK_STOP = frozenset(
+    {
+        "있나요",
+        "있어요",
+        "없어요",
+        "있으세요",
+        "어떤",
+        "어느",
+        "얼마나",
+        "집에",
+        "벽에",
+        "하세요",
+        "해요",
+    }
+)
+
+
+def said_in(question: str, q: str) -> bool:
+    """되묻기 질문의 핵심 낱말(예: '곰팡이' · '물자국')이 고객 질문에 이미 있나(r2 점검 C23)."""
+    for w in re.findall(r"[가-힣]{2,}", question or ""):
+        w = re.sub(r"(?:이나|이랑|이|가|나|은|는|을|를|에|도|요)$", "", w)
+        if len(w) >= 2 and w not in _ASK_STOP and w in (q or ""):
+            return True
+    return False
 
 
 def slot_known(slot: str, facts: ProjectFacts | None) -> bool:

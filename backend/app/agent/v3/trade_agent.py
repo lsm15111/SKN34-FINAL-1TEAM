@@ -91,13 +91,17 @@ def run(task: Task, kb: KB) -> Part:
         part.unknown = []  # 계산 엔진 값으로 이미 답했으면 '모름' 줄을 붙이지 않아요
         drop_promise(part)
     elif how == "unknown" and lines:
-        part.unknown = [
-            u for u in part.unknown if u != templates.UNKNOWN
-        ]  # 정책 글로 답했으면 확인할 곳만
+        part.unknown = []  # 정책 글이 이미 확인할 곳(업체 · 1372 · 실측)을 말해요(r2 점검 xc088 · xc084)
         drop_promise(part)
-    if spec.calc and not any(c.kind == "next_step" for c in part.cards):
+    if not any(
+        c.kind == "next_step" for c in part.cards
+    ):  # 계산 안 하는 공종도 단계 버튼(r2 점검 C29)
         stage = facts.stage if facts else None
         nxt = templates.NEXT.get(stage or "", []) if facts else templates.NO_PROJECT_NEXT
+        if any(
+            c.kind == "vendor_reco" for c in part.cards
+        ):  # 추천 카드에 '업체 모두 보기'가 있어요
+            nxt = [x for x in nxt if x.action != "vendors"]
         if nxt:
             part.cards.append(UiCard(kind="next_step", choices=list(nxt)))
     return part

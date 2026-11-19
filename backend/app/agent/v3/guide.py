@@ -63,9 +63,7 @@ def run(task: Task, kb: KB) -> Part:
         part.unknown = []  # 계산 엔진 값으로 이미 답했으면 '모름' 줄을 붙이지 않아요
         drop_promise(part)
     elif how == "unknown" and lines:
-        part.unknown = [
-            u for u in part.unknown if u != templates.UNKNOWN
-        ]  # 정책 글로 답했으면 확인할 곳만
+        part.unknown = []  # 정책 글이 이미 확인할 곳(업체 · 1372 · 실측)을 말해요(r2 점검 xc088 · xc084)
         drop_promise(part)
     nxt = templates.NEXT.get(f.stage, []) if f else templates.NO_PROJECT_NEXT
     if nxt:

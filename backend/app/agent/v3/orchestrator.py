@@ -150,11 +150,13 @@ def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
     prev: str | None = None
     seen: set[tuple[str, ...]] = set()
     failed: list[str] = []  # 못 찾은 공종 이름(공종 아닌 담당은 '')
+    said_order = False  # 순서를 물어 순서 문장으로 답했나
     for p in ordered:
         if want_order and p.route == "trade" and p.trade and prev:
             sec = order_section((prev, p.trade), kb)
             if sec is not None:
                 out.sections.append(sec)
+                said_order = True
         if p.route == "trade" and p.trade:
             prev = p.trade
         if p.empty or (not p.sections and not p.calc and p.unknown):
@@ -179,7 +181,9 @@ def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
         out.used_cards.extend(p.used_cards)
         out.used_chunks.extend(p.used_chunks)
         out.dropped.extend(p.dropped)
-    if failed:
+    if failed and said_order and ORDER_ASK.search(asked or ""):
+        out.unknown = []  # 순서를 물었고 순서 문장으로 답했으면 못 찾은 공종 줄 · 확인할 곳은 빼요(r2 점검 C15)
+    elif failed:
         if out.sections or out.calc:  # 답한 공종이 있으면 못 찾은 공종을 한 줄로
             names = list(dict.fromkeys(k for k in failed if k))
             line = (
@@ -207,6 +211,10 @@ def run(task: Task, kb: KB) -> tuple[Part, list[str], int]:
     failed = sum(1 for p in parts if not p.sections and not p.calc)
     names = [f"{t.route}:{t.trades[0] if t.trades else '-'}" for t in tasks]
     out = merge(parts, kb, asked=task.text)
+    if pair is not None and pair.lines and any(sec.title == "[순서]" for sec in out.sections):
+        # 순서 묶음이 따로 있으면 기간 묶음의 순서 문장은 빼요(같은 말 두 번, r2 점검 C04)
+        pair.lines = [x.replace(calc_lines.PAIR_ORDER, "").strip() for x in pair.lines]
+        pair.lines = [x for x in pair.lines if x]
     if pair is not None and pair.lines:
         tail = templates.PART_FAILED_WHICH.split("{which}")[1]
         # 기간은 계산 묶음이 답했으니 '… 쪽은 확인하지 못했어요' 한 줄은 빼요(조각 지식이 없을 뿐이에요)
