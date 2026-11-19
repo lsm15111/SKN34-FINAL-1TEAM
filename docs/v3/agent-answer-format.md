@@ -33,7 +33,7 @@ flowchart TD
   MODE -->|예| D[무료 답 먼저 SSE draft]
   D --> W{계산 답만 있나?}
   W -->|예| OUT
-  W -->|아니요| L[답 작성기 composer_v1<br/>gpt-6-luna · JSON 블록 1회]
+  W -->|아니요| L[답 작성기 composer_v2<br/>gpt-6-luna · JSON 블록 1회]
   L --> K2[블록 검사<br/>숫자 · 계산 되풀이 · 정해 둔 글 되풀이 · 자료 말 · 인용]
   K2 -->|통과| OUT
   K2 -->|unknown · 실패| OUT
@@ -70,16 +70,17 @@ flowchart TD
 - 질문 계산 값(`chat.tools.general_facts`)은 DB 없이 약 20ms에 세요. 프로젝트 사실(`project_facts`)은 세션 사용자로만 읽어요.
 - 숫자 검사는 계산 값 글(`calc_text`)에 있는 숫자만 통과시켜요. 표 칸도 같은 검사를 지나요.
 
-## 5. LLM 모드 답 작성기 (`agent/v3/composer.py`, 지시문 `composer_v1`)
+## 5. LLM 모드 답 작성기 (`agent/v3/composer.py`, 지시문 `composer_v2`)
 
 | 칸 | 값 |
 | --- | --- |
 | 언제 | 가이드 · 공종 · 복합 담당, `LLM_LIVE=true` + 키 + 사용자 하루 100턴 안. 계산 답만 있는 턴은 부르지 않아요 |
 | 모델 | `gpt-6-luna`, 추론 none(`OPENAI_LIGHT_ROLES=trade,composer`) |
-| system | `composer_v1.md` 1,786토큰(o200k). 규칙 → 블록 모양 → 출력 JSON → 예시 3개 |
+| system | `composer_v2.md`(o200k 약 1,900토큰). 규칙 → 블록 모양 → 출력 JSON → 예시 3개(비교 · 방법 · 모름) |
 | user | `<자료>{계산 결과, 정해 둔 글, 카드, 근거}</자료>` + 가린 질문. 근거 = 무료 답이 인용한 조각 + 검색 위 6개(조각마다 420자, 도배 · 목공 · 공통 질문엔 다른 공종 조각 뺌) |
 | 받는 것 | `{verdict: answer · partial · unknown, lead, blocks: [body · steps · compare · caution], follow}` |
-| 검사 | 숫자(계산 · 근거 글에 있는 것만) · 계산 숫자 되풀이 · 정해 둔 글 되풀이(글자 묶음 50% 이상) · '자료로 확인하지 못했어요' 같은 말 · 인용 ref · 금지 표현 · 지시문 규칙 30자 누출 |
+| 검사 | 숫자(계산 · 근거 글에 있는 것만) · 계산 숫자 되풀이 · 정해 둔 글 되풀이(글자 묶음 50% 이상) · '자료로 확인하지 못했어요' 같은 말 · 인용 지지(문장과 인용 조각 글자 묶음 겹침 0.18 이상, 다 안 맞으면 문장을 뺌) · 금지 표현 · 지시문 규칙 30자 누출 |
+| 이어 묻기 | LLM이 쓴 질문을 카드 열쇠 질문(점수 0.62 이상)으로 바꿔요. 고객에게 되묻는 말 · 숫자 든 말은 버려요 |
 | 되돌리기 | unknown, 실패, 계산 없이 lead가 빠짐 → 무료 답 그대로. partial이면 '확인하지 못했어요'는 빼고 확인할 곳만 |
 | 캐시 | OpenAI 자동 캐시(1,024토큰부터). 실측: 첫 호출 캐시 0, 다음 호출부터 입력 약 3,050토큰 중 2,079토큰을 캐시에서 읽음 |
 
