@@ -48,7 +48,7 @@ TYPE_KO = {
     "law": "법령", "gov_notice": "정부 고시", "gov_guide": "정부 안내", "gov_qa": "정부 안내", "kcs": "표준시방서",
     "pumsem": "표준품셈", "standard_contract": "표준계약서", "consumer_agency": "소비자원", "official": "공공기관",
     "public_data": "공공 자료", "gov": "공공기관", "maker": "제조사", "maker_guide": "제조사", "industry": "학회 · 협회",
-    "guide": "공공기관", "book": "시공 안내서", "news": "뉴스", "experience": "경험담 · 후기", "platform": "후기 · 문답",
+    "guide": "안내 자료", "book": "시공 안내서", "news": "뉴스", "experience": "경험담 · 후기", "platform": "후기 · 문답",
     "blog": "블로그", "community": "후기 · 문답",
 }  # fmt: skip
 _CASUAL = ("blog", "community", "platform", "experience")
