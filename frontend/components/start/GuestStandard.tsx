@@ -39,7 +39,7 @@ export function GuestStandard({ mock }: { mock: boolean }) {
         view: {
           scope: r.scope, lines: toQuoteLines(r.lines, r.scope), supply: r.supply, vat: r.vat, total: r.total, days: r.days,
           budget: budgetText(r.budget_fit, info.budget_won),
-          condition: conditionText({ ...info, area_m2: r.area_m2, area_basis: r.area_basis }),
+          condition: conditionText({ ...info, area_m2: r.area_m2, area_basis: r.area_basis, rooms: r.rooms }),
         },
       });
     } catch (e) {

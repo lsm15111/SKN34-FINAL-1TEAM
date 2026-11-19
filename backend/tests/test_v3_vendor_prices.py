@@ -76,11 +76,11 @@ def test_v3_table_starts_empty_with_example_quantities(api):
     ]
     assert got == [
         ("1201", "공급 평", None, "21.0", 0),
-        ("1203", "벽지 평", None, "63.0", 0),
-        ("1204", "벽지 평", None, "63.0", 0),
+        ("1203", "벽지 평", None, "53.9", 0),  # 판 2026H2-rooms: 69.4㎡ · 방 2개 (2.5배 판 63.0)
+        ("1204", "벽지 평", None, "53.9", 0),
         ("1205", "공급 평", None, "21.0", 0),
-        ("1206", "품", None, "5.0", 0),
-        ("1207", "품", None, "5.0", 0),
+        ("1206", "품", None, "4.5", 0),
+        ("1207", "품", None, "4.5", 0),
         ("1208", "대", None, "1", 0),
     ]
     mok = api.get(PRICES, params={"trade": "mokgong"})
@@ -96,9 +96,12 @@ def test_confirm_v3_saves_every_line_and_warns(api):
     assert (v3["version"], v3["needs_setup"]) == (1, False) and v3["confirmed_at"]
     lines = {x["key"]: x for x in v3["lines"]}
     assert lines["putty"]["example_amount"] == 315_000  # 9판 D02 '공급 69.4㎡ 집이면'
-    assert lines["paper_silk"]["example_amount"] == 567_000
+    assert lines["paper_silk"]["example_amount"] == 485_100  # 53.9평 × 9,000 (2.5배 판 567,000)
     assert lines["material"]["example_amount"] == 252_000
-    assert (lines["labor"]["example_amount"], lines["labor"]["warn"]) == (14_000_000, "too_high")
+    assert (lines["labor"]["example_amount"], lines["labor"]["warn"]) == (
+        12_600_000,
+        "too_high",
+    )  # 4.5품 × 2,800,000
     # 화면이 저장 전에 쓰는 경고 경계: B6 기준 270,000원 × 10 · ÷ 10 올림
     assert (lines["labor"]["warn_high"], lines["labor"]["warn_low"]) == (2_700_000, 27_000)
     assert (
@@ -114,9 +117,9 @@ def test_confirm_v3_saves_every_line_and_warns(api):
     assert all(lines[k]["warn"] is None for k in ("putty", "paper_silk", "material", "truck"))
     ex = v3["example"]
     assert (ex["supply"], ex["vat"], ex["total"], ex["grade"], ex["paper_ok"]) == (
-        15_184_000,
-        1_518_400,
-        16_702_400,
+        13_702_100,  # 퍼티 315,000 + 실크 485,100 + 자재 252,000 + 인건비 12,600,000 + 운송 50,000
+        1_370_210,
+        15_072_310,
         "basic",
         True,
     )
@@ -221,29 +224,29 @@ def test_customer_estimate_v3_for_c11(api):
 
     e = _estimate(maru, pid)
     assert (e.supply, e.vat, e.total, e.tax_kind, e.grade) == (
-        2_896_500,
-        289_650,
-        3_186_150,
+        2_654_550,  # 판 2026H2-rooms 수량 (2.5배 판 9판 C11 3,186,150)
+        265_455,
+        2_920_005,
         "general",
         "basic",
     )
     assert (
-        e.vs_standard_pct == Decimal("26.6") and e.paper_ok is True
+        e.vs_standard_pct == Decimal("30.3") and e.paper_ok is True
     )  # 퍼티 · 식대 · 운송비는 비교에서 뺌
     assert [(x.code, x.qty, x.amount) for x in e.lines][:2] == [
         ("1201", Decimal("21.0"), 420_000),
-        ("1204", Decimal("63.0"), 598_500),
+        ("1204", Decimal("53.9"), 512_050),
     ]
     assert e.set_id is not None and e.version == 1
     hapji = _estimate(maru, pid, grade="economy")  # ?grade= 미리 보기: 표준도 그 벽지로
     assert (
-        hapji.grade == "economy" and hapji.total - e.total == -311_850
-    )  # C11 '합지 −31만 1,850원'
+        hapji.grade == "economy" and hapji.total - e.total == -266_805
+    )  # 53.9평 기준 (2.5배 판 C11 '합지 −31만 1,850원')
     assert _estimate(none, pid) is None and _estimate(maru, pid, trade="mokgong") is None
 
     query("update vendors set tax_kind = 'simplified' where user_id = $1", maru)
     simple = _estimate(maru, pid)
-    assert (simple.vat, simple.total, simple.tax_kind) == (0, 2_896_500, "simplified")  # L02
+    assert (simple.vat, simple.total, simple.tax_kind) == (0, 2_654_550, "simplified")  # L02
     query("update vendors set status = 'rejected', review_code = 'closed', approved_at = null"
           " where user_id = $1", maru)  # fmt: skip
     assert _estimate(maru, pid) is None  # 승인된 업체만
@@ -274,7 +277,7 @@ def test_partial_project_estimate_uses_shared_quantities(api):
     e = _estimate(maru, pid)
     qty = {x.key: x.qty for x in e.lines}
     assert (qty["putty"], qty["paper_silk"], qty["labor"]) == (
-        Decimal("6.7"),
-        Decimal("15.1"),
+        Decimal("6.5"),  # 2방 표 거실 0.20 + 주방 0.11 = 0.31 몫
+        Decimal("10.9"),
         Decimal("1.0"),
     )

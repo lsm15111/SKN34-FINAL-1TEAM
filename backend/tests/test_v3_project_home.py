@@ -40,6 +40,7 @@ def test_v3_body_creates_a_member_project_with_home(api):
         "scope": "full",
         "spaces": [],
         "faces": ["wall", "ceiling"],
+        "rooms": None,  # 안 넣으면 비워 두고 계산 엔진이 평형 기본값(21평 → 2개)으로 센다
         "housing": "apt",
         "sido": "seoul",
         "sgg": "노원구",
@@ -59,7 +60,8 @@ def test_v3_body_creates_a_member_project_with_home(api):
     assert (row["source"], row["client_key"], row["start_kind"]) == ("member", None, "date")
 
     st = api.get(f"/projects/{p['id']}/standard").json()
-    assert st["total"] == 2_060_625  # 9판 C07 집, 시장 평균 실크
+    # 9판 C07 집, 시장 평균 실크. 판 2026H2-rooms: 69.4 × 1.55 + 방 2 × 20.4 (2.5배 판 2,060,625)
+    assert st["total"] == 1_802_374 and st["price_ver"] == "2026H2-rooms"
     assert (st["scope"], st["spaces"], st["faces"], st["share_ver"]) == (
         "full",
         [],
@@ -72,7 +74,7 @@ def test_v3_body_creates_a_member_project_with_home(api):
         "2026.11.2",
     )
     paper = next(ln for ln in st["trades"][0]["lines"] if ln["key"] == "paper")
-    assert (paper["unit"], paper["basis"], paper["qty"]) == ("벽지 평", "market", "63.0")
+    assert (paper["unit"], paper["basis"], paper["qty"]) == ("벽지 평", "market", "53.9")
     assert st["days"] == "2.0"  # C07 '예상 2일'
 
 
@@ -107,7 +109,7 @@ def test_standard_days_add_up_trades_for_old_projects(api):
 
 def test_partial_project_keeps_spaces_and_share_version(api):
     signup(api)
-    r = create(api, {**PART, "budget_won": 400_000, "start_date": None})
+    r = create(api, {**PART, "budget_won": 300_000, "start_date": None})
     assert r.status_code == 201, r.text
     p = r.json()
     assert (p["home"]["scope"], p["home"]["spaces"], p["home"]["faces"]) == (
@@ -122,8 +124,8 @@ def test_partial_project_keeps_spaces_and_share_version(api):
     st = api.get(f"/projects/{p['id']}/standard").json()
     assert (st["scope"], st["spaces"], st["faces"]) == ("partial", ["living", "kitchen"], ["wall"])
     assert (st["share_ver"], st["total"], st["budget_fit"]) == (
-        "space-share-2026.11",
-        466_065,
+        "space-rooms-2026.11",
+        335_547,  # 2방 표 거실 0.20 + 주방 0.11 (옛 한 장 표 0.32 · 466,065)
         "over",
     )
     (row,) = query("select scope, faces, space_keys, share_ver, market_ver from standard_quotes")
@@ -132,7 +134,7 @@ def test_partial_project_keeps_spaces_and_share_version(api):
         ["wall"],
         ["living", "kitchen"],
     )
-    assert (row["share_ver"], row["market_ver"]) == ("space-share-2026.11", "paper-market-2026.11")
+    assert (row["share_ver"], row["market_ver"]) == ("space-rooms-2026.11", "paper-market-2026.11")
 
 
 def test_same_idempotency_key_returns_the_same_project(api):
@@ -268,3 +270,46 @@ def test_patch_v3_until_first_request_then_locked(api):
     query("update projects set locked_at = now() where id = $1", uuid.UUID(p["id"]))
     locked = api.patch(f"/projects/{p['id']}", json=HOME)
     assert locked.status_code == 409 and locked.json()["error"]["code"] == "locked"
+
+
+def test_rooms_are_saved_and_change_the_standard(api):
+    """방 개수를 넣으면 저장하고, 고치면 표준견적서가 새 버전으로 바뀐다. 방 5개면 작은방 4 칩도 저장된다."""
+    signup(api)
+    r = create(api, {**HOME, "rooms": 3})
+    assert r.status_code == 201, r.text
+    p = r.json()
+    assert p["home"]["rooms"] == 3
+    assert query("select rooms from projects")[0]["rooms"] == 3
+    three = api.get(f"/projects/{p['id']}/standard").json()
+    five = {
+        **HOME,
+        "rooms": 5,
+        "scope": "partial",
+        "spaces": ["living", "room4"],
+        "faces": ["wall"],
+    }
+    assert api.patch(f"/projects/{p['id']}", json=five).status_code == 200
+    after = api.get(f"/projects/{p['id']}/standard").json()
+    assert after["trades"][0]["version"] == 2 and after["spaces"] == ["living", "room4"]
+    assert after["share_ver"] == "space-rooms-2026.11" and after["total"] < three["total"]
+    assert [k["kind"] for k in query("select kind from project_spaces order by sort")] == [
+        "living",
+        "room4",
+    ]
+    bad = {**HOME, "rooms": 2, "scope": "partial", "spaces": ["room3"], "faces": ["wall"]}
+    assert api.patch(f"/projects/{p['id']}", json=bad).status_code == 422
+
+
+def test_old_project_without_rooms_uses_default_rooms(api):
+    """옛 공사(rooms가 비어 있음): 평형 기본값으로 세고, 고른 방 칩이 더 많으면 그만큼 센다"""
+    signup(api)
+    full = create(api, HOME).json()
+    query("update projects set rooms = null")
+    st = api.get(f"/projects/{full['id']}/standard").json()
+    guest = api.post("/guest/standard", json={**HOME, "rooms": 2}).json()
+    assert st["total"] == guest["total"] == 1_802_374
+    part = create(api, {**PART, "spaces": ["living", "room2"]})
+    assert part.status_code == 201, part.text
+    st2 = api.get(f"/projects/{part.json()['id']}/standard").json()
+    want = api.post("/guest/standard", json={**PART, "spaces": ["living", "room2"], "rooms": 3})
+    assert st2["total"] == want.json()["total"]

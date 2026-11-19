@@ -6,11 +6,13 @@
 - quote(): 옛 표준견적서(도배지 ㎡ × 공공 재료비). v2 업체 단가표 예시 · 다른 계산이 그대로 쓴다.
 - quote_v3() · standard_v3(): v3 표준견적서(D07 A · D02 A). 도배지 줄만 '벽지 평 × 시장 평균 가격'으로 바꾸고,
   부분 공사는 고른 공간 몫으로 벽 · 천장 면적을 줄인다. 가견적 v3 수량(QtyV3)도 같이 만든다.
+- 단가 판에 회귀 계수(area_per_supply · area_per_room)가 있으면 집 전체 도배 면적을
+  '공급㎡ × 계수 + 방 개수 × ㎡'로 센다(whole-house-area.md 방안 4). 없으면 옛 '면적 × area_factor'.
 """
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_CEILING, Decimal
 from typing import Literal, Protocol
 
 from app.calc.common import (
@@ -25,7 +27,13 @@ from app.calc.common import (
     m2,
     won,
 )
-from app.calc.space_share import SpaceShares, share_of
+from app.calc.space_share import (
+    RoomSpaceShares,
+    SpaceShares,
+    room_kinds,
+    rooms_needed,
+    share_of,
+)
 from app.calc.standard_quote import HouseRules, house_pyeong
 
 Grade = Literal["economy", "basic"]
@@ -58,6 +66,54 @@ class DobaePrices:
     crew: int  # 하루 들어가는 도배공 수 (가정값)
     vat_rate: Decimal
     sources: dict[str, str]  # 줄 키 → 출처 문구
+    # v3 회귀식 (가정값): 도배 면적 = 공급㎡ × area_per_supply + 방 개수 × area_per_room.
+    # 비우면 옛 area_factor를 쓴다. 전용면적은 supply_per_exclusive로 공급면적을 잡는다
+    area_per_supply: Decimal | None = None
+    area_per_room: Decimal | None = None
+    supply_per_exclusive: Decimal | None = None
+    # 방 개수 기본값: (공급 평 이상, 방 개수)를 작은 평부터. 고객이 방 개수를 안 넣었을 때 쓴다
+    room_bands: tuple[tuple[Decimal, int], ...] = ()
+    room_fallback: int = 3  # 면적을 모를 때 화면에 먼저 보이는 방 개수
+
+
+def num(x: Decimal) -> str:
+    """글에 넣는 숫자: 25.0 → 25, 1.55 → 1.55"""
+    return format(x.normalize(), "f")
+
+
+def supply_m2(area_m2: Decimal, basis: AreaBasis, p: DobaePrices) -> Decimal:
+    """회귀식에 넣을 공급면적 (전용이면 × supply_per_exclusive)"""
+    if basis == "supply":
+        return area_m2
+    if p.supply_per_exclusive is None:
+        raise ValueError("전용 → 공급 환산값이 없는 단가 판이에요")
+    return area_m2 * p.supply_per_exclusive
+
+
+def default_rooms(area_m2: Decimal, basis: AreaBasis, p: DobaePrices) -> int:
+    """평형으로 채우는 방 개수 기본값 (room_bands). 표가 없으면 room_fallback"""
+    if not p.room_bands or area_m2 <= 0:
+        return p.room_fallback
+    py = supply_m2(area_m2, basis, p) / PYEONG_M2
+    rooms = p.room_bands[0][1]
+    for floor, n in p.room_bands:
+        if py >= floor:
+            rooms = n
+    return rooms
+
+
+def room_bands_m2(p: DobaePrices) -> list[tuple[AreaBasis, Decimal, int]]:
+    """방 개수 기본값 표를 ㎡로: (면적 기준, 이 ㎡ 이상, 방 개수). ㎡는 소수 한 자리로 올려
+    default_rooms와 같은 답이 나오게 한다(화면이 칸만 찾게)."""
+    out: list[tuple[AreaBasis, Decimal, int]] = []
+    for basis in ("supply", "exclusive"):
+        per = Decimal(1) if basis == "supply" else p.supply_per_exclusive
+        if per is None:
+            continue
+        for floor, n in p.room_bands:
+            edge = (floor * PYEONG_M2 / per).quantize(Decimal("0.1"), rounding=ROUND_CEILING)
+            out.append((basis, edge, n))
+    return out
 
 
 @dataclass(frozen=True)
@@ -251,6 +307,7 @@ class DobaeV3Input:
     faces: tuple[Face, ...] = FACES
     share: Decimal | None = None  # 부분 공사: 고른 공간 몫 합(0~1). 비우면 전체
     balcony_ext: bool = False
+    rooms: int | None = None  # 방 개수 (회귀식 단가 판에서 꼭 필요)
 
 
 def paper_py(paper_m2: Decimal) -> Decimal:
@@ -291,8 +348,16 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
         raise ValueError("벽 · 천장 중 하나 이상 골라야 해요")
     if inp.share is not None and not Decimal(0) < inp.share <= 1:
         raise ValueError("공간 몫은 0보다 크고 1 이하여야 해요")
-    gross = inp.area_m2 * p.area_factor[inp.area_basis]
-    if inp.balcony_ext:
+    by_rooms = p.area_per_supply is not None and p.area_per_room is not None
+    if by_rooms:
+        if inp.rooms is None:
+            raise ValueError("방 개수가 있어야 해요")
+        room_kinds(inp.rooms)  # 1~5 밖이면 ValueError
+        sup = supply_m2(inp.area_m2, inp.area_basis, p)
+        gross = sup * p.area_per_supply + inp.rooms * p.area_per_room
+    else:
+        gross = inp.area_m2 * p.area_factor[inp.area_basis]
+    if inp.balcony_ext and p.balcony_factor != 1:
         gross *= p.balcony_factor
     ceiling = m2(gross * p.ceiling_share)
     wall = m2(gross) - ceiling
@@ -409,8 +474,21 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
     steps.append(Step("finish", "마감 · 확인 · 청소", 1))
     days = m2(Decimal(sum(s.half_days for s in steps)) / 2)
 
+    if by_rooms:
+        conv = (
+            ""
+            if inp.area_basis == "supply"
+            else f"(전용 × {num(p.supply_per_exclusive)} = 공급 {num(m2(sup))}㎡)"
+        )
+        area_note = (
+            f"도배 면적은 공급면적{conv} × {num(p.area_per_supply)} + 방 {inp.rooms}개 × "
+            f"{num(p.area_per_room)}㎡로 추정했어요(공개 평면도 20곳 기준, 발코니 확장 집). "
+            "실측 때 방마다 다시 재요."
+        )
+    else:
+        area_note = f"도배 면적은 {BASIS_LABEL[inp.area_basis]} × {p.area_factor[inp.area_basis]}로 추정했어요. 실측 때 방마다 다시 재요."
     assumptions = [
-        f"도배 면적은 {BASIS_LABEL[inp.area_basis]} × {p.area_factor[inp.area_basis]}로 추정했어요. 실측 때 방마다 다시 재요.",
+        area_note,
         f"천장은 도배 면적의 {int(p.ceiling_share * 100)}%로 잡았어요.",
         f"도배지는 {paper.name} 시장 평균 가격으로 셌어요(벽지 1평 = 3.3058㎡).",
         f"하루 도배공 {p.crew}명이 들어가는 것으로 기간을 잡았어요.",
@@ -419,7 +497,7 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
         assumptions.insert(
             0, "부분 공사는 고른 공간의 넓이를 어림해 계산했어요. 실측 뒤 업체 견적서로 확정해요."
         )
-    if inp.balcony_ext:
+    if inp.balcony_ext and p.balcony_factor != 1:
         assumptions.append(f"발코니 확장은 도배 면적을 {p.balcony_factor}배로 잡았어요.")
     return DobaeQuote(
         version=p.version,
@@ -449,6 +527,14 @@ class HomeV3:
     spaces: tuple[str, ...] = ()  # 부분 공사 공간 종류
     faces: tuple[Face, ...] = FACES
     balcony_ext: bool = False
+    rooms: int | None = None  # 방 개수. 비우면 평형 기본값(옛 공사 · v2 공사)
+
+
+def rooms_of(h: HomeV3, p: DobaePrices) -> int:
+    """계산에 쓰는 방 개수: 넣은 값, 없으면 평형 기본값(고른 방 칩이 더 많으면 그만큼, 최대 5)"""
+    if h.rooms is not None:
+        return h.rooms
+    return min(max(default_rooms(h.area_m2, h.area_basis, p), rooms_needed(h.spaces)), 5)
 
 
 @dataclass(frozen=True)
@@ -468,15 +554,31 @@ class StandardV3:
     share_ver: str | None  # 공간 몫 표 판 (부분일 때만)
     market_ver: str  # 벽지 시장 평균 가격 판
     qty: QtyV3
+    rooms: int | None = None  # 계산에 쓴 방 개수 (회귀식 판만)
 
 
 def standard_v3(
-    h: HomeV3, p: DobaePrices, paper: PaperPrice, shares: SpaceShares, house: HouseRules
+    h: HomeV3,
+    p: DobaePrices,
+    paper: PaperPrice,
+    shares: SpaceShares | RoomSpaceShares,
+    house: HouseRules,
 ) -> StandardV3:
-    """기본 정보 → v3 표준견적서 + 가견적 수량. 표준견적서 저장 · 손님 계산 · 가견적이 같은 값을 쓴다."""
-    share = share_of(h.spaces, shares) if h.scope == "partial" else None
+    """기본 정보 → v3 표준견적서 + 가견적 수량. 표준견적서 저장 · 손님 계산 · 가견적이 같은 값을 쓴다.
+    부분 공사 몫은 방 개수에 맞는 표로 센다(방 개수에 없는 방 칩이면 ValueError)."""
+    by_rooms = p.area_per_supply is not None
+    rooms = rooms_of(h, p) if by_rooms else None
+    share = None
+    if h.scope == "partial":
+        table = shares.for_rooms(rooms or 3)
+        unknown = [k for k in dict.fromkeys(h.spaces) if k not in table.share]
+        if unknown and isinstance(shares, RoomSpaceShares):
+            raise ValueError("방 개수보다 많은 방을 골랐어요")
+        share = share_of(h.spaces, table)
     q = quote_v3(
-        DobaeV3Input(h.area_m2, h.area_basis, h.grade, h.occupied, h.faces, share, h.balcony_ext),
+        DobaeV3Input(
+            h.area_m2, h.area_basis, h.grade, h.occupied, h.faces, share, h.balcony_ext, rooms
+        ),
         p,
         paper,
     )
@@ -488,4 +590,4 @@ def standard_v3(
         man_day=q.man_days,
     )
     share_ver = shares.version if share is not None else None
-    return StandardV3(q, py, share, share_ver, paper.version, qty)
+    return StandardV3(q, py, share, share_ver, paper.version, qty, rooms)

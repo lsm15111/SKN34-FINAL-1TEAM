@@ -90,8 +90,8 @@ def test_v3_demo_builds_every_stage_with_9th_draft_numbers(api):
     assert r.status_code == 200, r.text
     cards = {c["name"]: c for c in r.json()["local"]}
     assert (cards["마루와벽"]["estimate_total"], cards["결도배"]["estimate_total"]) == (
-        3_186_150,
-        2_774_200,
+        2_920_005,  # 판 2026H2-rooms 수량(69.4㎡ · 방 2개). 2.5배 판 9판 C10은 3,186,150 · 2,774,200
+        2_535_610,
     )
     assert (
         cards["마루와벽"]["rating"],

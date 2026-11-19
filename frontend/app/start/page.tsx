@@ -7,9 +7,9 @@ import { InfoForm } from "@/components/start/InfoForm";
 import { InfoLocked } from "@/components/start/InfoLocked";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
-import { getMyProject, getProjectShell, getRegions, type ApiProject } from "@/lib/api/project";
+import { getMyProject, getProjectShell, getRegions, getRoomRule, type ApiProject } from "@/lib/api/project";
 import { decText, todaySeoul } from "@/lib/format";
-import { EMPTY_DRAFT, fromSaved, placeText, type InfoDraft } from "@/lib/guest/info";
+import { EMPTY_DRAFT, fromSaved, placeText, roomsOf, type InfoDraft } from "@/lib/guest/info";
 import { MOCK_V3A, mockKeyOf } from "@/lib/mock/v3a/mode";
 import { getSession, requireRole } from "@/lib/session";
 
@@ -32,7 +32,7 @@ function draftOfProject(p: ApiProject): InfoDraft {
 export default async function StartPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
   const { edit } = await searchParams;
   const today = todaySeoul();
-  const [session, regions] = await Promise.all([getSession(), getRegions()]);
+  const [session, regions, roomRule] = await Promise.all([getSession(), getRegions(), getRoomRule()]);
 
   if (edit) {
     if (!mockKeyOf(edit)) await requireRole("customer", `/start?edit=${encodeURIComponent(edit)}`);
@@ -47,7 +47,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
           <AppHeader phone={{ title: "도배 기본 정보", back: `/projects/${shell.id}` }} />
           <Main narrow>
             <PageHead title="도배 기본 정보" crumbs={crumbs} />
-            <InfoLocked draft={draft} region={placeText(regions, draft)} today={today} />
+            <InfoLocked draft={draft} region={placeText(regions, draft)} today={today} rooms={roomsOf(draft, roomRule)} />
           </Main>
           <BottomBar>
             <Button variant="secondary" size="lg" href="/start">다른 조건으로 새로 받기</Button>
@@ -58,7 +58,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
     return (
       <>
         <AppHeader phone={{ title: "도배 기본 정보", back: `/projects/${shell.id}/standard` }} />
-        <InfoForm key={shell.id} regions={regions} today={today} mode="edit" projectId={shell.id} initial={draft} mock={shell.mock} crumbs={crumbs} />
+        <InfoForm key={shell.id} regions={regions} roomRule={roomRule} today={today} mode="edit" projectId={shell.id} initial={draft} mock={shell.mock} crumbs={crumbs} />
       </>
     );
   }
@@ -66,7 +66,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
   return (
     <>
       <AppHeader phone={{ title: "도배 기본 정보", back: "/" }} />
-      <InfoForm regions={regions} today={today} mode={session?.role === "customer" ? "member" : "guest"} mock={MOCK_V3A}
+      <InfoForm regions={regions} roomRule={roomRule} today={today} mode={session?.role === "customer" ? "member" : "guest"} mock={MOCK_V3A}
         crumbs={[{ label: "표준견적서 받기", href: "/start" }, { label: "도배 기본 정보" }]} />
     </>
   );

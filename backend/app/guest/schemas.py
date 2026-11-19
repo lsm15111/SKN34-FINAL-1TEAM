@@ -24,6 +24,26 @@ class GuestLineOut(BaseModel):
     source: str = Field(description="출처 이름 (벽지 시장 평균 가격 2026.11 …)")
 
 
+class RoomBandOut(BaseModel):
+    """방 개수 기본값 한 칸: 이 면적(㎡) 이상이면 이 방 개수"""
+
+    area_basis: Literal["supply", "exclusive"]
+    min_m2: Decimal = Field(description="이 면적 이상 (㎡, 소수 한 자리 올림)")
+    rooms: int
+
+
+class RoomRuleOut(BaseModel):
+    """방 개수 칸 (whole-house-area 방안 4). 화면은 면적으로 칸을 찾기만 하고 계산하지 않는다."""
+
+    price_ver: str = Field(description="이 표가 든 도배 단가 판")
+    share_ver: str = Field(description="방 개수별 공간 몫 표 판")
+    min: int
+    max: int
+    fallback: int = Field(description="면적을 아직 안 넣었을 때 보이는 방 개수")
+    bands: list[RoomBandOut] = Field(description="면적 기준별, 작은 면적부터")
+    room_kinds: list[str] = Field(description="방 칩 순서 (방 1개 = 첫 칸, 5개 = 다섯 칸)")
+
+
 class GuestStandardOut(BaseModel):
     """저장하지 않는 계산 결과. DB · 로그에 입력을 남기지 않는다."""
 
@@ -35,6 +55,9 @@ class GuestStandardOut(BaseModel):
     area_m2: Decimal
     area_basis: str
     pyeong: Decimal = Field(description="표시용 평 (계산 엔진)")
+    rooms: int | None = Field(
+        default=None, description="계산에 쓴 방 개수 (안 넣었으면 평형 기본값)"
+    )
     lines: list[GuestLineOut]
     supply: int
     vat: int

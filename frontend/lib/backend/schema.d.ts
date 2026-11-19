@@ -212,6 +212,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/guest/room-rule": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 방 개수 칸: 범위 · 평형 기본값 표 (기본 정보 화면) */
+        get: operations["guest_room_rule_guest_room_rule_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -4018,6 +4035,11 @@ export interface components {
              * @description 표시용 평 (계산 엔진)
              */
             pyeong: string;
+            /**
+             * Rooms
+             * @description 계산에 쓴 방 개수 (안 넣었으면 평형 기본값)
+             */
+            rooms?: number | null;
             /** Lines */
             lines: components["schemas"]["GuestLineOut"][];
             /** Supply */
@@ -4085,10 +4107,15 @@ export interface components {
             scope: "full" | "partial";
             /**
              * Spaces
-             * @description 부분 공사일 때 고른 공간 (전체면 비움)
+             * @description 부분 공사일 때 켠 공간 칩 (전체면 비움)
              * @default []
              */
-            spaces: ("living" | "kitchen" | "master" | "room1" | "room2" | "hall" | "entry" | "dress")[];
+            spaces: ("living" | "kitchen" | "master" | "room1" | "room2" | "room3" | "room4" | "hall" | "entry" | "dress")[];
+            /**
+             * Rooms
+             * @description 방 개수 1~5. 비우면 평형 기본값(GET /guest/room-rule)으로 센다
+             */
+            rooms?: number | null;
             /**
              * Faces
              * @description 전체는 벽 + 천장
@@ -4159,9 +4186,14 @@ export interface components {
              */
             scope: "full" | "partial";
             /** Spaces */
-            spaces: ("living" | "kitchen" | "master" | "room1" | "room2" | "hall" | "entry" | "dress")[];
+            spaces: ("living" | "kitchen" | "master" | "room1" | "room2" | "room3" | "room4" | "hall" | "entry" | "dress")[];
             /** Faces */
             faces: ("wall" | "ceiling")[];
+            /**
+             * Rooms
+             * @description 넣은 방 개수 (옛 공사는 비어 있음)
+             */
+            rooms?: number | null;
             /** Housing */
             housing: string;
             /** Sido */
@@ -6898,6 +6930,59 @@ export interface components {
              * @description POST /files kind=review_photo
              */
             photo_file_ids?: string[];
+        };
+        /**
+         * RoomBandOut
+         * @description 방 개수 기본값 한 칸: 이 면적(㎡) 이상이면 이 방 개수
+         */
+        RoomBandOut: {
+            /**
+             * Area Basis
+             * @enum {string}
+             */
+            area_basis: "supply" | "exclusive";
+            /**
+             * Min M2
+             * @description 이 면적 이상 (㎡, 소수 한 자리 올림)
+             */
+            min_m2: string;
+            /** Rooms */
+            rooms: number;
+        };
+        /**
+         * RoomRuleOut
+         * @description 방 개수 칸 (whole-house-area 방안 4). 화면은 면적으로 칸을 찾기만 하고 계산하지 않는다.
+         */
+        RoomRuleOut: {
+            /**
+             * Price Ver
+             * @description 이 표가 든 도배 단가 판
+             */
+            price_ver: string;
+            /**
+             * Share Ver
+             * @description 방 개수별 공간 몫 표 판
+             */
+            share_ver: string;
+            /** Min */
+            min: number;
+            /** Max */
+            max: number;
+            /**
+             * Fallback
+             * @description 면적을 아직 안 넣었을 때 보이는 방 개수
+             */
+            fallback: number;
+            /**
+             * Bands
+             * @description 면적 기준별, 작은 면적부터
+             */
+            bands: components["schemas"]["RoomBandOut"][];
+            /**
+             * Room Kinds
+             * @description 방 칩 순서 (방 1개 = 첫 칸, 5개 = 다섯 칸)
+             */
+            room_kinds: string[];
         };
         /**
          * SameNameOut
@@ -11417,6 +11502,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    guest_room_rule_guest_room_rule_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoomRuleOut"];
                 };
             };
         };

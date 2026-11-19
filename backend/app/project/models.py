@@ -31,8 +31,19 @@ DOBAE_GRADES = ("economy", "basic")  # 저가형 · 기본형 (v3 화면 말: �
 # v3: 공사 범위(전체 · 부분) · 면(벽 · 천장) · 공간 종류 · 손님 답을 옮겼는지
 SCOPES = ("full", "partial")
 FACES = ("wall", "ceiling")
-# 거실 · 주방 · 안방 · 작은방 1 · 작은방 2 · 복도 · 현관 · 드레스룸 (공간 몫은 calc.space_share 표에서 kind로)
-SPACE_KINDS = ("living", "kitchen", "master", "room1", "room2", "hall", "entry", "dress")
+# 거실 · 주방 · 안방 · 작은방 1~4 · 복도 · 현관 · 드레스룸 (공간 몫은 calc.space_share 표에서 kind로)
+SPACE_KINDS = (
+    "living",
+    "kitchen",
+    "master",
+    "room1",
+    "room2",
+    "room3",
+    "room4",
+    "hall",
+    "entry",
+    "dress",
+)
 # v3 부분 공사 공간을 project_spaces에 넣을 때 쓰는 이름 (화면 말)
 SPACE_NAMES = {
     "living": "거실",
@@ -40,6 +51,8 @@ SPACE_NAMES = {
     "master": "안방",
     "room1": "작은방 1",
     "room2": "작은방 2",
+    "room3": "작은방 3",
+    "room4": "작은방 4",
     "hall": "복도",
     "entry": "현관",
     "dress": "드레스룸",
@@ -48,7 +61,9 @@ SOURCES = ("v2", "guest", "member")
 BUDGET_WON_MIN = 100_000
 BUDGET_WON_MAX = 10_000_000_000
 _FACES_SQL = "array['wall', 'ceiling']::varchar[]"
-_SPACE_KINDS_SQL = "('living', 'kitchen', 'master', 'room1', 'room2', 'hall', 'entry', 'dress')"
+_SPACE_KINDS_SQL = (
+    "('living', 'kitchen', 'master', 'room1', 'room2', 'room3', 'room4', 'hall', 'entry', 'dress')"
+)
 
 
 class Project(Base):
@@ -90,6 +105,7 @@ class Project(Base):
             name="budget_won",
         ),
         CheckConstraint("source in ('v2', 'guest', 'member')", name="source"),
+        CheckConstraint("rooms is null or rooms between 1 and 5", name="rooms"),
         # 손님 답 옮기기 멱등 키: 같은 키로 두 번 오면 만든 공사를 돌려준다 (NULL끼리는 겹치지 않는다)
         UniqueConstraint("owner_id", "client_key", name="uq_projects_client_key"),
     )
@@ -127,6 +143,8 @@ class Project(Base):
     budget_won: Mapped[int | None] = mapped_column(BigInteger)  # 비면 '아직 몰라요'
     source: Mapped[str] = mapped_column(String(8), default="v2", server_default="v2")
     client_key: Mapped[uuid.UUID | None] = mapped_column()
+    # v3 (0036): 방 개수 1~5. 비면(옛 공사 · v2) 평형 기본값으로 센다(calc.dobae.rooms_of)
+    rooms: Mapped[int | None] = mapped_column(SmallInteger)
 
 
 class ProjectSpace(Base):

@@ -104,6 +104,7 @@ def _fill(p: Project, data: ProjectCreate) -> None:
     p.budget = data.budget
     p.emd = None  # v3 칸 (v2 몸통으로 고치면 v3 기본 정보가 없어진다)
     p.budget_won = None
+    p.rooms = None
 
 
 def _fill_home(p: Project, data: HomeInfoIn) -> None:
@@ -123,6 +124,7 @@ def _fill_home(p: Project, data: HomeInfoIn) -> None:
     p.occupied = data.occupied
     p.budget = None
     p.budget_won = data.budget_won
+    p.rooms = data.rooms
 
 
 async def _write_home_parts(s: AsyncSession, p: Project, data: HomeInfoIn) -> None:
@@ -324,6 +326,7 @@ def _home(p: Project, spaces: list, trades: list, links: list) -> HomeInfoOut | 
         scope=t.scope,
         spaces=[sp.kind for sp in spaces if sp.kind and sp.id in linked],
         faces=list(t.faces),
+        rooms=p.rooms,
         housing=p.house_type,
         sido=p.sido,
         sgg=p.sgg,

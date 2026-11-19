@@ -4,7 +4,7 @@ import { cache } from "react";
 import { serverGet, type Schemas } from "@/lib/backend/server";
 import type { BandTask } from "@/components/site/ProjectBand";
 import { dueText } from "@/lib/format";
-import { projectName, stepIndex } from "@/lib/guest/info";
+import { ROOM_RULE_EMPTY, projectName, stepIndex } from "@/lib/guest/info";
 import { mockKeyOf } from "@/lib/mock/v3a/mode";
 import { MOCK_CHECKS, mockPlan, mockProject } from "@/lib/mock/v3a/project";
 import { SIDO } from "@/lib/mock/regions";
@@ -36,11 +36,20 @@ export async function getRegions(): Promise<Region[]> {
   }
 }
 
+/** 방 개수 칸 범위 · 평형 기본값 표(GET /guest/room-rule). 못 읽으면 칸 범위만(기본값 3개) */
+export async function getRoomRule(): Promise<Schemas["RoomRuleOut"]> {
+  try {
+    return (await serverGet<Schemas["RoomRuleOut"]>("/guest/room-rule")) ?? ROOM_RULE_EMPTY;
+  } catch {
+    return ROOM_RULE_EMPTY;
+  }
+}
+
 // ───── v3 공사 한 건 머리
 
 export type HomeSaved = Schemas["HomeInfoOut"];
 /** 표준견적서 '이 조건으로 계산했어요' 줄에 쓰는 값(v2로 만든 공사는 옛 칸에서 모아요) */
-export type Condition = { scope: "full" | "partial"; spaces: string[]; faces: string[]; area_m2: string; area_basis: string; grade: string | null; occupied: boolean };
+export type Condition = { scope: "full" | "partial"; spaces: string[]; faces: string[]; area_m2: string; area_basis: string; grade: string | null; occupied: boolean; rooms?: number | null };
 
 export type ProjectShell = {
   id: string;
@@ -105,7 +114,7 @@ export const getProjectShell = cache(async (id: string): Promise<ProjectShell | 
   const trades = (["dobae", "mokgong"] as const).filter((t) => p.trades[t]);
   const h = p.home ?? null;
   const cond: Condition | null = h
-    ? { scope: h.scope, spaces: h.spaces, faces: h.faces, area_m2: String(h.area_m2), area_basis: h.area_basis, grade: h.grade, occupied: h.occupied }
+    ? { scope: h.scope, spaces: h.spaces, faces: h.faces, area_m2: String(h.area_m2), area_basis: h.area_basis, grade: h.grade, occupied: h.occupied, rooms: h.rooms }
     : p.size.m2
       ? { scope: "full", spaces: [], faces: ["wall", "ceiling"], area_m2: String(p.size.m2), area_basis: p.size.basis ?? "supply", grade: p.trades.dobae?.grade ?? null, occupied: p.occupied }
       : null;

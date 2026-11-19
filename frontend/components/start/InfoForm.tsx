@@ -19,8 +19,8 @@ import type { Region } from "@/lib/api/project";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort } from "@/lib/format";
 import {
-  EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, SPACES, checkDraft, placeText, summaryRows, toHomeInfo,
-  type Face, type InfoDraft, type InfoErrors, type SpaceKind,
+  EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, checkDraft, chipsFor, onChips, placeText, roomsOf, scopeOf, spaceLabel, summaryRows, toHomeInfo,
+  type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
 } from "@/lib/guest/info";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
 import { DateSheet } from "./DateSheet";
@@ -34,8 +34,10 @@ const FIELD_ID: Record<keyof InfoErrors, string> = {
   spaces: "inf-spaces", faces: "inf-faces", region: "inf-region", area: "inf-area", occupied: "inf-occupied", grade: "inf-grade", budget: "inf-budget",
 };
 
-export function InfoForm({ regions, today, mode, projectId, initial, mock, crumbs }: {
+export function InfoForm({ regions, roomRule, today, mode, projectId, initial, mock, crumbs }: {
   regions: Region[];
+  /** 방 개수 칸 범위 · 평형 기본값 표(서버 계산 엔진) */
+  roomRule: RoomRule;
   /** 웹 이동 경로(마지막 줄은 이 화면) */
   crumbs: Crumb[];
   /** 오늘(서울 날짜, 서버 값) */
@@ -118,6 +120,16 @@ export function InfoForm({ regions, today, mode, projectId, initial, mock, crumb
     }
   }
 
+  const rooms = roomsOf(d, roomRule);
+  const chips = chipsFor(rooms, roomRule);
+  const on = onChips(d, chips);
+  // 방 개수를 바꾸면 칩이 늘거나 줄어요. 새로 생긴 방 칩은 켜진 채로 와요
+  const setRooms = (n: number) => {
+    const next = chipsFor(n, roomRule);
+    const added = next.filter((k) => !chips.includes(k));
+    set({ rooms: n, ...scopeOf([...on, ...added], d.faces, next) });
+  };
+
   const errKeys = ERROR_ORDER.filter((k) => errors[k]);
   const place = placeText(regions, d);
   const cta = d.scope === "partial" ? "부분 표준견적서 보기" : "표준견적서 보기";
@@ -140,22 +152,7 @@ export function InfoForm({ regions, today, mode, projectId, initial, mock, crumb
             <h2 id="g-what" className={s.grp}>어떤 공사</h2>
             <div className={s.cols}>
               <ChoiceChips legend="공사 종류" value="dobae" onChange={() => {}} options={[{ value: "dobae", label: "도배" }, { value: "mokgong", label: "목공", soon: true }]} />
-              <div className={s.f}>
-                <Segmented legend="공사 범위" value={d.scope} onChange={(v) => set(v === "partial" ? { scope: "partial" } : { scope: "full", spaces: [], faces: ["wall", "ceiling"] })}
-                  options={[{ value: "full", label: "전체" }, { value: "partial", label: "부분" }]} />
-                <p className={s.help}>전체는 벽 + 천장이에요. 부분을 고르면 공간과 면(벽 · 천장)을 골라요</p>
-              </div>
             </div>
-            {d.scope === "partial" ? (
-              <div className={s.part}>
-                <div id={FIELD_ID.spaces}>
-                  <ChoiceChips multiple legend="공간" value={d.spaces} error={errors.spaces} onChange={(v) => set({ spaces: v as SpaceKind[] })} options={SPACES.map((x) => ({ value: x.key, label: x.label }))} />
-                </div>
-                <div id={FIELD_ID.faces}>
-                  <ChoiceChips multiple legend="면" value={d.faces} error={errors.faces} onChange={(v) => set({ faces: v as Face[] })} options={FACES.map((x) => ({ value: x.key, label: x.label }))} />
-                </div>
-              </div>
-            ) : null}
           </section>
 
           <section className={s.group} aria-labelledby="g-home">
@@ -183,9 +180,23 @@ export function InfoForm({ regions, today, mode, projectId, initial, mock, crumb
             <div className={s.gh}>
               <Button variant="text" onClick={() => setSheet("pyeong")}>평으로 넣기</Button>
             </div>
+            <ChoiceChips legend="방 개수" value={String(rooms)} onChange={(v) => setRooms(Number(v))}
+              options={Array.from({ length: roomRule.max - roomRule.min + 1 }, (_, i) => { const n = roomRule.min + i; return { value: String(n), label: `${n}개` }; })} />
             <div id={FIELD_ID.occupied}>
               <ChoiceChips legend="공사할 때 집은" value={d.occupied === null ? null : d.occupied ? "yes" : "no"} error={errors.occupied} onChange={(v) => set({ occupied: v === "yes" })}
                 options={[{ value: "yes", label: "사는 중" }, { value: "no", label: "빈 집" }]} />
+            </div>
+          </section>
+
+          <section className={s.group} aria-labelledby="g-where">
+            <h2 id="g-where" className={s.grp}>도배할 곳</h2>
+            <div id={FIELD_ID.spaces}>
+              <ChoiceChips multiple legend="공간" value={on} error={errors.spaces} onChange={(v) => set(scopeOf(v as SpaceKind[], d.faces, chips))}
+                options={chips.map((k) => ({ value: k, label: spaceLabel(k) }))} />
+            </div>
+            <div id={FIELD_ID.faces}>
+              <ChoiceChips multiple legend="면" value={d.faces} error={errors.faces} onChange={(v) => set(scopeOf(on, v as Face[], chips))}
+                options={FACES.map((x) => ({ value: x.key, label: x.label }))} />
             </div>
           </section>
 
@@ -224,7 +235,7 @@ export function InfoForm({ regions, today, mode, projectId, initial, mock, crumb
         <aside className={s.aside} aria-labelledby="inf-sum">
           <h2 id="inf-sum" className={s.eb}>넣은 내용</h2>
           <dl className={s.rows}>
-            {summaryRows(d, { fullRegion: place }).map((r) => (
+            {summaryRows(d, { fullRegion: place, rooms }).map((r) => (
               <div key={r.label} className={s.row}>
                 <dt>{r.label}{r.sub ? <span>{r.sub}</span> : null}</dt>
                 <dd className="mj-num">{r.value || "—"}</dd>

@@ -13,6 +13,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.calc.space_share import rooms_needed
 from app.shared.errors import app_error
 from app.shared.regions import is_region
 
@@ -23,8 +24,10 @@ DobaeGrade = Literal["economy", "basic"]  # 저가형 · 기본형 (v3 화면 �
 # v3 기본 정보
 Scope = Literal["full", "partial"]  # 전체 · 부분 공사
 Face = Literal["wall", "ceiling"]  # 벽 · 천장
-# 거실 · 주방 · 안방 · 작은방 1 · 작은방 2 · 복도 · 현관 · 드레스룸
-SpaceKind = Literal["living", "kitchen", "master", "room1", "room2", "hall", "entry", "dress"]
+# 거실 · 주방 · 안방 · 작은방 1~4 · 복도 · 현관 · 드레스룸 (방 칩은 방 개수만큼: calc.space_share.room_kinds)
+SpaceKind = Literal[
+    "living", "kitchen", "master", "room1", "room2", "room3", "room4", "hall", "entry", "dress"
+]
 MAX_PHOTOS_PER_SPACE = 10
 MAX_PLANS = 5
 
@@ -188,7 +191,13 @@ class HomeInfoIn(BaseModel):
     trade: Literal["dobae"] = "dobae"
     scope: Scope = "full"
     spaces: list[SpaceKind] = Field(
-        default=[], max_length=8, description="부분 공사일 때 고른 공간 (전체면 비움)"
+        default=[], max_length=10, description="부분 공사일 때 켠 공간 칩 (전체면 비움)"
+    )
+    rooms: int | None = Field(
+        default=None,
+        ge=1,
+        le=5,
+        description="방 개수 1~5. 비우면 평형 기본값(GET /guest/room-rule)으로 센다",
     )
     faces: list[Face] = Field(
         default=["wall", "ceiling"], min_length=1, max_length=2, description="전체는 벽 + 천장"
@@ -229,6 +238,8 @@ class HomeInfoIn(BaseModel):
             raise ValueError("전체 공사는 공간을 고르지 않고 벽 · 천장을 모두 해요.")
         if self.scope == "partial" and not self.spaces:
             raise ValueError("부분 공사할 공간을 골라 주세요.")
+        if self.rooms is not None and rooms_needed(self.spaces) > self.rooms:
+            raise ValueError("방 개수보다 많은 방을 골랐어요.")
         return self
 
 
@@ -274,6 +285,7 @@ class HomeInfoOut(BaseModel):
     scope: Scope
     spaces: list[SpaceKind]
     faces: list[Face]
+    rooms: int | None = Field(default=None, description="넣은 방 개수 (옛 공사는 비어 있음)")
     housing: str
     sido: str
     sgg: str

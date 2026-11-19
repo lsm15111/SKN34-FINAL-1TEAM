@@ -1,5 +1,12 @@
 """v2 API: 예시 평면도 · 목공 자재 · 견적 미리 보기. 미리 보기는 저장하지 않는다."""
 
+from app.calc import dobae
+from app.calc.space_share import SPACE_SHARE_2026_11
+from app.project.schemas import ProjectOut
+from app.quote.service import home_v3
+from app.refprice.book import DOBAE_2026H2
+from app.refprice.house import HOUSE_2026H2
+from app.refprice.wallpaper_market import paper_market
 from tests.conftest import query
 from tests.helpers import signup
 from tests.test_project import body
@@ -51,15 +58,24 @@ def test_preview_without_plan_matches_standard_dobae(api):
     assert r.status_code == 200, r.text
     pv = r.json()
     assert [t["trade"] for t in pv["trades"]] == ["mokgong", "dobae"]
-    # 도면이 없으면 도배는 팀 표준견적서와 같은 금액. v3 표준견적서는 도배지 줄만 벽지 평 × 시장 평균
-    # (리드 결정)이라 그 줄을 뺀 공급가가 같다
+    # 도면이 없으면 도배는 옛 판(2026H2, 면적 × 2.5)으로 센 v3 표준견적서와 같은 금액. v3 표준견적서는
+    # 도배지 줄만 벽지 평 × 시장 평균(리드 결정)이라 그 줄을 뺀 공급가가 같다.
+    # 지금 표준견적서는 판 2026H2-rooms(공급 × 1.55 + 방 × 20.4㎡)라 v2 미리보기보다 작다
+    pv_d = pv["trades"][1]
+    p = ProjectOut.model_validate(api.get(f"/projects/{pid}").json())
+    h = home_v3(p)
+    old = dobae.standard_v3(
+        h, DOBAE_2026H2, paper_market(h.grade), SPACE_SHARE_2026_11, HOUSE_2026H2
+    ).quote
+    old_paper = next(ln.amount for ln in old.lines if ln.key == "paper")
+    paper = next(ln["amount"] for ln in pv_d["lines"] if ln["key"] == "paper")
+    assert pv_d["supply"] - paper == old.subtotal - old_paper
     st = api.get(f"/projects/{pid}/standard").json()
-    pv_d, st_d = pv["trades"][1], st["trades"][1]
-
-    def paper(t: dict) -> int:
-        return next(ln["amount"] for ln in t["lines"] if ln["key"] == "paper")
-
-    assert pv_d["supply"] - paper(pv_d) == st_d["supply"] - paper(st_d)
+    vers = {
+        r["trade"]: r["price_ver"] for r in query("select trade, price_ver from standard_quotes")
+    }
+    assert pv_d["version"] == "2026H2" and vers == {"mokgong": "2026H2", "dobae": "2026H2-rooms"}
+    assert st["trades"][1]["supply"] < old.subtotal
     mok = pv["trades"][0]
     assert {ln["key"] for ln in mok["lines"]} >= {"molding", "molding_mat", "base", "base_mat"}
     assert mok["market"]["lo"] <= mok["market"]["hi"]

@@ -4,6 +4,7 @@
 견적에는 version을 고정해서 나중에 값이 바뀌어도 만든 때의 기준을 알 수 있게 한다.
 """
 
+from dataclasses import replace
 from decimal import Decimal
 
 from app.calc.common import won
@@ -43,6 +44,30 @@ DOBAE_2026H2 = DobaePrices(
         "occupied": "표준품셈 · 짐 있는 집 시공량 15% 감산, 노무비에만",
         "removal": "표준품셈 벽지 떼내기 × 2026.9.1 보통인부 노임",
         "none": "공공 단가가 없어 업체 견적에서 확인해요",
+    },
+)
+
+# v3 표준견적서 · 손님 계산 · 가견적이 쓰는 판 (docs/v3/research/whole-house-area.md 방안 4).
+# 옛 판(2026H2)은 v2 단가표 예시 · 정밀 견적 같은 옛 계산이 그대로 쓴다.
+# - 도배 면적 = 공급㎡ × 1.55 + 방 개수 × 20.4㎡ (확장 평면도 20곳 회귀, 오차 11.7㎡)
+# - 전용면적은 × 1.315로 공급면적을 잡는다 (공고 평면 20곳 공급 ÷ 전용 가운뎃값)
+# - 천장 0.35 (평면도 0.349). 회귀가 확장 집 기준이라 발코니 확장 가산은 1(더하지 않음)
+# - area_factor는 고정 배수로 셀 때의 바로잡은 값(공급 2.2 · 전용 2.9, 방안 1). 회귀식이 있어 지금은 안 쓴다
+# - 방 개수 기본값: 공급 22평 미만 2개 · 22~39평 3개 · 40평 이상 4개 (평면도 20곳 · 집닥 34평 → 3)
+DOBAE_V3_2026_11 = replace(
+    DOBAE_2026H2,
+    version="2026H2-rooms",
+    area_factor={"supply": Decimal("2.2"), "exclusive": Decimal("2.9")},
+    ceiling_share=Decimal("0.35"),
+    balcony_factor=Decimal(1),
+    area_per_supply=Decimal("1.55"),
+    area_per_room=Decimal("20.4"),
+    supply_per_exclusive=Decimal("1.315"),
+    room_bands=((Decimal(0), 2), (Decimal(22), 3), (Decimal(40), 4)),
+    room_fallback=3,
+    sources={
+        **DOBAE_2026H2.sources,
+        "area": "팀 가정값 · 공개 평면도 20곳 회귀 (공급 × 1.55 + 방 × 20.4㎡, plans-2026.11-v9)",
     },
 )
 

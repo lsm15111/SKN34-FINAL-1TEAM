@@ -21,7 +21,7 @@ from app.auth.models import User
 from app.calc import deadline, dobae, mokgong
 from app.calc.common import FORMULA_VERSION, Money, Step, from_entered, sum_days, sum_won
 from app.calc.quote_diff import budget_fit, budget_gap
-from app.calc.space_share import SPACE_SHARE_2026_11
+from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
 from app.calc.standard_quote import house_area, house_pyeong
 from app.files import service as files_service
 from app.files.models import File
@@ -47,7 +47,7 @@ from app.quote.schemas import (
     StandardTradeOut,
     VendorQuoteOut,
 )
-from app.refprice.book import DOBAE_2026H2, MOKGONG_2026H2
+from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.wallpaper_market import paper_market
 from app.shared.clock import SEOUL, now_utc
@@ -55,7 +55,8 @@ from app.shared.errors import AppError
 from app.shared.ids import uuid7
 from app.vendor import service as vendor_service
 
-PRICE_VER = DOBAE_2026H2.version
+# 공정별 단가 판. 도배는 v3 판(회귀식 · 방 개수, 2026H2-rooms), 목공은 2026H2
+PRICE_VER = {"dobae": DOBAE_V3_2026_11.version, "mokgong": MOKGONG_2026H2.version}
 ROOM = "방"  # 방문 개수: 목공을 고른 공간 중 이름에 '방'이 든 곳
 FULL_FACES = ("wall", "ceiling")
 VALID_SOON = "quote_valid_soon"  # 기한 일 kind (jobs.models.KINDS) · 알림 kind (notify.catalog)
@@ -98,14 +99,14 @@ def home_v3(p: ProjectOut, grade: str | None = None) -> dobae.HomeV3:
     if h is None:
         return dobae.HomeV3(area, basis, g, p.occupied, balcony_ext=p.balcony_ext)
     return dobae.HomeV3(
-        area, basis, g, p.occupied, h.scope, tuple(h.spaces), tuple(h.faces), p.balcony_ext
+        area, basis, g, p.occupied, h.scope, tuple(h.spaces), tuple(h.faces), p.balcony_ext, h.rooms
     )
 
 
 def standard_v3(h: dobae.HomeV3, crew: int | None = None) -> dobae.StandardV3:
     """v3 도배 표준견적서 (계산 엔진 + refprice 판). 손님 계산 · 가견적도 같은 함수 꼴을 쓴다."""
-    dp = replace(DOBAE_2026H2, crew=crew) if crew else DOBAE_2026H2
-    return dobae.standard_v3(h, dp, paper_market(h.grade), SPACE_SHARE_2026_11, HOUSE_2026H2)
+    dp = replace(DOBAE_V3_2026_11, crew=crew) if crew else DOBAE_V3_2026_11
+    return dobae.standard_v3(h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2)
 
 
 def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[TradeCalc]:
@@ -113,7 +114,7 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
     crews를 주면 그 공정의 하루 인원을 바꿔 기간을 센다(업체가 적은 인원)."""
     crews = crews or {}
     mp = replace(MOKGONG_2026H2, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG_2026H2
-    dp = replace(DOBAE_2026H2, crew=crews["dobae"]) if "dobae" in crews else DOBAE_2026H2
+    dp = replace(DOBAE_V3_2026_11, crew=crews["dobae"]) if "dobae" in crews else DOBAE_V3_2026_11
     area, basis = _area(p)
     out: list[TradeCalc] = []
     if p.trades.mokgong:
@@ -189,7 +190,7 @@ def _fresh(row: StandardQuote, p: ProjectOut, c: TradeCalc) -> bool:
     return (
         row.project_rev == p.rev
         and row.formula_ver == FORMULA_VERSION
-        and row.price_ver == PRICE_VER
+        and row.price_ver == PRICE_VER.get(c.trade)
         and row.market_ver == c.market_ver
         and row.share_ver == c.share_ver
     )
@@ -213,7 +214,7 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
                 version=(latest[trade].version + 1) if trade in latest else 1,
                 project_rev=p.rev,
                 formula_ver=FORMULA_VERSION,
-                price_ver=PRICE_VER,
+                price_ver=PRICE_VER[trade],
                 grade=c.grade,
                 area_m2=area,
                 area_basis=basis,

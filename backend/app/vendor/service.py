@@ -21,13 +21,13 @@ from app.auth import service as auth_service
 from app.auth.models import User
 from app.calc import dobae, estimate, mokgong
 from app.calc.schedule import days_since
-from app.calc.space_share import SPACE_SHARE_2026_11
+from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
 from app.calc.standard_quote import house_area
 from app.calc.visit_view import area_text
 from app.files import service as files_service
 from app.files.models import File
 from app.notify import service as notify_service
-from app.refprice.book import DOBAE_2026H2, MOKGONG_2026H2
+from app.refprice.book import DOBAE_2026H2, DOBAE_V3_2026_11, MOKGONG_2026H2
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.vendor_baseline import price_warning, vendor_base
 from app.refprice.wallpaper_market import paper_market
@@ -865,7 +865,7 @@ def _estimate_v3_out(
 def _std_v3(h: dobae.HomeV3) -> dobae.StandardV3:
     """v3 표준견적서 계산 (quote.service가 저장하는 값과 같은 계산 엔진 · 판)"""
     return dobae.standard_v3(
-        h, DOBAE_2026H2, paper_market(h.grade), SPACE_SHARE_2026_11, HOUSE_2026H2
+        h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
     )
 
 
@@ -1218,7 +1218,7 @@ def _home_v3(p: "ProjectOut", grade: str | None) -> dobae.HomeV3:
     if h is None:
         return dobae.HomeV3(area, basis, g, p.occupied, balcony_ext=p.balcony_ext)
     return dobae.HomeV3(
-        area, basis, g, p.occupied, h.scope, tuple(h.spaces), tuple(h.faces), p.balcony_ext
+        area, basis, g, p.occupied, h.scope, tuple(h.spaces), tuple(h.faces), p.balcony_ext, h.rooms
     )
 
 

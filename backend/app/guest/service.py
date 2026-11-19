@@ -9,12 +9,26 @@ from datetime import date
 from app.calc import dobae
 from app.calc.common import FORMULA_VERSION
 from app.calc.quote_diff import budget_fit
-from app.calc.space_share import SPACE_SHARE_2026_11
-from app.guest.schemas import GuestLineOut, GuestStandardOut
+from app.calc.space_share import ROOM_KINDS, ROOMS_MAX, ROOMS_MIN, SPACE_SHARE_ROOMS_2026_11
+from app.guest.schemas import GuestLineOut, GuestStandardOut, RoomBandOut, RoomRuleOut
 from app.project.schemas import HomeInfoIn, check_home
-from app.refprice.book import DOBAE_2026H2
+from app.refprice.book import DOBAE_V3_2026_11
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.wallpaper_market import paper_market
+
+
+def room_rule() -> RoomRuleOut:
+    """GET /guest/room-rule: 방 개수 칸의 범위 · 평형 기본값 표 (계산 엔진 판 그대로)"""
+    p = DOBAE_V3_2026_11
+    return RoomRuleOut(
+        price_ver=p.version,
+        share_ver=SPACE_SHARE_ROOMS_2026_11.version,
+        min=ROOMS_MIN,
+        max=ROOMS_MAX,
+        fallback=p.room_fallback,
+        bands=[RoomBandOut(area_basis=b, min_m2=m, rooms=n) for b, m, n in dobae.room_bands_m2(p)],
+        room_kinds=list(ROOM_KINDS),
+    )
 
 
 async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
@@ -29,8 +43,11 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         data.scope,
         tuple(data.spaces),
         tuple(data.faces),
+        rooms=data.rooms,
     )
-    v = dobae.standard_v3(h, DOBAE_2026H2, paper_market(h.grade), SPACE_SHARE_2026_11, HOUSE_2026H2)
+    v = dobae.standard_v3(
+        h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+    )
     q = v.quote
     return GuestStandardOut(
         formula_ver=FORMULA_VERSION,
@@ -41,6 +58,7 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         area_m2=data.area_m2,
         area_basis=data.area_basis,
         pyeong=v.pyeong,
+        rooms=v.rooms or data.rooms,
         lines=[
             GuestLineOut(
                 key=ln.key,

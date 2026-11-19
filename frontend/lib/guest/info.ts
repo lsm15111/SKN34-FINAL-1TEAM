@@ -10,12 +10,16 @@ export type SpaceKind = HomeInfo["spaces"][number];
 export type Face = HomeInfo["faces"][number];
 export type Grade = HomeInfo["grade"];
 export type Basis = HomeInfo["area_basis"];
+/** 방 개수 칸 범위 · 평형 기본값 표(GET /guest/room-rule, 서버 계산 엔진 판) */
+export type RoomRule = Schemas["RoomRuleOut"];
 
 /** 넣는 중인 답(기기에 저장하는 모양). 다 차면 toHomeInfo로 API 몸통이 돼요 */
 export type InfoDraft = {
   scope: "full" | "partial";
   spaces: SpaceKind[];
   faces: Face[];
+  /** 방 개수 1~5. 비우면 면적으로 채운 기본값(roomsOf) */
+  rooms: number | null;
   sido: string;
   sgg: string;
   emd: string;
@@ -31,17 +35,55 @@ export type InfoDraft = {
 };
 
 export const EMPTY_DRAFT: InfoDraft = {
-  scope: "full", spaces: [], faces: ["wall", "ceiling"], sido: "", sgg: "", emd: "",
+  scope: "full", spaces: [], faces: ["wall", "ceiling"], rooms: null, sido: "", sgg: "", emd: "",
   area: "", basis: "supply", occupied: null, grade: null, budget: "", start: null,
 };
 
 export const SPACES: { key: SpaceKind; label: string }[] = [
   { key: "living", label: "거실" }, { key: "kitchen", label: "주방" }, { key: "master", label: "안방" },
-  { key: "room1", label: "작은방 1" }, { key: "room2", label: "작은방 2" }, { key: "hall", label: "복도" },
+  { key: "room1", label: "작은방 1" }, { key: "room2", label: "작은방 2" }, { key: "room3", label: "작은방 3" },
+  { key: "room4", label: "작은방 4" }, { key: "hall", label: "복도" },
   { key: "entry", label: "현관" }, { key: "dress", label: "드레스룸" },
 ];
 export const FACES: { key: Face; label: string }[] = [{ key: "wall", label: "벽" }, { key: "ceiling", label: "천장" }];
 export const spaceLabel = (k: string) => SPACES.find((s) => s.key === k)?.label ?? k;
+/** API를 못 읽었을 때: 칸 범위 · 방 칩 순서만(기본값 표는 비워 두고 fallback 3개) */
+export const ROOM_RULE_EMPTY: RoomRule = {
+  price_ver: "", share_ver: "", min: 1, max: 5, fallback: 3, bands: [],
+  room_kinds: ["master", "room1", "room2", "room3", "room4"],
+};
+
+/** 화면에 보이는 방 개수: 넣은 값, 없으면 면적으로 표에서 찾은 기본값(서버 calc.dobae.default_rooms와 같은 표) */
+export function roomsOf(d: Pick<InfoDraft, "rooms" | "area" | "basis" | "spaces">, rule: RoomRule): number {
+  if (d.rooms) return d.rooms;
+  const n = Number(d.area.trim());
+  let r = rule.fallback;
+  if (d.area.trim() && Number.isFinite(n) && n > 0) {
+    const bands = rule.bands.filter((b) => b.area_basis === d.basis);
+    if (bands.length) r = bands.reduce((acc, b) => (n >= Number(b.min_m2) ? b.rooms : acc), bands[0].rooms);
+  }
+  // 고른 방 칩이 더 많으면 그만큼(옛 공사 호환, 서버 rooms_of와 같음)
+  const need = Math.max(0, ...d.spaces.map((k) => rule.room_kinds.indexOf(k) + 1));
+  return Math.min(Math.max(r, need), rule.max);
+}
+
+/** 방 개수에 맞춘 공간 칩: 거실 · 주방 · 안방 · 작은방 1 … · 복도 · 현관 · 드레스룸 */
+export function chipsFor(rooms: number, rule: RoomRule): SpaceKind[] {
+  const rk = rule.room_kinds.slice(0, rooms) as SpaceKind[];
+  return ["living", "kitchen", ...rk, "hall", "entry", "dress"];
+}
+
+/** 켠 칩 · 면 → 범위. 칩을 다 켜고 벽 + 천장이면 전체, 아니면 부분(켠 칩만) */
+export function scopeOf(on: SpaceKind[], faces: Face[], chips: SpaceKind[]): Pick<InfoDraft, "scope" | "spaces" | "faces"> {
+  const spaces = chips.filter((k) => on.includes(k));
+  const both = faces.includes("wall") && faces.includes("ceiling");
+  if (spaces.length === chips.length && both) return { scope: "full", spaces: [], faces: ["wall", "ceiling"] };
+  return { scope: "partial", spaces, faces: FACES.map((f) => f.key).filter((f) => faces.includes(f)) };
+}
+
+/** 켜진 칩(전체면 모두) */
+export const onChips = (d: Pick<InfoDraft, "scope" | "spaces">, chips: SpaceKind[]): SpaceKind[] => (d.scope === "full" ? chips : chips.filter((k) => d.spaces.includes(k)));
+
 export const GRADE_WORD: Record<Grade, string> = { economy: "합지", basic: "실크" };
 
 /** 면 글: 벽 + 천장 · 벽만 · 천장만 */
@@ -89,7 +131,7 @@ export const ERROR_NAME: Record<keyof InfoErrors, string> = { spaces: "공간", 
 export function checkDraft(d: InfoDraft): InfoErrors {
   const e: InfoErrors = {};
   if (d.scope === "partial") {
-    if (!d.spaces.length) e.spaces = "공간을 하나 이상 골라 주세요.";
+    if (!d.spaces.length) e.spaces = "공간을 하나 이상 켜 주세요.";
     if (!d.faces.length) e.faces = "벽 · 천장 중 하나 이상 골라 주세요.";
   }
   if (!d.sido || !d.sgg) e.region = "지역을 골라 주세요. 시 · 도와 시 · 군 · 구를 골라요.";
@@ -123,6 +165,7 @@ export function toHomeInfo(d: InfoDraft): HomeInfo {
     scope: d.scope,
     spaces: partial ? d.spaces : [],
     faces: partial ? d.faces : ["wall", "ceiling"],
+    rooms: d.rooms,
     housing: "apt",
     sido: d.sido,
     sgg: d.sgg, // 동은 보내지 않아요(시 · 군 · 구까지만 받아요)
@@ -141,6 +184,7 @@ export function fromSaved(h: HomeInfoSaved): InfoDraft {
     scope: h.scope,
     spaces: h.spaces,
     faces: h.faces.length ? h.faces : ["wall", "ceiling"],
+    rooms: h.rooms ?? null,
     sido: h.sido,
     sgg: h.sgg,
     emd: h.emd ?? "",
@@ -173,11 +217,13 @@ export function summaryLine(d: InfoDraft): string {
 }
 
 /** 웹 '넣은 내용' 칸(D11) · 잠긴 기본 정보(C50)가 같이 쓰는 줄 */
-export function summaryRows(d: InfoDraft, opts: { longDate?: string; fullRegion?: string } = {}): { label: string; value: string; sub?: string }[] {
+export function summaryRows(d: InfoDraft, opts: { longDate?: string; fullRegion?: string; rooms?: number } = {}): { label: string; value: string; sub?: string }[] {
   const budget = budgetWon(d.budget);
+  const rooms = d.rooms ?? opts.rooms;
   return [
     { label: "공사 종류", value: "도배" },
     { label: "공사 범위", value: scopeText(d) },
+    { label: "방 개수", value: rooms ? `${rooms}개` : "" },
     { label: "주거 종류", value: "아파트" },
     { label: "지역", value: opts.fullRegion ?? placeOf(d) },
     { label: "면적", value: areaOf(d) },
@@ -212,8 +258,8 @@ export function projectName(emd: string | null | undefined, region: string, trad
 }
 
 /** 표준견적서 위 '이 조건으로 계산했어요' 줄(C07 · C57 · C60): '도배 전체 · 아파트 공급 69.4㎡ · 실크 · 빈 집' */
-export function conditionText(h: { scope: string; spaces: readonly string[]; faces: readonly string[]; area_m2: string | number; area_basis: string; grade: string | null; occupied: boolean }): string {
-  const area = `${h.area_basis === "exclusive" ? "전용" : "공급"} ${String(h.area_m2).replace(/(\.\d)0+$/, "$1")}㎡`;
+export function conditionText(h: { scope: string; spaces: readonly string[]; faces: readonly string[]; area_m2: string | number; area_basis: string; grade: string | null; occupied: boolean; rooms?: number | null }): string {
+  const area = `${h.area_basis === "exclusive" ? "전용" : "공급"} ${String(h.area_m2).replace(/(\.\d)0+$/, "$1")}㎡${h.rooms ? ` · 방 ${h.rooms}개` : ""}`;
   const grade = h.grade === "economy" || h.grade === "basic" ? GRADE_WORD[h.grade] : "";
   if (h.scope === "partial") {
     return [`도배 부분`, ...h.spaces.map(spaceLabel), facesText(h.faces), `아파트 ${area}`, grade].filter(Boolean).join(" · ");

@@ -16,6 +16,8 @@ type StoredInfo = {
   scope: "full" | "partial";
   spaces: string[];
   faces: string[];
+  /** 방 개수 1~5. 없거나 null이면 면적 기본값(옛 저장본에는 없음) */
+  rooms?: number | null;
   housing: "apt";
   sido: string;
   sgg: string;
@@ -41,8 +43,9 @@ function valid(x: unknown): x is GuestSaved {
   return (
     i.trade === "dobae" && i.housing === "apt" &&
     (i.scope === "full" || i.scope === "partial") &&
-    Array.isArray(i.spaces) && i.spaces.length <= 8 && i.spaces.every((s) => typeof s === "string" && SPACE_KEYS.has(s)) &&
+    Array.isArray(i.spaces) && i.spaces.length <= 10 && i.spaces.every((s) => typeof s === "string" && SPACE_KEYS.has(s)) &&
     Array.isArray(i.faces) && i.faces.length <= 2 && i.faces.every((f) => f === "wall" || f === "ceiling") &&
+    (i.rooms === undefined || i.rooms === null || (Number.isInteger(i.rooms) && (i.rooms as number) >= 1 && (i.rooms as number) <= 5)) &&
     str(i.sido, 20) && str(i.sgg, 20) && str(i.emd, 20) && str(i.area_m2, 10) &&
     (i.area_basis === "supply" || i.area_basis === "exclusive") &&
     (i.occupied === null || typeof i.occupied === "boolean") &&
@@ -66,7 +69,7 @@ function uuid(): string {
 function toStored(d: InfoDraft): StoredInfo {
   const b = d.budget.replace(/[,\s]/g, "");
   return {
-    trade: "dobae", scope: d.scope, spaces: d.spaces, faces: d.faces, housing: "apt",
+    trade: "dobae", scope: d.scope, spaces: d.spaces, faces: d.faces, rooms: d.rooms, housing: "apt",
     sido: d.sido, sgg: d.sgg, emd: d.emd.slice(0, 20), area_m2: d.area.trim().slice(0, 10), area_basis: d.basis,
     occupied: d.occupied, grade: d.grade,
     budget_won: /^\d{1,6}$/.test(b) ? Number(b) * 10000 : null,
@@ -82,6 +85,7 @@ export function draftOf(s: GuestSaved): InfoDraft {
     scope: i.scope,
     spaces: i.spaces as InfoDraft["spaces"],
     faces: (i.faces.length ? i.faces : ["wall", "ceiling"]) as InfoDraft["faces"],
+    rooms: i.rooms ?? null,
     sido: i.sido, sgg: i.sgg, emd: i.emd, area: i.area_m2, basis: i.area_basis,
     occupied: i.occupied, grade: i.grade,
     budget: i.budget_won ? String(Math.round(i.budget_won / 10000)) : "",

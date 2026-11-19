@@ -6,8 +6,8 @@ import { summaryRows, type InfoDraft } from "@/lib/guest/info";
 import s from "./info.module.css";
 import q from "./standard.module.css";
 
-export function InfoLocked({ draft, region, today }: { draft: InfoDraft; region: string; today: string }) {
-  const rows = summaryRows(draft, { fullRegion: region, longDate: draft.start ? dateShort(draft.start, today) : undefined });
+export function InfoLocked({ draft, region, today, rooms }: { draft: InfoDraft; region: string; today: string; rooms?: number }) {
+  const rows = summaryRows(draft, { fullRegion: region, rooms, longDate: draft.start ? dateShort(draft.start, today) : undefined });
   return (
     <>
       <p className={s.locked} role="status"><Icon name="lock" size={18} />실측 요청을 보내서 기본 정보를 바꿀 수 없어요. 업체가 받은 내용과 같아야 해서요.</p>

@@ -14,6 +14,7 @@ from app.chat.router import router as ai_router
 from app.config import settings
 from app.files.router import router as files_router
 from app.guest.router import router as guest_router
+from app.guest.router import rule_router as guest_rule_router
 from app.notify.router import router as notify_router
 from app.project.router import router as project_router
 from app.quote.router import router as quote_router
@@ -65,6 +66,7 @@ ROUTERS = [
     auth_router,
     files_router,
     guest_router,
+    guest_rule_router,
     notify_router,
     project_router,
     quote_router,
