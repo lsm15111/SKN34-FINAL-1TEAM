@@ -33,13 +33,22 @@ from app.agent.v3.trades import BY_CODE, trades_in
 from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
-VERSION = "composer_v6"
+VERSION = "composer_v7"
 TOP_CHUNKS = 6  # 검색 위 조각을 몇 개 더 넣을지
 CHUNK_CHARS = 420  # 조각 글 앞 몇 글자
 MAX_BLOCKS = 4
 MAX_BLOCKS_LONG = 6  # 설명 질문: 개요 + 공종마다 블록(하는 일 · 순서 · 고를 것) + 주의
 MAX_ITEMS = 5
-KIND_KO = {None: "자료", "explain": "설명", "house": "우리 집"}  # 지시문에 넘기는 질문 꼴 이름
+# 질문 꼴: 설명 · 우리 집(explain.kind) · 화면(LLM 모드 데이터 화면에서 질문 분석기를 거친 턴, screen_tools)
+Mode = Literal["explain", "house", "screen"]
+KIND_KO = {
+    None: "자료",
+    "explain": "설명",
+    "house": "우리 집",
+    "screen": "화면",
+}  # 지시문에 넘기는 꼴 이름
+# 화면 꼴에서 공정 정보도 넣는 조각 꼴(뜻 · 방법 · 고를 것)
+FACT_KINDS = frozenset({"what", "how", "choose", "other"})
 # 고정 몫: 코드가 만든 글(계산 결과 · 정해 둔 글). 작성기 답에서도 앞에 그대로 남아요
 FIXED = ("calc", "template")
 # 작성기가 더할 것이 없었던 이유(실패와 달라요). 고정 몫이 있으면 무료 발췌를 붙이지 않아요(turn.py)
@@ -109,11 +118,14 @@ def evidence(
     kb: KB,
     question: str,
     trade: TradeCode | None,
-    mode: explain.Kind | None = None,
+    mode: Mode | None = None,
     trades: list[str] | None = None,
+    screen: dict | None = None,
+    asks: list[tuple[str, str]] | None = None,
 ) -> dict:
     """근거 묶음(코드가 고름). 반환: {kind: [...]} + 'refs'(인용 허용 ref) + 'text'(숫자 허용 글).
-    mode(설명 · 우리 집)면 공정 정보(코드 데이터, ref rule:…)를 더해요."""
+    mode(설명 · 우리 집)면 공정 정보(코드 데이터, ref rule:…)를 더해요. 화면 꼴은 보는 화면(screen_tools.screen_text,
+    계산 엔진 값) · 분석한 조각을 더하고, 뜻 · 방법 · 고를 것 조각이 있을 때만 공정 정보도 더해요."""
     calc = [x.text for s in part.sections if s.source == "calc" for x in s.sentences]
     fixed = [x.text for s in part.sections if s.source == "template" for x in s.sentences]
     cards: list[dict] = []
@@ -144,7 +156,11 @@ def evidence(
                 "제목": it.doc.title[:60],
                 "글": it.chunk.text[:CHUNK_CHARS],
             }
-    rules = explain.facts(trades or ([trade] if trade else [])) if mode else []
+    with_facts = mode in ("explain", "house") or (
+        mode == "screen" and any(k in FACT_KINDS for k, _ in asks or [])
+    )
+    rules = explain.facts(trades or ([trade] if trade else [])) if with_facts else []
+    shown = [screen] if mode == "screen" and screen else []
     data = {
         "계산 결과": [_clean(x) for x in calc],
         "정해 둔 글": [_clean(x) for x in fixed],
@@ -153,14 +169,19 @@ def evidence(
     }
     if rules:
         data["공정 정보"] = rules
-    refs = {c["ref"] for c in cards} | set(chunks) | {r["ref"] for r in rules}
+    if shown:
+        data["보는 화면"] = [{**x, "글": _clean(x["글"])} for x in shown]
+    if mode == "screen" and asks:
+        data["질문 분석"] = [f"{k}: {_clean(t)}" for k, t in asks]
+    every = [*rules, *shown]
+    refs = {c["ref"] for c in cards} | set(chunks) | {r["ref"] for r in every}
     allowed = "\n".join(
         [*calc, *fixed, *(c["글"] for c in cards), *(c["글"] for c in chunks.values()),
-         *(r["글"] for r in rules), question]
+         *(r["글"] for r in every), question]
     )  # fmt: skip
     return {
         "data": data, "refs": refs, "allowed": allowed, "calc": " ".join(calc), "fixed": " ".join(fixed),
-        "rules": {r["ref"]: r["글"] for r in rules}, "rule_src": explain.sources(rules),
+        "rules": {r["ref"]: r["글"] for r in every}, "rule_src": explain.sources(every),
     }  # fmt: skip
 
 
@@ -204,13 +225,17 @@ def to_sections(
     route,
     trade,
     dropped: list[str],
-    mode: explain.Kind | None = None,
+    mode: Mode | None = None,
 ) -> list[Section] | None:
     """블록 → 검사를 지난 Section들. lead가 빠지면 None(설명 · 우리 집 꼴은 블록이 남으면 이어 가요).
     mode가 있으면 근거로 받칠 수 없는 문장은 일반 설명(source=general)으로 남겨요(explain.general_why를 지나야 해요)."""
     c = _dots(c)
     refs: set[str] = ev["refs"]
     allowed, calc = ev["allowed"], ev["calc"]
+    # 화면 꼴: 보는 화면 글의 숫자. 인용을 비웠어도 숫자가 모두 화면 값이면 화면 인용 문장으로 봐요(3300 '밥값 · 차비')
+    screen_nums = (
+        check.guard.numbers(ev.get("rules", {}).get(SCREEN_REF, "")) if mode == "screen" else set()
+    )
 
     # 카드 · 공정 정보(rule:…)는 근거 글이 묶음 안에 있어요. 조각(K…)은 색인 글자 묶음과 견줘요
     texts = {c["ref"]: c["글"] for c in ev.get("data", {}).get("카드", [])} | ev.get("rules", {})
@@ -254,11 +279,15 @@ def to_sections(
         """(문장, 일반 설명인가). mode가 있고 작성기가 인용을 비운 문장은 일반 설명이에요: 인용을 대신 붙이지 않고
         (자료에서 온 말처럼 보이지 않게) 일반 설명 규칙으로만 봐요. 인용을 달았으면 지금처럼 인용이 맞아야 해요."""
         if mode and not any(x.strip() for x in it.cites):
-            why = explain.general_why(it.text)
-            if why:
-                dropped.append(why)
-                return None
-            return Sentence(text=it.text.strip()), True
+            nums = check.guard.numbers(it.text)
+            if screen_nums and nums and nums <= screen_nums:
+                it = it.model_copy(update={"cites": [SCREEN_REF]})  # 화면 숫자만 쓴 문장: 화면 인용
+            else:
+                why = explain.general_why(it.text)
+                if why:
+                    dropped.append(why)
+                    return None
+                return Sentence(text=it.text.strip()), True
         s = sent(it)
         if s is None:
             return None
@@ -310,7 +339,13 @@ def to_sections(
         g = _grams(text)
         if calc_nums and n and n <= calc_nums:
             return "계산 되풀이"  # 계산 묶음이 이미 보이는 숫자만 든 문장 · 표 줄
-        if any(_overlap(g, h) >= SAME for h in shown) or covered(g):
+        # 화면 꼴의 판단 문장('~보다 높은 편이에요')은 고정 몫과 같은 숫자를 써도 새 말이에요(고정 몫에 판단이 없을 때)
+        judged = (
+            mode == "screen"
+            and JUDGE.search(text)
+            and not any(JUDGE.search(t) for t in fixed_texts)
+        )
+        if not judged and (any(_overlap(g, h) >= SAME for h in shown) or covered(g)):
             return "정해 둔 글 되풀이"
         if order_repeat(text, fixed_texts, weight):
             return "순서 되풀이"  # 고정 몫이 이미 말한 두 공종 순서를 말만 바꿔 다시 쓴 문장
@@ -371,7 +406,7 @@ def to_sections(
     if lead is None and not (calc or ev.get("fixed")) and not mode:
         return None  # 고정 몫(계산 · 정해 둔 글)이 있으면 그 글이 첫 줄 노릇을 해서 lead가 빠져도 이어 간다
     out = [lead] if lead else []
-    limit = MAX_BLOCKS_LONG if mode == "explain" else MAX_BLOCKS
+    limit = MAX_BLOCKS_LONG if mode in ("explain", "screen") else MAX_BLOCKS
     for b in c.blocks[:limit]:
         title = trade_title(b.trade) if b.trade else ""
         code = b.trade or None
@@ -435,14 +470,16 @@ async def compose(
     question: str,
     *,
     trade: TradeCode | None,
-    mode: explain.Kind | None = None,
+    mode: Mode | None = None,
     trades: list[str] | None = None,
+    screen: dict | None = None,
+    asks: list[tuple[str, str]] | None = None,
 ) -> Part | None:
     """작성기 한 번. 쓸 수 없으면 None(부르는 쪽은 무료 답 그대로).
     계산만 있는 답도 불러요: 숫자는 계산 묶음이 이미 보여서, 작성기는 검색 위 조각으로 덧붙일 것만 써요.
     카드 · 조각 근거가 하나도 없으면 부르지 않아요(덧붙일 것이 없어요). 설명 · 우리 집 꼴(mode)은 공정 정보와
-    일반 설명으로 쓸 수 있어서 늘 불러요."""
-    ev = evidence(part, kb, question, trade, mode, trades)
+    일반 설명으로, 화면 꼴은 보는 화면(screen) · 분석한 조각(asks: 꼴, 풀어 쓴 질문)으로 쓸 수 있어서 늘 불러요."""
+    ev = evidence(part, kb, question, trade, mode, trades, screen, asks)
     if not (ev["data"]["카드"] or ev["data"]["근거"] or mode):
         part.dropped.append("작성기: 근거 없음")
         return None
@@ -485,7 +522,7 @@ async def compose(
     # 일부만 답했으면 '확인하지 못했어요'는 빼고 확인할 곳 줄만 둬요(답 뒤에 모름이 붙으면 앞뒤가 안 맞아요).
     # 설명 꼴은 확인할 곳 줄도 빼고(집을 볼 일이 아니에요), 우리 집 꼴은 대략 답 끝에 확인할 곳 한 줄을 늘 둬요
     where = [u for u in part.unknown if u != templates.UNKNOWN]
-    if mode == "explain":
+    if mode in ("explain", "screen"):
         where = []
     elif mode == "house":
         where = where or [
@@ -525,6 +562,12 @@ DEFER = re.compile(
     r"(?:정해요|정하면\s{0,2}돼요|확인해요)[.!]?$|"
     r"업체와\s{0,2}(?:\S+\s{1,2}){0,2}정해요[.!]?$"
 )
+# 화면 꼴의 판단 말(2026-11-20 사용자: 판단 질문은 LLM이 판단 말로). 고정 몫 숫자를 되풀이해도 새 정보로 봐요
+JUDGE = re.compile(
+    r"(?:높은|낮은|비싼|싼|많은|적은|무난한|보통인)\s{0,2}편|적당|괜찮|무난|"
+    r"보다\s{0,2}(?:높|낮|많|적|비싸|싸)|범위\s{0,2}(?:안|밖|안쪽|바깥)"
+)
+SCREEN_REF = "rule:screen"  # 보는 화면 근거 ref(screen_tools.SCREEN_REF와 같아요)
 # 인용 지지 기준(IDF 무게 겹침). c2 답 인용 154쌍: 맞는 짝 86% 통과 · 섞은 짝 6.5% 통과(support_cal)
 SUPPORT = 0.18
 # 순서 되풀이: 고정 몫(정해 둔 순서 문장 · 기간 묶음)이 이미 두 공종의 순서를 말했으면, 작성기가 같은 두 공종의

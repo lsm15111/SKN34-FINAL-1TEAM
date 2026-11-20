@@ -161,20 +161,35 @@ def run(task: Task, kb: KB) -> Part:
     seen = (
         f.screen.vendor if f.screen else None
     )  # 업체 자세히 화면에서 물으면 그 업체 가견적 줄부터 맞춰요
-    sline = match_screen_line(q, seen.lines) if seen is not None else None
+    # 질문 분석기가 항목 · 할 일을 골랐으면(LLM 모드 데이터 화면) 글 맞추기 대신 그 줄 · 그 비교로 답해요
+    item, want = task.item, task.want
+    sline = None
+    if seen is not None and item and item.startswith("vendor."):
+        sline = next((x for x in seen.lines if f"vendor.{x.key}" == item), None)
+    elif seen is not None and item is None:
+        sline = match_screen_line(q, seen.lines)
+    std_item = next((x for x in st.lines if f"standard.{x.key}" == item), None) if item else None
+    compare = want == "compare" and std_item is None and sline is None
     if seen is not None and sline is not None:
         _screen_line(part, lines, allowed, sline, seen, f)
         trade = trade or "dobae"
-    elif ESTIMATE_Q.search(q) and f.estimates:
+    elif (
+        std_item is None
+        and f.estimates
+        and ((compare and seen is None) or (want is None and ESTIMATE_Q.search(q)))
+    ):
         lines.append(templates.ESTIMATE_GAP)
-        for e in f.estimates[:3]:
+        for i, e in enumerate(f.estimates[:3]):
             pct = e.vs_standard
             note = (
                 "" if pct is None else f"표준보다 {abs(pct)}% {'많아요' if pct >= 0 else '적어요'}"
             )
             part.calc.append(
                 CalcBox(
-                    label=f"{e.vendor} 가견적", ref="estimates.total", amount=e.total, note=note
+                    label=f"{e.vendor} 가견적",
+                    ref=f"estimates.{i}.total",
+                    amount=e.total,
+                    note=note,
                 )
             )
             up = sorted((x for x in e.lines if x.diff > 0), key=lambda x: -x.diff)[:2]
@@ -188,7 +203,7 @@ def run(task: Task, kb: KB) -> Part:
                 part.calc.extend(
                     CalcBox(
                         label=f"{e.vendor} {x.name}",
-                        ref=f"estimates.{x.key}",
+                        ref=f"estimates.{i}.{x.key}",
                         amount=x.diff,
                         note="줄 차이",
                     )
@@ -205,16 +220,18 @@ def run(task: Task, kb: KB) -> Part:
         part.cards.append(
             UiCard(kind="next_step", choices=[Choice(text="업체 보기", action="vendors")])
         )
-    elif VENDOR_QUOTE_Q.search(q) and "실측" in q:
+    elif want is None and VENDOR_QUOTE_Q.search(q) and "실측" in q:
         lines.append(templates.QUOTE_COMPARE)
         part.cards.append(
             UiCard(kind="next_step", choices=[Choice(text="실측 견적서 비교", action="quotes")])
         )
-    elif seen is not None and COMPARE_Q.search(q):
+    elif seen is not None and (
+        compare or (want is None and std_item is None and COMPARE_Q.search(q))
+    ):
         _screen_compare(part, lines, allowed, seen, st, f)
         trade = trade or "dobae"
     else:
-        ln = match_line(q, st.lines)
+        ln = std_item or (match_line(q, st.lines) if item is None else None)
         if ln is not None:
             key = (ln.key, ln.state)
             text = templates.LINE_STATE_SPECIAL.get(key) or templates.LINE_STATE[ln.state].format(

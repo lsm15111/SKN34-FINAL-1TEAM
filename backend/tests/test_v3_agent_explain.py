@@ -115,7 +115,7 @@ def overview_stub(stub) -> None:
 def test_overview_mixes_general_and_cited_blocks_per_trade(stub):
     overview_stub(stub)
     a = turn(OVERVIEW_Q)
-    assert a.trace.prompts == ["composer_v6"]
+    assert a.trace.prompts == ["composer_v7"]
     lead = a.sections[0]
     assert (
         lead.source == "general"

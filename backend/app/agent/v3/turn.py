@@ -19,8 +19,10 @@ from app.agent.v3 import (
     explain,
     llm_mode,
     orchestrator,
+    planner,
     policy,
     screen,
+    screen_tools,
     templates,
 )
 from app.agent.v3 import gate as gate_mod
@@ -47,8 +49,10 @@ PHOTO_LINE = "사진은 아직 보여 드리지 못해요. 대신 글로 알려 
 CHITCHAT = re.compile(r"로또|주식|코인|집값|영화|점심|저녁\s*뭐|강아지|번역|날씨|심심|노래|게임")
 
 
-VERSIONS = {"composer": composer.VERSION, "general": general_mod.VERSION}
-RULES = {"composer": composer.rules, "general": general_mod.rules}
+VERSIONS = {
+    "composer": composer.VERSION, "general": general_mod.VERSION, "planner": planner.VERSION,
+}  # fmt: skip
+RULES = {"composer": composer.rules, "general": general_mod.rules, "planner": planner.rules}
 
 
 @dataclass
@@ -176,6 +180,18 @@ async def run_turn(
         part, names, failed_parts = orchestrator.run(task, kb)
     else:
         part = orchestrator.AGENTS[g.route](task, kb)
+    # 질문 분석(LLM 모드 · 표준견적서 · 업체 자세히 화면): 조각 · 가리킨 화면 항목을 받아 코드가 도구(담당)를 불러요.
+    # 버튼 · 기다리던 칸 · 범위 밖이면 걸지 않고, 분석이 실패하면 위에서 만든 지금 길 몫을 그대로 써요
+    plan: planner.Plan | None = None
+    if (
+        ctx.mode == "llm" and ctx.view in planner.DATA_VIEWS and facts is not None
+        and not slot_turn and g.route != "out_of_scope"
+    ):  # fmt: skip
+        plan = await planner.plan(masked, ctx.view, facts)
+        if plan is not None and (plan.out_of_scope or not plan.asks):
+            plan = None
+    if plan is not None:
+        part, names = screen_tools.run(plan, task, kb)
     if photo and g.route not in ("out_of_scope", "ask_back"):
         part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
 
@@ -223,12 +239,17 @@ async def run_turn(
                 ans.brief.lines = [first, *ans.brief.lines][:3]  # 사진 안내는 짧은 답에도 맨 앞에
         return ans
 
-    routes: list[str] = []
+    routes: list[str] = ["planner"] if plan is not None else []
     shown: list[Section] | None = None
-    mode: explain.Kind | None = None
-    if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
-        # 질문 꼴: 설명(일반 설명 섞기 · 길게) · 우리 집 조건(대략 답 + 끝에 확인할 곳). 그 밖은 자료로만 짧게
-        mode = explain.kind(masked, g.route, list(g.trades), list(g.policy))
+    mode: composer.Mode | None = None
+    if ctx.mode == "llm" and (g.route in ("guide", "trade", "multi") or plan is not None):
+        # 질문 꼴: 화면(질문 분석을 거친 턴) · 설명(일반 설명 섞기 · 길게) · 우리 집 조건(대략 답 + 끝에 확인할 곳).
+        # 그 밖은 자료로만 짧게
+        mode = (
+            "screen"
+            if plan is not None
+            else explain.kind(masked, g.route, list(g.trades), list(g.policy))
+        )
         # 우리 집 조건 질문의 '집 상태는 직접 봐야 …' 안내는 먼저 보이지 않아요(대략 답 뒤에 확인할 곳 줄이 붙어요)
         held = [
             s for s in part.sections
@@ -254,9 +275,11 @@ async def run_turn(
             trade=g.trades[0] if g.trades else None,
             mode=mode,
             trades=list(g.trades),
+            screen=screen_tools.screen_text(ctx.view, facts) if plan is not None else None,
+            asks=[(a.kind, a.text) for a in plan.asks] if plan is not None else None,
         )
         if composed is not None:
-            part, routes = composed, ["composer"]
+            part, routes = composed, [*routes, "composer"]
         elif shown and composer.QUIET & set(part.dropped):
             # 고정 몫이 이미 답했고 작성기가 더할 것이 없어요(빈 답 · 모름 · 다 걸러짐): 무료 발췌로 채우지 않아요.
             # 카드는 검증된 글이라 둬요. 작성기 실패는 아래 길(무료 몫 그대로)이에요
@@ -276,10 +299,10 @@ async def run_turn(
                 part.unknown = where or [
                     templates.UNKNOWN_WHERE.format(where=general_mod.WHERE_DEFAULT)
                 ]
-                routes = ["general"]
+                routes = [*routes, "general"]
         if held and composed is None:  # 작성기가 못 쓰면 미뤄 둔 안내를 끝 줄로 둬요
             part.unknown = [*(x.text for s in held for x in s.sentences), *part.unknown]
-    ans = finish(part, routes, shown, long=mode == "explain" and routes == ["composer"])
+    ans = finish(part, routes, shown, long=mode in ("explain", "screen") and "composer" in routes)
     ans.trace.inherited = inherited
     new_wait = None
     if ans.ask is not None:

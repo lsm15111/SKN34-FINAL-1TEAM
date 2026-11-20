@@ -88,6 +88,10 @@ class Task:
     general: GeneralFacts | None = (
         None  # 질문의 평수 · 예시 평수로 센 계산 엔진 값(프로젝트와 별개)
     )
+    # 질문 분석기(LLM 모드 데이터 화면)가 고른 화면 항목 키('vendor.truck' · 'standard.removal')와 할 일.
+    # 있으면 견적 설명이 글 맞추기 대신 그 줄 · 그 비교로 답해요(screen_tools)
+    item: str | None = None
+    want: str | None = None  # line · compare
 
 
 @dataclass

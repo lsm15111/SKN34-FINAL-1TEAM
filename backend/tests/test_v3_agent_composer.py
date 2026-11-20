@@ -64,7 +64,7 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
     )
     a = turn(Q).answer
     # 차이 질문은 설명 꼴이라 개요(첫 문장)만 먼저 보이고 나머지는 '자세히'에 접혀요
-    assert a.trace.prompts == ["composer_v6"] and a.brief is not None
+    assert a.trace.prompts == ["composer_v7"] and a.brief is not None
     assert a.brief.lines[0].text.startswith("실크는 코팅이 있어") and a.brief.more >= 2
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
@@ -114,7 +114,7 @@ def test_calc_only_answer_gets_composer_context_after_calc(stub):
 
     period_stub(stub)
     a = turn(PERIOD_Q, general=general_facts(PERIOD_Q)).answer
-    assert a.trace.prompts == ["composer_v6"]
+    assert a.trace.prompts == ["composer_v7"]
     assert a.sections[0].source == "calc"
     assert a.sections[0].sentences[0].text.startswith("믿집 계산으로 34평 도배는")
     assert [x.text for s in a.sections if s.source == "llm" for x in s.sentences] == [PAINT]
@@ -540,7 +540,7 @@ def test_empty_new_is_fine_without_fixed_part(stub):
     lead = CItem(text="실크는 코팅이 있어 관리가 쉽고, 합지는 값이 싸요.", cites=refs[:1])
     stub(Composed(new=[], verdict="answer", lead=lead, blocks=[], follow=[]))
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v6"] and lead.text in [
+    assert a.trace.prompts == ["composer_v7"] and lead.text in [
         x.text for s in a.sections for x in s.sentences
     ]
 
