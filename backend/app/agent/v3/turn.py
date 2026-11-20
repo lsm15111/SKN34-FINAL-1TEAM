@@ -16,6 +16,7 @@ from app.agent.v3 import (
     check,
     composer,
     context,
+    explain,
     llm_mode,
     orchestrator,
     policy,
@@ -179,8 +180,11 @@ async def run_turn(
     if photo and g.route not in ("out_of_scope", "ask_back"):
         part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
 
-    def finish(p: Part, routes: list[str], shown: list[Section] | None = None) -> AgentAnswer:
-        """검사 · 짧은 답. shown: 화면에 먼저 보낸 고정 묶음(검사를 마친 것)이라 그대로 앞에 두고 나머지만 검사해요."""
+    def finish(
+        p: Part, routes: list[str], shown: list[Section] | None = None, long: bool = False
+    ) -> AgentAnswer:
+        """검사 · 짧은 답. shown: 화면에 먼저 보낸 고정 묶음(검사를 마친 것)이라 그대로 앞에 두고 나머지만 검사해요.
+        long: 작성기가 쓴 긴 설명 답. 먼저 보인 글이 없으면 개요 1~2줄만 보이고 나머지는 '자세히'에 접어요."""
         prompts = [VERSIONS[r] if r in VERSIONS else llm_mode.VERSION[r] for r in routes]
         boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
         rest = (
@@ -204,7 +208,9 @@ async def run_turn(
             ans.sections = [*shown, *ans.sections]
             ans.failed = not (ans.sections or ans.cards or ans.calc or ans.unknown)
             ans.fixed = len(shown)
-            return ans  # 먼저 보인 글이 접힌 짧은 답으로 바뀌지 않게 통째로 보여요(brief 없음)
+            if long and not shown:  # 아직 보인 글이 없을 때만 접어요(설명 답의 개요 먼저)
+                ans.brief = brief.lead(ans)
+            return ans  # 먼저 보인 글이 접힌 짧은 답으로 바뀌지 않게, 보인 글이 있으면 통째로 보여요(brief 없음)
         ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
         if "composer" in routes:
             ans.brief = None  # 작성기 답은 블록 한 벌이 이미 짧아서 통째로 보여요
@@ -219,7 +225,16 @@ async def run_turn(
         return ans
 
     routes: list[str] = []
+    mode: explain.Kind | None = None
     shown: list[Section] | None = None
+        # 질문 꼴: 설명(일반 설명 섞기 · 길게) · 우리 집 조건(대략 답 + 끝에 확인할 곳). 그 밖은 자료로만 짧게
+        mode = explain.kind(masked, g.route, list(g.trades), list(g.policy))
+        # 우리 집 조건 질문의 '집 상태는 직접 봐야 …' 안내는 먼저 보이지 않아요(대략 답 뒤에 확인할 곳 줄이 붙어요)
+        held = [
+            s for s in part.sections
+            if mode == "house" and s.source == "template" and any(x.text == templates.MY_HOUSE for x in s.sentences)
+        ]  # fmt: skip
+        part.sections = [s for s in part.sections if s not in held]
     if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
         # 고정 몫(계산 결과 · 정해 둔 글)만 검사해 먼저 보낸다. 비어 있어도 보내서 화면이 'AI가 쓰는 중'을 알아요.
         # 카드 · 계산 상자 · 이어 묻기는 마지막 답에만 둬요(먼저 보인 글 아래로 이어 붙게)
@@ -233,7 +248,14 @@ async def run_turn(
         if on_part is not None:
             await on_part(first)
         # 답 작성기 한 번(근거 묶음 → 블록). 근거가 질문에 안 맞거나 실패하면 무료 몫(카드 · 조각)을 붙여요
-        composed = await composer.compose(part, kb, masked, trade=g.trades[0] if g.trades else None)
+        composed = await composer.compose(
+            part,
+            kb,
+            masked,
+            trade=g.trades[0] if g.trades else None,
+            mode=mode,
+            trades=list(g.trades),
+        )
         if composed is not None:
             part, routes = composed, ["composer"]
         elif shown and composer.QUIET & set(part.dropped):
@@ -256,7 +278,9 @@ async def run_turn(
                     templates.UNKNOWN_WHERE.format(where=general_mod.WHERE_DEFAULT)
                 ]
                 routes = ["general"]
-    ans = finish(part, routes, shown)
+        if held and composed is None:  # 작성기가 못 쓰면 미뤄 둔 안내를 끝 줄로 둬요
+            part.unknown = [*(x.text for s in held for x in s.sentences), *part.unknown]
+    ans = finish(part, routes, shown, long=mode == "explain" and routes == ["composer"])
     ans.trace.inherited = inherited
     new_wait = None
     if ans.ask is not None:

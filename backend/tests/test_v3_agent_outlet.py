@@ -57,7 +57,7 @@ def test_composer_answer_keeps_card_tables_below(monkeypatch):
     )
     llm.set_stub("composer", Composed(verdict="answer", lead=lead, blocks=[], follow=[]))
     a = turn(Q, "llm").answer
-    assert a.trace.prompts == ["composer_v5"]
+    assert a.trace.prompts == ["composer_v6"]
     assert [s.title for s in a.sections][-2:] == [
         "[방법]",
         "[업체에 물을 말]",

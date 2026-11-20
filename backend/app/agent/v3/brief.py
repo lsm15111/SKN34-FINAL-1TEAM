@@ -216,3 +216,19 @@ def make(ans: AgentAnswer, question: str) -> Brief:
     shown = {x.text for x in chosen}
     more = sum(1 for x in every if x.text not in shown) + extras
     return Brief(form=form, lines=chosen, more=more)
+
+
+def lead(ans: AgentAnswer, n: int = 2) -> Brief:
+    """설명 질문의 짧은 답: 공종 블록(제목 있는 묶음) 앞의 개요 문장을 n개까지 보이고, 나머지는 '자세히'에 둬요.
+    개요가 없으면 첫 문장 하나. 새 글을 만들지 않아요(검사를 지난 sections에서 고름)."""
+    head: list[Sentence] = []
+    for sec in ans.sections:
+        if sec.title or sec.table:
+            break
+        head += sec.sentences
+    chosen = head[:n] or [x for s in ans.sections for x in s.sentences][:1]
+    every = [x for s in ans.sections for x in s.sentences]
+    extras = sum(1 for s in ans.sections for x in (s.caution, s.tip) if x)
+    rows = sum(len(s.table) for s in ans.sections)
+    more = sum(1 for x in every if x not in chosen) + extras + rows
+    return Brief(form="define", lines=chosen, more=more)
