@@ -10,6 +10,8 @@ import { MQ } from "@/components/site/breakpoints";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { useModal } from "@/components/ui/useModal";
 import { ASK_EVENT, FIND_EVENT, POPULAR, TRADE_LABEL, articleHref, termHrefId, type SearchIndex } from "@/lib/guide/shared";
+import { afterClose } from "./afterClose";
+import { markTermOpen } from "./TermPanel";
 import s from "./guide.module.css";
 
 type Item = { key: string; href?: string; title: string; sub: string; img?: string; icon?: IconName; ask?: string };
@@ -109,13 +111,17 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
   const flat = groups.flatMap((g) => g.items);
   const cur = Math.min(active, Math.max(0, flat.length - 1));
 
+  // 폰은 창이 넣은 기록 칸이 걷힌 뒤에 옮겨요(afterClose). 용어는 닫을 때 온 곳으로 돌아가게 표시해요
   function go(it: Item) {
-    close();
-    if (it.ask !== undefined) {
-      window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { text: it.ask } }));
-      return;
-    }
-    if (it.href) router.push(it.href);
+    afterClose(close, () => {
+      if (it.ask !== undefined) {
+        window.dispatchEvent(new CustomEvent(ASK_EVENT, { detail: { text: it.ask } }));
+        return;
+      }
+      if (!it.href) return;
+      if (it.key.startsWith("t-")) markTermOpen();
+      router.push(it.href);
+    });
   }
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.nativeEvent.isComposing || !flat.length) return;
@@ -144,13 +150,12 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
           />
           <button type="button" className={s.panelX} aria-label="닫기" onClick={close}><Icon name="close" /></button>
         </div>
+        {/* 알림 칸은 늘 두고(목록 상자 밖), 찾은 것이 있으면 개수만 읽어 줘요 */}
+        <p className={flat.length ? "mj-sr" : s.findNone} role="status">
+          {!data ? (failed ? "목록을 불러오지 못했어요. 잠시 뒤 다시 열어 주세요." : "불러오는 중이에요") : flat.length ? `${flat.length}개 찾았어요` : "맞는 것이 없어요"}
+        </p>
         <div className={s.findList} id={listId} role="listbox" aria-label="찾은 것">
-          {!data ? (
-            <p className={s.findNone} role="status">{failed ? "목록을 불러오지 못했어요. 잠시 뒤 다시 열어 주세요." : "불러오는 중이에요"}</p>
-          ) : flat.length === 0 ? (
-            <p className={s.findNone} role="status">맞는 것이 없어요</p>
-          ) : (
-            groups.map((g) => (
+          {groups.map((g) => (
               <div key={g.title} className={s.findGroup} role="group" aria-label={g.title}>
                 <h3 aria-hidden="true">{g.title}</h3>
                 {g.items.map((it) => {
@@ -171,8 +176,7 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
                   );
                 })}
               </div>
-            ))
-          )}
+          ))}
         </div>
         <div className={s.findFoot} aria-hidden="true">
           <span>↑ ↓ 고르기</span><span>Enter 열기</span><span>Esc 닫기</span>

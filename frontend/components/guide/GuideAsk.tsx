@@ -3,7 +3,7 @@
 // 한 번 연 뒤에는 닫아도 창을 그대로 두고 숨겨서, 백과 안에서 글을 옮겨 다녀도 대화가 이어져요(백과 layout에 하나).
 // 고객만 물어볼 수 있어요. 손님은 로그인 안내를 보고, 업체 · 관리자에게는 단추 자체가 없어요(부르는 쪽이 숨겨요).
 import { useEffect, useRef, useState } from "react";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { AsideHost } from "@/components/site/AsideSlot";
 import { MQ } from "@/components/site/breakpoints";
@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useModal } from "@/components/ui/useModal";
 import { ASK_EVENT } from "@/lib/guide/shared";
+import { afterClose } from "./afterClose";
 import s from "./guide.module.css";
 
 export type AskWho = "customer" | "guest" | "none";
@@ -23,6 +24,16 @@ export function GuideAsk({ who }: { who: AskWho }) {
   const path = usePathname();
   const close = () => setOpen(false);
   const m = useModal(ref, open, close, { closeOnBack: () => !window.matchMedia(MQ.tablet).matches });
+  const router = useRouter();
+  // 창 안 링크(AI 답의 화면 링크 · 로그인 · 가입)로 나갈 때: 창을 닫고, 폰은 창이 넣은 기록 칸이 걷힌 뒤에 옮겨요
+  const onLinkCapture = (e: React.MouseEvent<HTMLDialogElement>) => {
+    const a = (e.target as Element).closest?.("a[href]");
+    if (!a || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || a.getAttribute("target")) return;
+    const href = a.getAttribute("href") ?? "";
+    if (!href.startsWith("/") || href.startsWith("//")) return;
+    e.preventDefault();
+    afterClose(close, () => router.push(href));
+  };
 
   useEffect(() => {
     if (who === "none") return;
@@ -45,7 +56,7 @@ export function GuideAsk({ who }: { who: AskWho }) {
 
   if (who === "none") return null;
   return (
-    <dialog ref={ref} className={s.ask} aria-label="AI 채팅" onCancel={m.onCancel} onClick={m.onClick}>
+    <dialog ref={ref} className={s.ask} aria-label="AI 채팅" onCancel={m.onCancel} onClick={m.onClick} onClickCapture={onLinkCapture}>
       {who === "customer" ? (
         <div className={s.askIn}>
           {used ? (

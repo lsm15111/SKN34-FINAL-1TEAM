@@ -3,10 +3,10 @@ import { TRADE_LABEL, termHref, type Term } from "@/lib/guide";
 import { TermLink } from "./TermPanel";
 import s from "./guide.module.css";
 
-export function TermCard({ term: t, href, showTrade = true }: { term: Term; href?: string; showTrade?: boolean }) {
+export function TermCard({ term: t, href, showTrade = true, keepScroll = false }: { term: Term; href?: string; showTrade?: boolean; keepScroll?: boolean }) {
   const img = t.images.find((x) => x.kind === "입체 그림") ?? t.images[0];
   return (
-    <TermLink href={href ?? termHref(t)} className={img ? s.card : `${s.card} ${s.cardText}`} aria-label={`${t.term}: ${t.easy}`}>
+    <TermLink href={href ?? termHref(t)} keepScroll={keepScroll} className={img ? s.card : `${s.card} ${s.cardText}`} aria-label={`${t.term}: ${t.easy}`}>
       {img ? <img className={s.cardImg} src={img.src} alt="" loading="lazy" width={400} height={300} /> : null}
       <span className={s.cardBody}>
         <span className={s.cardName}>{t.term}</span>

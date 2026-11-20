@@ -61,7 +61,7 @@ export default async function GuideTermsPage({ searchParams }: Props) {
               ))}
             </ul>
           </nav>
-          <Link className={s.toggle} href={href({ trade, img: !img })} scroll={false} role="switch" aria-checked={img}>
+          <Link className={s.toggle} href={href({ trade, img: !img })} scroll={false} aria-current={img ? "true" : undefined}>
             <i aria-hidden="true" />그림 있는 것만
           </Link>
         </div>
@@ -74,7 +74,7 @@ export default async function GuideTermsPage({ searchParams }: Props) {
                 <span className={s.meta}>{g.items.length}개{g.k === "oos" ? " · 믿집 범위 밖이라 알아 두기로만 적었어요" : ""}</span>
               </div>
               <ul className={s.cards}>
-                {g.items.map((t) => <li key={t.id}><TermCard term={t} href={href({ trade, img, term: t.id })} showTrade={!!trade || g.k === "oos"} /></li>)}
+                {g.items.map((t) => <li key={t.id}><TermCard term={t} href={href({ trade, img, term: t.id })} showTrade={!!trade || g.k === "oos"} keepScroll /></li>)}
               </ul>
             </section>
           ))

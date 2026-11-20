@@ -86,7 +86,7 @@
 .tocCol { display: none; }
 .navBox { display: flex; flex-direction: column; gap: 2px; font-size: var(--mj-type-label); }
 .navBox h2 { margin: 14px 0 2px 10px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); }
-.navBox h2:first-child { margin-top: 0; }
+.navBox > div:first-child > h2 { margin-top: 0; }
 .navBox ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .navBox a { display: flex; align-items: center; min-height: var(--mj-hit-min); padding: 6px 10px; border-radius: 9px; color: var(--mj-text-sub); text-decoration: none; line-height: var(--mj-lh-ui); }
 .navBox a:hover { background: var(--mj-fill); color: var(--mj-text); }
@@ -99,7 +99,6 @@
 .crumbs { display: none; align-items: center; gap: 6px; color: var(--mj-text-mute); font-size: var(--mj-type-label); }
 .crumbs a { display: inline-flex; align-items: center; min-height: var(--mj-hit-min); color: var(--mj-text-mute); text-decoration: none; }
 .crumbs a:hover { color: var(--mj-text); text-decoration: underline; text-underline-offset: 3px; }
-.anchor { scroll-margin-top: calc(var(--mj-sticky-top) + 16px); }
 .box { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; border-radius: var(--mj-radius-card); background: var(--mj-surface-sub); box-shadow: inset 0 0 0 1px var(--mj-line); font-size: var(--mj-type-body); line-height: var(--mj-lh-body); }
 .box h2, .box h3 { font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); }
 .box ul { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 2px; }
@@ -109,7 +108,7 @@
 .mj { background: var(--mj-surface); box-shadow: inset 0 0 0 1.5px var(--mj-primary); }
 .mj h2 { color: var(--mj-on-primary-weak); }
 .mj > div { margin-top: 4px; }
-.sec { display: flex; flex-direction: column; gap: 12px; scroll-margin-top: calc(var(--mj-sticky-top) + 16px); }
+.sec { display: flex; flex-direction: column; gap: 12px; }
 .sec h2 { font-size: var(--mj-type-title); font-weight: var(--mj-weight-bold); line-height: var(--mj-lh-title); letter-spacing: var(--mj-track-title); }
 .p { font-size: var(--mj-type-body); line-height: 1.75; max-width: 42em; text-wrap: pretty; }
 .ul { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 6px; font-size: var(--mj-type-body); line-height: var(--mj-lh-body); max-width: 42em; }
@@ -130,7 +129,8 @@
 .src { display: flex; flex-direction: column; gap: 4px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); line-height: var(--mj-lh-ui); }
 .src h2, .src h3 { color: var(--mj-text-sub); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); }
 .src ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; }
-.src a { color: var(--mj-text-sub); }
+/* 출처 링크도 손가락으로 누르기 쉽게 높이 40px(줄이 넘어가도 칸이 같이 커져요) */
+.src a { display: inline-flex; align-items: center; min-height: var(--mj-hit-min); color: var(--mj-text-sub); }
 .pager { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .pager a { display: flex; flex-direction: column; gap: 2px; min-height: 64px; padding: 12px 14px; border-radius: var(--mj-radius-card); box-shadow: inset 0 0 0 1px var(--mj-line); text-decoration: none; color: var(--mj-text); }
 .pager a:hover { box-shadow: inset 0 0 0 1px var(--mj-line-control); }
@@ -173,7 +173,7 @@
 }
 .pop[hidden] { display: none; }
 .pop b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
-.pop a { color: var(--mj-link); font-weight: var(--mj-weight-semibold); text-decoration: none; }
+.pop a { display: inline-flex; align-items: center; align-self: flex-start; min-height: var(--mj-hit-min); color: var(--mj-link); font-weight: var(--mj-weight-semibold); text-decoration: none; }
 .pop a:hover { text-decoration: underline; text-underline-offset: 3px; }
 
 /* ───── 용어 사전 ───── */
@@ -185,9 +185,9 @@
 .toggle { display: inline-flex; align-items: center; gap: 8px; min-height: var(--mj-hit-min); padding: 0 4px; color: var(--mj-text-sub); font-size: var(--mj-type-label); text-decoration: none; }
 .toggle i { position: relative; width: 36px; height: 22px; border-radius: 11px; background: var(--mj-fill-strong); }
 .toggle i::after { content: ""; position: absolute; left: 3px; top: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--mj-white); box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25); transition: transform var(--mj-dur-fast); }
-.toggle[aria-checked="true"] { color: var(--mj-text); font-weight: var(--mj-weight-semibold); }
-.toggle[aria-checked="true"] i { background: var(--mj-primary); }
-.toggle[aria-checked="true"] i::after { transform: translateX(14px); }
+.toggle[aria-current="true"] { color: var(--mj-text); font-weight: var(--mj-weight-semibold); }
+.toggle[aria-current="true"] i { background: var(--mj-primary); }
+.toggle[aria-current="true"] i::after { transform: translateX(14px); }
 .empty { padding: 24px; border-radius: var(--mj-radius-card); background: var(--mj-surface-sub); color: var(--mj-text-sub); text-align: center; }
 
 /* 용어 자세히 칸(웹 오른쪽 · 폰 아래 시트) */
@@ -243,9 +243,9 @@
 /* ───── AI 채팅 창 ───── */
 .ask { width: 100%; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; background: var(--mj-surface); color: var(--mj-text); overflow: hidden; }
 .ask::backdrop { background: var(--mj-scrim); }
-.askIn { display: flex; flex-direction: column; height: 100%; padding: max(8px, env(safe-area-inset-top, 0px)) 0 0; }
-.askIn > section { flex: 1 1 auto; min-height: 0; border-radius: 0; box-shadow: none; }
-.askGuest { display: flex; flex-direction: column; gap: 12px; padding: 20px; }
+.askIn { display: flex; flex-direction: column; height: 100%; padding: max(8px, env(safe-area-inset-top, 0px)) env(safe-area-inset-right, 0px) 0 env(safe-area-inset-left, 0px); }
+.askIn > section { flex: 1 1 auto; min-height: 0; border-radius: 0; box-shadow: none; padding-bottom: max(18px, env(safe-area-inset-bottom, 0px)); }
+.askGuest { display: flex; flex-direction: column; gap: 12px; padding: max(20px, env(safe-area-inset-top, 0px)) max(20px, env(safe-area-inset-right, 0px)) max(20px, env(safe-area-inset-bottom, 0px)) max(20px, env(safe-area-inset-left, 0px)); }
 .askGuestHead { display: flex; align-items: center; gap: 8px; }
 .askGuestHead h2 { font-size: var(--mj-type-title-s); font-weight: var(--mj-weight-bold); }
 

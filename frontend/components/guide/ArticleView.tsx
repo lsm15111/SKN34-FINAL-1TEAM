@@ -8,6 +8,7 @@ import { ArticleToc } from "./ArticleToc";
 import { CopyChecks } from "./CopyChecks";
 import { GuideNav } from "./GuideNav";
 import { Rich } from "./Rich";
+import { TermLink } from "./TermPanel";
 import { AskButton } from "./Triggers";
 import s from "./guide.module.css";
 
@@ -88,14 +89,14 @@ export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
         ))}
 
         {a.pitfall ? (
-          <section id="a-pitfall" className={`${s.box} ${s.pit} ${s.anchor}`} aria-labelledby="a-pitfall-h">
+          <section id="a-pitfall" className={`${s.box} ${s.pit}`} aria-labelledby="a-pitfall-h">
             <h2 id="a-pitfall-h">놓치기 쉬운 것</h2>
             <p><Rich text={a.pitfall} /></p>
           </section>
         ) : null}
 
         {a.mijip ? (
-          <section id="a-mijip" className={`${s.box} ${s.mj} ${s.anchor}`} aria-labelledby="a-mijip-h">
+          <section id="a-mijip" className={`${s.box} ${s.mj}`} aria-labelledby="a-mijip-h">
             <h2 id="a-mijip-h">믿집에서는</h2>
             <p><Rich text={a.mijip.text} /></p>
             {a.mijip.link ? <div><Button href={a.mijip.link.href} variant="weak" size="sm" arrow>{a.mijip.link.label}</Button></div> : null}
@@ -103,7 +104,7 @@ export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
         ) : null}
 
         {a.checks.length ? (
-          <section id="a-checks" className={`${s.sec} ${s.anchor}`} aria-labelledby="a-checks-h">
+          <section id="a-checks" className={s.sec} aria-labelledby="a-checks-h">
             <h2 id="a-checks-h">확인할 것</h2>
             <ul id="a-checks-list" className={s.checks}>{a.checks.map((x, i) => <li key={i}><span><Rich text={x} /></span></li>)}</ul>
             <CopyChecks lines={a.checks.map((x) => x.replace(/\[\[([^\]]+)\]\]/g, "$1"))} target="a-checks-list" />
@@ -114,7 +115,7 @@ export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
           <section className={s.sec} aria-labelledby="a-terms-h">
             <h2 id="a-terms-h" className={s.h3}>관련 용어</h2>
             <ul className={s.rel}>
-              {terms.map((t) => <li key={t.id}><Link className={s.relLink} href={termHref(t)}>{t.term}</Link></li>)}
+              {terms.map((t) => <li key={t.id}><TermLink className={s.relLink} href={termHref(t)}>{t.term}</TermLink></li>)}
             </ul>
           </section>
         ) : null}
