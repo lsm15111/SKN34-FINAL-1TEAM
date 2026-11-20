@@ -42,15 +42,21 @@ class PriceRowV3(PriceRow):
     qty: QtyKind = "one"  # 이 줄 수량 = QtyV3의 어느 값인지
     grade: str | None = None  # 도배지 줄: 이 벽지(economy 합지 · basic 실크)를 고른 집에만 쓴다
     in_standard: bool = True  # 표준견적서에 같은 일이 있는 줄. 아니면 비교 %에서 뺀다
+    label: str = ""  # 고객 화면 이름(비면 name). 화면 · AI가 같은 말을 써요
+    note: str = ""  # 고객 화면 줄 아래 짧은 뜻
 
 
 # 단위는 refprice.vendor_baseline과 같다(테스트가 본다). 공급 평 = 내 집 평(공급 기준)
 V3_ROWS: tuple[PriceRowV3, ...] = (
-    PriceRowV3("putty", "퍼티작업", "공급 평", "1201", "floor_py", None, False),
-    PriceRowV3("paper_hapji", "합지", "벽지 평", "1203", "paper_py", "economy"),
-    PriceRowV3("paper_silk", "실크", "벽지 평", "1204", "paper_py", "basic"),
-    PriceRowV3("material", "부자재", "공급 평", "1205", "floor_py"),
-    PriceRowV3("labor", "인건비", "품", "1206", "man_day"),
+    PriceRowV3(
+        "putty", "퍼티작업", "공급 평", "1201", "floor_py", None, False, note="사전퍼티 또는 밀작업"
+    ),
+    PriceRowV3("paper_hapji", "합지", "벽지 평", "1203", "paper_py", "economy", label="합지벽지"),
+    PriceRowV3("paper_silk", "실크", "벽지 평", "1204", "paper_py", "basic", label="실크벽지"),
+    PriceRowV3(
+        "material", "부자재", "공급 평", "1205", "floor_py", note="풀 · 부직포 · 네바리 · 실리콘 등"
+    ),
+    PriceRowV3("labor", "인건비", "품", "1206", "man_day", note="품 = 1명이 하루 하는 일"),
     PriceRowV3("meal", "식대", "품", "1207", "man_day", None, False),
     PriceRowV3("truck", "운송비", "대", "1208", "one", None, False),
 )

@@ -666,6 +666,10 @@ class EstimateV3LineOut(BaseModel):
         description="표준견적서에 같은 일이 있는 줄. False(퍼티 · 식대 · 운송비)는 비교 %에서 빼고"
         " '표준견적서에 없는 줄'로 따로 보여요",
     )
+    label: str = Field(default="", description="고객 화면 이름(실크벽지 · 합지벽지 …). 비면 name")
+    note: str = Field(
+        default="", description="고객 화면 줄 아래 짧은 뜻(풀 · 부직포 · 네바리 · 실리콘 등)"
+    )
 
 
 class EstimateV3Out(BaseModel):

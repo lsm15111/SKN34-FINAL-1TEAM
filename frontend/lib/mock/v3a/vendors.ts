@@ -59,8 +59,11 @@ export function mockShortlist(key: MockKey): Shortlist {
 type Line = S["EstimateV3LineOut"];
 /** 표준견적서에 없는 줄(퍼티 · 식대 · 운송비)은 in_standard false — 비교 %에서 빠져요(API와 같은 규칙) */
 const OUTSIDE = new Set(["putty", "meal", "truck"]);
+/** 고객 화면 이름 · 짧은 뜻(API label · note, 백엔드 계산 엔진 줄 정의와 같은 값) */
+const LABEL: Record<string, string> = { paper_silk: "실크벽지", paper_hapji: "합지벽지" };
+const NOTE: Record<string, string> = { putty: "사전퍼티 또는 밀작업", material: "풀 · 부직포 · 네바리 · 실리콘 등", labor: "품 = 1명이 하루 하는 일" };
 const L = (code: string, key: string, name: string, qty: string, unit: string, unit_price: number | null, amount: number, mode: Line["mode"] = "price"): Line =>
-  ({ code, key, name, qty, unit, unit_price, amount, mode, included_in: null, in_standard: !OUTSIDE.has(key) });
+  ({ code, key, name, label: LABEL[key] ?? name, note: NOTE[key] ?? "", qty, unit, unit_price, amount, mode, included_in: null, in_standard: !OUTSIDE.has(key) });
 
 /** 마루와벽 실크(318만 6,150원) · 합지(287만 4,300원) — D07 AI 답의 숫자와 같아요 */
 const MARU_LINES: Record<"basic" | "economy", Line[]> = {

@@ -851,6 +851,8 @@ def _estimate_v3_out(
                 mode=x.mode,
                 included_in=x.included_in,
                 in_standard=x.row.in_standard,
+                label=x.row.label or x.row.name,
+                note=x.row.note,
             )
             for x in e.lines
         ],

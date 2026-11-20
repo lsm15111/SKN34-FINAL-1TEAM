@@ -3760,6 +3760,18 @@ export interface components {
              * @default true
              */
             in_standard: boolean;
+            /**
+             * Label
+             * @description 고객 화면 이름(실크벽지 · 합지벽지 …). 비면 name
+             * @default
+             */
+            label: string;
+            /**
+             * Note
+             * @description 고객 화면 줄 아래 짧은 뜻(풀 · 부직포 · 네바리 · 실리콘 등)
+             * @default
+             */
+            note: string;
         };
         /**
          * EstimateV3Out

@@ -41,14 +41,13 @@ export function monthText(v: string | null | undefined): string {
 
 /** 가견적 줄(엔진 값) → 화면 줄(QuoteLines). 줄 번호(1201~)는 고객에게 보이지 않아요(CF-42).
  *  보이는 벽지가 아닌 벽지 줄은 빼고, '다른 줄에 포함'은 금액 '—' + 어디에 들었는지, '빼기'는 '안 함'으로 둬요. 더하지 않아요 */
-const EST_NAME: Record<string, string> = { putty: "퍼티작업", paper_silk: "실크벽지", paper_hapji: "합지벽지", material: "부자재", labor: "인건비", meal: "식대", truck: "운송비" };
-const EST_NOTE: Record<string, string> = { putty: "사전퍼티 또는 밀작업", material: "풀 · 부직포 · 네바리 · 실리콘 등", labor: "품 = 1명이 하루 하는 일" };
-type EstLine = { code: string; key: string; name: string; qty: string; unit: string; unit_price: number | null; amount: number; mode: "price" | "included" | "excluded"; included_in: string | null; in_standard: boolean };
+/** 줄 이름 · 짧은 뜻은 API(계산 엔진 줄 정의의 label · note)에서 받아요. AI 답도 같은 말을 써요 */
+type EstLine = { code: string; key: string; name: string; label?: string; note?: string; qty: string; unit: string; unit_price: number | null; amount: number; mode: "price" | "included" | "excluded"; included_in: string | null; in_standard: boolean };
 /** inside: 표준견적서에 같은 일이 있는 줄 · outside: 없는 줄(퍼티 · 식대 · 운송비, API in_standard false) */
 export function estimateLines(lines: EstLine[], grade: "basic" | "economy"): { inside: QuoteLine[]; outside: QuoteLine[] } {
   const other = grade === "basic" ? "paper_hapji" : "paper_silk";
   const byCode = new Map(lines.map((l) => [l.code, l]));
-  const nameOf = (l: EstLine) => EST_NAME[l.key] ?? l.name;
+  const nameOf = (l: EstLine) => l.label || l.name;
   const shown = lines.filter((l) => l.key !== other);
   const toLine = (l: EstLine): QuoteLine => {
     const key = `${l.code}-${l.key}`;
@@ -57,7 +56,7 @@ export function estimateLines(lines: EstLine[], grade: "basic" | "economy"): { i
       return { key, name: nameOf(l), note: host ? `${nameOf(host)}에 포함` : "다른 줄에 포함", qty: l.qty, unit: unitText(l.unit), unitPrice: null, amount: null };
     }
     if (l.mode === "excluded") return { key, name: nameOf(l), amount: null, state: "excluded" };
-    return { key, name: nameOf(l), note: EST_NOTE[l.key], qty: l.qty, unit: unitText(l.unit), unitPrice: l.unit_price, amount: l.amount };
+    return { key, name: nameOf(l), note: l.note || undefined, qty: l.qty, unit: unitText(l.unit), unitPrice: l.unit_price, amount: l.amount };
   };
   return { inside: shown.filter((l) => l.in_standard).map(toLine), outside: shown.filter((l) => !l.in_standard).map(toLine) };
 }
