@@ -38,6 +38,7 @@ from app.auth.models import User
 from app.calc.common import COUNTED
 from app.db import SessionLocal
 from app.shared.clock import SEOUL
+from app.shared.korean import i_ga
 
 if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
@@ -74,10 +75,16 @@ async def brief(
     now: datetime,
     refs: "RefTable",
     turn_id: uuid.UUID | None = None,
+    *,
+    commit: bool = True,
+    origin: str = "turn",
+    propose_window: bool = True,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
     """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지) · 가견적(요청 때 고정한 값) ·
-    빈 반나절 · 추천 응답(기간 초안 → window_answer 제안 행, 요청함 상태일 때만).
-    돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
+    빈 반나절 · 추천 응답(기간 초안 → window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀).
+    AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
+    (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
+    말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
     from app.calc import slots
     from app.refprice.holidays import days_off
     from app.vendor import service as vendor_service
@@ -112,7 +119,8 @@ async def brief(
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    free = await open_halves(s, vendor.id, start, end) if d.status == "requested" else None
+    ask = d.status == "requested" and propose_window
+    free = await open_halves(s, vendor.id, start, end) if ask else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
     if wins:
         w = wins[0]
@@ -145,8 +153,10 @@ async def brief(
             now=now,
             expires_at=d.reply_due_at if d.reply_due_at and d.reply_due_at > now else None,
             turn_id=turn_id,
+            origin=origin,
         )
-        await s.commit()
+        if commit:
+            await s.commit()
         made = [actions.out(row)]
         closed = [actions.out(c) for c in old]
         if row.status == "proposed":
@@ -184,6 +194,7 @@ async def brief(
         due_at=d.reply_due_at,
         memo=policy.mask_in(d.message or "") or None,
     )
+    data.sentence = brief_template(data)
     card = CardOut(
         card_id=f"brief-{visit_id}", kind="vendor_brief", data=data.model_dump(mode="json")
     )
@@ -200,6 +211,96 @@ async def brief(
         "proposed": bool(made),
     }
     return card, model, data, made, closed
+
+
+SENTENCE_MAX = 60
+SENTENCE_TTL = 86400  # 같은 사실이면 하루 동안 같은 문장(Haiku를 다시 부르지 않는다)
+
+
+class Sentence(BaseModel):
+    text: str
+
+
+def _md(d: date) -> str:
+    return f"{d.month:02d}.{d.day:02d}"
+
+
+def brief_template(data: VendorBriefData) -> str:
+    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터, 다 맞으면 답하기 좋은 기간."""
+    bad = next((f for f in data.fit if not f.ok), None)
+    if bad is not None:
+        return f"{i_ga(bad.label)} 맞지 않아요. 요청을 열어 확인해 주세요."
+    g = data.suggest
+    if g is not None:
+        return f"{_md(g.start)}~{_md(g.end)}에 빈 반나절 {g.open_count}칸이 있어 답하기 좋아요."
+    return "공정 · 지역 · 일정이 맞아요. 요청을 열어 확인해 주세요."
+
+
+def _brief_facts(data: VendorBriefData) -> dict:
+    g = data.suggest
+    return {
+        "title": data.title,
+        "fit": [{"label": f.label, "ok": f.ok, "text": f.text} for f in data.fit],
+        "open_count": data.halves.open_count,
+        "suggest": {"start": _md(g.start), "end": _md(g.end), "open_count": g.open_count}
+        if g
+        else None,
+        "due": data.due_at.astimezone(SEOUL).strftime("%m.%d %H:%M") if data.due_at else None,
+    }
+
+
+def sentence_ok(text: str, facts: str) -> bool:
+    """짧은 AI 문장 검사(먼저 말 걸기 · 브리핑): 길이 · '요' 끝 · 숫자는 사실에 있는 것만 · 한 일처럼 말하지 않음 ·
+    표준 대비 % · 링크 · 연락처 없음."""
+    import re
+
+    from app.agent.v3 import check
+    from app.agent.v3.schemas import Sentence as Sent
+    from app.assistant.runtime import claims_done
+    from app.v2 import guard
+
+    t = (text or "").strip()
+    if not t or len(t) > SENTENCE_MAX or "\n" in t or not re.search(r"요[.!?]?$", t):
+        return False
+    ok, _ = check.sentence_ok(Sent(text=t), guard.numbers(facts), None, None, None)
+    return (
+        ok is not None and ok.text == t and not claims_done(t) and not policy.VS_STANDARD.search(t)
+    )
+
+
+async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID) -> str:
+    """브리핑 AI 한 문장(Haiku, 같은 사실이면 하루 캐시). 못 부르거나 검사에 걸리면 틀(brief_template)."""
+    import hashlib
+    import json
+
+    from app import queue
+    from app.agent import llm
+    from app.assistant import prompts
+    from app.usage.service import REDIS_ERRORS
+
+    facts = json.dumps(_brief_facts(data), ensure_ascii=False, sort_keys=True)
+    key = f"assistant:brief:{data.visit_id}:{hashlib.sha256(facts.encode()).hexdigest()[:16]}"
+    try:
+        hit = await queue.redis.get(key)
+    except REDIS_ERRORS:
+        hit = None
+    if hit:
+        return hit.decode() if isinstance(hit, bytes) else str(hit)
+    try:
+        with llm.call_ctx(user_id=user_id, purpose="nudge"):
+            got = await llm.claude_json(
+                "nudge", Sentence, prompts.text("brief"), facts, max_tokens=512
+            )
+        text = got.text.strip()
+    except llm.LLMError:
+        return brief_template(data)
+    if not sentence_ok(text, facts):
+        return brief_template(data)
+    try:
+        await queue.redis.set(key, text, ex=SENTENCE_TTL)
+    except REDIS_ERRORS:
+        pass
+    return text
 
 
 async def checklist(
@@ -417,6 +518,30 @@ class NoArgs(BaseModel):
     pass
 
 
+def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
+    """공사 날 후보 둘(job_for 결과): 견적서 공사 기간 · 예상 공정표 시작일로 계산 엔진(calc.schedule.workdays)이
+    고른 일하는 날. 값은 이름표(days) 값 꼴 {deal_id, start, days, crew}. my_jobs · 먼저 말 걸기가 같이 쓴다."""
+    from app.calc.schedule import WEEKEND, workdays
+    from app.refprice.holidays import days_off
+
+    count = max(job.quote.days or job.need.days, 1)
+    weekend = () if job.weekend_work else WEEKEND
+    base = max(job.plan_start or today, today) + timedelta(days=1)
+    out = []
+    for start in (base, base + timedelta(days=7)):
+        off = days_off(start, start + timedelta(days=count * 3 + 14))
+        picked = workdays(start, count, off, weekend)
+        out.append(
+            {
+                "deal_id": str(deal_id),
+                "start": picked[0].isoformat(),
+                "days": [x.isoformat() for x in picked],
+                "crew": job.need.crew,
+            }
+        )
+    return out
+
+
 @tool(
     "my_jobs",
     surface="vendor",
@@ -427,8 +552,6 @@ class NoArgs(BaseModel):
     schema=obj({}),
 )
 async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
-    from app.calc.schedule import WEEKEND, workdays
-    from app.refprice.holidays import days_off
     from app.schedule import service as schedule_service
 
     async with SessionLocal() as s:
@@ -460,25 +583,14 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
             }
             if r.dates_state in ("waiting", "requested"):
                 job = await schedule_service.job_for(s, tc.user, r.deal_id, tc.today)
-                count = max(job.quote.days or job.need.days, 1)
-                weekend = () if job.weekend_work else WEEKEND
-                base = max(job.plan_start or tc.today, tc.today) + timedelta(days=1)
                 cands = []
-                for start in (base, base + timedelta(days=7)):
-                    off = days_off(start, start + timedelta(days=count * 3 + 14))
-                    picked = workdays(start, count, off, weekend)
-                    nref = tc.refs.put(
-                        "days",
-                        {
-                            "deal_id": str(r.deal_id),
-                            "start": picked[0].isoformat(),
-                            "days": [x.isoformat() for x in picked],
-                            "crew": job.need.crew,
-                        },
-                    )
+                for c in date_candidates(job, r.deal_id, tc.today):
+                    picked = [date.fromisoformat(x) for x in c["days"]]
+                    nref = tc.refs.put("days", c)
                     cands.append(
                         {"ref": nref, "start": picked[0], "end": picked[-1], "days": picked}
                     )
+                count = max(job.quote.days or job.need.days, 1)
                 row.update(candidates=cands, crew=job.need.crew, days_needed=count)
             deals.append(row)
     return ToolOut(data={"requests": requests, "deals": deals, "count": len(requests) + len(deals)})

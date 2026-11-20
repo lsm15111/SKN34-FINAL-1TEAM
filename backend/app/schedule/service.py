@@ -975,6 +975,15 @@ def _state(d: Deal, pending: DateProposal | None, req: DateRequest | None) -> st
     return "scheduled"
 
 
+async def dates_states(s: AsyncSession, deal_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """업체 확정마다 지금 공사 날짜 상태(dates_state). 읽기만 한다(비서 sweep이 열린 제안과 견준다)."""
+    if not deal_ids:
+        return {}
+    deals = (await s.scalars(select(Deal).where(Deal.id.in_(deal_ids)))).all()
+    pend, reqs = await _pending(s, deal_ids), await _open_requests(s, deal_ids)
+    return {d.id: _state(d, pend.get(d.id), reqs.get(d.id)) for d in deals}
+
+
 def _overdue(d: Deal, pending: DateProposal | None, req: DateRequest | None, now: datetime) -> bool:
     """기한 지남(상태가 아님): 날짜를 아직 안 냈는데 확정 기한이 지났거나, 열린 요청의 기한이 지났다."""
     if req is not None:  # 날짜 요청 · 바꾸기 요청 모두 기한이 있다
@@ -1745,6 +1754,7 @@ async def propose_dates(
     답하면 고객이 고른 시작일 중에서, 스스로 바꾸면 이유 필수. 수락하기 전까지 지금 날짜는 그대로다."""
     d = await _vendor_deal(s, vendor, deal_id)
     p = await project_service.get_out(s, d.project_id)
+    _need(p, d.trade, None)  # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
     plan = await ensure_expected(s, p, today)
     weekend = _weekend(plan)
     picked: list[date] | None = None
@@ -2024,6 +2034,8 @@ async def add_extra(
     묶음의 새 판(version + 1)이고 앞 판은 superseded가 된다(D23, 답 · 합계는 최신 판만).
     돌려주는 값: (공사 한 건 화면, 새로 만들었는지)."""
     d = await _vendor_deal(s, vendor, deal_id)
+    # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
+    _need(await project_service.get_out(s, d.project_id), d.trade, None)
     if data.client_key is not None and await _extra_by_key(s, d.id, data.client_key):
         return await job_for(s, vendor, deal_id, today), False
     tax = await vendor_service.tax_kind_of(s, vendor.id)
@@ -2357,6 +2369,8 @@ async def finish(
     끝나요'(+4일) · 자동 끝(+7일, D24). 고객 알림."""
     data = data or DoneIn()
     d = await _vendor_deal(s, vendor, deal_id)
+    # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
+    _need(await project_service.get_out(s, d.project_id), d.trade, None)
     await project_service.lock(s, d.project_id)
     d = await _lock_deal(s, d.id)
     if d is None or d.vendor_id != vendor.id:

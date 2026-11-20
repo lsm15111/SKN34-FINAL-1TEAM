@@ -274,6 +274,7 @@ class ProjectCondition(Base):
 
     고객이 되묻기에 답하거나 단추로 고른 값만 둔다(LLM 추측은 넣지 않는다). 칸(key)은 TradeSpec 칸 이름
     (예: dobae.grade)이고 공사 · 칸마다 하나다. 다음 턴부터 에이전트가 같은 칸을 다시 묻지 않는다.
+    v4 철거 범위(demolition)는 코드 값(full · partial · none)만 받는다(0043, 전체 철거면 리모델링 기준).
     """
 
     __tablename__ = "project_conditions"
@@ -281,6 +282,9 @@ class ProjectCondition(Base):
         UniqueConstraint("project_id", "key", name="uq_project_conditions_key"),
         CheckConstraint("char_length(key) between 3 and 40", name="key"),
         CheckConstraint("char_length(btrim(value)) between 1 and 40", name="value"),
+        CheckConstraint(
+            "key <> 'demolition' or value in ('full', 'partial', 'none')", name="demolition"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)

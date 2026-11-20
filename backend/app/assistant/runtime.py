@@ -26,7 +26,7 @@ from app import queue
 from app.agent import llm
 from app.agent.v3 import check
 from app.agent.v3.schemas import Sentence
-from app.assistant import policy, prompts
+from app.assistant import choices, policy, prompts
 from app.assistant import tools as tools_mod
 from app.assistant.schemas import AnswerData, CardOut
 from app.assistant.tools import ToolCtx, ToolError
@@ -314,8 +314,9 @@ async def send_card(res: TurnResult, emit: Emit, card: CardOut) -> None:
 
 
 class _Turn:
-    def __init__(self, ctx: TurnCtx, emit: Emit, res: TurnResult) -> None:
+    def __init__(self, ctx: TurnCtx, emit: Emit, res: TurnResult, note: str | None = None) -> None:
         self.ctx, self.emit, self.res = ctx, emit, res
+        self.note = note  # 카드 고르기를 코드가 처리한 결과(모델에 알릴 한 줄)
         self.budget = policy.TurnBudget(
             started=time.monotonic(), cap_micros=round(settings.llm_cap_turn_usd * 1_000_000)
         )
@@ -339,7 +340,9 @@ class _Turn:
     def _messages(self) -> list[dict]:
         text = self.ctx.text
         if self.ctx.choice:
-            text += f"\n(카드에서 고름: {', '.join(self.ctx.choice)})"
+            text += f"\n(카드에서 고름: {', '.join(choices.text_of(c) for c in self.ctx.choice)})"
+        if self.note:
+            text += f"\n({self.note})"
         return [
             *self.ctx.history,
             {"role": "user", "content": [{"type": "text", "text": text}]},
@@ -525,37 +528,48 @@ class _Turn:
         return {"type": "tool_result", "tool_use_id": cid, "content": body}, None
 
 
-async def free_turn(ctx: TurnCtx, emit: Emit, res: TurnResult, reason: str) -> None:
-    """무료 모드(계약서 4장 9): 입구 관문(gate.gate) + 단계 카드 + answer_only(mode="free"). LLM을 부르지 않는다."""
-    from app.agent.v3 import gate as gate_mod
-    from app.assistant.tools import cards
-    from app.chat import service as chat_service
+async def free_turn(
+    ctx: TurnCtx, emit: Emit, res: TurnResult, reason: str, note: str | None = None
+) -> None:
+    """무료 모드(계약서 4장 9): LLM 없이 코드 길잡이(free.answer)가 의도 → 도구 → 카드 + 정해 둔 글로 답한다.
+    note(카드 고르기를 코드가 처리한 결과)가 있으면 그 한 줄로 답한다."""
+    from app.assistant import free
 
     res.mode, res.reason = "free", reason
-    g = gate_mod.gate(ctx.text, has_project=ctx.project_id is not None)
-    tc = ToolCtx(
-        user=ctx.user,
-        surface=ctx.surface,  # type: ignore[arg-type]
-        turn_id=ctx.turn_id,
-        chat_id=ctx.chat_id,
-        project_id=ctx.project_id,
-        visit_id=ctx.visit_id,
-        today=ctx.today,
-        now=ctx.now,
-        refs=ctx.refs,
-        mode="free",
-    )
-    card = await cards.step_card(tc, g.route)
-    if card is not None:
-        await send_card(res, emit, card)
-    text = ""
-    try:
-        ans = await chat_service.answer_only(
-            ctx.user, ctx.text, ctx.today, project_id=ctx.project_id, mode="free"
+    text = note or ""
+    if not note:
+        tc = ToolCtx(
+            user=ctx.user,
+            surface=ctx.surface,  # type: ignore[arg-type]
+            turn_id=ctx.turn_id,
+            chat_id=ctx.chat_id,
+            project_id=ctx.project_id,
+            visit_id=ctx.visit_id,
+            today=ctx.today,
+            now=ctx.now,
+            refs=ctx.refs,
+            mode="free",
         )
-        text = ans.text
-    except AppError:
-        text = ""
+        try:
+            text, out = await free.answer(tc, ctx.text, ctx.card_id)
+        except (ToolError, AppError) as e:
+            text, out = e.message, None
+        except Exception as e:  # noqa: BLE001 - 길잡이 실패는 실패 문구로 끝낸다(종류 이름만 로그)
+            log.warning("무료 모드 길잡이 실패 (%s)", type(e).__name__)
+            text, out = "", None
+        if out is not None:
+            for a in out.closed:
+                await emit("action", a.model_dump(mode="json"))
+            for c in out.cards:
+                await send_card(res, emit, c)
+            for a in out.actions:
+                if str(a.action_id) not in res.actions:
+                    res.actions.append(str(a.action_id))
+                await emit("action", a.model_dump(mode="json"))
+            if out.task is not None:
+                await emit(
+                    "status", {"text": out.task.title, "task": out.task.model_dump(mode="json")}
+                )
     text = text or FAIL_TEXT
     await send_card(
         res,
@@ -576,10 +590,12 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
     ok = True if breaker else await llm.budget_ok(ctx.user.id, "assistant")
     # 꺼짐(키 없음 · LLM_LIVE=false)은 첫 호출의 LLMOff로 안다(시험 대본이 켜져 있으면 대본으로 돈다)
     mode, reason = policy.mode_for(available=True, budget_ok=ok, breaker=breaker)
+    # 카드 단추로 고른 것(철거 범위 · 'visit_request:v1,v2' …)은 모드와 상관없이 코드가 승인 카드로 만든다
+    note = await choices.apply(ctx, emit, res)
     if mode == "free":
-        await free_turn(ctx, emit, res, reason)
+        await free_turn(ctx, emit, res, reason, note)
     else:
-        turn = _Turn(ctx, emit, res)
+        turn = _Turn(ctx, emit, res, note)
         try:
             await turn.run()
             res.text = turn.gate.text
@@ -588,7 +604,7 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
                 await emit("token", {"text": FAIL_TEXT})
         except _Fallback as f:
             kept = turn.gate.text
-            await free_turn(ctx, emit, res, f.reason)
+            await free_turn(ctx, emit, res, f.reason, note)
             res.text = f"{kept}\n{res.text}".strip() if kept else res.text
     if not res.text:
         res.text = "(카드를 보여 줬어요: " + " · ".join(c["kind"] for c in res.cards) + ")"

@@ -89,10 +89,18 @@ class FieldChange(BaseModel):
     after: str
 
 
+Demolition = Literal["full", "partial", "none"]
+
+
 class HomeInfoData(BaseModel):
     phase: Literal["confirm"] = "confirm"
     facts: list[str] = Field(description="집 요약 줄(코드 값)")
     area: HomeArea | None = None
+    demolition: Demolition | None = Field(
+        default=None,
+        description="철거 범위(모은 조건 demolition): full 전체 철거 · partial 부분 · none 안 함. "
+        "전체 철거면 표준견적서가 리모델링 기준이에요",
+    )
     changes: list[FieldChange] = Field(default=[], description="제안한 바뀜(승인 전)")
     action_id: uuid.UUID | None = None
     saved: bool = False
@@ -149,6 +157,13 @@ class SlotCandidate(BaseModel):
     why: list[str]
 
 
+# 업체가 쓴 자유 글(벽지 사양 · 다른 날 제안 메모 · 날짜 바꾼 까닭)은 카드의 '업체가 적은 말' 칸에만 짧게 둔다.
+# 비서 문장 · 요약 · 버튼 문구 · 모델 값에는 넣지 않는다(주입 방어, policy.vendor_note)
+VENDOR_NOTE_DESC = (
+    "업체가 적은 말(업체가 쓴 글 그대로, 연락처 가림 · 한 줄 · 40자까지). 화면은 이 칸에만 보여요"
+)
+
+
 class VisitSlotsData(BaseModel):
     vendor_name: str
     window: DateRange | None = Field(description="업체가 답한 기간(요청 전이면 비움)")
@@ -157,6 +172,7 @@ class VisitSlotsData(BaseModel):
     chosen: str | None = None
     instant: bool = False
     calendar_href: str
+    vendor_note: str | None = Field(default=None, description=VENDOR_NOTE_DESC)
 
 
 class CompareFileOut(BaseModel):
@@ -186,7 +202,9 @@ class CompareCol(BaseModel):
     expired: bool = False
     demolish: bool | None = None
     waste: bool | None = None
-    paper: str | None = None
+    vendor_note: str | None = Field(
+        default=None, description=VENDOR_NOTE_DESC + " (견적서의 벽지 사양 칸)"
+    )
     warranty_months: int | None = None
     file: CompareFileOut | None = None
     wait_note: str | None = None
@@ -217,6 +235,9 @@ class ScheduleData(BaseModel):
     plan_version: int
     href: str
     ics_href: str | None = None
+    vendor_note: str | None = Field(
+        default=None, description=VENDOR_NOTE_DESC + " (날짜를 바꾼 까닭)"
+    )
 
 
 class CheckItem(BaseModel):
@@ -471,6 +492,16 @@ class TokenEvent(BaseModel):
     text: str
 
 
+class SuggestOut(BaseModel):
+    """다음에 물을 말 하나(코드가 고름). 누르면 say를 비서에게 보낸다. 먼저 말 걸기에서 왔으면 nudge_id."""
+
+    id: str
+    text: str = Field(description="제안 한 줄(정해 둔 글 또는 먼저 말 걸기 문장)")
+    why: str = Field(description="까닭 한 줄(코드 사실)")
+    say: str = Field(description="누르면 비서에게 보낼 말")
+    nudge_id: uuid.UUID | None = None
+
+
 class DoneEvent(BaseModel):
     seq: int
     rev: int
@@ -479,6 +510,7 @@ class DoneEvent(BaseModel):
     actions: list[uuid.UUID]
     stopped: bool = False
     chips: list[str] = []
+    suggest: list[SuggestOut] = Field(default=[], description="다음에 물을 말 0~3개(코드가 고름)")
 
 
 class ErrorEvent(BaseModel):
@@ -516,8 +548,13 @@ class NotePart(BaseModel):
     text: str
 
 
+class SuggestPart(BaseModel):
+    t: Literal["suggest"] = "suggest"
+    suggest: SuggestOut
+
+
 FeedPart = Annotated[
-    TextPart | CardPart | TaskPart | ActionPart | NotePart, Field(discriminator="t")
+    TextPart | CardPart | TaskPart | ActionPart | SuggestPart | NotePart, Field(discriminator="t")
 ]
 
 
@@ -543,6 +580,9 @@ class AssistantItem(BaseModel):
     mode: Mode | None = None
     error: ErrorOut | None = None
     status: str | None = None
+    nudge_id: uuid.UUID | None = Field(
+        default=None, description="먼저 말 건 줄이면 그 id(열기 · 닫기 API)"
+    )
 
 
 FeedItem = Annotated[UserItem | AssistantItem, Field(discriminator="role")]
@@ -579,10 +619,52 @@ class AssistantThreadOut(BaseModel):
     updated_at: datetime
 
 
+MemoryKey = Literal[
+    "avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"
+]
+
+
+class MemoryOut(BaseModel):
+    """비서가 기억하는 것 한 줄(고객이 한 말에서만). 지우면 다음 턴부터 쓰지 않는다."""
+
+    id: uuid.UUID
+    key: MemoryKey
+    label: str = Field(description="키의 화면 이름(예: 편한 시간)")
+    value: str
+    evidence_message_id: uuid.UUID
+    evidence_quote: str = Field(description="근거로 옮긴 고객 말(가린 글)")
+    updated_at: datetime
+
+
+NudgeTrigger = Literal[
+    "visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick",
+    "visit_requested", "visit_picked", "deal_confirmed",
+]  # fmt: skip
+NudgeStatus = Literal["pending", "held", "sent", "opened", "dismissed", "expired"]
+
+
+class NudgeOut(BaseModel):
+    """먼저 말 건 줄 하나(열기 · 닫기 응답). 문장은 Haiku(ai) 또는 정해 둔 틀(guide)이다."""
+
+    nudge_id: uuid.UUID
+    trigger: NudgeTrigger
+    channel: Literal["feed", "notify"]
+    status: NudgeStatus
+    body: str | None
+    src: Literal["ai", "guide"] | None
+    action_id: uuid.UUID | None
+    sent_at: datetime | None
+    acted_at: datetime | None
+
+
 class BoardMoneyOut(BaseModel):
     label: str
     won: int | None = None
-    range: list[int] | None = Field(default=None, description="[가장 작은 값, 가장 큰 값]")
+    range: list[int] | None = Field(
+        default=None,
+        description="[가장 작은 값, 가장 큰 값]. 확정 전 업체 금액(받은 실측 견적서, 없으면 요청 때 고정한 "
+        "가견적, 부가세 포함)이 두 곳 이상일 때",
+    )
 
 
 class BoardVendorRow(BaseModel):
@@ -615,7 +697,7 @@ class BoardOut(BaseModel):
     period: BoardPeriod | None
     docs: list[LinkOut]
     plan_example: bool
-    memory: list[dict] = Field(default=[], description="기억(0042 담당이 채움)")
+    memory: list[MemoryOut] = Field(default=[], description="비서가 기억하는 것(고객 말에서만)")
     today_pin: int
 
 

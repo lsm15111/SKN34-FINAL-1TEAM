@@ -9,6 +9,7 @@ import json
 import re
 import secrets
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from redis.exceptions import RedisError
@@ -308,9 +309,11 @@ CITE = re.compile(r"\[(K\d{1,5})\]")
 SEARCH_TRADES = frozenset(RAG_TRADES)
 
 
-async def _search(q: str, *, queries: list[str] | None = None, trade: str | None = None):
-    """검색어 임베딩을 먼저 만들고(세션 밖), 짧은 DB 세션으로 찾고 바로 닫는다"""
-    embedding = await llm.embed_query(q)
+async def _search(
+    q: str, *, queries: list[str] | None = None, trade: str | None = None, embed: bool = True
+):
+    """검색어 임베딩을 먼저 만들고(세션 밖), 짧은 DB 세션으로 찾고 바로 닫는다. embed=False면 낱말로만"""
+    embedding = await llm.embed_query(q) if embed else None
     async with SessionLocal() as s:
         return await knowledge.search(
             s, q, queries=queries or [], trade=trade, k=6, embedding=embedding
@@ -516,6 +519,62 @@ async def resume(
     return await _run(turn_id, turn)
 
 
+async def answer_only(
+    user_id: str,
+    message: str,
+    today: date,
+    *,
+    pyeong: Decimal | None = None,
+    region: str = "",
+    living: str = "",
+    mode: str = "llm",
+) -> v2.V2AskOut:
+    """v2 답 파이프라인(일반 상담)에서 저장 없이 답만 낸다(v4 비서 answer_question, 계약서 1장).
+
+    근거 검색 → 지시문 → LLM ↔ 서버 도구(price_reference · search_knowledge) → 숫자 · 인용 검사.
+    화면 도구 · 대화 저장 · Redis 턴 보관 · 입구 관문 · 시간당 요청 제한은 쓰지 않는다(부르는 쪽 턴이 지킨다).
+    mode="free"면 LLM을 부르지 않고(임베딩도 없이) 먼저 찾은 근거 자료만 sources로 돌려준다(text 비움).
+    금액(price_reference)은 v2 계산 엔진 값이라 비서 표준견적서(v4 두 기준)와 다를 수 있다(평가로 고른다)."""
+    b = v2.V2AskIn(
+        kind="chat",
+        message=message[:1_000],
+        profile=v2.V2AskProfile(pyeong=pyeong, region=region[:40], living=living[:40]),
+        quote=v2.V2QuoteIn(pyeong=pyeong) if pyeong else None,
+    )
+    trade = route(b)
+    first = await _search(b.message, trade=trade, embed=mode != "free")
+    if mode == "free":
+        turn: dict = {}
+        _remember(turn, first.hits)
+        sources = [v2.V2AskSource(**x) for x in turn.get("seen", {}).values()]
+        return v2.V2AskOut(done=True, text="", sources=sources, trade=trade)
+    system, allowed, calc = _system(b, today, "", first, trade)
+    turn = {
+        "user": user_id,
+        "question": b.message,
+        "prev": "",
+        "kind": "chat",
+        "today": today.isoformat(),
+        "chat": None,
+        "system": system,
+        "messages": [{"role": "user", "content": [{"type": "text", "text": b.message}]}],
+        "allowed": [*allowed, b.message],
+        "calc": calc,
+        "text": "",
+        "calls": 0,
+        "rounds": 0,
+        "nudged": False,
+        "pending": [],
+        "quote": b.quote.model_dump(mode="json") if b.quote else None,
+        "plan": None,
+        "cons": None,
+        "intent": None,
+        "trade": trade,
+    }
+    _remember(turn, first.hits)
+    return await _run(secrets.token_urlsafe(16), turn, server_only=True)
+
+
 def _intent_out(i: Intent) -> v2.V2IntentOut:
     return v2.V2IntentOut(label=i.label, confidence=i.confidence, source=i.source)
 
@@ -565,12 +624,17 @@ def _system(
     return system, [profile, materials, refs], []
 
 
-async def _run(turn_id: str, turn: dict) -> v2.V2AskOut:
+async def _run(turn_id: str, turn: dict, server_only: bool = False) -> v2.V2AskOut:
+    """server_only: 서버 도구만 주고(화면 도구 없음) 화면을 기다리지 않는다(answer_only)."""
     kind = turn["kind"]
     today = date.fromisoformat(turn["today"])
-    allowed_names = set(BY_KIND[kind])
+    allowed_names = set(BY_KIND[kind]) & (SERVER_TOOLS if server_only else set(BY_KIND[kind]))
     while turn["calls"] < MAX_CALLS:
-        tools = tools_for(kind) if turn["rounds"] < MAX_TOOL_ROUNDS else []
+        tools = (
+            [t for t in tools_for(kind) if t["name"] in allowed_names]
+            if turn["rounds"] < MAX_TOOL_ROUNDS
+            else []
+        )
         try:
             r = await llm.chat_tools(turn["system"], turn["messages"], tools)
         except llm.LLMError:

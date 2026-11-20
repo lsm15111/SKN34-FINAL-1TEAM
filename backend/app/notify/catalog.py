@@ -113,6 +113,8 @@ KINDS: dict[str, Kind] = {
     ),
     "vendor_needs_info": Kind("vendor", "/vendor", "가입 신청에 보완할 것이 있어요"),
     "vendor_reject": Kind("vendor", "/vendor", "가입 신청이 거절됐어요"),
+    # ---- v4 비서 먼저 말 걸기(알림 채널, 하루 고객 2 · 업체 3번까지). 업체 링크는 요청 · 공사 화면 ----
+    "assistant_nudge": Kind("any", "/projects/{pid}", "결도배 실측 날짜를 아직 고르지 않았어요"),
 }
 
 

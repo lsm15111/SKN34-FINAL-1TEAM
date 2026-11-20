@@ -2,6 +2,7 @@
 
 import asyncio
 import uuid
+from datetime import timedelta
 
 import asyncpg
 import pytest
@@ -14,8 +15,9 @@ from app.schedule.schemas import AckIn
 from app.shared.errors import AppError
 from tests.conftest import BACKEND, query
 from tests.helpers import JPEG, PDF, no_surprises, signup, upload, use
-from tests.test_dates import SEEN0, days, propose, ready
+from tests.test_dates import SEEN0, TODAY, days, mokgong_deal, propose, ready
 from tests.test_visit_inbox import login
+from tests.test_visit_request import listed
 
 MOLD = {"title": "곰팡이 방지 처리", "reason": "안방 창가 벽에 곰팡이가 있어 방지 처리를 했어요."}
 
@@ -124,6 +126,19 @@ def test_only_while_working(api):
     assert (
         gone.status_code == 409 and gone.json()["error"]["message"] == "다시 고른 업체의 공사예요."
     )
+
+
+def test_trade_not_in_home_saves_nothing(api):
+    """집 정보로 필요한 기간을 못 세는 공정(도배만 고른 집의 목공)은 저장하기 전에 409.
+    공사 화면 응답을 못 만드는데 추가 금액 · 알림만 저장되면 안 된다."""
+    _customer, pid, _did, _ = ready(api)
+    soon = TODAY + timedelta(days=1)
+    vid = listed(api, "barum@mitjip.test", "바름집수리")  # 업체로 로그인
+    mok = mokgong_deal(pid, vid, "scheduled", soon, soon + timedelta(days=2))
+    r = extra(api, mok, 10_000)
+    assert r.status_code == 409 and r.json()["error"]["code"] == "trade", r.text
+    assert query("select count(*) n from extra_charges")[0]["n"] == 0
+    assert notes("extra_added") == []
 
 
 def ready_other(api):

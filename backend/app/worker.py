@@ -22,6 +22,7 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app import demo
+from app.assistant import jobs as assistant_jobs
 from app.assistant import service as assistant_service
 from app.config import settings
 from app.db import SessionLocal
@@ -39,6 +40,7 @@ log = logging.getLogger(__name__)
 
 # kind → 처리 함수 (jobs.models.KINDS). 기능마다 자기 jobs.py의 HANDLERS에 넣고 여기서 모은다
 JOB_HANDLERS: dict[str, JobHandler] = {
+    **assistant_jobs.HANDLERS,
     **quote_jobs.HANDLERS,
     **schedule_jobs.HANDLERS,
     **visit_jobs.HANDLERS,
@@ -113,9 +115,15 @@ async def sweep_jobs(ctx: dict | None = None, now: datetime | None = None) -> in
 
 
 async def assistant_sweep(ctx: dict | None = None, now: datetime | None = None) -> int:
-    """비서 정리(2분마다, unique): 만료 제안 → expired · 2분 넘은 승인 → failed · 멈춘 턴 → failed.
-    먼저 말 걸기(이벤트 · 시간 트리거) · 기억 추출은 0042 담당이 여기에 더한다. 돌려주는 값: 바꾼 수."""
+    """비서 정리(2분마다, unique): 만료 제안 → expired · 2분 넘은 승인 → failed · 멈춘 턴 → failed ·
+    상태 전이 알림 → 먼저 말 걸기 · 기한이 된 제안 평가. 기억 뽑기는 sweep_jobs가 한다. 돌려주는 값: 바꾼 수."""
     got = await assistant_service.sweep(now or now_utc())
+    return sum(got.values())
+
+
+async def assistant_hourly(ctx: dict | None = None, now: datetime | None = None) -> int:
+    """먼저 말 걸기 시간 · 무응답 트리거(매시간 5분, unique). 돌려주는 값: 만든 제안 수."""
+    got = await assistant_service.hourly(now or now_utc())
     return sum(got.values())
 
 
@@ -127,6 +135,7 @@ class WorkerSettings:
     functions: ClassVar[list] = [ping]
     cron_jobs: ClassVar[list] = [
         cron(assistant_sweep, minute=set(range(0, 60, 2)), second=30, unique=True, timeout=60),
+        cron(assistant_hourly, minute=5, second=15, unique=True, timeout=60),
         cron(sweep_jobs, second=0, unique=True, timeout=SWEEP_TIMEOUT),
         *([cron(demo_reply, second=set(range(0, 60, 5)), timeout=50)] if demo_on() else []),
     ]

@@ -45,8 +45,9 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         tuple(data.faces),
         rooms=data.rooms,
     )
-    # 손님은 도배만 넣어요(목공 · 모은 조건 없음). 기준은 계산 엔진이 고른다(ADR 0004: 도배만 하는 공사)
-    pick = dobae.pick_profile(dobae.WorkFacts())
+    # 손님은 도배만 넣어요(목공 없음). 기준은 계산 엔진이 고른다(ADR 0004). 철거 범위를 넣었으면 그 값만 모은 조건으로
+    said = {dobae.DEMOLITION_KEY: data.demolition} if data.demolition else {}
+    pick = dobae.pick_profile(dobae.WorkFacts((), said))
     p = DOBAE_PROFILES[pick.profile]
     v = dobae.standard_v3(
         h, p, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2, pick.why

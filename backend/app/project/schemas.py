@@ -24,6 +24,8 @@ DobaeGrade = Literal["economy", "basic"]  # 저가형 · 기본형 (v3 화면 �
 # v3 기본 정보
 Scope = Literal["full", "partial"]  # 전체 · 부분 공사
 Face = Literal["wall", "ceiling"]  # 벽 · 천장
+# v4 철거 범위(모은 조건 demolition, calc.dobae.DEMOLITION): 전체 철거 · 부분 철거 · 철거 안 함
+Demolition = Literal["full", "partial", "none"]
 # 거실 · 주방 · 안방 · 작은방 1~4 · 복도 · 현관 · 드레스룸 (방 칩은 방 개수만큼: calc.space_share.room_kinds)
 SpaceKind = Literal[
     "living", "kitchen", "master", "room1", "room2", "room3", "room4", "hall", "entry", "dress"
@@ -224,6 +226,11 @@ class HomeInfoIn(BaseModel):
         description="예산(원, 만 원 단위). 비우면 '아직 몰라요'",
     )
     start_date: date | None = Field(default=None, description="공사 시작 희망일 (모르면 비움)")
+    demolition: Demolition | None = Field(
+        default=None,
+        description="철거 범위(모은 조건 demolition): full 전체 철거 · partial 부분 · none 안 함. "
+        "전체 철거면 표준견적서가 리모델링 기준이에요. 고치기에서 안 보내면 그대로, null이면 지워요",
+    )
 
     @field_validator("emd")
     @classmethod
@@ -296,6 +303,7 @@ class HomeInfoOut(BaseModel):
     grade: DobaeGrade | None
     budget_won: int | None
     start_date: date | None
+    demolition: Demolition | None = Field(default=None, description="철거 범위(모은 조건)")
 
 
 class EmdOut(BaseModel):
