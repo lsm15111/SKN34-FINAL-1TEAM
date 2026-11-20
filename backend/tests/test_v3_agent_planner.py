@@ -14,7 +14,7 @@ from app.agent import llm
 from app.agent.v3 import planner, screen_tools, templates
 from app.agent.v3.composer import CBlock, CItem, Composed
 from app.agent.v3.planner import Ask, Plan
-from app.agent.v3.schemas import ProjectFacts, ScreenFacts, TurnContext
+from app.agent.v3.schemas import ProjectFacts, ScreenFacts, StandardLineFact, TurnContext
 from app.agent.v3.turn import run_turn
 
 
@@ -54,6 +54,25 @@ def test_items_are_screen_lines_without_numbers():
     # 금액 · 수량은 넘기지 않아요(뜻 글의 '1명이 하루' 같은 정의 말은 괜찮아요)
     assert not any(re.search(r"\d{2,}|\d원|,\d", x["뜻"]) for x in [*v, *s])
     assert planner.items_of("plan", _facts()) == []
+
+
+def test_standard_items_explain_profile_lines():
+    """조건별 두 기준 판의 새 표준 줄(부자재 · 퍼티 · 식대 · 운송 · 경비)도 짧은 해요체 뜻이 붙어요."""
+    names = {"material": "부자재", "putty": "퍼티작업", "meal": "식대", "truck": "운송 · 경비"}
+    f = std_facts()
+    assert f.standard is not None
+    f.standard.lines = [
+        StandardLineFact(
+            key=k, name=n, state="included", qty=1.0, unit="식", unit_price=1, amount=1
+        )
+        for k, n in names.items()
+    ]
+    got = {x["key"]: x["뜻"] for x in planner.items_of("standard", f)}
+    for k in names:
+        meaning = planner.STANDARD_MEANING[k]
+        assert meaning.endswith("요") and got[f"standard.{k}"].startswith(meaning), k
+    assert "밥값" in got["standard.meal"] and "합계에 들어감" in got["standard.meal"]
+    assert not any(re.search(r"\d{2,}|\d원|,\d", x) for x in got.values())
 
 
 def test_clean_drops_unknown_items_and_caps_pieces():
