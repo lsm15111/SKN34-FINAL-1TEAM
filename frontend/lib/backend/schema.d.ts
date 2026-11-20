@@ -259,6 +259,74 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assistant/nudges/{nudge_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 먼저 말 건 줄 열기 */
+        post: operations["nudge_open_assistant_nudges__nudge_id__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/nudges/{nudge_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 먼저 말 건 줄 닫기(같은 일을 3일 쉬어요) */
+        post: operations["nudge_dismiss_assistant_nudges__nudge_id__dismiss_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/memory": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 비서가 기억하는 것(내 말에서만) */
+        get: operations["memory_assistant_memory_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/memory/{memory_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 기억 한 줄 지우기 */
+        delete: operations["forget_assistant_memory__memory_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/assistant/health": {
         parameters: {
             query?: never;
@@ -423,6 +491,40 @@ export interface paths {
         put?: never;
         /** 거절 */
         post: operations["vendor_reject_vendor_assistant_actions__action_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/nudges/{nudge_id}/open": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 먼저 말 건 줄 열기 */
+        post: operations["vendor_nudge_open_vendor_assistant_nudges__nudge_id__open_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/nudges/{nudge_id}/dismiss": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 먼저 말 건 줄 닫기(같은 일을 3일 쉬어요) */
+        post: operations["vendor_nudge_dismiss_vendor_assistant_nudges__nudge_id__dismiss_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3265,7 +3367,7 @@ export interface components {
             /** Turn Id */
             turn_id: string | null;
             /** Parts */
-            parts: (components["schemas"]["TextPart"] | components["schemas"]["CardPart"] | components["schemas"]["TaskPart"] | components["schemas"]["ActionPart"] | components["schemas"]["NotePart"])[];
+            parts: (components["schemas"]["TextPart"] | components["schemas"]["CardPart"] | components["schemas"]["TaskPart"] | components["schemas"]["ActionPart"] | components["schemas"]["SuggestPart"] | components["schemas"]["NotePart"])[];
             /**
              * Done
              * @default true
@@ -3276,6 +3378,11 @@ export interface components {
             error?: components["schemas"]["ErrorOut"] | null;
             /** Status */
             status?: string | null;
+            /**
+             * Nudge Id
+             * @description 먼저 말 건 줄이면 그 id(열기 · 닫기 API)
+             */
+            nudge_id?: string | null;
         };
         /** AssistantThreadOut */
         AssistantThreadOut: {
@@ -3300,7 +3407,7 @@ export interface components {
             won?: number | null;
             /**
              * Range
-             * @description [가장 작은 값, 가장 큰 값]
+             * @description [가장 작은 값, 가장 큰 값]. 확정 전 업체 금액(받은 실측 견적서, 없으면 요청 때 고정한 가견적, 부가세 포함)이 두 곳 이상일 때
              */
             range?: number[] | null;
         };
@@ -3330,12 +3437,10 @@ export interface components {
             plan_example: boolean;
             /**
              * Memory
-             * @description 기억(0042 담당이 채움)
+             * @description 비서가 기억하는 것(고객 말에서만)
              * @default []
              */
-            memory: {
-                [key: string]: unknown;
-            }[];
+            memory: components["schemas"]["MemoryOut"][];
             /** Today Pin */
             today_pin: number;
         };
@@ -4987,6 +5092,11 @@ export interface components {
              * @description 공사 시작 희망일 (모르면 비움)
              */
             start_date?: string | null;
+            /**
+             * Demolition
+             * @description 철거 범위(모은 조건 demolition): full 전체 철거 · partial 부분 · none 안 함. 전체 철거면 표준견적서가 리모델링 기준이에요. 고치기에서 안 보내면 그대로, null이면 지워요
+             */
+            demolition?: ("full" | "partial" | "none") | null;
         };
         /**
          * HomeInfoOut
@@ -5029,6 +5139,11 @@ export interface components {
             budget_won: number | null;
             /** Start Date */
             start_date: string | null;
+            /**
+             * Demolition
+             * @description 철거 범위(모은 조건)
+             */
+            demolition?: ("full" | "partial" | "none") | null;
         };
         /** InboxPageOut */
         InboxPageOut: {
@@ -5550,6 +5665,44 @@ export interface components {
             status: "active" | "suspended";
         };
         /**
+         * MemoryOut
+         * @description 비서가 기억하는 것 한 줄(고객이 한 말에서만). 지우면 다음 턴부터 쓰지 않는다.
+         */
+        MemoryOut: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "avail_days" | "avail_half" | "living" | "style" | "material" | "priority" | "pet" | "diy";
+            /**
+             * Label
+             * @description 키의 화면 이름(예: 편한 시간)
+             */
+            label: string;
+            /** Value */
+            value: string;
+            /**
+             * Evidence Message Id
+             * Format: uuid
+             */
+            evidence_message_id: string;
+            /**
+             * Evidence Quote
+             * @description 근거로 옮긴 고객 말(가린 글)
+             */
+            evidence_quote: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /**
          * MessageIn
          * @description 글 보내기. client_key가 같으면 저장하지 않고 처음 글을 200으로 돌려준다.
          */
@@ -5809,6 +5962,42 @@ export interface components {
             items: components["schemas"]["NotificationOut"][];
             /** Unread */
             unread: number;
+        };
+        /**
+         * NudgeOut
+         * @description 먼저 말 건 줄 하나(열기 · 닫기 응답). 문장은 Haiku(ai) 또는 정해 둔 틀(guide)이다.
+         */
+        NudgeOut: {
+            /**
+             * Nudge Id
+             * Format: uuid
+             */
+            nudge_id: string;
+            /**
+             * Trigger
+             * @enum {string}
+             */
+            trigger: "visit_offered" | "quote_sent" | "dates_proposed" | "work_eve" | "no_pick" | "visit_requested" | "visit_picked" | "deal_confirmed";
+            /**
+             * Channel
+             * @enum {string}
+             */
+            channel: "feed" | "notify";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "held" | "sent" | "opened" | "dismissed" | "expired";
+            /** Body */
+            body: string | null;
+            /** Src */
+            src: ("ai" | "guide") | null;
+            /** Action Id */
+            action_id: string | null;
+            /** Sent At */
+            sent_at: string | null;
+            /** Acted At */
+            acted_at: string | null;
         };
         /** OpenFieldOut */
         OpenFieldOut: {
@@ -8377,6 +8566,40 @@ export interface components {
              * Format: uuid
              */
             id: string;
+        };
+        /**
+         * SuggestOut
+         * @description 다음에 물을 말 하나(코드가 고름). 누르면 say를 비서에게 보낸다. 먼저 말 걸기에서 왔으면 nudge_id.
+         */
+        SuggestOut: {
+            /** Id */
+            id: string;
+            /**
+             * Text
+             * @description 제안 한 줄(정해 둔 글 또는 먼저 말 걸기 문장)
+             */
+            text: string;
+            /**
+             * Why
+             * @description 까닭 한 줄(코드 사실)
+             */
+            why: string;
+            /**
+             * Say
+             * @description 누르면 비서에게 보낼 말
+             */
+            say: string;
+            /** Nudge Id */
+            nudge_id?: string | null;
+        };
+        /** SuggestPart */
+        SuggestPart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            t: "suggest";
+            suggest: components["schemas"]["SuggestOut"];
         };
         /** SummaryRow */
         SummaryRow: {
@@ -12744,6 +12967,117 @@ export interface operations {
             };
         };
     };
+    nudge_open_assistant_nudges__nudge_id__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                nudge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NudgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    nudge_dismiss_assistant_nudges__nudge_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                nudge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NudgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    memory_assistant_memory_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryOut"][];
+                };
+            };
+        };
+    };
+    forget_assistant_memory__memory_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                memory_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     health_assistant_health_get: {
         parameters: {
             query?: never;
@@ -13026,6 +13360,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_nudge_open_vendor_assistant_nudges__nudge_id__open_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                nudge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NudgeOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_nudge_dismiss_vendor_assistant_nudges__nudge_id__dismiss_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                nudge_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NudgeOut"];
                 };
             };
             /** @description Validation Error */

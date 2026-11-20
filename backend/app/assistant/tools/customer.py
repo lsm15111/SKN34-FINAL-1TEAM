@@ -141,7 +141,8 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
 async def compare_quotes(tc: ToolCtx, a: TradeIn) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.compare(s, tc.user, pid_of(tc), a.trade, tc.today, tc.refs)
-    return ToolOut(data=model, cards=[card])
+        task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
+    return ToolOut(data=model, cards=[card], task=task)
 
 
 @tool(
@@ -171,7 +172,8 @@ async def get_schedule(tc: ToolCtx, _: NoArgs) -> ToolOut:
 async def today_tasks(tc: ToolCtx, _: NoArgs) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.today(s, tc.user, pid_of(tc), tc.today, tc.now, tc.refs)
-    return ToolOut(data=model, cards=[card])
+        task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
+    return ToolOut(data=model, cards=[card], task=task)
 
 
 ShowKind = Literal[

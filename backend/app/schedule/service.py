@@ -975,6 +975,15 @@ def _state(d: Deal, pending: DateProposal | None, req: DateRequest | None) -> st
     return "scheduled"
 
 
+async def dates_states(s: AsyncSession, deal_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """업체 확정마다 지금 공사 날짜 상태(dates_state). 읽기만 한다(비서 sweep이 열린 제안과 견준다)."""
+    if not deal_ids:
+        return {}
+    deals = (await s.scalars(select(Deal).where(Deal.id.in_(deal_ids)))).all()
+    pend, reqs = await _pending(s, deal_ids), await _open_requests(s, deal_ids)
+    return {d.id: _state(d, pend.get(d.id), reqs.get(d.id)) for d in deals}
+
+
 def _overdue(d: Deal, pending: DateProposal | None, req: DateRequest | None, now: datetime) -> bool:
     """기한 지남(상태가 아님): 날짜를 아직 안 냈는데 확정 기한이 지났거나, 열린 요청의 기한이 지났다."""
     if req is not None:  # 날짜 요청 · 바꾸기 요청 모두 기한이 있다

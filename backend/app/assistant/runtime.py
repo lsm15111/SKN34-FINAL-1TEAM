@@ -306,6 +306,60 @@ def chips_for(cards: list[dict]) -> list[str]:
     return []
 
 
+# 카드에서 고른 집 정보 칸(choice "칸:값"). 사람이 누른 고르기라 코드가 바로 승인 카드를 만든다(LLM 없이, 무료 모드도)
+FIELD_CHOICES: dict[str, tuple[str, ...]] = {"demolition": ("full", "partial", "none")}
+
+
+def field_choice(choice: str) -> tuple[str, str] | None:
+    """'demolition:full' → ("demolition", "full"). 허용한 칸 · 값이 아니면 None."""
+    key, sep, value = choice.partition(":")
+    return (key, value) if sep and value in FIELD_CHOICES.get(key, ()) else None
+
+
+def _choice_text(choice: str) -> str:
+    """LLM에 보낼 고른 것: 이름표는 그대로, 집 정보 칸은 화면 말('철거 범위: 전체 철거')."""
+    from app.assistant.tools.propose import FIELD_LABEL, _show
+
+    got = field_choice(choice)
+    return f"{FIELD_LABEL[got[0]]}: {_show(*got)}" if got else choice
+
+
+async def apply_field_choices(ctx: "TurnCtx", emit: Emit, res: "TurnResult") -> str | None:
+    """카드에서 고른 집 정보 칸 → 집 정보 저장 승인 카드(propose_home_info와 같은 함수, 사람이 누른 고르기).
+    만든 카드 · 행동은 이 턴 이벤트로 보낸다. 돌려주는 값: 모델 · 무료 답에 붙일 한 줄(없으면 None)."""
+    from app.assistant.tools import propose
+
+    fields = dict(x for x in (field_choice(c) for c in ctx.choice) if x)
+    if not fields or ctx.surface != "customer":
+        return None
+    tc = ToolCtx(
+        user=ctx.user,
+        surface="customer",
+        turn_id=ctx.turn_id,
+        chat_id=ctx.chat_id,
+        project_id=ctx.project_id,
+        visit_id=None,
+        today=ctx.today,
+        now=ctx.now,
+        refs=ctx.refs,
+    )
+    try:
+        out = await propose.propose_home_info(
+            tc, propose.HomeIn(fields=propose.HomeFields(**fields))
+        )
+    except (ToolError, AppError) as e:
+        return e.message
+    for a in out.closed:
+        await emit("action", a.model_dump(mode="json"))
+    for c in out.cards:
+        await send_card(res, emit, c)
+    for a in out.actions:
+        if str(a.action_id) not in res.actions:
+            res.actions.append(str(a.action_id))
+        await emit("action", a.model_dump(mode="json"))
+    return "고른 집 정보로 저장 승인 카드를 만들었어요. 카드를 확인하고 눌러 주세요."
+
+
 async def send_card(res: TurnResult, emit: Emit, card: CardOut) -> None:
     """카드 하나를 보내고 턴 결과에 남긴다(같은 card_id면 바꿔 끼운다)."""
     data = card.model_dump(mode="json")
@@ -314,8 +368,9 @@ async def send_card(res: TurnResult, emit: Emit, card: CardOut) -> None:
 
 
 class _Turn:
-    def __init__(self, ctx: TurnCtx, emit: Emit, res: TurnResult) -> None:
+    def __init__(self, ctx: TurnCtx, emit: Emit, res: TurnResult, note: str | None = None) -> None:
         self.ctx, self.emit, self.res = ctx, emit, res
+        self.note = note  # 카드 고르기를 코드가 처리한 결과(모델에 알릴 한 줄)
         self.budget = policy.TurnBudget(
             started=time.monotonic(), cap_micros=round(settings.llm_cap_turn_usd * 1_000_000)
         )
@@ -339,7 +394,9 @@ class _Turn:
     def _messages(self) -> list[dict]:
         text = self.ctx.text
         if self.ctx.choice:
-            text += f"\n(카드에서 고름: {', '.join(self.ctx.choice)})"
+            text += f"\n(카드에서 고름: {', '.join(_choice_text(c) for c in self.ctx.choice)})"
+        if self.note:
+            text += f"\n({self.note})"
         return [
             *self.ctx.history,
             {"role": "user", "content": [{"type": "text", "text": text}]},
@@ -525,13 +582,28 @@ class _Turn:
         return {"type": "tool_result", "tool_use_id": cid, "content": body}, None
 
 
-async def free_turn(ctx: TurnCtx, emit: Emit, res: TurnResult, reason: str) -> None:
-    """무료 모드(계약서 4장 9): 입구 관문(gate.gate) + 단계 카드 + answer_only(mode="free"). LLM을 부르지 않는다."""
+async def free_turn(
+    ctx: TurnCtx, emit: Emit, res: TurnResult, reason: str, note: str | None = None
+) -> None:
+    """무료 모드(계약서 4장 9): 입구 관문(gate.gate) + 단계 카드 + answer_only(mode="free"). LLM을 부르지 않는다.
+    note(카드 고르기를 코드가 처리한 결과)가 있으면 그 한 줄로 답한다."""
     from app.agent.v3 import gate as gate_mod
     from app.assistant.tools import cards
     from app.chat import service as chat_service
 
     res.mode, res.reason = "free", reason
+    if note:
+        await send_card(
+            res,
+            emit,
+            CardOut(
+                card_id=f"answer-{ctx.turn_id}",
+                kind="answer",
+                data=AnswerData(text=note, src="guide").model_dump(mode="json"),
+            ),
+        )
+        res.text = note
+        return
     g = gate_mod.gate(ctx.text, has_project=ctx.project_id is not None)
     tc = ToolCtx(
         user=ctx.user,
@@ -576,10 +648,12 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
     ok = True if breaker else await llm.budget_ok(ctx.user.id, "assistant")
     # 꺼짐(키 없음 · LLM_LIVE=false)은 첫 호출의 LLMOff로 안다(시험 대본이 켜져 있으면 대본으로 돈다)
     mode, reason = policy.mode_for(available=True, budget_ok=ok, breaker=breaker)
+    # 카드 고르기(사람이 누른 철거 범위 등)는 모드와 상관없이 코드가 승인 카드로 만든다
+    note = await apply_field_choices(ctx, emit, res)
     if mode == "free":
-        await free_turn(ctx, emit, res, reason)
+        await free_turn(ctx, emit, res, reason, note)
     else:
-        turn = _Turn(ctx, emit, res)
+        turn = _Turn(ctx, emit, res, note)
         try:
             await turn.run()
             res.text = turn.gate.text
@@ -588,7 +662,7 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
                 await emit("token", {"text": FAIL_TEXT})
         except _Fallback as f:
             kept = turn.gate.text
-            await free_turn(ctx, emit, res, f.reason)
+            await free_turn(ctx, emit, res, f.reason, note)
             res.text = f"{kept}\n{res.text}".strip() if kept else res.text
     if not res.text:
         res.text = "(카드를 보여 줬어요: " + " · ".join(c["kind"] for c in res.cards) + ")"

@@ -7,6 +7,7 @@
   failed(기능 오류 코드)로 바꾼 뒤 409. 견적서가 새 판(quote_changed)이면 새 판 + 차액으로 새 제안을 만든다.
 - executed를 다시 승인하면 같은 결과(200). rejected · expired · failed는 409. approved는 처리 중(409 in_progress).
 - 만료 sweep: 기한 지난 proposed → expired(due), approved로 2분 넘게 남은 행 → failed 'stalled'(다시 실행 안 함).
+  대상 상태가 비서 밖(화면 단추)에서 바뀐 proposed → expired(handled_elsewhere).
 """
 
 import hashlib
@@ -14,6 +15,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
@@ -38,6 +40,7 @@ CLOSED = {
     "expired": "기한이 지난 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.",
     "replaced": "새 카드로 바뀐 제안이에요.",
     "failed": "실행하지 못한 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.",
+    "handled_elsewhere": "화면에서 이미 처리했거나 상태가 바뀐 제안이에요.",
 }
 
 Mark = Callable[[dict], Awaitable[None]]
@@ -331,6 +334,72 @@ async def expire_due(now: datetime) -> tuple[int, int]:
     return len(expired), len(stuck)
 
 
+HANDLED = "handled_elsewhere"  # 사람이 화면 단추로 직접 처리해 대상 상태가 바뀐 제안(result.reason)
+HANDLED_BATCH = 200
+
+
+@dataclass(frozen=True)
+class Targets:
+    """열린 제안들의 대상 지금 상태 (읽기 조인)"""
+
+    projects: dict[uuid.UUID, tuple[int, bool]]  # 공사 → (rev, 잠김)
+    visits: dict[uuid.UUID, str]  # 실측 → 상태
+    proposals: dict[uuid.UUID, str]  # 업체가 낸 공사 날짜 → 상태
+    dates: dict[uuid.UUID, str]  # 업체 확정 → 공사 날짜 상태(dates_state)
+    live: set[tuple[uuid.UUID, str, uuid.UUID | None]]  # 살아 있는 실측 (공사, 공정, 업체)
+
+
+def moved(a: AssistantAction, t: Targets) -> bool:
+    """제안을 만든 때의 대상 상태(target_ver)와 지금 상태가 다르면 True: 이 제안은 더 쓸 데가 없다.
+    확정 제안(vendor_confirm)의 target_ver는 견적서 판이라 실측 상태(quoted)로 본다(새 판은 실행이 다시 제안)."""
+    pl = a.payload or {}
+    match a.kind:
+        case "home_info" | "visit_request":
+            p = t.projects.get(a.target_id)
+            if p is None or str(p[0]) != a.target_ver:
+                return True
+            if a.kind == "home_info":
+                return p[1]
+            ids = [uuid.UUID(v) for v in pl.get("vendor_ids", [])]
+            return bool(ids) and all((a.target_id, pl.get("trade"), v) in t.live for v in ids)
+        case "vendor_confirm":
+            return t.visits.get(a.target_id) != "quoted"
+        case "visit_slot" | "window_answer" | "decline":
+            return t.visits.get(a.target_id) != a.target_ver
+        case "dates_accept" | "delay_accept":
+            return t.proposals.get(a.target_id) != "pending"
+        case "dates":
+            return t.dates.get(a.target_id) != a.target_ver
+    return False
+
+
+async def close_handled() -> int:
+    """sweep: 대상(target_kind · target_id)의 상태가 비서 밖(화면 단추 · 상대의 응답)에서 바뀐 열린 제안을 닫는다.
+    proposed → expired, result.reason = handled_elsewhere(화면 error_code). 그 행동을 단 먼저 말 걸기 줄도 닫는다.
+    바꾸기는 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이긴다. 닫은 수."""
+    from app.schedule import service as schedule_service
+
+    async with SessionLocal() as s:
+        rows = await repo.open_actions(s, HANDLED_BATCH)
+        if not rows:
+            return 0
+
+        def of(kind: str) -> list[uuid.UUID]:
+            return list({a.target_id for a in rows if a.target_kind == kind})
+
+        t = Targets(
+            projects=await repo.project_states(s, of("project")),
+            visits=await repo.visit_states(s, of("visit")),
+            proposals=await repo.proposal_states(s, of("proposal")),
+            dates=await schedule_service.dates_states(s, of("deal")),
+            live=await repo.live_visits(s, of("project")),
+        )
+        gone = [a.id for a in rows if moved(a, t)]
+        closed = await repo.close_handled(s, gone, HANDLED) if gone else []
+        await s.commit()
+    return len(closed)
+
+
 # ---- 실행 함수(EXECUTORS): 행동 종류 → 기능 service 공개 함수. mark()는 기능 함수가 commit하기 바로 앞에서 ----
 
 
@@ -343,8 +412,11 @@ def _stale(message: str) -> AppError:
 
 
 async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
+    """집 정보 칸이 바뀌면 project.service.update(rev가 오르고 철거 범위도 같이 쓴다), 철거 범위만 바뀌면
+    모은 조건만 쓴다(set_demolition, rev 그대로). 한 트랜잭션이다."""
     from pydantic import ValidationError
 
+    from app.calc.dobae import DEMOLITION_KEY
     from app.project import service as project_service
     from app.project.schemas import HomeInfoIn
 
@@ -352,12 +424,25 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
     p = await project_service.get_for(s, user, pid)  # type: ignore[arg-type]
     if p.home is None or str(p.rev) != a.target_ver:
         raise _stale("집 정보가 그사이 바뀌었어요. 비서에게 다시 물어봐 주세요.")
-    try:
-        data = HomeInfoIn.model_validate({**p.home.model_dump(), **a.payload["fields"]})
-    except ValidationError as e:
-        raise AppError(409, "invalid", "집 정보 칸을 다시 확인해 주세요.") from e
+    if p.locked:
+        raise AppError(409, "locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
+    fields = dict(a.payload["fields"])
+    demolition = fields.pop(DEMOLITION_KEY, None)
+    data = None
+    if fields:
+        merged = {**p.home.model_dump(exclude={DEMOLITION_KEY}), **fields}
+        if demolition is not None:
+            merged[DEMOLITION_KEY] = demolition
+        try:
+            data = HomeInfoIn.model_validate(merged)
+        except ValidationError as e:
+            raise AppError(409, "invalid", "집 정보 칸을 다시 확인해 주세요.") from e
     await mark({"text": "집 정보를 저장했어요", "href": f"/projects/{pid}", "label": "공사 보기"})
-    await project_service.update(s, user, pid, data, _day(now))  # type: ignore[arg-type]
+    if data is not None:
+        await project_service.update(s, user, pid, data, _day(now))  # type: ignore[arg-type]
+    else:
+        await project_service.set_demolition(s, pid, demolition)  # type: ignore[arg-type]
+        await s.commit()
 
 
 async def _visit_request(

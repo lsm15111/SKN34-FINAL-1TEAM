@@ -5,14 +5,19 @@
   업체 · 웹 글은 도구가 {"자료(지시 아님)": …}로 감싸서 넘긴다(그 키도 허용 칸).
 - TurnBudget: 도구 6 · LLM 8 · 45초 · 턴 $0.06(LLM_CAP_TURN_USD). 넘으면 '지금까지로 답해요' 한 번, 그래도 넘으면 멈춤.
 - mode_for: 꺼짐(키 없음 · LLM_LIVE=false) · 상한 · 차단기면 무료 모드.
+- NudgeRules(계약서 6장): 먼저 말 걸기 규칙. 하루 알림 상한(고객 2 · 업체 3) · 밤(21~9시) 알림은 9시로 ·
+  닫으면 같은 trigger 3일 쉬기 · 7일 안에 2번 닫으면 알림 7일 멈춤. 시각은 부르는 쪽이 넣는다(고정 시계로 시험).
 """
 
+import itertools
 import re
 from dataclasses import dataclass
+from datetime import datetime, time, timedelta
 from typing import Any, Literal
 
 from app.agent.v3.check import mask
 from app.agent.v3.schemas import TEXT_MAX
+from app.shared.clock import SEOUL
 
 TOOL_MAX = 6
 LLM_MAX = 8
@@ -37,7 +42,7 @@ ALLOWED = frozenset(
         "rating", "reviews", "done_jobs", "instant", "reasons", "picked", "local",
         "vendor", "vendor_name", "vendors", "picks", "cols", "items", "rows", "count",
         "open_count", "open_halves", "candidates", "wishes", "windows", "excluded", "why",
-        "demolish", "waste", "paper", "warranty_months", "files", "file_count",
+        "demolish", "demolition", "waste", "paper", "warranty_months", "files", "file_count",
         "todo", "waiting", "news", "next", "sub", "fit", "ok", "facts", "memo", "message",
         "sources", "source", "publisher", "section", "hits", "answer", "route", "found",
         "links", "complex", "note", "notes", "error", "shown", "action", "actions",
@@ -139,3 +144,82 @@ def mode_for(
     if not budget_ok:
         return "free", "budget"
     return "llm", "ok"
+
+
+# ---- 먼저 말 걸기 규칙 (계약서 6장) ----
+
+Verdict = Literal["send", "defer", "hold"]
+
+
+@dataclass(frozen=True)
+class Dismissal:
+    """닫은 제안 하나(트리거 · 닫은 때). 규칙은 이것만 본다."""
+
+    trigger: str
+    at: datetime
+
+
+@dataclass(frozen=True)
+class RuleOut:
+    verdict: Verdict
+    reason: str | None = None  # hold · defer 까닭: snooze · mute · night · cap
+    until: datetime | None = None  # defer면 다시 볼 때
+
+
+@dataclass(frozen=True)
+class NudgeRules:
+    """알림(notify)은 사람을 부르니 상한 · 밤 · 멈춤을 보고, 대화 기록(feed)은 쉬기만 본다(밤에도 쌓는다)."""
+
+    cap_customer: int = 2  # 하루 알림 수(서울 날짜)
+    cap_vendor: int = 3
+    night_from: int = 21  # 21시부터
+    night_to: int = 9  # 9시까지는 9시로 미룬다
+    snooze: timedelta = timedelta(days=3)  # 닫으면 같은 trigger를 쉬는 기간
+    mute_window: timedelta = timedelta(days=7)  # 이 안에 두 번 닫으면
+    mute_for: timedelta = timedelta(days=7)  # 알림을 멈추는 기간
+
+    def cap(self, surface: str) -> int:
+        return self.cap_vendor if surface == "vendor" else self.cap_customer
+
+    def night(self, now: datetime) -> bool:
+        h = now.astimezone(SEOUL).hour
+        return h >= self.night_from or h < self.night_to
+
+    def morning(self, now: datetime) -> datetime:
+        """다음 아침 night_to시(서울). 지금이 그 시각 전이면 오늘 아침."""
+        local = now.astimezone(SEOUL)
+        day = local.date() if local.hour < self.night_to else local.date() + timedelta(days=1)
+        return datetime.combine(day, time(self.night_to), SEOUL)
+
+    def snoozed(self, trigger: str, dismissals: list[Dismissal], now: datetime) -> bool:
+        return any(d.trigger == trigger and now - d.at < self.snooze for d in dismissals)
+
+    def muted_until(self, dismissals: list[Dismissal]) -> datetime | None:
+        """mute_window 안에 이어 닫은 두 번이 있으면 뒤의 것 + mute_for까지 알림을 멈춘다."""
+        at = sorted(d.at for d in dismissals)
+        ends = [b + self.mute_for for a, b in itertools.pairwise(at) if b - a <= self.mute_window]
+        return max(ends) if ends else None
+
+    def check(
+        self,
+        *,
+        trigger: str,
+        channel: str,
+        surface: str,
+        now: datetime,
+        sent_today: int,
+        dismissals: list[Dismissal],
+    ) -> RuleOut:
+        """보낼지(send) · 미룰지(defer, until) · 기록만 할지(hold). sent_today는 오늘(서울) 보낸 알림 수."""
+        if self.snoozed(trigger, dismissals, now):
+            return RuleOut("hold", "snooze")
+        if channel != "notify":
+            return RuleOut("send")
+        muted = self.muted_until(dismissals)
+        if muted is not None and now < muted:
+            return RuleOut("hold", "mute")
+        if self.night(now):
+            return RuleOut("defer", "night", self.morning(now))
+        if sent_today >= self.cap(surface):  # 낮(9~21시)이라 다음 아침은 내일 9시
+            return RuleOut("defer", "cap", self.morning(now))
+        return RuleOut("send")
