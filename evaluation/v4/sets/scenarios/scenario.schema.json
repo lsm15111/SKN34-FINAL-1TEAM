@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "mitjip/v4/eval/scenario.schema.json",
   "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 1 · 2026-11-21)",
-  "description": "시뮬레이터 러너(evaluation/v4/sim/run.py, 아직 없음)가 world를 DB에 심고, persona를 흉내 내는 사용자 LLM과 비서(/assistant/turns · /vendor/assistant/turns)를 max_turns까지 대화시킨 뒤 끝 상태를 expected_end와 견줘요. 행동 · 도구 · 상태 이름은 03-비서 백엔드 설계(계약서) 2 · 5장과 같아요.",
+  "description": "시뮬레이터 러너(evaluation/v4/sim/run.py)가 world를 시험 DB에 심고, 사용자 대본(script.turns, 나중에는 persona를 흉내 내는 사용자 LLM)으로 비서(/assistant/turns · /vendor/assistant/turns)와 max_turns까지 대화한 뒤 끝 상태를 expected_end와 견줘요. 사람 승인은 script.decide 규칙대로 눌러요. 행동 · 도구 · 상태 이름은 03-비서 백엔드 설계(계약서) 2 · 5장과 같아요.",
   "type": "object",
   "required": ["id", "title", "surface", "split", "tags", "persona", "world", "opening", "max_turns", "expected_end"],
   "additionalProperties": false,
@@ -85,6 +85,7 @@
     },
     "opening": {"type": "string", "description": "사용자의 첫 말"},
     "max_turns": {"type": "integer", "minimum": 1, "maximum": 30, "description": "사용자 말 수 상한(넘으면 그때 상태로 채점)"},
+    "script": {"$ref": "#/$defs/script"},
     "expected_end": {
       "type": "object",
       "description": "정답 끝 상태. 여기 적은 것만 확인해요(적지 않은 것은 자유)",
@@ -284,6 +285,66 @@
         "has": {"type": "array", "items": {"type": "object", "required": ["key", "contains"], "additionalProperties": false, "properties": {"key": {"$ref": "#/$defs/memory_key"}, "contains": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "값에 이 중 하나가 들어 있으면 돼요"}}}},
         "absent_keys": {"type": "array", "items": {"$ref": "#/$defs/memory_key"}},
         "absent_values": {"type": "array", "items": {"type": "string"}, "description": "어떤 기억 값에도 들어 있으면 안 되는 말(금액 · 연락처 · 건강)"}
+      }
+    },
+    "script": {
+      "type": "object",
+      "description": "대본 사용자. turns[0].say는 opening과 같아요. say 수는 max_turns 안이에요",
+      "required": ["turns", "decide"],
+      "additionalProperties": false,
+      "properties": {
+        "as": {"type": "string", "description": "업체 화면이면 말하는 업체 ref(비우면 world.vendors[0])"},
+        "turns": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/step"}},
+        "decide": {"type": "array", "items": {"$ref": "#/$defs/rule"}}
+      }
+    },
+    "step": {
+      "type": "object",
+      "description": "say = 비서 턴 한 번, screen = 화면 열기(LLM 없음, 업체 요청 브리핑은 코드가 기간 답하기 제안을 만들어요)",
+      "additionalProperties": false,
+      "properties": {
+        "say": {"type": "string", "minLength": 1},
+        "screen": {"enum": ["vendor_brief", "vendor_checklist", "vendor_today", "customer_today", "customer_board"]},
+        "visit": {"type": "string", "description": "업체가 보던 요청(world.visits ref)"},
+        "context": {"type": "object", "description": "카드에서 고른 것(TurnContextIn)"}
+      },
+      "oneOf": [{"required": ["say"]}, {"required": ["screen"]}]
+    },
+    "view_key": {"enum": ["amount", "version", "day", "half", "wish_start", "wish_end", "vendors", "code", "start", "end"]},
+    "weekday": {"enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
+    "rule": {
+      "type": "object",
+      "description": "사람 승인 규칙. 위에서부터 처음 맞는 규칙을 따르고, 맞는 규칙이 없으면 누르지 않아요",
+      "required": ["kind", "do"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"$ref": "#/$defs/action_kind"},
+        "do": {"enum": ["approve", "reject", "leave"]},
+        "if": {
+          "type": "object",
+          "description": "모두 맞아야 해요. 카드 요약(금액 · 판)과 실행할 값(날짜 · 반나절 · 업체 수 · 칸)을 봐요(sim/check.py PREDICATES)",
+          "additionalProperties": false,
+          "properties": {
+            "has": {"type": "array", "items": {"$ref": "#/$defs/view_key"}},
+            "missing": {"type": "array", "items": {"$ref": "#/$defs/view_key"}},
+            "amount_max": {"type": "integer"},
+            "amount_min": {"type": "integer"},
+            "vendors_max": {"type": "integer"},
+            "vendors_min": {"type": "integer"},
+            "weekday_in": {"type": "array", "items": {"$ref": "#/$defs/weekday"}},
+            "wish_has_weekday": {"type": "array", "items": {"$ref": "#/$defs/weekday"}},
+            "half_in": {"type": "array", "items": {"enum": ["am", "pm"]}},
+            "start_from": {"$ref": "#/$defs/date"},
+            "start_to": {"$ref": "#/$defs/date"},
+            "end_from": {"$ref": "#/$defs/date"},
+            "end_to": {"$ref": "#/$defs/date"},
+            "area_in": {"type": "array", "items": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}},
+            "field_eq": {"type": "object"},
+            "code_in": {"type": "array", "items": {"type": "string"}},
+            "after_turn": {"type": "integer", "minimum": 0},
+            "before_turn": {"type": "integer", "minimum": 1}
+          }
+        }
       }
     }
   }

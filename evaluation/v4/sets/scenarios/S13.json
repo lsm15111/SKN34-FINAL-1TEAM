@@ -19,7 +19,7 @@
   "reject": [
    {
     "kind": "propose_delay_accept",
-    "when": "도배가 1월 22일 넘어서 끝나면"
+    "when": "도배가 1월 22일이나 그 뒤에 끝나면(입주 전날까지 밀리면)"
    }
   ],
   "never": [],
@@ -122,6 +122,31 @@
  },
  "opening": "도배 업체가 날짜를 미루자는데 어떻게 돼요?",
  "max_turns": 6,
+ "script": {
+  "turns": [
+   {
+    "say": "도배 업체가 날짜를 미루자는데 어떻게 돼요?"
+   },
+   {
+    "say": "입주가 1월 23일인데 괜찮아요?"
+   },
+   {
+    "say": "그럼 연기는 수락 안 할래요. 업체에 뭐라고 물어보면 돼요?"
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_delay_accept",
+    "do": "reject",
+    "if": {
+     "end_from": "2027-01-22"
+    }
+   }
+  ]
+ },
  "expected_end": {
   "deals": [
    {

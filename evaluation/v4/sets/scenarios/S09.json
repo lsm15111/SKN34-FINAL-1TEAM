@@ -92,6 +92,41 @@
  },
  "opening": "새 요청 왔는데 우리랑 맞아?",
  "max_turns": 6,
+ "script": {
+  "turns": [
+   {
+    "say": "새 요청 왔는데 우리랑 맞아?",
+    "visit": "v1"
+   },
+   {
+    "screen": "vendor_brief",
+    "visit": "v1"
+   },
+   {
+    "say": "우리는 마포구 · 서대문구만 다녀. 이 건은 못 한다고 해 줘.",
+    "visit": "v1"
+   },
+   {
+    "say": "고마워.",
+    "visit": "v1"
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_decline",
+    "do": "approve",
+    "if": {
+     "code_in": [
+      "out_of_area"
+     ]
+    }
+   },
+   {
+    "kind": "propose_window_answer",
+    "do": "reject"
+   }
+  ]
+ },
  "expected_end": {
   "visits": [
    {
