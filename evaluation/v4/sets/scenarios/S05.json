@@ -1,0 +1,201 @@
+{
+ "id": "S05",
+ "title": "고객: 업체 추천 3곳과 실측 희망 시간 후보로 두 곳에 요청",
+ "surface": "customer",
+ "split": "dev",
+ "tags": [
+  "C3",
+  "C4"
+ ],
+ "persona": {
+  "role": "customer",
+  "who": "평일 오후와 토요일 오전만 되는 고객",
+  "goal": "추천받은 업체 중 두 곳에 실측 요청 보내기",
+  "style": "이유를 꼭 물어봐요.",
+  "knows": {
+   "되는 때": "평일 오후, 토요일 오전"
+  },
+  "approve": [
+   {
+    "kind": "propose_visit_request",
+    "when": "두 곳이고 평일 오후 · 토요일 오전 후보면"
+   }
+  ],
+  "reject": [
+   {
+    "kind": "propose_visit_request",
+    "when": "세 곳 이상이거나 후보 시간이 안 맞으면"
+   }
+  ],
+  "never": [
+   "전화번호를 말하지 않아요"
+  ],
+  "done_when": "요청을 보내면 끝내요"
+ },
+ "world": {
+  "today": "2026-11-25",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae",
+    "mokgong"
+   ],
+   "grade": "basic",
+   "mokgong": [
+    "molding",
+    "base"
+   ],
+   "living": "vacant",
+   "start_wish": "2027-01-04"
+  },
+  "project": {
+   "stage": "standard"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae",
+     "mokgong"
+    ],
+    "price_confirmed": true,
+    "rating": 4.8,
+    "reviews": 12,
+    "done": 31,
+    "phone": "010-3333-4444",
+    "free_halves": [
+     "2026-12-05:am",
+     "2026-12-06:pm",
+     "2026-12-08:pm"
+    ]
+   },
+   {
+    "ref": "gyeol",
+    "name": "결도배",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "rating": 4.6,
+    "reviews": 7,
+    "done": 12,
+    "phone": "010-3333-5555",
+    "free_halves": [
+     "2026-12-05:pm",
+     "2026-12-12:am"
+    ]
+   },
+   {
+    "ref": "saebom",
+    "name": "새봄도배",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "rating": 4.5,
+    "reviews": 5,
+    "done": 8,
+    "free_halves": [
+     "2026-12-03:pm",
+     "2026-12-05:am"
+    ]
+   },
+   {
+    "ref": "gangnam",
+    "name": "강남벽지",
+    "gu": "강남구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "rating": 4.9,
+    "reviews": 30,
+    "done": 60
+   },
+   {
+    "ref": "hanbit",
+    "name": "한빛도배",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": false,
+    "rating": 4.4,
+    "reviews": 3,
+    "done": 2
+   }
+  ]
+ },
+ "opening": "도배 업체 추천해 주세요. 평일 오후랑 토요일 오전만 돼요.",
+ "max_turns": 8,
+ "expected_end": {
+  "visits": [
+   {
+    "trade": "dobae",
+    "status_in": [
+     "requested"
+    ],
+    "count": 2
+   }
+  ],
+  "actions": {
+   "executed": [
+    {
+     "kind": "propose_visit_request",
+     "count": 1
+    }
+   ],
+   "none_without_approval": true
+  },
+  "memory": {
+   "has": [
+    {
+     "key": "avail_half",
+     "contains": [
+      "오후"
+     ]
+    },
+    {
+     "key": "avail_days",
+     "contains": [
+      "토"
+     ]
+    }
+   ]
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "required_tools": [
+   "recommend_vendors",
+   "vendor_free_slots"
+  ],
+  "no_text": [
+   "010-5555-0101",
+   "101동",
+   "1203호",
+   "한빛도배"
+  ],
+  "no_regex": [
+   "표준[^.\\n]{0,15}(대비|보다)[^.\\n]{0,15}\\d+(\\.\\d+)?\\s*%"
+  ],
+  "max_cost_usd": 0.3
+ },
+ "judge": [
+  "추천 순서와 사유가 코드 점수 그대로였나(광고 · 단정 없음)",
+  "고르는 건 고객이라고 했나"
+ ]
+}

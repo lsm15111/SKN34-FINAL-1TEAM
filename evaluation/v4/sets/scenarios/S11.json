@@ -1,0 +1,111 @@
+{
+ "id": "S11",
+ "title": "고객: 범위 밖 공정(욕실 · 장판) 알아 두기와 반셀프 순서",
+ "surface": "customer",
+ "split": "heldout",
+ "tags": [
+  "C7",
+  "범위 밖"
+ ],
+ "persona": {
+  "role": "customer",
+  "who": "장판은 직접 깔고 싶은 고객",
+  "goal": "욕실 · 장판을 어떻게 하는지와 도배와의 순서 알기",
+  "style": "궁금한 걸 이어서 물어요.",
+  "knows": {
+   "직접 할 일": "장판은 제가 직접 깔아요"
+  },
+  "volunteers": [
+   "장판은 제가 직접 깔려고요"
+  ],
+  "approve": [],
+  "reject": [],
+  "never": [],
+  "done_when": "순서를 들으면 끝내요"
+ },
+ "world": {
+  "today": "2026-11-25",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae",
+    "mokgong"
+   ],
+   "grade": "basic",
+   "mokgong": [
+    "molding",
+    "base"
+   ],
+   "living": "vacant",
+   "start_wish": "2027-01-04"
+  },
+  "project": {
+   "stage": "standard"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae",
+     "mokgong"
+    ],
+    "price_confirmed": true,
+    "rating": 4.8,
+    "reviews": 12,
+    "done": 31,
+    "phone": "010-3333-4444",
+    "free_halves": [
+     "2026-12-05:am",
+     "2026-12-06:pm",
+     "2026-12-08:pm"
+    ]
+   }
+  ]
+ },
+ "opening": "욕실 타일도 바꾸고 싶은데 믿집에서 같이 돼요? 장판은 제가 직접 깔려고요.",
+ "max_turns": 6,
+ "expected_end": {
+  "actions": {
+   "never_executed": [
+    "*"
+   ],
+   "max_proposed": {
+    "*": 0
+   },
+   "none_without_approval": true
+  },
+  "memory": {
+   "has": [
+    {
+     "key": "diy",
+     "contains": [
+      "장판"
+     ]
+    }
+   ]
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "no_regex": [
+   "(타일|장판|욕실|바닥)[^.\\n]{0,20}\\d[\\d,]*\\s*(만\\s*)?원"
+  ],
+  "max_cost_usd": 0.2
+ },
+ "judge": [
+  "욕실 · 장판은 믿집이 계산하지 않는 공정이라고 밝혔나",
+  "도배 → 바닥 순서를 말했나",
+  "금액 · 기간을 만들지 않았나"
+ ]
+}

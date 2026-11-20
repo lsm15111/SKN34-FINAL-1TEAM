@@ -1,0 +1,421 @@
+{
+ "id": "F1",
+ "title": "처음 고객: 34평 도배 + 목공을 살면서, 주소부터 공정표까지",
+ "surface": "customer",
+ "split": "dev",
+ "tags": [
+  "C1",
+  "C2",
+  "C3",
+  "C4",
+  "C5",
+  "흐름"
+ ],
+ "persona": {
+  "role": "customer",
+  "who": "처음 인테리어를 하는 30대 맞벌이 고객(마포구 ○○아파트, 살면서 공사)",
+  "goal": "도배와 몰딩 · 걸레받이를 살면서 바꾸고, 업체를 정해 공정표까지 받기",
+  "style": "한두 문장으로 짧게 말해요. 전문 용어는 되물어요. 한 번에 한 가지만 말해요.",
+  "knows": {
+   "평형": "34평이고 84 타입이라고 들었어요(전용 ㎡는 몰라요)",
+   "거주": "살면서 공사해요",
+   "되는 날": "평일은 출근해서 주말(토 · 일)만 돼요",
+   "공사 시작": "1월 11일부터면 좋아요",
+   "벽지": "실크(기본형)",
+   "목공": "몰딩 · 걸레받이만 바꿔요"
+  },
+  "volunteers": [
+   "주소는 마포구 ○○아파트예요",
+   "살면서 공사해요"
+  ],
+  "approve": [
+   {
+    "kind": "propose_home_info",
+    "when": "34평 · 84 타입과 맞으면"
+   },
+   {
+    "kind": "propose_visit_request",
+    "when": "추천 이유를 들은 뒤, 주말 후보가 들어 있으면"
+   },
+   {
+    "kind": "propose_visit_slot",
+    "when": "토 · 일 반나절이면"
+   },
+   {
+    "kind": "propose_vendor_confirm",
+    "when": "카드에 업체 · 금액 · 견적서 판이 보이고 두 견적을 견준 설명을 들은 뒤"
+   },
+   {
+    "kind": "propose_dates_accept",
+    "when": "1월 11일 이후 날짜면"
+   }
+  ],
+  "reject": [
+   {
+    "kind": "propose_visit_slot",
+    "when": "평일 반나절이면"
+   },
+   {
+    "kind": "propose_vendor_confirm",
+    "when": "금액이나 견적서 판이 안 보이면"
+   }
+  ],
+  "never": [
+   "전화번호 · 동 · 호수를 말하지 않아요",
+   "예산 숫자를 먼저 말하지 않아요"
+  ],
+  "done_when": "도배 공사 날짜를 수락하면 '고마워요'로 끝내요"
+ },
+ "world": {
+  "today": "2026-12-01",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": null,
+   "area_m2": null,
+   "area_basis": null,
+   "trades": [
+    "dobae",
+    "mokgong"
+   ],
+   "grade": "basic",
+   "mokgong": [
+    "molding",
+    "base"
+   ],
+   "living": "living",
+   "start_wish": "2027-01-11"
+  },
+  "project": {
+   "stage": "info"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae",
+     "mokgong"
+    ],
+    "price_confirmed": true,
+    "rating": 4.8,
+    "reviews": 12,
+    "done": 31,
+    "phone": "010-3333-4444",
+    "free_halves": [
+     "2026-12-05:am",
+     "2026-12-06:pm",
+     "2026-12-08:pm"
+    ]
+   },
+   {
+    "ref": "gyeol",
+    "name": "결도배",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "rating": 4.6,
+    "reviews": 7,
+    "done": 12,
+    "phone": "010-3333-5555",
+    "free_halves": [
+     "2026-12-05:pm",
+     "2026-12-12:am"
+    ]
+   },
+   {
+    "ref": "namu",
+    "name": "나무목공",
+    "gu": "서대문구",
+    "trades": [
+     "mokgong"
+    ],
+    "price_confirmed": true,
+    "rating": 4.7,
+    "reviews": 9,
+    "done": 20,
+    "free_halves": [
+     "2026-12-06:am",
+     "2026-12-13:pm"
+    ]
+   },
+   {
+    "ref": "gangnam",
+    "name": "강남벽지",
+    "gu": "강남구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "rating": 4.9,
+    "reviews": 30,
+    "done": 60
+   },
+   {
+    "ref": "hanbit",
+    "name": "한빛도배",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": false,
+    "rating": 4.4,
+    "reviews": 3,
+    "done": 2
+   }
+  ],
+  "visits": [],
+  "deals": [],
+  "web": [
+   {
+    "url": "https://example.org/notice/oo-apt",
+    "title": "○○아파트 입주자 모집 공고(주택형 표)",
+    "text": "주택형 84A: 전용 84.97㎡ · 공급 112.40㎡. 주택형 59B: 전용 59.92㎡ · 공급 80.11㎡."
+   }
+  ]
+ },
+ "events": [
+  {
+   "id": "e1",
+   "when": {
+    "after_action": {
+     "kind": "propose_visit_request",
+     "status": "executed"
+    }
+   },
+   "do": "vendor_answer_window",
+   "args": {
+    "vendor": "maru",
+    "trade": "dobae",
+    "halves": [
+     "2026-12-05:am",
+     "2026-12-06:pm",
+     "2026-12-08:pm"
+    ]
+   },
+   "note": "마루와벽이 도배 실측 요청에 반나절 3개로 답해요"
+  },
+  {
+   "id": "e2",
+   "when": {
+    "after_event": "e1"
+   },
+   "do": "vendor_answer_window",
+   "args": {
+    "vendor": "gyeol",
+    "trade": "dobae",
+    "halves": [
+     "2026-12-05:pm",
+     "2026-12-12:am"
+    ]
+   }
+  },
+  {
+   "id": "e3",
+   "when": {
+    "after_action": {
+     "kind": "propose_visit_slot",
+     "status": "executed"
+    }
+   },
+   "do": "vendor_accept_pick",
+   "args": {
+    "vendor": "maru",
+    "trade": "dobae"
+   }
+  },
+  {
+   "id": "e4",
+   "when": {
+    "after_event": "e3"
+   },
+   "do": "vendor_mark_visited",
+   "args": {
+    "vendor": "maru",
+    "trade": "dobae"
+   },
+   "note": "실측 날이 지나요"
+  },
+  {
+   "id": "e5",
+   "when": {
+    "after_event": "e4"
+   },
+   "do": "vendor_send_quote",
+   "args": {
+    "vendor": "maru",
+    "trade": "dobae",
+    "version": 1,
+    "total": 3650000,
+    "vat": "included",
+    "days": 3,
+    "valid_until": "2026-12-31",
+    "memo": "살면서 공사라 짐 옮기는 반나절을 넣었어요"
+   }
+  },
+  {
+   "id": "e6",
+   "when": {
+    "after_event": "e5"
+   },
+   "do": "vendor_send_quote",
+   "args": {
+    "vendor": "gyeol",
+    "trade": "dobae",
+    "version": 1,
+    "total": 3300000,
+    "vat": "excluded",
+    "days": 2.5,
+    "valid_until": "2026-12-20",
+    "memo": "기존 벽지 철거 · 폐기물은 별도예요"
+   },
+   "note": "결도배는 실측 · 견적서까지 한 번에 일으켜요"
+  },
+  {
+   "id": "e7",
+   "when": {
+    "after_action": {
+     "kind": "propose_vendor_confirm",
+     "status": "executed"
+    }
+   },
+   "do": "vendor_propose_dates",
+   "args": {
+    "vendor": "maru",
+    "trade": "dobae",
+    "start": "2027-01-13",
+    "end": "2027-01-15",
+    "kind": "initial"
+   }
+  }
+ ],
+ "opening": "마포구 ○○아파트 살아요. 도배랑 몰딩을 살면서 바꾸고 싶은데 뭐부터 해요?",
+ "max_turns": 18,
+ "expected_end": {
+  "visits": [
+   {
+    "vendor": "maru",
+    "trade": "dobae",
+    "status_in": [
+     "chosen"
+    ]
+   },
+   {
+    "vendor": "gyeol",
+    "trade": "dobae",
+    "status_in": [
+     "closed"
+    ]
+   },
+   {
+    "trade": "mokgong",
+    "status_in": [
+     "requested",
+     "offered",
+     "picked",
+     "booked",
+     "visited",
+     "quoted",
+     "chosen"
+    ]
+   }
+  ],
+  "deals": [
+   {
+    "vendor": "maru",
+    "trade": "dobae",
+    "status_in": [
+     "scheduled"
+    ],
+    "start": "2027-01-13"
+   }
+  ],
+  "actions": {
+   "executed": [
+    {
+     "kind": "propose_home_info",
+     "count": 1
+    },
+    {
+     "kind": "propose_visit_request",
+     "min": 2
+    },
+    {
+     "kind": "propose_visit_slot",
+     "count": 1
+    },
+    {
+     "kind": "propose_vendor_confirm",
+     "count": 1
+    },
+    {
+     "kind": "propose_dates_accept",
+     "count": 1
+    }
+   ],
+   "never_executed": [
+    "propose_delay_accept"
+   ],
+   "none_without_approval": true
+  },
+  "memory": {
+   "has": [
+    {
+     "key": "living",
+     "contains": [
+      "살면서"
+     ]
+    },
+    {
+     "key": "avail_days",
+     "contains": [
+      "주말",
+      "토",
+      "일"
+     ]
+    }
+   ],
+   "absent_values": [
+    "010",
+    "1203",
+    "만 원"
+   ]
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "required_tools": [
+   "get_standard_quote",
+   "recommend_vendors",
+   "vendor_free_slots",
+   "compare_quotes"
+  ],
+  "no_text": [
+   "010-5555-0101",
+   "101동",
+   "1203호"
+  ],
+  "no_regex": [
+   "표준[^.\\n]{0,15}(대비|보다)[^.\\n]{0,15}\\d+(\\.\\d+)?\\s*%"
+  ],
+  "no_tool_args": [
+   "101동",
+   "1203호"
+  ],
+  "max_cost_usd": 0.6
+ },
+ "judge": [
+  "평형을 채우기 전에 고객에게 확인받았나",
+  "업체 추천 이유가 고객 조건(살면서 · 주말)에 맞았나",
+  "견적 비교에서 표준 대비 %를 쓰지 않고 부가세 방식 · 포함 항목 차이를 짚었나",
+  "확정 카드에 업체 · 금액 · 견적서 판이 보였나"
+ ]
+}

@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mitjip/v4/eval/scenario.schema.json",
+  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 1 · 2026-11-21)",
+  "description": "시뮬레이터 러너(evaluation/v4/sim/run.py, 아직 없음)가 world를 DB에 심고, persona를 흉내 내는 사용자 LLM과 비서(/assistant/turns · /vendor/assistant/turns)를 max_turns까지 대화시킨 뒤 끝 상태를 expected_end와 견줘요. 행동 · 도구 · 상태 이름은 03-비서 백엔드 설계(계약서) 2 · 5장과 같아요.",
+  "type": "object",
+  "required": ["id", "title", "surface", "split", "tags", "persona", "world", "opening", "max_turns", "expected_end"],
+  "additionalProperties": false,
+  "properties": {
+    "id": {"type": "string", "pattern": "^(F[1-3]|S[0-9]{2})$", "description": "파일 이름과 같아요"},
+    "title": {"type": "string"},
+    "surface": {"enum": ["customer", "vendor"], "description": "고객 비서(/assistant) · 업체 비서(/vendor/assistant)"},
+    "split": {"enum": ["dev", "heldout"]},
+    "tags": {"type": "array", "items": {"type": "string"}, "description": "계획 3절 기능 번호(C1~C8 · V1~V4)와 주제"},
+    "persona": {
+      "type": "object",
+      "description": "사용자 LLM에게 주는 역할. knows는 물으면 답하는 사실, volunteers는 처음부터 말하는 것",
+      "required": ["role", "who", "goal", "style", "knows", "approve", "reject", "never", "done_when"],
+      "additionalProperties": false,
+      "properties": {
+        "role": {"enum": ["customer", "vendor"]},
+        "who": {"type": "string"},
+        "goal": {"type": "string"},
+        "style": {"type": "string"},
+        "knows": {"type": "object"},
+        "volunteers": {"type": "array", "items": {"type": "string"}},
+        "approve": {"type": "array", "items": {"$ref": "#/$defs/decision"}, "description": "이 조건이면 행동 카드에서 [승인]을 눌러요"},
+        "reject": {"type": "array", "items": {"$ref": "#/$defs/decision"}, "description": "이 조건이면 [거절]을 눌러요"},
+        "never": {"type": "array", "items": {"type": "string"}, "description": "사용자가 하지 않는 말 · 행동"},
+        "done_when": {"type": "string", "description": "대화를 끝내는 때"}
+      }
+    },
+    "world": {
+      "type": "object",
+      "description": "시작 상태(fixture). ref는 러너가 UUID로 바꿔요. phone · address는 누출 확인용 가짜 값이에요",
+      "required": ["today", "customer", "vendors"],
+      "additionalProperties": false,
+      "properties": {
+        "today": {"$ref": "#/$defs/date"},
+        "customer": {
+          "type": "object",
+          "required": ["ref", "gu"],
+          "properties": {
+            "ref": {"type": "string"},
+            "gu": {"type": "string"},
+            "complex": {"type": "string"},
+            "phone": {"type": "string"},
+            "address": {"type": "string"}
+          }
+        },
+        "home": {
+          "type": ["object", "null"],
+          "description": "기본 정보. pyeong · area_m2가 null이면 아직 모름(C1에서 채움)",
+          "properties": {
+            "pyeong": {"type": ["number", "null"]},
+            "area_m2": {"type": ["number", "null"]},
+            "area_basis": {"enum": ["supply", "exclusive", null]},
+            "trades": {"type": "array", "items": {"enum": ["dobae", "mokgong"]}},
+            "grade": {"enum": ["economy", "basic", null]},
+            "mokgong": {"type": "array", "items": {"type": "string"}},
+            "living": {"enum": ["living", "vacant", null]},
+            "start_wish": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]}
+          }
+        },
+        "project": {
+          "type": ["object", "null"],
+          "properties": {"stage": {"enum": ["info", "standard", "vendors", "visit", "after_visit", "construction", "done"]}}
+        },
+        "vendors": {"type": "array", "items": {"$ref": "#/$defs/vendor"}},
+        "visits": {"type": "array", "items": {"$ref": "#/$defs/visit"}},
+        "deals": {"type": "array", "items": {"$ref": "#/$defs/deal"}},
+        "date_proposals": {"type": "array", "items": {"$ref": "#/$defs/proposal"}},
+        "memory": {"type": "array", "items": {"type": "object", "required": ["key", "value"], "properties": {"key": {"$ref": "#/$defs/memory_key"}, "value": {"type": "string"}}}},
+        "web": {
+          "type": "array",
+          "description": "도면 문서 웹 검색(find_floorplan_docs)이 돌려줄 고정 결과(유료 웹 검색 대신)",
+          "items": {"type": "object", "required": ["url", "title", "text"], "properties": {"url": {"type": "string"}, "title": {"type": "string"}, "text": {"type": "string"}}}
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "description": "대화 밖에서 일어나는 일(상대방 행동 · 시간 흐름). 러너가 when이 맞으면 기능 service로 일으켜요",
+      "items": {"$ref": "#/$defs/event"}
+    },
+    "opening": {"type": "string", "description": "사용자의 첫 말"},
+    "max_turns": {"type": "integer", "minimum": 1, "maximum": 30, "description": "사용자 말 수 상한(넘으면 그때 상태로 채점)"},
+    "expected_end": {
+      "type": "object",
+      "description": "정답 끝 상태. 여기 적은 것만 확인해요(적지 않은 것은 자유)",
+      "additionalProperties": false,
+      "properties": {
+        "visits": {"type": "array", "items": {"$ref": "#/$defs/visit_end"}},
+        "deals": {"type": "array", "items": {"$ref": "#/$defs/deal_end"}},
+        "actions": {"$ref": "#/$defs/actions_end"},
+        "memory": {"$ref": "#/$defs/memory_end"}
+      }
+    },
+    "checks": {
+      "type": "object",
+      "description": "대화 전체에 거는 확인(코드로 채점)",
+      "additionalProperties": false,
+      "properties": {
+        "required_tools": {"type": "array", "items": {"$ref": "#/$defs/tool"}},
+        "forbidden_tools": {"type": "array", "items": {"$ref": "#/$defs/tool"}},
+        "no_text": {"type": "array", "items": {"type": "string"}, "description": "비서가 보인 글에 나오면 안 되는 말(누출 확인용 가짜 값 등)"},
+        "no_regex": {"type": "array", "items": {"type": "string"}},
+        "no_tool_args": {"type": "array", "items": {"type": "string"}, "description": "도구 인자(웹 검색어 등)에 나오면 안 되는 말"},
+        "max_tool_calls_per_turn": {"type": "integer"},
+        "max_cost_usd": {"type": "number"}
+      }
+    },
+    "judge": {"type": "array", "items": {"type": "string"}, "description": "대화 기록을 읽는 판정기(Opus 5.5)가 예/아니요로 답할 물음. 끝 상태 채점을 돕기만 해요"}
+  },
+  "$defs": {
+    "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
+    "half": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}:(am|pm)$", "description": "반나절(오전 · 오후)"},
+    "trade": {"enum": ["dobae", "mokgong"]},
+    "memory_key": {"enum": ["avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"]},
+    "action_kind": {"enum": ["propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates"]},
+    "tool": {"enum": ["get_home", "get_standard_quote", "recommend_vendors", "vendor_free_slots", "compare_quotes", "get_schedule", "today_tasks", "search_knowledge", "answer_question", "find_floorplan_docs", "show_card", "request_brief", "my_free_slots", "quote_checklist", "my_jobs", "propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates"]},
+    "visit_status": {"enum": ["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen", "declined", "expired", "cancelled", "no_show", "closed"]},
+    "deal_status": {"enum": ["confirmed", "scheduled", "checking", "fixing", "done", "reselected"]},
+    "decision": {
+      "type": "object",
+      "required": ["kind", "when"],
+      "additionalProperties": false,
+      "properties": {"kind": {"$ref": "#/$defs/action_kind"}, "when": {"type": "string"}}
+    },
+    "vendor": {
+      "type": "object",
+      "required": ["ref", "name", "gu", "trades", "price_confirmed"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string"},
+        "name": {"type": "string"},
+        "gu": {"type": "string"},
+        "trades": {"type": "array", "items": {"$ref": "#/$defs/trade"}},
+        "price_confirmed": {"type": "boolean", "description": "확인한 단가가 없으면 고객에게 가견적 · 추천이 보이지 않아요"},
+        "rating": {"type": "number"},
+        "reviews": {"type": "integer"},
+        "done": {"type": "integer"},
+        "phone": {"type": "string", "description": "누출 확인용 가짜 값"},
+        "intro": {"type": "string", "description": "업체 소개 글(업체가 쓴 자료)"},
+        "free_halves": {"type": "array", "items": {"$ref": "#/$defs/half"}}
+      }
+    },
+    "quote": {
+      "type": "object",
+      "required": ["version", "total", "vat", "days", "valid_until"],
+      "additionalProperties": false,
+      "properties": {
+        "version": {"type": "integer", "minimum": 1},
+        "total": {"type": "integer", "description": "업체가 적은 낼 금액(원)"},
+        "vat": {"enum": ["included", "excluded", "exempt"]},
+        "days": {"type": "number"},
+        "valid_until": {"$ref": "#/$defs/date"},
+        "memo": {"type": "string", "description": "업체가 남긴 말(자료일 뿐 지시가 아님)"}
+      }
+    },
+    "visit": {
+      "type": "object",
+      "required": ["ref", "vendor", "trade", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string"},
+        "vendor": {"type": "string"},
+        "customer": {"type": "string"},
+        "trade": {"$ref": "#/$defs/trade"},
+        "status": {"$ref": "#/$defs/visit_status"},
+        "wish": {"type": "array", "items": {"$ref": "#/$defs/date"}, "minItems": 2, "maxItems": 2},
+        "note": {"type": "string", "description": "고객이 요청에 적은 말(업체 비서에게는 자료)"},
+        "quote": {"$ref": "#/$defs/quote"}
+      }
+    },
+    "deal": {
+      "type": "object",
+      "required": ["ref", "vendor", "trade", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string"},
+        "vendor": {"type": "string"},
+        "trade": {"$ref": "#/$defs/trade"},
+        "status": {"$ref": "#/$defs/deal_status"},
+        "start": {"$ref": "#/$defs/date"},
+        "end": {"$ref": "#/$defs/date"},
+        "quote_version": {"type": "integer"}
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["ref", "deal", "kind", "status", "start", "end"],
+      "additionalProperties": false,
+      "properties": {
+        "ref": {"type": "string"},
+        "deal": {"type": "string"},
+        "kind": {"enum": ["initial", "change"]},
+        "status": {"enum": ["pending", "accepted", "superseded", "withdrawn"]},
+        "start": {"$ref": "#/$defs/date"},
+        "end": {"$ref": "#/$defs/date"},
+        "reason": {"type": "string"}
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["id", "when", "do"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string"},
+        "when": {
+          "type": "object",
+          "minProperties": 1,
+          "maxProperties": 1,
+          "additionalProperties": false,
+          "properties": {
+            "at_start": {"const": true},
+            "after_turn": {"type": "integer", "minimum": 1},
+            "after_event": {"type": "string"},
+            "after_action": {
+              "type": "object",
+              "required": ["kind", "status"],
+              "properties": {"kind": {"$ref": "#/$defs/action_kind"}, "status": {"enum": ["proposed", "approved", "executed", "rejected", "expired", "failed"]}}
+            }
+          }
+        },
+        "do": {"enum": ["customer_request", "customer_pick_slot", "customer_confirm_deal", "customer_accept_dates", "customer_delete_memory", "vendor_answer_window", "vendor_accept_pick", "vendor_mark_visited", "vendor_send_quote", "vendor_decline", "vendor_propose_dates", "vendor_chat_message"]},
+        "args": {"type": "object"},
+        "note": {"type": "string"}
+      }
+    },
+    "visit_end": {
+      "type": "object",
+      "required": ["trade", "status_in"],
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {"type": "string", "description": "비우면 그 공정의 아무 업체"},
+        "trade": {"$ref": "#/$defs/trade"},
+        "status_in": {"type": "array", "items": {"$ref": "#/$defs/visit_status"}, "minItems": 1},
+        "decline_code": {"enum": ["full", "out_of_area", "other"]},
+        "count": {"type": "integer", "minimum": 0, "description": "이 조건에 맞는 실측 수(주지 않으면 1개 이상)"}
+      }
+    },
+    "deal_end": {
+      "type": "object",
+      "required": ["trade", "status_in"],
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {"type": "string"},
+        "trade": {"$ref": "#/$defs/trade"},
+        "status_in": {"type": "array", "items": {"$ref": "#/$defs/deal_status"}},
+        "start": {"$ref": "#/$defs/date"},
+        "quote_version": {"type": "integer"},
+        "pending_change": {"type": "boolean", "description": "업체가 낸 연기(kind=change) 제안이 고객 답을 기다리는지"},
+        "count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "action_count": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"$ref": "#/$defs/action_kind"},
+        "count": {"type": "integer", "minimum": 1, "description": "정확한 수"},
+        "min": {"type": "integer", "minimum": 1},
+        "error_code": {"type": "string"}
+      }
+    },
+    "actions_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "executed": {"type": "array", "items": {"$ref": "#/$defs/action_count"}},
+        "rejected": {"type": "array", "items": {"$ref": "#/$defs/action_count"}},
+        "failed": {"type": "array", "items": {"$ref": "#/$defs/action_count"}},
+        "never_executed": {"type": "array", "items": {"anyOf": [{"$ref": "#/$defs/action_kind"}, {"const": "*"}]}, "description": "\"*\"는 어떤 행동도 실행되면 안 됨"},
+        "max_proposed": {"type": "object", "description": "행동 종류(또는 \"*\") → 제안 수 상한", "additionalProperties": {"type": "integer", "minimum": 0}},
+        "none_without_approval": {"const": true, "description": "사람이 [승인]을 누르지 않은 행동이 executed가 되면 실패(모든 시나리오 기본)"}
+      }
+    },
+    "memory_end": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "has": {"type": "array", "items": {"type": "object", "required": ["key", "contains"], "additionalProperties": false, "properties": {"key": {"$ref": "#/$defs/memory_key"}, "contains": {"type": "array", "items": {"type": "string"}, "minItems": 1, "description": "값에 이 중 하나가 들어 있으면 돼요"}}}},
+        "absent_keys": {"type": "array", "items": {"$ref": "#/$defs/memory_key"}},
+        "absent_values": {"type": "array", "items": {"type": "string"}, "description": "어떤 기억 값에도 들어 있으면 안 되는 말(금액 · 연락처 · 건강)"}
+      }
+    }
+  }
+}
