@@ -2,7 +2,9 @@
 
 - 금액 · 날짜 · 수는 기능 service(계산 엔진) 값 그대로다. 여기서 더하거나 빼지 않는다.
 - '표준 대비 %'는 넣지 않는다(업체 추천 사유에서도 뗀다).
-- 모델용 값(dict)에는 id를 넣지 않고 ref만 넣는다. 업체 · 고객 글은 policy.data()로 자료 상자에 담는다.
+- 모델용 값(dict)에는 id를 넣지 않고 ref만 넣는다. 고객 · 웹 글은 policy.data()로 자료 상자에 담는다.
+- 업체가 쓴 자유 글(벽지 사양 · 다른 날 메모 · 날짜 바꾼 까닭)은 카드 '업체가 적은 말'(vendor_note, 40자)에만 둔다.
+  모델 값에는 있는지만(vendor_note=True) 넣어 비서 문장 · 요약 · 버튼 문구로 옮겨지지 않게 한다.
 - 읽기 도구 · show_card · 무료 모드 단계 카드 · REST(보드 · 오늘 · 브리핑 · 체크리스트)가 같이 쓴다.
 """
 
@@ -16,6 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.assistant import policy
 from app.assistant.schemas import (
     CardOut,
+    CheckItem,
     CompareCol,
     CompareFileOut,
     DateRange,
@@ -40,6 +43,7 @@ from app.shared.clock import SEOUL
 
 if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
+    from app.assistant.schemas import TaskOut
 
 GRADE = {"economy": "합지", "basic": "실크"}
 SCOPE = {"full": "전체", "partial": "부분"}
@@ -65,12 +69,16 @@ def _m2(x: Decimal | float | None) -> str | None:
 
 
 async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, dict]:
+    """집 정보 카드. 철거 범위(모은 조건 demolition, 코드 값)도 같이 보여 준다(전체 철거면 리모델링 기준)."""
+    from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
     from app.project import service as project_service
     from app.quote import service as quote_service
 
     p = await project_service.get_for(s, user, pid)
     h = p.home
     std = next(iter((await quote_service.latest_of(s, [p.id])).values()), None)
+    demo = (await project_service.conditions(s, p.id)).get(DEMOLITION_KEY)
+    demo = demo if demo in DEMOLITION else None
     m2 = h.area_m2 if h else p.size.m2
     basis = h.area_basis if h else p.size.basis
     facts = [p.region]
@@ -87,12 +95,14 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
             facts.append(f"방 {h.rooms}개")
         if h.start_date:
             facts.append(f"공사 시작 희망 {h.start_date.isoformat()}")
+    if demo is not None:
+        facts.append(DEMOLITION[demo])
     area = (
         HomeArea(m2=m2, basis=basis, pyeong=std.pyeong if std else None)
         if m2 is not None and basis in ("supply", "exclusive")
         else None
     )
-    data = HomeInfoData(facts=facts, area=area, locked=p.locked)
+    data = HomeInfoData(facts=facts, area=area, locked=p.locked, demolition=demo)
     card = CardOut(card_id="home", kind="home_info", data=data.model_dump(mode="json"))
     model = {
         "region": p.region,
@@ -104,6 +114,7 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         "scope": h.scope if h else None,
         "rooms": h.rooms if h else None,
         "start_date": h.start_date if h else (p.when.start if p.when else None),
+        "demolition": demo,
         "locked": p.locked,
         "facts": facts,
     }
@@ -359,6 +370,7 @@ async def visit_slots(
         candidates=cands,
         instant=v.instant or v.status == "proposed",
         calendar_href=href(pid, f"/visits/{v.visit_id}"),
+        vendor_note=policy.vendor_note(v.proposal.note if v.proposal else None),
     )
     card = CardOut(
         card_id=f"slots-{v.visit_id}", kind="visit_slots", data=data.model_dump(mode="json")
@@ -371,7 +383,7 @@ async def visit_slots(
         "candidates": [
             {"ref": c.ref, "day": c.day, "half": HALF[c.half], "why": c.why} for c in cands
         ],
-        "note": policy.data(v.proposal.note if v.proposal else None),
+        "vendor_note": data.vendor_note is not None,  # 업체 글은 카드 칸에만(모델에는 있는지만)
     }
     return card, model
 
@@ -435,7 +447,7 @@ async def compare(
             expired=r.expired,
             demolish=q.incl_removal if q else None,
             waste=q.incl_waste if q else None,
-            paper=q.paper_spec if q else None,
+            vendor_note=policy.vendor_note(q.paper_spec) if q else None,
             warranty_months=q.warranty_months if q else None,
             file=_file(pid, q) if q else None,
             wait_note=None if q else "견적서 기다림",
@@ -456,7 +468,7 @@ async def compare(
                 "expired": col.expired,
                 "demolish": col.demolish,
                 "waste": col.waste,
-                "paper": policy.data(col.paper),
+                "vendor_note": col.vendor_note is not None,  # 업체 글은 카드 칸에만
                 "warranty_months": col.warranty_months,
                 "file_count": len(q.files) if q else 0,
             }
@@ -526,7 +538,7 @@ async def schedule(
                 "work_days": x.workdays,
                 "days": x.days,
                 "change": kind == "delay",
-                "reason": policy.data(x.reason),
+                "vendor_note": bool(x.reason),  # 바꾼 까닭(업체 글)은 카드 칸에만
                 "conflicts": [o.trade for o in t.fit.conflicts] if t.fit else [],
             }
             if card is None:
@@ -544,6 +556,7 @@ async def schedule(
                     ],
                     plan_version=sch.final_version,
                     href=href(pid, "/schedule"),
+                    vendor_note=policy.vendor_note(x.reason),
                 )
                 card = CardOut(
                     card_id=f"dates-{x.id}",
@@ -586,7 +599,88 @@ def _batchim_free(word: str) -> bool:
     return not ("가" <= ch <= "힣") or (ord(ch) - 0xAC00) % 28 == 0
 
 
+# ---- 작업 카드(status.task) ----
+
+ENDED_TEXT = {
+    "booked": "실측 확정",
+    "visited": "실측 받음",
+    "quoted": "견적서 옴",
+    "chosen": "확정",
+    "closed": "닫힘",
+    "declined": "못 받아요",
+    "expired": "기한 지남",
+    "cancelled": "취소",
+    "no_show": "안 옴",
+}
+ENDED = ("closed", "declined", "expired", "cancelled", "no_show")
+
+
+def visit_task(pid: uuid.UUID, o, now: datetime) -> "TaskOut | None":
+    """실측 요청 진행(업체마다 한 줄)을 작업 카드 하나로(공사 요약 schedule.overview_for의 vendors 그대로).
+    고객 차례 need · 업체 차례 waiting · 끝 done · 닫힘 cancelled. 요청이 없으면 None."""
+    from app.assistant.schemas import LinkOut, TaskOut, TaskRow
+
+    if not o.vendors:
+        return None
+    rows: list[TaskRow] = []
+    for v in o.vendors:
+        n = v.next
+        if v.status in ENDED:
+            state = "cancelled"
+        elif n.who == "customer":
+            state = "need"
+        elif n.who == "vendor":
+            state = "waiting"
+        else:
+            state = "done"
+        text = NEXT_TEXT.get(n.kind) if n.kind != "none" and state != "cancelled" else None
+        rows.append(
+            TaskRow(
+                label=v.vendor_name,
+                state=state,  # type: ignore[arg-type]
+                text=text or ENDED_TEXT.get(v.status, "진행 중"),
+                note=n.due_at.astimezone(SEOUL).strftime("%m.%d %H:%M까지")
+                if n.due_at and state in ("need", "waiting")
+                else None,
+            )
+        )
+    quoted = any(v.status in ("quoted", "chosen") for v in o.vendors)
+    live = any(r.state in ("need", "waiting") for r in rows)
+    return TaskOut(
+        task_id="visits",
+        title=f"{'실측 · 견적서' if quoted else '실측 요청'} {len(rows)}곳",
+        state="waiting" if live else "done",
+        at=now,
+        rows=rows,
+        link=LinkOut(label="실측 일정 보기", href=href(pid, "/visits")),
+    )
+
+
+async def visit_task_for(
+    s: AsyncSession, user: User, pid: uuid.UUID, today: date, now: datetime
+) -> "TaskOut | None":
+    from app.schedule import service as schedule_service
+
+    return visit_task(pid, await schedule_service.overview_for(s, user, pid, today), now)
+
+
 # ---- 지식 ----
+
+
+def prep_card(card_id: str, trades: list[str]) -> CardOut:
+    """공사 전날 준비물(공정 설정 agent.v3.trades의 고객 준비 · 주의점, 정해 둔 글)."""
+    from app.agent.v3.trades import SPECS
+
+    specs = [x for x in SPECS if x.code in trades] or [x for x in SPECS if x.code == "dobae"]
+    prep = list(dict.fromkeys(p for x in specs for p in x.prep))
+    cautions = list(dict.fromkeys(c for x in specs for c in x.cautions))
+    data = KnowledgeData(
+        title="공사 전날 준비물",
+        lines=[*prep, *cautions][:6],
+        source="믿집 안내",
+        checklist=[CheckItem(key=f"prep{i}", label=p) for i, p in enumerate(prep[:5], 1)],
+    )
+    return CardOut(card_id=card_id, kind="knowledge", data=data.model_dump(mode="json"))
 
 
 def knowledge_card(card_id: str, title: str, hits: list, source: str = "") -> CardOut:
@@ -713,7 +807,9 @@ async def step_card(tc, route: str) -> CardOut | None:
                     return None
                 from app.assistant.tools.vendor import brief
 
-                card, *_ = await brief(s, tc.user, tc.visit_id, tc.today, tc.now, tc.refs)
+                card, *_ = await brief(
+                    s, tc.user, tc.visit_id, tc.today, tc.now, tc.refs, propose_window=False
+                )
                 return card
             if tc.project_id is None:
                 return None

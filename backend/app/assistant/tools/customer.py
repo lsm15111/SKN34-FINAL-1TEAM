@@ -9,6 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, model_validator
 
+from app.assistant import policy
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.db import SessionLocal
 
@@ -25,6 +26,12 @@ def pid_of(tc: ToolCtx) -> uuid.UUID:
     if tc.project_id is None:
         raise ToolError("no_project", "공사를 먼저 골라 주세요.")
     return tc.project_id
+
+
+def dobae_only(trade: str) -> None:
+    """업체 연결(추천 · 실측 요청 · 견적 비교 · 확정)은 아직 도배만이다. 목공이면 ToolError(dobae_only)."""
+    if trade != "dobae":
+        raise ToolError("dobae_only", policy.DOBAE_ONLY)
 
 
 class NoArgs(BaseModel):
@@ -71,11 +78,12 @@ async def get_standard_quote(tc: ToolCtx, a: TradeIn) -> ToolOut:
     kind="read",
     status="업체를 고르고 있어요",
     description="이 집 조건에 맞는 업체 3곳(v1~v3)을 믿집 점수(별점 · 끝낸 공사 · 가견적)로 골라요. "
-    "가견적은 업체가 확인한 단가 × 믿집 수량이에요.",
+    "가견적은 업체가 확인한 단가 × 믿집 수량이에요. 업체 연결은 아직 도배(dobae)만이에요.",
     model=TradeIn,
     schema=obj({"trade": TRADE}),
 )
 async def recommend_vendors(tc: ToolCtx, a: TradeIn) -> ToolOut:
+    dobae_only(a.trade)
     async with SessionLocal() as s:
         card, model = await cards.vendor_picks(s, tc.user, pid_of(tc), a.trade, tc.refs)
     return ToolOut(data=model, cards=[card])
@@ -139,9 +147,11 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
     schema=obj({"trade": TRADE}),
 )
 async def compare_quotes(tc: ToolCtx, a: TradeIn) -> ToolOut:
+    dobae_only(a.trade)
     async with SessionLocal() as s:
         card, model = await cards.compare(s, tc.user, pid_of(tc), a.trade, tc.today, tc.refs)
-    return ToolOut(data=model, cards=[card])
+        task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
+    return ToolOut(data=model, cards=[card], task=task)
 
 
 @tool(
@@ -171,7 +181,8 @@ async def get_schedule(tc: ToolCtx, _: NoArgs) -> ToolOut:
 async def today_tasks(tc: ToolCtx, _: NoArgs) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.today(s, tc.user, pid_of(tc), tc.today, tc.now, tc.refs)
-    return ToolOut(data=model, cards=[card])
+        task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
+    return ToolOut(data=model, cards=[card], task=task)
 
 
 ShowKind = Literal[

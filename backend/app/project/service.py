@@ -224,7 +224,8 @@ async def _validate(
 
 
 async def _write(s: AsyncSession, p: Project, data: Body) -> None:
-    """칸 · 공간 · 공정 · 파일을 쓴다 (고치기면 부르는 쪽이 먼저 지운다)."""
+    """칸 · 공간 · 공정 · 파일을 쓴다 (고치기면 부르는 쪽이 먼저 지운다).
+    v4 철거 범위는 모은 조건(demolition)에 둔다: 보낸 때만 쓰고(null이면 지움), 안 보내면 그대로."""
     if isinstance(data, HomeInfoIn):
         _fill_home(p, data)
     else:
@@ -233,8 +234,32 @@ async def _write(s: AsyncSession, p: Project, data: Body) -> None:
     await s.flush()
     if isinstance(data, HomeInfoIn):
         await _write_home_parts(s, p, data)
+        if "demolition" in data.model_fields_set:
+            await set_demolition(s, p.id, data.demolition)
     else:
         await _write_parts(s, p, data)
+
+
+async def set_demolition(s: AsyncSession, project_id: uuid.UUID, value: str | None) -> None:
+    """철거 범위(모은 조건 demolition, 코드 값)를 덮어쓰거나(값) 지운다(None). 권한 · commit은 부르는 쪽."""
+    from app.calc.dobae import DEMOLITION_KEY
+
+    if value is None:
+        await s.execute(
+            delete(ProjectCondition).where(
+                ProjectCondition.project_id == project_id, ProjectCondition.key == DEMOLITION_KEY
+            )
+        )
+        return
+    stmt = insert(ProjectCondition).values(
+        id=uuid7(), project_id=project_id, trade="dobae", key=DEMOLITION_KEY, value=value
+    )
+    await s.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_project_conditions_key",
+            set_={"value": value, "trade": "dobae", "updated_at": func.now()},
+        )
+    )
 
 
 async def create_once(
@@ -317,9 +342,11 @@ def _size(p: Project) -> SizeIn:
     return SizeIn(band=p.size_band) if p.size_band else SizeIn(basis=p.area_basis, m2=p.area_m2)
 
 
-def _home(p: Project, spaces: list, trades: list, links: list) -> HomeInfoOut | None:
+def _home(
+    p: Project, spaces: list, trades: list, links: list, demolition: str | None = None
+) -> HomeInfoOut | None:
     """v3 기본 정보(넣은 그대로). v3 몸통으로 만든 공사만(source guest · member), v2 공사는 None.
-    동은 비어 있을 수 있다(지금 화면은 시 · 군 · 구까지만 받는다)."""
+    동은 비어 있을 수 있다(지금 화면은 시 · 군 · 구까지만 받는다). 철거 범위는 모은 조건 값."""
     t = next((t for t in trades if t.trade == "dobae"), None)
     if p.source == "v2" or t is None or p.area_m2 is None or p.area_basis is None:
         return None
@@ -340,11 +367,19 @@ def _home(p: Project, spaces: list, trades: list, links: list) -> HomeInfoOut | 
         grade=t.grade,
         budget_won=p.budget_won,
         start_date=p.start_date,
+        demolition=demolition if demolition in ("full", "partial", "none") else None,
     )
 
 
 async def _out(s: AsyncSession, p: Project) -> ProjectOut:
+    from app.calc.dobae import DEMOLITION_KEY
+
     spaces, trades, links, files = await repo.parts(s, p.id)
+    demolition = await s.scalar(
+        select(ProjectCondition.value).where(
+            ProjectCondition.project_id == p.id, ProjectCondition.key == DEMOLITION_KEY
+        )
+    )
     tr = TradesOut()
     for t in trades:
         ids = [link.space_id for link in links if link.trade == t.trade]
@@ -356,7 +391,7 @@ async def _out(s: AsyncSession, p: Project) -> ProjectOut:
         source=p.source,
         emd=p.emd,
         budget_won=p.budget_won,
-        home=_home(p, spaces, trades, links),
+        home=_home(p, spaces, trades, links, demolition),
         id=p.id,
         code=p.code,
         rev=p.rev,
@@ -506,8 +541,9 @@ async def conditions(s: AsyncSession, project_id: uuid.UUID) -> dict[str, str]:
 
 
 async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[ConditionOut]:
-    """화면 칩 목록(만든 고객만, 먼저 모은 것부터)."""
+    """화면 칩 목록(만든 고객만, 먼저 모은 것부터). 코드 값 칸(철거 범위)은 화면 말로 바꿔 보여 준다."""
     from app.agent.v3.trades import slot_label
+    from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
 
     await _own(s, user, project_id)
     rows = await s.scalars(
@@ -516,7 +552,13 @@ async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> 
         .order_by(ProjectCondition.updated_at, ProjectCondition.key)
     )
     return [
-        ConditionOut(trade=r.trade, key=r.key, label=slot_label(r.key), value=r.value) for r in rows
+        ConditionOut(
+            trade=r.trade,
+            key=r.key,
+            label=slot_label(r.key),
+            value=DEMOLITION.get(r.value, r.value) if r.key == DEMOLITION_KEY else r.value,
+        )
+        for r in rows
     ]
 
 

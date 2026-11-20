@@ -3,13 +3,14 @@
 - POST …/turns → SSE(ack · status · card · action · token · done | error). 스트림을 열기 전 오류(404 · 409 ·
   429)는 같은 오류 모양이다. 같은 client_key로 끝난 턴이면 저장한 결과를 같은 이벤트로 다시 보낸다.
 - 사용자 · 공사 · 요청은 세션 · 요청 경로로만 정하고 LLM 출력으로 받지 않는다. 남의 것은 404, 역할이 다르면 403.
-- 먼저 말 걸기(nudges) · 기억(memory)은 0042 담당이 더한다.
+- 먼저 말 걸기: POST …/nudges/{id}/open · dismiss(고객 · 업체 같은 꼴, 닫으면 같은 일을 3일 쉰다).
+- 기억: GET /assistant/memory · DELETE /assistant/memory/{id}(고객만). 기억 쓰기 API · 도구는 없다.
 """
 
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import StreamingResponse
 
 from app.assistant import service
@@ -21,6 +22,8 @@ from app.assistant.schemas import (
     BoardOut,
     FeedPage,
     HealthOut,
+    MemoryOut,
+    NudgeOut,
     QuoteChecklistData,
     TodayData,
     TurnIn,
@@ -130,6 +133,31 @@ async def reject(action_id: uuid.UUID, user: User = Customer) -> ActionOut:
     return await service.reject(user, action_id, "customer")
 
 
+@router.post("/nudges/{nudge_id}/open", response_model=NudgeOut, summary="먼저 말 건 줄 열기")
+async def nudge_open(nudge_id: uuid.UUID, user: User = Customer) -> NudgeOut:
+    return await service.nudge_act(user, nudge_id, "customer", "opened")
+
+
+@router.post(
+    "/nudges/{nudge_id}/dismiss",
+    response_model=NudgeOut,
+    summary="먼저 말 건 줄 닫기(같은 일을 3일 쉬어요)",
+)
+async def nudge_dismiss(nudge_id: uuid.UUID, user: User = Customer) -> NudgeOut:
+    return await service.nudge_act(user, nudge_id, "customer", "dismissed")
+
+
+@router.get("/memory", response_model=list[MemoryOut], summary="비서가 기억하는 것(내 말에서만)")
+async def memory(user: User = Customer) -> list[MemoryOut]:
+    return await service.memory_for(user)
+
+
+@router.delete("/memory/{memory_id}", status_code=204, summary="기억 한 줄 지우기")
+async def forget(memory_id: uuid.UUID, user: User = Customer) -> Response:
+    await service.forget(user, memory_id)
+    return Response(status_code=204)
+
+
 @router.get("/health", response_model=HealthOut, summary="비서가 지금 LLM으로 답하는지")
 async def health(user: User = Customer) -> HealthOut:
     return await service.health(user)
@@ -204,3 +232,19 @@ async def vendor_approve(
 @vendor_router.post("/actions/{action_id}/reject", response_model=ActionOut, summary="거절")
 async def vendor_reject(action_id: uuid.UUID, vendor: User = Vendor) -> ActionOut:
     return await service.reject(vendor, action_id, "vendor")
+
+
+@vendor_router.post(
+    "/nudges/{nudge_id}/open", response_model=NudgeOut, summary="먼저 말 건 줄 열기"
+)
+async def vendor_nudge_open(nudge_id: uuid.UUID, vendor: User = Vendor) -> NudgeOut:
+    return await service.nudge_act(vendor, nudge_id, "vendor", "opened")
+
+
+@vendor_router.post(
+    "/nudges/{nudge_id}/dismiss",
+    response_model=NudgeOut,
+    summary="먼저 말 건 줄 닫기(같은 일을 3일 쉬어요)",
+)
+async def vendor_nudge_dismiss(nudge_id: uuid.UUID, vendor: User = Vendor) -> NudgeOut:
+    return await service.nudge_act(vendor, nudge_id, "vendor", "dismissed")

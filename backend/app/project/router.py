@@ -150,7 +150,9 @@ async def list_conditions(
 )
 async def delete_condition(
     project_id: uuid.UUID,
-    key: Annotated[str, Path(min_length=3, max_length=40, pattern=r"^[a-z_]+\.[a-z_]+$")],
+    key: Annotated[
+        str, Path(min_length=3, max_length=40, pattern=r"^[a-z_]+(?:\.[a-z_]+)?$")
+    ],  # '공종.칸' 또는 공종 없는 칸(demolition)
     user: User = Depends(require_role("customer")),
     s: AsyncSession = Depends(get_session),
 ) -> list[ConditionOut]:

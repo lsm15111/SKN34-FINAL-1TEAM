@@ -7,11 +7,21 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import func, or_, select, update
+from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assistant.models import AssistantAction, AssistantTurn
+from app.assistant.models import (
+    AssistantAction,
+    AssistantMemory,
+    AssistantNudge,
+    AssistantTurn,
+)
 from app.chat.models import Chat, ChatMessage
+from app.project.models import Project
+from app.schedule.models import DateProposal
+from app.shared.ids import uuid7
+from app.visit.models import LIVE, Visit
 
 # ---- 대화 ----
 
@@ -177,15 +187,33 @@ async def actions_of(
     return list(rows.all())
 
 
-async def replace_open(
-    s: AsyncSession, user_id: uuid.UUID, kind: str, target_id: uuid.UUID, by: uuid.UUID
+async def open_on(
+    s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID
 ) -> list[AssistantAction]:
-    """같은 (사람, 종류, 대상)의 열린 제안을 만료(replaced)로 바꾸고 바뀐 행을 돌려준다. by = 새 제안 id."""
+    """그 사람 · 그 대상의 열린 제안(proposed). 대상마다 하나지만 옛 행이 남았을 수 있어 목록으로 읽는다."""
+    rows = await s.scalars(
+        select(AssistantAction)
+        .where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.target_kind == target_kind,
+            AssistantAction.target_id == target_id,
+            AssistantAction.status == "proposed",
+        )
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def replace_open(
+    s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID, by: uuid.UUID
+) -> list[AssistantAction]:
+    """같은 (사람, 대상)의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 바뀐 행을 돌려준다(대상마다 열린
+    제안 하나, 계약서 6장). by = 새 제안 id."""
     res = await s.execute(
         update(AssistantAction)
         .where(
             AssistantAction.user_id == user_id,
-            AssistantAction.kind == kind,
+            AssistantAction.target_kind == target_kind,
             AssistantAction.target_id == target_id,
             AssistantAction.status == "proposed",
         )
@@ -232,6 +260,79 @@ async def fail_stuck(s: AsyncSession, before: datetime) -> list[AssistantAction]
     return list(res.scalars().all())
 
 
+async def open_actions(s: AsyncSession, limit: int) -> list[AssistantAction]:
+    """모든 사람의 열린 제안(proposed), 새 것부터 (sweep: 화면에서 직접 처리했는지 보기)."""
+    rows = await s.scalars(
+        select(AssistantAction)
+        .where(AssistantAction.status == "proposed")
+        .order_by(AssistantAction.created_at.desc())
+        .limit(limit)
+    )
+    return list(rows.all())
+
+
+async def close_handled(s: AsyncSession, ids: Sequence[uuid.UUID], reason: str) -> list[uuid.UUID]:
+    """열린 제안만 → expired(reason). 그 행동을 단 먼저 말 걸기 줄(sent · opened)도 expired(handled)."""
+    res = await s.execute(
+        update(AssistantAction)
+        .where(AssistantAction.id.in_(list(ids)), AssistantAction.status == "proposed")
+        .values(status="expired", result={"reason": reason})
+        .returning(AssistantAction.id)
+    )
+    closed = list(res.scalars().all())
+    if closed:
+        await s.execute(
+            update(AssistantNudge)
+            .where(AssistantNudge.action_id.in_(closed), AssistantNudge.status.in_(SHOWN))
+            .values(status="expired", reason="handled")
+        )
+    return closed
+
+
+async def project_states(
+    s: AsyncSession, ids: Sequence[uuid.UUID]
+) -> dict[uuid.UUID, tuple[int, bool]]:
+    """공사 id → (rev, 잠김). 읽기 조인."""
+    if not ids:
+        return {}
+    rows = await s.execute(
+        select(Project.id, Project.rev, Project.locked_at).where(Project.id.in_(list(ids)))
+    )
+    return {i: (rev, locked is not None) for i, rev, locked in rows}
+
+
+async def visit_states(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """실측 id → 상태. 읽기 조인."""
+    if not ids:
+        return {}
+    rows = await s.execute(select(Visit.id, Visit.status).where(Visit.id.in_(list(ids))))
+    return {k: v for k, v in rows}
+
+
+async def live_visits(
+    s: AsyncSession, project_ids: Sequence[uuid.UUID]
+) -> set[tuple[uuid.UUID, str, uuid.UUID | None]]:
+    """공사들의 살아 있는 실측 (공사, 공정, 업체). 읽기 조인."""
+    if not project_ids:
+        return set()
+    rows = await s.execute(
+        select(Visit.project_id, Visit.trade, Visit.vendor_id).where(
+            Visit.project_id.in_(list(project_ids)), Visit.status.in_(LIVE)
+        )
+    )
+    return {(p, t, v) for p, t, v in rows}
+
+
+async def proposal_states(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
+    """업체가 낸 공사 날짜 id → 상태. 읽기 조인."""
+    if not ids:
+        return {}
+    rows = await s.execute(
+        select(DateProposal.id, DateProposal.status).where(DateProposal.id.in_(list(ids)))
+    )
+    return {k: v for k, v in rows}
+
+
 async def open_count(s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None) -> int:
     q = select(func.count()).select_from(AssistantAction)
     q = q.where(AssistantAction.user_id == user_id, AssistantAction.status == "proposed")
@@ -240,3 +341,215 @@ async def open_count(s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID 
             or_(AssistantAction.project_id == project_id, AssistantAction.project_id.is_(None))
         )
     return int(await s.scalar(q) or 0)
+
+
+# ---- 먼저 말 걸기 ----
+
+SHOWN = ("sent", "opened")  # 대화 기록에 보이는 줄
+SENT = ("sent", "opened", "dismissed")  # 보낸 줄(상한 · 점수가 센다)
+
+
+async def insert_nudge(s: AsyncSession, **values) -> bool:
+    """(사람, dedup_key)가 없을 때만 넣는다(멱등). 넣었으면 True."""
+    res = await s.execute(
+        insert(AssistantNudge)
+        .values(id=uuid7(), **values)
+        .on_conflict_do_nothing(constraint="uq_assistant_nudges_user_dedup")
+        .returning(AssistantNudge.id)
+    )
+    return res.scalar_one_or_none() is not None
+
+
+async def nudge_owned(
+    s: AsyncSession, user_id: uuid.UUID, nudge_id: uuid.UUID, surface: str
+) -> AssistantNudge | None:
+    return await s.scalar(
+        select(AssistantNudge)
+        .where(
+            AssistantNudge.id == nudge_id,
+            AssistantNudge.user_id == user_id,
+            AssistantNudge.surface == surface,
+        )
+        .execution_options(populate_existing=True)
+    )
+
+
+async def due_nudges(s: AsyncSession, now: datetime, limit: int) -> list[AssistantNudge]:
+    rows = await s.scalars(
+        select(AssistantNudge)
+        .where(AssistantNudge.status == "pending", AssistantNudge.due_at <= now)
+        .order_by(AssistantNudge.due_at)
+        .limit(limit)
+    )
+    return list(rows.all())
+
+
+async def set_nudge(
+    s: AsyncSession, nudge_id: uuid.UUID, frm: Sequence[str], **values
+) -> AssistantNudge | None:
+    """frm 상태일 때만 바꾼다(조건부 UPDATE). 바뀐 행 또는 None."""
+    res = await s.execute(
+        update(AssistantNudge)
+        .where(AssistantNudge.id == nudge_id, AssistantNudge.status.in_(list(frm)))
+        .values(**values)
+        .returning(AssistantNudge)
+        .execution_options(populate_existing=True)
+    )
+    return res.scalar_one_or_none()
+
+
+async def sent_count(
+    s: AsyncSession, user_id: uuid.UUID, since: datetime, channel: str | None = None
+) -> int:
+    q = select(func.count()).select_from(AssistantNudge)
+    q = q.where(
+        AssistantNudge.user_id == user_id,
+        AssistantNudge.status.in_(SENT),
+        AssistantNudge.sent_at >= since,
+    )
+    if channel is not None:
+        q = q.where(AssistantNudge.channel == channel)
+    return int(await s.scalar(q) or 0)
+
+
+async def dismissals(
+    s: AsyncSession, user_id: uuid.UUID, since: datetime
+) -> list[tuple[str, datetime]]:
+    """since 뒤에 닫은 제안(트리거, 닫은 때)."""
+    rows = await s.execute(
+        select(AssistantNudge.trigger, AssistantNudge.acted_at).where(
+            AssistantNudge.user_id == user_id,
+            AssistantNudge.status == "dismissed",
+            AssistantNudge.acted_at >= since,
+        )
+    )
+    return [(t, at) for t, at in rows]
+
+
+async def replace_shown(
+    s: AsyncSession, user_id: uuid.UUID, ref_id: uuid.UUID, keep: uuid.UUID
+) -> int:
+    """같은 대상의 보이는 제안을 새 제안(keep)으로 바꾼다(expired · replaced). 대상마다 열린 제안은 하나."""
+    res = await s.execute(
+        update(AssistantNudge)
+        .where(
+            AssistantNudge.user_id == user_id,
+            AssistantNudge.ref_id == ref_id,
+            AssistantNudge.id != keep,
+            AssistantNudge.status.in_(SHOWN),
+        )
+        .values(status="expired", reason="replaced")
+    )
+    return res.rowcount or 0
+
+
+async def shown_nudges(
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    surface: str,
+    project_id: uuid.UUID | None,
+    *,
+    since: datetime | None = None,
+    open_only: bool = False,
+    limit: int = 10,
+) -> list[AssistantNudge]:
+    """대화 기록에 보일 제안(새것부터). 고객은 그 공사 것만, 업체는 업체 것 모두."""
+    q = select(AssistantNudge).where(
+        AssistantNudge.user_id == user_id,
+        AssistantNudge.surface == surface,
+        AssistantNudge.status.in_(("sent",) if open_only else SHOWN),
+    )
+    if project_id is not None:
+        q = q.where(AssistantNudge.project_id == project_id)
+    if since is not None:
+        q = q.where(AssistantNudge.sent_at >= since)
+    rows = await s.scalars(
+        q.order_by(AssistantNudge.sent_at.desc())
+        .limit(limit)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def last_dismissed(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID, since: datetime
+) -> AssistantNudge | None:
+    return await s.scalar(
+        select(AssistantNudge)
+        .where(
+            AssistantNudge.user_id == user_id,
+            AssistantNudge.project_id == project_id,
+            AssistantNudge.status == "dismissed",
+            AssistantNudge.acted_at >= since,
+        )
+        .order_by(AssistantNudge.acted_at.desc())
+        .limit(1)
+    )
+
+
+# ---- 기억 ----
+
+
+async def memories(s: AsyncSession, user_id: uuid.UUID) -> list[AssistantMemory]:
+    rows = await s.scalars(
+        select(AssistantMemory)
+        .where(AssistantMemory.user_id == user_id)
+        .order_by(AssistantMemory.updated_at.desc(), AssistantMemory.key)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def upsert_memory(
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    *,
+    key: str,
+    value: str,
+    message_id: uuid.UUID,
+    quote: str,
+    now: datetime,
+) -> None:
+    """(사람, 키)마다 한 줄: 새 말로 덮어쓴다."""
+    stmt = insert(AssistantMemory).values(
+        id=uuid7(),
+        user_id=user_id,
+        key=key,
+        value=value,
+        evidence_message_id=message_id,
+        evidence_quote=quote,
+        created_at=now,
+        updated_at=now,
+    )
+    await s.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_assistant_memory_user_key",
+            set_={
+                "value": value,
+                "evidence_message_id": message_id,
+                "evidence_quote": quote,
+                "updated_at": now,
+            },
+        )
+    )
+
+
+async def trim_memory(s: AsyncSession, user_id: uuid.UUID, keep: int) -> int:
+    """새것부터 keep줄만 남긴다(옛 선호가 새 선호를 이기지 않게). 지운 수."""
+    old = (
+        select(AssistantMemory.id)
+        .where(AssistantMemory.user_id == user_id)
+        .order_by(AssistantMemory.updated_at.desc(), AssistantMemory.key)
+        .offset(keep)
+    )
+    res = await s.execute(delete(AssistantMemory).where(AssistantMemory.id.in_(old)))
+    return res.rowcount or 0
+
+
+async def delete_memory(s: AsyncSession, user_id: uuid.UUID, memory_id: uuid.UUID) -> bool:
+    res = await s.execute(
+        delete(AssistantMemory).where(
+            AssistantMemory.id == memory_id, AssistantMemory.user_id == user_id
+        )
+    )
+    return res.rowcount == 1

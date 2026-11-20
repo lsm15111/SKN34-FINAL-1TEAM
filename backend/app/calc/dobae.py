@@ -768,13 +768,18 @@ class ProfilePick:
     why: tuple[str, ...]  # 리모델링으로 고른 근거 이름. 도배만 하는 공사면 비어 있다
 
 
-# 리모델링 신호(큰 목공): (근거 이름, 목공 항목, 모은 조건 칸, 그 칸의 '한다' 단추 글, '안 한다' 단추 글).
-# 단추 글은 agent.v3.trades 되묻기 칸과 같아요(테스트가 본다). 모은 조건이 '한다' · '안 한다'면 그 답을,
-# 칸이 없거나 '아직 몰라요' · 단추 글이 아닌 답이면 공사에 고른 목공 항목을 본다.
-# 몰딩 · 걸레받이 교체는 흔한 가벼운 공사라 신호가 아니에요(2026-11-21 리드 결정)
-REMODEL_SIGNALS: tuple[tuple[str, str, str, str, str], ...] = (
+# 모은 조건 '철거 범위'(2026-11-21 리드 결정): 키 · 값은 코드 값이에요(단추 글 아님). 화면 · 비서가 같은 키를 써요
+DEMOLITION_KEY = "demolition"
+DEMOLITION = {"full": "전체 철거", "partial": "부분 철거", "none": "철거 안 함"}
+
+# 리모델링 신호: (근거 이름, 목공 항목, 모은 조건 칸, 그 칸의 '한다' 값, '안 한다' 값).
+# 목공 두 줄의 값은 agent.v3.trades 되묻기 단추 글과 같아요(테스트가 본다). 모은 조건이 '한다' · '안 한다'면 그 답을,
+# 칸이 없거나 '아직 몰라요' · 단추 글이 아닌 답이면 공사에 고른 목공 항목을 본다(목공 항목이 없는 신호는 아님).
+# 몰딩 · 걸레받이 교체는 흔한 가벼운 공사라 신호가 아니에요(2026-11-21 리드 결정). 철거는 전체 철거만 신호예요
+REMODEL_SIGNALS: tuple[tuple[str, str | None, str, str, str], ...] = (
     ("문틀 교체", "door", "mokgong.doors", "문틀까지", "문짝만"),
     ("천장 평탄화", "flatten", "mokgong.ceiling", "네", "아니요"),
+    ("전체 철거", None, DEMOLITION_KEY, "full", "none"),
 )
 SCOPE_KEY = "mokgong.molding_scope"  # '이번 공사는 어디까지 하세요?'
 SCOPE_ALL = "벽 · 천장까지 새로"  # 철거 뒤 벽 · 천장을 새로 마감하는 공사 → 리모델링
@@ -786,12 +791,12 @@ def _said(w: WorkFacts, key: str) -> str | None:
 
 
 def pick_profile(w: WorkFacts) -> ProfilePick:
-    """공사 조건 → 두 기준 중 하나. 문틀 교체 · 천장 평탄화 · '벽 · 천장까지 새로' 중 하나라도 있으면
+    """공사 조건 → 두 기준 중 하나. 문틀 교체 · 천장 평탄화 · 전체 철거 · '벽 · 천장까지 새로' 중 하나라도 있으면
     리모델링(서울 업체 실견적 보정), 없으면 도배만 하는 공사(시장 실견적 가운데). 몰딩 교체만은 도배만이다."""
     why: list[str] = []
     for name, item, key, yes, no in REMODEL_SIGNALS:
         said = _said(w, key)
-        hit = said == yes if said in (yes, no) else item in w.mok_items
+        hit = said == yes if said in (yes, no) else item is not None and item in w.mok_items
         if hit:
             why.append(name)
     if _said(w, SCOPE_KEY) == SCOPE_ALL:

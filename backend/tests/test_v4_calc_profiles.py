@@ -89,12 +89,33 @@ def test_said_answer_wins_over_project_item():
 
 
 def test_signal_values_are_the_agent_buttons():
-    """기준 고르기가 읽는 값은 되묻기 단추 글과 같아야 해요(글이 바뀌면 이 테스트가 잡아요)."""
+    """기준 고르기가 읽는 목공 값은 되묻기 단추 글과 같아야 해요(글이 바뀌면 이 테스트가 잡아요).
+    철거 범위는 단추 글이 아니라 코드 값(full · partial · none)이에요."""
     options = {s.key: set(s.options) for spec in SPECS for s in spec.slots}
     for _, item, key, yes, no in dobae.REMODEL_SIGNALS:
+        if key == dobae.DEMOLITION_KEY:
+            assert item is None and {yes, no} <= set(dobae.DEMOLITION)
+            continue
         assert {yes, no} <= options[key], key
         assert item in ("door", "flatten")
     assert dobae.SCOPE_ALL in options[dobae.SCOPE_KEY]
+
+
+@pytest.mark.parametrize(
+    ("items", "said", "profile", "why"),
+    [
+        ([], {"demolition": "full"}, "remodel", ("전체 철거",)),
+        ([], {"demolition": "partial"}, "paper_only", ()),
+        ([], {"demolition": "none"}, "paper_only", ()),
+        (["molding"], {"demolition": "full"}, "remodel", ("전체 철거",)),
+        (["door"], {"demolition": "none"}, "remodel", ("문틀 교체",)),
+        (["door"], {"demolition": "full"}, "remodel", ("문틀 교체", "전체 철거")),
+    ],
+)
+def test_full_demolition_is_remodel(items, said, profile, why):
+    """철거 범위 칸(demolition)이 '전체 철거'면 리모델링 기준이에요. 부분 · 안 함은 다른 신호를 봐요."""
+    got = dobae.pick_profile(dobae.WorkFacts(tuple(items), said))
+    assert got == dobae.ProfilePick(profile, why)
 
 
 # ---- 도배만 하는 공사 기준 (시장 가운데, 추천안 R) ----
