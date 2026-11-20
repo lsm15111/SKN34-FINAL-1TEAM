@@ -1,0 +1,217 @@
+{
+ "id": "F3",
+ "title": "반셀프 고객: 공정 순서 · 범위 밖 알아 두기 · 오늘 정할 일 · 준비물 · 연기 승인",
+ "surface": "customer",
+ "split": "dev",
+ "tags": [
+  "C6",
+  "C7",
+  "C8",
+  "반셀프",
+  "흐름"
+ ],
+ "persona": {
+  "role": "customer",
+  "who": "목공 · 도배는 믿집 업체에 맡기고 콘센트는 직접 전기 기사를 부르는 반셀프 고객",
+  "goal": "직접 할 일의 순서를 알고, 업체 연기 요청을 영향을 듣고 승인하기",
+  "style": "꼼꼼하게 물어요. 날짜가 바뀌면 다른 공정도 바뀌는지 꼭 확인해요.",
+  "knows": {
+   "직접 할 일": "콘센트 두 개를 옮기려고 전기 기사를 따로 불러요",
+   "입주": "1월 30일 입주예요"
+  },
+  "volunteers": [
+   "콘센트는 제가 따로 전기 기사를 불러요"
+  ],
+  "approve": [
+   {
+    "kind": "propose_delay_accept",
+    "when": "도배 날짜가 어떻게 바뀌는지 듣고 입주(1/30) 전에 끝나면"
+   }
+  ],
+  "reject": [
+   {
+    "kind": "propose_delay_accept",
+    "when": "영향 설명 없이 카드만 오면"
+   }
+  ],
+  "never": [
+   "연락처를 말하지 않아요"
+  ],
+  "done_when": "공사 전날 준비물까지 들으면 끝내요"
+ },
+ "world": {
+  "today": "2027-01-05",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae",
+    "mokgong"
+   ],
+   "grade": "basic",
+   "mokgong": [
+    "molding",
+    "base"
+   ],
+   "living": "vacant",
+   "start_wish": "2027-01-11"
+  },
+  "project": {
+   "stage": "construction"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae",
+     "mokgong"
+    ],
+    "price_confirmed": true,
+    "rating": 4.8,
+    "reviews": 12,
+    "done": 31,
+    "phone": "010-3333-4444",
+    "free_halves": [
+     "2026-12-05:am",
+     "2026-12-06:pm",
+     "2026-12-08:pm"
+    ]
+   },
+   {
+    "ref": "namu",
+    "name": "나무목공",
+    "gu": "서대문구",
+    "trades": [
+     "mokgong"
+    ],
+    "price_confirmed": true,
+    "rating": 4.7,
+    "reviews": 9,
+    "done": 20,
+    "free_halves": [
+     "2026-12-06:am",
+     "2026-12-13:pm"
+    ]
+   }
+  ],
+  "deals": [
+   {
+    "ref": "d_mok",
+    "vendor": "namu",
+    "trade": "mokgong",
+    "status": "scheduled",
+    "start": "2027-01-11",
+    "end": "2027-01-12",
+    "quote_version": 1
+   },
+   {
+    "ref": "d_dob",
+    "vendor": "maru",
+    "trade": "dobae",
+    "status": "scheduled",
+    "start": "2027-01-13",
+    "end": "2027-01-15",
+    "quote_version": 1
+   }
+  ],
+  "date_proposals": []
+ },
+ "events": [
+  {
+   "id": "e1",
+   "when": {
+    "after_turn": 2
+   },
+   "do": "vendor_propose_dates",
+   "args": {
+    "vendor": "namu",
+    "deal": "d_mok",
+    "start": "2027-01-13",
+    "end": "2027-01-14",
+    "kind": "change",
+    "reason": "몰딩 자재 입고가 늦어요"
+   }
+  }
+ ],
+ "opening": "콘센트 옮기는 건 제가 따로 전기 기사를 부르려고요. 언제 해야 해요?",
+ "max_turns": 10,
+ "expected_end": {
+  "deals": [
+   {
+    "vendor": "namu",
+    "trade": "mokgong",
+    "status_in": [
+     "scheduled"
+    ],
+    "start": "2027-01-13"
+   },
+   {
+    "vendor": "maru",
+    "trade": "dobae",
+    "status_in": [
+     "scheduled",
+     "confirmed"
+    ]
+   }
+  ],
+  "actions": {
+   "executed": [
+    {
+     "kind": "propose_delay_accept",
+     "count": 1
+    }
+   ],
+   "never_executed": [
+    "propose_vendor_confirm",
+    "propose_dates_accept"
+   ],
+   "none_without_approval": true
+  },
+  "memory": {
+   "has": [
+    {
+     "key": "diy",
+     "contains": [
+      "콘센트",
+      "전기"
+     ]
+    }
+   ],
+   "absent_values": [
+    "010"
+   ]
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "required_tools": [
+   "get_schedule",
+   "today_tasks"
+  ],
+  "no_text": [
+   "010-5555-0101",
+   "101동",
+   "1203호"
+  ],
+  "no_regex": [
+   "(전기|콘센트)[^.\\n]{0,20}\\d[\\d,]*\\s*(만\\s*)?원"
+  ],
+  "max_cost_usd": 0.4
+ },
+ "judge": [
+  "콘센트 이동을 목공 · 도배 전에 끝내라는 순서를 말했나",
+  "전기 공사 금액을 만들지 않았나",
+  "연기 승인 카드 전에 도배 날짜 영향을 설명했나",
+  "준비물이 이 집 공정(목공 · 도배)에 맞았나"
+ ]
+}
