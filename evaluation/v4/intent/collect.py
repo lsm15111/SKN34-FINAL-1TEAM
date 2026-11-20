@@ -28,7 +28,7 @@ V4 = HERE.parent
 sys.path.insert(0, str(V4))
 sys.path.insert(0, str(V4.parents[1] / "backend"))
 
-from kit import RUNS, ROOT, SCENARIOS, SETS, jsonl, utf8_stdout, write_jsonl
+from kit import ROOT, RUNS, SCENARIOS, SETS, jsonl, utf8_stdout, write_jsonl
 
 from app.agent.intent import DONGHO, PHONE, clean
 
