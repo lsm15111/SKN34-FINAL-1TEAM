@@ -267,3 +267,41 @@ def test_composer_drops_paraphrased_fixed_lines_and_table_repeats():
     assert not any(s.table for s in secs or [])
     assert "정해 둔 글 되풀이" in dropped and dropped.count("계산 되풀이") == 2
     assert "뻔한 말" in dropped
+
+
+def test_composer_drops_order_repeats_and_keeps_new_order_info():
+    """고정 몫([기간] · [순서])이 이미 말한 '목공 다음 도배'를 말만 바꿔 쓴 작성기 문장은 빼고(3300 두 턴 답),
+    새 정보가 든 문장은 남겨요. 남는 새 말이 없으면 작성기 묶음을 붙이지 않아요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    period = Section(source="calc", title="[기간]", sentences=[
+        Sentence(text="믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 빈집 기준 이만큼 걸려요."),
+        Sentence(text="기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."),
+    ])  # fmt: skip
+    order = Section(
+        source="template", title="[순서]", sentences=[Sentence(text="목공이 끝난 뒤 도배해요.")]
+    )
+    part = Part(sections=[period, order], route="multi")
+    text = " ".join(x.text for s in (period, order) for x in s.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    repeats = [
+        "목공과 도배는 순서대로 진행해요.",
+        "목공을 마친 뒤 도배하고, 실제 날짜는 공정표에서 확인해요.",
+        "목공을 먼저 마친 뒤 도배를 이어서 진행해요.",
+    ]
+    new = "목공이 끝나면 몰딩 페인트가 다 마른 다음에 도배해야 벽지가 들뜨지 않아요."
+
+    def run(lead: str, items: list[str]) -> tuple[list[str], list[str]]:
+        body = CBlock(kind="body", rows=[], items=[CItem(text=t, cites=[]) for t in items])
+        c = Composed(verdict="answer", lead=CItem(text=lead, cites=[]), blocks=[body], follow=[])
+        dropped: list[str] = []
+        secs = composer.to_sections(
+            c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped
+        )
+        return [x.text for s in secs or [] for x in s.sentences], dropped
+
+    kept, dropped = run(repeats[0], [*repeats[1:], new])
+    assert kept == [new] and dropped.count("순서 되풀이") == 3
+    assert run(repeats[0], repeats[1:])[0] == []  # 새 말이 없으면 작성기 묶음이 없어요

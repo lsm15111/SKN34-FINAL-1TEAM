@@ -24,6 +24,7 @@ from app.agent import llm
 from app.agent.v3 import check, llm_mode, templates
 from app.agent.v3.answer import KB, T_HIGH, Part, search
 from app.agent.v3.schemas import Section, Sentence, TradeCode
+from app.agent.v3.trades import BY_CODE, trades_in
 from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
@@ -193,7 +194,8 @@ def to_sections(
         return [x for x in (sent(i) for i in items) if x is not None]
 
     calc_nums = check.guard.numbers(calc) if calc else set()
-    shown = [_grams(x.text) for s in part.sections if s.source in FIXED for x in s.sentences]
+    fixed_texts = [x.text for s in part.sections if s.source in FIXED for x in s.sentences]
+    shown = [_grams(t) for t in fixed_texts]
     fixed_grams: set[str] = set().union(*shown) if shown else set()
 
     def covered(g: set[str]) -> bool:
@@ -210,6 +212,8 @@ def to_sections(
             return "계산 되풀이"  # 계산 묶음이 이미 보이는 숫자만 든 문장 · 표 줄
         if any(_overlap(g, h) >= SAME for h in shown) or covered(g):
             return "정해 둔 글 되풀이"
+        if order_repeat(text, fixed_texts, weight):
+            return "순서 되풀이"  # 고정 몫이 이미 말한 두 공종 순서를 말만 바꿔 다시 쓴 문장
         if fixed_grams and VAGUE.search(text.strip()):
             return "뻔한 말"  # 계산 · 정해 둔 글 아래에 '~에 따라 달라져요'만 덧붙이면 새 정보가 없어요
         return None
@@ -355,6 +359,44 @@ VAGUE = re.compile(
 )
 # 인용 지지 기준(IDF 무게 겹침). c2 답 인용 154쌍: 맞는 짝 86% 통과 · 섞은 짝 6.5% 통과(support_cal)
 SUPPORT = 0.18
+# 순서 되풀이: 고정 몫(정해 둔 순서 문장 · 기간 묶음)이 이미 두 공종의 순서를 말했으면, 작성기가 같은 두 공종의
+# 순서를 말만 바꿔 다시 쓴 문장('목공과 도배는 순서대로 진행해요')은 빼요. 순서 낱말 · 공종 이름 · 고정 몫 글을
+# 빼고 남는 새 말(드문 글자 묶음 무게)이 적으면 되풀이예요. 3300 두 턴 답의 되풀이 문장은 0.64~1.0,
+# 새 정보가 든 문장('페인트가 마른 다음에 도배해야 들뜨지 않아요' 등)은 0.06~0.38이라 그 사이 0.55로 둬요
+ORDER_CUE = re.compile(
+    r"먼저|나중|순서|차례|이어서|다음에|(?:끝난|끝나고|끝내고|마친|마치고|마무리하고|마무리한)\s{0,2}(?:뒤|다음|후)?"
+)
+TWO_WORK = re.compile(r"두\s{0,2}(?:공정|공종|작업)")
+ORDER_WORDS = (
+    "먼저 나중 순서대로 차례대로 이어서 이어 다음에 끝난 뒤 끝나고 끝내고 마친 뒤 마치고 마무리하고 "
+    "진행해요 진행하고 진행돼요 해요 하고 들어가요 와요 실제 날짜 공정 공정표 일정 확인해요 작업 이뤄져요"
+)
+ORDER_COVER = 0.55
+
+
+def _order_pair(text: str) -> frozenset[str] | None:
+    """두 공종(이상)의 순서를 말하는 문장이면 그 공종들. '두 공정'처럼 이름 없이 말하면 {'*'}. 아니면 None."""
+    if not ORDER_CUE.search(text or ""):
+        return None
+    tr = frozenset(t for t in trades_in(text) if t != "common")
+    if len(tr) >= 2:
+        return tr
+    return frozenset({"*"}) if TWO_WORK.search(text) else None
+
+
+def order_repeat(text: str, fixed: list[str], weight: Callable[[str], float] | None) -> bool:
+    """고정 몫 글(fixed)이 이미 말한 두 공종 순서를, 새 말 없이 되풀이하는 문장인지."""
+    pair = _order_pair(text)
+    if pair is None or weight is None:
+        return False
+    said = [p for p in (_order_pair(t) for t in fixed) if p and "*" not in p]
+    if not said or ("*" not in pair and not any(pair <= p for p in said)):
+        return False
+    names = " ".join(BY_CODE[t].ko for p in said for t in p if t in BY_CODE)  # type: ignore[index]
+    known = set().union(*(_grams(t) for t in fixed)) | _grams(ORDER_WORDS) | _grams(names)
+    g = _grams(text)
+    tot = sum(weight(x) for x in g)
+    return tot > 0 and sum(weight(x) for x in g if x in known) / tot >= ORDER_COVER
 
 
 _IDF: dict[int, tuple[object, dict[str, float], float]] = {}  # 색인 하나만 들고 있어요
