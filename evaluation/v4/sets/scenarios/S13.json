@@ -39,14 +39,9 @@
    "area_m2": 105.8,
    "area_basis": "supply",
    "trades": [
-    "dobae",
-    "mokgong"
+    "dobae"
    ],
    "grade": "basic",
-   "mokgong": [
-    "molding",
-    "base"
-   ],
    "living": "vacant",
    "start_wish": "2027-01-11"
   },
@@ -59,8 +54,7 @@
     "name": "마루와벽",
     "gu": "마포구",
     "trades": [
-     "dobae",
-     "mokgong"
+     "dobae"
     ],
     "price_confirmed": true,
     "rating": 4.8,
@@ -72,33 +66,9 @@
      "2026-12-06:pm",
      "2026-12-08:pm"
     ]
-   },
-   {
-    "ref": "namu",
-    "name": "나무목공",
-    "gu": "서대문구",
-    "trades": [
-     "mokgong"
-    ],
-    "price_confirmed": true,
-    "rating": 4.7,
-    "reviews": 9,
-    "done": 20,
-    "free_halves": [
-     "2026-12-06:am",
-     "2026-12-13:pm"
-    ]
    }
   ],
   "deals": [
-   {
-    "ref": "d_mok",
-    "vendor": "namu",
-    "trade": "mokgong",
-    "status": "scheduled",
-    "start": "2027-01-11",
-    "end": "2027-01-12"
-   },
    {
     "ref": "d_dob",
     "vendor": "maru",
@@ -183,5 +153,8 @@
   "바뀌는 날짜를 공정표 계산 값으로만 말했나",
   "입주일과 겹치는 위험을 짚었나",
   "AI가 대신 승인했다고 말하지 않았나"
+ ],
+ "memo": [
+  "2026-11-21 리드 결정: 이번에는 목공 공사 흐름을 열지 않아요(v3 공사 흐름은 도배만). 맥락으로만 있던 목공 확정(나무목공)을 빼고 집 · 업체 공정을 도배만으로 맞췄어요. 정답(도배 연기 카드 거절 · 날짜 그대로)은 그대로예요."
  ]
 }

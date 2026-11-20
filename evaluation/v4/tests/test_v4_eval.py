@@ -167,11 +167,22 @@ class SetsTest(unittest.TestCase):
     def test_script_problems(self):
         s = {"id": "S99", "surface": "customer", "opening": "안녕하세요", "max_turns": 1,
              "world": {"visits": []},
+             "checks": {"answer_has": [{"when_said": "몰딩 교체", "any": ["알아 두기"]}]},
              "script": {"turns": [{"say": "다른 말"}, {"say": "둘째 말"}, {"screen": "vendor_brief"}],
                         "decide": [{"kind": "propose_dates", "do": "approve", "if": {"zzz": 1}}]}}  # fmt: skip
         errs = " / ".join(build_sets.check_script(s, {"propose_home_info"}, set()))
-        for want in ("opening", "max_turns", "화면 vendor_brief", "모르는 kind", "모르는 조건"):
+        for want in ("opening", "max_turns", "화면 vendor_brief", "모르는 kind", "모르는 조건",
+                     "answer_has '몰딩 교체'"):  # fmt: skip
             self.assertIn(want, errs)
+
+    def test_no_mokgong_flow(self):
+        # 2026-11-21 결정: 공사 흐름은 도배만. world · events · 끝 상태에 mokgong이 있으면 점검이 막아요
+        s = {"id": "S99", "surface": "customer", "opening": "안녕", "max_turns": 2,
+             "world": {"vendors": [{"ref": "namu", "trades": ["mokgong"]}]},
+             "expected_end": {"visits": [{"trade": "mokgong", "status_in": ["requested"]}]},
+             "script": {"turns": [{"say": "안녕"}], "decide": []}}  # fmt: skip
+        errs = " / ".join(build_sets.check_scenario(Path("S99.json"), s))
+        self.assertIn("목공 공사 흐름", errs)
 
 
 class SimDateTest(unittest.TestCase):
@@ -270,6 +281,20 @@ class SimEndTest(unittest.TestCase):
         bad = [i["what"] for i in simcheck.check_process(checks, run) if not i["ok"]]
         self.assertEqual(len(bad), 3)
         self.assertTrue(any("get_schedule" in b for b in bad) and any("101동" in b for b in bad))
+
+    def test_answer_has(self):
+        know = {"when_said": "몰딩 교체", "any": ["알아 두기"], "no_cards": ["vendor_picks"]}
+        good = {"kind": "say", "say": "몰딩 교체는 언제 해요?", "shown": "[목공 · 알아 두기] 도배 전에 해요",
+                "cards": ["answer"]}  # fmt: skip
+        bad = {"kind": "say", "say": "몰딩 교체도 해 줘요", "shown": "[목공] 업체를 골라 봤어요",
+               "cards": ["vendor_picks", "answer"]}  # fmt: skip
+        other = {"kind": "say", "say": "도배는요?", "shown": "", "cards": []}
+        items = simcheck.check_process({"answer_has": [know]}, {"turns": [good, other]})
+        self.assertTrue(all(i["ok"] for i in items) and len(items) == 2)  # 몰딩 턴만 봐요
+        items = simcheck.check_process({"answer_has": [know]}, {"turns": [bad]})
+        self.assertEqual([i["ok"] for i in items], [False, False])
+        items = simcheck.check_process({"answer_has": [know]}, {"turns": [other]})
+        self.assertTrue(items[0]["na"])  # 그 말을 하지 않았으면 잴 수 없음
 
     def test_pass_hat(self):
         self.assertAlmostEqual(simcheck.pass_hat([3, 0, 1], 3, 1), (1 + 0 + 1 / 3) / 3)

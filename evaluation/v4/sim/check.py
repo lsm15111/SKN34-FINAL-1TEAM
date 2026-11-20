@@ -343,6 +343,25 @@ def check_process(checks: dict, run: dict) -> list[dict]:
         cost = run.get("cost_usd") or 0.0
         cap = checks["max_cost_usd"]
         out.append(_item("check", f"비용 ≤${cap}", cost <= cap, round(cost, 6)))
+    for spec in checks.get("answer_has") or []:
+        out += _answer_has(spec, turns)
+    return out
+
+
+def _answer_has(spec: dict, turns: list[dict]) -> list[dict]:
+    """사용자가 when_said를 말한 턴의 답(보인 것)에 any 중 하나가 있고, no_cards 카드는 없어야 해요.
+    예: 목공은 지식 질문으로만 → '몰딩 교체'를 물은 턴에 '알아 두기', 업체 추천 · 실측 카드 없음."""
+    said = [t for t in turns if spec["when_said"] in (t.get("say") or "")]
+    what = f"'{spec['when_said']}' 답에 {' · '.join(spec['any'])}"
+    if not said:
+        return [_item("check", what, True, None, na=True, why="그 말을 하지 않음")]
+    out = []
+    for t in said:
+        shown = t.get("shown") or ""
+        out.append(_item("check", what, any(x in shown for x in spec["any"]), t.get("text")))
+        bad = sorted(set(t.get("cards") or []) & set(spec.get("no_cards") or []))
+        if spec.get("no_cards"):
+            out.append(_item("check", f"'{spec['when_said']}' 답에 카드 없음", not bad, bad))
     return out
 
 

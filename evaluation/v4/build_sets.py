@@ -308,6 +308,11 @@ def check_scenario(path: Path, s: dict) -> list[str]:
             errs.append(f"{sid}: 사건 {e.get('id')}의 업체 {ref}가 없어요")
     if not isinstance(s.get("max_turns"), int) or not 1 <= s["max_turns"] <= 30:
         errs.append(f"{sid}: max_turns")
+    flow = json.dumps([s.get("world"), s.get("events"), end], ensure_ascii=False)
+    if (
+        '"mokgong"' in flow
+    ):  # 2026-11-21 리드 결정: 공사 흐름은 도배만, 목공은 지식 질문(알아 두기)으로만
+        errs.append(f"{sid}: 목공 공사 흐름(world · events · 끝 상태의 mokgong)은 두지 않아요")
     return errs + check_script(s, kinds, vendors)
 
 
@@ -335,6 +340,9 @@ def check_script(s: dict, kinds: set[str], vendors: set[str]) -> list[str]:
         errs.append(f"{sid}: 대본 업체 {sc['as']}가 없어요")
     for r in sc.get("decide", []):
         errs += [f"{sid}: 승인 규칙 {p}" for p in rule_problems(r, kinds)]
+    for a in (s.get("checks") or {}).get("answer_has", []):
+        if not any(a.get("when_said", "") in x for x in says):
+            errs.append(f"{sid}: answer_has '{a.get('when_said')}'를 대본에서 말하지 않아요")
     return errs
 
 

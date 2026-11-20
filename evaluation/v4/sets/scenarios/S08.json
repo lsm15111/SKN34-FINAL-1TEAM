@@ -44,14 +44,9 @@
    "area_m2": 105.8,
    "area_basis": "supply",
    "trades": [
-    "dobae",
-    "mokgong"
+    "dobae"
    ],
    "grade": "basic",
-   "mokgong": [
-    "molding",
-    "base"
-   ],
    "living": "vacant",
    "start_wish": "2027-01-04"
   },
@@ -64,8 +59,7 @@
     "name": "마루와벽",
     "gu": "마포구",
     "trades": [
-     "dobae",
-     "mokgong"
+     "dobae"
     ],
     "price_confirmed": true,
     "rating": 4.8,
@@ -184,5 +178,8 @@
  },
  "judge": [
   "거절 뒤 묻지 않았는데 같은 카드를 다시 내밀지 않았나"
+ ],
+ "memo": [
+  "2026-11-21 리드 결정: 이번에는 목공 공사 흐름을 열지 않아요(v3 공사 흐름은 도배만). 집 · 업체 공정을 도배만으로 맞췄어요. 정답은 그대로예요."
  ]
 }
