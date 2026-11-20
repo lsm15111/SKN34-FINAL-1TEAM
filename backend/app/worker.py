@@ -22,6 +22,7 @@ from arq import cron
 from arq.connections import RedisSettings
 
 from app import demo
+from app.assistant import service as assistant_service
 from app.config import settings
 from app.db import SessionLocal
 from app.jobs import service as jobs
@@ -111,6 +112,13 @@ async def sweep_jobs(ctx: dict | None = None, now: datetime | None = None) -> in
     return sum(n for (_, result), n in tally.items() if result in ("done", "skipped"))
 
 
+async def assistant_sweep(ctx: dict | None = None, now: datetime | None = None) -> int:
+    """비서 정리(2분마다, unique): 만료 제안 → expired · 2분 넘은 승인 → failed · 멈춘 턴 → failed.
+    먼저 말 걸기(이벤트 · 시간 트리거) · 기억 추출은 0042 담당이 여기에 더한다. 돌려주는 값: 바꾼 수."""
+    got = await assistant_service.sweep(now or now_utc())
+    return sum(got.values())
+
+
 def demo_on() -> bool:
     return settings.demo_auto and settings.app_env != "production"
 
@@ -118,6 +126,7 @@ def demo_on() -> bool:
 class WorkerSettings:
     functions: ClassVar[list] = [ping]
     cron_jobs: ClassVar[list] = [
+        cron(assistant_sweep, minute=set(range(0, 60, 2)), second=30, unique=True, timeout=60),
         cron(sweep_jobs, second=0, unique=True, timeout=SWEEP_TIMEOUT),
         *([cron(demo_reply, second=set(range(0, 60, 5)), timeout=50)] if demo_on() else []),
     ]

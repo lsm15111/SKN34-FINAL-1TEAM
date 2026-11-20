@@ -99,27 +99,55 @@
 | 고객(`require_role("customer")`) | 업체(`approved_vendor`) |
 | --- | --- |
 | `POST /assistant/turns`(SSE) · `GET …/turns/{id}` · `GET …/threads/latest?project_id=` | `POST /vendor/assistant/turns`(SSE, visit_id) · `GET …/turns/{id}` |
-| `GET /assistant/feed?project_id=` | `GET /vendor/assistant/feed` · `GET …/briefs/{visit_id}` |
-| `GET /assistant/actions` · `POST …/{id}/approve` · `…/reject` | 같은 꼴 |
-| `POST /assistant/nudges/{id}/open` · `…/dismiss` | 같은 꼴 |
-| `GET` · `DELETE /assistant/memory[/{id}]` · `GET …/health` | – |
+| `GET /assistant/feed?project_id=&before=&limit=` | `GET /vendor/assistant/feed` · `GET …/briefs/{visit_id}` |
+| `GET /assistant/board?project_id=` · `GET /assistant/today?project_id=` (화면 제안) | `GET …/checklists/{visit_id}` · `GET …/today` (화면 제안) |
+| `GET /assistant/actions?project_id=&status=` · `POST …/{id}/approve` · `…/reject` | 같은 꼴 |
+| `POST /assistant/nudges/{id}/open` · `…/dismiss` (0042 담당) | 같은 꼴 (0042 담당) |
+| `GET` · `DELETE /assistant/memory[/{id}]` (0042 담당) · `GET /assistant/health` | – |
+
+- `approve` 몸통: `{client_key?, seen?}`. `seen`(화면이 본 target_ver)이 행과 다르면 409 stale, 기능 오류는 409(기능 오류 코드).
+- `health`: `{mode: llm | free, reason: ok | off | budget | breaker}`(글 · 키 없음).
 
 ### SSE
-- 순서: `ack`{turn_id, chat_id} → `status` · `card`{card_id, kind, data} · `action`{action_id, summary, expires_at}(여러 번) → `token`(여러 번) → `done`{rev, mode, cards, actions, stopped?}
-- 실패하면 `done` 대신 `error`를 보내요.
+- 순서: `ack`{turn_id, chat_id, at} → `status`{text, task?} · `card`{card_id, kind, data, say?} · `action`(ActionOut)(여러 번) → `token`{text}(여러 번) → `done`{rev, mode, cards, actions, stopped, chips}
+- 실패하면 `done` 대신 `error`{code, message}를 보내요.
 - 모든 data에 `seq`(턴 안에서 늘기만 함)와 `id: {turn_id}:{seq}`를 붙여요. 화면은 이미 받은 seq 이하를 버려요.
-- `action`은 행을 commit한 뒤, `done`은 대화 저장을 commit한 뒤에 보내요.
-- 스트림을 열기 전 오류(404 · 409 · 429)는 지금과 같은 오류 모양이에요.
+- `action`은 행을 commit한 뒤, `done`은 대화 저장을 commit한 뒤에 보내요. 새 제안에 밀려 닫힌 옛 제안도 `action`(expired)으로 보내요.
+- 스트림을 열기 전 오류(404 · 409 · 429)는 지금과 같은 오류 모양이에요. 같은 client_key로 끝난 턴이면 저장한 카드 · 행동(지금 상태) · 답 글을 같은 이벤트로 다시 보내요.
+- 화면이 끊어도 턴은 끝까지 돌려 저장해요(다시 열면 feed로 보여요).
 
 ### 카드 kind
 - home_info · standard_quote · vendor_picks · visit_slots · quote_compare · schedule · knowledge · answer · floorplan_links · today · vendor_brief · quote_checklist
-- 화면은 `components/assistant/cards/registry`에서 kind로 컴포넌트를 골라요.
+- 화면은 `components/assistant/cards/registry`에서 kind로 컴포넌트를 골라요. data 모양은 `assistant/schemas.py`의 `*Data`예요.
 - 같은 card_id면 카드를 바꿔 끼워요. 대화를 다시 열면 `assistant_turns.cards`로 그려요.
+
+### 행동(ActionOut)
+- `{action_id, kind, status, summary, target_ver, expires_at, decided_at?, executed_at?, error_code?, result?, supersedes?}`
+- kind는 제안 도구 이름에서 `propose_`를 뗀 것(home_info · visit_request · visit_slot · vendor_confirm · dates_accept · delay_accept · window_answer · decline · dates)이에요.
+- summary: `{title, amount_won?, amounts[], diff?, version?, rows[], file?, note?, approve_label}`. 금액 · 차액은 계산 엔진 값이에요.
+- 만료 까닭(due · replaced)은 `result.reason`에 두고 `error_code`로 내보내요(DB의 error_code는 failed에만, 2장 CHECK).
+- 견적서가 새 판이라 확정이 실패(quote_changed)하면 새 판 금액 · 차액으로 새 제안을 만들고, 새 행동의 `supersedes` = 옛 id, 옛 행동 `result.superseded_by` = 새 id예요. feed는 옛 자리에 새 행동을 그려요.
+
+### 화면 제안 칸(2026-11-21 반영)
+| 칸 | 결정 | 메모 |
+| --- | --- | --- |
+| `status.task` | 넣음(모양만) | TaskOut 모양을 정했어요. 만드는 쪽은 먼저 말 걸기(0042 담당)예요 |
+| `card.say` | 넣음 | 카드 위 한 줄. 정해 둔 글(코드)만 써요 |
+| `done.chips` · `feed.chips` | 넣음 | 마지막 카드 종류로 고른 정해 둔 칩이에요 |
+| `done.suggest` · feed `suggest` 조각 | 뺌 | 먼저 말 걸기(nudges, 0042 담당)가 채워요 |
+| `action.kind` · `status` · `supersedes` | 넣음 | 위 '행동' 참고 |
+| `feed.now` · `feed.before`(턴 번호 커서) | 넣음 | 처음 30줄, `before`로 앞 쪽 |
+| `GET /assistant/board` | 넣음 | 단계(0~6) · 집 요약 · 낼 금액(won) · 업체 줄 · 기간 · 서류. `money.range` · `memory`(0042)는 비워요 |
+| `GET /assistant/today` | 넣음 | 오늘 정할 일 줄(코드가 골라요). `know` · 문장 하나는 비워요 |
+| 업체 `checklists` · `today` | 넣음 | 표준견적서 줄 · 내 견적서 칸 · 빠지기 쉬운 것 / 새 요청 · 오늘 실측 · 보낼 견적서 |
+| 업체 `briefs.suggest.action_id` | 넣음 | 요청함이면 기간 답하기 제안 행(window_answer)을 만들어요(같은 내용이면 같은 행). `sentence`(AI 한 문장)는 비워요 |
+| `home_info`의 주소 찾기(search · manual) · `GET /address/search` | 뺌 | 범위 밖. 집 정보 카드는 confirm 모양(요약 · 면적 · 바뀜 · action_id)만이에요 |
+| `TurnIn.context`{card_id, choice} | 넣음 | choice는 1~40자 값 하나 또는 5개까지예요. LLM에는 이번 대화에서 도구가 준 ref만 가고 모르는 값은 버려요(422 아님) |
 
 ### 권한
 - 모든 조회에 `user_id = 세션 사용자`를 붙여요. 남의 것 · 없는 것은 404, 역할이 다르면 403이에요.
 - project_id · visit_id는 `project.service.get_for` · `visit.service.vendor_visit`로 확인해요.
-- executed인 행동을 다시 승인하면 200(같은 result)이에요. rejected · expired · failed는 409예요.
+- executed인 행동을 다시 승인하면 200(같은 result)이에요. rejected · expired · failed는 409, approved(처리 중)는 409 in_progress예요.
 
 ## 4. 런타임(`runtime.run_turn`)
 1. `start_turn`(짧은 세션)
@@ -186,6 +214,15 @@
 2. tx2: approved → executed와 기능 함수를 같이 실행해요. 기능 함수의 commit으로 확정돼요.
 3. AppError가 나면 rollback하고 failed(기능 오류 코드)로 바꾼 뒤 409를 돌려줘요.
 4. approved로 2분 넘게 남은 행은 sweep이 failed로 바꿔요(다시 실행하지 않음).
+- 기능 함수가 여러 번 commit하는 실행(visit_request: 안 담은 업체 담기 → 요청)은 마지막 기능 함수 바로 앞에서 executed를 써요(담기가 먼저 commit돼도 행동은 executed가 아니에요).
+
+### 구현 메모(2026-11-21, 비서 담당)
+- ref 머리글자: v 업체 · m 실측 요청 · r 희망 기간 · s 반나절 · w 업체 기간 · d 확정 · p 공사 날짜 제안 · n 공사 날 후보. 대화마다 Redis 30분.
+- `answer_question`은 `answer_only(mode="free")`로 근거 문장만 받아요(겹친 LLM 호출 없음). `v2.ask.answer_only`는 v2 파일이라 이번에 하지 않았어요.
+- `vendor_free_slots`는 `prefer`(any · am · pm)와 `days`(any · weekday · weekend)를 받아요. `find_floorplan_docs`는 고객이 말한 단지 이름(`complex`, 동 · 호수 뗌)을 받을 수 있어요.
+- `vendor_free_slots`(요청 전) · `request_brief` · `my_free_slots`의 업체 빈 반나절은 도메인 갈래의 `visit.service.open_halves_for`(실제 함수, 공사 날 · 잡기 반영)를 불러요. 가견적은 요청 때 고정한 값(`vendor_visit.estimate_total`)이에요.
+- `propose_dates`의 날 후보(n1~)는 `my_jobs`가 견적서 공사 기간 · 예상 공정표 시작일로 `calc.schedule.workdays`에서 만들어요.
+- `assistant_actions`에는 turn_id 칸을 두지 않았어요. 턴의 행동 id는 `assistant_turns.trace.actions`에 있어요.
 
 ## 6. 먼저 말 걸기
 - 원천: 상태를 바꾸는 트랜잭션 안에서 함께 쓰는 `notifications`를 아웃박스로 읽어요.

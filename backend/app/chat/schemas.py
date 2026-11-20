@@ -96,6 +96,15 @@ class AiTurnOut(BaseModel):
     conditions: list[ConditionOut] = []
 
 
+class AiAnswerOnlyOut(BaseModel):
+    """answer_only 결과(대화에 저장하지 않음). v4 비서의 answer_question 도구 · 무료 모드가 쓴다."""
+
+    mode: Literal["free", "llm"]
+    route: Route
+    answer: AiAnswer
+    text: str = Field(description="대화 표에 남길 글(검사를 지난 문장 · 표 줄만)")
+
+
 class AiThreadOut(BaseModel):
     chat_id: uuid.UUID
     updated_at: datetime

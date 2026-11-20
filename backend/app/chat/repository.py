@@ -10,18 +10,22 @@ from app.chat.models import Chat, ChatMessage
 
 
 async def insert_chat(
-    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None = None
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None = None, kind: str = "ai"
 ) -> Chat:
-    """project_id는 service가 세션 기준으로 본인 공사인지 확인한 값만 넘긴다."""
-    chat = Chat(user_id=user_id, project_id=project_id)
+    """project_id는 service가 세션 기준으로 본인 공사인지 확인한 값만 넘긴다. kind: ai · assistant(v4 비서)."""
+    chat = Chat(user_id=user_id, project_id=project_id, kind=kind)
     s.add(chat)
     await s.flush()  # id · rev를 바로 쓰려고 DB에 먼저 보낸다
     return chat
 
 
-async def get_owned(s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID) -> Chat | None:
-    """내 대화만 꺼낸다. 남의 것과 없는 것을 구별하지 않는다(둘 다 None)."""
-    return await s.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
+async def get_owned(
+    s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, kind: str = "ai"
+) -> Chat | None:
+    """내 대화만 꺼낸다. 남의 것과 없는 것을 구별하지 않는다(둘 다 None). 종류(kind)가 다른 대화도 None."""
+    return await s.scalar(
+        select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id, Chat.kind == kind)
+    )
 
 
 async def recent_messages(s: AsyncSession, chat_id: uuid.UUID, limit: int) -> list[ChatMessage]:
@@ -99,8 +103,8 @@ async def set_project(
 async def list_chats(
     s: AsyncSession, user_id: uuid.UUID, limit: int = 20, project_id: uuid.UUID | None = None
 ) -> list[Chat]:
-    """내 대화방 최근 것부터. project_id를 주면 그 공사 대화만."""
-    q = select(Chat).where(Chat.user_id == user_id)
+    """내 v3 AI 칸 대화방(kind=ai) 최근 것부터. project_id를 주면 그 공사 대화만."""
+    q = select(Chat).where(Chat.user_id == user_id, Chat.kind == "ai")
     if project_id is not None:
         q = q.where(Chat.project_id == project_id)
     rows = await s.scalars(q.order_by(Chat.updated_at.desc()).limit(limit))
@@ -110,9 +114,11 @@ async def list_chats(
 async def latest_chat(
     s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None, hours: int
 ) -> Chat | None:
-    """마지막 턴 뒤 hours시간 안의 내 대화 하나(이어 보기). project_id가 없으면 공사 칸이 빈 대화만."""
+    """마지막 턴 뒤 hours시간 안의 내 v3 대화(kind=ai) 하나(이어 보기). project_id가 없으면 공사 칸이 빈 대화만."""
     q = select(Chat).where(
-        Chat.user_id == user_id, Chat.updated_at >= func.now() - timedelta(hours=hours)
+        Chat.user_id == user_id,
+        Chat.kind == "ai",
+        Chat.updated_at >= func.now() - timedelta(hours=hours),
     )
     if project_id is not None:
         q = q.where(Chat.project_id == project_id)

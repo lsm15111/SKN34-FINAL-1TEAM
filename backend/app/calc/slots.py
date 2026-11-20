@@ -6,6 +6,7 @@
 - 희망 기간 초안(UC-VIS-01): 공사 시작 희망일 − 28일 ~ − 14일. 추천(D15): 희망일 − 20일에 가장 가까운 칸.
   AI는 이 값을 설명만 한다.
 - 업체 공사 날(v4 비서 빈 반나절, ADR 0001): 그날은 실측 칸을 모두 막는다.
+- v4 비서 후보: 요청 전 희망 기간(wish_candidates) · 업체 기간 안 반나절(candidates) · 업체가 답할 기간(best_windows).
 """
 
 from collections import Counter
@@ -13,6 +14,8 @@ from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Literal
+
+from app.calc.schedule import is_off
 
 Half = Literal["am", "pm"]
 HALVES: tuple[Half, ...] = ("am", "pm")
@@ -138,4 +141,205 @@ def work_days_in(
         while d <= min(last, end):
             out.add(d)
             d += timedelta(days=1)
+    return out
+
+
+# ---- v4 비서: 실측 시간 후보 (계약서 5장 vendor_free_slots · my_free_slots) ----
+# 업체 빈 반나절(open_by_day: 날 → 남은 반나절 "am" · "pm")은 visit.service.open_halves_for가 준다(고객 정보 없음).
+# 쉬는 날은 계산 엔진 규칙(calc.schedule.is_off: 공휴일 days_off · 주말 요일 weekend)을 따른다. 실측은 기본으로
+# 공휴일만 쉬고(weekend=()), 고객이 평일 · 주말을 말하면 days로 거른다. 오늘 · 지난 날은 고르지 않는다.
+
+HalfPrefer = Literal["any", "am", "pm"]  # 고객이 편한 반나절
+DayPrefer = Literal["any", "weekday", "weekend"]  # 고객이 편한 요일
+WISH_SPAN = 7  # 희망 기간 후보 길이(일)
+WISH_MAX = 2  # r1 ~ r2
+SLOT_MAX = 3  # s1 ~ s3
+WINDOW_SPAN = 7  # 업체가 답할 기간 후보 길이(일)
+WINDOW_MAX = 3  # w1 ~ w3
+WISH_FALLBACK_DAYS = 28  # 공사 시작 희망일이 없으면 내일부터 이 날 수 안에서 찾는다
+
+
+@dataclass(frozen=True)
+class WishRange:
+    """요청 전 희망 기간 후보. open_count는 그 기간 업체 빈 반나절 수(고객 선호에 맞는 것만)."""
+
+    start: date
+    end: date
+    open_count: int
+    basis: Literal["start_minus_20", "earliest"]
+
+
+@dataclass(frozen=True)
+class SlotPick:
+    """업체가 답한 기간 안의 반나절 후보. why는 화면 · AI가 글로 바꾸는 코드다."""
+
+    day: date
+    half: Half
+    why: tuple[str, ...]  # prefer_half · prefer_day · start_minus_20 · earliest
+
+
+@dataclass(frozen=True)
+class Window:
+    """업체가 답할 기간 후보(WindowIn 꼴): 시작 · 끝은 빈 칸이 있는 날, 그 사이 빈 칸 없는 날은 excluded."""
+
+    start: date
+    end: date
+    excluded: tuple[date, ...]
+    open_count: int
+
+
+def _off(d: date, days_off: Collection[date], weekend: Collection[int]) -> bool:
+    return is_off(d, days_off, weekend)  # 공휴일 · 주말 규칙은 공정표와 같은 함수
+
+
+def _day_ok(d: date, days: DayPrefer) -> bool:
+    if days == "weekday":
+        return d.weekday() < 5
+    if days == "weekend":
+        return d.weekday() >= 5
+    return True
+
+
+def _free(
+    open_by_day: Mapping[date, Collection[str]],
+    d: date,
+    today: date,
+    days_off: Collection[date],
+    weekend: Collection[int],
+) -> list[Half]:
+    """그날 고를 수 있는 반나절(오늘 · 지난 날 · 쉬는 날은 없음)."""
+    if d <= today or _off(d, days_off, weekend):
+        return []
+    got = open_by_day.get(d) or ()
+    return [h for h in HALVES if h in got]
+
+
+def wish_candidates(
+    open_by_day: Mapping[date, Collection[str]],
+    work_start: date | None,
+    today: date,
+    *,
+    prefer: HalfPrefer = "any",
+    days: DayPrefer = "any",
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = (),
+    span: int = WISH_SPAN,
+    n: int = WISH_MAX,
+) -> list[WishRange]:
+    """요청 전 희망 기간 후보 r1~r2. 범위는 희망 기간 초안(공사 시작 희망일 − 28 ~ − 14일, draft_wish), 희망일이
+    없으면 내일부터 28일. 그 안의 span일 기간을 하루씩 밀며 선호에 맞는 업체 빈 반나절이 많은 순, 같으면
+    희망일 − 20일(없으면 내일)에 가까운 순 · 이른 순. 빈 칸이 없는 기간은 빼고, 서로 겹치지 않게 고른다."""
+    if span < 1 or n < 1:
+        raise ValueError("기간 길이와 후보 수는 1 이상이에요")
+    draft = draft_wish(work_start, today)
+    lo, hi = draft or (
+        today + timedelta(days=1),
+        today + timedelta(days=WISH_FALLBACK_DAYS),
+    )
+    target = work_start - timedelta(days=RECOMMEND_BEFORE_DAYS) if work_start else lo
+    basis: Literal["start_minus_20", "earliest"] = "start_minus_20" if work_start else "earliest"
+    ranked: list[tuple[int, int, date, WishRange]] = []
+    last = max(lo, hi - timedelta(days=span - 1))
+    for st in days_between(lo, last):
+        en = min(st + timedelta(days=span - 1), hi)
+        count = sum(
+            1
+            for d in days_between(st, en)
+            if _day_ok(d, days)
+            for h in _free(open_by_day, d, today, days_off, weekend)
+            if prefer == "any" or h == prefer
+        )
+        if count == 0:
+            continue
+        mid = st + (en - st) / 2
+        ranked.append((-count, abs((mid - target).days), st, WishRange(st, en, count, basis)))
+    ranked.sort(key=lambda r: r[:3])
+    out: list[WishRange] = []
+    for *_, r in ranked:
+        if all(not overlaps(r.start, r.end, x.start, x.end) for x in out):
+            out.append(r)
+        if len(out) == n:
+            break
+    return out
+
+
+def candidates(
+    days: Sequence[DayOpen],
+    work_start: date | None,
+    today: date,
+    *,
+    prefer: HalfPrefer = "any",
+    day_prefer: DayPrefer = "any",
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = (),
+    n: int = SLOT_MAX,
+) -> list[SlotPick]:
+    """업체가 답한 기간의 열린 반나절에서 후보 s1~s3. 순서: 선호(반나절 · 요일)에 맞는 수가 많음 →
+    희망일 − 20일(없으면 오늘)에 가까움 → 이른 날 · 오전. 날이 겹치지 않게 먼저 고르고, 모자라면 같은 날
+    다른 반나절로 채운다."""
+    target = work_start - timedelta(days=RECOMMEND_BEFORE_DAYS) if work_start else None
+    pool: list[tuple[int, int, date, int, SlotPick]] = []
+    for x in days:
+        if x.day <= today or _off(x.day, days_off, weekend):
+            continue
+        for h in HALVES:
+            if x.left(h) <= 0:
+                continue
+            fit_half = prefer != "any" and h == prefer
+            fit_day = day_prefer != "any" and _day_ok(x.day, day_prefer)
+            miss = int(prefer != "any" and not fit_half) + int(day_prefer != "any" and not fit_day)
+            why = (
+                *(("prefer_half",) if fit_half else ()),
+                *(("prefer_day",) if fit_day else ()),
+                "start_minus_20" if target else "earliest",
+            )
+            dist = abs((x.day - target).days) if target else (x.day - today).days
+            pool.append((miss, dist, x.day, HALVES.index(h), SlotPick(x.day, h, why)))
+    pool.sort(key=lambda p: p[:4])
+    out: list[SlotPick] = []
+    for *_, p in pool:
+        if len(out) < n and all(p.day != o.day for o in out):
+            out.append(p)
+    for *_, p in pool:
+        if len(out) < n and p not in out:
+            out.append(p)
+    return out
+
+
+def best_windows(
+    open_by_day: Mapping[date, Collection[str]],
+    start: date,
+    end: date,
+    today: date,
+    *,
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = (),
+    span: int = WINDOW_SPAN,
+    n: int = WINDOW_MAX,
+) -> list[Window]:
+    """업체가 답할 기간 후보 w1~w3: start ~ end(내일부터) 안 span일 기간 중 빈 반나절이 많은 순, 같으면 이른
+    기간. 앞뒤 빈 칸 없는 날은 기간에서 빼고, 사이의 빈 칸 없는 날 · 쉬는 날은 excluded로 둔다. 겹치지 않게 고른다."""
+    if span < 1 or n < 1:
+        raise ValueError("기간 길이와 후보 수는 1 이상이에요")
+    lo = max(start, today + timedelta(days=1))
+    if end < lo:
+        return []
+    ranked: list[tuple[int, date, Window]] = []
+    for st in days_between(lo, max(lo, end - timedelta(days=span - 1))):
+        span_days = days_between(st, min(st + timedelta(days=span - 1), end))
+        free = {d: _free(open_by_day, d, today, days_off, weekend) for d in span_days}
+        open_days = [d for d in span_days if free[d]]
+        if not open_days:
+            continue
+        first, last = open_days[0], open_days[-1]
+        excluded = tuple(d for d in span_days if first < d < last and not free[d])
+        count = sum(len(free[d]) for d in open_days)
+        ranked.append((-count, first, Window(first, last, excluded, count)))
+    ranked.sort(key=lambda r: r[:2])
+    out: list[Window] = []
+    for *_, w in ranked:
+        if all(not overlaps(w.start, w.end, x.start, x.end) for x in out):
+            out.append(w)
+        if len(out) == n:
+            break
     return out

@@ -18,6 +18,7 @@ from app.chat import repository
 from app.chat.models import Chat
 from app.chat.schemas import (
     AiAnswer,
+    AiAnswerOnlyOut,
     AiBrief,
     AiFaqOut,
     AiMessageOut,
@@ -199,6 +200,79 @@ def _public(ans) -> AiAnswer:
     )
 
 
+async def _turn_mode(user_id, today: date) -> str:
+    """이 턴을 LLM 모드로 할지: 키 · LLM_LIVE → 비용 상한(사용자 하루 · 서비스 하루 · 전체의 90%) → v3 하루 턴 수."""
+    from app.agent import llm
+
+    turn_mode = mode()
+    if turn_mode == "llm" and not await llm.budget_ok(user_id, "v3"):
+        turn_mode = "free"
+    if turn_mode == "llm" and not await llm_budget_ok(user_id, today):
+        turn_mode = "free"  # 오늘 LLM 상한을 넘으면 무료 모드로 답해요(비용 상한)
+    return turn_mode
+
+
+async def answer_only(
+    user,
+    text: str,
+    today: date,
+    *,
+    project_id: uuid.UUID | None = None,
+    mode: str | None = None,
+) -> AiAnswerOnlyOut:
+    """ai_turn에서 저장만 뺀 답(v4 비서 answer_question 도구 · 무료 모드, 계약서 1장).
+
+    대화방 · 되묻기 칸 · 맥락 · 같은 키 되돌림 · 시간당 요청 제한은 쓰지 않는다(부르는 쪽 턴이 지킨다).
+    mode가 None이면 ai_turn과 같은 규칙으로 정하고, "free"면 LLM을 부르지 않는다. 남의 공사는 404(AppError).
+    부르는 쪽이 이미 장부 문맥(llm.CALL_CTX)을 열었으면 그대로 쓴다(비서 턴의 비용으로 센다)."""
+    from contextlib import nullcontext
+
+    from app.agent import llm
+    from app.agent.llm import embed_query
+    from app.agent.v3 import check
+    from app.agent.v3.answer import KB
+    from app.agent.v3.schemas import TurnContext
+    from app.agent.v3.turn import run_turn
+    from app.chat import tools
+    from app.config import settings
+    from app.db import SessionLocal
+    from app.knowledge import cards
+    from app.knowledge import service as knowledge
+
+    turn_mode = mode if mode in ("free", "llm") else await _turn_mode(user.id, today)
+    use_emb = turn_mode == "llm" or (
+        settings.ai_embed_free and bool(settings.openai_api_key.get_secret_value())
+    )
+    masked = check.mask(text)
+    emb = await embed_query(masked[:300]) if use_emb else None
+    facts = None
+    async with SessionLocal() as s:  # 짧게 열고 닫는다. 답을 만드는 동안 세션을 쥐지 않는다
+        if project_id is not None:
+            facts = await tools.project_facts(s, user, project_id, today)
+        kb = KB(
+            ix=await knowledge.index(s),
+            cards=cards.default(),
+            dense=await knowledge.nearest(s, emb),
+        )
+    ctx = TurnContext(
+        user_id=user.id,
+        project_id=project_id if facts is not None else None,
+        mode=turn_mode,  # type: ignore[arg-type]
+        today=today,
+    )
+    general = tools.general_facts(masked, today)
+    if facts is None:
+        general = tools.with_said(general, None, None, today)
+    general.here = tools.house_size(facts)
+    scope = llm.call_ctx(user_id=user.id) if llm.CALL_CTX.get() is None else nullcontext()
+    with scope:
+        res = await run_turn(text, ctx, kb=kb, facts=facts, general=general)
+    ans = res.answer
+    return AiAnswerOnlyOut(
+        mode=ctx.mode, route=ans.trace.route, answer=_public(ans), text=ans.plain()
+    )
+
+
 async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     """POST /ai/turns. 남의 대화 · 남의 프로젝트는 404, 같은 대화 동시 저장은 409.
 
@@ -227,12 +301,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     rev, waiting_label = 1, None
     facts = None
     state = None  # 이 대화의 맥락(chats.state). 이어 묻기를 푸는 데만 써요(context.py)
-    turn_mode = mode()
-    # 비용 상한(사용자 하루 · 서비스 하루 · 전체)의 90%를 넘으면 무료 모드로 답해요
-    if turn_mode == "llm" and not await llm.budget_ok(user.id, "v3"):
-        turn_mode = "free"
-    if turn_mode == "llm" and not await llm_budget_ok(user.id, today):
-        turn_mode = "free"  # 오늘 LLM 상한을 넘으면 무료 모드로 답해요(비용 상한)
+    turn_mode = await _turn_mode(user.id, today)
     # 의미 검색 벡터는 DB 세션을 열기 전에 만든다. 무료 모드도 키가 있고 ai_embed_free면 만든다
     # (임베딩만, 하루 LLM 상한과 별개). 실패하거나 LLM_LIVE=false(스텁)면 None → 키워드로만
     use_emb = turn_mode == "llm" or (
