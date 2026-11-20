@@ -22,31 +22,39 @@ export const STANDARD = {
   partial: false,
 };
 
-export type MockVendor = { key: string; id: string; name: string; photo: string; rating: number; reviews: number; done: number; est: number; reasons: string[]; badge?: string };
+/** ref는 서버처럼 대화 이름표(v1 …)예요. key는 목업 안에서만 써요 */
+export type MockVendor = { key: string; ref: string; id: string; name: string; photo: string; rating: number; reviews: number; done: number; est: number; reasons: string[]; badge?: string };
 export const VENDORS: MockVendor[] = [
-  { key: "gyeol", id: "v4m-gyeol", name: "결도배", photo: "/v2/img/looks/mw01.jpg", rating: 4.7, reviews: 23, done: 31, est: 4_182_300, reasons: ["세 곳 중 가견적이 가장 낮아요", "보통 하루 안에 답해요"] },
-  { key: "bareun", id: "v4m-bareun", name: "바른벽", photo: "/v2/img/looks/nw01.jpg", rating: 4.9, reviews: 12, done: 18, est: 4_398_000, reasons: ["상계동에서 시공 12건", "실측 출장비가 없어요"] },
-  { key: "maru", id: "v4m-maru", name: "마루와벽", photo: "/v2/img/looks/hg01.jpg", rating: 4.8, reviews: 41, done: 57, est: 4_615_500, reasons: ["리뷰 41개 · 별점 4.8", "날짜를 고르면 바로 확정돼요"], badge: "바로 확정" },
+  { key: "gyeol", ref: "v1", id: "v4m-gyeol", name: "결도배", photo: "/v2/img/looks/mw01.jpg", rating: 4.7, reviews: 23, done: 31, est: 4_182_300, reasons: ["세 곳 중 가견적이 가장 낮아요", "보통 하루 안에 답해요"] },
+  { key: "bareun", ref: "v2", id: "v4m-bareun", name: "바른벽", photo: "/v2/img/looks/nw01.jpg", rating: 4.9, reviews: 12, done: 18, est: 4_398_000, reasons: ["상계동에서 시공 12건", "실측 출장비가 없어요"] },
+  { key: "maru", ref: "v3", id: "v4m-maru", name: "마루와벽", photo: "/v2/img/looks/hg01.jpg", rating: 4.8, reviews: 41, done: 57, est: 4_615_500, reasons: ["리뷰 41개 · 별점 4.8", "날짜를 고르면 바로 확정돼요"], badge: "바로 확정" },
 ];
 export const vendorOf = (key: string) => VENDORS.find((v) => v.key === key) ?? VENDORS[0];
 
-/** 희망 기간 · 실측 후보(계산 엔진 calc.slots 몫). why는 서버처럼 코드예요(화면이 말로 바꿔요) */
+/** 희망 기간 · 실측 후보(계산 엔진 calc.slots 몫). why는 서버처럼 코드예요(화면이 말로 바꿔요). 이름표는 r(희망 기간) · s(반나절) */
 export const WISH = { start: "2026-11-23", end: "2026-12-04", work_wish_on: "2026-12-18" };
+/** 요청 전 희망 기간 후보(첫 고른 업체의 빈 반나절 수) */
+export const WISHES = [
+  { ref: "r1", start: "2026-11-23", end: "2026-11-28", open_count: 9 },
+  { ref: "r2", start: "2026-11-30", end: "2026-12-04", open_count: 7 },
+];
 export const SLOTS = [
   { ref: "s1", vendor: "gyeol", day: "2026-11-24", half: "am" as const, why: ["start_minus_20"] },
   { ref: "s2", vendor: "gyeol", day: "2026-11-25", half: "pm" as const, why: ["earliest"] },
   { ref: "s3", vendor: "gyeol", day: "2026-11-26", half: "am" as const, why: ["earliest"] },
 ];
 export const MARU_SLOTS = [
-  { ref: "m1", vendor: "maru", day: "2026-11-25", half: "am" as const, why: ["vendor_proposal"] },
-  { ref: "m2", vendor: "maru", day: "2026-11-26", half: "pm" as const, why: ["vendor_proposal"] },
+  { ref: "s4", vendor: "maru", day: "2026-11-25", half: "am" as const, why: ["vendor_proposal"] },
+  { ref: "s5", vendor: "maru", day: "2026-11-26", half: "pm" as const, why: ["vendor_proposal"] },
 ];
+/** 마루와벽이 다른 날을 내며 적은 말(업체 글 그대로) */
+export const MARU_NOTE = "이번 주는 다른 현장이 있어 이 두 날만 돼요";
 
-/** 실측 견적서(업체가 적은 칸 + 계산 엔진 합계 · 차액) */
+/** 실측 견적서(업체가 적은 칸 + 계산 엔진 합계 · 차액). vendor_note는 벽지 사양 칸(업체가 적은 말) */
 export const QUOTES = {
-  gyeol1: { version: 1, received_on: "2026-11-26", total_won: 4_180_000, diff_vs_estimate_won: -2_300, days: 2, valid_until: "2026-12-31", demolish: true, waste: true, paper: "LX 베스띠", warranty_months: 12, file: "PDF" },
-  gyeol2: { version: 2, received_on: "2026-11-26", total_won: 4_290_000, diff_vs_estimate_won: 107_700, days: 2, valid_until: "2026-12-31", demolish: true, waste: true, paper: "LX 베스띠", warranty_months: 12, file: "PDF" },
-  bareun1: { version: 1, received_on: "2026-11-25", total_won: 4_510_000, diff_vs_estimate_won: 112_000, days: 2, valid_until: "2026-11-27", demolish: true, waste: null, paper: "개나리 로하스", warranty_months: 6, file: "사진 3장" },
+  gyeol1: { version: 1, received_on: "2026-11-26", total_won: 4_180_000, diff_vs_estimate_won: -2_300, days: 2, valid_until: "2026-12-31", demolish: true, waste: true, vendor_note: "LX 베스띠", warranty_months: 12, file: "PDF" },
+  gyeol2: { version: 2, received_on: "2026-11-26", total_won: 4_290_000, diff_vs_estimate_won: 107_700, days: 2, valid_until: "2026-12-31", demolish: true, waste: true, vendor_note: "LX 베스띠", warranty_months: 12, file: "PDF" },
+  bareun1: { version: 1, received_on: "2026-11-25", total_won: 4_510_000, diff_vs_estimate_won: 112_000, days: 2, valid_until: "2026-11-27", demolish: true, waste: null, vendor_note: "개나리 로하스 · 거실만 친환경 풀", warranty_months: 6, file: "사진 3장" },
   /** 두 곳 차이(서버 gap_total) */
   gap1: 330_000,
   gap2: 220_000,
@@ -79,8 +87,8 @@ export const KNOW = {
 };
 
 export const MEMORY_SEED = [
-  { id: "mem-1", key: "avail_half" as const, value: "평일 오전이 편해요", evidence_message_id: "u-seed-1", evidence_quote: "평일 오전이 편해요" },
-  { id: "mem-2", key: "material" as const, value: "아이 방은 냄새 적은 풀", evidence_message_id: "u-seed-2", evidence_quote: "아이 방은 냄새 적은 풀이면 좋겠어요" },
+  { id: "mem-1", key: "avail_half" as const, label: "편한 때", value: "평일 오전이 편해요", evidence_message_id: "u-seed-1", evidence_quote: "평일 오전이 편해요", updated_at: T("2026-11-20", "21:10") },
+  { id: "mem-2", key: "material" as const, label: "자재 바람", value: "아이 방은 냄새 적은 풀", evidence_message_id: "u-seed-2", evidence_quote: "아이 방은 냄새 적은 풀이면 좋겠어요", updated_at: T("2026-11-20", "21:12") },
 ];
 
 /** 업체 쪽(V1 · V3) */

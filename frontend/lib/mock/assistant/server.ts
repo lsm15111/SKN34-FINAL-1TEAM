@@ -7,13 +7,13 @@
 // - 실제 서버처럼 전체 화면 카드 안 v3 단추가 한 일은 행동 행을 닫지 않아요('처리됨'은 화면이 표시해요).
 import { ApiError, type Schemas } from "@/lib/backend/client";
 import {
-  applyTurnEvent, replaceAction, replaceCard,
+  applyTurnEvent, MEMORY_LABEL, replaceAction, replaceCard,
   type ActionKind, type ActionOut, type ActionStatus, type ActionSummary, type BoardOut, type BriefSeed, type CardOut, type CompareCol,
   type Demolition, type FeedItem, type FeedPage, type HealthOut, type HomeInfoData, type MemoryOut, type NotifyPage, type QuoteChecklistData,
-  type QuoteCompareData, type TaskOut, type TaskRow, type ThreadOut, type TodayData, type TurnEvent, type TurnIn, type VendorBriefData,
+  type QuoteCompareData, type SuggestOut, type TaskOut, type TaskRow, type ThreadOut, type TodayData, type TurnEvent, type TurnIn, type VendorBriefData,
   type VendorTodayData,
 } from "@/lib/api/assistant";
-import { dateLong, dateShort, halfDayText, rangeText, won } from "@/lib/format";
+import { dateLong, dateShort, euro, halfDayText, rangeText, won } from "@/lib/format";
 import type { MockScript } from "./mode";
 import * as D from "./data";
 
@@ -36,6 +36,10 @@ type State = {
   quoteFailOnce: boolean;
   todayDismissed: boolean;
   demolition: Demolition | null;
+  /** 희망 기간 카드에서 고른 기간(r1 …). 실측 요청 승인 카드의 희망 기간이 돼요 */
+  wish: string | null;
+  /** 확정 승인 카드를 만든 · 확정한 업체 */
+  deal: "gyeol" | "bareun";
   /** 승인 뒤 이어질 일(새로 고쳐도 이어지게 시각과 함께 저장) */
   pending: { beat: Beat; at: number }[];
 };
@@ -46,12 +50,12 @@ type Draft =
   | { type: "card"; data: CardOut }
   | { type: "action"; data: ActionOut }
   | { type: "token"; data: { text: string } }
-  | { type: "done"; data: { rev: number; mode: "llm" | "free"; cards: string[]; actions: string[]; chips?: string[]; stopped?: boolean; suggest?: { id: string; text: string; why: string; say: string; nudge_id?: string | null } | null } }
+  | { type: "done"; data: { rev: number; mode: "llm" | "free"; cards: string[]; actions: string[]; chips?: string[]; stopped?: boolean; suggest?: SuggestOut[] } }
   | { type: "error"; data: { code: string; message: string } };
 type Step = { wait: number; ev: Draft; clock?: string; apply?: (s: State) => void; dup?: boolean };
 type Plan = { steps: Step[]; after?: (s: State) => void };
 
-const VERSION = 5;
+const VERSION = 6;
 const KEY = (pid: string) => `mj_v4_mock:${pid}`;
 const MEMORY_KEY = "mj_v4_mock:memory";
 const cache = new Map<string, State>();
@@ -105,7 +109,7 @@ function enqueue<T>(pid: string, fn: () => Promise<T>): Promise<T> {
 
 const base = (pid: string, script: MockScript, clock: string): State => ({
   v: VERSION, pid, script, stage: "standard", clock, items: [], actions: {}, chips: [], rev: 1, n: 0,
-  notes: [], picks: ["gyeol", "bareun", "maru"], quoteVer: 1, quoteFailOnce: true, todayDismissed: false, demolition: null, pending: [],
+  notes: [], picks: ["gyeol", "bareun", "maru"], quoteVer: 1, quoteFailOnce: true, todayDismissed: false, demolition: null, wish: null, deal: "gyeol", pending: [],
 });
 const href = (s: State, tail = "") => `/projects/${encodeURIComponent(s.pid)}${tail}`;
 const nextId = (s: State, p: string) => `${p}-${++s.n}`;
@@ -155,7 +159,7 @@ function picksCard(s: State): CardOut<"vendor_picks"> {
     data: {
       area_name: "노원구",
       picks: D.VENDORS.map((v) => ({
-        ref: v.key, vendor_id: v.id, name: v.name, photo: v.photo, photo_alt: `${v.name} 시공 사례`, rating: v.rating, reviews: v.reviews,
+        ref: v.ref, vendor_id: v.id, name: v.name, photo: v.photo, photo_alt: `${v.name} 시공 사례`, rating: v.rating, reviews: v.reviews,
         done_jobs: v.done, estimate_won: v.est, reasons: v.reasons, badge: v.badge ?? null, picked: s.picks.includes(v.key), href: href(s, "/vendors"),
       })),
       basis: ["이 구에서 일하고 이 공정을 해요", "업체가 단가를 확인해 가견적이 있어요", "별점 · 끝낸 공사 · 가견적으로 점수를 매겨요"],
@@ -165,12 +169,13 @@ function picksCard(s: State): CardOut<"vendor_picks"> {
 }
 function visitRequestAction(s: State): ActionOut {
   const vs = D.VENDORS.filter((v) => s.picks.includes(v.key));
+  const w = D.WISHES.find((x) => x.ref === s.wish) ?? D.WISH;
   return makeAction(s, "visit_request", {
     title: "실측 요청 보내기",
     amounts: vs.map((v) => ({ label: v.name, won: v.est })),
     rows: [
       { label: "가견적", value: "11월 15일 확인한 단가로 고정돼요" },
-      { label: "희망 기간", value: rangeText(D.WISH.start, D.WISH.end, { weekday: true }), sub: `공사 시작 희망 ${dateLong(D.WISH.work_wish_on)} 기준` },
+      { label: "희망 기간", value: rangeText(w.start, w.end, { weekday: true }), sub: s.wish ? "고른 희망 기간이에요" : `공사 시작 희망 ${dateLong(D.WISH.work_wish_on)} 기준` },
       { label: "사진", value: "4장" },
     ],
     note: "업체마다 48시간 안에 갈 수 있는 기간을 답해요. 연락은 믿집 채팅으로 이어요",
@@ -196,11 +201,9 @@ function visitTask(s: State, phase: "sent" | "answered" | "booked" | "quoted" | 
       { label: "바른벽", state: "done", text: "견적서 옴", note: "1판 · 11.25(수)" },
       { label: "마루와벽", state: "need", text: "날짜 고를 차례", note: "업체가 다른 날을 냈어요" },
     ],
-    closed: [
-      { label: "결도배", state: "done", text: "확정", note: `${s.quoteVer}판` },
-      { label: "바른벽", state: "cancelled", text: "닫힘", note: "다른 업체를 확정했어요" },
-      { label: "마루와벽", state: "cancelled", text: "닫힘", note: "다른 업체를 확정했어요" },
-    ],
+    closed: D.VENDORS.map((v): TaskRow => (v.key === s.deal
+      ? { label: v.name, state: "done", text: "확정", note: `${v.key === "gyeol" ? s.quoteVer : 1}판` }
+      : { label: v.name, state: "cancelled", text: "닫힘", note: "다른 업체를 확정했어요" })),
   };
   const title = phase === "quoted" || phase === "closed" ? "실측 · 견적서 3곳" : `실측 요청 ${rows.sent.length || 3}곳`;
   const state = phase === "closed" ? "done" : "waiting";
@@ -221,11 +224,15 @@ function slotsCard(s: State, who: "gyeol" | "maru", chosen: string): CardOut<"vi
       candidates: list.map((c) => ({ ref: c.ref, vendor_name: v.name, day: c.day, half: c.half, why: am && c.half === "am" && who === "gyeol" ? ["prefer_half", ...c.why] : c.why })),
       wishes: [],
       chosen, instant: who === "maru", calendar_href: href(s, "/visits"),
+      vendor_note: who === "maru" ? D.MARU_NOTE : null,
     },
   };
 }
-function slotAction(s: State, who: "gyeol" | "maru", ref: string): ActionOut {
+/** 반나절 이름표 → 그 업체(마루와벽이 낸 날이면 maru) */
+const slotOwner = (ref: string): "gyeol" | "maru" => (D.MARU_SLOTS.some((x) => x.ref === ref) ? "maru" : "gyeol");
+function slotAction(s: State, ref: string): ActionOut {
   const c = [...D.SLOTS, ...D.MARU_SLOTS].find((x) => x.ref === ref) ?? D.SLOTS[0];
+  const who = slotOwner(c.ref);
   const v = D.vendorOf(who);
   return makeAction(s, "visit_slot", {
     title: `${v.name} 실측 ${halfDayText(c.day, c.half)}`,
@@ -242,7 +249,7 @@ function compareCard(s: State): CardOut<"quote_compare"> {
   const col = (ref: string, vid: string, name: string, q: typeof g | typeof b, changed: CompareCol["changed"]): CompareCol => ({
     ref, visit_id: vid, vendor_name: name, state: "quoted", version: q.version, received_on: q.received_on, total_won: q.total_won, changed,
     diff_vs_estimate_won: q.diff_vs_estimate_won, days: q.days, valid_until: q.valid_until, valid_soon: q.valid_until === "2026-11-27",
-    demolish: q.demolish, waste: q.waste, paper: q.paper, warranty_months: q.warranty_months,
+    demolish: q.demolish, waste: q.waste, vendor_note: q.vendor_note, warranty_months: q.warranty_months,
     file: { kind: q.file === "PDF" ? "pdf" : "image", label: q.file, href: href(s, "/quotes") },
   });
   const data: QuoteCompareData = {
@@ -257,24 +264,31 @@ function compareCard(s: State): CardOut<"quote_compare"> {
   };
   return { card_id: "compare-dobae", kind: "quote_compare", say: "실측 견적서가 2곳 왔어요.", data };
 }
-function confirmAction(s: State, supersedes: string | null = null): ActionOut {
-  const g = s.quoteVer === 2 ? D.QUOTES.gyeol2 : D.QUOTES.gyeol1;
+/** 확정할 업체의 지금 견적서(결도배는 판이 바뀔 수 있어요) */
+const quoteOf = (s: State, who: "gyeol" | "bareun") => (who === "bareun" ? D.QUOTES.bareun1 : s.quoteVer === 2 ? D.QUOTES.gyeol2 : D.QUOTES.gyeol1);
+/** 비교 카드 열 이름표(m1 결도배 · m2 바른벽) → 업체. 견적서가 없는 열(m3)은 null */
+const quoteOwner = (ref: string): "gyeol" | "bareun" | null => (ref === "m1" ? "gyeol" : ref === "m2" ? "bareun" : null);
+function confirmAction(s: State, who: "gyeol" | "bareun" = "gyeol", supersedes: string | null = null): ActionOut {
+  const g = quoteOf(s, who);
+  const name = euro(D.vendorOf(who).name);
   return makeAction(s, "vendor_confirm", {
-    title: "결도배로 확정",
+    title: `${name} 확정`,
     amount_won: g.total_won,
-    diff: s.quoteVer === 2 ? { label: "1판보다", from_won: D.QUOTES.gyeol1.total_won, to_won: g.total_won, diff_won: D.QUOTES.change } : null,
+    diff: who === "gyeol" && s.quoteVer === 2 ? { label: "1판보다", from_won: D.QUOTES.gyeol1.total_won, to_won: g.total_won, diff_won: D.QUOTES.change } : null,
     version: `견적서 ${g.version}판`,
     rows: [{ label: "공사 기간", value: `${g.days}일` }, { label: "유효기간", value: `${g.valid_until}까지` }],
     note: "확정하면 같은 공정의 다른 요청은 닫혀요",
-    approve_label: "결도배로 확정",
-  }, D.T("2026-12-31", "18:00"), { target_ver: `${g.version}`, supersedes });
+    approve_label: `${name} 확정`,
+  }, D.T(g.valid_until, "18:00"), { target_ver: `${who}-${g.version}`, supersedes });
 }
+/** 확정한 업체 이름 + 이/가(결도배가 · 바른벽이) */
+const dealWho = (s: State) => `${D.vendorOf(s.deal).name}${s.deal === "gyeol" ? "가" : "이"}`;
 function datesCard(s: State, phase: "dates" | "final"): CardOut<"schedule"> {
   return {
     card_id: phase === "dates" ? "dates-1" : "plan-2", kind: "schedule",
-    say: phase === "dates" ? "결도배가 공사 날짜를 올렸어요." : "확정 공정표예요.",
+    say: phase === "dates" ? `${dealWho(s)} 공사 날짜를 올렸어요.` : "확정 공정표예요.",
     data: {
-      phase, vendor_name: "결도배", start: D.WORK.start, end: D.WORK.end, work_days: D.WORK.work_days, days: D.WORK.days,
+      phase, vendor_name: D.vendorOf(s.deal).name, start: D.WORK.start, end: D.WORK.end, work_days: D.WORK.work_days, days: D.WORK.days,
       conflicts: [], plan_version: phase === "dates" ? 1 : 2,
       href: href(s, phase === "dates" ? "/schedule" : "/plan"), ics_href: phase === "final" ? `/api/projects/${encodeURIComponent(s.pid)}/plan.ics` : null,
     },
@@ -303,8 +317,9 @@ function init(pid: string, script: MockScript): State {
 }
 function initF1(pid: string): State {
   const s = base(pid, "f1", D.T("2026-11-21", "10:00"));
+  // 먼저 말 건 줄(서버 feed처럼 turn_id 없음 · nudge_id)이라 턴이 이어져도 제안이 남아요
   s.items = [{
-    id: "a-hello", role: "assistant", at: s.clock, turn_id: "hello", done: true,
+    id: "a-hello", role: "assistant", at: s.clock, turn_id: null, nudge_id: "nudge-vendors", done: true,
     parts: [
       { t: "text", src: "guide", text: "안녕하세요. 공사를 끝까지 챙기는 믿집 비서예요.\n첫 대화에서 넣은 집으로 표준견적서를 만들었어요." },
       { t: "card", card: homeCard(s) },
@@ -373,7 +388,7 @@ function boardOf(s: State): BoardOut {
   const g = s.quoteVer === 2 ? D.QUOTES.gyeol2 : D.QUOTES.gyeol1;
   const money: BoardOut["money"] =
     s.stage === "compare" ? { label: "받은 견적서 · 부가세 포함", range: [g.total_won, D.QUOTES.bareun1.total_won] }
-      : i >= 4 ? { label: "확정 금액 · 부가세 포함", won: g.total_won }
+      : i >= 4 ? { label: "확정 금액 · 부가세 포함", won: quoteOf(s, s.deal).total_won }
         : { label: "표준견적서 · 부가세 포함", won: D.STANDARD.total_won };
   const picked = D.VENDORS.filter((v) => s.picks.includes(v.key));
   const vendors: BoardOut["vendors"] =
@@ -381,7 +396,7 @@ function boardOf(s: State): BoardOut {
       : s.stage === "requested" ? { title: "업체", rows: picked.map((v) => ({ name: v.name, state: "waiting", text: "답 기다림" })) }
         : s.stage === "slots" || s.stage === "booked" ? { title: "업체", rows: visitTask(s, s.stage === "slots" ? "answered" : "booked").rows!.map((r) => ({ name: r.label, state: r.state, text: r.text })) }
           : s.stage === "compare" ? { title: "업체", rows: [{ name: "결도배", state: "done", text: `견적서 ${s.quoteVer}판` }, { name: "바른벽", state: "done", text: "견적서 1판" }, { name: "마루와벽", state: "need", text: "날짜 고르기" }] }
-            : i >= 4 ? { title: "확정 업체", rows: [{ name: "결도배", state: "done", text: s.stage === "final" ? "공사 날짜 수락" : s.stage === "dates" ? "공사 날짜 옴" : "공사 날짜 기다림" }] }
+            : i >= 4 ? { title: "확정 업체", rows: [{ name: D.vendorOf(s.deal).name, state: "done", text: s.stage === "final" ? "공사 날짜 수락" : s.stage === "dates" ? "공사 날짜 옴" : "공사 날짜 기다림" }] }
               : null;
   const period: BoardOut["period"] =
     s.stage === "dates" || s.stage === "final"
@@ -406,7 +421,8 @@ function learn(text: string) {
     // 카드에서 고른 날짜 말('11.25(수) 오후로 할래요')은 기억하지 않아요
     if (!re.test(text) || text.length > 40 || /\d+\.\d+/.test(text)) continue;
     const value = text.replace(/[.!?]+$/, "").slice(0, 30);
-    m = [...m.filter((x) => x.key !== key), { id: `mem-${Date.now().toString(36)}-${key}`, key, value, evidence_message_id: "u", evidence_quote: text }];
+    const label = MEMORY_LABEL[key as keyof typeof MEMORY_LABEL];
+    m = [...m.filter((x) => x.key !== key), { id: `mem-${Date.now().toString(36)}-${key}`, key, label, value, evidence_message_id: "u", evidence_quote: text, updated_at: new Date().toISOString() }];
   }
   writeMemory(m);
 }
@@ -414,27 +430,34 @@ function learn(text: string) {
 function respond(s: State, body: TurnIn, turnId: string): Plan {
   const text = body.text.trim();
   const choice = body.context?.choice;
-  const cardId = body.context?.card_id ?? "";
   const head: Step[] = [step({ type: "ack", data: { turn_id: turnId, chat_id: "chat-mock", at: s.clock } })];
   const reply = (steps: Step[], after?: Plan["after"]): Plan => ({ steps: [...head, ...steps], after });
   const answer = (t: string, links: { label: string; href: string }[] = [], chips = s.chips) =>
     reply([step({ type: "status", data: { text: "답을 찾고 있어요" } }, 300), step({ type: "card", data: answerCard(s, t, links) }, 500), done(s, chips)]);
 
-  if (cardId === "home" && typeof choice === "string" && choice.startsWith("demolition:")) return reply(demolitionAsked(s, choice.slice(11) as Demolition));
-  if (cardId === "picks-dobae" && Array.isArray(choice)) return reply(repick(s, choice));
-  if (cardId.startsWith("slots-") && typeof choice === "string") return reply(reslot(s, cardId === "slots-maru" ? "maru" : "gyeol", choice));
+  // 카드 단추(계약 꼴 choice, 서버 assistant/choices.py와 같게): 칸 · 행동이면 승인 카드를 만들어요. 다른 꼴은 말로만 봐요
+  const picked = typeof choice === "string" ? choice : "";
+  const cut = picked.indexOf(":");
+  const kind = cut > 0 ? picked.slice(0, cut) : "";
+  const rest = cut > 0 ? picked.slice(cut + 1) : "";
+  const args = rest.split(",").map((x) => x.trim()).filter(Boolean);
+  if (kind === "demolition") return reply(demolitionAsked(s, rest as Demolition));
+  if (kind === "visit_request") return reply(repick(s, args));
+  if (kind === "visit_slot" && args[0]) return reply(reslot(s, args[0]));
+  if (kind === "vendor_confirm" && args[0]) return reply(confirmBeat(s, args[0]));
 
   if (/다시 만들어/.test(text)) {
     if (/실측 요청/.test(text)) return reply(vendorsBeat(s));
     if (/확정/.test(text)) return reply(compareBeat(s, true));
     if (/마루와벽/.test(text)) return reply(maruBeat(s));
-    if (/실측/.test(text)) return reply(reslot(s, "gyeol", "s1"));
+    if (/실측/.test(text)) return reply(reslot(s, "s1"));
     if (/수락/.test(text)) {
       const close = closeOpen(s, "dates_accept");
       return reply([step({ type: "card", data: datesCard(s, "dates") }, 400), ...close, step({ type: "action", data: datesAction(s) }, 300), done(s, s.chips)]);
     }
   }
   if ((s.stage === "standard" || s.stage === "vendors") && /업체/.test(text) && /추천|골라/.test(text)) return reply(vendorsBeat(s));
+  if ((s.stage === "standard" || s.stage === "vendors") && /실측\S{0,2}\s*(?:시간|언제|날짜|일정)|희망 기간 후보/.test(text)) return reply(wishBeat(s));
   if (/다른 업체/.test(text)) return answer("업체 목록에서 더 볼 수 있어요. 가견적 낮은 순으로 보여요.", [{ label: "업체 목록 열기", href: href(s, "/vendors") }]);
   if (/가견적/.test(text)) return answer("가견적은 업체가 확인한 단가에 믿집이 센 수량을 곱해 계산 엔진이 만든 금액이에요. 실측 뒤 업체가 보내는 견적서와 달라질 수 있어요.", [{ label: "표준견적서 보기", href: href(s, "/standard") }]);
   if (/견적서 비교|비교 보기/.test(text)) return reply(compareBeat(s, true));
@@ -502,19 +525,51 @@ function vendorsBeat(s: State): Step[] {
     ...close,
     step({ type: "action", data: act }, 400, { apply: (x) => { x.stage = "vendors"; } }),
     ...sentences("세 곳 모두 단가를 확인한 업체예요. 고른 곳에만 실측 요청이 가요."),
-    done(s, ["가견적은 어떻게 계산해요?", "실측은 무엇을 봐요?"]),
+    // 다음에 물을 말은 목록(0~3개)이에요: 첫 것은 제안 카드, 나머지는 칩으로 보여요
+    done(s, ["가견적은 어떻게 계산해요?", "실측은 무엇을 봐요?"], { suggest: [
+      { id: "step-pick", text: "실측 희망 기간을 볼까요?", why: "담은 업체에 실측을 요청할 차례예요", say: "실측 시간 찾아 줘" },
+      { id: "idea-standard", text: "표준견적서 금액을 풀어 볼까요?", why: "가장 큰 줄부터 볼 수 있어요", say: "표준견적서 금액 풀이해 줘" },
+    ] }),
   ];
 }
-function repick(s: State, keys: string[]): Step[] {
-  const valid = keys.filter((k) => D.VENDORS.some((v) => v.key === k));
-  s.picks = valid;
-  if (!valid.length) return [step({ type: "card", data: picksCard(s) }, 0), ...closeOpen(s, "visit_request"), step({ type: "token", data: { text: "업체를 한 곳 이상 골라 주세요." } }, 200), done(s, s.chips)];
-  const close = closeOpen(s, "visit_request");
-  return [step({ type: "card", data: picksCard(s) }, 0), ...close, step({ type: "action", data: visitRequestAction(s) }, 500), done(s, s.chips)];
+/** 희망 기간 카드(요청 전): 첫 고른 업체의 빈 반나절로 고른 기간 후보. 고르면 실측 요청 승인 카드가 그 기간으로 바뀌어요 */
+function wishCard(s: State): CardOut<"visit_slots"> {
+  const v = D.VENDORS.find((x) => s.picks.includes(x.key)) ?? D.VENDORS[0];
+  return {
+    card_id: `wish-${v.ref}`, kind: "visit_slots",
+    data: { vendor_name: v.name, window: null, candidates: [], wishes: D.WISHES, chosen: null, instant: false, calendar_href: href(s, "/visits/new"), vendor_note: null },
+  };
 }
-function reslot(s: State, who: "gyeol" | "maru", ref: string): Step[] {
+function wishBeat(s: State): Step[] {
+  return [
+    step({ type: "status", data: { text: "업체 빈 시간을 보고 있어요" } }, 300),
+    // 처음(추천 전)이면 업체 추천 카드도 같이 보여요(승인 카드 없이: 고른 업체로 [n곳에 실측 요청하기])
+    ...(s.stage === "standard" ? [step({ type: "card", data: picksCard(s) }, 500)] : []),
+    step({ type: "card", data: wishCard(s) }, 600),
+    ...sentences("공사 시작 희망일에 맞춘 실측 희망 기간 후보예요. 고르면 실측 요청 승인 카드가 그 기간으로 바뀌어요."),
+    done(s, s.chips),
+  ];
+}
+/** visit_request:v…[,r…] → 고른 업체(목업 key)와 희망 기간으로 실측 요청 승인 카드를 새로 만들어요 */
+function repick(s: State, refs: string[]): Step[] {
+  const wish = refs.find((r) => D.WISHES.some((w) => w.ref === r));
+  if (wish) s.wish = wish;
+  const keys = D.VENDORS.filter((v) => refs.includes(v.ref)).map((v) => v.key);
+  if (!keys.length) return [step({ type: "token", data: { text: "고른 업체가 없어요. 업체 카드에서 다시 골라 주세요." } }, 200), done(s, s.chips)];
+  s.picks = keys;
+  const close = closeOpen(s, "visit_request");
+  return [step({ type: "card", data: picksCard(s) }, 0), ...close, step({ type: "action", data: visitRequestAction(s) }, 500, { apply: (x) => { if (x.stage === "standard") x.stage = "vendors"; } }), done(s, s.chips)];
+}
+function reslot(s: State, ref: string): Step[] {
   const close = closeOpen(s, "visit_slot");
-  return [step({ type: "card", data: slotsCard(s, who, ref) }, 0), ...close, step({ type: "action", data: slotAction(s, who, ref) }, 500), done(s, s.chips)];
+  return [step({ type: "card", data: slotsCard(s, slotOwner(ref), ref) }, 0), ...close, step({ type: "action", data: slotAction(s, ref) }, 500), done(s, s.chips)];
+}
+/** vendor_confirm:m… → 그 업체 확정 승인 카드(같은 종류 열린 카드는 새 카드로 바뀌어요) */
+function confirmBeat(s: State, ref: string): Step[] {
+  const who = quoteOwner(ref);
+  if (!who) return [step({ type: "token", data: { text: "아직 확정할 수 있는 견적서가 없어요." } }, 200), done(s, s.chips)];
+  const close = closeOpen(s, "vendor_confirm");
+  return [...close, step({ type: "action", data: confirmAction(s, who) }, 400), done(s, s.chips)];
 }
 function compareBeat(s: State, inline: boolean): Step[] {
   const close = closeOpen(s, "vendor_confirm");
@@ -529,7 +584,8 @@ function compareBeat(s: State, inline: boolean): Step[] {
 }
 function maruBeat(s: State): Step[] {
   const close = closeOpen(s, "visit_slot");
-  return [step({ type: "card", data: slotsCard(s, "maru", "m1") }, 600), ...close, step({ type: "action", data: slotAction(s, "maru", "m1") }, 300), done(s, s.chips)];
+  const first = D.MARU_SLOTS[0].ref;
+  return [step({ type: "card", data: slotsCard(s, "maru", first) }, 600), ...close, step({ type: "action", data: slotAction(s, first) }, 300), done(s, s.chips)];
 }
 
 // ───── 승인 뒤 이어지는 일(서버가 먼저 보내는 턴)
@@ -562,7 +618,7 @@ function beatOf(s: State, beat: Beat): { clock?: string; steps: Step[] } {
         step({ type: "status", data: { text: "업체가 답했어요", task: visitTask(s, "answered") } }, 300, { apply: (x) => { x.stage = "slots"; } }),
         ...closeOpen(s, "visit_slot"),
         step({ type: "card", data: slotsCard(s, "gyeol", "s1") }, 700),
-        step({ type: "action", data: slotAction(s, "gyeol", "s1") }, 300),
+        step({ type: "action", data: slotAction(s, "s1") }, 300),
         done(s, ["다른 시간도 볼래요", "실측은 무엇을 봐요?"]),
       ] };
     case "booked":
@@ -583,11 +639,11 @@ function beatOf(s: State, beat: Beat): { clock?: string; steps: Step[] } {
     case "closed":
       return { steps: [
         step({ type: "status", data: { text: "확정했어요", task: visitTask(s, "closed") } }, 300, { apply: (x) => { x.stage = "confirmed"; } }),
-        ...sentences("결도배가 공사 날짜를 올리면 알려 드릴게요. 확정한 견적서는 바뀌지 않아요."),
+        ...sentences(`${dealWho(s)} 공사 날짜를 올리면 알려 드릴게요. 확정한 견적서는 바뀌지 않아요.`),
         done(s, ["공사 날짜는 언제 와요?"]),
       ] };
     case "dates":
-      note(s, "결도배가 공사 날짜를 올렸어요", "/schedule", "dates_proposed");
+      note(s, `${dealWho(s)} 공사 날짜를 올렸어요`, "/schedule", "dates_proposed");
       return { clock: D.T("2026-11-27", "11:00"), steps: [
         step({ type: "card", data: datesCard(s, "dates") }, 500, { apply: (x) => { x.stage = "dates"; } }),
         step({ type: "action", data: datesAction(s) }, 400),
@@ -690,14 +746,15 @@ export async function approve(pid: string, actionId: string, _clientKey: string)
     if (a.status === "executed") return a;
     if (a.status !== "proposed") throw new ApiError(409, a.status === "expired" && a.error_code === "due" ? "expired" : "action_closed", a.error_code === "replaced" ? "새 카드로 바뀐 제안이에요." : "기한이 지난 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.");
     await sleep(700);
-    if (a.kind === "vendor_confirm" && s.quoteFailOnce && s.quoteVer === 1) {
+    const bareun = a.kind === "vendor_confirm" && a.summary.title.startsWith("바른벽");
+    if (a.kind === "vendor_confirm" && !bareun && s.quoteFailOnce && s.quoteVer === 1) {
       // 그사이 결도배가 2판을 보냈어요 → 옛 행동은 실패(quote_changed), 새 판 + 차액으로 새 행동(supersedes)
       s.quoteFailOnce = false;
       s.quoteVer = 2;
       s.clock = D.T("2026-11-26", "18:41");
       const failed: ActionOut = { ...a, status: "failed", error_code: "quote_changed" };
       s.actions[a.action_id] = failed;
-      const fresh = confirmAction(s, a.action_id);
+      const fresh = confirmAction(s, "gyeol", a.action_id);
       s.items = s.items.map((it) => (it.role === "assistant" ? { ...it, parts: it.parts.map((p) => (p.t === "action" && p.action.action_id === a.action_id ? { t: "action" as const, action: fresh } : p)) } : it));
       s.items = replaceCard(s.items, compareCard(s));
       note(s, "결도배가 실측 견적서를 다시 보냈어요", "/quotes", "quote_resent");
@@ -709,11 +766,12 @@ export async function approve(pid: string, actionId: string, _clientKey: string)
       a.kind === "home_info" ? { text: "집 정보를 저장했어요" }
         : a.kind === "visit_request" ? { text: `${s.picks.length}곳에 요청을 보냈어요`, href: href(s, "/visits"), label: "실측 일정 보기" }
           : a.kind === "visit_slot" ? { text: a.summary.title.startsWith("마루와벽") ? "실측을 잡았어요" : "고른 시간을 보냈어요. 업체가 수락하면 확정돼요", href: href(s, "/visits"), label: "실측 일정 보기" }
-            : a.kind === "vendor_confirm" ? { text: "결도배로 확정했어요", href: href(s, "/quotes"), label: "견적서 보기" }
+            : a.kind === "vendor_confirm" ? { text: `${a.summary.title}했어요`, href: href(s, "/quotes"), label: "견적서 보기" }
               : a.kind === "dates_accept" ? { text: "공사 날짜를 수락했어요", href: href(s, "/plan"), label: "공정표 보기" }
                 : { text: "했어요" };
     const fin: ActionOut = { ...a, status: "executed", decided_at: at, executed_at: at, result };
     setAction(s, fin);
+    if (a.kind === "vendor_confirm") s.deal = bareun ? "bareun" : "gyeol";
     if (a.kind === "home_info") {
       const picked = /전체/.test(a.summary.rows?.[0]?.value ?? "") ? "full" : /일부/.test(a.summary.rows?.[0]?.value ?? "") ? "partial" : "none";
       s.demolition = picked;

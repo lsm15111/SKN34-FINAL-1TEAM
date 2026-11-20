@@ -1,5 +1,5 @@
 // 대화 카드가 받는 것. 카드는 값을 계산하지 않고, 고른 것을 턴(send)이나 승인(approve)으로만 넘겨요.
-import type { ActionOut, CardKind, CardOut, TurnIn } from "@/lib/api/assistant";
+import type { ActionKind, ActionOut, CardKind, CardOut, TurnIn } from "@/lib/api/assistant";
 
 export type CardCtx = {
   projectId: string;
@@ -15,6 +15,12 @@ export type CardCtx = {
   /** 전체 화면 카드 안 v3 단추로 이미 처리한 행동 */
   handledOf: (actionId: string) => boolean;
   dismissNudge: (cardId: string, nudgeId: string) => void;
+  /** 화면에서 고른 이름표(card_id마다). 업체 추천 카드 ↔ 희망 기간 카드가 같이 봐요. 서버에는 choice로만 가요 */
+  marks: Record<string, string[]>;
+  mark: (cardId: string, refs: string[] | null) => void;
+  /** 대화에서 가장 나중의 그 kind 카드 · 그 종류 행동(없으면 null) */
+  lastCard: <K extends CardKind>(kind: K, test?: (c: CardOut<K>) => boolean) => CardOut<K> | null;
+  lastAction: (kind: ActionKind) => ActionOut | null;
 };
 
 export type CardProps<K extends CardKind> = { card: CardOut<K>; ctx: CardCtx; old: boolean };

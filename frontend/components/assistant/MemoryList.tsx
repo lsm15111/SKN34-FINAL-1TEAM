@@ -40,7 +40,7 @@ export function MemoryList() {
           {list.map((x) => (
             <li key={x.id}>
               <div className={m.body}>
-                <span className={m.key}>{MEMORY_LABEL[x.key as MemoryKey] ?? "기억"}</span>
+                <span className={m.key}>{x.label || MEMORY_LABEL[x.key as MemoryKey] || "기억"}</span>
                 <b>{x.value}</b>
                 {x.evidence_quote ? <blockquote className={m.quote}><span>내가 한 말</span>{x.evidence_quote}</blockquote> : null}
               </div>

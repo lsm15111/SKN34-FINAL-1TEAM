@@ -5,7 +5,7 @@
 // 알림 링크에 ?nudge={id}가 붙어 오면 먼저 말 건 제안을 '열었어요'로 알리고 주소에서 떼요.
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { mockScriptOf, type ActionOut } from "@/lib/api/assistant";
+import { lastActionIn, lastCardIn, mockScriptOf, type ActionOut } from "@/lib/api/assistant";
 import type { MockScript } from "@/lib/mock/assistant/mode";
 import { Board } from "./Board";
 import { CardSlot } from "./CardSlot";
@@ -27,6 +27,13 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
   const col = useRef<HTMLDivElement>(null);
   const [boardOpen, setBoardOpen] = useState(false);
   const [mock, setMock] = useState<MockScript | null>(null);
+  // 카드에서 고른 이름표(card_id마다, 화면에만). 공사 · 목업 대본이 바뀌면 비워요
+  const [marks, setMarks] = useState<Record<string, string[]>>({});
+  useEffect(() => { setMarks({}); }, [projectId]);
+  const mark = useCallback((cardId: string, refs: string[] | null) => setMarks((m) => {
+    const { [cardId]: _, ...rest } = m;
+    return refs ? { ...rest, [cardId]: refs } : rest;
+  }), []);
 
   // 이 공사 안에서 다닌 길(닫기 = 뒤로 가기가 이 화면 안에 머무는지 알려고)
   const stack = useRef<string[]>([]);
@@ -66,7 +73,7 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
   const waitingReply = a.running && last?.role === "user";
   const tick = a.items.length + (last?.role === "assistant" && last.done ? 1000 : 0);
 
-  const { approve: approveFn, actionOf, send, pending, handled, dismissNudge } = a;
+  const { approve: approveFn, actionOf, send, pending, handled, dismissNudge, items } = a;
   const ctx: CardCtx = useMemo(() => ({
     projectId,
     now: a.now,
@@ -77,7 +84,11 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
     pendingOf: (id) => !!pending[id],
     handledOf: (id) => !!handled[id],
     dismissNudge: (cardId, nudgeId) => { void dismissNudge(cardId, nudgeId); },
-  }), [projectId, a.now, a.running, send, approveFn, actionOf, pending, handled, dismissNudge]);
+    marks,
+    mark,
+    lastCard: (kind, test) => lastCardIn(items, kind, test),
+    lastAction: (kind) => lastActionIn(items, kind),
+  }), [projectId, a.now, a.running, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items]);
 
   const act: ActionHandlers = {
     approve: (x) => { void a.approve(x); },
@@ -104,7 +115,7 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
   return (
     <div className={s.shell}>
       <div inert={cardOpen || boardOpen} style={{ display: "contents" }}>
-        <Header projectId={projectId} name={a.board?.project_name && mock ? a.board.project_name : name} unread={unread} tick={tick} mock={mock} onMock={(x) => { void a.reset(x).then(() => setMock(x)); }} />
+        <Header projectId={projectId} name={a.board?.project_name && mock ? a.board.project_name : name} unread={unread} tick={tick} mock={mock} onMock={(x) => { setMarks({}); void a.reset(x).then(() => setMock(x)); }} />
       </div>
       <div className={s.body}>
         <div

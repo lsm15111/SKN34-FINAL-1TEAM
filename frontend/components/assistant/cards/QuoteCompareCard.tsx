@@ -1,8 +1,10 @@
-// C5 실측 견적서 비교(업체 = 열): 낼 금액(앞 판과 차액) · 가견적과 차이 · 공사 기간 · 유효기간 · 철거 · 폐기물 · 벽지 · 하자 보수 · 파일.
+// C5 실측 견적서 비교(업체 = 열): 낼 금액(앞 판과 차액) · 가견적과 차이 · 공사 기간 · 유효기간 · 철거 · 폐기물 · 업체가 적은 말 · 하자 보수 · 파일.
 // 금액 · 차이는 계산 엔진 값(서버)이에요. 표준견적서와 견준 %는 넣지 않아요(리드 결정). 업체 견적서는 줄로 바꾸지 않아요(파일 + 칸).
+// 업체가 적은 말(벽지 사양 칸, vendor_note)은 업체 글 그대로라 그 줄에만 보여요(다른 글에 섞지 않아요).
+// '확정할 업체' [○○로 할래요]는 그 업체 확정 승인 카드를 받아요(choice vendor_confirm:m…, 무료 모드도). 유효기간이 지났거나 이미 확정했으면 없어요.
 import Link from "next/link";
-import type { CompareCol } from "@/lib/api/assistant";
-import { dateShort, won, wonDelta } from "@/lib/format";
+import { CHOICE, type CompareCol } from "@/lib/api/assistant";
+import { dateShort, euro, won, wonDelta } from "@/lib/format";
 import { SourceTag } from "../kit/StatusTag";
 import { I } from "../kit/icons";
 import k from "../kit/kit.module.css";
@@ -16,6 +18,9 @@ export function QuoteCompareCard({ card, ctx }: CardProps<"quote_compare">) {
   const d = card.data;
   const cols = d.cols;
   const td = (x: CompareCol, v: React.ReactNode) => <td key={x.visit_id} className={x.state === "waiting" ? c.waitCol : undefined}>{x.state === "waiting" ? "" : v}</td>;
+  const deal = ctx.lastAction("vendor_confirm");
+  const decided = !!deal && (deal.status === "executed" || (deal.status === "proposed" && ctx.handledOf(deal.action_id)));
+  const pickable = decided ? [] : cols.filter((x) => x.state === "quoted" && !x.expired && x.ref);
   return (
     <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
@@ -42,13 +47,24 @@ export function QuoteCompareCard({ card, ctx }: CardProps<"quote_compare">) {
             <tr><th scope="row">공사 기간</th>{cols.map((x) => td(x, x.days != null ? `${x.days}일` : "—"))}</tr>
             <tr><th scope="row">유효기간</th>{cols.map((x) => td(x, x.valid_until ? <span className={x.valid_soon || x.expired ? `${c.warn} ${k.num}` : k.num}>{dateShort(x.valid_until)}{x.expired ? " · 지났어요" : x.valid_soon ? " · 곧 끝나요" : ""}</span> : "—"))}</tr>
             <tr><th scope="row">철거 · 폐기물</th>{cols.map((x) => td(x, <>{yes(x.demolish)} · {yes(x.waste)}</>))}</tr>
-            <tr><th scope="row">벽지</th>{cols.map((x) => td(x, x.paper ?? "—"))}</tr>
+            <tr><th scope="row">업체가 적은 말<small>벽지 사양</small></th>{cols.map((x) => td(x, x.vendor_note ? <q className={c.vq}>{x.vendor_note}</q> : "—"))}</tr>
             <tr><th scope="row">하자 보수</th>{cols.map((x) => td(x, months(x.warranty_months)))}</tr>
             <tr><th scope="row">파일</th>{cols.map((x) => td(x, x.file ? <Link className={x.file.kind === "image" ? `${c.file} ${c.fileImg}` : c.file} href={x.file.href} scroll={false}><I n={x.file.kind === "image" ? "image" : "file"} />{x.file.label}</Link> : "—"))}</tr>
           </tbody>
         </table>
       </div>
       {d.gap_won != null ? <p className={c.gap}><SourceTag src="calc" />두 곳이 <b className={k.num}>{won(d.gap_won)}</b> 차이 나요</p> : null}
+      {pickable.length ? (
+        <div className={c.askTo} role="group" aria-label="확정할 업체">
+          <span>확정할 업체</span>
+          {pickable.map((x) => (
+            <button key={x.visit_id} type="button" className={`${k.btn} ${k.sm}`} disabled={ctx.busy}
+              onClick={() => ctx.send(`${euro(x.vendor_name)} 확정할래요`, { card_id: card.card_id, choice: CHOICE.vendorConfirm(x.ref) })}>
+              {euro(x.vendor_name)} 할래요
+            </button>
+          ))}
+        </div>
+      ) : null}
       {d.ask_chips.length ? (
         <div className={c.askTo}>
           <span>업체에 물을 말</span>

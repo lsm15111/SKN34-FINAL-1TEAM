@@ -38,8 +38,8 @@ export type HomeInfoData = {
   saved: boolean;
   /** 실측을 요청해 더 고칠 수 없음 */
   locked: boolean;
-  /** 철거 범위(백엔드 담당이 같은 키로 더해요). 없거나 null이면 묻기 칩을 보여요 */
-  demolition?: Demolition | null;
+  /** 철거 범위(모은 조건 demolition). null이면 묻기 칩을 보여요 */
+  demolition: Demolition | null;
 };
 
 export type StandardQuoteData = {
@@ -81,10 +81,13 @@ export type VisitSlotsData = {
   chosen: string | null;
   instant: boolean;
   calendar_href: string;
+  /** 업체가 적은 말(다른 날 제안 메모). 업체 글 그대로라 이 칸에만 보여요 */
+  vendor_note?: string | null;
 };
 
 export type CompareCol = {
-  ref?: string;
+  /** 실측 요청 이름표(m1 …). 확정 단추 choice에 써요 */
+  ref: string;
   visit_id: string; vendor_name: string;
   state: "quoted" | "waiting";
   version?: number | null; received_on?: string | null;
@@ -95,7 +98,9 @@ export type CompareCol = {
   days?: number | null;
   valid_until?: string | null; valid_soon?: boolean; expired?: boolean;
   demolish?: boolean | null; waste?: boolean | null;
-  paper?: string | null; warranty_months?: number | null;
+  /** 업체가 적은 말(견적서 벽지 사양 칸, 연락처 가림 · 40자). 업체 글 그대로라 이 칸에만 보여요 */
+  vendor_note?: string | null;
+  warranty_months?: number | null;
   file?: { kind: "pdf" | "image" | "sheet"; label: string; href: string } | null;
   wait_note?: string | null;
 };
@@ -112,6 +117,8 @@ export type ScheduleData = {
   plan_version: number;
   href: string;
   ics_href?: string | null;
+  /** 업체가 적은 말(날짜를 바꾼 까닭). 업체 글 그대로라 이 칸에만 보여요 */
+  vendor_note?: string | null;
 };
 
 export type KnowledgeData = {
@@ -191,14 +198,14 @@ export type ActionOut = {
   target_ver?: string | null;
   expires_at: string;
   decided_at?: string | null; executed_at?: string | null;
-  /** 실패 코드. 만료면 까닭(due · replaced) */
+  /** 실패 코드. 만료면 까닭(due · replaced · handled_elsewhere) */
   error_code?: string | null;
   result?: { text: string; href?: string | null; label?: string | null } | null;
   /** 판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤) */
   supersedes?: string | null;
 };
 
-/** 먼저 말 건 제안(nudges, 다른 담당). feed의 suggest 조각 · done.suggest로 와요 */
+/** 다음에 물을 말(코드가 고름). feed의 suggest 조각(먼저 말 건 줄) · done.suggest(0~3개)로 와요. 먼저 말 걸기에서 왔으면 nudge_id */
 export type SuggestOut = { id: string; text: string; why: string; say: string; nudge_id?: string | null };
 
 // ───── SSE 이벤트
@@ -208,7 +215,7 @@ export type SseStatus = { seq: number; text: string; task?: TaskOut | null };
 export type SseCard = { seq: number } & CardOut;
 export type SseAction = { seq: number } & ActionOut;
 export type SseToken = { seq: number; text: string };
-export type SseDone = { seq: number; rev: number; mode: "llm" | "free"; cards: string[]; actions: string[]; stopped?: boolean; chips?: string[]; suggest?: SuggestOut | null };
+export type SseDone = { seq: number; rev: number; mode: "llm" | "free"; cards: string[]; actions: string[]; stopped?: boolean; chips?: string[]; suggest?: SuggestOut[] };
 export type SseError = { seq: number; code: string; message: string };
 export type TurnEvent =
   | { type: "ack"; data: SseAck }
@@ -241,6 +248,8 @@ export type FeedPart =
 export type AssistantItem = {
   id: string; role: "assistant"; at: string; turn_id: string | null; parts: FeedPart[];
   done?: boolean; mode?: "llm" | "free" | null; error?: { code: string; message: string } | null; status?: string | null;
+  /** 먼저 말 건 줄이면 그 id(턴이 아니라 turn_id는 null) */
+  nudge_id?: string | null;
   /** 한도에 닿아 카드만으로 끝냈어요(done.stopped) */
   stopped?: boolean;
 };
@@ -252,8 +261,20 @@ export type TurnIn = {
   project_id: string;
   client_key: string;
   text: string;
-  /** 카드에서 고른 것(업체 · 반나절 등 ref). LLM에는 이 대화에서 도구가 준 ref만 가요 */
+  /** 카드에서 고른 것(choice 꼴은 아래 CHOICE). 이름표는 이 대화에서 도구 · 카드가 준 것만 서버가 받아요 */
   context?: { card_id?: string; choice?: string | string[] } | null;
+};
+
+/**
+ * 카드 단추 → 계약 꼴 choice(backend assistant/choices.py, 계약서 4장 11). 이 꼴이면 무료 모드에서도 코드가 승인 카드를 만들어요.
+ * 이름표 v 업체 · r 희망 기간 · s 반나절 · m 실측 요청은 카드 data에 온 것 그대로 써요. 한 choice는 40자 · 이름표 4개까지예요.
+ * 집 정보 칸은 `demolition:<full · partial · none>`(HomeInfoCard)이에요.
+ */
+export const CHOICE = {
+  /** 고른 업체(1~3곳)에 실측 요청. 희망 기간을 골랐으면 끝에 붙여요 */
+  visitRequest: (vendors: string[], wish?: string | null) => `visit_request:${[...vendors.slice(0, 3), ...(wish ? [wish] : [])].join(",")}`,
+  visitSlot: (slot: string) => `visit_slot:${slot}`,
+  vendorConfirm: (visit: string) => `vendor_confirm:${visit}`,
 };
 
 // ───── 대화 · 보드 · 오늘 · 상태 · 기억 · 알림
@@ -262,10 +283,11 @@ export type ThreadOut = { chat_id: string; rev: number; updated_at: string };
 export type HealthOut = { mode: "llm" | "free"; reason: "ok" | "off" | "budget" | "breaker" };
 
 export type MemoryKey = "avail_days" | "avail_half" | "living" | "style" | "material" | "priority" | "pet" | "diy";
-export type MemoryOut = { id: string; key: MemoryKey | string; value: string; evidence_message_id?: string | null; evidence_quote: string };
+/** label은 키의 화면 이름(서버 값). 옛 목업 기록처럼 비어 오면 MEMORY_LABEL(서버 memory.LABEL과 같은 말)을 써요 */
+export type MemoryOut = { id: string; key: MemoryKey | string; label: string; value: string; evidence_message_id: string; evidence_quote: string; updated_at: string };
 export const MEMORY_LABEL: Record<MemoryKey, string> = {
-  avail_days: "되는 요일", avail_half: "되는 시간", living: "사는 상태", style: "좋아하는 느낌",
-  material: "자재", priority: "먼저 챙길 것", pet: "반려동물", diy: "직접 할 일",
+  avail_days: "편한 요일", avail_half: "편한 때", living: "사는 방식", style: "좋아하는 느낌",
+  material: "자재 바람", priority: "중요한 것", pet: "반려동물", diy: "직접 할 일",
 };
 
 export type BoardOut = {
@@ -336,8 +358,13 @@ export function applyTurnEvent(items: FeedItem[], turnId: string, ev: TurnEvent,
       return put(parts);
     }
     case "done": {
-      const parts = ev.data.suggest ? [...item.parts, { t: "suggest" as const, suggest: ev.data.suggest }] : item.parts;
-      return put(parts, { done: true, mode: ev.data.mode, status: null, stopped: !!ev.data.stopped, error: null });
+      // 다음에 물을 말(0~3개)은 마지막 턴 끝에만 둬요(서버도 기록에 남기지 않아요). 먼저 말 건 줄(turn_id 없음)의 제안은 그대로예요
+      const ideas = (ev.data.suggest ?? []).map((suggest): FeedPart => ({ t: "suggest", suggest }));
+      const plain = (parts: FeedPart[]) => parts.filter((p) => p.t !== "suggest");
+      return next.map((x, k) => {
+        if (k === i) return { ...item, parts: [...plain(item.parts), ...ideas], done: true, mode: ev.data.mode, status: null, stopped: !!ev.data.stopped, error: null };
+        return x.role === "assistant" && x.turn_id !== null && x.parts.some((p) => p.t === "suggest") ? { ...x, parts: plain(x.parts) } : x;
+      });
     }
     case "error":
       return put(item.parts, { done: true, status: null, error: { code: ev.data.code, message: ev.data.message } });
@@ -398,6 +425,32 @@ export function actionsIn(items: FeedItem[]): ActionOut[] {
   const out = new Map<string, ActionOut>();
   for (const it of items) if (it.role === "assistant") for (const p of it.parts) if (p.t === "action") out.set(p.action.action_id, p.action);
   return [...out.values()];
+}
+
+/** 대화에서 가장 나중에 그려진 그 kind 카드(test를 주면 맞는 것만). 없으면 null */
+export function lastCardIn<K extends CardKind>(items: FeedItem[], kind: K, test?: (c: CardOut<K>) => boolean): CardOut<K> | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.role !== "assistant") continue;
+    for (let k = it.parts.length - 1; k >= 0; k--) {
+      const p = it.parts[k];
+      if (p.t === "card" && p.card.kind === kind && (!test || test(p.card as CardOut<K>))) return p.card as CardOut<K>;
+    }
+  }
+  return null;
+}
+
+/** 대화에서 가장 나중에 그려진 그 종류 행동(상태 상관없이). 없으면 null */
+export function lastActionIn(items: FeedItem[], kind: ActionKind): ActionOut | null {
+  for (let i = items.length - 1; i >= 0; i--) {
+    const it = items[i];
+    if (it.role !== "assistant") continue;
+    for (let k = it.parts.length - 1; k >= 0; k--) {
+      const p = it.parts[k];
+      if (p.t === "action" && p.action.kind === kind) return p.action;
+    }
+  }
+  return null;
 }
 
 /**
