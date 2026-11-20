@@ -20,7 +20,10 @@ export type AiAsk = { trade: string; slot: string; question: string; options: st
 /** 짧은 답: 먼저 보일 문장 1~3개(서버가 sections · unknown에서 고름, 새 글 아님). more = '자세히'에만 있는 문장 수 */
 export type AiBrief = { form: string; lines: string[]; more: number; cites?: number[][] };
 export type AiAnswer = { sections: AiSection[]; calc: AiCalc[]; cards: AiCard[]; ask?: AiAsk | null; unknown: string[]; suggest: string[]; failed: boolean; brief?: AiBrief | null; refs?: AiSource[]; fixed?: number };
-export type AiTurnOut = { chat_id: string | null; rev: number | null; mode: "free" | "llm"; route: AiRoute; answer: AiAnswer };
+/** 모은 조건(맥락 L3): 공사 화면에서 고객이 되묻기에 답한 칸. label은 화면 말(예: '방문') */
+export type AiCondition = { trade: string; key: string; label: string; value: string };
+/** conditions: 공사 화면 대화면 이 턴에 답한 칸까지 든 모은 조건 전체. 공사 밖은 빈 목록 */
+export type AiTurnOut = { chat_id: string | null; rev: number | null; mode: "free" | "llm"; route: AiRoute; answer: AiAnswer; conditions?: AiCondition[] };
 export type AiButton = { route: AiRoute; trade?: string | null; slot?: string | null; value?: string | null };
 export type AiTurnIn = { client_key: string; text: string; chat_id?: string | null; context: { screen?: AiScreen | null; project_id?: string | null; ids?: string[] }; button?: AiButton | null };
 export type AiFaq = { id: string; question: string; sentences: string[]; tip: string; sources: AiSource[]; actions: string[] };
@@ -85,3 +88,11 @@ export const getAiFaq = () => call<AiFaq[]>("GET", "/ai/faq");
 export const getAiThreads = (projectId?: string) =>
   call<AiThread[]>("GET", projectId ? `/ai/threads?project_id=${encodeURIComponent(projectId)}` : "/ai/threads");
 export const getAiThread = (chatId: string) => call<AiThreadDetail>("GET", `/ai/threads/${encodeURIComponent(chatId)}`);
+/** 화면을 옮겨도 이어 갈 대화(맥락 L2): 같은 공사(없으면 공사 밖) · 마지막 턴 뒤 24시간 안. 없으면 null */
+export const getLatestAiThread = (projectId?: string) =>
+  call<AiThreadDetail | null>("GET", projectId ? `/ai/threads/latest?project_id=${encodeURIComponent(projectId)}` : "/ai/threads/latest");
+export const getAiConditions = (projectId: string) =>
+  call<AiCondition[]>("GET", `/projects/${encodeURIComponent(projectId)}/conditions`);
+/** 지우면 남은 목록이 와요. 지운 칸은 AI가 다시 물어요 */
+export const deleteAiCondition = (projectId: string, key: string) =>
+  call<AiCondition[]>("DELETE", `/projects/${encodeURIComponent(projectId)}/conditions/${encodeURIComponent(key)}`);

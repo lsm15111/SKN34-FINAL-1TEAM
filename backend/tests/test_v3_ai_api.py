@@ -242,6 +242,27 @@ def test_project_slot_answer_becomes_condition_and_is_not_asked_again(api):
     assert api.delete(f"/projects/{pid}/conditions/mokgong.doors").status_code == 404
 
 
+def test_latest_thread_continues_within_24h_in_the_same_scope(api):
+    """이어 보기(맥락 L2): 같은 공사(없으면 공사 밖) 대화만, 마지막 턴 뒤 24시간 안이면 이어 가요."""
+    use(api, signup(api, "latest@mitjip.test"))
+    assert api.get("/ai/threads/latest").json() is None
+    pid = _project(api)
+    cid = done(ask(api, context={"screen": "standard", "project_id": pid}))["chat_id"]
+    assert api.get("/ai/threads/latest").json() is None  # 공사 대화는 공사 밖에서 잇지 않아요
+    d = api.get(f"/ai/threads/latest?project_id={pid}").json()
+    assert d["chat_id"] == cid and [m["role"] for m in d["messages"]] == ["user", "assistant"]
+    free = done(ask(api))["chat_id"]
+    assert api.get("/ai/threads/latest").json()["chat_id"] == free
+    query(
+        "update chats set updated_at = now() - interval '25 hours' where id = $1", uuid.UUID(free)
+    )
+    assert api.get("/ai/threads/latest").json() is None  # 24시간이 지나면 새 대화
+    assert api.get(f"/ai/threads/latest?project_id={pid}").json()["chat_id"] == cid
+    use(api, signup(api, "latest2@mitjip.test"))
+    assert api.get(f"/ai/threads/latest?project_id={pid}").status_code == 404
+    assert api.get("/ai/threads/latest").json() is None  # 남의 대화는 보이지 않아요
+
+
 def test_llm_mode_sends_fixed_part_first_then_done(api, monkeypatch):
     """LLM 모드: 답 작성기를 기다리기 전에 고정 몫을 part로 먼저 보내고, 저장 뒤 done으로 끝낸다.
     done의 앞 묶음은 part와 같아서 화면에 이미 보인 글은 바뀌지 않는다."""

@@ -60,3 +60,16 @@
 .table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
 .table th, .table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
 .table th { color: var(--ink-sub); font-weight: 600; white-space: nowrap; width: 30%; }
+/* 이어 온 지난 턴의 답(저장된 글만, 카드 · 출처 없음) */
+.old { margin: 0; white-space: pre-line; font-size: var(--fs-md); color: var(--ink); overflow-wrap: anywhere; }
+/* 머리 오른쪽 '새 대화'(폰은 닫기 X 바로 왼쪽). 누를 곳은 44px이지만 머리 높이는 그대로 둬요 */
+.newChat { margin: -10px 0 -10px auto; }
+.embedNew { display: flex; justify-content: flex-end; }
+/* 기억한 조건(모은 조건) 칩: '칸: 값' + 지우기 */
+.conds { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.condsHead { font-size: var(--fs-xs); color: var(--ink-mute); }
+.cond { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 32px; padding: 0 2px 0 10px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink-sub); font-size: var(--fs-sm); }
+.condText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.condX { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-mute); cursor: pointer; }
+.condX:hover { background: var(--surface-2); color: var(--ink); }
+.condX:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }

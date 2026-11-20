@@ -55,6 +55,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/threads/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 화면을 옮겨도 이어 갈 대화(같은 공사 · 24시간 안 마지막 대화, 없으면 null) */
+        get: operations["latest_thread_ai_threads_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/threads/{chat_id}": {
         parameters: {
             query?: never;
@@ -385,6 +402,40 @@ export interface paths {
         put: operations["set_check_projects__project_id__checks__key__put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/conditions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** AI 상담으로 모은 조건 (만든 고객만) */
+        get: operations["list_conditions_projects__project_id__conditions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/conditions/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** 모은 조건 한 칸 지우기 (만든 고객만, 지우면 AI가 다시 물어요) */
+        delete: operations["delete_condition_projects__project_id__conditions__key__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3136,6 +3187,20 @@ export interface components {
              */
             requote_at?: string | null;
             rating?: components["schemas"]["RatingOut"] | null;
+        };
+        /**
+         * ConditionOut
+         * @description AI 상담으로 모은 조건 한 칸(맥락 L3). 화면 칩은 'label: value'예요
+         */
+        ConditionOut: {
+            /** Trade */
+            trade: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
         };
         /** ConfirmIn */
         ConfirmIn: {
@@ -11221,6 +11286,37 @@ export interface operations {
             };
         };
     };
+    latest_thread_ai_threads_latest_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AiThreadDetailOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     thread_ai_threads__chat_id__get: {
         parameters: {
             query?: never;
@@ -11832,6 +11928,69 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectCheckOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_conditions_projects__project_id__conditions_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_condition_projects__project_id__conditions__key__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConditionOut"][];
                 };
             };
             /** @description Validation Error */

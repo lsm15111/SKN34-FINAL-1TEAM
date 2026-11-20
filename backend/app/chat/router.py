@@ -84,6 +84,20 @@ async def threads(
     return await service.ai_threads(s, user, project_id)
 
 
+# /threads/{chat_id}보다 먼저 둬요('latest'가 대화 id 자리로 들어가 422가 되지 않게)
+@router.get(
+    "/threads/latest",
+    response_model=AiThreadDetailOut | None,
+    summary="화면을 옮겨도 이어 갈 대화(같은 공사 · 24시간 안 마지막 대화, 없으면 null)",
+)
+async def latest_thread(
+    project_id: uuid.UUID | None = Query(default=None),
+    user: User = Depends(require_role("customer")),
+    s: AsyncSession = Depends(get_session),
+) -> AiThreadDetailOut | None:
+    return await service.ai_latest(s, user, project_id)
+
+
 @router.get("/threads/{chat_id}", response_model=AiThreadDetailOut, summary="AI 대화 이어 보기")
 async def thread(
     chat_id: uuid.UUID,

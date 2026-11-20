@@ -108,6 +108,7 @@ async def llm_budget_ok(user_id, today: date) -> bool:
 WAIT_TTL = 1800  # 되물은 칸은 30분 뒤 비운다(agents.md 5절)
 REPLAY_TTL = 600  # 같은 client_key는 10분 동안 처음 답을 그대로 돌려준다
 THREAD_MESSAGES = 30
+RESUME_HOURS = 24  # 마지막 턴 뒤 이 시간 안이면 화면을 옮겨도 같은 대화를 이어 가요(맥락 L2)
 # 대화 표 CHECK(0022)에 맞춘 라벨 · 출처. v3 가이드 · 복합은 v2처럼 orchestrator로 남긴다
 LABEL = {
     "guide": "orchestrator",
@@ -334,14 +335,30 @@ async def ai_threads(s: AsyncSession, user, project_id: uuid.UUID | None) -> lis
     ]
 
 
-async def ai_thread(s: AsyncSession, user, chat_id: uuid.UUID) -> AiThreadDetailOut:
-    chat = await get_for(s, user.id, chat_id)
+async def _detail(s: AsyncSession, chat) -> AiThreadDetailOut:
     rows = await repository.recent_messages(s, chat.id, THREAD_MESSAGES)
     return AiThreadDetailOut(
         chat_id=chat.id,
         rev=chat.rev,
         messages=[AiMessageOut(role=m.role, text=m.text, turn=m.turn) for m in rows],
     )
+
+
+async def ai_thread(s: AsyncSession, user, chat_id: uuid.UUID) -> AiThreadDetailOut:
+    return await _detail(s, await get_for(s, user.id, chat_id))
+
+
+async def ai_latest(
+    s: AsyncSession, user, project_id: uuid.UUID | None
+) -> AiThreadDetailOut | None:
+    """GET /ai/threads/latest(맥락 L2). 화면을 옮겨도 이어 갈 대화: 같은 공사(없으면 공사 칸이 빈 대화)에서
+    마지막 턴 뒤 24시간 안의 것 하나. 없으면 None(새 대화). 남의 공사는 404."""
+    if project_id is not None:
+        from app.project import service as project_service
+
+        await project_service.get_for(s, user, project_id)
+    chat = await repository.latest_chat(s, user.id, project_id, RESUME_HOURS)
+    return await _detail(s, chat) if chat else None
 
 
 async def faq(ip: str) -> list[AiFaqOut]:

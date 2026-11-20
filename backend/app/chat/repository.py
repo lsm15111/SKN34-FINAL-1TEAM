@@ -1,6 +1,7 @@
 """대화 표 읽기 · 쓰기. commit은 하지 않는다 (service가 한다)."""
 
 import uuid
+from datetime import timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -104,6 +105,20 @@ async def list_chats(
         q = q.where(Chat.project_id == project_id)
     rows = await s.scalars(q.order_by(Chat.updated_at.desc()).limit(limit))
     return list(rows.all())
+
+
+async def latest_chat(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None, hours: int
+) -> Chat | None:
+    """마지막 턴 뒤 hours시간 안의 내 대화 하나(이어 보기). project_id가 없으면 공사 칸이 빈 대화만."""
+    q = select(Chat).where(
+        Chat.user_id == user_id, Chat.updated_at >= func.now() - timedelta(hours=hours)
+    )
+    if project_id is not None:
+        q = q.where(Chat.project_id == project_id)
+    else:
+        q = q.where(Chat.project_id.is_(None))
+    return await s.scalar(q.order_by(Chat.updated_at.desc()).limit(1))
 
 
 async def last_questions(s: AsyncSession, chat_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
