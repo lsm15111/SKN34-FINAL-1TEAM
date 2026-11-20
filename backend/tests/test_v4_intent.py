@@ -9,7 +9,7 @@ from v3_kb import repo_index
 from app.agent import llm
 from app.assistant import free, intent_v4
 from app.assistant.schemas import CardKind
-from tests.test_v3_visit_kit import customer, vendor
+from tests.test_v3_visit_kit import customer, requested, vendor
 from tests.test_v4_assistant_turns import ask, ok
 
 
@@ -88,6 +88,28 @@ def test_model_label_picks_handler(monkeypatch, label, want):
     assert free.customer_intent("공정표 보여 주세요") == want
 
 
+def test_how_question_after_a_wish_goes_to_knowledge(monkeypatch):
+    # 2판: 바람 · 진술 뒤 순서 · 시기 · 방법 질문은 모델이 집 정보 · 표준견적서로 봐도 지식(카드 없음)
+    fixed(monkeypatch, "home_info")
+    assert free.customer_intent("몰딩도 바꾸고 싶은데 도배 전에 해야 해요?") == (None, None)
+    assert free.customer_intent("문틀 바꾸고 나서 언제 도배해요?") == (None, None)
+    # 묻지 않는 바람 · 진술은 집 정보 그대로
+    assert free.customer_intent("몰딩도 이번에 같이 바꾸고 싶어요.") == ("home", None)
+    assert free.customer_intent("신혼집 들어가기 전에 몰딩도 바꾸고 싶어요") == ("home", None)
+    fixed(monkeypatch, "standard_quote")
+    # 돈 · 기간 질문은 표준견적서 그대로
+    assert free.customer_intent("몰딩까지 하면 금액이 어떻게 돼요?") == ("standard", None)
+    fixed(monkeypatch, "vendor_pick")
+    # 다른 라벨은 그대로
+    assert free.customer_intent("업체는 어떻게 골라요?") == ("vendors", None)
+
+
+def test_flow_questions_with_the_real_model():
+    # 오늘 흐름에서 나빠졌던 두 질문(실제 모델 + 2판 규칙)
+    assert free.customer_intent("몰딩도 바꾸고 싶은데 도배 전에 해야 해요?") == (None, None)
+    assert free.customer_intent("몰딩 교체는 언제 해요?") == (None, None)
+
+
 def test_guide_is_today_only_when_asking_todays_work(monkeypatch):
     fixed(monkeypatch, "guide")
     assert free.customer_intent("오늘 제가 정할 일 있어요?") == ("today", None)
@@ -128,3 +150,13 @@ def test_free_turn_knowledge_label_has_no_step_card(api, free_mode, monkeypatch)
     fixed(monkeypatch, "knowledge")
     ev = ok(ask(api, pid, "안녕하세요, 도배 풀은 뭘 써요?"))  # 관문 길이면 인사 → today 카드였을 말
     assert kinds(ev) == ["answer"]
+
+
+def test_home_card_shows_before_lock_and_not_after(api, free_mode, monkeypatch):
+    """집 정보는 실측 요청 전까지만 고칠 수 있어요. 잠긴 공사에는 집 정보 카드를 다시 띄우지 않고 답만 해요."""
+    fixed(monkeypatch, "home_info")
+    _, pid = customer(api, "open@mitjip.test")
+    assert "home_info" in kinds(ok(ask(api, pid, "저희 집 34평이에요")))
+    f = requested(api)  # 실측을 요청하면 집 정보가 잠겨요
+    ev = ok(ask(api, f["pid"], "저희 집 34평이에요"))
+    assert "home_info" not in kinds(ev) and kinds(ev)[-1] == "answer"

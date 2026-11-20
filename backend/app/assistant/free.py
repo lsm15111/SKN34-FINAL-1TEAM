@@ -130,6 +130,26 @@ LABEL_DO: dict[str, str] = {
     "home_info": "home", "standard_quote": "standard", "vendor_pick": "vendors", "visit": "slots",
     "quote_compare": "compare", "schedule": "schedule",
 }  # fmt: skip
+# 바람 · 진술 뒤에 순서 · 시기 · 방법을 묻는 말은 지식이에요(라벨 규칙 10: 배경 뒤 묻는 말이면 묻는 쪽).
+# 모델이 이 꼴을 집 정보 · 표준견적서로 보는 일이 있어서, 낱말 규칙이 없고 이 꼴이면 지식 답으로 내려요
+# (어려운 예 재학습보다 dev에서 나았어요, intent.md 8절). 돈 · 기간을 묻는 말은 표준견적서 그대로예요
+HOW_LABELS = ("home_info", "standard_quote")
+MONEY_DAYS = re.compile(r"얼마|비용|금액|가격|시세|평당|단가|예산|며칠|몇\s*일|기간")
+# 묻는 낱말(언제 · 어떻게 · 순서 …)은 그대로, 때 낱말(전에 · 후에 · 먼저 …)은 묻는 꼴 문장에서만 세요
+ASK_WORD = re.compile(
+    r"언제|어떻게|어떡|순서|뭐부터|무엇부터|뭘\s{0,2}먼저|뭐가\s{0,2}먼저|"
+    r"해야\s{0,2}(?:하나요|하죠|할까요|되나요|될까요)|해도\s{0,2}(?:되나요|될까요|괜찮)"
+)
+ASK_TIME = re.compile(r"전에|후에|뒤에|다음에|먼저|나중")
+QUESTION = re.compile(r"\?|나요|까요|가요|죠|는지|ㄹ지|할지|되요|돼요|해요\s{0,2}\?")
+
+
+def asks_how(text: str) -> bool:
+    """순서 · 시기 · 방법을 묻는 말인지(돈 · 기간을 묻는 말은 빼요)."""
+    t = text or ""
+    if MONEY_DAYS.search(t):
+        return False
+    return bool(ASK_WORD.search(t) or (ASK_TIME.search(t) and QUESTION.search(t)))
 
 
 def customer_intent(text: str) -> tuple[str | None, str | None]:
@@ -138,10 +158,13 @@ def customer_intent(text: str) -> tuple[str | None, str | None]:
     from app.assistant import intent_v4
 
     g = intent_v4.predict(text)
+    rule = intent_of(text, "customer")
     if g is None:
-        return intent_of(text, "customer"), "gate"
+        return rule, "gate"
     if g.label == "guide":
-        return ("today", None) if intent_of(text, "customer") == "today" else (None, "guide")
+        return ("today", None) if rule == "today" else (None, "guide")
+    if g.label in HOW_LABELS and rule is None and asks_how(text):
+        return None, None  # 순서 · 시기 · 방법 질문: 카드 없이 지식 답
     return LABEL_DO.get(g.label), None
 
 
@@ -251,9 +274,12 @@ async def _today(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolO
     return (TODAY if model["count"] else TODAY_NONE), ToolOut(data={}, cards=[card], task=task)
 
 
-async def _home(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut]:
+async def _home(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut] | None:
+    """집 정보 카드. 실측을 요청해 집 정보가 잠긴 공사는 고칠 수 없어서 카드를 다시 띄우지 않는다(None → 답만)."""
     async with SessionLocal() as s:
-        card, _ = await cards.home(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+        card, model = await cards.home(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+    if model["locked"]:
+        return None
     return HOME, ToolOut(data={}, cards=[card])
 
 
@@ -444,6 +470,9 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
     got = await handler(tc, text, found) if handler is not None else None
     if got is not None:
         return got
-    # handler가 카드를 못 만들면(목공 표준견적서 없음 등) 지금처럼 입구 관문 길의 단계 카드
-    said, out = await _knowledge(tc, text, found, card_id, "gate" if handler is not None else step)
+    # handler가 카드를 못 만들면: 잠긴 집 정보(home)는 카드 없이 답만, 그 밖(목공 표준견적서 없음 등)은
+    # 지금처럼 입구 관문 길의 단계 카드
+    if handler is not None:
+        step = None if intent == "home" else "gate"
+    said, out = await _knowledge(tc, text, found, card_id, step)
     return await fit_cards(tc, said, out), out
