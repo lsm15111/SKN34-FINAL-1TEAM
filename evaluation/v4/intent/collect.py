@@ -35,6 +35,9 @@ from app.agent.intent import DONGHO, PHONE, clean
 POOL = RUNS / "intent" / "pool.jsonl"  # 라벨 붙이기 전 후보(git 밖)
 DEV = HERE / "dev.jsonl"
 HELDOUT = HERE / "heldout.jsonl"
+# 2판(오류 꼴 고치기): dev 쪽 어려운 예(학습에 안 씀, 고르기용) · 오늘 흐름 결 확인 세트(라벨 먼저, 합성)
+DEV_HARD = HERE / "dev_hard.jsonl"
+CHECK_FLOW = HERE / "check_flow.jsonl"
 LABELS = (
     "home_info", "standard_quote", "vendor_pick", "visit", "quote_compare", "schedule",
     "knowledge", "guide", "out_of_scope",
@@ -192,7 +195,9 @@ def check() -> int:
     errors: list[str] = []
     pool = {r["id"]: r for r in gather()}
     dev, held = jsonl(DEV), jsonl(HELDOUT)
-    for name, rows in (("dev", dev), ("heldout", held)):
+    hard, flow = jsonl(DEV_HARD), jsonl(CHECK_FLOW)
+    sets = (("dev", dev), ("heldout", held), ("dev_hard", hard), ("check_flow", flow))
+    for name, rows in sets:
         ids = Counter(r["id"] for r in rows)
         errors += [f"{name}: id 겹침 {i}" for i, n in ids.items() if n > 1]
         for r in rows:
@@ -211,10 +216,27 @@ def check() -> int:
         if src is None or src["text"] != r["text"]:
             errors.append(f"heldout {r['id']}: 출처 글과 다름")
     idx = NearIndex([r["text"] for r in held])
-    for r in dev:
-        sim, j = idx.best(r["text"])
-        if sim >= NEAR:
-            errors.append(f"dev {r['id']}: held-out {held[j]['id']}과 거의 같은 글({sim:.2f})")
+    for name, rows in (("dev", dev), ("dev_hard", hard), ("check_flow", flow)):
+        for r in rows:
+            sim, j = idx.best(r["text"])
+            if sim >= NEAR:
+                errors.append(
+                    f"{name} {r['id']}: held-out {held[j]['id']}과 거의 같은 글({sim:.2f})"
+                )
+    errors += [
+        f"{n} {r['id']}: 합성 표시가 없음"
+        for n, rs in sets[2:]
+        for r in rs
+        if not r.get("synthetic")
+    ]
+    fidx = NearIndex([r["text"] for r in flow]) if flow else None
+    for name, rows in (("dev", dev), ("dev_hard", hard)):
+        for r in rows if fidx else []:
+            sim, j = fidx.best(r["text"])
+            if sim >= NEAR:
+                errors.append(
+                    f"{name} {r['id']}: 확인 세트 {flow[j]['id']}과 거의 같은 글({sim:.2f})"
+                )
     keys = Counter(norm(r["text"]) for r in dev)
     errors += [f"dev 안에 같은 글이 {n}번" for k, n in keys.items() if n > 1]
     ratio = len(dev) / max(1, len(held))
@@ -225,7 +247,7 @@ def check() -> int:
     syn = sum(1 for r in dev if r.get("synthetic"))
     print(
         f"dev {len(dev)}(합성 {syn}, {syn / max(1, len(dev)):.1%}) · held-out {len(held)} · "
-        f"비 {ratio:.2f}:1 · 틀림 {len(errors)}"
+        f"비 {ratio:.2f}:1 · 어려운 예 {len(hard)} · 확인 세트 {len(flow)} · 틀림 {len(errors)}"
     )
     return 1 if errors else 0
 

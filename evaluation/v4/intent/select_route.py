@@ -2,6 +2,7 @@
 
     cd backend && uv run python ../evaluation/v4/intent/select_route.py            # dev로 고르기(results/route_dev.json)
     cd backend && uv run python ../evaluation/v4/intent/select_route.py --final    # 고른 길 · 두 기준선 held-out(results/route_heldout.json)
+    cd backend && uv run python ../evaluation/v4/intent/select_route.py --second   # 2판: held-out 두 번째 · 확인 세트
 
 - 고객 말만 봐요(연결은 무료 모드 고객 길에만 해요). 업체 화면 · LLM 모드 길은 그대로예요.
 - 길 흉내(DB 없음, free.answer와 같은 순서)
@@ -79,6 +80,11 @@ def route(row: dict, design: str, p: dict, t: float = 0.0, oos_first: bool = Fal
     if design == "rules":
         return path(row, rule, "rule" if rule else "none", None)
     if design == "model":
+        return path(row, LABEL_DO.get(lab), "model", lab)
+    # 2판: 모델만 + 순서 · 시기 · 방법 질문은 지식(free.customer_intent와 같음)
+    if design == "model_how":
+        if lab in free.HOW_LABELS and rule is None and free.asks_how(text):
+            return path(row, None, "model", "knowledge")
         return path(row, LABEL_DO.get(lab), "model", lab)
     # rules_model: 규칙 먼저, 없으면 신뢰도 ≥ t인 모델, 그 아래는 지금 지식 길
     if rule is not None:
@@ -183,6 +189,81 @@ def dev_choice() -> dict:
     return {"n": len(rows), "table": table, "choice": best}
 
 
+def show(name: str, s: dict) -> None:
+    ci = s.get("ci")
+    if ci:
+        print(
+            f"{name}: 카드 {s['card_acc']:.1%} ({ci['card_acc'][0]:.1%}~{ci['card_acc'][1]:.1%}) · "
+            f"macro-F1 {s['macro_f1']:.3f} ({ci['macro_f1'][0]:.3f}~{ci['macro_f1'][1]:.3f}) · "
+            f"범위 밖 {s['oos_recall']:.1%} ({ci['oos_recall'][0]:.1%}~{ci['oos_recall'][1]:.1%})"
+        )
+    else:
+        print(
+            f"{name}: 카드 {s['card_acc']:.1%} · macro-F1 {s['macro_f1']:.3f} · 정확도 {s['accuracy']:.1%}"
+        )
+
+
+def second() -> None:
+    """2판(순서 · 시기 · 방법 질문 → 지식): held-out은 두 번째로 보고, 확인 세트(라벨 먼저)는 처음 봐요."""
+    held = [r for r in jsonl(HERE / "heldout.jsonl") if r["surface"] == "customer"]
+    flow = jsonl(HERE / "check_flow.jsonl")
+    out: dict = {"look": 2, "note": "held-out 두 번째로 봄(2판 규칙은 dev · 어려운 예로 고름)"}
+    for name, rows in (("heldout", held), ("check_flow", flow)):
+        probs = [intent_v4.probs(r["text"]) for r in rows]
+        systems = {
+            "old_v3": old_base(rows),
+            "rules": run(rows, probs, "rules"),
+            "model": run(rows, probs, "model"),
+            "model_how": run(rows, probs, "model_how"),
+        }
+        rep = {
+            "n": len(rows),
+            "systems": {k: measure(rows, s, boot=True) for k, s in systems.items()},
+            "paired": {
+                "how_vs_rules": paired(rows, systems["rules"], systems["model_how"]),
+                "how_vs_old": paired(rows, systems["old_v3"], systems["model_how"]),
+                "how_vs_model": paired(rows, systems["model"], systems["model_how"]),
+            },
+            "items": [
+                {"id": r["id"], "gold": r["label"], **{k: s["pred"][i] for k, s in systems.items()}}
+                for i, r in enumerate(rows)
+            ],
+        }
+        if name == "check_flow":
+            for part, keep in (("want", lambda r: r["kind"].startswith("want_")), ("other", None)):
+                idx = [
+                    i
+                    for i, r in enumerate(rows)
+                    if (keep(r) if keep else not r["kind"].startswith("want_"))
+                ]
+                sub = [rows[i] for i in idx]
+                rep[f"part_{part}"] = {
+                    k: measure(sub, {kk: [v[i] for i in idx] for kk, v in s.items()})
+                    for k, s in systems.items()
+                }
+        out[name] = rep
+        print(
+            f"{name} {len(rows)}줄"
+            + (" (held-out 두 번째)" if name == "heldout" else " (라벨 먼저)")
+        )
+        for k, s in rep["systems"].items():
+            show(f"  {k}", s)
+        for k, d in rep["paired"].items():
+            print(
+                f"  {k}: 카드 {d['card_acc'] * 100:+.1f}%p ({d['card_acc_ci'][0] * 100:+.1f}~"
+                f"{d['card_acc_ci'][1] * 100:+.1f}) · macro-F1 {d['macro_f1']:+.3f}"
+            )
+        for part in ("part_want", "part_other"):
+            if part in rep:
+                print(
+                    f"  {part}: "
+                    + " · ".join(f"{k} {s['card_acc']:.0%}" for k, s in rep[part].items())
+                )
+    (RESULTS / "route_second.json").write_text(
+        json.dumps(out, ensure_ascii=False, indent=1, default=str), encoding="utf-8", newline="\n"
+    )
+
+
 def label(x: dict) -> str:
     name = {"rules": "규칙만", "model": "모델만", "rules_model": "규칙 먼저 + 모델"}[x["design"]]
     if x["t"] is not None:
@@ -196,7 +277,15 @@ def main() -> int:
     ap.add_argument(
         "--final", action="store_true", help="고른 길 하나와 두 기준선을 held-out으로 한 번"
     )
+    ap.add_argument(
+        "--second",
+        action="store_true",
+        help="2판: held-out 두 번째 · 확인 세트(results/route_second.json)",
+    )
     args = ap.parse_args()
+    if args.second:
+        second()
+        return 0
     got = dev_choice()
     RESULTS.mkdir(exist_ok=True)
     (RESULTS / "route_dev.json").write_text(
