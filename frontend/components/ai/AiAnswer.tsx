@@ -44,6 +44,33 @@ function titled(list: { title: string }[]): boolean {
   return new Set(list.map((x) => x.title).filter(Boolean)).size > 1;
 }
 
+/** '업체에 물을 말' 표의 첫 칸을 번호를 붙여 복사해요(업체 채팅에 붙여 넣기). 복사가 막히면 글을 펼쳐 골라 둬요 */
+function CopyRows({ rows }: { rows: string[] }) {
+  const [done, setDone] = useState(false);
+  const [manual, setManual] = useState(false);
+  const text = rows.map((r, i) => `${i + 1}. ${r}`).join("\n");
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(text);
+      setDone(true);
+    } catch {
+      setManual(true);
+    }
+  }
+  return (
+    <div className={s.copyRow}>
+      <Button variant="secondary" size="sm" onClick={() => void copy()}>{done ? "복사했어요" : "물을 말 복사"}</Button>
+      <span className="mj-sr" role="status">{done ? "업체에 물을 말을 복사했어요" : ""}</span>
+      {manual ? (
+        <textarea
+          className={s.copyText} readOnly value={text} rows={rows.length} aria-label="업체에 물을 말"
+          ref={(el) => { el?.focus(); el?.select(); }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 /** 묶음 출처 표시. 같은 표시가 이어지면 맨 앞에 한 번만 보여요 */
 export function byLabel(source?: string): string {
   if (source === "calc") return "믿집 계산";
@@ -203,6 +230,7 @@ export function AiAnswer({ answer, projectId, onPick, pending = false }: {
                 </table>
               </div>
             ) : null}
+            {sec.copyable && sec.table?.length ? <CopyRows rows={sec.table.map((r) => r[0])} /> : null}
             {!sec.steps && sec.table?.length
               ? sec.sentences.slice(1).map((t, j) => <Line key={j + 1} text={t} nums={sec.cites?.[j + 1]} refs={refs} lead={isLead()} />)
               : null}

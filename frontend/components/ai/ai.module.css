@@ -83,3 +83,6 @@
 .scopeMenu button:hover { background: var(--surface-2); }
 .scopeMenu button[aria-checked="true"] { font-weight: 700; }
 .scopeMenu button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+/* '업체에 물을 말' 복사 단추 · 복사가 막혔을 때 고를 글 */
+.copyRow { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.copyText { width: 100%; min-width: 0; resize: none; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 8px 10px; font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface); }

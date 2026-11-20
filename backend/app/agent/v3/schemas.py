@@ -244,6 +244,7 @@ class Section(BaseModel):
     sources: list[dict] = []  # 인용 조각 출처 {ref, title, kind_ko, publisher} (원문 없음)
     table: list[list[str]] = []  # 비교 블록(2칸 줄). 칸 글도 출력 검사를 지난 것만
     steps: bool = False  # 단계 블록(문장이 순서대로인 단계)
+    copyable: bool = False  # 표 첫 칸을 '복사' 단추로 옮길 수 있게(업체에 물을 말)
 
 
 class CalcBox(BaseModel):
@@ -331,12 +332,15 @@ class AgentAnswer(BaseModel):
     trace: Trace = Trace()
 
     def plain(self) -> str:
-        """대화 표에 남길 글: 묶음 제목 · 문장만 잇는다(카드 · 상자는 뺀다)."""
+        """대화 표에 남길 글: 묶음 제목 · 문장 · 표 줄만 잇는다(카드 · 상자는 뺀다)."""
         out: list[str] = []
         for s in self.sections:
             if s.title:
                 out.append(s.title)
             out.extend(x.text for x in s.sentences)
+            out.extend(
+                f"· {' — '.join(c for c in r if c)}" for r in s.table
+            )  # 이어 보기에서도 표 내용이 보이게
             if s.caution:
                 out.append(s.caution.text)
         out.extend(self.unknown)

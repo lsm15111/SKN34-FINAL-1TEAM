@@ -57,6 +57,7 @@ class AiSection(BaseModel):
     cites: list[list[int]] = []  # 문장마다 출처 번호(AiAnswer.refs의 1부터). sentences와 같은 길이
     table: list[list[str]] = []  # 비교 블록 2칸 줄
     steps: bool = False  # 단계 블록
+    copyable: bool = False  # 표 첫 칸(업체에 물을 말)을 복사 단추로
 
 
 class AiBrief(BaseModel):
@@ -145,4 +146,5 @@ def section_out(s: Section) -> AiSection:
         sources=src,
         table=[list(r) for r in s.table],
         steps=s.steps,
+        copyable=s.copyable,
     )

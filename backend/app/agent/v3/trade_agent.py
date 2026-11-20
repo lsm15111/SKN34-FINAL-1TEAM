@@ -8,7 +8,7 @@
 """
 
 from app.agent.v3 import calc_lines, templates
-from app.agent.v3.answer import KB, Part, Task, drop_promise, knowledge
+from app.agent.v3.answer import KB, OWN_TRADES, Part, Task, drop_promise, knowledge, trade_title
 from app.agent.v3.schemas import UiCard
 from app.agent.v3.trades import BY_CODE
 
@@ -74,7 +74,7 @@ def run(task: Task, kb: KB) -> Part:
         lines.append(templates.MY_HOUSE)
     if lines:
         part.add(
-            templates.section(lines, title=f"[{ko}]", route="trade", trade=code),
+            templates.section(lines, title=trade_title(code), route="trade", trade=code),
             "\n".join([*lines, templates.ALLOWED]),
         )
 
@@ -98,6 +98,8 @@ def run(task: Task, kb: KB) -> Part:
     ):  # 계산 안 하는 공종도 단계 버튼(r2 점검 C29)
         stage = facts.stage if facts else None
         nxt = templates.NEXT.get(stage or "", []) if facts else templates.NO_PROJECT_NEXT
+        if facts is None and code not in OWN_TRADES:
+            nxt = []  # 범위 밖 공종(전기 등) 질문에 '기본 정보 넣기 · 표준견적서 보기'는 딴말이에요(4.5)
         if any(
             c.kind == "vendor_reco" for c in part.cards
         ):  # 추천 카드에 '업체 모두 보기'가 있어요

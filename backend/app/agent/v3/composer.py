@@ -331,8 +331,10 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
     if not secs:
         return None
     fixed = [s for s in part.sections if s.source in FIXED]
+    # 카드의 방법 · 업체에 물을 말 표는 검증된 카드 글이라 작성기 답 아래에 그대로 붙여요(작성기는 표를 다시 쓰지 않음)
+    tables = [s for s in part.sections if s.source == "card" and s.table]
     new = Part(
-        sections=[*fixed, *secs], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
+        sections=[*fixed, *secs, *tables], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
         # 일부만 답했으면 '확인하지 못했어요'는 빼고 확인할 곳 줄만 둬요(답 뒤에 모름이 붙으면 앞뒤가 안 맞아요)
         unknown=[] if c.verdict == "answer" else [u for u in part.unknown if u != templates.UNKNOWN],
         suggest=_follow(c.follow, kb) or list(part.suggest), near=list(part.near), used_cards=list(part.used_cards),

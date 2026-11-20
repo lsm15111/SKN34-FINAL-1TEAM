@@ -47,6 +47,13 @@ DOC_REFS: dict[str, str] = {
 DOC_REF = re.compile(r"doc:[a-z0-9_.\-]+")
 
 
+def _check_refs(v: list[str]) -> list[str]:
+    for r in v:
+        if not (bm25.REF.fullmatch(r) or r in DOC_REFS):
+            raise ValueError(f"조각 번호 모양이 아니에요: {r}")
+    return v
+
+
 class CardSentence(BaseModel):
     text: str = Field(min_length=4, max_length=220)
     cites: list[str] = Field(min_length=1, max_length=4)
@@ -54,10 +61,41 @@ class CardSentence(BaseModel):
     @field_validator("cites")
     @classmethod
     def _refs(cls, v: list[str]) -> list[str]:
-        for r in v:
-            if not (bm25.REF.fullmatch(r) or r in DOC_REFS):
-                raise ValueError(f"조각 번호 모양이 아니에요: {r}")
-        return v
+        return _check_refs(v)
+
+
+class CardMethod(BaseModel):
+    """'어떻게' 답의 방법 한 줄: 이름 · 언제 쓰고 무엇을 보는지(표 한 줄로 보여요)."""
+
+    name: str = Field(min_length=2, max_length=24)
+    when: str = Field(min_length=4, max_length=90)
+    cites: list[str] = Field(min_length=1, max_length=4)
+
+    @field_validator("cites")
+    @classmethod
+    def _refs(cls, v: list[str]) -> list[str]:
+        return _check_refs(v)
+
+    @property
+    def text(self) -> str:
+        return f"{self.name}: {self.when}"
+
+
+class CardVendorAsk(BaseModel):
+    """업체에 물을 말 한 줄: 물을 말 · 왜 묻는지(표 한 줄 · 복사 단추로 보여요)."""
+
+    q: str = Field(min_length=4, max_length=60)
+    why: str = Field(min_length=4, max_length=90)
+    cites: list[str] = Field(min_length=1, max_length=4)
+
+    @field_validator("cites")
+    @classmethod
+    def _refs(cls, v: list[str]) -> list[str]:
+        return _check_refs(v)
+
+    @property
+    def text(self) -> str:
+        return f"{self.q} {self.why}"
 
 
 class CardSource(BaseModel):
@@ -99,6 +137,9 @@ class AnswerCard(BaseModel):
     calc: list[CardCalc] = []
     actions: list[str] = []
     ask: CardAsk | None = None
+    # 범위 밖 공종 '어떻게' 카드의 선택 칸(agent-context.md 4.2): 방법 표 · 업체에 물을 말 표
+    methods: list[CardMethod] = Field(default=[], max_length=4)
+    vendor_ask: list[CardVendorAsk] = Field(default=[], max_length=6)
     policy: list[str] = []
     sources: list[CardSource] = []
     guest: bool = False  # 로그인 전 자주 묻는 질문 칩으로 보여도 되는 카드
@@ -114,6 +155,8 @@ class AnswerCard(BaseModel):
         for s in (self.caution, self.tip):
             if s:
                 out.extend(s.cites)
+        for row in (*self.methods, *self.vendor_ask):
+            out.extend(row.cites)
         return list(dict.fromkeys(out))
 
 

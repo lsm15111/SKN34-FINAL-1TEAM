@@ -42,6 +42,22 @@ DIY_PENALTY = (
 T_NEAR_ASK = 0.40  # 모름일 때 이 점수 이상인 카드 열쇠 질문을 '이걸 물으셨나요?' 버튼으로
 # 정해 둔 글로 답하는 정책 질문은 조각 문장을 붙이지 않는다(추천 · 금액 · 법률은 원문 한 줄이 오해를 부름)
 NO_EXTRACT = frozenset({"price", "vendor_reco", "brand_reco", "legal_case"})
+# 믿집이 견적 · 공정표를 만드는 공종. 그 밖은 범위 밖이라 묶음 제목에 '알아 두기'를 붙여요(agent-context.md 4.1)
+OWN_TRADES = frozenset({"dobae", "mokgong", "common"})
+# 업체에 물을 말을 찾는 질문: 있으면 카드의 '업체에 물을 말' 표를 펼쳐요(없으면 이어 물을 질문으로)
+ASK_VENDOR = re.compile(
+    r"물어\s{0,2}볼|물어봐|물어\s{0,2}봐야|물을\s{0,2}(?:거|것|게|말)|뭐\s{0,2}물어|질문할|확인할|체크|따져"
+)
+METHODS_LEAD = "업체가 쓰는 방법은 이래요."
+ASK_LEAD = "업체에 이렇게 물어보세요."
+
+
+def trade_title(code: str | None) -> str:
+    """묶음 제목: '[도배]' · 범위 밖은 '[전기 · 알아 두기]'"""
+    if not code or code not in BY_CODE:
+        return ""
+    ko = BY_CODE[code].ko  # type: ignore[index]
+    return f"[{ko}]" if code in OWN_TRADES else f"[{ko.split(' · ')[0]} · 알아 두기]"
 
 
 @dataclass
@@ -150,9 +166,8 @@ def card_section(card: cards.AnswerCard, *, route: Route, trade: TradeCode | Non
     def sent(x: cards.CardSentence | None) -> Sentence | None:
         return Sentence(text=x.text, cites=[*x.cites, tag]) if x else None
 
-    ko = BY_CODE[card.trade].ko if card.trade in BY_CODE else ""
     return Section(
-        title=f"[{ko}]" if ko else "",
+        title=trade_title(card.trade),
         sentences=[sent(x) for x in card.answer],  # type: ignore[misc]
         caution=sent(card.caution),
         tip=sent(card.tip),
@@ -163,8 +178,32 @@ def card_section(card: cards.AnswerCard, *, route: Route, trade: TradeCode | Non
     )
 
 
+def card_tables(
+    part: Part, c: cards.AnswerCard, q: str, allowed: str, *, route: Route, trade: TradeCode | None
+) -> None:
+    """카드의 방법 표 · 업체에 물을 말 표(agent-context.md 4.2). 물을 말은 질문이 그걸 찾을 때만 펼치고,
+    아니면 그 카드의 물을 말 열쇠 질문을 이어 물을 질문 맨 앞에 둬요."""
+    srcs = [s.model_dump(include={"ref", "title", "kind", "publisher"}) for s in c.sources]
+    if c.methods:
+        sec = Section(title="[방법]", sentences=[Sentence(text=METHODS_LEAD)], source="card",
+                      route=route, trade=trade, sources=srcs, table=[[m.name, m.when] for m in c.methods])  # fmt: skip
+        part.add(sec, allowed)
+    if not c.vendor_ask:
+        return
+    if ASK_VENDOR.search(q or ""):
+        sec = Section(title="[업체에 물을 말]", sentences=[Sentence(text=ASK_LEAD)], source="card",
+                      route=route, trade=trade, sources=srcs, copyable=True,
+                      table=[[a.q, a.why] for a in c.vendor_ask])  # fmt: skip
+        part.add(sec, allowed)
+    else:
+        key = next((k for k in c.keys if ASK_VENDOR.search(k)), None)
+        if key:
+            part.suggest.insert(0, key)
+
+
 def card_allowed(kb: KB, card: cards.AnswerCard) -> str:
     texts = [x.text for x in card.answer] + [x.text for x in (card.caution, card.tip) if x]
+    texts += [x.text for x in (*card.methods, *card.vendor_ask)]
     texts += [kb.ix.by_ref[r].chunk.text for r in card.cites() if r in kb.ix.by_ref]
     return "\n".join(texts)
 
@@ -221,7 +260,9 @@ def knowledge(
         part.scores[c.tag] = best.score
         # 함께 고른 공종의 카드면 묶음 공종도 그 공종으로
         own = c.trade if c.trade in also and c.trade != trade else trade
-        part.add(card_section(c, route=route, trade=own), card_allowed(kb, c))  # type: ignore[arg-type]
+        allowed = card_allowed(kb, c)
+        part.add(card_section(c, route=route, trade=own), allowed)  # type: ignore[arg-type]
+        card_tables(part, c, q, allowed, route=route, trade=own)  # type: ignore[arg-type]
         _card_extras(part, c, facts, q)
         part.suggest.extend(
             m.key for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD
@@ -245,7 +286,7 @@ def knowledge(
                         Sentence(text=f"“{x.text}” ({x.kind_ko} · {x.title[:40]})", cites=[x.ref])
                     )
             sec = Section(
-                title=f"[{BY_CODE[trade].ko}]" if trade and trade in BY_CODE else "",
+                title=trade_title(trade),
                 sentences=sents, source="extract", route=route, trade=trade,
                 sources=[{"ref": x.ref, "title": x.title, "kind": x.kind, "publisher": x.publisher} for x in quotes],
             )  # fmt: skip
