@@ -51,8 +51,8 @@ export function FinalPlanBody({ plan, projectId, checks, mock }: { plan: ApiPlan
       {/* 공정표 칸(B4 ScheduleChart) 두 보기: 날짜별(날마다 '오전 도배 · 오후 도배') · 공정별(공정이 줄, 날짜가 열인 반나절 칸 표) */}
       <section className={s.group} aria-label="확정 공정표 칸">
         <PlanViewTabs
-          days={<ScheduleChart caption="확정 공정표 · 날짜별" view="list" half days={chart.days} rows={chart.rows} legend={["work", "off"]} note="공휴일은 건너뛰어요." />}
-          trades={<ScheduleChart caption="확정 공정표 · 공정별" view="table" half days={chart.days} rows={chart.rows} legend={["work", "off"]} note="공휴일은 건너뛰어요." />}
+          days={<ScheduleChart caption="확정 공정표 · 날짜별" view="list" half days={chart.days} rows={chart.rows} legend={["work", "off"]} note="공휴일은 건너뛰어요." fold />}
+          trades={<ScheduleChart caption="확정 공정표 · 공정별" view="table" half days={chart.days} rows={chart.rows} legend={["work", "off"]} note="공휴일은 건너뛰어요." fold />}
         />
         {crewText ? <p className={`${s.sm} ${s.phoneOnly}`}>{crewText}</p> : null}
       </section>

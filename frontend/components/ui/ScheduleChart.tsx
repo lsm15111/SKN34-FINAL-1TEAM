@@ -3,6 +3,8 @@
 //   웹(≥ 768): 표 — 줄(공정 · 업체 팀) × 열(날, half면 오전 · 오후). 쉬는 날 열은 흐리게, 오늘은 머리에 '오늘'. 넓으면 옆으로 넘김 상자.
 //   폰(< 768): 날마다 세로 목록(C36) — 칸이 있는 날과 쉬는 날(흐린 한 줄)만. heads면 V08처럼 '오늘 · 12월 15일(화)' 날짜 묶음 머리 + 줄(쉬는 날은 빼요).
 // 건조 · 청소 칸(엔진이 도배 뒤에 늘 붙여요)은 D22 B대로 기본 숨김이에요. 팀이 정하면 showAfter로 켜요.
+// 공사 사이 빈 날(어느 줄에도 칸이 없는 날, 오늘 빼고)은 웹 표에서 좁은 한 칸('12.5~6 · 쉬는 날')으로 접고,
+//   끊긴 같은 막대는 점선으로 이어요. 폰 목록도 이어진 쉬는 날을 한 줄로 묶어요(11-20 사용자 요청).
 // "use client"가 아니라 서버 화면에서 바로 그려요(칸 링크는 Next Link).
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
@@ -33,11 +35,16 @@ const KIND_WORD: Record<ChartKind, string> = { work: "공사", dry: "자연 건�
 const KIND_TONE: Partial<Record<ChartKind, "ok" | "wait">> = { booked: "ok", hold: "wait", pending: "wait" };
 const AFTER: ChartKind[] = ["dry", "clean"];
 
-type Col = { day: ChartDay; half?: Half };
+/** 표 열: 날(half면 오전 · 오후) 또는 접은 빈 날 묶음(gap) */
+type Col = { day: ChartDay; half?: Half; gap?: ChartDay[] };
+type Seg = { day: ChartDay; gap?: undefined } | { gap: ChartDay[]; day?: undefined };
+const GAP_W = 64;
 
-export function ScheduleChart({ caption, days, rows, half, today, labelHead = "공정", showAfter, legend, note, showCaption, heads, restHead = "그 뒤", view = "auto" }: {
+export function ScheduleChart({ caption, days, rows, half, today, labelHead = "공정", showAfter, legend, note, showCaption, heads, restHead = "그 뒤", view = "auto", fold = false }: {
   /** 표 · 목록 이름(읽기용): '확정 공정표' · '1월 4일 주 일정' */
   caption: string;
+  /** 공사 사이 빈 날을 좁은 한 칸 · 한 줄로 접어요(고객 공정표). 업체 일정은 빈 날이 잡을 수 있는 날이라 접지 않아요 */
+  fold?: boolean;
   /** 보기: auto 폭에 맞춰(폰 목록 · 웹 표) · list 늘 날짜별 목록 · table 늘 표(공정이 줄, 날짜가 열. 폰은 옆으로 넘겨요) */
   view?: "auto" | "list" | "table";
   /** 열이 될 날(API가 준 순서 · 쉬는 날 포함). 보일 날만 넘겨요 */
@@ -64,22 +71,47 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
   const shown = rows
     .map((r) => ({ ...r, cells: showAfter ? r.cells : r.cells.filter((c) => !AFTER.includes(c.kind ?? "work")) }))
     .filter((r, i) => r.cells.length > 0 || rows[i].cells.length === 0);
-  const cols: Col[] = half ? days.flatMap((d) => [{ day: d, half: "am" as const }, { day: d, half: "pm" as const }]) : days.map((d) => ({ day: d }));
+  // 첫 칸과 마지막 칸 사이의 빈 날은 한 칸으로 접어요(오늘은 '오늘' 표시가 있어서 접지 않아요)
+  const used = new Set(shown.flatMap((r) => r.cells.map((c) => c.day)));
+  const firstUsed = days.findIndex((d) => used.has(d.day));
+  const lastUsed = days.findLastIndex((d) => used.has(d.day));
+  const segs: Seg[] = [];
+  days.forEach((d, i) => {
+    const gap = fold && i > firstUsed && i < lastUsed && !used.has(d.day) && d.day !== today;
+    const prev = segs[segs.length - 1];
+    if (gap && prev?.gap) prev.gap.push(d);
+    else segs.push(gap ? { gap: [d] } : { day: d });
+  });
+  const cols: Col[] = segs.flatMap((g): Col[] => {
+    if (g.gap) return [{ day: g.gap[0], gap: g.gap }];
+    return half ? [{ day: g.day, half: "am" }, { day: g.day, half: "pm" }] : [{ day: g.day }];
+  });
 
-  const cellAt = (r: ChartRow, c: Col) =>
-    r.cells.find((x) => x.day === c.day.day && (c.half ? x.half === c.half || !x.half : true)) ?? null;
+  const cellAt = (r: ChartRow, c: Col | undefined) =>
+    !c || c.gap ? null : r.cells.find((x) => x.day === c.day.day && (c.half ? x.half === c.half || !x.half : true)) ?? null;
   const sameRun = (a: ChartCell | null, b: ChartCell | null) =>
     !!a && !!b && (a.kind ?? "work") === (b.kind ?? "work") && a.label === b.label && a.href === b.href && (half || (!a.half && !b.half));
   const textOf = (r: ChartRow, c: ChartCell) => c.label ?? r.name;
   const dayName = (d: ChartDay) => [dateSpoken(d.day), d.off ? "쉬는 날" : null, d.holiday ?? null, d.day === today ? "오늘" : null].filter(Boolean).join(", ");
   const md = (iso: string) => { const p = dayParts(iso); return { md: `${p.m}.${p.d}`, w: p.w }; };
+  /** 접은 빈 날 머리: '12.5(토)' 또는 '12.5~6' · '12.28~1.3' + '쉬는 날'(모두 쉬는 날일 때) · '공사 없음' */
+  const gapHead = (g: ChartDay[]) => {
+    const a = dayParts(g[0].day);
+    const b = dayParts(g[g.length - 1].day);
+    const range = g.length === 1 ? `${a.m}.${a.d}(${a.w})` : `${a.m}.${a.d}~${a.m === b.m ? b.d : `${b.m}.${b.d}`}`;
+    const word = g.every((d) => d.off) ? "쉬는 날" : "공사 없음";
+    const hol = g.map((d) => d.holiday).filter(Boolean).join(" · ");
+    const spoken = [g.length === 1 ? dateSpoken(g[0].day) : `${dateSpoken(g[0].day)}부터 ${dateSpoken(g[g.length - 1].day)}까지`, word, hol || null].filter(Boolean).join(", ");
+    return { range, word, spoken };
+  };
 
-  const bar = (r: ChartRow, c: ChartCell, wide: boolean) => {
+  const bar = (r: ChartRow, c: ChartCell, wide: boolean, cont = false) => {
     const kind = c.kind ?? "work";
     const text = textOf(r, c);
     const inner = (
       <>
-        <span className={s.barText}>{text}{c.note ? <span className={s.note}> · {c.note}</span> : null}</span>
+        <span className={s.barText}>{text}{c.note && !cont ? <span className={s.note}> · {c.note}</span> : null}</span>
+        {cont ? <span className="mj-sr">, 쉬는 날 뒤 이어서</span> : null}
         {kind !== "work" && !text.includes(KIND_WORD[kind]) ? <span className="mj-sr">, {KIND_WORD[kind]}</span> : null}
       </>
     );
@@ -90,17 +122,24 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
       : <span className={cls} title={text}>{inner}</span>;
   };
 
-  // 줄마다: 붙어 있는 같은 칸은 한 칸(colSpan)으로 이어요
+  // 줄마다: 붙어 있는 같은 칸은 한 칸(colSpan)으로 이어요. 접은 빈 날 양쪽이 같은 막대면 점선으로 잇고, 뒤 막대는 덧말 없이 보여요
   const bodyRow = (r: ChartRow) => {
     const out: ReactNode[] = [];
     for (let i = 0; i < cols.length; ) {
       const col = cols[i];
+      if (col.gap) {
+        const join = sameRun(cellAt(r, cols[i - 1]), cellAt(r, cols[i + 1]));
+        out.push(<td key={i} className={`${s.gapCell} ${s.off}`}>{join ? <span className={s.gapLine} aria-hidden="true" /> : null}</td>);
+        i += 1;
+        continue;
+      }
       const c = cellAt(r, col);
       const off = col.day.off ? s.off : undefined;
       if (!c) { out.push(<td key={i} className={[off, col.half === "pm" ? s.pm : null].filter(Boolean).join(" ") || undefined} />); i += 1; continue; }
       let n = 1;
       while (i + n < cols.length && sameRun(c, cellAt(r, cols[i + n]))) n += 1;
-      out.push(<td key={i} colSpan={n > 1 ? n : undefined} className={[s.filled, c.href ? s.linked : null, off].filter(Boolean).join(" ")}>{bar(r, c, half || n > 1 || !c.half)}</td>);
+      const cont = !!cols[i - 1]?.gap && sameRun(cellAt(r, cols[i - 2]), c);
+      out.push(<td key={i} colSpan={n > 1 ? n : undefined} className={[s.filled, c.href ? s.linked : null, off].filter(Boolean).join(" ")}>{bar(r, c, half || n > 1 || !c.half, cont)}</td>);
       i += n;
     }
     return out;
@@ -126,8 +165,21 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
     return out;
   };
 
-  // 반나절 칸 48(누르는 막대 44 + 칸 여백), 날 칸 72 — 이보다 좁아지면 옆으로 넘겨요
-  const tableMin = 150 + cols.length * (half ? 48 : 72);
+  // 반나절 칸 48(누르는 막대 44 + 칸 여백), 날 칸 72, 접은 빈 날 64 — 이보다 좁아지면 옆으로 넘겨요
+  const tableMin = 150 + cols.reduce((n, c) => n + (c.gap ? GAP_W : half ? 48 : 72), 0);
+
+  // 폰 목록: 칸이 있는 날 + 쉬는 날. 이어진 쉬는 날(칸 없음 · 오늘 아님)은 한 줄로 묶어요
+  type Entry = { d: ChartDay; at: number; items: { r: ChartRow; c: ChartCell }[]; rest?: ChartDay[] };
+  const entries: Entry[] = [];
+  days.forEach((d, at) => {
+    const items = shown.flatMap((r) => r.cells.filter((c) => c.day === d.day).map((c) => ({ r, c })))
+      .sort((a, b) => (a.c.half === "pm" ? 1 : 0) - (b.c.half === "pm" ? 1 : 0));
+    if (!items.length && !d.off) return;
+    const restDay = !items.length && d.off && d.day !== today;
+    const prev = entries[entries.length - 1];
+    if (fold && restDay && prev?.rest && prev.at === at - 1) { prev.rest.push(d); prev.at = at; return; }
+    entries.push({ d, at, items, rest: restDay ? [d] : undefined });
+  });
 
   return (
     <div className={[s.wrap, view === "list" ? s.vList : view === "table" ? s.vTable : null].filter(Boolean).join(" ")}>
@@ -137,12 +189,24 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
             <caption className={showCaption ? s.caption : "mj-sr"}>{caption}</caption>
             <colgroup>
               <col className={s.colLabel} />
-              {cols.map((c, i) => <col key={i} />)}
+              {cols.map((c, i) => <col key={i} className={c.gap ? s.colGap : undefined} />)}
             </colgroup>
             <thead>
               <tr>
                 <th scope="col" rowSpan={half ? 2 : 1} className={s.l}>{labelHead}</th>
-                {days.map((d) => {
+                {segs.map((g) => {
+                  if (g.gap) {
+                    const h = gapHead(g.gap);
+                    return (
+                      <th key={`gap-${g.gap[0].day}`} scope="col" rowSpan={half ? 2 : 1} className={`${s.dh} ${s.gapH} ${s.off}`}>
+                        <span aria-label={h.spoken}>
+                          <time dateTime={g.gap[0].day} className={s.gapRange} aria-hidden="true">{h.range}</time>
+                          <span className={s.gapWord} aria-hidden="true">{h.word}</span>
+                        </span>
+                      </th>
+                    );
+                  }
+                  const d = g.day;
                   const p = md(d.day);
                   return (
                     <th key={d.day} scope="col" colSpan={half ? 2 : 1} className={[s.dh, d.off ? s.off : null, d.day === today ? s.today : null].filter(Boolean).join(" ")}>
@@ -154,7 +218,7 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
               </tr>
               {half ? (
                 <tr>
-                  {cols.map((c, i) => <th key={i} scope="col" className={[s.hh, c.day.off ? s.off : null, c.half === "pm" ? s.pm : null].filter(Boolean).join(" ")}>{HALF_LABEL[c.half!]}</th>)}
+                  {cols.map((c, i) => c.gap ? null : <th key={i} scope="col" className={[s.hh, c.day.off ? s.off : null, c.half === "pm" ? s.pm : null].filter(Boolean).join(" ")}>{HALF_LABEL[c.half!]}</th>)}
                 </tr>
               ) : null}
             </thead>
@@ -206,11 +270,23 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
         </div>
       ) : (
         <ol className={s.list} aria-label={caption}>
-          {days.map((d) => {
-            const items = shown.flatMap((r) => r.cells.filter((c) => c.day === d.day).map((c) => ({ r, c })))
-              .sort((a, b) => (a.c.half === "pm" ? 1 : 0) - (b.c.half === "pm" ? 1 : 0));
-            if (!items.length && !d.off) return null;
+          {entries.map(({ d, items, rest }) => {
             const p = md(d.day);
+            if (rest && rest.length > 1) {
+              const last = rest[rest.length - 1];
+              const q = md(last.day);
+              const hol = rest.map((x) => x.holiday).filter(Boolean).join(" · ");
+              return (
+                <li key={d.day} className={`${s.item} ${s.restDay}`}>
+                  <p className={s.dt}>
+                    <time dateTime={d.day} aria-label={`${dateSpoken(d.day)}부터 ${dateSpoken(last.day)}까지`}>{p.md}<span>{p.w}~{q.w}</span></time>
+                  </p>
+                  <div className={s.bars}>
+                    <span className={s.rest}>{hol ? `${hol} · 쉬는 날` : "쉬는 날"} · {q.md}({q.w})까지</span>
+                  </div>
+                </li>
+              );
+            }
             return (
               <li key={d.day} className={[s.item, d.off && !items.length ? s.restDay : null].filter(Boolean).join(" ")}>
                 <p className={s.dt}>

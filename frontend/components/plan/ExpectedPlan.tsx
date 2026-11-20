@@ -48,7 +48,7 @@ export function ExpectedPlan({ plan }: { plan: ApiPlan }) {
       </section>
       <section className={s.group} aria-labelledby="gt-month">
         <p id="gt-month" className={s.gh}><b>{month}</b></p>
-        <ScheduleChart caption="예상 공정표" days={days} rows={rows} legend={["work", "off"]} />
+        <ScheduleChart caption="예상 공정표" days={days} rows={rows} legend={["work", "off"]} fold />
         <ul className={s.legend}>
           {works.map((b) => <li key={`${b.trade}-${b.start}`}><i aria-hidden="true" /><b>{tradeLabel(b.trade ?? "")}</b> <span className="mj-num">{rangeText(b.start, b.end, { weekday: true })} · {b.days}일</span></li>)}
         </ul>
