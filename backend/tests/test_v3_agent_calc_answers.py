@@ -138,10 +138,22 @@ def test_vendor_pick_scores_and_reasons():
         vendor_pick.Candidate("d", "라업체", True, 2_100_000, 0, None, 0, 5),
     ]
     picks = vendor_pick.pick(c)
-    assert [p.c.name for p in picks] == ["가업체", "라업체", "나업체"]
-    assert vendor_pick.reasons(picks[0]) == [
-        "별점 4.8 · 리뷰 20개", "믿집 공사 30건", "가견적이 표준견적서보다 6% 낮아요",
-    ]  # fmt: skip
+    assert [p.c.name for p in picks] == [
+        "가업체",
+        "라업체",
+        "나업체",
+    ]  # 점수에는 표준 대비 %를 써요
+    assert vendor_pick.reasons(picks[0]) == ["별점 4.8 · 리뷰 20개", "믿집 공사 30건"]
+
+
+def test_vendor_pick_reasons_never_compare_with_standard():
+    """추천 사유에 표준견적서와 견준 말이 없어요(사용자 결정 2026-11-21). %가 낮든 높든 같아요."""
+    for pct in (-30, -6, 0, 8, 41, None):
+        for local, instant in ((True, False), (False, True)):
+            c = vendor_pick.Candidate("a", "가업체", local, 2_000_000, pct, 4.8, 3, 2, instant)
+            (p,) = vendor_pick.pick([c], n=1)
+            got = vendor_pick.reasons(p)
+            assert got and not [r for r in got if "표준" in r or "%" in r], (pct, got)
 
 
 def test_vendor_answer_with_and_without_project():

@@ -113,7 +113,8 @@ SCREEN_LINE = "{name} 줄은 {vendor} 확인한 단가에 이 집 수량({unit})
 SCREEN_BASIS = "수량은 {basis} 단위로 셌어요."
 SCREEN_MAN_DAY = "품 수는 이 집 벽 · 천장 도배 면적으로 셈하고 0.5품 단위로 올렸어요."
 SCREEN_MAN_DAY_LIVING = "살면서 하는 집이라 짐을 옮기며 붙이는 만큼 품을 더 셌어요."
-SCREEN_EXTRA = "{eun} 표준견적서에 없는 줄이라 표준견적서와 견줄 때는 빼요."
+# 표준견적서와 견주는 말(표준 대비 % · '견줄 때 빼요')은 쓰지 않아요(사용자 결정 2026-11-21). 줄이 있는지만 말해요
+SCREEN_EXTRA = "{eun} 표준견적서에 없는 줄이에요."
 SCREEN_NOTE = "{name} 줄에는 {note} 들어가요."
 # 시장 기준값(자료 많은 줄만, 사용자 결정 2026-11-20): 판단 말 없이 범위 · 건수 · 기준 달만
 SCREEN_MARKET = (
@@ -123,10 +124,7 @@ SCREEN_MARKET = (
 SCREEN_MARKET_ONE = "믿집이 모은 실견적 {n}건에서 {name} 단가는 {basis}당 {stat} {base}원(부가세 빼고)이에요({ym} 기준)."
 SCREEN_INCLUDED = "{eun} 다른 줄에 포함돼 따로 받지 않아요."
 SCREEN_COMPARE_SAME = "업체 가견적은 모두 같은 믿집 수량에 업체 단가를 곱해서, 업체끼리는 같은 줄의 단가를 견주면 돼요."
-SCREEN_COMPARE_PCT = "{vendor} 가견적의 표준 대비 %는 표준견적서와 같은 일 줄만 견준 값이에요."
-SCREEN_COMPARE_EXTRA = (
-    "{lines} 줄은 표준견적서에 없어서 견줄 때 빼고, 다른 업체도 따로 받는지 봐요."
-)
+SCREEN_COMPARE_EXTRA = "{lines} 줄은 표준견적서에 없는 줄이에요. 다른 업체도 따로 받는지 봐요."
 SCREEN_COMPARE_AFTER = "{lines} 실측 뒤 업체가 정해서 가견적에 없어요. 실측 견적서에서 꼭 확인해요."
 
 # ---- 일정 ----

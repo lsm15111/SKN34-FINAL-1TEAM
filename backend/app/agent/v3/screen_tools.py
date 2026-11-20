@@ -4,7 +4,7 @@
 | 꼴 | 도구 |
 | --- | --- |
 | line(항목을 가리키는 판단 · 비교 · 뜻도) | 견적 설명(그 줄: 무엇을 곱했는지 · 단위 · 표준에 없는 줄 · 시장 기준값 + 계산 상자), 항목마다 |
-| compare · judge | 견적 설명 비교(업체 화면: 표준 대비 · 따로 받는 줄 · 실측 뒤 줄, 표준 화면: 업체 가견적 차이) |
+| compare · judge | 견적 설명 비교(업체 화면: 같은 수량 · 따로 받는 줄 · 실측 뒤 줄, 표준 화면: 업체 가견적 차이) |
 | rank | 없음(작성기가 '보는 화면'의 금액 큰 순서로 답해요) |
 | what · how · choose · other | 항목을 가리키면 그 줄 풀이, 아니면 공종(카드 · 조각 · 계산) |
 | price · period | 공종(계산 엔진 금액 · 기간) |
@@ -12,6 +12,7 @@
 
 - 담당끼리는 서로 부르지 않고, 조각 묶음은 오케스트레이터 합치기 그대로 이어 붙여요(다시 쓰지 않음).
 - 같은 담당 · 같은 항목은 한 번만 불러요. 담당 호출은 턴당 MAX_CALLS번까지.
+- 표준견적서와 견준 %는 '보는 화면' 글에 넣지 않아요(사용자 결정 2026-11-21).
 """
 
 from app.agent.v3 import guide, orchestrator, policy, quote_explain, schedule_agent, trade_agent
@@ -29,10 +30,6 @@ def _won(v: int | None) -> str:
     return "" if v is None else f"{v:,}원"
 
 
-def _pct(p: float | None) -> str:
-    return "" if p is None else f"표준견적서보다 {abs(p):g}% {'많아요' if p >= 0 else '적어요'}"
-
-
 def screen_text(view: str | None, facts: ProjectFacts | None) -> dict | None:
     """'보는 화면' 근거(작성기용). 화면에 보이는 계산 엔진 값을 그대로 글로 옮겨요. 없으면 None."""
     if facts is None or facts.standard is None:
@@ -46,8 +43,6 @@ def screen_text(view: str | None, facts: ProjectFacts | None) -> dict | None:
             f"{v.vendor} 가견적(업체 자세히 화면) · 벽지 {GRADE_KO.get(v.grade, v.grade)} · "
             f"합계 {_won(v.total)}(부가세 포함, 공급가 {_won(v.supply)} + 부가세 {_won(v.vat)})."
         )
-        if v.vs_standard is not None:
-            out.append(f"표준견적서와 같은 일 줄만 견주면 {_pct(v.vs_standard)}.")
         if v.grade_diff is not None and v.grade in OTHER_GRADE:
             other = GRADE_KO[OTHER_GRADE[v.grade]]
             sign = "+" if v.grade_diff > 0 else "−"
@@ -100,10 +95,7 @@ def screen_text(view: str | None, facts: ProjectFacts | None) -> dict | None:
         row += " · " + " · ".join(b for b in bits if b)
         out.append(row)
     if others:
-        out.append(
-            "업체 가견적: "
-            + " / ".join(f"{e.vendor} {_won(e.total)}({_pct(e.vs_standard)})" for e in others[:3])
-        )
+        out.append("업체 가견적: " + " / ".join(f"{e.vendor} {_won(e.total)}" for e in others[:3]))
     return {"ref": SCREEN_REF, "제목": title, "글": "\n".join(out)}
 
 

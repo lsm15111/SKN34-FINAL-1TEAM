@@ -166,26 +166,28 @@ def test_material_question_reads_vendor_line_not_standard_line():
 
 
 def test_compare_question_on_vendor_screen_lists_what_to_check():
-    """'이 견적서 업체랑 비교할 때 뭘 위주로 봐야해?' → 같은 수량 · 표준 대비 %의 뜻 · 표준에 없는 줄 · 실측 뒤 줄."""
+    """'이 견적서 업체랑 비교할 때 뭘 위주로 봐야해?' → 같은 수량 · 표준에 없는 줄 · 실측 뒤 줄.
+    표준견적서와 견준 %는 글 · 계산 상자에 없어요(사용자 결정 2026-11-21)."""
     a = _turn("이 견적서 업체랑 비교할 때 뭘 위주로 봐야해?", _facts())
     assert a.trace.route == "quote_explanation"
     texts = _texts(a)
     assert templates.SCREEN_COMPARE_SAME in texts
     assert (
-        "퍼티작업 · 식대 · 운송비 줄은 표준견적서에 없어서 견줄 때 빼고, 다른 업체도 따로 받는지 봐요."
+        "퍼티작업 · 식대 · 운송비 줄은 표준견적서에 없는 줄이에요. 다른 업체도 따로 받는지 봐요."
         in texts
     )
+    assert not [t for t in texts if "표준보다" in t or "표준 대비" in t or "견줄 때" in t]
     assert (
         "기존 벽지 철거 · 폐기물 처리는 실측 뒤 업체가 정해서 가견적에 없어요. 실측 견적서에서 꼭 확인해요."
         in texts
     )
     assert templates.STANDARD_IS not in texts  # 전에는 '표준견적서는 업체 견적이 아니에요'만 했어요
     box = next(b for b in a.calc if b.ref == "screen.vendor.total")
-    assert (box.amount, box.note) == (2_920_005, "표준보다 30.3% 많아요")
+    assert (box.amount, box.note) == (2_920_005, "")
 
 
 def test_man_day_lines_explain_how_pum_is_counted():
-    """인건비 · 식대(품 줄): 품을 세는 법. 식대 · 운송비처럼 표준견적서에 없는 줄은 견줄 때 빼는 줄이라고 해요."""
+    """인건비 · 식대(품 줄): 품을 세는 법. 식대 · 운송비처럼 표준견적서에 없는 줄은 없는 줄이라고만 해요."""
     kb = repo_kb()
 
     def run(q: str):
@@ -207,7 +209,7 @@ def test_man_day_lines_explain_how_pum_is_counted():
     meal = run("식대는 왜 줘야해?")
     texts = [x.text for s in meal.sections for x in s.sentences]
     assert templates.SCREEN_MAN_DAY in texts
-    assert "식대는 표준견적서에 없는 줄이라 표준견적서와 견줄 때는 빼요." in texts
+    assert "식대는 표준견적서에 없는 줄이에요." in texts
 
 
 def test_without_screen_facts_no_screen_boxes():

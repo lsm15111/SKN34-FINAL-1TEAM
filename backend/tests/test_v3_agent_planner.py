@@ -75,11 +75,14 @@ def test_screen_text_lists_lines_by_amount_with_market_and_other_vendors():
     body = t["글"]
     first = body.index("- 인건비"), body.index("- 실크벽지"), body.index("- 퍼티작업")
     assert first == tuple(sorted(first)), "금액 큰 순서"
-    assert "4.5 품 × 300,000원 = 1,350,000원" in body and "표준견적서보다 30.3% 많아요" in body
+    assert "4.5 품 × 300,000원 = 1,350,000원" in body
     assert "합지(저가형)으로 바꾸면 합계가 −266,805원" in body
     assert "실견적 279건" in body and "표준견적서에 없는 줄" in body
     s = screen_tools.screen_text("standard", std_facts())
     assert s is not None and "실측 뒤 업체가 정함" in s["글"] and "1,802,374원" in s["글"]
+    # 표준견적서와 견준 %는 '보는 화면' 글에 없어요(사용자 결정 2026-11-21)
+    for text in (body, s["글"]):
+        assert "표준견적서보다" not in text and "30.3%" not in text and "%" not in text
 
 
 def plan_stub(stub, *asks: Ask) -> None:
@@ -126,6 +129,8 @@ def test_judge_and_rank_answer_from_screen_numbers(stub):
     )
     t = texts(a)
     assert judge in t and top in t and made_up not in t
+    # 작성기가 표준 대비 %를 써도 보는 화면에 그 숫자가 없어 숫자 검사에서 빠져요(사용자 결정 2026-11-21)
+    assert not [x for x in t if "표준보다" in x or "30.3" in x]
     assert any(src["ref"] == "rule:screen" for s in a.sections for src in s.sources)
     assert any(c.label == "마루와벽 가견적" for c in a.calc)
     assert a.unknown == []
