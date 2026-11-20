@@ -8,6 +8,11 @@ if [ "${1:-}" = v4 ]; then
   : "${V3_DB_NAME:=mitjip_v4}" "${V3_REDIS_DB:=7}" "${V3_API_PORT:=8040}" "${V3_WEB_PORT:=3040}"
 fi
 . "$(dirname "$0")/env.sh"
+# live(두 번째 인자): 메인 .env의 Anthropic 키만 살리고 LLM_LIVE=true(사용자 결정 2026-11-21, 상한 $50). OpenAI · 다른 키는 그대로 비워요
+if [ "${2:-}" = live ]; then
+  ANTHROPIC_API_KEY="$(sed -n 's/^ANTHROPIC_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
+  export ANTHROPIC_API_KEY LLM_LIVE=true
+fi
 WEB="${V3_WEB_PORT:-3031}"
 export APP_ENV=local DEMO_AUTO=false JEV_ENABLED=false
 export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER:-mitjip}:${POSTGRES_PASSWORD}@127.0.0.1:${DB_HOST_PORT:-5433}/${V3_DB_NAME:-mitjip_v3}"
