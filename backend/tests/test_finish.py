@@ -14,9 +14,10 @@ from app.shared.errors import AppError
 from app.visit import service as visit_service
 from tests.conftest import query
 from tests.helpers import no_surprises, signup, use
-from tests.test_dates import days, propose, ready
+from tests.test_dates import days, mokgong_deal, propose, ready
 from tests.test_extras import extra, scheduled
 from tests.test_visit_inbox import login
+from tests.test_visit_request import listed
 
 TODAY = today_seoul()
 WORKED = "update deals set start_date = current_date - 3, end_date = current_date"
@@ -189,6 +190,21 @@ def test_state_rules(api):
     assert (
         api.post(f"/projects/{pid}/deals/{did}/check", json={"result": "later"}).status_code == 422
     )
+
+
+def test_trade_not_in_home_saves_nothing(api):
+    """집 정보로 필요한 기간을 못 세는 공정(도배만 고른 집의 목공)은 저장하기 전에 409.
+    공사 화면 응답을 못 만드는데 끝냄(상태 · 이력 · 기한 일 · 알림)만 저장되면 안 된다."""
+    _customer, pid, _did, _ = ready(api)
+    vid = listed(api, "barum@mitjip.test", "바름집수리")  # 업체로 로그인
+    mok = uuid.UUID(mokgong_deal(pid, vid, "scheduled", TODAY - timedelta(days=3), TODAY))
+    r = api.post(f"/vendor/jobs/{mok}/done")
+    assert r.status_code == 409 and r.json()["error"]["code"] == "trade", r.text
+    (row,) = query("select status, work_done_on from deals where id = $1", mok)
+    assert (row["status"], row["work_done_on"]) == ("scheduled", None)
+    assert query("select count(*) n from deal_events where deal_id = $1", mok)[0]["n"] == 0
+    assert query("select count(*) n from jobs where ref_id = $1", mok)[0]["n"] == 0
+    assert bodies("work_done") == []
 
 
 def test_two_checks_at_once_only_one_wins(api):

@@ -2,7 +2,7 @@
 
 import asyncio
 import uuid
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 
 import asyncpg
 import pytest
@@ -87,7 +87,13 @@ def mokgong_scheduled(pid: str, start: str, end: str) -> None:
     )
 
 
-def mokgong_confirmed(pid: str, vendor_id: str) -> str:
+def mokgong_deal(
+    pid: str,
+    vendor_id: str,
+    status: str = "confirmed",
+    start: date | None = None,
+    end: date | None = None,
+) -> str:
     """도배만 고른 집에 업체가 있는 목공 확정을 넣는다 (평가 시뮬레이터와 같은 방법). 확정 id."""
     vid, did = uuid.uuid4(), uuid.uuid4()
     query(
@@ -99,13 +105,16 @@ def mokgong_confirmed(pid: str, vendor_id: str) -> str:
     )
     query(
         "insert into deals (id, project_id, trade, vendor_id, vendor_name, visit_id, quote_id,"
-        " status, dates_due_at)"
-        " select $1, $2, 'mokgong', $3, '바름집수리', $4, quote_id, 'confirmed', now()"
+        " status, dates_due_at, start_date, end_date)"
+        " select $1, $2, 'mokgong', $3, '바름집수리', $4, quote_id, $5, now(), $6, $7"
         " from deals where project_id = $2 limit 1",
         did,
         uuid.UUID(pid),
         uuid.UUID(vendor_id),
         vid,
+        status,
+        start,
+        end,
     )
     return str(did)
 
@@ -400,7 +409,7 @@ def test_trade_not_in_home_saves_nothing(api, v3):
     """집 정보로 필요한 기간을 못 세는 공정(도배만 고른 집의 목공)은 저장하기 전에 409.
     공사 화면 응답을 못 만드는데 날짜 · 알림만 저장되면 안 된다."""
     _customer, pid, _did, _ = ready(api)
-    mok = mokgong_confirmed(pid, listed(api, "barum@mitjip.test", "바름집수리"))  # 업체로 로그인
+    mok = mokgong_deal(pid, listed(api, "barum@mitjip.test", "바름집수리"))  # 업체로 로그인
     picked = workdays(TODAY + timedelta(days=14), 3, OFF)  # 견적서 공사 기간 3일
     over = {"days": [d.isoformat() for d in picked]} if v3 else {}
     r = propose(api, mok, *days(14), **over)
