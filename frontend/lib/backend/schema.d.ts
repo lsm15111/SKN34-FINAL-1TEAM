@@ -8806,14 +8806,14 @@ export interface components {
         };
         /**
          * TurnContextIn
-         * @description 카드에서 고른 것. 값은 도구가 준 ref(v1 · s2 …)만이고 LLM에는 ref만 간다(모르는 ref는 버린다).
+         * @description 카드에서 고른 것. LLM에는 이 대화에서 도구가 준 ref(v1 · s2 …)만 가고 모르는 값은 버린다.
          */
         TurnContextIn: {
             /** Card Id */
             card_id?: string | null;
             /**
              * Choice
-             * @description 고른 ref 하나 또는 여러 개
+             * @description 고른 ref 하나 또는 여러 개(5개까지)
              */
             choice?: string | string[] | null;
         };

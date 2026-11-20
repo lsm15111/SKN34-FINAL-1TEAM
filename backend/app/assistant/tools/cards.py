@@ -77,7 +77,7 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
     if m2 is not None and basis:
         facts.append(f"{BASIS.get(basis, basis)} {_m2(m2)}")
     if std is not None and std.pyeong:
-        facts.append(f"{std.pyeong}평")
+        facts.append(f"{Decimal(std.pyeong).normalize():f}평")
     facts.append("살면서 공사" if p.occupied else "빈 집")
     if h is not None:
         facts.append(

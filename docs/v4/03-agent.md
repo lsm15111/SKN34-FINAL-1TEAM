@@ -142,7 +142,7 @@
 | 업체 `checklists` · `today` | 넣음 | 표준견적서 줄 · 내 견적서 칸 · 빠지기 쉬운 것 / 새 요청 · 오늘 실측 · 보낼 견적서 |
 | 업체 `briefs.suggest.action_id` | 넣음 | 요청함이면 기간 답하기 제안 행(window_answer)을 만들어요(같은 내용이면 같은 행). `sentence`(AI 한 문장)는 비워요 |
 | `home_info`의 주소 찾기(search · manual) · `GET /address/search` | 뺌 | 범위 밖. 집 정보 카드는 confirm 모양(요약 · 면적 · 바뀜 · action_id)만이에요 |
-| `TurnIn.context`{card_id, choice} | 넣음 | choice는 도구가 준 ref만, 이번 대화에서 모르는 ref는 버려요 |
+| `TurnIn.context`{card_id, choice} | 넣음 | choice는 1~40자 값 하나 또는 5개까지예요. LLM에는 이번 대화에서 도구가 준 ref만 가고 모르는 값은 버려요(422 아님) |
 
 ### 권한
 - 모든 조회에 `user_id = 세션 사용자`를 붙여요. 남의 것 · 없는 것은 404, 역할이 다르면 403이에요.

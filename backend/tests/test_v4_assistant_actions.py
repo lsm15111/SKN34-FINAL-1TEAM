@@ -262,6 +262,11 @@ def test_recommend_then_request_visit_after_approval(api, script):
     w = wish["data"]["wishes"][0]
     assert str(rows[0]["wish_start"]) == w["start"] and str(rows[0]["wish_end"]) == w["end"]
     assert approve(api, act["action_id"]).json()["status"] == "executed"
+    # 다음 턴에 카드에서 고른 값: 이 대화의 이름표(v1)만 LLM에 가고 모르는 값은 버린다
+    log = script([{"text": "결도배를 고르셨어요."}])
+    ok(ask(api, pid, "이 업체요", context={"card_id": "picks-dobae", "choice": ["v1", "addr-9"]}))
+    sent = log[0]["messages"][-2]["content"][0]["text"]
+    assert "(카드에서 고름: v1)" in sent and "addr-9" not in sent
 
 
 def test_pick_a_slot_after_the_vendor_answered(api, script):

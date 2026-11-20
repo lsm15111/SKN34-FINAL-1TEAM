@@ -563,8 +563,9 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     ]
     if any(v.total is not None for v in o.vendors):
         docs.append(LinkOut(label="실측 견적서", href=cards.href(p.id, "/quotes")))
+    trades = " · ".join(cards.TRADE[t] for t in ("dobae", "mokgong") if getattr(p.trades, t, None))
     return BoardOut(
-        project_name=f"{p.sgg} 아파트 도배",
+        project_name=f"{p.sgg} 아파트 {trades}".strip(),
         step=step,
         facts=home["facts"],
         confirmed=p.home is not None,

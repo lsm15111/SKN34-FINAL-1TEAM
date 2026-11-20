@@ -42,7 +42,7 @@ Emit = Callable[[str, dict], Awaitable[None]]
 
 WRAP = "도구는 더 부르지 말고, 지금까지 얻은 결과로만 짧게 답해 주세요."
 FAIL_TEXT = "설명을 만들지 못했어요. 카드와 버튼으로 이어서 진행해 주세요."
-TOOL_FAIL = "{name}을(를) 하지 못했어요. 화면에서 직접 이어서 해 주세요."
+TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
 BREAKER_KEY = "assistant:breaker"
 BREAKER_TTL = 300  # Claude가 한 턴에 두 번 실패하면 5분 동안 무료 모드
 PAUSE_MAX = 2
@@ -448,9 +448,7 @@ class _Turn:
                     CardOut(
                         card_id=f"fail-{self.ctx.turn_id}",
                         kind="answer",
-                        data=AnswerData(text=TOOL_FAIL.format(name=failed), src="guide").model_dump(
-                            mode="json"
-                        ),
+                        data=AnswerData(text=TOOL_FAIL, src="guide").model_dump(mode="json"),
                     )
                 )
                 self.res.status, self.res.stop = "stopped", "tool_error"
@@ -481,12 +479,8 @@ class _Turn:
             if code is not None and code != "tool_limit":
                 self.errors[(name, code)] += 1
                 if self.errors[(name, code)] >= 2 and failed is None:
-                    failed = self._label(name)
+                    failed = name
         return results, failed
-
-    def _label(self, name: str) -> str:
-        t = tools_mod.REGISTRY.get(name)
-        return t.status.removesuffix("고 있어요") if t else "도구"
 
     @staticmethod
     def _error(cid: str, code: str, message: str) -> dict:

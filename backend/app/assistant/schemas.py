@@ -31,17 +31,19 @@ TurnStatus = Literal["running", "done", "stopped", "failed"]
 Source = Literal["calc", "ai", "guide"]  # 출처 이름표: 믿집 계산 · AI 답변 · 믿집 안내
 Half = Literal["am", "pm"]
 ClientKey = Annotated[str, Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")]
-Ref = Annotated[str, Field(min_length=2, max_length=8, pattern=r"^[a-z][0-9]{1,3}$")]
+Choice = Annotated[str, Field(min_length=1, max_length=40)]
 
 
 # ---- 들어오는 몸통 ----
 
 
 class TurnContextIn(BaseModel):
-    """카드에서 고른 것. 값은 도구가 준 ref(v1 · s2 …)만이고 LLM에는 ref만 간다(모르는 ref는 버린다)."""
+    """카드에서 고른 것. LLM에는 이 대화에서 도구가 준 ref(v1 · s2 …)만 가고 모르는 값은 버린다."""
 
     card_id: str | None = Field(default=None, max_length=40)
-    choice: Ref | list[Ref] | None = Field(default=None, description="고른 ref 하나 또는 여러 개")
+    choice: Choice | Annotated[list[Choice], Field(max_length=5)] | None = Field(
+        default=None, description="고른 ref 하나 또는 여러 개(5개까지)"
+    )
 
 
 class TurnIn(BaseModel):

@@ -185,6 +185,7 @@ def test_board_and_today_and_health(api):
     assert b.status_code == 200, b.text
     board = b.json()
     assert board["step"] in range(7) and board["confirmed"] is True
+    assert board["project_name"] == "노원구 아파트 도배"
     assert any("노원구" in x for x in board["facts"]) and board["money"]["won"] > 0
     t = api.get("/assistant/today", params={"project_id": pid})
     assert t.status_code == 200, t.text and "todo" in t.json()
@@ -285,6 +286,7 @@ def test_same_tool_error_twice_stops_with_a_fail_card(api, script):
     assert done["stopped"] is True
     fail = [d for e, d, _ in ev if e == "card" and d["card_id"].startswith("fail-")]
     assert fail and fail[0]["kind"] == "answer"
+    assert fail[0]["data"]["text"].startswith("같은 문제가 두 번 나서 멈췄어요")
     assert turn_row(ev[0][1]["turn_id"])["status"] == "stopped"
 
 

@@ -1,6 +1,7 @@
 """v4 비서 실측 시간 후보 (calc.slots): 요청 전 희망 기간 · 업체 기간 안 반나절 · 업체가 답할 기간. 순수 함수."""
 
 from datetime import date, timedelta
+from itertools import pairwise
 
 import pytest
 
@@ -22,7 +23,7 @@ def test_wish_candidates_pick_ranges_with_most_open_halves_inside_draft():
     assert got[0].start <= date(2026, 12, 16) and got[0].end >= date(2026, 12, 20)
     assert got[0].basis == "start_minus_20"
     assert len(got) <= slots.WISH_MAX
-    assert all(not slots.overlaps(a.start, a.end, b.start, b.end) for a, b in zip(got, got[1:]))
+    assert all(not slots.overlaps(a.start, a.end, b.start, b.end) for a, b in pairwise(got))
     lo, hi = slots.draft_wish(WORK, TODAY)
     assert all(lo <= r.start <= r.end <= hi for r in got)
 
@@ -80,7 +81,7 @@ def test_best_windows_trim_and_exclude_closed_days():
     assert (w.start, w.end) == (d(3), d(6))  # 앞뒤 빈 칸 없는 날은 뺀다
     assert w.excluded == (d(4),)
     assert w.open_count == 5
-    assert all(not slots.overlaps(a.start, a.end, b.start, b.end) for a, b in zip(got, got[1:]))
+    assert all(not slots.overlaps(a.start, a.end, b.start, b.end) for a, b in pairwise(got))
     assert slots.best_windows(free, d(-5), d(0), TODAY) == []  # 지난 기간
 
 
