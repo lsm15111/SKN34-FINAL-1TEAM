@@ -1,6 +1,6 @@
 # v2 ERD
 
-0001의 표 12개 위에 기능마다 migration을 하나씩 더한다(`0002_v2_*` …). 돈은 원 단위 `bigint`, 날짜는 서울 기준 `date`, 시각은 `timestamptz`다.
+기준: 2026-11-18 `dev` 커밋 `1a3e656`. `0001`의 표 12개에 `0002`~`0023` 마이그레이션이 순서대로 적용된다. 아래 **업무 표는 `0001`~`0018`**, 기준 데이터·v2 저장·상담은 `0019`~`0023`의 현재 결과다. 돈은 원 단위 `bigint`, 날짜는 서울 기준 `date`, 시각은 `timestamptz`다. [기능 개발표](../feature-roadmap.md) · [프로젝트 구조](structure.md) · [기준 데이터 사용 안내](../reference-data.md)
 
 ## 그림
 
@@ -13,6 +13,8 @@ erDiagram
   users ||--o{ notifications : ""
   projects ||--o{ project_spaces : ""
   projects ||--o{ project_trades : ""
+  project_trades ||--o{ project_trade_spaces : "공정별 공간"
+  project_spaces ||--o{ project_trade_spaces : "선택된 공간"
   projects ||--o{ project_files : ""
   projects ||--o{ project_checks : ""
   projects ||--o{ standard_quotes : "버전"
@@ -42,7 +44,17 @@ erDiagram
   deals ||--o{ extra_charges : "추가 금액"
   extra_charges ||--o{ extra_charge_files : "공사 사진"
   deals ||--o{ plan_steps : ""
+  users ||--o{ v2_cases : "v2 인테리어 소유"
+  users ||--o{ chats : "상담 소유"
+  chats ||--o{ chat_messages : "질문·답"
+  ref_dataset_versions ||--o{ ref_floorplan_rows : "평면도"
+  ref_dataset_versions ||--o{ ref_unit_price_rows : "일위대가"
+  ref_dataset_versions ||--o{ ref_productivity_rows : "표준품셈"
+  ref_dataset_versions ||--o{ ref_wage_rows : "임금"
+  ref_dataset_versions ||--o{ rag_chunks : "지식 조각"
 ```
+
+`project_trade_spaces`는 PK(`project_id`, `trade`, `space_id`)로 공정별 선택 공간을 저장한다. (`project_id`, `trade`)가 `project_trades`의 복합 PK를 참조하고 `space_id`가 `project_spaces.id`를 참조한다(CASCADE). `ref_dataset_versions`에서 데이터 행 5종으로 가는 선은 실제로 **(`dataset_id`, `dataset_kind`) → (`id`, `kind`) 복합 외래키**다. `v2_cases`와 `chats`는 모두 `users`에 속하지만 둘 사이의 외래키는 없다. 아래의 상세 제약은 실제 migration과 모델에 근거한다.
 
 ## 고치는 표
 
@@ -82,6 +94,32 @@ erDiagram
 | extra_charges | 0017_v2_extra | deal · title ≤40 · reason ≤300 · vat_mode · entered_amount(0~10억) · supply · vat · total(calc from_entered, total = supply + vat, 면세면 vat 0) · ack(pending · ok · talk) · acked_at(ack ≠ pending일 때만) · by · created_at. 고치지 않고 새로 올린다 |
 | extra_charge_files | 0017_v2_extra | (extra, file) PK, file UQ, sort 0~4(5장까지). files.kind = work_photo |
 | project_checks | 0018_v2_checks | (project, key) PK · key(CHECK: office_report 관리사무소 공사 신고, 판에 있는 항목만) · done_at · by(지우면 NULL). 끄면 행을 지운다 |
+
+## 0019~0023: 기준 데이터·v2 상태·상담
+
+| 표 | 마이그레이션 | 현재 구조·관계 |
+| --- | --- | --- |
+| `ref_dataset_versions` | 0019 · **0023 변경** | PK `id`, 자료 키 `dataset_key`, `kind`(5종), `version`, 출처·적용일·파일 경로·해시·가공 프로필·임베딩 모델·차원·`provenance JSONB`. **`status BOOLEAN NOT NULL DEFAULT false`**로 활성 여부만 관리. 같은 `dataset_key`에 `status=true` 최대 1개(부분 unique). UQ(`id`,`kind`), UQ(`dataset_key`,`version`), 내용·프로필 중복 제한 |
+| `ref_floorplan_rows` | 0019 · 0020 | PK(`dataset_id`,`record_key`). 예시 도면의 공간·물량·페이지·상세/합계 역할. 버전 종류 `floorplan`; (`dataset_id`,`parent_key`)는 같은 표의 상위 행을 참조 |
+| `ref_unit_price_rows` | 0019 · 0020 | PK(`dataset_id`,`record_key`). 일위대가 작업 코드·규격·구성 항목·수치·단위·조건. 버전 종류 `unit_price`, 상위 행 자기참조 |
+| `ref_productivity_rows` | 0019 · 0020 · 0023 | PK(`dataset_id`,`record_key`). 표준품셈 표 셀·수치·행/열 문맥·역할·원문. 버전 종류 `productivity`, 상위 행 자기참조. 0023에서 `semantic_status` 제거 |
+| `ref_wage_rows` | 0019 · 0020 | PK(`dataset_id`,`record_key`). 직종·공표일·기준 근로시간·원화 임금·표시·원문. 버전 종류 `wage`, 상위 행 자기참조. `occupation_wage` 대상 부분 unique |
+| `rag_chunks` | 0019 · 0020 · 0023 | PK(`dataset_id`,`record_key`). 자료 본문·절·페이지 배열·내용 해시·`embedding VECTOR`, 버전 종류 `knowledge`. 0023에서 `review_reason` 제거 |
+| `v2_cases` | 0021 | PK `id`, FK `owner_id → users.id`(CASCADE). `title`(1~40), 고른 값 `state JSONB`, 서버 재계산 견적·공정표 `quote/plan JSONB`, 합계·견적 코드·시작·종료일·작업 일수 요약. `owner_id`/수정일 인덱스 |
+| `chats` | 0022 | PK `id`, FK `user_id → users.id`(CASCADE), 동시 저장 충돌 검사 `rev≥1`·되묻기 담당 `waiting`·생성/수정시각 |
+| `chat_messages` | 0022 | PK `id`, FK `chat_id → chats.id`(CASCADE), `turn`·`role`(user/assistant)·본문·의도 라벨/신뢰도/출처. UQ(`chat_id`,`turn`,`role`): 한 턴의 고객 질문·답 각각 1행 |
+
+기준 데이터 행 표 5개에는 `0020_ingest_provenance`으로 행별 `provenance JSONB DEFAULT '{}'`가 추가됐다. 같은 migration의 DB 트리거는 `rag_chunks.embedding`의 실제 벡터 차원이 연결된 버전의 `embedding_dimensions`과 일치하는지 확인하고, 임베딩이 존재하는 버전의 모델·차원 변경을 막는다. 자료의 적재 및 임베딩 생성은 별도 CLI 작업이며 migration만으로 데이터가 채워지지 않는다.
+
+`0023_reference_simplify` 적용 뒤에는 과거에 있던 **`ref_dataset_events`가 삭제**되고 `historical`, `current_rule_usable`, `calculation_usable`, `reference_usable` 칸도 제거됐다. 문서와 새 기능에서 과거 문자열 상태(`draft/approved/active/retired/rejected`)나 상태 변경 이력을 현행 스키마로 취급하지 않는다. 삭제 전 자료의 이력을 이 표만으로 복원할 수는 없다.
+
+### 현재 v2 저장 관계
+
+- 화면: `/v2/cases` → `case_service` → `v2_cases`. 고객별 최대 30건이고, 입력 `state`와 견적·공정표 입력을 받아 **견적·날짜는 서버 계산 엔진으로 다시 만든다**. 금액·날짜 요약을 직접 신뢰하지 않는다.
+- 대화: `/v2/ask` → `ask_chat` → `chat.service` → `chats`·`chat_messages`. 기존 `chat_id`는 반드시 본인 것인지 확인하고, 열 때 본 `rev`로 저장 시 409 충돌을 막는다. 성공한 일반 상담의 고객/답 두 행을 저장하며 범위 밖 고정 안내·실패 답은 저장하지 않는다.
+- Redis에 임시 저장하는 `v2ask:{turn}`은 화면 도구 결과를 기다리는 10분짜리 턴이다. PostgreSQL의 `chat_messages`와 구분하며 DB 외래키가 없다. 독립 SSE 채팅 라우터 및 일정 MCP는 구현되지 않았다.
+
+현재 테이블의 정본은 [refprice 모델](../../backend/app/refprice/models.py) · [RAG 모델](../../backend/app/knowledge/models.py) · [v2 모델](../../backend/app/v2/models.py) · [chat 모델](../../backend/app/chat/models.py)과 [0019](../../backend/migrations/versions/0019_reference_data.py) · [0020](../../backend/migrations/versions/0020_ingest_provenance.py) · [0021](../../backend/migrations/versions/0021_v2_cases.py) · [0022](../../backend/migrations/versions/0022_chat.py) · [0023](../../backend/migrations/versions/0023_reference_simplify.py) migration이다.
 
 ## 상태와 허용 전이
 

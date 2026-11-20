@@ -322,10 +322,23 @@ class DraftCard(BaseModel):
     recommend: VisitRecommendFact | None = None
 
 
+class TableRow(BaseModel):
+    cells: list[str]
+    cites: list[str] = []
+
+
+class CompareTable(BaseModel):
+    """검증된 카드의 비교표를 옮긴 것(AI가 만든 표가 아님). 출처는 제목만."""
+
+    cols: list[str]
+    rows: list[TableRow]
+    sources: list[str] = []
+
+
 class UiCard(BaseModel):
     kind: Literal[
         "calc", "visit_draft", "open_calendar", "grade_preview", "faq", "choices", "next_step",
-        "vendor_reco",
+        "vendor_reco", "compare",
     ]  # fmt: skip
     title: str = ""
     text: str = ""
@@ -333,6 +346,7 @@ class UiCard(BaseModel):
     calc: list[CalcBox] = []
     draft: DraftCard | None = None
     vendors: list[VendorPickFact] = []  # vendor_reco: 코드가 고른 업체와 사유
+    table: CompareTable | None = None  # compare: 검증된 카드의 비교표(#166)
 
 
 class AskSlot(BaseModel):

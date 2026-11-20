@@ -75,6 +75,7 @@ MY_HOUSE = "집 상태는 직접 봐야 정확히 알 수 있어요. 실측 때 
 UNKNOWN = "이 질문은 믿집 자료로 확인하지 못했어요."
 UNKNOWN_WHERE = "{where}에 물어보시면 정확해요."
 ASK_BACK = "어떤 걸 물어보신 건지 골라 주세요."
+ASK_AGAIN = "어느 쪽으로 하실지 하나만 골라 주세요."
 EXTRACT_LEAD = "믿집 자료에는 이렇게 나와요."
 EXTRACT_SUMMARY_LEAD = "믿집 자료를 보면 이래요."
 PART_FAILED = "그 부분은 확인하지 못했어요."

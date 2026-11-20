@@ -4,7 +4,7 @@
 
 ## 스키마와 적재
 
-- 스키마: [기준 자료 모델](../backend/app/refprice/models.py), [RAG 모델](../backend/app/knowledge/models.py), [0019 마이그레이션](../backend/migrations/versions/0019_reference_data.py), [0023 마이그레이션](../backend/migrations/versions/0023_reference_simplify.py)을 기준으로 6개 테이블이 유지된다.
+- 스키마: [기준 자료 모델](../backend/app/refprice/models.py), [RAG 모델](../backend/app/knowledge/models.py), [0019 마이그레이션](../backend/migrations/versions/0019_reference_data.py), [0020 마이그레이션](../backend/migrations/versions/0020_ingest_provenance.py), [0023 마이그레이션](../backend/migrations/versions/0023_reference_simplify.py)을 기준으로 6개 테이블이 유지된다. `0020`은 행별 원본 기록과 임베딩 차원 검사를 추가한다.
 - `0019`는 확장과 빈 테이블만 만든다. CSV 적재와 임베딩 생성은 수행하지 않는다.
 - 전처리 CSV 데이터는 담당자가 DB에 수동으로 적재한다. 마이그레이션만 실행하면 데이터는 적재되지 않는다.
 
@@ -23,7 +23,7 @@
 
 원본 PDF·엑셀은 프로젝트 폴더 밖에서 별도로 보관하고 저장소에 올리지 않는다. `data/raw/`는 사용하지 않으며 Git 추적에서도 제외한다. 저장소에는 `data/processed/`의 전처리 결과를 두고, 출처 파일명·페이지·해시 등 추적 정보는 유지한다.
 
-`data/processed/`의 CSV 13개는 총 55,656행(정형 54,936행, RAG 720행)이며 DB 테이블 6개와 일대일 관계가 아니다. 시공일지 CSV는 이 목록에 포함하지 않고 로컬에만 보관한다.
+`data/processed/`에서 관리하는 공유 자료는 CSV 13개, 55,652행(정형 4개·54,936행, RAG 9개·716행)이다. 가이드북은 59행이며, 시공일지는 포함하지 않는다. `data/consult/consult_knowledge_rag.csv`는 별도 상담 자료로 이 집계에 포함하지 않는다. CSV를 추가하거나 교체하면 **이 문서의 집계·출처 표**와 [검색 평가의 자료 구성](../evaluation/rag/README.md)을 검토한다. 프로젝트 README에는 수치를 중복 기재하지 않는다.
 
 | CSV | 데이터 행 테이블 | 상태 처리 |
 | --- | --- | --- |
@@ -31,32 +31,72 @@
 | `02_unit_price.csv` | `ref_unit_price_rows` | 적재·활성화 시 `False` 유지 |
 | `03_standard_productivity.csv` | `ref_productivity_rows` | 적재·활성화 시 `False` 유지 |
 | `06_construction_wages.csv` | `ref_wage_rows` | 적재·활성화 시 `False` 유지 |
-| `04`, `05`, `07`~`12`의 `*_rag.csv` 8개 | `rag_chunks` | 적재 시 `False`, 검증·활성화 후 `True` |
-| `13_interior_guide_book_rag.csv` 63행 | `rag_chunks` | 적재 시 `False`, 검증·활성화 후 `True` |
+| `04`, `05`, `07`~`12`의 `*_rag.csv` 8개 | `rag_chunks` | 새 버전 적재 시 `False`, 검증·활성화 후 `True` |
+| `13_interior_guide_book_rag.csv` 59행 | `rag_chunks` | 새 버전 적재 시 `False`, 검증·활성화 후 `True` |
+
+### 기준 자료 출처와 수집 예시
+
+| 자료 종류 | 출처·기존 수집 예시 |
+| --- | --- |
+| 노무·품 | 2026 건설공사 표준품셈과 2026.9.1 노임 기준. 도배 작업량 예시: 하루 95㎡에 도배공 2명·보통인부 1명 |
+| 실내건축 일위대가 | 도배바름 1㎡당 6,672원(당시 전처리 예시이며 현장 견적이나 현재 확정 단가가 아님) |
+| 평면도·물량 | AI Hub 평면도 기반 팀 물량 산출서 예시: 59㎡형 벽 도배 126.97㎡, 84㎡형 180.09㎡ |
+| 시공·공정 기준 | 건축공사 표준시방서(KCS 41 51 05 등), LH 전문시방서(LHCS 41 51 05 등). 도배 전후 건조·공정 순서의 참고 근거 |
+
+원본 자료와 전처리 예시는 출처·단위·적용 조건을 확인해 사용한다. 위 값은 기존 프로젝트 소개에 기록된 **수집 예시**이며 실제 공사비·기간을 그대로 확정하는 기준이 아니다.
+
+같은 파일 해시·모델·차원·가공 프로필의 RAG 버전이 있으면 검증 후 재사용한다. 이때 기존 활성 여부는 유지되며, 단순 `verify`는 활성 상태를 바꾸지 않는다.
 
 - 현재 미사용 정형 자료 4종은 파일별 `dataset_key`로 구분한다(`app/data_ingest.py`의 `INACTIVE_DATASETS`). `load --execute`와 `verify --require-embeddings --activate`를 실행하면 선택한 해당 자료의 모든 버전을 `False`로 유지하며, 기존 활성 버전도 비활성으로 바꾼다. 테이블과 데이터 행은 삭제하지 않는다. 읽기 전용 명령은 상태를 바꾸지 않는다.
+- 이 비활성 유지 규칙은 [PR #106](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-1TEAM/pull/106)의 수정 요청과 승인에 따라 반영됐다. 정형 자료를 계산에 다시 연결할 때는 사용 범위와 활성화 규칙을 별도 작업으로 정한다.
 - 데이터 행 5개 테이블은 `(dataset_id, record_key)`가 기본 키다. `record_key`만으로는 버전 간 행을 식별할 수 없다.
 - `dataset_id`와 `dataset_kind`는 `ref_dataset_versions`의 `id`와 `kind`를 함께 참조한다. 종류는 각각 `floorplan`, `unit_price`, `productivity`, `wage`, `knowledge`다.
 - 계산용 행 4개 테이블의 `parent_key`는 같은 버전·같은 테이블의 상위 행을 참조한다. 표 제목·주석·합계·문맥도 저장하므로 모든 행이 계산 대상은 아니다.
 
 ### 상담 지식 자료 (v2)
 
-| CSV | 만드는 법 | 저장소 |
+| CSV | 만드는 법 | 보관 규칙 |
 | --- | --- | --- |
-| `data/consult/consult_knowledge_rag.csv` | `data/consult/rag5.json` → `python -m app.knowledge.json_csv` | 올림 |
-| `data/processed/13_interior_guide_book_rag.csv` | 가이드북 전처리 결과 63행 | 공유 허용 |
-| `data/local/sigong_ilji_rag.csv` | 시공일지(스캔본) 쪽별 JSON → 쪽 묶기(번호 · 형식 통일) → 같은 변환 | 올리지 않음(공유 금지) |
+| `data/consult/consult_knowledge_rag.csv` | `data/consult/rag5.json` → `python -m app.knowledge.json_csv` | Git에서 관리 |
+| `data/processed/13_interior_guide_book_rag.csv` | 안내서 전처리 결과 59행 | 공유 허용, Git에서 관리 |
+| `data/local/sigong_ilji_rag.csv` | 시공일지 쪽별 JSON → 쪽 경계 합치기 → CSV 변환, 검토본 1,156행 | 로컬 전용, Git에 올리지 않음 |
 
-- 가이드북 CSV는 공유할 수 있지만 시공일지는 원본과 결과 CSV 모두 저장소에 올리지 않는다. 시공일지는 `data/local/`에만 두며 파일명을 바꿔 업로드하지 않는다.
-- 적재 · 활성화는 위 자료와 같이 `app.data_ingest`로 한다. 검색 번호는 상담 자료 K1~, 팀 자료 K2001~, 가이드북 K5001~ · 시공일지 K6000~다(`knowledge/sources.py`). 가이드북은 `--directory ../data/processed --dataset 13_interior_guide_book_rag`, 시공일지는 `--directory ../data/local --dataset sigong_ilji_rag`로 적재한다. 기존 `14_sigong_ilji_rag` 적재본이 있으면 같은 자료를 중복 활성화하지 않는다.
+- 원본 PDF·엑셀은 저장소 밖에 보관한다([PR #103](https://github.com/SKNETWORKS-FAMILY-AICAMP/SKN34-FINAL-1TEAM/pull/103)). 시공일지의 이미지·쪽별 JSON·작업용 CSV는 Git에서 제외한 `data/local/`에 둔다. 전처리 방법은 [시공일지 규칙](../data/sigong_ilji/SPEC.md)과 [읽기 지시](../data/sigong_ilji/READER.md)를 따른다.
+- 가이드북 CSV는 공유할 수 있다. 시공일지는 원본 PDF뿐 아니라 본문을 담은 이미지·JSON·CSV도 저장소에 올리지 않는다. 파일명을 바꾸거나 다른 폴더에 옮겨도 같은 규칙을 따른다. 시공일지 자료가 들어 있는 이전 Git 이력도 다시 push하지 않는다.
+- 적재 · 활성화는 `app.data_ingest`로 한다. `dataset_key`는 CSV 확장자를 뺀 파일명이다. 안내서는 `13_interior_guide_book_rag`, 로컬 시공일지는 `sigong_ilji_rag`를 사용한다.
+- 검색 번호는 파일 위치만으로 정하지 않는다. 행에 `ref`가 있으면 그 번호를 유지하므로 안내서는 K5001~, 시공일지는 K6000~다. `ref`가 없는 팀 자료만 자료명·행 ID 순으로 K2001~를 부여한다(`knowledge/sources.py`).
+- 가이드북의 예전 로컬 파일과 현재 `13_interior_guide_book_rag.csv`, 시공일지의 기존 `14_sigong_ilji_rag.csv`와 로컬 `sigong_ilji_rag.csv`는 파일명이 달라 DB에서 각각 다른 자료로 취급된다. 기존 적재본이 있으면 활성 버전을 확인하고 같은 책의 두 자료를 동시에 활성화하지 않는다. 검색 번호가 중복되면 검색 자료 조립이 실패한다.
 - 시공일지는 사례 · 후기 · 금액 표 조각을 `source_type` `platform`으로 둔다. 검색이 비용 · 법 · 안전 질문에서 이 종류를 빼므로 책 금액이 상담 금액 근거로 쓰이지 않는다.
-- 열은 공통 9열(`id` · `source` · `source_sha256` · `effective_date` · `content` · `section` · `page` · `category` · `trade`) 뒤에 검색 전용 열을 둔다.
+- `json_csv`의 새 변환 결과는 공통 9열(`id` · `source` · `source_sha256` · `effective_date` · `content` · `section` · `page` · `category` · `trade`) 뒤에 검색 전용 열을 둔다. 기존 CSV는 열 이름으로 읽으므로 열 순서나 추가 메타데이터 열이 달라도 적재할 수 있다. 아래 형식은 새 변환 결과 기준이다.
   - `page`는 쪽 번호를 `,`로 잇는다. 쪽을 모르면 `1`과 `page_known=false`이고, 쪽을 알면 검색 결과의 절 뒤에 쪽이 붙는다.
   - `effective_date`는 문서 날짜가 `YYYY-MM-DD`일 때만 넣고, 그 밖의 날짜 글은 `doc_date`에만 둔다.
-  - `category`는 영어 코드 하나다. 표 조각은 `table`, 아니면 JSON 주제(`topics`)의 첫 값이다.
+  - `category`는 `topics`에 `table`이 있으면 `table`, 아니면 `text`를 제외한 첫 값이다. 해당 값이 없으면 빈 값이다.
 - 검색에만 쓰는 열(`source_org` · `source_url` · `source_type` · `ref` · `doc` · `trades` · `hints` · `rel` · `doc_date` · `page_known`)은 표에 열을 더하지 않고 행의 `provenance`에 남는다. `ref`를 빼면 팀 자료 규칙으로 읽혀 번호가 K2001~로 바뀌고 문서 종류 · 공정 · hints가 사라지므로 빼지 않는다.
 - 9열만 있는 CSV도 적재 · 검색된다(출처 기관 · 주소는 빈 값).
 - 원본이 파일 하나인 자료(로컬 책 등)는 JSON의 `docs[문서].sha256`에 원본 파일의 SHA-256을, 조각의 `pdf_page`에 원본 파일의 쪽을 담는다. 변환하면 CSV의 `source_sha256` · `page`가 그 값이 된다. 없으면 JSON 파일의 해시와 `page`를 쓴다(웹 자료를 묶은 상담 자료).
+
+### 수동 적재와 검증
+
+아래는 `backend/`에서 공유 가능한 가이드북 한 파일을 처리하는 예다. 로컬 CLI는 `APP_ENV=local` 또는 `test`에서만 실행하며, PostgreSQL에 마이그레이션을 적용하고 터미널의 `DATABASE_URL`을 먼저 설정한다. 이 CLI는 루트 `.env`를 자동으로 읽지 않는다. 시공일지는 `--directory ../data/local --dataset sigong_ilji_rag`를 사용하며 CSV를 저장소에 복사하지 않는다.
+
+```bash
+# 계획 확인: DB 변경 및 유료 API 호출 없음
+uv run python -m app.data_ingest plan --directory ../data/processed --dataset 13_interior_guide_book_rag
+# CSV 적재: 새 버전은 비활성으로 저장, 같은 버전은 재사용
+uv run python -m app.data_ingest load --directory ../data/processed --dataset 13_interior_guide_book_rag --execute
+# 임베딩: 기존 벡터를 재사용하고, 새 본문은 OpenAI에 전송해 유료 API 호출
+uv run python -m app.data_ingest embed --directory ../data/processed --dataset 13_interior_guide_book_rag --execute
+# 적재 내용과 임베딩 검증
+uv run python -m app.data_ingest verify --directory ../data/processed --dataset 13_interior_guide_book_rag --require-embeddings
+# 검증한 버전을 검색에 사용하도록 활성화
+uv run python -m app.data_ingest verify --directory ../data/processed --dataset 13_interior_guide_book_rag --require-embeddings --activate
+```
+
+- 모델·차원·가공 프로필을 바꾸면 계획부터 같은 옵션으로 진행한다. 임베딩 호출 상한은 `--max-api-calls`로 지정한다.
+- 새 임베딩을 만드는 `embed --execute`에는 `OPENAI_API_KEY`가 필요하다. 로컬 보관과 외부 API 전송은 별개이므로, 외부 전송이 금지된 자료에는 이 명령을 사용하지 않는다.
+- 파일이 존재하지 않는 것과 정상적인 0행 CSV는 다르다. 없는 `--dataset`이나 CSV 없는 디렉터리의 검증은 오류이며, 삭제를 나타내는 정상 0행 스냅샷은 적재·검증할 수 있다.
+- `--json`을 붙이면 결과를 하나의 JSON으로 출력한다. `embed --execute --json` 성공 결과에는 `embedding_usage`도 포함된다. 임베딩 호출·저장 중 실패하면 사용량과 오류는 stderr로 출력한다.
+- 검증 완료와 검색 품질 확인은 구분한다. 검색 평가 명령과 자료 구성별 결과는 [RAG 평가 안내](../evaluation/rag/README.md)에 기록한다.
 
 ## 조회와 버전 선택 규칙
 
@@ -90,4 +130,4 @@
 - 삭제 전 이력 건수는 마이그레이션의 NOTICE로 출력한다. PostgreSQL 트랜잭션에서 수행하며 예상하지 못한 의존성이 있으면 실패·롤백한다. 실제 적용 전 이력과 제거 메타데이터를 별도로 백업해야 한다.
 - downgrade는 스키마만 복원한다. 비활성은 `draft`, 제거한 불리언은 `False`, 검토 열은 NULL, 이력은 빈 테이블이 되므로 원래 상태·메타데이터·이력은 복구되지 않는다.
 - CSV의 기존 메타데이터 열은 필수가 아니며 남아 있어도 행의 `provenance`에 보존한다. `--allow-calculation`은 제거한다. 새 적재는 비활성이고 검증 후 `--activate`로 전환한다. 단, 미사용 정형 자료 4종은 활성화 대상에서 제외한다.
-- 위 조회 규칙은 후속 기능 연결 기준이다. 이번 변경에서는 조회에 활성 필터를 추가하지 않는다.
+- 현재 지식 검색은 `knowledge.repository.active_versions`에서 `kind = 'knowledge'`와 `status = True`인 버전만 조회한다. 정형 자료 4종은 위 비활성 유지 규칙을 따른다.

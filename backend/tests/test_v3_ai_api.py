@@ -76,6 +76,20 @@ def test_turn_streams_sentences_then_done_and_saves_masked_question(api):
     assert "010-1234-5678" not in rows[0]["text"]
 
 
+def test_account_with_four_spaces_is_masked_in_saved_ai_thread(api):
+    use(api, signup(api))
+    number = "123456789012"  # 시험용 숫자
+    question = f"제 계좌는 국민은행    {number} 입니다. {Q}"
+    chat_id = done(ask(api, text=question))["chat_id"]
+
+    saved = api.get(f"/ai/threads/{chat_id}")
+    assert saved.status_code == 200, saved.text
+    messages = saved.json()["messages"]
+    assert [m["role"] for m in messages] == ["user", "assistant"]
+    assert messages[0]["text"] == f"제 계좌는 국민은행    (계좌 가림) 입니다. {Q}"
+    assert number not in messages[0]["text"]
+
+
 def test_same_client_key_returns_first_answer_without_saving_twice(api):
     use(api, signup(api))
     a = done(ask(api, key="same-key-123"))

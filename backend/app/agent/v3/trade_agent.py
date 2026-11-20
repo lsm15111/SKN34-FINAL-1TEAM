@@ -8,8 +8,17 @@
 """
 
 from app.agent.v3 import calc_lines, templates
-from app.agent.v3.answer import KB, Part, Task, drop_promise, knowledge, trade_title
-from app.agent.v3.schemas import UiCard
+from app.agent.v3.answer import (
+    KB,
+    Part,
+    Task,
+    drop_promise,
+    knowledge,
+    next_card,
+    trade_title,
+    use_card,
+)
+from app.agent.v3.schemas import AskSlot, UiCard
 from app.agent.v3.trades import BY_CODE
 
 
@@ -81,12 +90,33 @@ def run(task: Task, kb: KB) -> Part:
     q = task.text
     if task.slot and task.value:  # 되물은 칸의 답: 원래 질문 + 고른 값으로 다시 찾는다
         q = f"{task.asked} {task.value}".strip()
-    how = knowledge(
-        part, kb, q, trade=code, route="trade", facts=facts, policy=task.policy,  # type: ignore[arg-type]
-        also=task.trades[1:],  # 관문이 함께 고른 공종의 카드도 찾는다(검색 무게는 첫 공종)
-    )  # fmt: skip
-    if task.slot:
-        part.ask = None  # 한 칸은 한 번만 묻는다(되묻기 반복 막기)
+    pick = next_card(kb, task.slot, task.value) if task.slot and task.value else None
+    # 카드가 정해 둔 '고른 답 → 다음 카드'(상황별 안내)
+    if pick is not None and pick.card is not None:
+        use_card(part, kb, pick.card, route="trade", trade=code, facts=facts, q=q)  # type: ignore[arg-type]
+        how = "card"
+    elif pick is not None and pick.again:
+        # 둘 다 고르거나 하나만 빼서 정할 수 없으면 남은 선택지로 다시 묻기(일반 검색으로 넘기지 않음)
+        part.add(
+            templates.section(
+                [templates.ASK_AGAIN], title=trade_title(code), route="trade", trade=code
+            ),
+            templates.ASK_AGAIN,
+        )
+        part.ask = AskSlot(
+            trade=code,  # type: ignore[arg-type]
+            slot=task.slot,  # type: ignore[arg-type]
+            question=templates.ASK_AGAIN,
+            options=pick.again,
+        )
+        how = "ask"
+    else:
+        how = knowledge(
+            part, kb, q, trade=code, route="trade", facts=facts, policy=task.policy,  # type: ignore[arg-type]
+            also=task.trades[1:],  # 관문이 함께 고른 공종의 카드도 찾는다(검색 무게는 첫 공종)
+        )  # fmt: skip
+    if task.slot and how != "ask":
+        part.ask = None  # 한 칸은 한 번만 묻는다(되묻기 반복 막기). 정할 수 없을 때만 다시 물어요
     if how == "unknown" and nums.lines:
         part.unknown = []  # 계산 엔진 값으로 이미 답했으면 '모름' 줄을 붙이지 않아요
         drop_promise(part)

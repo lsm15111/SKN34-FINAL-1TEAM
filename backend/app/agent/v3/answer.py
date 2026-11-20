@@ -17,12 +17,14 @@ from app.agent.v3 import check, templates
 from app.agent.v3.schemas import (
     AskSlot,
     CalcBox,
+    CompareTable,
     GeneralFacts,
     PolicyFlag,
     ProjectFacts,
     Route,
     Section,
     Sentence,
+    TableRow,
     TradeCode,
     TurnContext,
     UiCard,
@@ -272,15 +274,9 @@ def knowledge(
     best, matches = accept(matches, top, near)
     if best is not None:
         c = best.card
-        part.used_cards.append(c.tag)
-        part.used_chunks.extend(c.cites())
-        part.scores[c.tag] = best.score
         # 함께 고른 공종의 카드면 묶음 공종도 그 공종으로
         own = c.trade if c.trade in also and c.trade != trade else trade
-        allowed = card_allowed(kb, c)
-        part.add(card_section(c, route=route, trade=own), allowed)  # type: ignore[arg-type]
-        card_tables(part, c, q, allowed, route=route, trade=own)  # type: ignore[arg-type]
-        _card_extras(part, c, facts, q)
+        use_card(part, kb, c, route=route, trade=own, facts=facts, q=q, score=best.score)  # type: ignore[arg-type]
         part.suggest.extend(
             m.key for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD
         )
@@ -366,6 +362,71 @@ def where_for(q: str, trade: TradeCode | None) -> str | None:
     return "실측 때 업체"
 
 
+def use_card(
+    part: Part,
+    kb: KB,
+    c: cards.AnswerCard,
+    *,
+    route: Route,
+    trade: TradeCode | None,
+    facts: ProjectFacts | None,
+    q: str = "",
+    score: float = 1.0,
+) -> None:
+    """카드 하나를 몫에 담는다: 묶음 문장 + 방법 · 물을 말 표 + 비교표 · 계산 상자 · 되묻기."""
+    part.used_cards.append(c.tag)
+    part.used_chunks.extend(c.cites())
+    part.scores[c.tag] = score
+    allowed = card_allowed(kb, c)
+    part.add(card_section(c, route=route, trade=trade), allowed)
+    card_tables(part, c, q, allowed, route=route, trade=trade)
+    _card_extras(part, c, facts, q)
+
+
+@dataclass
+class NextPick:
+    """되물은 칸 답 고르기 결과: 다음 카드 하나, 또는 다시 물을 선택지(card는 None)."""
+
+    card: cards.AnswerCard | None = None
+    again: list[str] = field(default_factory=list)
+
+
+# 버튼 글 바로 뒤에 붙으면 '그건 아니에요'라는 뜻("벽 · 천장까지 새로 말고 도배만 새로")
+DENY_AFTER = re.compile(r"^(?:은|는|이|가|을|를)?(?:말고|아니고|아니라|빼고|대신|안해|안하|싫)")
+
+
+def _flat(s: str) -> str:
+    return re.sub(r"[\s·,]", "", s)
+
+
+def next_card(kb: KB, slot: str, value: str) -> NextPick | None:
+    """되물은 칸의 답에 이어 줄 카드(카드 ask.next). 버튼 글과 같거나 버튼 글이 답 안에 있으면 그 카드.
+
+    글로 답할 때 버튼 글 바로 뒤에 '말고 · 아니고 · 빼고 · 안 해요'가 오면 그 선택지는 뺀 것으로 봐요.
+    남은 선택지가 하나면 그 카드, 둘 이상이거나 부정만 했으면 남은 선택지로 다시 물어요(일반 검색으로 넘기지 않음).
+    버튼 글이 하나도 없으면 None(원래 질문 + 답으로 다시 찾기).
+    """
+    v = _flat(value)
+    for c in kb.cards.cards:
+        if not (c.ask and c.ask.slot == slot and c.ask.next):
+            continue
+        keep: list[str] = []
+        denied: list[str] = []
+        for opt in c.ask.next:
+            o = _flat(opt)
+            i = v.find(o) if o else -1
+            if i < 0:
+                continue
+            (denied if DENY_AFTER.match(v[i + len(o) :]) else keep).append(opt)
+        if len(keep) == 1:
+            return NextPick(card=kb.cards.by_id.get(c.ask.next[keep[0]]))
+        if keep:
+            return NextPick(again=keep)
+        if denied:
+            return NextPick(again=[o for o in c.ask.options if o not in denied])
+    return None
+
+
 def drop_promise(part: Part) -> None:
     """추천 거절 글의 '…알려 드릴게요'는 기준 카드가 붙을 때만 둔다. 답이 모름이면 거절 한 문장만 남겨요."""
     for sec in part.sections:
@@ -375,7 +436,23 @@ def drop_promise(part: Part) -> None:
 
 
 def _card_extras(part: Part, c: cards.AnswerCard, facts: ProjectFacts | None, q: str = "") -> None:
-    """카드의 계산 상자 · 되묻기. 숫자는 facts(계산 엔진)에 있을 때만 상자로."""
+    """카드의 비교표 · 계산 상자 · 되묻기. 숫자는 facts(계산 엔진)에 있을 때만 상자로."""
+    if c.compare:
+        t = c.compare
+        refs = {r for row in t.rows for r in row.cites}
+        part.used_chunks.extend(sorted(refs))
+        titles = [s.title for s in c.sources if s.ref in refs]
+        part.cards.append(
+            UiCard(
+                kind="compare",
+                title=t.title,
+                table=CompareTable(
+                    cols=list(t.cols),
+                    rows=[TableRow(cells=list(r.cells), cites=list(r.cites)) for r in t.rows],
+                    sources=list(dict.fromkeys(titles)),
+                ),
+            )
+        )
     for cc in c.calc:
         box = calc_box(cc.ref, facts, label=cc.label)
         if box is not None:

@@ -242,7 +242,12 @@ async def run_turn(
     routes: list[str] = ["planner"] if plan is not None else []
     shown: list[Section] | None = None
     mode: composer.Mode | None = None
-    if ctx.mode == "llm" and (g.route in ("guide", "trade", "multi") or plan is not None):
+    # 칸 답으로 정할 수 없어 같은 칸을 다시 묻는 턴(#166)은 작성기 · 일반 설명을 부르지 않아요(다시 묻기만)
+    ask_again = task.slot is not None and part.ask is not None
+    if (
+        ctx.mode == "llm" and not ask_again
+        and (g.route in ("guide", "trade", "multi") or plan is not None)
+    ):  # fmt: skip
         # 질문 꼴: 화면(질문 분석을 거친 턴) · 설명(일반 설명 섞기 · 길게) · 우리 집 조건(대략 답 + 끝에 확인할 곳).
         # 그 밖은 자료로만 짧게
         mode = (

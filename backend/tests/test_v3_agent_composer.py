@@ -571,3 +571,22 @@ def test_composer_drops_hedges_under_fixed_part():
     )
     assert [x.text for s in secs or [] for x in s.sentences] == [keep]
     assert dropped.count("뻔한 말") == 2
+
+
+def test_scope_answer_asked_again_skips_composer(stub, monkeypatch):
+    """칸 답으로 정할 수 없어 같은 칸을 다시 묻는 턴(#166)은 작성기를 부르지 않고 남은 선택지로만 다시 물어요."""
+    from app.agent.v3 import composer
+
+    asked: list[str] = []
+    real = composer.compose
+
+    async def spy(part, kb, question, **kw):
+        asked.append(question)
+        return await real(part, kb, question, **kw)
+
+    monkeypatch.setattr(composer, "compose", spy)
+    first = turn("몰딩 추천좀해줄래")
+    assert first.waiting and first.waiting["slot"] == "mokgong.molding_scope"
+    a = turn("도배만 새로는 안 해요", waiting=first.waiting).answer
+    assert a.ask and a.ask.options == ["벽 · 천장까지 새로", "몰딩 색만 바꾸기"]
+    assert asked == ["몰딩 추천좀해줄래"]  # 다시 묻는 턴은 작성기를 부르지 않아요

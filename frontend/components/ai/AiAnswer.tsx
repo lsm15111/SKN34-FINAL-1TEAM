@@ -10,7 +10,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/Button";
 import { CalcBox, type CalcLine } from "@/components/ui/CalcBox";
 import { md } from "@/lib/format";
-import type { AiAnswer as Answer, AiButton, AiCalc, AiCard, AiChoice, AiSource } from "@/lib/api/chat";
+import type { AiAnswer as Answer, AiButton, AiCalc, AiCard, AiChoice, AiSource, AiTable } from "@/lib/api/chat";
 import s from "./ai.module.css";
 
 const ACTION_PATH: Record<string, (id?: string) => string> = {
@@ -152,8 +152,33 @@ function VendorReco({ card, projectId, onPick }: { card: AiCard; projectId?: str
   );
 }
 
+// 비교표: 폰 너비에서 가로로 넘치지 않게 줄마다 '칸 이름 · 값'으로 쌓아요. 글은 검증된 카드 그대로예요.
+function Compare({ title, table }: { title: string; table: AiTable }) {
+  const [head, ...rest] = table.cols;
+  return (
+    <section className={s.compare} aria-label={title || head}>
+      {title ? <p className={s.draftTitle}>{title}</p> : null}
+      {table.rows.map((r, i) => (
+        <div key={i} className={s.compareRow}>
+          <p className={s.compareName}>{r.cells[0]}</p>
+          <dl>
+            {rest.map((c, j) => (
+              <div key={c} className={s.compareItem}>
+                <dt>{c}</dt>
+                <dd>{r.cells[j + 1]}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      ))}
+      {table.sources.length ? <p className={s.sources}>출처 · {table.sources.slice(0, 3).join(" · ")}</p> : null}
+    </section>
+  );
+}
+
 function UiCard({ card, projectId, onPick }: { card: AiCard; projectId?: string; onPick?: (text: string, b?: AiButton) => void }) {
   if (card.kind === "vendor_reco") return <VendorReco card={card} projectId={projectId} onPick={onPick} />;
+  if (card.kind === "compare" && card.table) return <Compare title={card.title} table={card.table} />;
   if (card.kind === "visit_draft" && card.draft) {
     const d = card.draft;
     return (

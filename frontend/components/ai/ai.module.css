@@ -38,6 +38,14 @@
 .choices { display: flex; flex-wrap: wrap; gap: 6px; }
 .draft { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 4px; background: var(--surface); }
 .draftTitle { font-weight: 700; }
+.compare { border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; background: var(--surface); }
+.compareRow { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid var(--line-soft); }
+.compareRow:first-of-type { border-top: 0; padding-top: 0; }
+.compareName { font-weight: 700; }
+.compareRow dl { margin: 0; display: flex; flex-direction: column; gap: 2px; }
+.compareItem { display: grid; grid-template-columns: 5.5em minmax(0, 1fr); gap: 6px; font-size: var(--fs-sm); }
+.compareItem dt { color: var(--ink-mute); }
+.compareItem dd { margin: 0; color: var(--ink); overflow-wrap: anywhere; }
 .mute { color: var(--ink-mute); margin-right: 6px; }
 .notice1 { background: var(--surface-2); border-radius: var(--radius); padding: 10px 12px; font-size: var(--fs-sm); color: var(--ink-sub); display: flex; flex-direction: column; gap: 6px; }
 .composer { display: flex; gap: 6px; align-items: flex-end; }

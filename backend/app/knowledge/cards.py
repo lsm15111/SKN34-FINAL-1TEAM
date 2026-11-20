@@ -18,7 +18,7 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.knowledge import bm25
 from app.knowledge.suggest import COMMON
@@ -98,6 +98,30 @@ class CardVendorAsk(BaseModel):
         return f"{self.q} {self.why}"
 
 
+class CardRow(BaseModel):
+    cells: list[str] = Field(min_length=2, max_length=4)
+    cites: list[str] = Field(min_length=1, max_length=4)
+
+    @field_validator("cites")
+    @classmethod
+    def _refs(cls, v: list[str]) -> list[str]:
+        return _check_refs(v)
+
+
+class CardTable(BaseModel):
+    """'종류 · 차이' 질문에 같이 보여 주는 비교표. 칸 글도 카드 문장처럼 근거 조각 안에서만 쓴다."""
+
+    title: str
+    cols: list[str] = Field(min_length=2, max_length=4)
+    rows: list[CardRow] = Field(min_length=2, max_length=5)
+
+    @model_validator(mode="after")
+    def _same_width(self) -> "CardTable":
+        if any(len(r.cells) != len(self.cols) for r in self.rows):
+            raise ValueError("줄마다 칸 수가 머리줄과 같아야 해요")
+        return self
+
+
 class CardSource(BaseModel):
     ref: str
     title: str
@@ -109,6 +133,13 @@ class CardAsk(BaseModel):
     slot: str
     question: str
     options: list[str] = Field(min_length=2, max_length=4)
+    next: dict[str, str] = {}  # 고른 답 → 이어 보여 줄 카드 id(없으면 원래 질문 + 답으로 다시 찾음)
+
+    @model_validator(mode="after")
+    def _next_in_options(self) -> "CardAsk":
+        if set(self.next) - set(self.options):
+            raise ValueError("next의 열쇠는 options 안에 있어야 해요")
+        return self
 
 
 class CardCalc(BaseModel):
@@ -140,6 +171,7 @@ class AnswerCard(BaseModel):
     # 범위 밖 공종 '어떻게' 카드의 선택 칸(agent-context.md 4.2): 방법 표 · 업체에 물을 말 표
     methods: list[CardMethod] = Field(default=[], max_length=4)
     vendor_ask: list[CardVendorAsk] = Field(default=[], max_length=6)
+    compare: CardTable | None = None  # '종류 · 차이' 비교표(#166)
     policy: list[str] = []
     sources: list[CardSource] = []
     guest: bool = False  # 로그인 전 자주 묻는 질문 칩으로 보여도 되는 카드

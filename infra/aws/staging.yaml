@@ -255,6 +255,13 @@ Resources:
               - Effect: Allow
                 Action: [cloudformation:DescribeStacks]
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/mitjip-staging/*"
+        - PolicyName: !Sub "${AWS::StackName}-ai-runtime-read"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [secretsmanager:GetSecretValue]
+                Resource: !Sub "arn:${AWS::Partition}:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${AWS::StackName}/ai-runtime-??????"
       Tags:
         - Key: Project
           Value: mitjip

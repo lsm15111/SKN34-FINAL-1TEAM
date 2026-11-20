@@ -1,22 +1,22 @@
 # RAG 검색 평가
 
-상담 근거 검색이 질문에 맞는 조각을 위쪽에 가져오는지 잰다. LLM 호출 없음(무료).
+상담 근거 검색이 질문에 맞는 조각을 위쪽에 가져오는지 잰다. **말뭉치 구성·키워드 검색(BM25)·지표 계산은 LLM/API 호출 없이 실행할 수 있다.** 반면 `dense.py`의 **질문 임베딩은 OpenAI API를 호출하므로 유료**이며, 미리 적재한 임베딩과 DB(pgvector)가 필요하다. 아래 실행 안내는 현재 코드 기준이고, 뒤쪽의 날짜별 평가 표는 **당시 자료·설정으로 측정한 과거 결과**다.
 
 ## 파일
 - `questions.jsonl`: 평가 질문 90개 (도배 33 · 목공 33 · 공통 24, dev 60 · held-out 30)
-- `questions_300.jsonl`: 실제 고객 질문을 바꿔 쓴 300개 (도배 115 · 목공 85 · 공통 100, dev 200 · held-out 100). `expect`: answer 230 · no_source 51 · engine 19(계산 엔진 몫, 검색으로 재지 않음). 출처 · 만든 법은 `d10-/reports/데이터셋 조사/2. 질문 세트 300.md`
+- `questions_300.jsonl`: 실제 고객 질문을 바꿔 쓴 300개 (도배 115 · 목공 85 · 공통 100, dev 200 · held-out 100). `expect`: answer 230 · no_source 51 · engine 19(계산 엔진 몫, 검색으로 재지 않음). 출처 · 만든 법은 외부 작업 기록 `d10-/reports/데이터셋 조사/2. 질문 세트 300.md`에 있다(이 저장소에는 없음)
   - `expect`: `answer` | `no_source`(가격 · 업체 추천 · 범위 밖처럼 자료로 답하면 안 되거나 자료가 없는 질문)
   - `gold`: 정답 조각 `{ref, grade, why}`. grade 2 = 직접 답, 1 = 부분 관련. 후보(여러 검색의 상위 15개 합집합) + 말뭉치 낱말 검색으로 사람 대신 판정해 넣었다
   - `from`: 질문 출처 (`book` 시공 안내서, `mokgong_qa:q-…` 팀 목공 고객 질문, `written` 직접 씀)
 - `questions_sigong.jsonl`: 시공일지(로컬 자료)로 답할 질문 60개 (도배 15 · 목공 15 · 공통 30, dev 40 · held-out 20). 책 조각을 보고 고객 말로 새로 썼다. 정답 후보 = 시공일지 있음 · 없음 · hints 뺌 세 검색 위 12개 합집합 + 쓸 때 본 조각(1,311개, 상담 · 시방서 조각 포함)
 - `gold_sigong.jsonl`: 기존 두 세트 dev 질문에 시공일지 조각을 따로 판정한 정답 225개 `{set, qid, ref, grade, why}`. 시공일지를 넣은 검색 위 10개에 든 시공일지 조각 953개를 판정했다. 기존 질문 파일은 바꾸지 않고 `metrics.py --extra-gold`로 더한다
-- `corpus.py`: 서버 적재용 CSV로 합친 말뭉치 만들기 (화면 자료 `data/consult` K1~ · 팀 자료 `data/processed` K2001~ · 로컬 추가 자료 `data/local`(git 제외) 가이드북 K5001~ · 시공일지 K6000~). 번호 규칙은 서버와 같은 `backend/app/knowledge/sources.py`. 결과는 `.cache/`(git 제외)
+- `corpus.py`: 서버 적재용 CSV로 말뭉치 만들기. 기본은 **`data/processed/*_rag.csv` + `data/consult/*_rag.csv`**이고 `data/local/` 폴더가 있으면 **기본 실행에도** 그 안의 `*_rag.csv`(git 제외)를 추가한다. `--no-local`을 주면 `data/local/`만 제외한다. **공유 가이드북 59행**은 `data/processed/13_interior_guide_book_rag.csv`에 이미 있어 기본·`--no-local` 양쪽에 포함된다. 시공일지는 별도의 로컬 전용 `data/local/sigong_ilji_rag.csv`다. 번호 규칙은 `backend/app/knowledge/sources.py`, 결과는 `.cache/`(git 제외)
 - `rank_server.py`: 서버 검색(`backend/app/knowledge/bm25.py`)으로 질문마다 순위 뽑기 (DB 없이, 의미 검색 없이)
 - `dense.py`: 질문 임베딩 → DB(pgvector)에서 의미 검색 순위 (`.cache/dense.json`, 유료: 질문 90개 약 2천 토큰)
 - `hybrid.py`: 키워드 + 의미 검색 합치기 무게를 dev로 고르고(`--final`로 held-out 한 번) 확인
 - `metrics.py`: hit@1 · hit@5 · recall@5 · MRR · nDCG@5, 자료 없음 질문의 '자료 부족' 판단률
 
-## 돌리기
+## 현재 코드로 실행하기
 ```bash
 python evaluation/rag/corpus.py
 python evaluation/rag/rank_server.py --name server
@@ -24,9 +24,12 @@ python evaluation/rag/metrics.py evaluation/rag/.cache/rank_server.json
 ```
 - 화면 자료 CSV 다시 만들기: `cd backend && uv run python -m app.knowledge.json_csv ../data/consult/rag5.json ../data/consult/consult_knowledge_rag.csv`
 - held-out은 마지막에 한 번만: `--final`
-- 로컬 추가 자료(책)가 없으면 K5001~ 정답은 찾을 수 없어 점수가 낮게 나온다. 책 조각이 있는 로컬에서 잰다
-- 로컬 자료를 빼고 비교: `python evaluation/rag/corpus.py --no-local --out evaluation/rag/.cache/corpus_nolocal.json` 뒤 `rank_server.py --corpus …`
+- 현재 공유 가이드북(`data/processed/13_interior_guide_book_rag.csv`, **59행**)의 기존 K5001~ 번호는 로컬 가이드북 유무와 관계없이 유지된다. `--no-local`은 **`data/local`만 제외**하므로 가이드북을 제외하지 않으며, 시공일지 로컬 자료는 빠진다
+- CSV에 **`ref` 열이 있으면 어느 폴더에 있든 해당 번호를 그대로 사용**한다(화면·공유 가이드북·시공일지 포함). `ref` 열이 **없는 팀 전처리 자료에만** dataset_key·행 id 순으로 K2001부터 번호를 붙인다. `data/local`에 같은 가이드북 CSV를 중복 복사하면 같은 `ref`가 겹쳐 `sources.assemble()`이 `ValueError`를 낸다. 공개 가이드북을 로컬에 다시 넣지 않는다
+- 로컬 자료를 빼고 비교: `python evaluation/rag/corpus.py --no-local --out evaluation/rag/.cache/corpus_nolocal.json` 뒤 `python evaluation/rag/rank_server.py --corpus evaluation/rag/.cache/corpus_nolocal.json --name nolocal`. 결과를 비교할 때는 평가 질문·정답 파일과 시공일지 추가 판정 여부도 맞춘다
 - 시공일지 추가 판정까지 넣어 재기: `metrics.py … --questions evaluation/rag/questions_300.jsonl --extra-gold evaluation/rag/gold_sigong.jsonl`
+
+**과거 실험 기록:** 아래 2026-11-13~17의 표·수치·표본 수와 당시 조건은 수정하지 않고 보존한다. 특히 2026-11-17 절의 “이 PC에는 가이드북이 없어서”는 **그때 사용한 말뭉치 조건의 기록**이지, 현재 기본 입력에 공유 가이드북이 없다는 뜻이 아니다. 과거 지표를 새 말뭉치·현재 모델의 품질로 취급하지 않는다.
 
 ## 기준선 (2026-11-13, dev 58문항)
 | 검색 | hit@1 | hit@5 | recall@5 | MRR | nDCG@5 |

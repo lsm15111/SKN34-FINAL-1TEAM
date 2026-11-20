@@ -2,19 +2,24 @@
 
 - 원본: `시공일지(공유금지).pdf`, 218쪽, 글자 층 없는 스캔본, PDF 한 쪽 = 책 펼침면 2쪽
 - 원본 SHA-256: `65eced5777b0bbc3cda2c8763c2bb8b652934531607046a238711b818b2a5571`
-- 저장소에는 이 규칙 · 읽기 지시(`READER.md`) · 스크립트(`tools/`)만 둔다. 원본 PDF · 이미지 · 쪽 JSON · 결과 CSV는 책 본문이라 작업 폴더 `data/local/sigong_ilji/`(git 제외)에만 둔다. 결과 CSV: `data/local/sigong_ilji_rag.csv`
+- 원본 PDF는 저장소 밖에, 이미지·쪽 JSON·작업 중간 파일은 `data/local/sigong_ilji/`(Git 제외)에 둔다. 최종 CSV는 `data/local/sigong_ilji_rag.csv`에 보관한다. 원본과 본문을 담은 가공 결과는 모두 공유 금지이며 저장소에 올리지 않는다. 가이드북 CSV와의 구분 및 적재 규칙은 [기준 데이터 안내](../../docs/reference-data.md#상담-지식-자료-v2)를 따른다.
 - 스크립트는 작업 폴더에서 `python -I ../../sigong_ilji/tools/<스크립트>`로 돌린다. `render.py`만 `pymupdf`가 필요하다(백엔드 의존성 아님, 따로 설치)
 - 기존 코드(`knowledge/sources.py` · `json_csv.py` · `data_ingest.py`)는 바꾸지 않음
 
 ## 흐름
 
-1. `tools/render.py <원본 PDF> .` → `thumb/`(쪽 지도용 축소판) · `img/pNNNL.png`, `img/pNNNR.png`(220dpi 반쪽)
+1~5의 읽기 작업은 `data/local/sigong_ilji/` 폴더를 만든 뒤 그 안에서 진행한다. CSV 변환과 적재는 아래에 명시한 대로 `backend/`에서 실행한다.
+
+1. `uv run --with pymupdf python -I ../../sigong_ilji/tools/render.py "<원본 PDF 절대경로>" .` → `thumb/`(쪽 지도용 축소판) · `img/pNNNL.png`, `img/pNNNR.png`(220dpi 반쪽).
 2. 쪽 지도 → `map.json`: `{"7": {"part": "PART 1 <장 제목>", "q": "Q2 <질문 제목>", "text": true}}`
 3. 1차 읽기 → `a/pNNN.json`, 2차 읽기(같은 규칙, 따로) → `b/pNNN.json`
-4. `tools/diff.py a b diff.md` → 어긋난 곳만 300dpi로 다시 보고 `a/`를 고침
-5. `tools/merge.py a sigong_ilji.json ../../sigong_ilji/joins.json` → `json_csv` → `sigong_ilji_rag.csv`
+4. `python -I ../../sigong_ilji/tools/diff.py a b diff.md` → 어긋난 곳만 300dpi로 다시 보고 `a/`를 고침
+5. `python -I ../../sigong_ilji/tools/merge.py a sigong_ilji.json ../../sigong_ilji/joins.json`으로 쪽 JSON을 합친다.
    - `joins.json`: 쪽 경계에서 끊긴 조각을 잇는 쪽과 사이 글자(`""` 붙임 · `" "` 띄움 · `"\n"` 줄바꿈). 이 파일이 있어야 같은 CSV가 다시 나온다
-6. 적재: `data_ingest ... --directory ../data/local --dataset sigong_ilji_rag`
+   - 합친 조각에는 양쪽 원본 쪽 번호를 남긴다. 한쪽이 사례이거나 합친 본문에서 금액이 검출되면 결과도 `cases`로 둔다.
+   - 합쳐져 없어진 뒤쪽 조각의 번호는 빈 번호로 남긴다. 다른 조각의 번호를 당겨 바꾸지 않는다.
+   - 합친 뒤 `backend/`에서 `uv run python -m app.knowledge.json_csv ../data/local/sigong_ilji/sigong_ilji.json ../data/local/sigong_ilji_rag.csv`로 변환한다. 결과 CSV는 로컬에만 보관한다.
+6. 적재: 마이그레이션이 적용된 로컬 DB의 `DATABASE_URL`을 설정한 뒤 `backend/`에서 `uv run python -m app.data_ingest load --directory ../data/local --dataset sigong_ilji_rag --execute`를 실행한다. 적재만으로 검색에 활성화되지는 않는다. 기존 `14_sigong_ilji_rag` 적재본이 있으면 중복 활성화를 피하도록 [기준 데이터 사용 안내](../../docs/reference-data.md#상담-지식-자료-v2)를 확인한다. `embed --execute`는 새 본문을 외부 API로 보내므로 공유 금지 자료에 실행하지 않는다.
 
 ## 쪽 JSON (`a/pNNN.json`)
 

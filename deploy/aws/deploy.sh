@@ -32,10 +32,11 @@ smoke() {
 }
 
 restore_previous() {
-  if [[ ! -s .env.previous-release ]]; then
-    echo "No previous release exists; preserving diagnostic containers"
+  if [[ ! -s .env.previous-release || ! -s .env.previous-runtime ]]; then
+    echo "No complete previous release configuration exists; preserving diagnostic containers"
     return 1
   fi
+  install -m 600 .env.previous-runtime .env.runtime
   cp .env.previous-release .env.release
   if [[ -s compose.previous.yaml ]]; then cp compose.previous.yaml compose.deploy.yaml; fi
   if [[ -s Caddyfile.previous ]]; then cp Caddyfile.previous Caddyfile; fi
@@ -64,44 +65,26 @@ API_REPO="$(cfout ApiRepositoryUri)"
 WEB_REPO="$(cfout WebRepositoryUri)"
 [[ -n "$DB_HOST" && -n "$DB_SECRET" && -n "$S3_BUCKET" && -n "$API_REPO" && -n "$WEB_REPO" ]]
 
-aws secretsmanager get-secret-value --secret-id "$DB_SECRET" --region "$REGION" \
-  --query SecretString --output text | \
-  MITJIP_DB_HOST="$DB_HOST" MITJIP_S3_BUCKET="$S3_BUCKET" MITJIP_HOST="$HOST" python3 -c '
-import json, os, sys
-from urllib.parse import quote
-s = json.load(sys.stdin)
-u = quote(s["username"], safe="")
-p = quote(s["password"], safe="")
-h = os.environ["MITJIP_DB_HOST"]
-print("APP_ENV=staging")
-print("API_ROOT_PATH=/api")
-print("DATABASE_URL=postgresql+asyncpg://" + u + ":" + p + "@" + h + ":5432/mitjip")
-print("REDIS_URL=redis://redis:6379/0")
-print("FILES_S3_BUCKET=" + os.environ["MITJIP_S3_BUCKET"])
-print("AWS_DEFAULT_REGION=ap-northeast-2")
-print("ALLOWED_ORIGINS=https://" + os.environ["MITJIP_HOST"])
-print("LLM_LIVE=false")
-' > .env.runtime.new
-chmod 600 .env.runtime.new
-
 # 공식 main에서 CI가 통과한 커밋의 배포 파일만 가져온다.
-for f in compose.deploy.yaml Caddyfile; do
+for f in compose.deploy.yaml Caddyfile runtime_env.py; do
   curl -fLsS --retry 3 "https://raw.githubusercontent.com/$REPO/$SHA/deploy/aws/$f" -o "$f.new"
 done
+
+python3 runtime_env.py.new \
+  --region "$REGION" --stack "$STACK" --db-secret-id "$DB_SECRET" \
+  --db-host "$DB_HOST" --bucket "$S3_BUCKET" --host "$HOST" \
+  --output "$ROOT/.env.runtime.new"
 
 aws ecr get-login-password --region "$REGION" | docker login \
   --username AWS --password-stdin "${API_REPO%%/*}"
 
 if [[ -s .env.release ]]; then
+  [[ -s .env.runtime ]] || { echo "Missing active runtime configuration"; exit 1; }
   cp .env.release .env.previous-release
   cp compose.deploy.yaml compose.previous.yaml
   cp Caddyfile Caddyfile.previous
+  install -m 600 .env.runtime .env.previous-runtime
 fi
-mv .env.runtime.new .env.runtime
-mv compose.deploy.yaml.new compose.deploy.yaml
-mv Caddyfile.new Caddyfile
-printf 'API_IMAGE=%s\nWEB_IMAGE=%s\nDEPLOY_HOSTNAME=%s\n' \
-  "$API_REPO:$SHA" "$WEB_REPO:$SHA" "$HOST" > .env.release
 
 on_error() {
   local status=$?
@@ -113,6 +96,12 @@ on_error() {
   exit "$status"
 }
 trap on_error ERR
+
+mv .env.runtime.new .env.runtime
+mv compose.deploy.yaml.new compose.deploy.yaml
+mv Caddyfile.new Caddyfile
+printf 'API_IMAGE=%s\nWEB_IMAGE=%s\nDEPLOY_HOSTNAME=%s\n' \
+  "$API_REPO:$SHA" "$WEB_REPO:$SHA" "$HOST" > .env.release
 
 compose config --quiet
 compose pull api worker web redis caddy

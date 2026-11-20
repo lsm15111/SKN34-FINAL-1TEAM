@@ -78,3 +78,22 @@ def test_deep_trade_asks_use_known_slots():
     for c in CS.cards:
         if c.ask:
             assert c.trade in ("dobae", "mokgong") and c.ask.slot in known, c.id
+
+
+def test_compare_tables_cite_known_chunks_and_hold_no_money_or_period():
+    ix = repo_index()
+    tables = [c for c in CS.cards if c.compare]
+    assert tables
+    for c in tables:
+        refs = {s.ref for s in c.sources}
+        for r in c.compare.rows:
+            for x in r.cells:
+                assert not MONEY_OR_PERIOD.search(x), (c.id, x)
+            for ref in r.cites:
+                assert ref in ix.by_ref and ref in refs, (c.id, ref)
+
+
+def test_ask_next_points_to_existing_cards_of_same_trade():
+    for c in CS.cards:
+        for cid in c.ask.next.values() if c.ask else ():
+            assert cid in CS.by_id and CS.by_id[cid].trade in (c.trade, "common"), (c.id, cid)
