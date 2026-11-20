@@ -33,6 +33,7 @@ SLOT_LABEL = {
     "mokgong.molding": "몰딩",
     "mokgong.doors": "방문",
     "mokgong.ceiling": "천장 평탄화",
+    "demolition": "철거 범위",  # v4: 비서 집 정보 승인으로 모으는 코드 값 칸(calc.dobae.DEMOLITION)
 }
 
 
