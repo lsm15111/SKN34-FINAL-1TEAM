@@ -78,11 +78,13 @@ async def brief(
     *,
     commit: bool = True,
     origin: str = "turn",
+    propose_window: bool = True,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
     """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지) · 가견적(요청 때 고정한 값) ·
     빈 반나절 · 추천 응답(기간 초안 → window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀).
     AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
-    (먼저 말 걸기가 같은 트랜잭션에서 보낸다). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
+    (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
+    말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
     from app.calc import slots
     from app.refprice.holidays import days_off
     from app.vendor import service as vendor_service
@@ -117,7 +119,8 @@ async def brief(
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    free = await open_halves(s, vendor.id, start, end) if d.status == "requested" else None
+    ask = d.status == "requested" and propose_window
+    free = await open_halves(s, vendor.id, start, end) if ask else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
     if wins:
         w = wins[0]

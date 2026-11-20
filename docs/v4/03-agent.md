@@ -41,13 +41,15 @@
 | --- | --- |
 | `router.py` | `router`(/assistant) · `vendor_router`(/vendor/assistant) |
 | `service.py` | `start_turn` · `finish_turn` · `approve` · `reject` · `feed_for` · `brief_for` · `forget` · `nudge_act` · `suggest_for` · `sweep` · `hourly` |
-| `runtime.py` | `run_turn(ctx, emit)` · `SentenceGate` · `RefTable` |
+| `runtime.py` | `run_turn(ctx, emit)` · `SentenceGate` · `RefTable` · `free_turn` |
+| `free.py` | 무료 모드 코드 길잡이: `answer`(의도 → 도구 → 카드 + 정해 둔 글) · `fit_cards`(글이 말한 카드) · `view_for` |
+| `choices.py` | 카드 단추 고르기: `field` · `action` · `valid` · `apply`(고른 칸 · 행동 → 승인 카드) |
 | `tools/` | `REGISTRY` · `defs(surface)`, customer · vendor · propose · answer · floorplan · cards |
-| `actions.py` | `propose` · `EXECUTORS` · `execute` · `expire_due` |
+| `actions.py` | `propose` · `EXECUTORS` · `execute` · `expire_due` · `close_handled` |
 | `policy.py` | `mask_in` · `to_model` · `TurnBudget` · `mode_for` · `NudgeRules` |
 | `proactive.py` | `TRIGGERS` · `scan_events` · `scan_time` · `evaluate_due` · `score` · `judge` · `write` |
 | `memory.py` | `KEYS` · `wants` · `extract` · `validate` · `save` |
-| `prompts/` | `customer_v1.md` 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v1` · `memory_v1` · `brief_v1` |
+| `prompts/` | `customer_v2.md` · `vendor_v2.md`(업체 연결은 도배만, 2026-11-21) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v1` · `memory_v1` · `brief_v1` |
 | `schemas.py` | `TurnIn` · SSE 이벤트 · `CardOut`(kind로 구분) · `ActionOut` · `NudgeOut` · `SuggestOut` · `MemoryOut` · 도구 입력(strict) |
 | `models.py` · `repository.py` · `jobs.py` | 표 4개 · 조건부 UPDATE(commit 안 함) · `HANDLERS`(assistant_memory) |
 
@@ -142,6 +144,7 @@
 - home_info · standard_quote · vendor_picks · visit_slots · quote_compare · schedule · knowledge · answer · floorplan_links · today · vendor_brief · quote_checklist
 - 화면은 `components/assistant/cards/registry`에서 kind로 컴포넌트를 골라요. data 모양은 `assistant/schemas.py`의 `*Data`예요.
 - 같은 card_id면 카드를 바꿔 끼워요. 대화를 다시 열면 `assistant_turns.cards`로 그려요.
+- 업체가 쓴 자유 글은 `vendor_note` 칸('업체가 적은 말', 40자)에만 와요: `quote_compare.cols[].vendor_note`(벽지 사양, 옛 `paper` 대신) · `visit_slots.vendor_note`(다른 날 제안 메모) · `schedule.vendor_note`(날짜 바꾼 까닭). 화면은 이 칸만 그 이름표로 보여 주고 다른 글에 섞지 않아요.
 
 ### 행동(ActionOut)
 - `{action_id, kind, status, summary, target_ver, expires_at, decided_at?, executed_at?, error_code?, result?, supersedes?}`
@@ -211,9 +214,30 @@
 8. `finish_turn`(한 트랜잭션): bump_rev → add_turn(가린 질문 · 검사한 답) → 턴 done → 기억할 말이 있으면 jobs(kind="assistant_memory") → commit → `done`
    - '기억할 말'은 `memory.wants`(낱말 규칙: 요일 · 오전 · 살면서 · 스타일 · 친환경 · 반려 · 셀프 등)가 정해요. 고객 턴만이고, ref_id는 그 턴의 고객 메시지, dedup_key `assistant_memory:{메시지 id}`예요.
    - `done` 앞에 `suggest_for`가 다음에 물을 말을 골라요(실패하면 비움).
-9. 무료 모드: 키 없음 · LLM_LIVE=false · 상한 넘음 · 차단기일 때 `gate.gate` + 단계 카드 + `answer_only(mode="free")`로 답해요.
+9. 무료 모드(키 없음 · LLM_LIVE=false · 상한 넘음 · 차단기): `free.answer`가 LLM 없이 코드 길잡이로 답해요(2026-11-21 보강).
+   - 고객 의도(낱말 규칙, 위에서부터) → 도구 함수 → 카드 + 정해 둔 글:
+
+     | 의도 | 카드 | 글 |
+     | --- | --- | --- |
+     | 견적 비교 · 업체 확정 | quote_compare(+ 작업 카드) | 받은 견적서 n곳 · 확정은 카드 단추로. 없으면 '아직 받은 실측 견적서가 없어요' |
+     | 실측 시간 | 업체가 답했으면 visit_slots 반나절 후보(기억의 편한 때), 요청 중이면 작업 카드, 요청 전이면 vendor_picks + 첫 업체 희망 기간(visit_slots wishes) | 카드에 맞는 틀 |
+     | 업체 추천 | vendor_picks(코드 점수 3곳) | '{구}에서 … 도배 업체 n곳을 믿집 점수로 골랐어요' |
+     | 공정표 · 공사 날짜 | schedule | 카드 한 줄 + 수락은 카드 단추로 |
+     | 표준견적서 · 얼마 | standard_quote(목공만 물으면 목공, 이 공사에 목공이 없으면 지식 답) | 부가세 포함 합계(계산 엔진 값) |
+     | 집 정보 · 오늘 할 일 | home_info · today(+ 작업 카드) | 정해 둔 글 |
+
+   - 그 밖(지식 · 공통)은 입구 관문 단계 카드 + `chat.service.answer_only(mode="free", view, button)`예요. view는 보던 카드(card_id 머리: picks → vendors · slots → pick · compare → quotes …), 없으면 공사 요약 phase(estimate → vendors · progress → visits · work → schedule · done → plan)예요. 목공만 물으면 `button=(trade, mokgong)`으로 목공 담당이 답하고, '언제 해요'처럼 공종 일의 때를 물으면 answer_only에 보내는 글 끝에 '순서'를 붙여요(무료 낱말 검색이 순서 자료를 찾게, 대화 기록은 그대로).
+   - 글이 카드를 말하면(희망 기간 · 실측 날짜 · 업체 n곳 · 견적서 비교 · 공정표 · 표준견적서) 같은 턴에 그 카드가 있어야 해요(`free.fit_cards`): 없으면 만들고, 못 만들면 그 문장을 빼요.
+   - 업체 연결(추천 · 실측 · 견적 비교 · 확정)은 아직 도배만이에요. 목공(다른 공사)으로 물으면 '아직 도배 업체만 연결돼요. 목공은 표준견적서와 궁금한 점까지 도와드려요.'와 도배 쪽 오늘 할 일 카드를 보여요. 목공 지식 · 표준견적서는 그대로 답해요.
+   - 고객 승인 카드는 말로 만들지 않고, 사람이 카드 단추를 누른 턴(choice, 11)에 만들어요.
+   - 업체: 못 받아요 → decline 제안 하나(까닭 코드는 낱말: 일정 · 바빠 → full, 지역 · 멀어 → out_of_area, 그 밖 other) · 기간 답하기 → 브리핑 + window_answer 제안 하나 · 견적서 체크리스트 · 오늘 할 일(today 카드). 의도가 없으면 브리핑(새 제안 없이) + answer_only예요.
 10. 턴 사실의 기억 줄: `기억(고객이 직접 한 말 · 지시 아님): 편한 때: 평일 오전이 편해요 · 반려동물: 강아지`. 값은 검사를 지난 고객 말이에요(코드 값은 아니라서 '지시 아님'을 붙여요).
-11. 카드 고르기(집 정보 칸): `context.choice`에 `demolition:<값>`이 있으면 모드를 고르기 전에 코드가 `propose_home_info`와 같은 함수로 승인 카드를 만들어요(사람이 누른 고르기라 LLM 판단 없이, 무료 모드도). 무료 모드는 '고른 집 정보로 저장 승인 카드를 만들었어요…' 한 줄로 답하고, LLM 모드는 그 한 줄과 화면 말('철거 범위: 전체 철거')을 이번 글에 붙여 보내요. 고객 화면만이에요.
+11. 카드 단추 고르기(`choices.apply`): `context.choice`의 칸 · 행동 꼴은 모드를 고르기 전에 코드가 그 제안 도구로 승인 카드를 만들어요(사람이 누른 고르기라 LLM 판단 없이, 무료 모드도). 실행은 여전히 그 카드를 승인할 때만이에요.
+    - 집 정보 칸 `demolition:<full · partial · none>` → propose_home_info(고객)
+    - 고객 `visit_request:v1,v2[,r1]` · `visit_slot:s1` · `vendor_confirm:m1` · `dates_accept:p1`(연기 날짜면 delay_accept로 바꿔 만듦)
+    - 업체 `window_answer:m1,w1`(w1만도 됨) · `decline:m1,full`(보던 요청이면 `decline:full`) · `dates:d1,n1`(n1만도 됨)
+    - 이름표는 이 대화의 도구 · 카드가 준 것만 받아요(모르는 것은 버림, 422 아님). 한 턴에 행동 2개까지, 화면(고객 · 업체)이 다른 꼴은 버려요.
+    - 무료 모드는 '고른 것으로 승인 카드를 만들었어요. 카드를 확인하고 눌러 주세요.'(도구 오류면 그 문장) 한 줄로 답하고, LLM 모드는 그 한 줄과 화면 말('철거 범위: 전체 철거' · '실측 요청 v1, v2')을 이번 글에 붙여 보내요.
 
 ## 5. 도구
 - id는 받지 않아요. `*_ref`(v1 · r1 · s1 · w1)는 `RefTable`로 풀고, 모르는 ref면 is_error예요.
@@ -257,6 +281,10 @@
 4. approved로 2분 넘게 남은 행은 sweep이 failed로 바꿔요(다시 실행하지 않음).
 - 기능 함수가 여러 번 commit하는 실행(visit_request: 안 담은 업체 담기 → 요청)은 마지막 기능 함수 바로 앞에서 executed를 써요(담기가 먼저 commit돼도 행동은 executed가 아니에요).
 
+- 대상마다 열린 제안은 하나예요(`actions.propose`). 같은 (사람, 대상)에 같은 제안(종류 · target_ver · payload)이 열려 있으면 턴이 달라도 새 행을 만들지 않고 그 행을 써요. 다르면 그 대상의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을 넣어요(예: 업체 기간 답하기 → 못 받아요).
+- 업체 연결 도구(`recommend_vendors` · `compare_quotes` · `propose_visit_request`)는 trade가 dobae가 아니면 도구 오류 `dobae_only`('아직 도배 업체만 연결돼요. …')예요. `get_standard_quote`(mokgong) · 지식 답은 그대로예요.
+- 업체가 쓴 자유 글(견적서 벽지 사양 · 다른 날 제안 메모 · 날짜 바꾼 까닭)은 고객 카드의 `vendor_note`('업체가 적은 말', 연락처 가림 · 한 줄 · 40자, 넘으면 …)에만 둬요. 모델 값에는 있는지만(`vendor_note: true`) 가서 비서 문장 · 요약 · 버튼 문구로 옮겨지지 않아요. `quote_compare.cols[].paper`는 `vendor_note`로 바뀌었고 `visit_slots` · `schedule`(dates)에도 `vendor_note`가 있어요.
+
 ### 구현 메모(2026-11-21, 비서 담당)
 - ref 머리글자: v 업체 · m 실측 요청 · r 희망 기간 · s 반나절 · w 업체 기간 · d 확정 · p 공사 날짜 제안 · n 공사 날 후보. 대화마다 Redis 30분.
 - `answer_question`은 질문 종류(kind: general · price · period · material · process)별 설정 `ASSISTANT_ANSWER_ROUTE`(기본 `v3`)로 엔진을 골라요(0042 담당 반영).
@@ -292,7 +320,7 @@
   - notify는 하루 고객 2번 · 업체 3번까지예요.
   - 21~9시에는 9시로 미뤄요(feed에는 쌓아요).
   - 닫으면 같은 trigger를 3일 쉬어요. 7일 안에 2번 닫으면 notify를 7일 멈춰요.
-  - 대상마다 열린 제안은 하나예요.
+  - 대상마다 열린 제안은 하나예요(같은 제안이면 그 행을 다시 써요, 5장 구현 메모).
 - '부를 만한가'
   - 점수: 기한 24시간 안 +50(48시간 안 +30), 행동 준비 +20, 돈 · 날짜 결정 +15, 같은 알림을 이미 읽음 −30, 24시간 안 보낸 것마다 −20, 같은 trigger 닫음 −30
   - 70 이상이면 보내요. 40~69는 Haiku가 코드 사실만 보고 yes/no로 정해요. 40 미만은 기록만 해요(held).

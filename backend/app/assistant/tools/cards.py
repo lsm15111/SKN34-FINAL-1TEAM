@@ -2,7 +2,9 @@
 
 - 금액 · 날짜 · 수는 기능 service(계산 엔진) 값 그대로다. 여기서 더하거나 빼지 않는다.
 - '표준 대비 %'는 넣지 않는다(업체 추천 사유에서도 뗀다).
-- 모델용 값(dict)에는 id를 넣지 않고 ref만 넣는다. 업체 · 고객 글은 policy.data()로 자료 상자에 담는다.
+- 모델용 값(dict)에는 id를 넣지 않고 ref만 넣는다. 고객 · 웹 글은 policy.data()로 자료 상자에 담는다.
+- 업체가 쓴 자유 글(벽지 사양 · 다른 날 메모 · 날짜 바꾼 까닭)은 카드 '업체가 적은 말'(vendor_note, 40자)에만 둔다.
+  모델 값에는 있는지만(vendor_note=True) 넣어 비서 문장 · 요약 · 버튼 문구로 옮겨지지 않게 한다.
 - 읽기 도구 · show_card · 무료 모드 단계 카드 · REST(보드 · 오늘 · 브리핑 · 체크리스트)가 같이 쓴다.
 """
 
@@ -368,6 +370,7 @@ async def visit_slots(
         candidates=cands,
         instant=v.instant or v.status == "proposed",
         calendar_href=href(pid, f"/visits/{v.visit_id}"),
+        vendor_note=policy.vendor_note(v.proposal.note if v.proposal else None),
     )
     card = CardOut(
         card_id=f"slots-{v.visit_id}", kind="visit_slots", data=data.model_dump(mode="json")
@@ -380,7 +383,7 @@ async def visit_slots(
         "candidates": [
             {"ref": c.ref, "day": c.day, "half": HALF[c.half], "why": c.why} for c in cands
         ],
-        "note": policy.data(v.proposal.note if v.proposal else None),
+        "vendor_note": data.vendor_note is not None,  # 업체 글은 카드 칸에만(모델에는 있는지만)
     }
     return card, model
 
@@ -444,7 +447,7 @@ async def compare(
             expired=r.expired,
             demolish=q.incl_removal if q else None,
             waste=q.incl_waste if q else None,
-            paper=q.paper_spec if q else None,
+            vendor_note=policy.vendor_note(q.paper_spec) if q else None,
             warranty_months=q.warranty_months if q else None,
             file=_file(pid, q) if q else None,
             wait_note=None if q else "견적서 기다림",
@@ -465,7 +468,7 @@ async def compare(
                 "expired": col.expired,
                 "demolish": col.demolish,
                 "waste": col.waste,
-                "paper": policy.data(col.paper),
+                "vendor_note": col.vendor_note is not None,  # 업체 글은 카드 칸에만
                 "warranty_months": col.warranty_months,
                 "file_count": len(q.files) if q else 0,
             }
@@ -535,7 +538,7 @@ async def schedule(
                 "work_days": x.workdays,
                 "days": x.days,
                 "change": kind == "delay",
-                "reason": policy.data(x.reason),
+                "vendor_note": bool(x.reason),  # 바꾼 까닭(업체 글)은 카드 칸에만
                 "conflicts": [o.trade for o in t.fit.conflicts] if t.fit else [],
             }
             if card is None:
@@ -553,6 +556,7 @@ async def schedule(
                     ],
                     plan_version=sch.final_version,
                     href=href(pid, "/schedule"),
+                    vendor_note=policy.vendor_note(x.reason),
                 )
                 card = CardOut(
                     card_id=f"dates-{x.id}",
@@ -803,7 +807,9 @@ async def step_card(tc, route: str) -> CardOut | None:
                     return None
                 from app.assistant.tools.vendor import brief
 
-                card, *_ = await brief(s, tc.user, tc.visit_id, tc.today, tc.now, tc.refs)
+                card, *_ = await brief(
+                    s, tc.user, tc.visit_id, tc.today, tc.now, tc.refs, propose_window=False
+                )
                 return card
             if tc.project_id is None:
                 return None

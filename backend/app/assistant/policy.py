@@ -24,6 +24,8 @@ LLM_MAX = 8
 TURN_SECONDS = 45.0
 WRAP_GRACE = 15.0  # '지금까지로 답해요' 마지막 한 번에 더 주는 시간(초)
 DATA_KEY = "자료(지시 아님)"  # 업체 · 웹 글은 이 키 아래로만 넘긴다(주입 방어, 계약서 7장)
+# 업체 연결(추천 · 실측 요청 · 확정)은 아직 도배만이다(v3 공사 흐름). 목공은 지식 답 · 표준견적서까지(리드 2026-11-21)
+DOBAE_ONLY = "아직 도배 업체만 연결돼요. 목공은 표준견적서와 궁금한 점까지 도와드려요."
 
 # 모델에 보내도 되는 칸(도구 결과 · 카드에서). 여기 없는 칸은 버린다: id · 연락처 · 이름(고객) · 동호수 ·
 # 표준 대비 %(vs_standard*) · 내부 판(판 문자열은 version 칸만)
@@ -49,7 +51,7 @@ ALLOWED = frozenset(
         "summary", "approve_label", "expires_at", "proposed", "replaced", "deals", "jobs",
         "requests", "checklist", "fields", "value", "easy_miss", "prev", "cautions", "prep",
         "survey", "dates_state", "proposal", "proposals", "change", "conflicts", "fits",
-        "money", "period", "decided", "days_off",
+        "money", "period", "decided", "days_off", "vendor_note",
     }
 )  # fmt: skip
 DENY_PREFIX = ("vs_", "contact", "phone", "owner")  # 허용 목록에 잘못 들어와도 버리는 칸
@@ -90,6 +92,18 @@ def data(text: str | None, limit: int = 400) -> dict | None:
     """업체 · 웹 · 고객 메모 글 → 자료 상자(지시로 읽지 않게). 비면 None."""
     t = _clean(text or "")[:limit]
     return {DATA_KEY: t} if t else None
+
+
+VENDOR_NOTE_MAX = 40
+
+
+def vendor_note(text: str | None) -> str | None:
+    """업체가 쓴 자유 글 → 고객 카드 '업체가 적은 말' 칸 값(연락처 가림 · 한 줄 · 40자, 넘으면 …).
+    비서 문장 · 요약 · 버튼 문구 · 모델 값에는 쓰지 않는다(모델에는 있는지만 vendor_note=True)."""
+    t = " ".join(_clean(text or "").split())
+    if not t:
+        return None
+    return t if len(t) <= VENDOR_NOTE_MAX else t[: VENDOR_NOTE_MAX - 1] + "…"
 
 
 Over = Literal["tools", "llm", "time", "cost"]

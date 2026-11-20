@@ -219,11 +219,14 @@ async def answer_only(
     *,
     project_id: uuid.UUID | None = None,
     mode: str | None = None,
+    view: str | None = None,
+    button=None,
 ) -> AiAnswerOnlyOut:
     """ai_turn에서 저장만 뺀 답(v4 비서 answer_question 도구 · 무료 모드, 계약서 1장).
 
     대화방 · 되묻기 칸 · 맥락 · 같은 키 되돌림 · 시간당 요청 제한은 쓰지 않는다(부르는 쪽 턴이 지킨다).
     mode가 None이면 ai_turn과 같은 규칙으로 정하고, "free"면 LLM을 부르지 않는다. 남의 공사는 404(AppError).
+    view(보던 화면 · 공사 단계에 맞는 화면)와 button(관문을 건너뛸 담당 · 공종)은 ai_turn의 화면 맥락 · 버튼과 같다.
     부르는 쪽이 이미 장부 문맥(llm.CALL_CTX)을 열었으면 그대로 쓴다(비서 턴의 비용으로 센다)."""
     from contextlib import nullcontext
 
@@ -248,7 +251,7 @@ async def answer_only(
     facts = None
     async with SessionLocal() as s:  # 짧게 열고 닫는다. 답을 만드는 동안 세션을 쥐지 않는다
         if project_id is not None:
-            facts = await tools.project_facts(s, user, project_id, today)
+            facts = await tools.project_facts(s, user, project_id, today, (), view)
         kb = KB(
             ix=await knowledge.index(s),
             cards=cards.default(),
@@ -257,6 +260,7 @@ async def answer_only(
     ctx = TurnContext(
         user_id=user.id,
         project_id=project_id if facts is not None else None,
+        view=view,  # type: ignore[arg-type]
         mode=turn_mode,  # type: ignore[arg-type]
         today=today,
     )
@@ -266,7 +270,7 @@ async def answer_only(
     general.here = tools.house_size(facts)
     scope = llm.call_ctx(user_id=user.id) if llm.CALL_CTX.get() is None else nullcontext()
     with scope:
-        res = await run_turn(text, ctx, kb=kb, facts=facts, general=general)
+        res = await run_turn(text, ctx, kb=kb, facts=facts, general=general, button=button)
     ans = res.answer
     return AiAnswerOnlyOut(
         mode=ctx.mode, route=ans.trace.route, answer=_public(ans), text=ans.plain()

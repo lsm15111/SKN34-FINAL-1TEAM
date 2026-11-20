@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
-from app.assistant import actions, policy, runtime
+from app.assistant import actions, choices, policy, runtime
 from app.assistant import repository as repo
 from app.assistant.models import AssistantTurn
 from app.assistant.runtime import RefTable, TurnCtx, TurnResult
@@ -196,7 +196,7 @@ async def start_turn(
         rev = chat.rev
         await s.commit()
     # 이번 대화에서 도구가 준 이름표와 카드의 집 정보 칸 고르기(칸:값)만 넘긴다. 모르는 값은 버린다
-    choice = [r for r in _choices(context) if refs.known(r) or runtime.field_choice(r)]
+    choice = [r for r in _choices(context) if choices.valid(r, refs)]
     return TurnCtx(
         turn_id=turn.id,
         chat_id=chat.id,

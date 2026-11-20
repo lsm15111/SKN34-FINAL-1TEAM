@@ -1,7 +1,8 @@
 """대기 행동 (계약서 5장 actions.execute · 7장 함정 다섯). 비서는 행만 만들고, 실행은 사람이 누른 승인으로만 한다.
 
-- propose: 같은 (사람, 종류, 대상)의 열린 제안을 만료(replaced)로 바꾸고 새 행을 넣는다(멱등 키가 같으면 그 행).
-  commit은 부르는 쪽(도구)이 한다. action 이벤트는 commit 뒤에 보낸다.
+- propose: 대상마다 열린 제안은 하나다. 같은 (사람, 대상)에 같은 제안(종류 · 대상 판 · payload)이 열려 있으면
+  새로 만들지 않고 그 행을 쓴다(턴이 달라도). 다르면 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을
+  넣는다(멱등 키가 같으면 그 행). commit은 부르는 쪽(도구)이 한다. action 이벤트는 commit 뒤에 보낸다.
 - execute(승인): tx1 proposed → approved(조건부 UPDATE, 만료 전) commit → tx2 기능 함수 바로 앞에서
   approved → executed(mark)를 쓰고 기능 함수의 commit으로 같이 확정한다. AppError면 rollback하고 새 트랜잭션에서
   failed(기능 오류 코드)로 바꾼 뒤 409. 견적서가 새 판(quote_changed)이면 새 판 + 차액으로 새 제안을 만든다.
@@ -103,8 +104,12 @@ async def propose(
     exp = expires_at or now + DEFAULT_TTL
     if exp <= now:
         raise AppError(409, "expired", "기한이 지나 제안할 수 없어요.")
+    body = json.loads(json.dumps(payload, default=str))
+    for a in await repo.open_on(s, user.id, target_kind, target_id):
+        if (a.kind, a.target_ver, a.payload) == (kind, target_ver, body) and a.expires_at > now:
+            return a, []  # 같은 대상의 같은 제안이 열려 있다: 새로 만들지 않는다
     new_id = uuid7()
-    closed = await repo.replace_open(s, user.id, kind, target_id, new_id)
+    closed = await repo.replace_open(s, user.id, target_kind, target_id, new_id)
     row = AssistantAction(
         id=new_id,
         user_id=user.id,
@@ -115,7 +120,7 @@ async def propose(
         target_kind=target_kind,
         target_id=target_id,
         target_ver=target_ver,
-        payload=json.loads(json.dumps(payload, default=str)),
+        payload=body,
         summary=summary.model_dump(mode="json", exclude_none=True),
         idem_key=key,
         status="proposed",

@@ -187,15 +187,33 @@ async def actions_of(
     return list(rows.all())
 
 
-async def replace_open(
-    s: AsyncSession, user_id: uuid.UUID, kind: str, target_id: uuid.UUID, by: uuid.UUID
+async def open_on(
+    s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID
 ) -> list[AssistantAction]:
-    """같은 (사람, 종류, 대상)의 열린 제안을 만료(replaced)로 바꾸고 바뀐 행을 돌려준다. by = 새 제안 id."""
+    """그 사람 · 그 대상의 열린 제안(proposed). 대상마다 하나지만 옛 행이 남았을 수 있어 목록으로 읽는다."""
+    rows = await s.scalars(
+        select(AssistantAction)
+        .where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.target_kind == target_kind,
+            AssistantAction.target_id == target_id,
+            AssistantAction.status == "proposed",
+        )
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def replace_open(
+    s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID, by: uuid.UUID
+) -> list[AssistantAction]:
+    """같은 (사람, 대상)의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 바뀐 행을 돌려준다(대상마다 열린
+    제안 하나, 계약서 6장). by = 새 제안 id."""
     res = await s.execute(
         update(AssistantAction)
         .where(
             AssistantAction.user_id == user_id,
-            AssistantAction.kind == kind,
+            AssistantAction.target_kind == target_kind,
             AssistantAction.target_id == target_id,
             AssistantAction.status == "proposed",
         )

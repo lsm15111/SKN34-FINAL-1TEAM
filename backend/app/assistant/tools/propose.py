@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field, ValidationError
 from app.assistant import actions
 from app.assistant.schemas import ActionSummary, AmountRow, LinkOut, SummaryRow
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
-from app.assistant.tools.customer import TRADE, pid_of
+from app.assistant.tools.customer import TRADE, dobae_only, pid_of
 from app.db import SessionLocal
 from app.shared.errors import AppError
 
@@ -203,6 +203,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     from app.project import service as project_service
     from app.visit import service as visit_service
 
+    dobae_only(a.trade)
     pid = pid_of(tc)
     picked = {tc.refs.get(r, "vendor")["id"]: r for r in a.vendor_refs}
     async with SessionLocal() as s:

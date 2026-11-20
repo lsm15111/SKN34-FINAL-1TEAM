@@ -157,6 +157,13 @@ class SlotCandidate(BaseModel):
     why: list[str]
 
 
+# 업체가 쓴 자유 글(벽지 사양 · 다른 날 제안 메모 · 날짜 바꾼 까닭)은 카드의 '업체가 적은 말' 칸에만 짧게 둔다.
+# 비서 문장 · 요약 · 버튼 문구 · 모델 값에는 넣지 않는다(주입 방어, policy.vendor_note)
+VENDOR_NOTE_DESC = (
+    "업체가 적은 말(업체가 쓴 글 그대로, 연락처 가림 · 한 줄 · 40자까지). 화면은 이 칸에만 보여요"
+)
+
+
 class VisitSlotsData(BaseModel):
     vendor_name: str
     window: DateRange | None = Field(description="업체가 답한 기간(요청 전이면 비움)")
@@ -165,6 +172,7 @@ class VisitSlotsData(BaseModel):
     chosen: str | None = None
     instant: bool = False
     calendar_href: str
+    vendor_note: str | None = Field(default=None, description=VENDOR_NOTE_DESC)
 
 
 class CompareFileOut(BaseModel):
@@ -194,7 +202,9 @@ class CompareCol(BaseModel):
     expired: bool = False
     demolish: bool | None = None
     waste: bool | None = None
-    paper: str | None = None
+    vendor_note: str | None = Field(
+        default=None, description=VENDOR_NOTE_DESC + " (견적서의 벽지 사양 칸)"
+    )
     warranty_months: int | None = None
     file: CompareFileOut | None = None
     wait_note: str | None = None
@@ -225,6 +235,9 @@ class ScheduleData(BaseModel):
     plan_version: int
     href: str
     ics_href: str | None = None
+    vendor_note: str | None = Field(
+        default=None, description=VENDOR_NOTE_DESC + " (날짜를 바꾼 까닭)"
+    )
 
 
 class CheckItem(BaseModel):
