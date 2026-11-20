@@ -9,7 +9,7 @@ from pydantic import BaseModel, ValidationError
 
 from app.config import settings
 
-Role = Literal["orchestrator", "trade", "quote_explanation", "schedule", "composer"]
+Role = Literal["orchestrator", "trade", "quote_explanation", "schedule", "composer", "general"]
 
 JEV_URL = "https://openrouter.ai/api/alpha/decisions"
 

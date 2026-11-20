@@ -13,6 +13,7 @@ from dataclasses import dataclass
 
 from app.agent.v3 import brief, check, composer, llm_mode, orchestrator, policy, templates
 from app.agent.v3 import gate as gate_mod
+from app.agent.v3 import general as general_mod  # run_turn의 general(질문 계산 값)과 이름이 겹쳐요
 from app.agent.v3.answer import KB, T_HIGH, Part, Task
 from app.agent.v3.schemas import (
     TEXT_MAX,
@@ -33,6 +34,10 @@ PHOTO = re.compile(
 )
 PHOTO_LINE = "사진은 아직 보여 드리지 못해요. 대신 글로 알려 드릴게요."
 CHITCHAT = re.compile(r"로또|주식|코인|집값|영화|점심|저녁\s*뭐|강아지|번역|날씨|심심|노래|게임")
+
+
+VERSIONS = {"composer": composer.VERSION, "general": general_mod.VERSION}
+RULES = {"composer": composer.rules, "general": general_mod.rules}
 
 
 @dataclass
@@ -151,7 +156,7 @@ async def run_turn(
 
     def finish(p: Part, routes: list[str], shown: list[Section] | None = None) -> AgentAnswer:
         """검사 · 짧은 답. shown: 화면에 먼저 보낸 고정 묶음(검사를 마친 것)이라 그대로 앞에 두고 나머지만 검사해요."""
-        prompts = [composer.VERSION if r == "composer" else llm_mode.VERSION[r] for r in routes]
+        prompts = [VERSIONS[r] if r in VERSIONS else llm_mode.VERSION[r] for r in routes]
         boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
         rest = (
             p.sections
@@ -168,7 +173,7 @@ async def run_turn(
                 card_set=kb.cards.version, parts=names, failed_parts=failed_parts, dropped=p.dropped,
             ),
         )  # fmt: skip
-        texts = [composer.rules() if r == "composer" else llm_mode.prompt(r) for r in routes]
+        texts = [RULES[r]() if r in RULES else llm_mode.prompt(r) for r in routes]
         ans = check.final(ans, prompt="\n".join(texts) or None)
         if shown is not None:
             ans.sections = [*shown, *ans.sections]
@@ -206,6 +211,22 @@ async def run_turn(
         composed = await composer.compose(part, kb, masked, trade=g.trades[0] if g.trades else None)
         if composed is not None:
             part, routes = composed, ["composer"]
+        elif (
+            templates.UNKNOWN in part.unknown
+            and not any(s.source in ("card", "extract") for s in part.sections)
+            and general_mod.eligible(masked, g.route, g.trades, g.policy)
+        ):
+            # 믿집 자료가 없는 도배 · 목공 '무엇 · 어떻게' 질문: 숫자 없는 일반 설명 + 확인할 곳(모름 줄은 뺌)
+            more = await general_mod.explain(
+                masked, route=part.route, trade=g.trades[0], dropped=part.dropped
+            )
+            if more:
+                where = [u for u in part.unknown if u != templates.UNKNOWN]
+                part.sections = [*part.sections, *more]
+                part.unknown = where or [
+                    templates.UNKNOWN_WHERE.format(where=general_mod.WHERE_DEFAULT)
+                ]
+                routes = ["general"]
     ans = finish(part, routes, shown)
     new_wait = None
     if ans.ask is not None:

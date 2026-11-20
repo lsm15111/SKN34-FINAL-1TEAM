@@ -28,7 +28,7 @@ View = Literal[
 ]  # fmt: skip
 Stage = Literal["info", "standard", "vendors", "visit", "after_visit", "construction", "done"]
 LineState = Literal["included", "bundled", "separate", "optional", "after_visit", "excluded"]
-SectionSource = Literal["card", "extract", "llm", "template", "calc"]
+SectionSource = Literal["card", "extract", "llm", "template", "calc", "general"]
 Mode = Literal["free", "llm"]
 
 TEXT_MAX = 1000  # 질문 길이 (agents.md 8절)

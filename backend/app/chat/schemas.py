@@ -49,7 +49,7 @@ class AiSection(BaseModel):
     sentences: list[str]
     caution: str = ""
     tip: str = ""
-    source: Literal["card", "extract", "llm", "template", "calc"]
+    source: Literal["card", "extract", "llm", "template", "calc", "general"]
     route: Route
     trade: str | None = None
     sources: list[AiSource] = []
