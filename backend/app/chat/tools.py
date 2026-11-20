@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agent.v3.schemas import (
     EstimateFacts,
     GeneralFacts,
+    MarketFact,
     PlanBlockFact,
     PlanFacts,
     ProjectFacts,
@@ -116,6 +117,11 @@ async def _vendor_screen(
     return vendor_screen(d)
 
 
+# 고객 답에 시장 기준값을 보이는 줄: 직접 자료가 20건 이상인 가운데 값 · 평균만(2026-11-20 사용자 결정).
+# 식대 · 운송비는 직접 자료가 없는 어림 상한(upper_estimate)이라 보이지 않아요
+MARKET_MIN_N = 20
+
+
 def vendor_screen(d) -> VendorScreenFacts | None:
     """VendorDetailOut → 화면 사실. 값은 옮기기만 해요(셈 없음). 보여 준 벽지가 아닌 도배지 줄은 화면처럼 빼요."""
     from app.refprice.vendor_baseline import VENDOR_BASE_2026_11
@@ -129,10 +135,18 @@ def vendor_screen(d) -> VendorScreenFacts | None:
         if ln.key == other or ln.mode == "excluded":
             continue
         base = VENDOR_BASE_2026_11.get(ln.code)
+        market = None
+        if base is not None and base.stat in ("median", "mean") and base.n >= MARKET_MIN_N:
+            market = MarketFact(
+                base=base.base, stat=base.stat, p25=base.p25, p75=base.p75, n=base.n,
+                checked=base.checked,
+            )  # fmt: skip
         lines.append(
             ScreenLineFact(
                 key=ln.key,
-                name=ln.name,
+                name=getattr(ln, "label", "") or ln.name,
+                note=getattr(ln, "note", ""),
+                market=market,
                 qty=float(ln.qty),
                 unit=ln.unit,
                 unit_price=ln.unit_price,

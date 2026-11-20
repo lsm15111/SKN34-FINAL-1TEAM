@@ -126,20 +126,32 @@ class EstimateFacts(BaseModel):
     separate: list[str] = []  # 따로 받는 줄 이름
 
 
+class MarketFact(BaseModel):
+    """업체 단가 줄의 시장 기준값(실견적 모음). 자료가 많은 줄만 옮겨요(가운데 값 · 평균, 20건 이상)."""
+
+    base: int  # 원/단위, 부가세 별도
+    stat: Literal["median", "mean"]
+    p25: int
+    p75: int
+    n: int
+    checked: date  # 기준값을 확인한 날
+
+
 class ScreenLineFact(BaseModel):
     """보는 화면의 가견적 줄 한 개. 값은 화면과 같은 계산 엔진 결과(vendor_detail) 그대로."""
 
     key: str  # 업체 단가 키: putty · paper_hapji · paper_silk · material · labor · meal · truck
-    name: str  # 화면 이름: 퍼티작업 · 합지 · 실크 · 부자재 · 인건비 · 식대 · 운송비
+    name: str  # 고객 화면 이름: 퍼티작업 · 합지벽지 · 실크벽지 · 부자재 · 인건비 · 식대 · 운송비
+    note: str = ""  # 화면 줄 아래 짧은 뜻(풀 · 부직포 · 네바리 · 실리콘 등)
     qty: float
     unit: str  # 공급 평 · 벽지 평 · 품 · 대
     unit_price: int | None = None  # 다른 줄에 포함이면 비어요
     amount: int = 0  # 포함 · 빼기 줄은 0
     in_standard: bool = True  # 표준견적서에 같은 일이 있는 줄. 아니면 표준 대비 %에서 빼요
     included_in: str | None = None
-    basis: str = (
-        ""  # 수량 1의 뜻(시장 기준값 표 unit_ko에서 '당'을 뗀 것): '공급면적 1평(3.3058㎡)'
-    )
+    # 수량 1의 뜻(시장 기준값 표 unit_ko에서 '당'을 뗀 것): '공급면적 1평(3.3058㎡)'
+    basis: str = ""
+    market: MarketFact | None = None  # 시장 기준값(자료 많은 줄만)
 
 
 class VendorScreenFacts(BaseModel):

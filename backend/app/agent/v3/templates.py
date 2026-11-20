@@ -113,6 +113,13 @@ SCREEN_BASIS = "수량은 {basis} 단위로 셌어요."
 SCREEN_MAN_DAY = "품 수는 이 집 벽 · 천장 도배 면적으로 셈하고 0.5품 단위로 올렸어요."
 SCREEN_MAN_DAY_LIVING = "살면서 하는 집이라 짐을 옮기며 붙이는 만큼 품을 더 셌어요."
 SCREEN_EXTRA = "{eun} 표준견적서에 없는 줄이라 표준견적서와 견줄 때는 빼요."
+SCREEN_NOTE = "{name} 줄에는 {note} 들어가요."
+# 시장 기준값(자료 많은 줄만, 사용자 결정 2026-11-20): 판단 말 없이 범위 · 건수 · 기준 달만
+SCREEN_MARKET = (
+    "믿집이 모은 실견적 {n}건에서 {name} 단가는 {basis}당 {stat} {base}원(부가세 빼고)이고, "
+    "절반이 {p25}~{p75}원 사이예요({ym} 기준)."
+)
+SCREEN_MARKET_ONE = "믿집이 모은 실견적 {n}건에서 {name} 단가는 {basis}당 {stat} {base}원(부가세 빼고)이에요({ym} 기준)."
 SCREEN_INCLUDED = "{eun} 다른 줄에 포함돼 따로 받지 않아요."
 SCREEN_COMPARE_SAME = "업체 가견적은 모두 같은 믿집 수량에 업체 단가를 곱해서, 업체끼리는 같은 줄의 단가를 견주면 돼요."
 SCREEN_COMPARE_PCT = "{vendor} 가견적의 표준 대비 %는 표준견적서와 같은 일 줄만 견준 값이에요."

@@ -6,7 +6,7 @@
 
 import re
 
-from app.agent.v3 import templates
+from app.agent.v3 import screen, templates
 from app.agent.v3.answer import KB, Part, Task, calc_box, knowledge, line_box, screen_box
 from app.agent.v3.schemas import (
     CalcBox,
@@ -65,19 +65,9 @@ def match_line(q: str, lines: list[StandardLineFact]) -> StandardLineFact | None
 
 
 def match_screen_line(q: str, lines: list[ScreenLineFact]) -> ScreenLineFact | None:
-    """보던 화면의 가견적 줄을 이름(화면 데이터 그대로)으로 맞춰요. 이름이 질문에 있거나, 세 글자 넘는 이름은
-    앞 두 글자('퍼티작업' → '퍼티')가 있으면. 여럿이면 질문에서 먼저 나온 줄."""
-    plain = re.sub(r"\s+", "", q)
-    best: tuple[int, ScreenLineFact] | None = None
-    for ln in lines:
-        name = re.sub(r"\s+", "", ln.name)
-        for probe in (name, name[:2] if len(name) > 2 else ""):
-            if len(probe) >= 2 and probe in plain:
-                at = plain.index(probe)
-                if best is None or at < best[0]:
-                    best = (at, ln)
-                break
-    return best[1] if best else None
+    """보던 화면의 가견적 줄을 고객 화면 이름으로 맞춰요(screen.first_named). 여럿이면 질문에서 먼저 나온 줄."""
+    i = screen.first_named(q, [ln.name for ln in lines])
+    return lines[i] if i is not None else None
 
 
 def _screen_line(
@@ -93,12 +83,33 @@ def _screen_line(
         lines.append(templates.SCREEN_LINE.format(name=ln.name, vendor=who, unit=ln.unit))
         if ln.basis:
             lines.append(templates.SCREEN_BASIS.format(basis=ln.basis))
+    if (
+        ln.note and ln.unit != "품"
+    ):  # 인건비 '품 = 1명이 하루 하는 일'은 수량 단위 문장이 이미 말해요
+        lines.append(
+            templates.SCREEN_NOTE.format(name=ln.name, note=templates.josa(ln.note, "이", "가"))
+        )
     if ln.unit == "품":
         lines.append(templates.SCREEN_MAN_DAY)
         if f.living == "living":
             lines.append(templates.SCREEN_MAN_DAY_LIVING)
     if not ln.in_standard:
         lines.append(templates.SCREEN_EXTRA.format(eun=eun))
+    m = ln.market
+    if m is not None:
+        tpl = templates.SCREEN_MARKET if m.p25 < m.p75 else templates.SCREEN_MARKET_ONE
+        lines.append(
+            tpl.format(
+                n=m.n,
+                name=ln.name,
+                basis=ln.basis or f"{ln.unit} 1",
+                stat="가운데 값이" if m.stat == "median" else "평균이",
+                base=f"{m.base:,}",
+                p25=f"{m.p25:,}",
+                p75=f"{m.p75:,}",
+                ym=f"{m.checked.year}.{m.checked.month}",
+            )
+        )
     part.calc.append(screen_box(ln, v.vendor))
     allowed += [ln.name, v.vendor, ln.unit, ln.basis]
 

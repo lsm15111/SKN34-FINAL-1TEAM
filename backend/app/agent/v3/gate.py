@@ -9,10 +9,11 @@ Jev는 무료 모드에서 부르지 않는다(L21). 되묻기는 한 번이고 
 """
 
 import re
+from collections.abc import Sequence
 from itertools import pairwise
 
 from app.agent import intent as clf
-from app.agent.v3 import policy, trades
+from app.agent.v3 import policy, screen, trades
 from app.agent.v3.schemas import Button, Choice, GateResult, Route, View
 
 THRESHOLD = 0.7  # settings.intent_confidence_threshold와 같은 값(E1 기준값 곡선으로 다시 봄)
@@ -24,6 +25,8 @@ LABEL_ROUTE: dict[str, Route] = {
     "out_of_scope": "out_of_scope",
 }
 NEED_PROJECT: tuple[Route, ...] = ("quote_explanation", "schedule")
+# 화면 줄 이름이 나와도 견적 설명으로 보내지 않는 정책 표시(브랜드 · 하자 · 셀프 · 법률 · 추천 · 기간은 제 길로)
+SCREEN_OK_FLAGS = frozenset({"price", "my_house"})
 
 QUOTE_MINE = re.compile(
     r"표준\s*견적|가견적|실측\s*견적|견적서|견적\s*(?:이|가|에서|은|받았|차이)|합계|부가세|줄\s*하나|이\s*줄|"
@@ -133,8 +136,10 @@ def gate(
     button: Button | None = None,
     has_project: bool = False,
     ignore: list[str] | None = None,
+    items: Sequence[str] = (),
 ) -> GateResult:
-    """text는 가린 뒤의 고객 글. ignore: 업체 이름처럼 공종 낱말로 읽으면 안 되는 말(예: '마루와벽')."""
+    """text는 가린 뒤의 고객 글. ignore: 업체 이름처럼 공종 낱말로 읽으면 안 되는 말(예: '마루와벽').
+    items: 보던 화면의 항목 이름(화면 데이터 그대로, 예: 업체 가견적 줄 '운송비 · 식대')."""
     plain = _strip(text or "", ignore or [])
     found = trades.trades_in(plain)
     flags = policy.policy_of(plain)
@@ -177,6 +182,15 @@ def gate(
     moved = model_route is not None and model_route != waiting and conf >= THRESHOLD
     if waiting is not None and waiting not in ("ask_back", "out_of_scope") and not moved:
         return done(waiting, "waiting")
+
+    # 데이터 화면: 질문에 화면 줄 이름이 있으면 그 줄 풀이로(무료 모드 길, 2026-11-20 사용자 결정).
+    # 이름은 화면 데이터에서 와요. 정책 표시(브랜드 · 하자 · 셀프 · 기간 …)가 붙은 질문은 제 길로 둬요
+    if (
+        items
+        and not (set(flags) - SCREEN_OK_FLAGS)
+        and screen.first_named(plain, items) is not None
+    ):
+        return done("quote_explanation", "rule")
 
     # 범위 밖: 믿집이 하지 않는 일 · 10공종 견적 계산 요청
     if policy.out_of_scope(plain, bool(found)):

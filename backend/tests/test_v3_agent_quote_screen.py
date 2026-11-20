@@ -12,6 +12,7 @@ from v3_kb import repo_kb
 from app.agent.v3 import quote_explain, templates
 from app.agent.v3.answer import Task
 from app.agent.v3.schemas import (
+    MarketFact,
     ProjectFacts,
     ScreenFacts,
     ScreenLineFact,
@@ -44,20 +45,27 @@ def _standard() -> StandardFacts:
     )  # fmt: skip
 
 
+CHECKED = date(2026, 11, 18)
+
+
 def _maru() -> VendorScreenFacts:
     ln = ScreenLineFact
+    mk = lambda base, stat, p25, p75, n: MarketFact(
+        base=base, stat=stat, p25=p25, p75=p75, n=n, checked=CHECKED
+    )
     return VendorScreenFacts(
         vendor="마루와벽", grade="basic", total=2_920_005, supply=2_654_550, vat=265_455,
         vs_standard=30.3, grade_diff=-266_805,
         lines=[
-            ln(key="paper_silk", name="실크", qty=53.9, unit="벽지 평", unit_price=9_500, amount=512_050,
-               basis="벽지(도배지) 면적 1평(3.3058㎡)"),
-            ln(key="material", name="부자재", qty=21, unit="공급 평", unit_price=13_000, amount=273_000,
-               basis="공급면적 1평(3.3058㎡)"),
-            ln(key="labor", name="인건비", qty=4.5, unit="품", unit_price=300_000, amount=1_350_000,
-               basis="1품(1명이 하루 하는 일)"),
-            ln(key="putty", name="퍼티작업", qty=21, unit="공급 평", unit_price=20_000, amount=420_000,
-               in_standard=False, basis="공급면적 1평(3.3058㎡)"),
+            ln(key="paper_silk", name="실크벽지", qty=53.9, unit="벽지 평", unit_price=9_500, amount=512_050,
+               basis="벽지(도배지) 면적 1평(3.3058㎡)", market=mk(10_749, "mean", 9_016, 13_223, 279)),
+            ln(key="material", name="부자재", note="풀 · 부직포 · 네바리 · 실리콘 등", qty=21, unit="공급 평",
+               unit_price=13_000, amount=273_000, basis="공급면적 1평(3.3058㎡)",
+               market=mk(6_875, "median", 6_279, 7_586, 129)),
+            ln(key="labor", name="인건비", note="품 = 1명이 하루 하는 일", qty=4.5, unit="품", unit_price=300_000,
+               amount=1_350_000, basis="1품(1명이 하루 하는 일)", market=mk(270_000, "median", 250_000, 290_000, 22)),
+            ln(key="putty", name="퍼티작업", note="사전퍼티 또는 밀작업", qty=21, unit="공급 평", unit_price=20_000,
+               amount=420_000, in_standard=False, basis="공급면적 1평(3.3058㎡)"),
             ln(key="meal", name="식대", qty=4.5, unit="품", unit_price=11_000, amount=49_500,
                in_standard=False, basis="1품"),
             ln(key="truck", name="운송비", qty=1, unit="대", unit_price=50_000, amount=50_000,
@@ -94,16 +102,16 @@ def _texts(a) -> list[str]:
 
 def test_vendor_screen_copies_engine_values_and_hides_other_paper():
     """VendorDetailOut → 화면 사실: 값은 옮기기만, 보여 준 벽지가 아닌 도배지 · 빼기 줄은 화면처럼 빼요."""
-    row = lambda code, key, name, qty, unit, price, amount, mode="price", std=True: SimpleNamespace(
+    row = lambda code, key, name, qty, unit, price, amount, mode="price", std=True, label="", note="": SimpleNamespace(
         code=code, key=key, name=name, qty=Decimal(qty), unit=unit, unit_price=price, amount=amount,
-        mode=mode, included_in=None, in_standard=std,
+        mode=mode, included_in=None, in_standard=std, label=label, note=note,
     )  # fmt: skip
     est = SimpleNamespace(
         grade="basic", total=2_920_005, supply=2_654_550, vat=265_455, vs_standard_pct=Decimal("30.3"),
         lines=[
             row("1203", "paper_hapji", "합지", "53.9", "벽지 평", 5_000, 269_500),
-            row("1204", "paper_silk", "실크", "53.9", "벽지 평", 9_500, 512_050),
-            row("1205", "material", "부자재", "21", "공급 평", 13_000, 273_000),
+            row("1204", "paper_silk", "실크", "53.9", "벽지 평", 9_500, 512_050, label="실크벽지"),
+            row("1205", "material", "부자재", "21", "공급 평", 13_000, 273_000, note="풀 · 부직포 등"),
             row("1208", "truck", "운송비", "1", "대", 50_000, 50_000, std=False),
             row("1207", "meal", "식대", "4.5", "품", None, 0, mode="excluded", std=False),
         ],
@@ -119,7 +127,16 @@ def test_vendor_screen_copies_engine_values_and_hides_other_paper():
         30.3,
     )
     assert [x.key for x in v.lines] == ["paper_silk", "material", "truck"]
+    assert [x.name for x in v.lines] == [
+        "실크벽지",
+        "부자재",
+        "운송비",
+    ]  # 고객 화면 이름(줄 정의 label)
     assert v.lines[1].basis == "공급면적 1평(3.3058㎡)" and v.lines[2].in_standard is False
+    assert v.lines[1].note == "풀 · 부직포 등"
+    # 시장 기준값은 자료 많은 줄만(부자재 129건 가운데 값). 운송비는 어림 상한이라 없음
+    m = v.lines[1].market
+    assert m is not None and (m.stat, m.n) == ("median", 129) and v.lines[2].market is None
     assert vendor_screen(SimpleNamespace(estimate_v3=None)) is None
 
 
@@ -128,9 +145,14 @@ def test_material_question_reads_vendor_line_not_standard_line():
     a = _turn("도배 부자재는 왜 이렇게 비싸?", _facts())
     assert a.trace.route == "quote_explanation"
     texts = _texts(a)
-    assert texts[:2] == [
+    assert texts[:4] == [
         "부자재 줄은 마루와벽이 확인한 단가에 이 집 수량(공급 평)을 곱했어요.",
         "수량은 공급면적 1평(3.3058㎡) 단위로 셌어요.",
+        "부자재 줄에는 풀 · 부직포 · 네바리 · 실리콘 등이 들어가요.",
+        (
+            "믿집이 모은 실견적 129건에서 부자재 단가는 공급면적 1평(3.3058㎡)당 가운데 값이 6,875원(부가세 빼고)이고, "
+            "절반이 6,279~7,586원 사이예요(2026.11 기준)."
+        ),
     ]
     assert not [t for t in texts if "벽 도배 시공" in t]
     box = next(b for b in a.calc if b.ref == "screen.vendor.lines.material")
@@ -192,3 +214,34 @@ def test_without_screen_facts_no_screen_boxes():
     """화면 사실이 없으면(표준견적서 화면 등) 화면 줄 풀이를 하지 않아요(지금 길 그대로)."""
     a = _turn("도배 부자재는 왜 이렇게 비싸?", _facts(screen=False))
     assert not [b for b in a.calc if b.ref.startswith("screen.")]
+
+
+def test_screen_line_names_route_before_gate_on_vendor_screen():
+    """업체 화면에서 줄 이름(화면 데이터)이 나오면 관문보다 먼저 견적 설명으로(2026-11-20 사용자 결정).
+    전에는 운송비 · 식대가 되묻기, 인건비가 공종 담당, 퍼티가 일정 담당으로 갔어요."""
+    cases = {
+        "운송비는 왜 나오는거야?": "운송비 줄은 마루와벽이 확인한 단가에 이 집 수량(대)을 곱했어요.",
+        "식대는 왜 줘야해?": "식대 줄은 마루와벽이 확인한 단가에 이 집 수량(품)을 곱했어요.",
+        "도배 인건비는 왜 4품이야?": "인건비 줄은 마루와벽이 확인한 단가에 이 집 수량(품)을 곱했어요.",
+        "퍼티 작업이 뭐야?": "퍼티작업 줄은 마루와벽이 확인한 단가에 이 집 수량(공급 평)을 곱했어요.",
+    }
+    for q, first in cases.items():
+        a = _turn(q, _facts())
+        assert a.trace.route == "quote_explanation", q
+        texts = _texts(a)
+        assert texts[0] == first, q
+        assert not [b for b in a.calc if b.ref == "plan.range"], q  # 묻지 않은 공정표 상자 없음
+    labor = _texts(_turn("도배 인건비는 왜 4품이야?", _facts()))
+    assert templates.SCREEN_MAN_DAY in labor
+    assert any(t.startswith("믿집이 모은 실견적 22건에서 인건비 단가는") for t in labor)
+    truck = _texts(_turn("운송비는 왜 나오는거야?", _facts()))
+    assert not [t for t in truck if t.startswith("믿집이 모은 실견적")]  # 운송비는 시장 기준값 없음
+
+
+def test_policy_questions_keep_their_route_on_vendor_screen():
+    """정책 표시(브랜드 추천 등)가 붙으면 줄 이름이 있어도 정책 길 그대로. 화면 사실이 없으면 지금 관문 그대로."""
+    brand = _turn("실크벽지 어느 브랜드가 좋아요?", _facts())
+    assert brand.trace.route == "trade" and "brand_reco" in brand.trace.policy
+    assert any(x.startswith("특정 제품 · 브랜드는 추천하지 않아요") for x in _texts(brand))
+    plain = _turn("운송비는 왜 나오는거야?", _facts(screen=False))
+    assert plain.trace.route != "quote_explanation"

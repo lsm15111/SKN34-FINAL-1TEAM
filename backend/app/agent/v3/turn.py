@@ -11,7 +11,17 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.agent.v3 import brief, check, composer, context, llm_mode, orchestrator, policy, templates
+from app.agent.v3 import (
+    brief,
+    check,
+    composer,
+    context,
+    llm_mode,
+    orchestrator,
+    policy,
+    screen,
+    templates,
+)
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3 import general as general_mod  # run_turn의 general(질문 계산 값)과 이름이 겹쳐요
 from app.agent.v3.answer import KB, T_HIGH, Part, Task
@@ -142,7 +152,7 @@ async def run_turn(
     w_route = waiting.get("route") if waiting else None
     g = gate_mod.gate(
         masked, view=ctx.view, waiting=w_route, button=button, has_project=facts is not None,
-        ignore=ignore_words(facts),
+        ignore=ignore_words(facts), items=screen.items_of(facts),
     )  # fmt: skip
     slot = value = None
     asked = ""
