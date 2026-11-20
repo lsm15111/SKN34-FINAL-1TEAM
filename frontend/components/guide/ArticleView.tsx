@@ -2,11 +2,12 @@
 // 배치: 넓은 웹(≥1280) 왼쪽 글 목록 · 본문 · 오른쪽 '이 글에서', 웹(≥1024) 목록 · 본문, 그 아래는 본문만(위 '이 글에서' 펼침 · 아래 '백과 글 더 보기').
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
-import { CHECKED, IMG_NOTE, NAV_GROUPS, neighbors, readMinutes, termByName, termHref, type Article } from "@/lib/guide";
+import { CHECKED, NAV_GROUPS, readMinutes, termByName, termHref, type Article } from "@/lib/guide";
 import type { Block } from "@/lib/guide/types";
 import { ArticleToc } from "./ArticleToc";
 import { CopyChecks } from "./CopyChecks";
 import { GuideNav } from "./GuideNav";
+import { NavScroll } from "./NavScroll";
 import { Rich } from "./Rich";
 import { TermLink } from "./TermPanel";
 import { AskButton } from "./Triggers";
@@ -30,10 +31,12 @@ function BlockView({ b }: { b: Block }) {
   const t = termByName(b.term);
   const imgs = (t?.images ?? []).filter((im) => b.kinds.includes(im.kind));
   if (!t || !imgs.length) return null;
+  // 그림 아래에는 글을 두지 않아요(11-20 사용자 결정). 그림 설명은 읽기 프로그램용 대체 글로만 넣어요
   return (
     <figure className={s.fig}>
-      {imgs.map((im) => <img key={im.src} src={im.src} alt={`${t.term} ${im.kind}`} loading="lazy" width={400} height={300} />)}
-      <figcaption>{b.caption} · {IMG_NOTE}</figcaption>
+      {imgs.map((im) => (
+        <img key={im.src} src={im.src} alt={imgs.length > 1 ? `${b.caption} · ${im.kind}` : b.caption || `${t.term} ${im.kind}`} loading="lazy" width={400} height={300} />
+      ))}
     </figure>
   );
 }
@@ -41,7 +44,6 @@ function BlockView({ b }: { b: Block }) {
 export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
   const group = NAV_GROUPS.find((g) => g.slugs.includes(a.slug))?.title;
   const terms = a.terms.map((n) => termByName(n)).filter((t) => t !== undefined);
-  const { prev, next } = neighbors(a.slug);
   const toc = [
     ...a.sections.map((x) => ({ id: x.id, title: x.title })),
     ...(a.pitfall ? [{ id: "a-pitfall", title: "놓치기 쉬운 것" }] : []),
@@ -51,7 +53,7 @@ export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
 
   return (
     <div className={s.art}>
-      <div className={s.navCol}><GuideNav current={a.slug} /></div>
+      <NavScroll className={s.navCol}><GuideNav current={a.slug} /></NavScroll>
 
       <article className={s.doc} aria-labelledby="a-title">
         <header className={s.docHead}>
@@ -134,12 +136,6 @@ export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
           </section>
         ) : null}
 
-        {prev || next ? (
-          <nav className={s.pager} aria-label="앞 · 뒤 글">
-            {prev ? <Link href={`/guide/${prev.slug}`}><small>앞 글</small><b>{prev.title}</b></Link> : null}
-            {next ? <Link className={s.next} href={`/guide/${next.slug}`}><small>다음 글</small><b>{next.title}</b></Link> : null}
-          </nav>
-        ) : null}
       </article>
 
       <div className={s.tocCol}><ArticleToc items={toc} canAsk={canAsk} /></div>

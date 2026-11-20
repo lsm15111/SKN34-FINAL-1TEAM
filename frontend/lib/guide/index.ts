@@ -96,13 +96,6 @@ export const NAV_GROUPS: { title: string; slugs: string[] }[] = [
   { title: "공사 중 · 끝난 뒤", slugs: ["management-office", "living-during", "defects", "disputes"] },
 ];
 
-/** 이 글 앞 · 뒤 글(왼쪽 목록 순서) */
-export function neighbors(slug: string): { prev?: Article; next?: Article } {
-  const order = NAV_GROUPS.flatMap((g) => g.slugs).filter((s) => bySlug.has(s));
-  const i = order.indexOf(slug);
-  return { prev: i > 0 ? bySlug.get(order[i - 1]) : undefined, next: i >= 0 && i < order.length - 1 ? bySlug.get(order[i + 1]) : undefined };
-}
-
 /** 단계 안내: 공사 화면의 6단계(lib/guest/info STEP_NAMES)와 같은 이름 · 순서예요 */
 export type GuideStep = { name: string; desc: string; slugs: string[]; flow?: { label: string; or?: string }[] };
 export const STEPS: GuideStep[] = [

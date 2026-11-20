@@ -3,7 +3,6 @@ import type { TradeKey } from "./types";
 
 export const TRADE_LABEL: Record<TradeKey, string> = { dobae: "도배", mokgong: "목공", common: "공통", oos: "다른 공정" };
 export const TRADE_ORDER: TradeKey[] = ["dobae", "mokgong", "common", "oos"];
-export const IMG_NOTE = "AI로 그린 이해용 그림이라 실제 자재 · 시공과 다를 수 있어요";
 /** 글을 근거와 맞춰 본 때 */
 export const CHECKED = "2026년 11월 확인";
 /** 찾기 창 · AI 채팅 창을 여는 신호(백과 화면 어디서나) */
