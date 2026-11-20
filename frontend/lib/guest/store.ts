@@ -28,6 +28,8 @@ type StoredInfo = {
   grade: "economy" | "basic" | null;
   budget_won: number | null;
   start_date: string | null;
+  /** 철거 범위(v4 첫 대화). 옛 저장본에는 없음 */
+  demolition?: "full" | "partial" | "none" | null;
 };
 export type GuestSaved = { v: 3; key: string; saved_at: string; info: StoredInfo };
 
@@ -51,7 +53,8 @@ function valid(x: unknown): x is GuestSaved {
     (i.occupied === null || typeof i.occupied === "boolean") &&
     (i.grade === null || i.grade === "economy" || i.grade === "basic") &&
     (i.budget_won === null || (Number.isInteger(i.budget_won) && (i.budget_won as number) >= 0 && (i.budget_won as number) <= 10_000_000_000)) &&
-    day(i.start_date)
+    day(i.start_date) &&
+    (i.demolition === undefined || i.demolition === null || i.demolition === "full" || i.demolition === "partial" || i.demolition === "none")
   );
 }
 
@@ -74,6 +77,7 @@ function toStored(d: InfoDraft): StoredInfo {
     occupied: d.occupied, grade: d.grade,
     budget_won: /^\d{1,6}$/.test(b) ? Number(b) * 10000 : null,
     start_date: d.start,
+    demolition: d.demolition ?? null,
   };
 }
 
@@ -90,6 +94,7 @@ export function draftOf(s: GuestSaved): InfoDraft {
     occupied: i.occupied, grade: i.grade,
     budget: i.budget_won ? String(Math.round(i.budget_won / 10000)) : "",
     start: i.start_date,
+    demolition: i.demolition ?? null,
   };
 }
 

@@ -1,6 +1,9 @@
 // /start — 기본 정보(C02 · C03 · D11). ?edit={id}면 그 공사를 고쳐요(만든 고객만, 남의 것은 404). 첫 실측 요청 뒤면 잠김(C50).
 // 손님은 답을 이 기기에 두고 가입 없이 표준견적서로 가요(N1 A). 로그인한 고객은 같은 답으로 내 공사를 만들어요.
+// v4(겉모양 스위치): 새로 시작은 첫 대화(StartChat: 주소 · 단지 이름 → 집 정보 확인 카드 → 표준견적서). 고치기(?edit=)는 v3 화면 그대로예요.
 import { notFound } from "next/navigation";
+import { uiMode } from "@/components/assistant/mode";
+import { StartChat } from "@/components/assistant/start/StartChat";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
 import { InfoForm } from "@/components/start/InfoForm";
@@ -63,6 +66,9 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
     );
   }
 
+  if ((await uiMode()) === "v4") {
+    return <StartChat regions={regions} mode={session?.role === "customer" ? "member" : "guest"} mock={MOCK_V3A} />;
+  }
   return (
     <>
       <AppHeader phone={{ title: "기본 정보", back: "/" }} />

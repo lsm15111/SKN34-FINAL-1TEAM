@@ -12,6 +12,11 @@ export type Grade = HomeInfo["grade"];
 export type Basis = HomeInfo["area_basis"];
 /** 방 개수 칸 범위 · 평형 기본값 표(GET /guest/room-rule, 서버 계산 엔진 판) */
 export type RoomRule = Schemas["RoomRuleOut"];
+/** 철거 범위(v4 첫 대화 집 정보 카드). 백엔드 담당이 HomeInfoIn에 같은 키로 더해요 */
+export type Demolition = "full" | "partial" | "none";
+/** API 몸통 + 철거 범위(백엔드가 칸을 더하기 전에는 lib/guest/api sendHome이 빼고 다시 보내요) */
+export type HomeBody = HomeInfo & { demolition?: Demolition };
+const demolitionOf = (v: unknown): Demolition | null => (v === "full" || v === "partial" || v === "none" ? v : null);
 
 /** 넣는 중인 답(기기에 저장하는 모양). 다 차면 toHomeInfo로 API 몸통이 돼요 */
 export type InfoDraft = {
@@ -32,6 +37,8 @@ export type InfoDraft = {
   budget: string;
   /** 서울 날짜 "2027-01-04". 비우면 '아직 몰라요' */
   start: string | null;
+  /** 철거 범위(v4 첫 대화에서만 물어요. 없으면 보내지 않아요) */
+  demolition?: Demolition | null;
 };
 
 export const EMPTY_DRAFT: InfoDraft = {
@@ -157,10 +164,11 @@ export function checkDraft(d: InfoDraft): InfoErrors {
   return e;
 }
 
-/** 검사를 지난 답 → API 몸통(POST /guest/standard · POST /projects와 같은 칸) */
-export function toHomeInfo(d: InfoDraft): HomeInfo {
+/** 검사를 지난 답 → API 몸통(POST /guest/standard · POST /projects와 같은 칸). 철거 범위는 고른 때만 붙여요 */
+export function toHomeInfo(d: InfoDraft): HomeBody {
   const partial = d.scope === "partial";
   return {
+    ...(d.demolition ? { demolition: d.demolition } : {}),
     trade: "dobae",
     scope: d.scope,
     spaces: partial ? d.spaces : [],
@@ -194,6 +202,7 @@ export function fromSaved(h: HomeInfoSaved): InfoDraft {
     grade: h.grade,
     budget: h.budget_won ? String(Math.round(h.budget_won / 10000)) : "",
     start: h.start_date,
+    demolition: demolitionOf((h as { demolition?: unknown }).demolition),
   };
 }
 
