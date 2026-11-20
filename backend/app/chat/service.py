@@ -122,10 +122,10 @@ SOURCE = {"button": "button", "waiting": "rule", "rule": "rule", "model": "model
 
 
 def mode() -> str:
-    """키가 있고 LLM_LIVE=true일 때만 LLM 모드. 아니면 무료 모드(기본)."""
-    from app.config import settings
+    """LLM_LIVE=true이고 고른 공급자(LLM_PROVIDER)의 키가 있을 때만 LLM 모드. 아니면 무료 모드(기본)."""
+    from app.agent import llm
 
-    return "llm" if settings.llm_live and settings.openai_api_key.get_secret_value() else "free"
+    return "llm" if llm.available() else "free"
 
 
 def _key(*parts: str) -> str:
@@ -204,6 +204,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
 
     on_part(AiAnswer): LLM 모드에서 답 작성기를 기다리기 전에 고정 몫(계산 결과 · 정해 둔 글, 검사 통과본)을
     먼저 받는 쪽. 마지막 답은 이 묶음을 그대로 앞에 두고 아래에 이어 붙여요. 저장은 하지 않아요."""
+    from app.agent import llm
     from app.agent.llm import embed_query
     from app.agent.v3 import check, context
     from app.agent.v3.answer import KB
@@ -227,6 +228,9 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     facts = None
     state = None  # 이 대화의 맥락(chats.state). 이어 묻기를 푸는 데만 써요(context.py)
     turn_mode = mode()
+    # 비용 상한(사용자 하루 · 서비스 하루 · 전체)의 90%를 넘으면 무료 모드로 답해요
+    if turn_mode == "llm" and not await llm.budget_ok(user.id, "v3"):
+        turn_mode = "free"
     if turn_mode == "llm" and not await llm_budget_ok(user.id, today):
         turn_mode = "free"  # 오늘 LLM 상한을 넘으면 무료 모드로 답해요(비용 상한)
     # 의미 검색 벡터는 DB 세션을 열기 전에 만든다. 무료 모드도 키가 있고 ai_embed_free면 만든다
@@ -273,17 +277,19 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
         area, start = (said.area, said.start) if said else (None, None)
         general = tools.with_said(general, area, start, today)
     general.here = tools.house_size(facts)  # 공사에 없는 공종의 기간을 이 집 크기로 세요
-    res = await run_turn(
-        body.text,
-        ctx,
-        kb=kb,
-        facts=facts,
-        waiting=waiting,
-        button=body.button,
-        on_part=part,
-        general=general,
-        state=state,
-    )
+    # 이 턴의 LLM 호출을 이 사용자로 장부에 남긴다(사용자 하루 상한도 호출마다 건다)
+    with llm.call_ctx(user_id=user.id):
+        res = await run_turn(
+            body.text,
+            ctx,
+            kb=kb,
+            facts=facts,
+            waiting=waiting,
+            button=body.button,
+            on_part=part,
+            general=general,
+            state=state,
+        )
     ans = res.answer
     chat_id, new_rev = body.chat_id, None
     if not ans.failed:
