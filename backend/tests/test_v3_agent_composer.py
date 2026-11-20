@@ -64,7 +64,7 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
     )
     a = turn(Q).answer
     # 차이 질문은 설명 꼴이라 개요(첫 문장)만 먼저 보이고 나머지는 '자세히'에 접혀요
-    assert a.trace.prompts == ["composer_v7"] and a.brief is not None
+    assert a.trace.prompts == ["composer_v8"] and a.brief is not None
     assert a.brief.lines[0].text.startswith("실크는 코팅이 있어") and a.brief.more >= 2
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
@@ -114,7 +114,7 @@ def test_calc_only_answer_gets_composer_context_after_calc(stub):
 
     period_stub(stub)
     a = turn(PERIOD_Q, general=general_facts(PERIOD_Q)).answer
-    assert a.trace.prompts == ["composer_v7"]
+    assert a.trace.prompts == ["composer_v8"]
     assert a.sections[0].source == "calc"
     assert a.sections[0].sentences[0].text.startswith("믿집 계산으로 34평 도배는")
     assert [x.text for s in a.sections if s.source == "llm" for x in s.sentences] == [PAINT]
@@ -540,7 +540,7 @@ def test_empty_new_is_fine_without_fixed_part(stub):
     lead = CItem(text="실크는 코팅이 있어 관리가 쉽고, 합지는 값이 싸요.", cites=refs[:1])
     stub(Composed(new=[], verdict="answer", lead=lead, blocks=[], follow=[]))
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v7"] and lead.text in [
+    assert a.trace.prompts == ["composer_v8"] and lead.text in [
         x.text for s in a.sections for x in s.sentences
     ]
 
@@ -590,3 +590,14 @@ def test_scope_answer_asked_again_skips_composer(stub, monkeypatch):
     a = turn("도배만 새로는 안 해요", waiting=first.waiting).answer
     assert a.ask and a.ask.options == ["벽 · 천장까지 새로", "몰딩 색만 바꾸기"]
     assert asked == ["몰딩 추천좀해줄래"]  # 다시 묻는 턴은 작성기를 부르지 않아요
+
+
+def test_composer_v8_rule_against_standard_comparison():
+    """v8(사용자 결정 2026-11-21): 표준견적서와 견준 비율 · 높낮이를 쓰지 말라는 규칙이 규칙 칸에 있고,
+    v7의 '표준 대비 %도 보는 화면에 있으면 써' 허용 말은 없어요. 앞 판(v7)은 파일로 남아요."""
+    from app.agent.v3 import composer
+
+    rules = composer.rules()
+    assert composer.VERSION == "composer_v8" and "표준견적서와 업체 금액을 견주지 마" in rules
+    assert "표준 대비 % ·" not in rules
+    assert (composer.PROMPTS / "composer_v7.md").exists()
