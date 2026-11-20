@@ -3,6 +3,24 @@
 .user { align-self: flex-end; max-width: 85%; background: var(--accent-weak); color: var(--ink); border-radius: var(--radius); padding: 8px 12px; font-size: var(--fs-md); overflow-wrap: anywhere; }
 .answer { display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-md); color: var(--ink); overflow-wrap: anywhere; }
 .notice { font-size: var(--fs-xs); color: var(--ink-mute); }
+/* 묶음 출처 표시('믿집 계산' · 'AI 답변' · '믿집 안내'). 같은 표시가 이어지면 맨 앞에 한 번만 */
+.by { font-size: var(--fs-xs); color: var(--ink-mute); }
+/* 질문 + 답 한 턴. 마지막 턴은 목록 높이만큼 자리를 잡아 질문이 목록 맨 위로 올라갈 수 있어요(AiPanel이 --mj-turn-min을 재요) */
+.turn { display: flex; flex-direction: column; gap: 12px; }
+.turnLast { min-height: var(--mj-turn-min, 0px); }
+/* 답을 기다리는 줄: 점 세 개(움직임 줄이기 설정이면 멈춤) */
+.working { display: flex; align-items: center; gap: 8px; min-height: 24px; color: var(--ink-sub); font-size: var(--fs-sm); }
+.dots { display: inline-flex; gap: 4px; }
+.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-mute); animation: blink 1.2s ease-in-out infinite; }
+.dots i:nth-child(2) { animation-delay: 0.2s; }
+.dots i:nth-child(3) { animation-delay: 0.4s; }
+@keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.6; } }
+/* '최신 대화로' 단추: 목록 아래쪽에 붙어 떠요(높이 0 띠라 목록 길이는 그대로) */
+.jumpWrap { position: sticky; bottom: 8px; height: 0; display: flex; justify-content: flex-end; pointer-events: none; }
+.jump { pointer-events: auto; transform: translateY(-100%); display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); cursor: pointer; }
+.jump:hover { background: var(--surface-2); }
+.jump:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .section { display: flex; flex-direction: column; gap: 4px; }
 .secTitle { font-weight: 700; color: var(--ink-sub); font-size: var(--fs-sm); }
 .caution { color: var(--warn); font-size: var(--fs-sm); }
@@ -29,7 +47,6 @@
 .guestHead { display: flex; flex-direction: column; gap: 4px; }
 .guestTitle { font-weight: 700; font-size: var(--fs-lg); }
 .embed { display: flex; flex-direction: column; gap: 8px; }
-.draftAnswer { display: flex; flex-direction: column; gap: 4px; opacity: 0.85; }
 .step { display: flex; gap: 8px; align-items: baseline; }
 .stepNum { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 10px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 700; }
 .reco { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }

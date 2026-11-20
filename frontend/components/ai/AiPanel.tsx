@@ -2,11 +2,16 @@
 // - 사용자 · 프로젝트는 서버가 세션으로 정해요. 화면은 보던 화면(screen)과 프로젝트 id만 보내요.
 // - 처음 열 때 AI 알림 한 번(AI 기본법 · 9판 C09). 닫은 것은 이 기기에만 기억해요(실패해도 다시 보여 줄 뿐).
 // - 같은 공사 화면 사이를 옮겨도 layout이 이 조각을 그대로 두면 대화가 이어져요(F7 A).
+// - 질문 + 답을 한 턴으로 그려요. 보내면 새 질문이 대화 목록 맨 위로 올라가고 답은 그 아래로 자라요(긴 답도 첫 줄부터 읽게).
+//   마지막 턴은 목록 높이만큼 자리를 잡아 짧은 답이어도 질문이 위로 올라가요. 답이 오는 동안 · 온 뒤에는 스크롤을 건드리지 않아요.
+//   위로 올려 읽다가 마지막 질문이 목록 아래로 숨으면 '최신 대화로' 단추가 떠요.
+// - LLM 모드는 고정 몫(계산 결과 · 정해 둔 글)이 먼저 오고(part), 같은 자리 아래로 AI 글이 이어 붙어요(이미 보인 글은 바뀌지 않아요).
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AsidePanel } from "@/components/site/AsideSlot";
 import { Button } from "@/components/ui/Button";
+import { Icon } from "@/components/ui/Icon";
 import { errorText } from "@/lib/backend/client";
 import { askAi, newClientKey, type AiAnswer as AiAnswerT, type AiButton, type AiScreen, type AiTurnOut } from "@/lib/api/chat";
 import { AiAnswer } from "./AiAnswer";
@@ -27,8 +32,11 @@ const CHIPS: Partial<Record<AiScreen, string[]>> = {
 const PLACEHOLDER: Partial<Record<AiScreen, string>> = {
   standard: "이 견적서에 대해 물어보세요", visits: "일정에 대해 물어보세요", visit_request: "일정에 대해 물어보세요",
 };
+const TOP_GAP = 8; // 올린 질문 위 여백(px)
+const AUTO_MS = 700; // 질문을 올리는 부드러운 스크롤 동안은 '최신 대화로' 단추를 다시 재지 않아요
 
-type Msg = { role: "user"; text: string } | { role: "ai"; out: AiTurnOut };
+/** part: LLM 모드에서 먼저 온 고정 몫. out: 마지막 답(앞 묶음이 part와 같아요) */
+type Turn = { id: number; q: string; part?: AiAnswerT; out?: AiTurnOut };
 
 function seenNotice(): boolean {
   try {
@@ -36,6 +44,27 @@ function seenNotice(): boolean {
   } catch {
     return false;
   }
+}
+
+/** 가장 가까운 세로 스크롤 칸(옆 칸 · 폰 층의 대화 목록). 없으면 null(페이지가 스크롤해요) */
+function scroller(el: HTMLElement | null): HTMLElement | null {
+  for (let p = el?.parentElement ?? null; p; p = p.parentElement) {
+    const oy = getComputedStyle(p).overflowY;
+    if (oy === "auto" || oy === "scroll") return p;
+  }
+  return null;
+}
+
+/** 턴(질문)을 스크롤 칸 맨 위로. 칸만 스크롤해서 페이지는 움직이지 않아요. 움직임 줄이기 설정이면 바로 가요 */
+function toTurn(el: HTMLElement) {
+  const behavior: ScrollBehavior = window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth";
+  const box = scroller(el);
+  if (!box) {
+    el.scrollIntoView({ block: "nearest", behavior });
+    return;
+  }
+  const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - TOP_GAP;
+  box.scrollTo({ top: Math.max(0, top), behavior });
 }
 
 export function AiPanel({ screen, projectId, ids, embed = false }: {
@@ -48,13 +77,17 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
   /** 다른 옆 칸 안에 끼울 때(예: 확정 공정표 '공사 전 할 일' 칸 아래). 칸 틀(AsidePanel) 없이 대화 · 입력만 그려요 */
   embed?: boolean;
 }) {
-  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [turns, setTurns] = useState<Turn[]>([]);
   const [chatId, setChatId] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [draft, setDraft] = useState<AiAnswerT | null>(null); // LLM이 글을 다듬는 동안 먼저 보이는 무료 답
   const [notice, setNotice] = useState(false); // 서버 그림과 같게 시작하고, 열린 뒤 이 기기 기록을 봐요
+  const [away, setAway] = useState(false); // 마지막 질문이 목록 아래로 숨었어요(위로 올려 읽는 중)
+  const seq = useRef(0);
+  const msgsRef = useRef<HTMLDivElement>(null);
+  const lastRef = useRef<HTMLDivElement>(null);
+  const autoUntil = useRef(0);
   useEffect(() => {
     if (!seenNotice()) setNotice(true);
   }, []);
@@ -68,29 +101,77 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
     }
   }
 
+  /** 마지막 턴 자리 = 목록 높이(끼운 칸은 입력 칸이 목록 안에 있어서 자리를 잡지 않아요) */
+  function sizeLast() {
+    const el = msgsRef.current;
+    const box = scroller(el);
+    if (!el || !box || embed) return;
+    el.style.setProperty("--mj-turn-min", `${Math.max(0, box.clientHeight - TOP_GAP - 4)}px`);
+  }
+
+  function jump() {
+    if (!lastRef.current) return;
+    autoUntil.current = performance.now() + AUTO_MS;
+    setAway(false);
+    toTurn(lastRef.current);
+  }
+
+  const count = turns.length;
+  // 새 질문을 보냈을 때만 그 질문을 목록 맨 위로 올려요(답이 올 때는 움직이지 않아요)
+  useLayoutEffect(() => {
+    if (!count) return;
+    sizeLast();
+    jump();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [count]);
+
+  // 목록 높이가 바뀌면(창 크기 · 칩이 사라짐 · 폰 층이 열림) 마지막 턴 자리도 다시 재요
+  useEffect(() => {
+    const box = scroller(msgsRef.current);
+    if (!box || embed) return;
+    const ro = new ResizeObserver(() => sizeLast());
+    ro.observe(box);
+    return () => ro.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [embed]);
+
+  // 위로 올려 읽다가 마지막 질문이 목록 아래로 숨으면 '최신 대화로' 단추를 보여요
+  useEffect(() => {
+    const box = scroller(msgsRef.current);
+    if (!box || !count) return;
+    const check = () => {
+      if (performance.now() < autoUntil.current) return;
+      const last = lastRef.current;
+      setAway(!!last && last.getBoundingClientRect().top > box.getBoundingClientRect().bottom - 24);
+    };
+    box.addEventListener("scroll", check, { passive: true });
+    return () => box.removeEventListener("scroll", check);
+  }, [count]);
+
   async function send(q: string, button?: AiButton) {
     const t = q.trim().slice(0, MAX);
     if (!t || busy) return;
+    const id = ++seq.current;
+    const put = (patch: Partial<Turn>) => setTurns((ts) => ts.map((x) => (x.id === id ? { ...x, ...patch } : x)));
     setBusy(true);
     setError("");
-    setMsgs((m) => [...m, { role: "user", text: t }]);
+    setTurns((ts) => [...ts, { id, q: t }]);
     setText("");
     try {
       const out = await askAi({
         client_key: newClientKey(), text: t, chat_id: chatId,
         context: { screen, project_id: projectId ?? null, ids: ids?.slice(0, 5) ?? [] }, button: button ?? null,
-      }, { onDraft: setDraft });
+      }, { onPart: (part) => put({ part }) });
       if (out.chat_id) setChatId(out.chat_id);
-      setMsgs((m) => [...m, { role: "ai", out }]);
+      put({ out });
     } catch (e) {
       setError(errorText(e));
     } finally {
-      setDraft(null);
       setBusy(false);
     }
   }
 
-  const chips = msgs.length ? [] : CHIPS[screen] ?? ["처음이라 순서를 알고 싶어요", "표준견적서는 업체 견적이에요?"];
+  const chips = turns.length ? [] : CHIPS[screen] ?? ["처음이라 순서를 알고 싶어요", "표준견적서는 업체 견적이에요?"];
   const foot = (
     <>
       {chips.length ? (
@@ -112,26 +193,39 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
   );
 
   const body = (
-      <div className={s.msgs} aria-live="polite">
+      <div ref={msgsRef} className={s.msgs} aria-live="polite">
         {notice ? (
           <div className={s.notice1}>
             <p>{NOTICE}</p>
             <div><Button variant="secondary" size="sm" onClick={closeNotice}>알겠어요</Button></div>
           </div>
         ) : null}
-        {msgs.map((m, i) =>
-          m.role === "user" ? (
-            <p key={i} className={s.user}>{m.text}</p>
-          ) : (
-            <AiAnswer key={i} answer={m.out.answer} projectId={projectId} onPick={(q, b) => void send(q, b)} />
-          ),
-        )}
-        {draft ? (
-          <div className={s.draftAnswer} aria-busy="true">
-            <AiAnswer answer={draft} projectId={projectId} />
-            <p className={s.mute}>답을 다듬고 있어요</p>
-          </div>
-        ) : null}
+        {turns.map((t, i) => {
+          const last = i === turns.length - 1;
+          const waiting = last && busy && !t.out;
+          return (
+            <div key={t.id} ref={last ? lastRef : undefined} className={last && !embed ? `${s.turn} ${s.turnLast}` : s.turn}>
+              <p className={s.user}>{t.q}</p>
+              {t.out ? (
+                <AiAnswer key="a" answer={t.out.answer} projectId={projectId} onPick={(q, b) => void send(q, b)} />
+              ) : t.part && (waiting || t.part.sections.length) ? (
+                <AiAnswer key="a" answer={t.part} projectId={projectId} pending={waiting} />
+              ) : waiting ? (
+                <p className={s.working} role="status">
+                  <span className="mj-sr">답을 기다리는 중이에요</span>
+                  <span className={s.dots} aria-hidden="true"><i /><i /><i /></span>
+                </p>
+              ) : null}
+            </div>
+          );
+        })}
+        <div className={s.jumpWrap}>
+          {away ? (
+            <button type="button" className={s.jump} aria-label="최신 대화로" onClick={jump}>
+              <Icon name="chevron-down" />
+            </button>
+          ) : null}
+        </div>
       </div>
   );
   if (embed) {

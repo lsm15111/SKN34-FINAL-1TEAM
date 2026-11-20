@@ -1,4 +1,5 @@
-// AI 칸(`/ai/*`) 브라우저 쪽. 묻기는 SSE(token · card · done), 나머지는 GET.
+// AI 칸(`/ai/*`) 브라우저 쪽. 묻기는 SSE(part · token · card · done), 나머지는 GET.
+// part: LLM 모드에서 먼저 보이는 고정 몫(계산 결과 · 정해 둔 글). done 답의 앞 묶음이 part와 같아서 화면은 이어 붙이기만 해요.
 // 타입은 백엔드 app/chat/schemas.py와 같은 모양이에요. main.py ROUTERS에 AI router가 들어가고 `pnpm gen:api`를
 // 다시 돌리면 schema.d.ts의 AiTurnOut 등으로 바꿔요(b5.md '다른 묶음에 부탁').
 import { ApiError, call } from "@/lib/backend/client";
@@ -18,7 +19,7 @@ export type AiSection = { title: string; sentences: string[]; caution: string; t
 export type AiAsk = { trade: string; slot: string; question: string; options: string[] };
 /** 짧은 답: 먼저 보일 문장 1~3개(서버가 sections · unknown에서 고름, 새 글 아님). more = '자세히'에만 있는 문장 수 */
 export type AiBrief = { form: string; lines: string[]; more: number; cites?: number[][] };
-export type AiAnswer = { notice: string; sections: AiSection[]; calc: AiCalc[]; cards: AiCard[]; ask?: AiAsk | null; unknown: string[]; suggest: string[]; failed: boolean; brief?: AiBrief | null; refs?: AiSource[] };
+export type AiAnswer = { sections: AiSection[]; calc: AiCalc[]; cards: AiCard[]; ask?: AiAsk | null; unknown: string[]; suggest: string[]; failed: boolean; brief?: AiBrief | null; refs?: AiSource[] };
 export type AiTurnOut = { chat_id: string | null; rev: number | null; mode: "free" | "llm"; route: AiRoute; answer: AiAnswer };
 export type AiButton = { route: AiRoute; trade?: string | null; slot?: string | null; value?: string | null };
 export type AiTurnIn = { client_key: string; text: string; chat_id?: string | null; context: { screen?: AiScreen | null; project_id?: string | null; ids?: string[] }; button?: AiButton | null };
@@ -31,7 +32,7 @@ export function newClientKey(): string {
   return typeof crypto !== "undefined" && "randomUUID" in crypto ? crypto.randomUUID().replace(/-/g, "") : `${Date.now()}${Math.random().toString(36).slice(2)}`;
 }
 
-type Handlers = { onToken?: (text: string, section: number | null) => void; onCard?: (card: AiCard) => void; onDraft?: (answer: AiAnswer) => void };
+type Handlers = { onToken?: (text: string, section: number | null) => void; onCard?: (card: AiCard) => void; onPart?: (answer: AiAnswer) => void };
 
 /** POST /ai/turns. 오류(401 · 404 · 409 · 422 · 429)는 스트림을 열기 전에 ApiError로 와요. */
 export async function askAi(body: AiTurnIn, on: Handlers = {}): Promise<AiTurnOut> {
@@ -66,7 +67,7 @@ export async function askAi(body: AiTurnIn, on: Handlers = {}): Promise<AiTurnOu
       const raw = /^data: (.*)$/m.exec(block)?.[1];
       if (name && raw) {
         const data = JSON.parse(raw);
-        if (name === "draft") on.onDraft?.(data as AiAnswer);
+        if (name === "part") on.onPart?.(data as AiAnswer);
         else if (name === "token") on.onToken?.(data.text, data.section);
         else if (name === "card") on.onCard?.(data as AiCard);
         else if (name === "done") done = data as AiTurnOut;

@@ -1,4 +1,6 @@
-// AI 답 한 개를 그린다: '자동 답변' · 굵은 첫 줄(결론) · 묶음 문장 · 출처 번호 · 주의 · 팁 · 출처 목록 · 믿집 계산 상자 · 화면 조각.
+// AI 답 한 개를 그린다: 묶음별 출처 표시 · 굵은 첫 줄(결론) · 묶음 문장 · 출처 번호 · 주의 · 팁 · 출처 목록 · 믿집 계산 상자 · 화면 조각.
+// 출처 표시: 계산 엔진 묶음은 '믿집 계산', LLM이 쓴 묶음은 'AI 답변', 정해 둔 글 · 카드 · 자료 발췌는 '믿집 안내'.
+// pending(LLM 모드에서 먼저 온 고정 몫): 그 묶음 아래에 진행 줄을 두고, 마지막 답이 오면 같은 자리 아래로 이어 붙어요.
 // 출처 번호는 서버가 문서마다 처음 나온 순서로 매긴 것(refs · cites)이고, 화면은 그대로 그리기만 해요.
 // 숫자는 계산 엔진 값(calc)만 상자로 보이고, 이 조각은 계산하지 않아요. 링크는 믿집 화면 주소만 만들어요.
 "use client";
@@ -35,6 +37,13 @@ function calcLine(c: AiCalc): CalcLine | null {
 }
 
 const STEP = /^(\d)\.\s(.+)$/; // 서버가 쓴 단계 문장('1. …')은 번호 동그라미로 그려요
+
+/** 묶음 출처 표시. 같은 표시가 이어지면 맨 앞에 한 번만 보여요 */
+export function byLabel(source?: string): string {
+  if (source === "calc") return "믿집 계산";
+  if (source === "llm") return "AI 답변";
+  return "믿집 안내";
+}
 
 function Line({ text, nums, refs, lead }: { text: string; nums?: number[]; refs: AiSource[]; lead?: boolean }) {
   const ok = (nums ?? []).filter((n) => refs[n - 1]);
@@ -128,7 +137,13 @@ function UiCard({ card, projectId, onPick }: { card: AiCard; projectId?: string;
   return <Choices choices={card.choices} projectId={projectId} onPick={onPick} />;
 }
 
-export function AiAnswer({ answer, projectId, onPick }: { answer: Answer; projectId?: string; onPick?: (text: string, b?: AiButton) => void }) {
+export function AiAnswer({ answer, projectId, onPick, pending = false }: {
+  answer: Answer;
+  projectId?: string;
+  onPick?: (text: string, b?: AiButton) => void;
+  /** 먼저 온 고정 몫만 있는 답(LLM이 아래 글을 쓰는 중) */
+  pending?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const many = answer.sections.length > 1;
   const lines = answer.calc.map(calcLine).filter((x): x is CalcLine => x !== null);
@@ -141,15 +156,18 @@ export function AiAnswer({ answer, projectId, onPick }: { answer: Answer; projec
   const isLead = () => { const v = first; first = false; return v; };
   return (
     <div className={s.answer}>
-      <p className={s.notice}>{answer.notice}</p>
       {brief && !open ? (
         <div className={s.section}>
+          <p className={s.by}>{byLabel(answer.sections[0]?.source)}</p>
           {brief.lines.map((t, j) => <Line key={j} text={t} nums={brief.cites?.[j]} refs={refs} lead={isLead()} />)}
           <RefList refs={refs} fallback={briefSources} />
         </div>
       ) : (
         answer.sections.map((sec, i) => (
           <div key={i} className={s.section}>
+            {i === 0 || byLabel(answer.sections[i - 1].source) !== byLabel(sec.source) ? (
+              <p className={s.by}>{byLabel(sec.source)}</p>
+            ) : null}
             {many && sec.title ? <p className={s.secTitle}>{sec.title}</p> : null}
             {sec.steps ? (
               <ol className={s.steps}>
@@ -186,6 +204,12 @@ export function AiAnswer({ answer, projectId, onPick }: { answer: Answer; projec
           </div>
         ))
       )}
+      {pending ? (
+        <p className={s.working} role="status">
+          AI가 믿집 자료로 답을 쓰고 있어요<span className={s.dots} aria-hidden="true"><i /><i /><i /></span>
+        </p>
+      ) : null}
+      {!answer.sections.length && !pending && !brief ? <p className={s.by}>{byLabel()}</p> : null}
       {!(brief && !open) && refs.length ? <RefList refs={refs} fallback={[]} /> : null}
       {brief ? (
         <Button variant="text" size="sm" className={s.more} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
