@@ -67,6 +67,10 @@
   font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); text-decoration: none; overflow-wrap: anywhere;
 }
 .restDay .dt { color: var(--mj-text-mute); }
+/* 접은 쉬는 날(fold): 날짜만 적은 작은 회색 줄 */
+.restLine { padding: 8px 0; border-bottom: 1px solid var(--mj-line-soft); }
+.restLine:last-child { border-bottom: 0; }
+.restPill { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: var(--mj-radius-chip); background: var(--mj-fill); font-size: var(--mj-type-caption); color: var(--mj-text-mute); font-variant-numeric: tabular-nums; }
 .rest { display: flex; align-items: center; min-height: var(--mj-hit-min); font-size: var(--mj-type-label); color: var(--mj-text-mute); }
 
 /* 폰 날짜 묶음(heads, V08): '오늘 · 12월 15일(화)' 머리 + 흰 묶음 안 줄 */

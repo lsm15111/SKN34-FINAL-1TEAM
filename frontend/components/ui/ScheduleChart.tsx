@@ -268,18 +268,17 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
         <ol className={s.list} aria-label={caption}>
           {entries.map(({ d, items, rest }) => {
             const p = md(d.day);
-            if (rest && rest.length > 1) {
+            if (fold && rest) {
+              // 접은 쉬는 날: 날짜만 적은 작은 회색 줄('12.5(토)~6(일)'). '쉬는 날'은 읽기 글에만 둬요
               const last = rest[rest.length - 1];
-              const q = md(last.day);
+              const a = dayParts(d.day);
+              const b = dayParts(last.day);
+              const text = rest.length === 1 ? `${a.m}.${a.d}(${a.w})` : `${a.m}.${a.d}(${a.w})~${a.m === b.m ? b.d : `${b.m}.${b.d}`}(${b.w})`;
               const hol = rest.map((x) => x.holiday).filter(Boolean).join(" · ");
+              const spoken = [rest.length === 1 ? dateSpoken(d.day) : `${dateSpoken(d.day)}부터 ${dateSpoken(last.day)}까지`, "쉬는 날", hol || null].filter(Boolean).join(", ");
               return (
-                <li key={d.day} className={`${s.item} ${s.restDay}`}>
-                  <p className={s.dt}>
-                    <time dateTime={d.day} aria-label={`${dateSpoken(d.day)}부터 ${dateSpoken(last.day)}까지`}>{p.md}<span>{p.w}~{q.w}</span></time>
-                  </p>
-                  <div className={s.bars}>
-                    <span className={s.rest}>{hol ? `${hol} · 쉬는 날` : "쉬는 날"} · {q.md}({q.w})까지</span>
-                  </div>
+                <li key={d.day} className={s.restLine}>
+                  <time dateTime={d.day} className={s.restPill} aria-label={spoken}>{text}</time>
                 </li>
               );
             }
