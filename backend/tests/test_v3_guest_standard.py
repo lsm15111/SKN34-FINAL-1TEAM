@@ -32,8 +32,10 @@ def test_guest_standard_without_login_writes_nothing(api):
     r = api.post(URL, json=HOME)
     assert r.status_code == 200, r.text
     g = r.json()
-    # C07 공급 69.4㎡ · 방 2개(21평 기본값): 도배 면적 69.4 × 1.55 + 2 × 20.4 = 148.4㎡ (2.5배 판 2,060,625)
-    assert (g["supply"], g["vat"], g["total"]) == (1_638_522, 163_852, 1_802_374)
+    # C07 공급 69.4㎡ · 방 2개(21평 기본값): 도배 면적 69.4 × 1.55 + 2 × 20.4 = 148.4㎡.
+    # 손님은 도배만 하는 공사 기준(판 2026.11-market, ADR 0004). 옛 판 2026H2-rooms는 1,802,374
+    assert (g["supply"], g["vat"], g["total"]) == (1_767_928, 176_793, 1_944_721)
+    assert (g["profile"], g["profile_name"]) == ("paper_only", "도배만 하는 공사 기준")
     assert (g["scope"], g["area_m2"], g["area_basis"], g["pyeong"]) == (
         "full",
         "69.4",
@@ -43,17 +45,18 @@ def test_guest_standard_without_login_writes_nothing(api):
     assert (g["market_ver"], g["share_ver"], g["price_ver"]) == (
         "paper-market-2026.11",
         None,
-        "2026H2-rooms",
+        "2026.11-market",
     )
     assert g["rooms"] == 2
     assert g["formula_ver"] == "2026.11.2" and g["budget_fit"] is None
     assert (g["man_day"], g["days"]) == ("4.5", "2.0")
     paper = next(ln for ln in g["lines"] if ln["key"] == "paper")
+    # 148.4㎡ × 1.248(실크 소요량 1.2 × 1.04) = 185.2㎡ → 56.0 벽지 평
     assert (paper["qty"], paper["unit"], paper["unit_price"], paper["amount"], paper["basis"]) == (
-        "53.9",
+        "56.0",
         "벽지 평",
         10_749,
-        579_371,
+        601_944,
         "market",
     )
     removal = next(ln for ln in g["lines"] if ln["key"] == "removal")
@@ -64,19 +67,19 @@ def test_guest_standard_without_login_writes_nothing(api):
 
 
 def test_budget_fit_and_partial_scope(api):
-    over = api.post(URL, json={**HOME, "budget_won": 1_800_000}).json()
-    within = api.post(URL, json={**HOME, "budget_won": 1_810_000}).json()
+    over = api.post(URL, json={**HOME, "budget_won": 1_940_000}).json()
+    within = api.post(URL, json={**HOME, "budget_won": 1_950_000}).json()
     assert (over["budget_fit"], within["budget_fit"]) == ("over", "within")
     part = {**HOME, "scope": "partial", "spaces": ["living", "kitchen"], "faces": ["wall"]}
     p = api.post(URL, json=part)
     assert p.status_code == 200, p.text
     g = p.json()
-    # 2방 표: 거실 0.20 + 주방 0.11 = 0.31 몫 × 벽 96.5㎡ = 29.9㎡
-    assert (g["scope"], g["share_ver"], g["total"]) == ("partial", "space-rooms-2026.11", 335_547)
+    # 2방 표: 거실 0.20 + 주방 0.11 = 0.31 몫 × 벽 96.5㎡ = 29.9㎡, 부자재 21.0평 × 0.31 = 6.5평
+    assert (g["scope"], g["share_ver"], g["total"]) == ("partial", "space-rooms-2026.11", 380_056)
     ceiling = next(ln for ln in g["lines"] if ln["key"] == "ceiling")
     assert (ceiling["state"], ceiling["qty"], ceiling["amount"]) == ("excluded", None, None)
     hapji = api.post(URL, json={**HOME, "grade": "economy"}).json()
-    assert hapji["total"] == 1_436_436
+    assert hapji["total"] == 965_337  # 합지 시공비 × 0.55 · 부자재 3,300원/평 (옛 판 1,436,436)
 
 
 def test_unknown_fields_and_bad_shapes_are_422(api):
@@ -136,7 +139,7 @@ def test_rooms_field_changes_total_and_checks_range(api):
     """방 개수 칸: 바꾸면 방 하나에 20.4㎡씩, 0 · 6은 422, 방 개수보다 많은 방 칩도 422"""
     two = api.post(URL, json={**HOME, "rooms": 2}).json()
     four = api.post(URL, json={**HOME, "rooms": 4}).json()
-    assert two["total"] == 1_802_374 and two["rooms"] == 2  # 기본값(2)과 같다
+    assert two["total"] == 1_944_721 and two["rooms"] == 2  # 기본값(2)과 같다
     assert four["rooms"] == 4 and four["total"] > two["total"]
     removal = {g["rooms"]: next(ln["qty"] for ln in g["lines"] if ln["key"] == "removal")
                for g in (two, four)}  # fmt: skip
@@ -155,7 +158,7 @@ def test_room_rule_table(api):
     r = api.get("/guest/room-rule")
     assert r.status_code == 200, r.text
     g = r.json()
-    assert (g["min"], g["max"], g["fallback"], g["price_ver"]) == (1, 5, 3, "2026H2-rooms")
+    assert (g["min"], g["max"], g["fallback"], g["price_ver"]) == (1, 5, 3, "2026.11-market")
     supply = [(b["min_m2"], b["rooms"]) for b in g["bands"] if b["area_basis"] == "supply"]
     assert supply == [("0.0", 2), ("72.8", 3), ("132.3", 4)]
     assert g["room_kinds"] == ["master", "room1", "room2", "room3", "room4"]

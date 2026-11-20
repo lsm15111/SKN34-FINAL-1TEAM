@@ -60,8 +60,9 @@ def test_v3_body_creates_a_member_project_with_home(api):
     assert (row["source"], row["client_key"], row["start_kind"]) == ("member", None, "date")
 
     st = api.get(f"/projects/{p['id']}/standard").json()
-    # 9판 C07 집, 시장 평균 실크. 판 2026H2-rooms: 69.4 × 1.55 + 방 2 × 20.4 (2.5배 판 2,060,625)
-    assert st["total"] == 1_802_374 and st["price_ver"] == "2026H2-rooms"
+    # 9판 C07 집, 시장 평균 실크, 69.4 × 1.55 + 방 2 × 20.4. 도배만 하는 공사 기준(판 2026.11-market,
+    # ADR 0004). 옛 판 2026H2-rooms는 1,802,374 · 2.5배 판은 2,060,625
+    assert st["total"] == 1_944_721 and st["price_ver"] == "2026.11-market"
     assert (st["scope"], st["spaces"], st["faces"], st["share_ver"]) == (
         "full",
         [],
@@ -74,7 +75,7 @@ def test_v3_body_creates_a_member_project_with_home(api):
         "2026.11.2",
     )
     paper = next(ln for ln in st["trades"][0]["lines"] if ln["key"] == "paper")
-    assert (paper["unit"], paper["basis"], paper["qty"]) == ("벽지 평", "market", "53.9")
+    assert (paper["unit"], paper["basis"], paper["qty"]) == ("벽지 평", "market", "56.0")
     assert st["days"] == "2.0"  # C07 '예상 2일'
 
 
@@ -125,7 +126,8 @@ def test_partial_project_keeps_spaces_and_share_version(api):
     assert (st["scope"], st["spaces"], st["faces"]) == ("partial", ["living", "kitchen"], ["wall"])
     assert (st["share_ver"], st["total"], st["budget_fit"]) == (
         "space-rooms-2026.11",
-        335_547,  # 2방 표 거실 0.20 + 주방 0.11 (옛 한 장 표 0.32 · 466,065)
+        # 2방 표 거실 0.20 + 주방 0.11, 도배만 하는 공사 기준(부자재 6.5평). 옛 판 335,547 · 옛 한 장 표 466,065
+        380_056,
         "over",
     )
     (row,) = query("select scope, faces, space_keys, share_ver, market_ver from standard_quotes")
@@ -307,7 +309,7 @@ def test_old_project_without_rooms_uses_default_rooms(api):
     query("update projects set rooms = null")
     st = api.get(f"/projects/{full['id']}/standard").json()
     guest = api.post("/guest/standard", json={**HOME, "rooms": 2}).json()
-    assert st["total"] == guest["total"] == 1_802_374
+    assert st["total"] == guest["total"] == 1_944_721
     part = create(api, {**PART, "spaces": ["living", "room2"]})
     assert part.status_code == 201, part.text
     st2 = api.get(f"/projects/{part.json()['id']}/standard").json()

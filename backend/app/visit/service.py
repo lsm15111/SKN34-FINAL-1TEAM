@@ -264,7 +264,7 @@ async def _cards(
     if not vendor_ids:
         return {}
     v3s = await vendor_service.estimates_v3_for(
-        s, vendor_ids=vendor_ids, project=p, trade=trade, grade=grade
+        s, vendor_ids=vendor_ids, project=p, trade=trade, grade=grade, price_ver=std.price_ver
     )
     prices = await vendor_service.confirmed_prices(s, vendor_ids, trade)
     tried = await repo.attempts(s, p.id, trade, vendor_ids)
@@ -533,18 +533,18 @@ async def _grade_view(
     if mine is None or base is None:
         if grade is not None and mine is not None and grade != mine:
             preview = await vendor_service.estimate_v3_for(
-                s, vendor_id=vendor_id, project=p, trade=trade, grade=grade
+                s, vendor_id=vendor_id, project=p, trade=trade, grade=grade, price_ver=std.price_ver
             )
             return preview, None
         return base, None
     if grade is not None and grade != mine:
         preview = await vendor_service.estimate_v3_for(
-            s, vendor_id=vendor_id, project=p, trade=trade, grade=grade
+            s, vendor_id=vendor_id, project=p, trade=trade, grade=grade, price_ver=std.price_ver
         )
         return preview, grade_diff(base.total, preview.total) if preview else None
     other = "economy" if mine == "basic" else "basic"
     alt = await vendor_service.estimate_v3_for(
-        s, vendor_id=vendor_id, project=p, trade=trade, grade=other
+        s, vendor_id=vendor_id, project=p, trade=trade, grade=other, price_ver=std.price_ver
     )
     return base, grade_diff(alt.total, base.total) if alt else None
 

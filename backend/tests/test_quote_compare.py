@@ -83,8 +83,9 @@ def test_resend_and_compare(api):
     r = api.get(f"/projects/{p['id']}/quotes", params={"trade": "dobae"})
     assert r.status_code == 200, r.text
     c = r.json()
-    # v3 표준견적서(판 2026H2-rooms, 공급 × 1.55 + 방 × 20.4㎡). 2.5배 판은 3,140,760원
-    assert c["standard_total"] == 2_734_134 and c["sent_counts"] == {"dobae": 2}
+    # v3 표준견적서(공급 × 1.55 + 방 × 20.4㎡), 도배만 하는 공사 기준(판 2026.11-market, ADR 0004).
+    # 옛 판 2026H2-rooms는 2,734,134원 · 2.5배 판은 3,140,760원
+    assert c["standard_total"] == 2_952_491 and c["sent_counts"] == {"dobae": 2}
     assert c["formula_ver"] and c["price_ver"] and c["computed_at"]
     names = [(x["vendor_name"], x["status"]) for x in c["vendors"]]
     assert names == [("결도배", "quoted"), ("마루와벽", "quoted"), ("한결인테리어", "requested")]
@@ -97,7 +98,7 @@ def test_resend_and_compare(api):
     assert maru["latest"]["total"] == 3_421_000 and maru["latest"]["supply"] == 3_110_000
     assert [h["total"] for h in maru["history"]] == [3_388_000]  # 처음 금액
     assert maru["changed"] == ["total", "days"]
-    assert maru["vs_standard"] == str(percent_vs(3_421_000, 2_734_134))
+    assert maru["vs_standard"] == str(percent_vs(3_421_000, 2_952_491))
     assert (
         maru["estimate_total"] == 2_670_888
         and maru["latest"]["files"][0]["filename"] == "견적_고침.pdf"

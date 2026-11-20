@@ -8,7 +8,7 @@ from dataclasses import replace
 from decimal import Decimal
 
 from app.calc.common import won
-from app.calc.dobae import DobaePrices
+from app.calc.dobae import DobaePrices, ProfilePrices, WorkFacts, pick_profile
 from app.calc.mokgong import MokgongPrices
 from app.calc.precise_common import SilkPaper
 
@@ -70,6 +70,100 @@ DOBAE_V3_2026_11 = replace(
         "area": "팀 가정값 · 공개 평면도 20곳 회귀 (공급 × 1.55 + 방 × 20.4㎡, plans-2026.11-v9)",
     },
 )
+
+# ---- v4 조건별 두 기준 (2026-11-21 사용자 결정, ADR docs/v4/adr/0004-금액-조건별-두-기준.md) ----
+# 어느 기준인지는 계산 엔진(calc.dobae.pick_profile)이 공사 조건으로 골라요. 새 표준견적서는 이 두 판으로 세고,
+# 이미 만든 견적은 저장한 줄 · 판(2026H2-rooms)을 그대로 둬요. 면적 회귀 · 방 개수 · 품은 v3 판과 같다.
+# 근거: d10-/data/price-sources/README.md(추천안 R) · d10-/reports/v4 비서 에이전트/quote-accuracy/README.md(P3)
+_MARKET = "시장 실견적 가운데(8출처 619건, 2026-11)"
+_SEOUL = "서울 업체 실견적 보정(2026-11)"
+_HAPJI_MULT = "합지 품은 실크의 0.55배, 시장 실견적 가운데"
+_WAGE_REMODEL = 300_000  # 서울 업체 인건비 품당 30만 원(235건 중 216건)
+
+# 도배만 하는 공사: 시장 가운데(추천안 R). 실크 벽지 × 1.04(소요량 1.2 → 1.248), 시공은 공공 단가 그대로,
+# 초배지 줄 → 부자재(실크 6,900 · 합지 3,300원/공급 평), 합지 시공비 × 0.55.
+# 퍼티(넣은 견적 5곳 가운데 14,264원/평) · 운송 · 경비(5만 원)는 넣는 곳이 5~38%뿐이라 '선택'(합계 밖)
+DOBAE_MARKET_2026_11 = replace(
+    DOBAE_V3_2026_11,
+    version="2026.11-market",
+    profile=ProfilePrices(
+        key="paper_only",
+        name="도배만 하는 공사 기준",
+        source=_MARKET,
+        labor_basis="public",
+        labor_mult={"basic": Decimal(1), "economy": Decimal("0.55")},
+        paper_ratio={"basic": Decimal("1.248"), "economy": Decimal("1.2")},
+        material_py={"basic": 6_900, "economy": 3_300},
+        putty_py=14_264,
+        putty_state="optional",
+        meal_md=None,
+        truck=50_000,
+        truck_state="optional",
+        sources={
+            "material": f"{_MARKET} · 부자재 공급 평당 (가게 견적 가운데)",
+            "putty": f"{_MARKET} · 퍼티를 넣은 견적 5곳 공급 평당 가운데",
+            "truck": f"{_MARKET} · 운송 · 경비를 받은 견적 5곳 가운데",
+            "labor_mult": _HAPJI_MULT,
+        },
+    ),
+)
+
+# 전체 철거 · 목공이 크게 든 리모델링: 서울 업체 실견적 보정(P3). 시공 ㎡ 단가 = 표준품셈 품 × 일당 30만 원
+# (벽 0.024 · 천장 0.0351인/㎡), 벽지 소요량 1.58, 부자재 16,000 · 퍼티 20,000원/공급 평, 식대 15,000원/품,
+# 운송비 30,000원. 시공 줄은 인건비만이라(풀은 부자재 줄) 짐 할증도 시공 금액 전부에 붙인다(labor_ratio 1)
+DOBAE_REMODEL_2026_11 = replace(
+    DOBAE_V3_2026_11,
+    version="2026.11-remodel",
+    labor_wall=won(DOBAE_V3_2026_11.md_wall * _WAGE_REMODEL),
+    labor_ceiling=won(DOBAE_V3_2026_11.md_ceiling * _WAGE_REMODEL),
+    labor_ratio=Decimal(1),
+    paper_ratio=Decimal("1.58"),
+    sources={
+        **DOBAE_V3_2026_11.sources,
+        "wall": f"{_SEOUL} · 표준품셈 벽 0.024인/㎡ × 일당 30만 원",
+        "ceiling": f"{_SEOUL} · 표준품셈 천장 0.0351인/㎡ × 일당 30만 원",
+    },
+    profile=ProfilePrices(
+        key="remodel",
+        name="리모델링 기준",
+        source=_SEOUL,
+        labor_basis="market",
+        labor_mult={"basic": Decimal(1), "economy": Decimal("0.55")},
+        paper_ratio={"basic": Decimal("1.58"), "economy": Decimal("1.58")},
+        material_py={"basic": 16_000, "economy": 16_000},
+        putty_py=20_000,
+        putty_state="included",
+        meal_md=15_000,
+        truck=30_000,
+        truck_state="included",
+        sources={
+            "material": f"{_SEOUL} · 부자재 공급 평당 16,000원",
+            "putty": f"{_SEOUL} · 퍼티 공급 평당 20,000원",
+            "meal": f"{_SEOUL} · 식대 품당 15,000원",
+            "truck": f"{_SEOUL} · 운송비 1대",
+            "labor_mult": _HAPJI_MULT,
+        },
+    ),
+)
+
+# 기준마다 지금 쓰는 판
+DOBAE_PROFILES: dict[str, DobaePrices] = {
+    "paper_only": DOBAE_MARKET_2026_11,
+    "remodel": DOBAE_REMODEL_2026_11,
+}
+# 공사 조건이 없는 계산(손님 · 평수만 물은 질문 · 업체 단가표 예시)의 판: 조건 없이 계산 엔진이 고른 기준
+DOBAE_DEFAULT = DOBAE_PROFILES[pick_profile(WorkFacts()).profile]
+# 저장한 표준견적서의 판(price_ver) → 그 판. 가견적 비교를 저장본과 같은 판으로 셀 때 쓴다
+DOBAE_BY_VER: dict[str, DobaePrices] = {
+    p.version: p
+    for p in (DOBAE_2026H2, DOBAE_V3_2026_11, DOBAE_MARKET_2026_11, DOBAE_REMODEL_2026_11)
+}
+
+
+def dobae_prices_of(price_ver: str | None) -> DobaePrices:
+    """저장한 표준견적서 판 → 도배 단가 판. 모르는 판이면 지금 기본 판(도배만 하는 공사 기준)."""
+    return DOBAE_BY_VER.get(price_ver or "", DOBAE_DEFAULT)
+
 
 # 실크벽지 두 종류 평당 자재값. 지금은 업체 도배 견적서 1건(2026-11, 사용자 제공 이미지) 값이고,
 # 실견적 자료가 더 모이면 바꾼다. 화면 자재 id(wall-silk-*)로 고른다 (frontend/public/v2/data.json · v2_materials.json)

@@ -10,6 +10,8 @@ from app.quote.models import QUOTE_FILES_MAX
 
 VatMode = Literal["included", "excluded", "exempt"]  # 넣은 금액이 부가세 포함 · 부가세 빼고 · 면세
 AMOUNT_MAX = 1_000_000_000
+# 도배 금액 기준(ADR 0004): 도배만 하는 공사 · 전체 철거나 큰 목공이 든 리모델링
+Profile = Literal["paper_only", "remodel"]
 
 
 class StandardLineOut(BaseModel):
@@ -37,6 +39,14 @@ class StandardTradeOut(BaseModel):
     man_day: Decimal
     crew: int
     notes: list[str]
+    profile: Profile | None = Field(
+        default=None,
+        description="도배 금액 기준(계산 엔진이 공사 조건으로 고름): paper_only 도배만 하는 공사 · "
+        "remodel 리모델링. 목공 · 옛 판은 비움",
+    )
+    profile_name: str | None = Field(
+        default=None, description="기준 화면 이름: 도배만 하는 공사 기준 · 리모델링 기준"
+    )
 
 
 class BudgetOut(BaseModel):
