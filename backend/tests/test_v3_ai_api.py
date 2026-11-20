@@ -96,6 +96,23 @@ def test_follow_up_and_slot_answer_clear_waiting(api):
     assert query("select waiting from chats where id = $1", uuid.UUID(cid))[0]["waiting"] is None
 
 
+def test_chat_state_is_saved_and_follow_up_inherits_it(api):
+    """이어 묻기(agent-context.md 3절): 앞 턴의 공종 · 꼴을 chats.state에 두고 다음 턴이 물려받아요."""
+    use(api, signup(api))
+    first = done(ask(api, text="도배 며칠 걸려요?"))
+    cid = uuid.UUID(first["chat_id"])
+    st = json.loads(query("select state from chats where id = $1", cid)[0]["state"])
+    assert st["trades"] == ["dobae"] and st["form"] == "period" and st["turn"] == 1
+    done(ask(api, text="목공도 같이 하면요?", chat_id=str(cid)))
+    st = json.loads(query("select state from chats where id = $1", cid)[0]["state"])
+    assert {"dobae", "mokgong"} <= set(st["trades"]) and st["form"] == "period" and st["turn"] == 2
+    # 저장한 고객 글은 독립 질문이 아니라 고객이 쓴 글 그대로(가림만)예요
+    rows = query(
+        "select text from chat_messages where chat_id = $1 and role = 'user' order by turn", cid
+    )
+    assert [r["text"] for r in rows] == ["도배 며칠 걸려요?", "목공도 같이 하면요?"]
+
+
 def test_someone_elses_chat_and_missing_project_are_404(api):
     use(api, signup(api, "a@mitjip.test"))
     cid = done(ask(api))["chat_id"]

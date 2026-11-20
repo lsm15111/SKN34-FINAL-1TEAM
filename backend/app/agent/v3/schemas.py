@@ -300,6 +300,7 @@ class Trace(BaseModel):
     parts: list[str] = []  # 오케스트레이터가 나눈 조각 담당
     failed_parts: int = 0
     dropped: list[str] = []  # 출력 검사가 뺀 이유(문장 원문 없음)
+    inherited: bool = False  # 이어 묻기라 앞 턴의 공종 · 꼴을 물려받았는지(context.resolve)
 
 
 class Brief(BaseModel):

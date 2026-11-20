@@ -11,7 +11,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.agent.v3 import brief, check, composer, llm_mode, orchestrator, policy, templates
+from app.agent.v3 import brief, check, composer, context, llm_mode, orchestrator, policy, templates
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3 import general as general_mod  # run_turn의 general(질문 계산 값)과 이름이 겹쳐요
 from app.agent.v3.answer import KB, T_HIGH, Part, Task
@@ -47,6 +47,12 @@ class TurnResult:
     label: str | None  # 분류기 라벨(대화 표 intent_label 기록용)
     confidence: float
     source: str
+    state: dict | None = (
+        None  # 다음 턴의 대화 상태(context.ChatState). chat.service가 chats.state에 저장
+    )
+    filled: tuple[str, str, str] | None = (
+        None  # 이 턴에 받은 되묻기 칸 답(공종, 칸, 값). 공사 브리프로 저장
+    )
 
 
 def suggest_of(p: Part) -> list[str]:
@@ -118,12 +124,21 @@ async def run_turn(
     button: Button | None = None,
     on_part: Callable[[AgentAnswer], Awaitable[None]] | None = None,
     general: GeneralFacts | None = None,
+    state: dict | None = None,
 ) -> TurnResult:
+    """state: 이 대화의 앞 턴 맥락(chats.state). 이어 묻기면 공종 · 꼴을 물려받은 독립 질문으로 답해요."""
     masked = check.mask(text or "").strip()[:TEXT_MAX]
     photo = PHOTO.search(masked) is not None
     if photo:
         rest = PHOTO.sub(" ", masked).strip(" ,.?")
         masked = rest or masked
+    prev = context.load(state)
+    slot_turn = bool(waiting and waiting.get("slot")) or button is not None
+    inherited = False
+    if (
+        not slot_turn
+    ):  # 되묻기 칸 답 · 단추는 맥락을 물려받지 않아요(그 칸 · 단추가 이미 담당을 정해요)
+        masked, inherited = context.resolve(masked, prev)
     w_route = waiting.get("route") if waiting else None
     g = gate_mod.gate(
         masked, view=ctx.view, waiting=w_route, button=button, has_project=facts is not None,
@@ -228,7 +243,23 @@ async def run_turn(
                 ]
                 routes = ["general"]
     ans = finish(part, routes, shown)
+    ans.trace.inherited = inherited
     new_wait = None
     if ans.ask is not None:
         new_wait = {"route": "trade", "trade": ans.ask.trade, "slot": ans.ask.slot, "q": masked}
-    return TurnResult(ans, new_wait, g.label, g.confidence, g.source)
+    turn_no = (prev.turn if prev else 0) + 1
+    if (
+        slot_turn
+    ):  # 짧은 칸 답('기본형')이 앞 질문 맥락을 지우지 않게 앞 상태를 둬요(공종만 단추 것으로)
+        new_state = prev
+        if prev is not None and button is not None and button.trade:
+            new_state = prev.model_copy(update={"trades": [button.trade], "turn": turn_no})
+    else:
+        new_state = context.next_state(
+            prev, masked, route=g.route, trades=list(g.trades), turn=turn_no
+        )
+    filled = (task.trades[0] if task.trades else "common", slot, value) if slot and value else None
+    return TurnResult(
+        ans, new_wait, g.label, g.confidence, g.source,
+        state=new_state.model_dump() if new_state else None, filled=filled,
+    )  # fmt: skip

@@ -75,6 +75,15 @@ def add_turn(
     )
 
 
+async def set_state(
+    s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, state: dict | None
+) -> None:
+    """내 대화의 맥락(chats.state)을 덮어쓴다. bump_rev와 같은 트랜잭션에서 부른다."""
+    await s.execute(
+        update(Chat).where(Chat.id == chat_id, Chat.user_id == user_id).values(state=state)
+    )
+
+
 async def set_project(
     s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, project_id: uuid.UUID
 ) -> None:

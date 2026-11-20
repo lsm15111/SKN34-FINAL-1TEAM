@@ -223,6 +223,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
         return AiTurnOut.model_validate(old)
     rev, waiting_label = 1, None
     facts = None
+    state = None  # 이 대화의 맥락(chats.state). 이어 묻기를 푸는 데만 써요(context.py)
     turn_mode = mode()
     if turn_mode == "llm" and not await llm_budget_ok(user.id, today):
         turn_mode = "free"  # 오늘 LLM 상한을 넘으면 무료 모드로 답해요(비용 상한)
@@ -235,7 +236,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     async with SessionLocal() as s:  # 짧게 열고 닫는다. 답을 만드는 동안 세션을 쥐지 않는다
         if body.chat_id is not None:
             chat = await get_for(s, user.id, body.chat_id)
-            rev, waiting_label = chat.rev, chat.waiting
+            rev, waiting_label, state = chat.rev, chat.waiting, chat.state
         if body.context.project_id is not None:
             facts = await tools.project_facts(
                 s, user, body.context.project_id, today, body.context.ids
@@ -273,6 +274,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
         button=body.button,
         on_part=part,
         general=general,
+        state=state,
     )
     ans = res.answer
     chat_id, new_rev = body.chat_id, None
@@ -296,6 +298,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
                 await s.rollback()
                 raise AppError(409, "conflict", CONFLICT)
             repository.add_turn(s, chat_id, rev, mask(body.text), ans.plain(), intent)
+            await repository.set_state(s, user.id, chat_id, res.state)
             await s.commit()
         new_rev = rev + 1
         await _set_json(_key("wait", str(chat_id)), res.waiting, WAIT_TTL)
