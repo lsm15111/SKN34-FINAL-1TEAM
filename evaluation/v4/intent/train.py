@@ -10,7 +10,7 @@
 - 본 모델: TF-IDF(낱말 안 글자 2~4개, sublinear) + 로지스틱 회귀(v1 관문과 같은 꼴).
   비교: 선형 SVM(시그모이드 보정) · 낱말 1~2 + 글자 2~4 + 로지스틱 회귀.
 - 내보내기: backend/app/assistant/assistant_intent_v1.json.gz(가중치 · 온도 · 기준값 + checks: 학습 쪽 확률).
-  결과: results/train.json(--final이면 results/compare_models_heldout.json도)
+  결과: results/train.json · results/dev_oof.json(겹 밖 확률)(--final이면 results/compare_models_heldout.json도)
 """
 
 import argparse
@@ -157,6 +157,7 @@ def calibrate(texts: list[str], labels: list[str], c: float, w: str | None) -> d
         "ece_cal": M.ece(model["conf"], correct),
         "base_card_acc": sum(M.card_hits(gold_cards, base["cards"])) / len(rows),
         "curve": curve,
+        "oof": {"labels": names, "probs": [[round(float(x), 6) for x in row] for row in cal]},
     }
 
 
@@ -236,6 +237,13 @@ def main() -> int:
         f"온도 {cal['temperature']} · ECE {cal['ece_raw']:.3f} → {cal['ece_cal']:.3f}(dev 겹 밖) · "
         f"기준값 {cal['threshold']}"
     )
+    oof = cal.pop("oof")  # 무료 모드 길 고르기(select_route.py)가 쓰는 겹 밖 확률(온도 보정 뒤)
+    RESULTS.mkdir(exist_ok=True)
+    (RESULTS / "dev_oof.json").write_text(
+        json.dumps({"ids": [r["id"] for r in dev], **oof}, ensure_ascii=False),
+        encoding="utf-8",
+        newline="\n",
+    )
     meta = {**best, "temperature": cal["temperature"], "threshold": cal["threshold"]}
     model = make("lr_char", best["C"], best["class_weight"]).fit(texts, labels)
     info = export(model, texts, labels, meta)
@@ -248,7 +256,6 @@ def main() -> int:
         "calibration": cal,
         "export": info,
     }
-    RESULTS.mkdir(exist_ok=True)
     (RESULTS / "train.json").write_text(
         json.dumps(report, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
     )
