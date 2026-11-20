@@ -1,5 +1,9 @@
+from typing import Literal
+
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
 
 
 class Settings(BaseSettings):
@@ -14,6 +18,27 @@ class Settings(BaseSettings):
     api_root_path: str = ""
     # false면 LLM을 부르지 않고 스텁 응답을 쓴다 (유료 호출 0회)
     llm_live: bool = False
+    # LLM 공급자: anthropic(기본, Claude) · openai(되돌리기용). 임베딩은 공급자와 상관없이 OpenAI를 쓴다
+    llm_provider: Literal["anthropic", "openai"] = "anthropic"
+    # Claude 키. agent/llm.py만 읽는다. 키는 repr·오류에 표시하지 않는다
+    anthropic_api_key: SecretStr = SecretStr("")
+    # Claude API 주소. SDK가 환경의 ANTHROPIC_BASE_URL(다른 도구가 넣는 값)을 따라가지 않게 늘 이 값을 넘긴다
+    llm_anthropic_base_url: str = "https://api.anthropic.com"
+    # Claude 모델(agent/llm.py만 읽는다): 비서 · 도면 · 무거운 역할 / 짧은 문장 · 분류 · 기억 · 가벼운 역할 / 판정.
+    # 이름 앞을 LLM_으로 둔다: CLAUDE_* · ANTHROPIC_* 환경변수는 Claude Code 같은 도구가 이미 쓴다
+    llm_claude_model: str = "claude-sonnet-5-5"
+    llm_claude_effort: Effort = "medium"
+    llm_claude_light_model: str = "claude-haiku-5-5"
+    llm_claude_light_effort: Effort = "low"
+    llm_claude_judge_model: str = "claude-opus-5-5"  # 평가(evaluation)에서만
+    # 가벼운 모델을 쓸 v2 · v3 역할(쉼표로)
+    llm_claude_light_roles: str = "trade,composer,general,planner"
+    # 유료 LLM 비용 상한(달러, usage.service). 80%면 경고 로그, 90%면 유료 호출을 막고 무료 모드로 답한다
+    llm_cap_user_day_usd: float = 0.40
+    llm_cap_service_day_usd: float = 5.0
+    llm_cap_total_usd: float = 45.0
+    # 비서 한 턴 상한(달러). 비서 runtime이 CALL_CTX.spent_micros와 비교한다
+    llm_cap_turn_usd: float = 0.06
     # 수동 임베딩 CLI와 에이전트 LLM(agent/llm.py)이 쓴다. 키는 repr·오류에 표시하지 않는다.
     openai_api_key: SecretStr = SecretStr("")
     openai_embedding_model: str = "text-embedding-3-small"
@@ -29,7 +54,7 @@ class Settings(BaseSettings):
     files_s3_bucket: str = ""
     # true면 worker가 시연 업체(app/demo.py) 일을 몇 초마다 대신 한다. 운영에서는 켜도 돌지 않는다
     demo_auto: bool = False
-    # 에이전트 LLM. agent/llm.py만 읽는다
+    # OpenAI 길(LLM_PROVIDER=openai, 되돌리기용) 에이전트 LLM. agent/llm.py만 읽는다
     openai_agent_model: str = "gpt-6.1-terra"
     openai_reasoning_effort: str = "low"
     # 짧은 구조화 출력(공정 에이전트 등)에 쓰는 작은 모델. 비우면 openai_agent_model을 쓴다
