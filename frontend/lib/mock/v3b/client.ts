@@ -1,7 +1,7 @@
 // 브라우저 쓰기 한 곳(B2b 화면). 진짜면 lib/backend/client.ts call()로 /api/*에 보내고,
 // 예시 데이터(MOCK_V3B)면 보내지 않고 9판 이야기의 다음 단계로 넘겨요(쿠키 mj_v3b_step → 화면이 다시 읽음).
 // 예시에 없는 쓰기는 보내지 않고 '예시 데이터라 보내지 않았어요'를 오류로 돌려줘요(거짓으로 됐다고 하지 않아요).
-import { ApiError, call } from "@/lib/backend/client";
+import { ApiError, announceWrite, call } from "@/lib/backend/client";
 import { MOCK_V3B, STEP_COOKIE, type StepKey } from "./mode";
 
 type Method = "POST" | "PUT" | "PATCH" | "DELETE";
@@ -16,6 +16,7 @@ export async function send<T = unknown>(method: Method, path: string, body?: unk
   await new Promise((r) => setTimeout(r, 250));
   if (!mock) throw new ApiError(0, "mock", "예시 데이터라 보내지 않았어요.");
   if (mock.step) setMockStep(mock.step);
+  announceWrite(method, path); // v4 비서 화면이 대화 · 승인 카드를 다시 읽게(실제는 call()이 알려요)
   return mock.result as T;
 }
 

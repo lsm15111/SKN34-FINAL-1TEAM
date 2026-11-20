@@ -29,7 +29,7 @@ export function TodayCard({ card, ctx }: CardProps<"today">) {
       <Group title="정할 일" rows={d.todo} ctx={ctx} />
       <Group title="기다리는 일" rows={d.waiting} ctx={ctx} wait />
       <Group title="밤사이 소식" rows={d.news} ctx={ctx} news />
-      <Group title="알아 두기" rows={d.know} ctx={ctx} know />
+      <Group title="알아 두기" rows={d.know ?? []} ctx={ctx} know />
       {d.nudge_id ? (
         <div className={k.todayFoot}>
           <button type="button" className={`${k.text} ${k.gray}`} onClick={() => ctx.dismissNudge(card.card_id, d.nudge_id!)}>오늘은 그만</button>

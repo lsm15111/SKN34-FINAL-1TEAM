@@ -88,8 +88,6 @@
 .amtList { list-style: none; margin: 0; padding: 0; display: grid; }
 .amtList li { display: flex; justify-content: space-between; gap: 8px; max-width: 320px; }
 .amtList b { font-weight: var(--mj-weight-bold); }
-.thumbs { display: flex; gap: 4px; align-items: center; flex-wrap: wrap; }
-.thumbs img { width: 40px; height: 30px; object-fit: cover; border-radius: 6px; display: block; }
 .note { display: flex; gap: 6px; align-items: flex-start; font-size: var(--mj-type-label); color: var(--mj-text-sub); margin: 0; }
 .note svg { width: 18px; height: 18px; margin-top: 2px; color: var(--mj-text-mute); flex: none; }
 .acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }

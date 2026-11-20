@@ -1,31 +1,25 @@
 // v4 비서 목업 값. 예시 숫자 · 날짜 · 업체는 모두 여기에만 둬요(계산 엔진 값이 아니에요).
-// 화면 코드는 이 값을 직접 읽지 않고 lib/api/assistant.ts를 거쳐 받아요.
+// 화면 코드는 이 값을 직접 읽지 않고 lib/api/assistant.ts를 거쳐 받아요. 모양은 backend assistant/schemas.py와 같아요.
 
 /** 서울 시각 문자열 */
 export const T = (day: string, hm = "09:00") => `${day}T${hm}:00+09:00`;
 
+/** 첫 대화(/start)에서 저장한 집(계약서: confirm 모양) */
 export const HOME = {
-  hits: [
-    { id: "addr-1", name: "상계 푸른숲마을 7단지", road: "서울 노원구 상계숲길 27" },
-    { id: "addr-2", name: "상계 푸른숲마을 6단지", road: "서울 노원구 상계숲길 15" },
-    { id: "addr-3", name: "푸른숲 상계", road: "서울 노원구 동일로 1702" },
-  ],
-  complex: { name: "상계 푸른숲마을 7단지", road: "서울 노원구 상계숲길 27", households: 1284, approved_year: 1997, corridor: "계단식" },
-  dongs: ["701동", "702동", "703동", "704동"],
-  area: { exclusive_m2: "84.97", supply_m2: "112.40", pyeong_type: "34평형" },
-  pyeongs: ["24평형", "32평형", "34평형", "40평형"],
-  sources: ["건축물대장", "공동주택 단지 정보"],
+  facts: ["서울 노원구", "공급 112.4㎡", "34평", "살면서 공사", "도배 · 실크 · 전체"],
+  area: { m2: "112.4", basis: "supply" as const, pyeong: "34" },
 };
 
 export const STANDARD = {
   total_won: 3_148_560,
-  label: "도배 · 실크 · 전용 84.97㎡ · 살면서 공사",
+  label: "도배 · 실크 · 공급 112.4㎡",
   lines: [
     { name: "벽지 · 풀", won: 1_412_300 },
     { name: "도배 품(기능공 6품)", won: 1_236_000 },
     { name: "짐 옮기기 · 보양", won: 213_000 },
   ],
-  decided: ["벽지는 실크로 정했어요", "살면서 하는 공사예요"],
+  days: "2",
+  partial: false,
 };
 
 export type MockVendor = { key: string; id: string; name: string; photo: string; rating: number; reviews: number; done: number; est: number; reasons: string[]; badge?: string };
@@ -36,18 +30,16 @@ export const VENDORS: MockVendor[] = [
 ];
 export const vendorOf = (key: string) => VENDORS.find((v) => v.key === key) ?? VENDORS[0];
 
-export const PHOTOS = ["/v2/img/tone/room1.jpg", "/v2/img/tone/room2.jpg", "/v2/img/tone/room3.jpg", "/v2/img/tone/room4.jpg"];
-
-/** 희망 기간 · 실측 후보(계산 엔진 calc.slots 몫) */
-export const WISH = { start: "2026-11-23", end: "2026-12-04", work_wish_on: "2026-12-18", move_in: "2026-12-26" };
+/** 희망 기간 · 실측 후보(계산 엔진 calc.slots 몫). why는 서버처럼 코드예요(화면이 말로 바꿔요) */
+export const WISH = { start: "2026-11-23", end: "2026-12-04", work_wish_on: "2026-12-18" };
 export const SLOTS = [
-  { ref: "s1", vendor: "gyeol", day: "2026-11-24", half: "am" as const, why: ["공사 시작 24일 전이에요", "다른 실측과 안 겹쳐요"] },
-  { ref: "s2", vendor: "gyeol", day: "2026-11-25", half: "pm" as const, why: ["다른 실측과 안 겹쳐요"] },
-  { ref: "s3", vendor: "gyeol", day: "2026-11-26", half: "am" as const, why: ["평일 오전이에요"] },
+  { ref: "s1", vendor: "gyeol", day: "2026-11-24", half: "am" as const, why: ["start_minus_20"] },
+  { ref: "s2", vendor: "gyeol", day: "2026-11-25", half: "pm" as const, why: ["earliest"] },
+  { ref: "s3", vendor: "gyeol", day: "2026-11-26", half: "am" as const, why: ["earliest"] },
 ];
 export const MARU_SLOTS = [
-  { ref: "m1", vendor: "maru", day: "2026-11-25", half: "am" as const, why: ["업체가 낸 날이에요", "다른 실측과 안 겹쳐요"] },
-  { ref: "m2", vendor: "maru", day: "2026-11-26", half: "pm" as const, why: ["업체가 낸 날이에요"] },
+  { ref: "m1", vendor: "maru", day: "2026-11-25", half: "am" as const, why: ["vendor_proposal"] },
+  { ref: "m2", vendor: "maru", day: "2026-11-26", half: "pm" as const, why: ["vendor_proposal"] },
 ];
 
 /** 실측 견적서(업체가 적은 칸 + 계산 엔진 합계 · 차액) */

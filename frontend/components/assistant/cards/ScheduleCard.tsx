@@ -1,7 +1,7 @@
-// C6 공사 날짜 · 확정 공정표: 업체가 하루씩 고른 날(반나절 칸) · 일하는 날 n일 · 다른 공정과 겹침 · 입주 희망.
+// C6 공사 날짜 · 확정 공정표: 업체가 하루씩 고른 날(반나절 칸) · 일하는 날 n일 · 다른 공정과 겹침.
 // 날 · 일수는 계산 엔진 값이에요. 수락은 승인 카드가 맡고, 이 카드는 보여 주기만 해요.
 import Link from "next/link";
-import { dateLong, dayParts, rangeText } from "@/lib/format";
+import { dayParts, rangeText } from "@/lib/format";
 import { DecidedLine, SourceTag } from "../kit/StatusTag";
 import { I } from "../kit/icons";
 import k from "../kit/kit.module.css";
@@ -20,7 +20,7 @@ export function ScheduleCard({ card }: CardProps<"schedule">) {
       <div className={c.span}>
         <span>{final ? `공정표 ${d.plan_version}판` : "업체가 고른 날"}</span>
         <b className={k.num}>{rangeText(d.start, d.end, { weekday: true })}</b>
-        <small className={k.num}>일하는 날 {d.work_days}일{d.move_in ? ` · 입주 희망 ${dateLong(d.move_in)}` : ""}</small>
+        <small className={k.num}>일하는 날 {d.work_days}일</small>
       </div>
       <div className={c.halves} style={{ "--n": d.days.length } as React.CSSProperties} role="img" aria-label={`${rangeText(d.start, d.end, { weekday: true })} 도배, 오전 · 오후 칸`}>
         <span />

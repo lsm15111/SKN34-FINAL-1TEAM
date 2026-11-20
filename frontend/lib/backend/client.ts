@@ -25,6 +25,15 @@ export function isSafeApiPath(path: string): boolean {
   return p.startsWith("/") && !p.startsWith("//") && !BAD_PATH.test(p);
 }
 
+/** 쓰기(GET 말고)가 성공하면 같은 탭에 알리는 이벤트 이름. detail = { method, path }(물음표 앞 경로만).
+ *  v4 비서 화면이 듣고 대화 · 보드 · 열린 승인 카드를 다시 읽어요(전체 화면 카드 안 v3 단추를 누른 뒤). */
+export const API_WRITE_EVENT = "mj-api-write";
+export type ApiWrite = { method: string; path: string };
+export function announceWrite(method: string, path: string) {
+  if (typeof window === "undefined" || method === "GET") return;
+  window.dispatchEvent(new CustomEvent<ApiWrite>(API_WRITE_EVENT, { detail: { method, path: path.split(/[?#]/)[0] } }));
+}
+
 /** headers: 멱등 키(Idempotency-Key)처럼 요청마다 붙일 머리 */
 export async function call<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", path: string, body?: unknown, headers?: Record<string, string>): Promise<T> {
   if (!isSafeApiPath(path)) throw new ApiError(0, "bad_path", "요청을 처리하지 못했어요.");
@@ -37,6 +46,7 @@ export async function call<T = unknown>(method: "GET" | "POST" | "PUT" | "PATCH"
   } catch {
     throw new ApiError(0, "network", "서버에 연결하지 못했어요. 잠시 뒤 다시 해 주세요.");
   }
+  if (res.ok) announceWrite(method, path);
   if (res.status === 204) return undefined as T;
   const data = await res.json().catch(() => null);
   if (res.ok) return data as T;

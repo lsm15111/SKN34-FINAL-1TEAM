@@ -1,21 +1,23 @@
 // v4 비서 목업 서버(브라우저 안). 계약서 3장의 SSE 이벤트 · REST 응답을 같은 모양으로 흘려요.
-// - 대본 두 개: f1(처음 고객: 주소 → 집 확인 → 표준견적서 → 추천 3곳 → 실측 요청 승인 → 시간 후보 → 견적 비교 → 확정 승인 → 공정표)
-//   · today(오늘 정할 일). 상태는 공사마다 localStorage에 둬서 새로 고쳐도 대화가 그대로예요.
+// - 대본 두 개: f1(처음 고객: 첫 대화(/start)에서 집을 저장한 뒤 → 표준견적서 · 먼저 말 건 제안 → 추천 3곳 → 실측 요청 승인 →
+//   시간 후보 → 견적 비교 → 확정 승인 → 공정표) · today(오늘 정할 일). 상태는 공사마다 localStorage에 둬서 새로 고쳐도 그대로예요.
 // - 승인 카드만 일을 실행해요. 빠른 답 칩 · 글은 실행하지 않아요(승인 없이 실행 0건).
 // - 결도배 확정을 처음 누르면 '판 바뀜'(409 quote_changed)을 한 번 돌려줘요(새 판 + 차액 승인 카드 확인용).
 // - 승인 뒤 이어지는 일(업체 답 · 견적서 도착)은 서버가 먼저 보내는 턴으로 흘려요(subscribe). 시각은 대본 시계예요.
+// - 실제 서버처럼 전체 화면 카드 안 v3 단추가 한 일은 행동 행을 닫지 않아요('처리됨'은 화면이 표시해요).
 import { ApiError, type Schemas } from "@/lib/backend/client";
 import {
   applyTurnEvent, replaceAction, replaceCard,
-  type ActionKind, type ActionOut, type ActionSummary, type AddressHit, type BoardOut, type BriefSeed, type CardOut, type FeedItem,
-  type FeedPage, type MemoryOut, type NotifyPage, type QuoteChecklistData, type TaskOut, type TaskRow, type TurnEvent, type TurnIn,
-  type VendorBriefData, type VendorTodayData, type CompareCol, type QuoteCompareData,
+  type ActionKind, type ActionOut, type ActionStatus, type ActionSummary, type BoardOut, type BriefSeed, type CardOut, type CompareCol,
+  type Demolition, type FeedItem, type FeedPage, type HealthOut, type HomeInfoData, type MemoryOut, type NotifyPage, type QuoteChecklistData,
+  type QuoteCompareData, type TaskOut, type TaskRow, type ThreadOut, type TodayData, type TurnEvent, type TurnIn, type VendorBriefData,
+  type VendorTodayData,
 } from "@/lib/api/assistant";
 import { dateLong, dateShort, halfDayText, rangeText, won } from "@/lib/format";
 import type { MockScript } from "./mode";
 import * as D from "./data";
 
-type Stage = "address" | "home" | "standard" | "vendors" | "requested" | "slots" | "booked" | "compare" | "confirmed" | "dates" | "final";
+type Stage = "standard" | "vendors" | "requested" | "slots" | "booked" | "compare" | "confirmed" | "dates" | "final";
 type Note = Schemas["NotificationOut"];
 type State = {
   v: number;
@@ -29,28 +31,29 @@ type State = {
   rev: number;
   n: number;
   notes: Note[];
-  memory: MemoryOut[];
   picks: string[];
   quoteVer: 1 | 2;
   quoteFailOnce: boolean;
   todayDismissed: boolean;
+  demolition: Demolition | null;
   /** 승인 뒤 이어질 일(새로 고쳐도 이어지게 시각과 함께 저장) */
   pending: { beat: Beat; at: number }[];
 };
-type Beat = "standard" | "sent" | "answered" | "booked" | "maruBooked" | "quoted" | "closed" | "dates" | "final";
+type Beat = "sent" | "answered" | "booked" | "maruBooked" | "quoted" | "closed" | "dates" | "final";
 type Draft =
   | { type: "ack"; data: { turn_id: string; chat_id: string; at: string } }
   | { type: "status"; data: { text: string; task?: TaskOut | null } }
   | { type: "card"; data: CardOut }
   | { type: "action"; data: ActionOut }
   | { type: "token"; data: { text: string } }
-  | { type: "done"; data: { rev: number; mode: "llm" | "free"; cards: string[]; actions: string[]; chips?: string[]; suggest?: { id: string; text: string; why: string; say: string } | null } }
+  | { type: "done"; data: { rev: number; mode: "llm" | "free"; cards: string[]; actions: string[]; chips?: string[]; stopped?: boolean; suggest?: { id: string; text: string; why: string; say: string; nudge_id?: string | null } | null } }
   | { type: "error"; data: { code: string; message: string } };
 type Step = { wait: number; ev: Draft; clock?: string; apply?: (s: State) => void; dup?: boolean };
 type Plan = { steps: Step[]; after?: (s: State) => void };
 
-const VERSION = 4;
+const VERSION = 5;
 const KEY = (pid: string) => `mj_v4_mock:${pid}`;
+const MEMORY_KEY = "mj_v4_mock:memory";
 const cache = new Map<string, State>();
 const subs = new Map<string, Set<(turnId: string, e: TurnEvent) => void>>();
 const chains = new Map<string, Promise<unknown>>();
@@ -78,6 +81,13 @@ function save(s: State) {
   cache.set(s.pid, s);
   try { window.localStorage.setItem(KEY(s.pid), JSON.stringify(s)); } catch { /* 못 써도 이번 탭에서는 이어져요 */ }
 }
+/** 기억은 사람마다(공사와 상관없이) 하나예요 */
+function readMemory(): MemoryOut[] {
+  try { const raw = window.localStorage.getItem(MEMORY_KEY); const v: unknown = raw ? JSON.parse(raw) : []; return Array.isArray(v) ? (v as MemoryOut[]) : []; } catch { return []; }
+}
+function writeMemory(m: MemoryOut[]) {
+  try { window.localStorage.setItem(MEMORY_KEY, JSON.stringify(m.slice(-12))); } catch { /* 편의 */ }
+}
 const sleep = (ms: number, signal?: AbortSignal) =>
   new Promise<void>((ok) => {
     if (!ms || signal?.aborted) return ok();
@@ -94,8 +104,8 @@ function enqueue<T>(pid: string, fn: () => Promise<T>): Promise<T> {
 // ───── 조각 만들기
 
 const base = (pid: string, script: MockScript, clock: string): State => ({
-  v: VERSION, pid, script, stage: "address", clock, items: [], actions: {}, chips: [], rev: 1, n: 0,
-  notes: [], memory: [], picks: ["gyeol", "bareun", "maru"], quoteVer: 1, quoteFailOnce: true, todayDismissed: false, pending: [],
+  v: VERSION, pid, script, stage: "standard", clock, items: [], actions: {}, chips: [], rev: 1, n: 0,
+  notes: [], picks: ["gyeol", "bareun", "maru"], quoteVer: 1, quoteFailOnce: true, todayDismissed: false, demolition: null, pending: [],
 });
 const href = (s: State, tail = "") => `/projects/${encodeURIComponent(s.pid)}${tail}`;
 const nextId = (s: State, p: string) => `${p}-${++s.n}`;
@@ -129,25 +139,26 @@ const sentences = (text: string, wait = 260): Step[] => text.split(/(?<=[.?!요]
 const done = (s: State, chips: string[], extra: Partial<Extract<Draft, { type: "done" }>["data"]> = {}): Step =>
   step({ type: "done", data: { rev: s.rev + 1, mode: "llm", cards: [], actions: [], chips, ...extra } }, 120, { apply: (x) => { x.rev += 1; x.chips = chips; } });
 
-function homeSearch(query = "", hits: AddressHit[] = D.HOME.hits, picked: string | null = null): CardOut<"home_info"> {
-  return { card_id: "home-search", kind: "home_info", data: { phase: "search", query, hits, picked } };
-}
-function homeConfirm(actionId: string | null, saved: boolean): CardOut<"home_info"> {
-  return { card_id: "home", kind: "home_info", say: "이 집이 맞는지 확인해 주세요.", data: { phase: "confirm", complex: D.HOME.complex, dongs: D.HOME.dongs, area: D.HOME.area, sources: D.HOME.sources, action_id: actionId, saved } };
+const DEMO_LABEL: Record<Demolition, string> = { full: "전체 철거", partial: "일부", none: "안 함" };
+function homeCard(s: State, extra: Partial<HomeInfoData> = {}): CardOut<"home_info"> {
+  return {
+    card_id: "home", kind: "home_info",
+    data: { phase: "confirm", facts: D.HOME.facts, area: D.HOME.area, changes: [], action_id: null, saved: true, locked: s.stage !== "standard" && s.stage !== "vendors", demolition: s.demolition, ...extra },
+  };
 }
 function standardCard(s: State): CardOut<"standard_quote"> {
   return { card_id: "standard", kind: "standard_quote", say: "표준견적서가 나왔어요.", data: { ...D.STANDARD, href: href(s, "/standard") } };
 }
 function picksCard(s: State): CardOut<"vendor_picks"> {
   return {
-    card_id: "picks", kind: "vendor_picks", say: "노원구에서 이 집 조건에 맞는 세 곳이에요.",
+    card_id: "picks-dobae", kind: "vendor_picks", say: "노원구에서 이 집 조건에 맞는 곳이에요.",
     data: {
       area_name: "노원구",
       picks: D.VENDORS.map((v) => ({
         ref: v.key, vendor_id: v.id, name: v.name, photo: v.photo, photo_alt: `${v.name} 시공 사례`, rating: v.rating, reviews: v.reviews,
         done_jobs: v.done, estimate_won: v.est, reasons: v.reasons, badge: v.badge ?? null, picked: s.picks.includes(v.key), href: href(s, "/vendors"),
       })),
-      basis: ["이 구에서 일하고 도배를 해요", "단가를 확인해 가견적이 있어요", "가견적 · 별점 · 답 속도 · 끝낸 공사로 점수를 매겨요"],
+      basis: ["이 구에서 일하고 이 공정을 해요", "업체가 단가를 확인해 가견적이 있어요", "별점 · 끝낸 공사 · 가견적으로 점수를 매겨요"],
       more_href: href(s, "/vendors"),
     },
   };
@@ -160,8 +171,8 @@ function visitRequestAction(s: State): ActionOut {
     rows: [
       { label: "가견적", value: "11월 15일 확인한 단가로 고정돼요" },
       { label: "희망 기간", value: rangeText(D.WISH.start, D.WISH.end, { weekday: true }), sub: `공사 시작 희망 ${dateLong(D.WISH.work_wish_on)} 기준` },
+      { label: "사진", value: "4장" },
     ],
-    photos: D.PHOTOS,
     note: "업체마다 48시간 안에 갈 수 있는 기간을 답해요. 연락은 믿집 채팅으로 이어요",
     approve_label: `${vs.length}곳에 요청 보내기`,
   }, D.T("2026-11-22", "10:05"), { target_ver: "prices-2026-11-15" });
@@ -200,13 +211,15 @@ const dueTextOf = (day: string, hm: string) => `${dateShort(day)} ${hm}까지`;
 function slotsCard(s: State, who: "gyeol" | "maru", chosen: string): CardOut<"visit_slots"> {
   const list = who === "gyeol" ? D.SLOTS : D.MARU_SLOTS;
   const v = D.vendorOf(who);
+  const am = readMemory().some((m) => m.key === "avail_half");
   return {
     card_id: `slots-${who}`, kind: "visit_slots",
     say: who === "gyeol" ? "결도배가 갈 수 있는 기간을 답했어요. 이 시간 어때요?" : "마루와벽이 다른 날을 냈어요. 이 중에서 골라 주세요.",
     data: {
       vendor_name: v.name,
       window: who === "gyeol" ? { start: "2026-11-23", end: "2026-11-28" } : { start: "2026-11-25", end: "2026-11-26" },
-      candidates: list.map((c) => ({ ref: c.ref, vendor_name: v.name, day: c.day, half: c.half, why: s.memory.some((m) => m.key === "avail_half") && c.half === "am" ? [...c.why, "평일 오전이 편하다고 했어요"] : c.why })),
+      candidates: list.map((c) => ({ ref: c.ref, vendor_name: v.name, day: c.day, half: c.half, why: am && c.half === "am" && who === "gyeol" ? ["prefer_half", ...c.why] : c.why })),
+      wishes: [],
       chosen, instant: who === "maru", calendar_href: href(s, "/visits"),
     },
   };
@@ -226,23 +239,23 @@ function slotAction(s: State, who: "gyeol" | "maru", ref: string): ActionOut {
 function compareCard(s: State): CardOut<"quote_compare"> {
   const g = s.quoteVer === 2 ? D.QUOTES.gyeol2 : D.QUOTES.gyeol1;
   const b = D.QUOTES.bareun1;
-  const col = (vid: string, name: string, q: typeof g | typeof b, changed: CompareCol["changed"]): CompareCol => ({
-    visit_id: vid, vendor_name: name, state: "quoted", version: q.version, received_on: q.received_on, total_won: q.total_won, changed,
+  const col = (ref: string, vid: string, name: string, q: typeof g | typeof b, changed: CompareCol["changed"]): CompareCol => ({
+    ref, visit_id: vid, vendor_name: name, state: "quoted", version: q.version, received_on: q.received_on, total_won: q.total_won, changed,
     diff_vs_estimate_won: q.diff_vs_estimate_won, days: q.days, valid_until: q.valid_until, valid_soon: q.valid_until === "2026-11-27",
     demolish: q.demolish, waste: q.waste, paper: q.paper, warranty_months: q.warranty_months,
     file: { kind: q.file === "PDF" ? "pdf" : "image", label: q.file, href: href(s, "/quotes") },
   });
   const data: QuoteCompareData = {
     cols: [
-      col("vq-gyeol", "결도배", g, s.quoteVer === 2 ? { from_version: 1, diff_won: D.QUOTES.change } : null),
-      col("vq-bareun", "바른벽", b, null),
-      { visit_id: "vq-maru", vendor_name: "마루와벽", state: "waiting", wait_note: "실측 전" },
+      col("m1", "vq-gyeol", "결도배", g, s.quoteVer === 2 ? { from_version: 1, diff_won: D.QUOTES.change } : null),
+      col("m2", "vq-bareun", "바른벽", b, null),
+      { ref: "m3", visit_id: "vq-maru", vendor_name: "마루와벽", state: "waiting", wait_note: "견적서 기다림" },
     ],
     gap_won: s.quoteVer === 2 ? D.QUOTES.gap2 : D.QUOTES.gap1,
     ask_chips: ["폐기물 처리도 포함인가요?"],
     href: href(s, "/quotes"),
   };
-  return { card_id: "compare", kind: "quote_compare", say: "실측 견적서가 두 곳 왔어요.", data };
+  return { card_id: "compare-dobae", kind: "quote_compare", say: "실측 견적서가 2곳 왔어요.", data };
 }
 function confirmAction(s: State, supersedes: string | null = null): ActionOut {
   const g = s.quoteVer === 2 ? D.QUOTES.gyeol2 : D.QUOTES.gyeol1;
@@ -250,21 +263,20 @@ function confirmAction(s: State, supersedes: string | null = null): ActionOut {
     title: "결도배로 확정",
     amount_won: g.total_won,
     diff: s.quoteVer === 2 ? { label: "1판보다", from_won: D.QUOTES.gyeol1.total_won, to_won: g.total_won, diff_won: D.QUOTES.change } : null,
-    version: `견적서 ${g.version}판 · ${dateLong(g.received_on)} 받음`,
-    rows: [{ label: "공사 기간", value: `${g.days}일` }, { label: "유효기간", value: `${dateLong(g.valid_until)}까지` }],
-    file: { label: "PDF", href: href(s, "/quotes") },
-    note: "확정하면 바른벽 · 마루와벽 요청은 닫혀요",
+    version: `견적서 ${g.version}판`,
+    rows: [{ label: "공사 기간", value: `${g.days}일` }, { label: "유효기간", value: `${g.valid_until}까지` }],
+    note: "확정하면 같은 공정의 다른 요청은 닫혀요",
     approve_label: "결도배로 확정",
-  }, D.T("2026-12-31", "18:00"), { target_ver: `quote-gyeol-${g.version}`, supersedes });
+  }, D.T("2026-12-31", "18:00"), { target_ver: `${g.version}`, supersedes });
 }
 function datesCard(s: State, phase: "dates" | "final"): CardOut<"schedule"> {
   return {
-    card_id: phase === "dates" ? "plan-dates" : "plan-final", kind: "schedule",
-    say: phase === "dates" ? "결도배가 공사 날짜를 올렸어요." : "확정 공정표가 나왔어요.",
+    card_id: phase === "dates" ? "dates-1" : "plan-2", kind: "schedule",
+    say: phase === "dates" ? "결도배가 공사 날짜를 올렸어요." : "확정 공정표예요.",
     data: {
       phase, vendor_name: "결도배", start: D.WORK.start, end: D.WORK.end, work_days: D.WORK.work_days, days: D.WORK.days,
-      conflicts: [], plan_version: phase === "dates" ? 1 : 2, move_in: D.WISH.move_in,
-      href: href(s, "/plan"), ics_href: phase === "final" ? `/api/projects/${encodeURIComponent(s.pid)}/plan.ics` : null,
+      conflicts: [], plan_version: phase === "dates" ? 1 : 2,
+      href: href(s, phase === "dates" ? "/schedule" : "/plan"), ics_href: phase === "final" ? `/api/projects/${encodeURIComponent(s.pid)}/plan.ics` : null,
     },
   };
 }
@@ -272,10 +284,10 @@ function datesAction(s: State): ActionOut {
   return makeAction(s, "dates_accept", {
     title: `도배 ${rangeText(D.WORK.start, D.WORK.end, { weekday: true })} 수락`,
     version: "공정표 1판",
-    rows: [{ label: "일하는 날", value: `${D.WORK.work_days}일` }, { label: "입주 희망", value: dateLong(D.WISH.move_in), sub: "여유가 있어요" }],
+    rows: [{ label: "일하는 날", value: `${D.WORK.work_days}일` }],
     note: "수락하면 확정 공정표가 만들어지고, 공사 전날 준비물을 알려 드려요",
     approve_label: "이 날짜로 수락",
-  }, D.T("2026-11-29", "11:00"), { target_ver: "plan-1" });
+  }, D.T("2026-11-29", "11:00"), { target_ver: "1" });
 }
 function knowCard(): CardOut<"knowledge"> {
   return { card_id: "know-move", kind: "knowledge", say: "공사 전에 알아 두면 좋아요.", data: { ...D.KNOW.move, href: null } };
@@ -293,9 +305,14 @@ function initF1(pid: string): State {
   const s = base(pid, "f1", D.T("2026-11-21", "10:00"));
   s.items = [{
     id: "a-hello", role: "assistant", at: s.clock, turn_id: "hello", done: true,
-    parts: [{ t: "text", src: "guide", text: "안녕하세요. 공사를 끝까지 챙기는 믿집 비서예요.\n집 주소부터 알려 주세요." }, { t: "card", card: homeSearch() }],
+    parts: [
+      { t: "text", src: "guide", text: "안녕하세요. 공사를 끝까지 챙기는 믿집 비서예요.\n첫 대화에서 넣은 집으로 표준견적서를 만들었어요." },
+      { t: "card", card: homeCard(s) },
+      { t: "card", card: standardCard(s) },
+      { t: "suggest", suggest: { id: "sg-vendors", text: "업체 3곳을 골라 둘까요?", why: "노원구에서 가견적을 낸 도배 업체가 5곳 있어요", say: "업체 추천해 줘", nudge_id: "nudge-vendors" } },
+    ],
   }];
-  s.chips = ["상계 푸른숲마을 7단지", "평형만 알아요"];
+  s.chips = ["업체 추천해 줘", "표준견적서 금액 풀이해 줘", "가견적은 어떻게 계산해요?"];
   return s;
 }
 function initToday(pid: string): State {
@@ -303,7 +320,7 @@ function initToday(pid: string): State {
   s.stage = "compare";
   s.quoteVer = 2;
   s.quoteFailOnce = false;
-  s.memory = D.MEMORY_SEED.map((m) => ({ ...m }));
+  if (!readMemory().length) writeMemory(D.MEMORY_SEED.map((m) => ({ ...m })));
   const sent: TaskOut = { task_id: "task-sent", title: "실측 요청 3곳", state: "done", at: D.T("2026-11-21", "10:06"), rows: [], link: { label: "실측 일정 보기", href: href(s, "/visits") } };
   const old = makeAction(s, "visit_slot", {
     title: "마루와벽 실측 11.23(월) 오후", version: "업체가 답한 기간 11.23~11.27",
@@ -311,22 +328,7 @@ function initToday(pid: string): State {
   }, D.T("2026-11-23", "09:20"));
   const expired: ActionOut = { ...old, status: "expired", error_code: "due" };
   s.actions[old.action_id] = expired;
-  const today: CardOut<"today"> = {
-    card_id: "today", kind: "today",
-    data: {
-      date: "2026-11-24", nudge_id: "nudge-today",
-      todo: [
-        { id: "t1", icon: "doc", title: "견적서 두 곳 보고 확정하기", sub: "바른벽 견적서는 11.27(금)까지 유효해요", due: true, action: { label: "비교 보기", say: "견적서 비교 보기", primary: true } },
-        { id: "t2", icon: "calendar", title: "마루와벽 실측 날짜 고르기", sub: "오늘 18:00까지 · 11.25(수) 오전 · 11.26(목) 오후", due: true, action: { label: "날짜 고르기", say: "마루와벽 날짜 고르기" } },
-      ],
-      waiting: [],
-      news: [
-        { id: "n1", icon: "file", title: "결도배가 견적서 2판을 보냈어요", sub: `어제 20:14 · 1판보다 +${won(D.QUOTES.change)}` },
-        { id: "n2", icon: "chat", title: "마루와벽이 채팅에 사진 2장을 보냈어요", sub: "어제 21:03", action: { label: "채팅", href: "/chat" } },
-      ],
-      know: [{ id: "k1", icon: "bulb", title: D.KNOW.move.title, sub: "공사 전날 준비물 · 표준 시방서", action: { label: "보기", say: "알아 두기 보여 줘" } }],
-    },
-  };
+  const today: CardOut<"today"> = { card_id: "today", kind: "today", data: todayData(s) };
   s.items = [
     { id: "a-old-1", role: "assistant", at: D.T("2026-11-21", "10:06"), turn_id: "old-1", done: true, parts: [{ t: "task", task: sent }, { t: "text", src: "guide", text: "희망 기간 11.23~12.4로 세 곳에 보냈어요." }] },
     { id: "a-old-2", role: "assistant", at: D.T("2026-11-22", "09:20"), turn_id: "old-2", done: true, parts: [{ t: "action", action: expired }] },
@@ -334,27 +336,45 @@ function initToday(pid: string): State {
   ];
   s.chips = ["견적서 비교 보기", "마루와벽 날짜 고르기", "오늘은 그만"];
   s.notes = [
-    { id: "n-4", kind: "assistant", project_id: pid, body: "오늘 정할 일이 2개 있어요", link: href(s), created_at: D.T("2026-11-24", "09:00"), read: false },
+    { id: "n-4", kind: "assistant", project_id: pid, body: "오늘 정할 일이 2개 있어요", link: `${href(s)}?nudge=nudge-today`, created_at: D.T("2026-11-24", "09:00"), read: false },
     { id: "n-3", kind: "quote_resent", project_id: pid, body: "결도배가 실측 견적서를 다시 보냈어요", link: href(s, "/quotes"), created_at: D.T("2026-11-23", "20:14"), read: false },
     { id: "n-2", kind: "visit_offered", project_id: pid, body: "마루와벽이 다른 날을 냈어요", link: href(s, "/visits"), created_at: D.T("2026-11-23", "08:50"), read: true },
     { id: "n-1", kind: "quote_sent", project_id: pid, body: "바른벽이 실측 견적서를 보냈어요", link: href(s, "/quotes"), created_at: D.T("2026-11-22", "11:05"), read: true },
   ];
   return s;
 }
+function todayData(s: State): TodayData {
+  if (s.script !== "today") {
+    // f1: 열린 제안만 줄로(실제 today_for처럼 코드가 골라요)
+    const open = Object.values(s.actions).filter((a) => a.status === "proposed" && a.kind !== "home_info");
+    return { date: s.clock.slice(0, 10), nudge_id: null, todo: open.map((a) => ({ id: `a-${a.action_id}`, icon: "doc" as const, title: a.summary.title, sub: "승인 기다림" })), waiting: [], news: [], know: [] };
+  }
+  return {
+    date: "2026-11-24", nudge_id: "nudge-today", dismissed: s.todayDismissed,
+    todo: [
+      { id: "t1", icon: "doc", title: "견적서 두 곳 보고 확정하기", sub: "바른벽 견적서는 11.27(금)까지 유효해요", due: true, action: { label: "비교 보기", say: "견적서 비교 보기", primary: true } },
+      { id: "t2", icon: "calendar", title: "마루와벽 실측 날짜 고르기", sub: "오늘 18:00까지 · 11.25(수) 오전 · 11.26(목) 오후", due: true, action: { label: "날짜 고르기", say: "마루와벽 날짜 고르기" } },
+    ],
+    waiting: [],
+    news: [
+      { id: "n1", icon: "file", title: "결도배가 견적서 2판을 보냈어요", sub: `어제 20:14 · 1판보다 +${won(D.QUOTES.change)}` },
+      { id: "n2", icon: "chat", title: "마루와벽이 채팅에 사진 2장을 보냈어요", sub: "어제 21:03", action: { label: "채팅", href: "/chat" } },
+    ],
+    know: [{ id: "k1", icon: "bulb", title: D.KNOW.move.title, sub: "공사 전날 준비물 · 표준 시방서", action: { label: "보기", say: "알아 두기 보여 줘" } }],
+  };
+}
 
 // ───── 보드
 
-const STEP: Record<Stage, number> = { address: 0, home: 0, standard: 1, vendors: 2, requested: 3, slots: 3, booked: 3, compare: 4, confirmed: 4, dates: 5, final: 6 };
+const STEP: Record<Stage, number> = { standard: 1, vendors: 2, requested: 3, slots: 3, booked: 3, compare: 4, confirmed: 4, dates: 5, final: 6 };
 function boardOf(s: State): BoardOut {
   const i = STEP[s.stage];
-  const known = s.stage !== "address";
-  const facts = known ? ["서울 노원구 상계동", "상계 푸른숲마을 7단지", "전용 84.97㎡", "34평형", ...(i >= 1 ? ["살면서 공사", "도배 · 실크"] : [])] : [];
+  const facts = [...D.HOME.facts, ...(s.demolition ? [`철거 ${DEMO_LABEL[s.demolition]}`] : [])];
   const g = s.quoteVer === 2 ? D.QUOTES.gyeol2 : D.QUOTES.gyeol1;
   const money: BoardOut["money"] =
-    i === 0 ? null
-      : s.stage === "compare" ? { label: "받은 견적서 · 부가세 포함", range: [g.total_won, D.QUOTES.bareun1.total_won] }
-        : i >= 4 ? { label: "확정 금액 · 부가세 포함", won: g.total_won }
-          : { label: "표준견적서 · 부가세 포함", won: D.STANDARD.total_won };
+    s.stage === "compare" ? { label: "받은 견적서 · 부가세 포함", range: [g.total_won, D.QUOTES.bareun1.total_won] }
+      : i >= 4 ? { label: "확정 금액 · 부가세 포함", won: g.total_won }
+        : { label: "표준견적서 · 부가세 포함", won: D.STANDARD.total_won };
   const picked = D.VENDORS.filter((v) => s.picks.includes(v.key));
   const vendors: BoardOut["vendors"] =
     s.stage === "vendors" ? { title: `고른 업체 ${picked.length}/3`, rows: picked.map((v) => ({ name: v.name, state: "need", text: "가견적", won: v.est })) }
@@ -366,28 +386,29 @@ function boardOf(s: State): BoardOut {
   const period: BoardOut["period"] =
     s.stage === "dates" || s.stage === "final"
       ? { label: "공사", value: rangeText(D.WORK.start, D.WORK.end, { weekday: true }), sub: s.stage === "final" ? "확정 공정표" : "수락 전" }
-      : i >= 1 ? { label: "공사 시작 희망", value: dateLong(D.WISH.work_wish_on), sub: `입주 희망 ${dateLong(D.WISH.move_in)}` } : null;
-  const docs = i >= 1
-    ? [{ label: "표준견적서", href: href(s, "/standard") }, { label: s.stage === "final" ? "확정 공정표" : "예상 공정표", href: href(s, "/plan") },
-      ...(i >= 4 ? [{ label: "실측 견적서", href: href(s, "/quotes") }] : []), ...(i >= 4 ? [{ label: "서류 모두", href: href(s, "/docs") }] : [])]
-    : [];
-  const todo = ({ address: 1, home: 1, standard: 0, vendors: 1, requested: 0, slots: 1, booked: 0, compare: s.script === "today" ? 2 : 1, confirmed: 0, dates: 1, final: 0 } as Record<Stage, number>)[s.stage];
-  const waiting = ({ address: 0, home: 0, standard: 0, vendors: 0, requested: picked.length, slots: 1, booked: 3, compare: 0, confirmed: 1, dates: 0, final: 0 } as Record<Stage, number>)[s.stage];
+      : { label: "공사 시작 희망", value: dateLong(D.WISH.work_wish_on) };
+  const docs = [{ label: "표준견적서", href: href(s, "/standard") }, { label: s.stage === "final" ? "확정 공정표" : "예상 공정표", href: href(s, "/plan") },
+    ...(i >= 4 ? [{ label: "실측 견적서", href: href(s, "/quotes") }] : [])];
+  const open = Object.values(s.actions).filter((a) => a.status === "proposed").length;
+  const waiting = ({ standard: 0, vendors: 0, requested: picked.length, slots: 1, booked: 3, compare: 0, confirmed: 1, dates: 0, final: 0 } as Record<Stage, number>)[s.stage];
   return {
-    project_name: "상계동 아파트 도배", step: i, facts, confirmed: i >= 1, todo, waiting, money, vendors, period, docs,
-    plan_example: i === 0, memory: s.memory, today_pin: s.script === "today" && !s.todayDismissed ? 2 : 0,
+    project_name: "노원구 아파트 도배", step: i, facts, confirmed: true, todo: open, waiting, money, vendors, period, docs,
+    plan_example: s.stage !== "final", memory: [], today_pin: s.script === "today" && !s.todayDismissed ? 2 : 0,
   };
 }
 
 // ───── 턴 대답
 
-function learn(s: State, text: string) {
+function learn(text: string) {
   const rules: [RegExp, MemoryOut["key"]][] = [[/오전|오후|주말|평일/, "avail_half"], [/냄새|친환경|풀/, "material"], [/강아지|고양이|반려/, "pet"], [/살면서|비어 있|빈 집/, "living"]];
+  let m = readMemory();
   for (const [re, key] of rules) {
-    if (!re.test(text) || text.length > 40) continue;
+    // 카드에서 고른 날짜 말('11.25(수) 오후로 할래요')은 기억하지 않아요
+    if (!re.test(text) || text.length > 40 || /\d+\.\d+/.test(text)) continue;
     const value = text.replace(/[.!?]+$/, "").slice(0, 30);
-    s.memory = [...s.memory.filter((m) => m.key !== key), { id: nextId(s, "mem"), key, value, evidence_message_id: "u", evidence_quote: text }].slice(-12);
+    m = [...m.filter((x) => x.key !== key), { id: `mem-${Date.now().toString(36)}-${key}`, key, value, evidence_message_id: "u", evidence_quote: text }];
   }
+  writeMemory(m);
 }
 
 function respond(s: State, body: TurnIn, turnId: string): Plan {
@@ -399,23 +420,10 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
   const answer = (t: string, links: { label: string; href: string }[] = [], chips = s.chips) =>
     reply([step({ type: "status", data: { text: "답을 찾고 있어요" } }, 300), step({ type: "card", data: answerCard(s, t, links) }, 500), done(s, chips)]);
 
-  if (cardId === "home-search" && typeof choice === "string") return reply(addressPicked(s, choice));
-  if (cardId === "home-manual" && typeof choice === "string") return reply(manualPicked(s, choice));
-  if (cardId === "picks" && Array.isArray(choice)) return reply(repick(s, choice));
+  if (cardId === "home" && typeof choice === "string" && choice.startsWith("demolition:")) return reply(demolitionAsked(s, choice.slice(11) as Demolition));
+  if (cardId === "picks-dobae" && Array.isArray(choice)) return reply(repick(s, choice));
   if (cardId.startsWith("slots-") && typeof choice === "string") return reply(reslot(s, cardId === "slots-maru" ? "maru" : "gyeol", choice));
 
-  if (s.stage === "address") {
-    const hit = D.HOME.hits.find((h) => text.includes(h.name) || (text.length >= 2 && h.name.includes(text)));
-    if (hit) return reply(addressPicked(s, hit.id));
-    if (/평/.test(text) || /주소 없이/.test(text)) return reply(manualStart(s));
-    return reply([
-      step({ type: "status", data: { text: "주소를 찾고 있어요" } }, 300),
-      step({ type: "card", data: homeSearch(text, D.HOME.hits) }, 500),
-      step({ type: "token", data: { text: "비슷한 곳을 찾았어요. 맞는 주소를 골라 주세요." } }, 260),
-      done(s, s.chips),
-    ]);
-  }
-  if (/직접 고칠/.test(text)) return reply(manualStart(s));
   if (/다시 만들어/.test(text)) {
     if (/실측 요청/.test(text)) return reply(vendorsBeat(s));
     if (/확정/.test(text)) return reply(compareBeat(s, true));
@@ -426,29 +434,38 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
       return reply([step({ type: "card", data: datesCard(s, "dates") }, 400), ...close, step({ type: "action", data: datesAction(s) }, 300), done(s, s.chips)]);
     }
   }
-  if (s.stage === "standard" && /업체/.test(text) && !/다른/.test(text)) return reply(vendorsBeat(s));
+  if ((s.stage === "standard" || s.stage === "vendors") && /업체/.test(text) && /추천|골라/.test(text)) return reply(vendorsBeat(s));
   if (/다른 업체/.test(text)) return answer("업체 목록에서 더 볼 수 있어요. 가견적 낮은 순으로 보여요.", [{ label: "업체 목록 열기", href: href(s, "/vendors") }]);
   if (/가견적/.test(text)) return answer("가견적은 업체가 확인한 단가에 믿집이 센 수량을 곱해 계산 엔진이 만든 금액이에요. 실측 뒤 업체가 보내는 견적서와 달라질 수 있어요.", [{ label: "표준견적서 보기", href: href(s, "/standard") }]);
   if (/견적서 비교|비교 보기/.test(text)) return reply(compareBeat(s, true));
   if (/마루와벽/.test(text) && /날짜|고르/.test(text)) return reply(maruBeat(s));
   if (/오늘은 그만/.test(text)) {
     s.todayDismissed = true;
-    return reply([step({ type: "card", data: todayClosed(s) }, 200), step({ type: "token", data: { text: "알겠어요. 오늘은 더 알리지 않고, 정할 일이 바뀌면 다시 알려 드릴게요." } }, 300), done(s, ["견적서 비교 보기", "마루와벽 날짜 고르기"])]);
+    return reply([step({ type: "card", data: { card_id: "today", kind: "today", data: todayData(s) } }, 200), step({ type: "token", data: { text: "알겠어요. 오늘은 더 알리지 않고, 정할 일이 바뀌면 다시 알려 드릴게요." } }, 300), done(s, ["견적서 비교 보기", "마루와벽 날짜 고르기"])]);
   }
   if (/준비물|알아 두기/.test(text)) return reply([step({ type: "status", data: { text: "자료를 찾고 있어요" } }, 300), step({ type: "card", data: knowCard() }, 500), done(s, s.chips)]);
   if (/평면도/.test(text)) {
     const card: CardOut<"floorplan_links"> = {
       card_id: nextId(s, "floor"), kind: "floorplan_links",
       data: {
-        complex: D.HOME.complex.name,
+        complex: "상계 푸른숲마을 7단지",
         links: [{ label: "세움터 건축물대장 평면도", href: "https://www.eais.go.kr", source: "국토교통부 세움터" }, { label: "정부24 건축물대장 열람", href: "https://www.gov.kr", source: "정부24" }],
         note: "평면도 그림은 믿집이 찾아 넣지 않아요. 받은 파일을 보드에 올리면 실측 때 같이 봐요.",
       },
     };
     return reply([step({ type: "status", data: { text: "받을 곳을 찾고 있어요" } }, 300), step({ type: "card", data: card }, 600), done(s, s.chips)]);
   }
+  if (/풀이/.test(text)) {
+    return reply([
+      step({ type: "status", data: { text: "표준견적서를 읽고 있어요" } }, 300),
+      step({ type: "card", data: standardCard(s) }, 500),
+      ...sentences("가장 큰 줄은 벽지 값과 도배 품이에요. 짐 옮기기와 부분 보수는 실측 뒤에 바뀔 수 있어요."),
+      done(s, ["업체 추천해 줘", "가견적은 어떻게 계산해요?"]),
+    ]);
+  }
   if (/표준견적서/.test(text)) return answer("표준견적서는 공공 기준 단가로 믿집이 계산한 참고 금액이에요. 업체 견적이 아니에요.", [{ label: "표준견적서 열기", href: href(s, "/standard") }]);
   if (/공정표/.test(text)) return answer("공정표는 반나절 단위로 일을 놓고 하루 단위 날짜로 보여 줘요.", [{ label: "공정표 열기", href: href(s, "/plan") }]);
+  if (/순서/.test(text)) return answer("집 정보 → 표준견적서 → 업체 고르기 → 실측 → 견적서 비교 · 확정 → 공사 날짜 순서예요. 비서가 단계마다 알려 드려요.");
   if (/희망 기간/.test(text)) return answer("희망 기간은 요청서에서 바꿀 수 있어요. 보내기 전이라면 승인 카드에 바로 반영돼요.", [{ label: "요청서 열기", href: href(s, "/visits/new") }]);
   if (/폐기물/.test(text)) return answer("바른벽 견적서에는 폐기물 처리가 적혀 있지 않아요. 채팅에 물어볼 말을 넣어 둘게요. 보내기는 직접 눌러 주세요.", [{ label: "채팅 열기", href: "/chat" }]);
   if (/다른 시간|달력/.test(text)) return answer("달력에서 업체가 답한 기간 안의 반나절을 직접 고를 수 있어요.", [{ label: "실측 일정 열기", href: href(s, "/visits") }]);
@@ -459,31 +476,21 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
   return answer("예시 화면이라 정해 둔 말에만 답해요. 아래 칩이나 카드의 단추로 이어 가 보세요.");
 }
 
-function addressPicked(s: State, hitId: string): Step[] {
-  const hit = D.HOME.hits.find((h) => h.id === hitId) ?? D.HOME.hits[0];
-  const task: TaskOut = { task_id: "task-home", title: "단지 · 면적 찾기", state: "running", at: s.clock, sources: [] };
-  const homeAct = makeAction(s, "home_info", { title: "집 정보 저장", approve_label: "맞아요" }, D.T("2026-11-28", "10:00"), { target_ver: "home-1" });
+/** 철거 범위를 고르면 비서가 '집 정보 저장' 제안을 만들어요(승인해야 저장) */
+function demolitionAsked(s: State, key: Demolition): Step[] {
+  if (!DEMO_LABEL[key]) return [done(s, s.chips)];
+  const close = closeOpen(s, "home_info");
+  const act = makeAction(s, "home_info", {
+    title: "집 정보 저장",
+    rows: [{ label: "철거 범위", value: DEMO_LABEL[key], sub: `지금 ${s.demolition ? DEMO_LABEL[s.demolition] : "없음"}` }],
+    note: "저장하면 표준견적서를 새로 계산해요",
+    approve_label: "맞아요, 저장",
+  }, D.T("2026-11-28", "10:00"), { target_ver: "3" });
+  const card = homeCard(s, { saved: false, action_id: act.action_id, changes: [{ label: "철거 범위", before: s.demolition ? DEMO_LABEL[s.demolition] : null, after: DEMO_LABEL[key] }], demolition: key });
   return [
-    step({ type: "card", data: homeSearch(hit.name, D.HOME.hits, hit.id) }, 0),
-    step({ type: "status", data: { text: "단지 · 면적을 찾고 있어요", task } }, 250),
-    step({ type: "status", data: { text: "찾았어요", task: { ...task, state: "done", at: D.T("2026-11-21", "10:02"), sources: D.HOME.sources } } }, 1100, { clock: D.T("2026-11-21", "10:02"), dup: true }),
-    step({ type: "action", data: homeAct }, 0),
-    step({ type: "card", data: homeConfirm(homeAct.action_id, false) }, 350, { apply: (x) => { x.stage = "home"; } }),
-    done(s, ["직접 고칠게요", "평면도는 어디서 받아요?"]),
-  ];
-}
-function manualStart(s: State): Step[] {
-  const card: CardOut<"home_info"> = { card_id: "home-manual", kind: "home_info", say: "평형만 알아도 시작할 수 있어요.", data: { phase: "manual", pyeong_options: D.HOME.pyeongs, picked: null } };
-  return [step({ type: "card", data: card }, 400), done(s, s.chips)];
-}
-function manualPicked(s: State, pyeong: string): Step[] {
-  const homeAct = makeAction(s, "home_info", { title: "집 정보 저장", approve_label: "맞아요" }, D.T("2026-11-28", "10:00"), { target_ver: "home-1" });
-  const card: CardOut<"home_info"> = { card_id: "home-manual", kind: "home_info", data: { phase: "manual", pyeong_options: D.HOME.pyeongs, picked: pyeong } };
-  return [
-    step({ type: "card", data: card }, 0),
-    step({ type: "action", data: homeAct }, 0),
-    step({ type: "card", data: homeConfirm(homeAct.action_id, false) }, 600, { apply: (x) => { x.stage = "home"; } }),
-    done(s, ["직접 고칠게요"]),
+    ...close, step({ type: "action", data: act }, 200), step({ type: "card", data: { ...card, say: "이 집 정보가 맞는지 확인해 주세요." } }, 300),
+    ...sentences(`철거 범위를 '${DEMO_LABEL[key]}'로 바꿔 둘게요. 집 카드에서 [맞아요, 저장]을 누르면 표준견적서를 다시 계산해요.`),
+    done(s, s.chips),
   ];
 }
 function vendorsBeat(s: State): Step[] {
@@ -495,7 +502,7 @@ function vendorsBeat(s: State): Step[] {
     ...close,
     step({ type: "action", data: act }, 400, { apply: (x) => { x.stage = "vendors"; } }),
     ...sentences("세 곳 모두 단가를 확인한 업체예요. 고른 곳에만 실측 요청이 가요."),
-    done(s, ["다른 업체도 보기", "희망 기간 바꾸기", "가견적은 어떻게 계산해요?"]),
+    done(s, ["가견적은 어떻게 계산해요?", "실측은 무엇을 봐요?"]),
   ];
 }
 function repick(s: State, keys: string[]): Step[] {
@@ -517,24 +524,18 @@ function compareBeat(s: State, inline: boolean): Step[] {
     ...sentences(s.quoteVer === 2 ? "결도배 2판은 1판보다 금액 하나만 바뀌었어요. 바른벽은 폐기물 처리가 적혀 있지 않아 확정 전에 물어보면 좋아요." : "두 곳 모두 철거는 포함이에요. 바른벽은 폐기물 처리가 적혀 있지 않아 확정 전에 물어보면 좋아요."),
     ...close,
     step({ type: "action", data: confirmAction(s) }, 300, { apply: (x) => { x.stage = "compare"; } }),
-    done(s, ["바른벽에 폐기물 묻기", "마루와벽도 기다릴래요", "표준견적서 다시 보기"]),
+    done(s, ["폐기물 처리도 포함인가요?", "표준견적서 다시 보기"]),
   ];
 }
 function maruBeat(s: State): Step[] {
   const close = closeOpen(s, "visit_slot");
   return [step({ type: "card", data: slotsCard(s, "maru", "m1") }, 600), ...close, step({ type: "action", data: slotAction(s, "maru", "m1") }, 300), done(s, s.chips)];
 }
-function todayClosed(s: State): CardOut<"today"> {
-  const hit = s.items.flatMap((x) => (x.role === "assistant" ? x.parts : [])).find((p) => p.t === "card" && p.card.card_id === "today");
-  const card = hit && hit.t === "card" ? (hit.card as CardOut<"today">) : null;
-  return { card_id: "today", kind: "today", data: { ...(card?.data ?? { date: "2026-11-24", nudge_id: null, todo: [], waiting: [], news: [], know: [] }), dismissed: true } };
-}
 
 // ───── 승인 뒤 이어지는 일(서버가 먼저 보내는 턴)
 
 function follow(s: State, a: ActionOut) {
   switch (a.kind) {
-    case "home_info": later(s, "standard", 500); return;
     case "visit_request": later(s, "sent", 600); later(s, "answered", 3400); return;
     case "visit_slot":
       if (a.summary.title.startsWith("마루와벽")) { later(s, "maruBooked", 500); return; }
@@ -548,13 +549,6 @@ function follow(s: State, a: ActionOut) {
 /** 이어질 일 하나: 대본 시계를 옮기고(날이 바뀌면 날짜 줄이 생겨요) 보낼 이벤트 */
 function beatOf(s: State, beat: Beat): { clock?: string; steps: Step[] } {
   switch (beat) {
-    case "standard":
-      return { steps: [
-        step({ type: "status", data: { text: "표준견적서를 계산하고 있어요" } }, 300),
-        step({ type: "card", data: standardCard(s) }, 900, { apply: (x) => { x.stage = "standard"; } }),
-        ...sentences("가장 큰 줄은 벽지 값과 도배 품이에요. 짐 옮기기와 부분 보수는 실측 뒤에 바뀔 수 있어요."),
-        done(s, ["업체 추천해 줘", "가견적은 어떻게 계산해요?", "예상 공정표 보기"], { suggest: { id: "sg-vendors", text: "업체 3곳을 골라 둘까요?", why: "노원구에서 가견적을 낸 도배 업체가 5곳 있어요", say: "업체 추천해 줘" } }),
-      ] };
     case "sent":
       return { steps: [
         step({ type: "status", data: { text: "업체에 보냈어요", task: visitTask(s, "sent") } }, 300, { apply: (x) => { x.stage = "requested"; } }),
@@ -569,7 +563,7 @@ function beatOf(s: State, beat: Beat): { clock?: string; steps: Step[] } {
         ...closeOpen(s, "visit_slot"),
         step({ type: "card", data: slotsCard(s, "gyeol", "s1") }, 700),
         step({ type: "action", data: slotAction(s, "gyeol", "s1") }, 300),
-        done(s, ["다른 시간 볼래요", "실측은 무엇을 봐요?"]),
+        done(s, ["다른 시간도 볼래요", "실측은 무엇을 봐요?"]),
       ] };
     case "booked":
       return { steps: [
@@ -597,7 +591,7 @@ function beatOf(s: State, beat: Beat): { clock?: string; steps: Step[] } {
       return { clock: D.T("2026-11-27", "11:00"), steps: [
         step({ type: "card", data: datesCard(s, "dates") }, 500, { apply: (x) => { x.stage = "dates"; } }),
         step({ type: "action", data: datesAction(s) }, 400),
-        done(s, ["다른 날짜 요청하기", "공정표 열기"]),
+        done(s, ["다른 날짜 요청하기", "공정표 보기"]),
       ] };
     case "final":
       return { steps: [
@@ -605,7 +599,7 @@ function beatOf(s: State, beat: Beat): { clock?: string; steps: Step[] } {
         step({ type: "card", data: datesCard(s, "final") }, 900, { apply: (x) => { x.stage = "final"; } }),
         step({ type: "card", data: knowCard() }, 500),
         ...sentences("공사 전날 저녁 6시에 준비물을 한 번 더 알려 드릴게요."),
-        done(s, ["공사 전날 준비물", "공정표 열기", "달력에 넣기"]),
+        done(s, ["공사 전날 준비물", "공정표 보기", "달력에 넣기"]),
       ] };
   }
 }
@@ -653,6 +647,10 @@ async function run(pid: string, turnId: string, steps: Step[], emit: (e: TurnEve
 
 // ───── 바깥에 보이는 함수(lib/api/assistant.ts가 불러요)
 
+export async function latest(pid: string): Promise<ThreadOut | null> {
+  const s = load(pid);
+  return s.items.length ? { chat_id: "chat-mock", rev: s.rev, updated_at: s.clock } : null;
+}
 export async function feed(pid: string): Promise<FeedPage> {
   const s = load(pid);
   return { items: s.items, before: null, rev: s.rev, chips: s.chips, now: s.clock };
@@ -660,13 +658,19 @@ export async function feed(pid: string): Promise<FeedPage> {
 export async function board(pid: string): Promise<BoardOut> {
   return boardOf(load(pid));
 }
+export async function today(pid: string): Promise<TodayData> {
+  return todayData(load(pid));
+}
+export async function health(): Promise<HealthOut> {
+  return { mode: "llm", reason: "ok" };
+}
 export async function turn(body: TurnIn, emit: (e: TurnEvent) => void, signal?: AbortSignal): Promise<void> {
   const pid = body.project_id;
   await enqueue(pid, async () => {
     const s = load(pid);
     const uid = `u-${body.client_key}`;
     if (!s.items.some((x) => x.id === uid)) s.items = [...s.items, { id: uid, role: "user", at: s.clock, text: body.text }];
-    learn(s, body.text);
+    learn(body.text);
     const turnId = `t-${++s.n}`;
     save(s);
     const plan = respond(s, body, turnId);
@@ -675,23 +679,24 @@ export async function turn(body: TurnIn, emit: (e: TurnEvent) => void, signal?: 
     plan.after?.(load(pid));
   });
 }
-export async function actions(pid: string): Promise<ActionOut[]> {
-  return Object.values(load(pid).actions).filter((a) => a.status === "proposed");
+export async function actions(pid: string, status?: ActionStatus): Promise<ActionOut[]> {
+  return Object.values(load(pid).actions).filter((a) => !status || a.status === status);
 }
 export async function approve(pid: string, actionId: string, _clientKey: string): Promise<ActionOut> {
   return enqueue(pid, async () => {
     const s = load(pid);
     const a = s.actions[actionId];
-    if (!a) throw new ApiError(404, "not_found", "제안을 찾지 못했어요.");
+    if (!a) throw new ApiError(404, "not_found", "제안을 찾을 수 없어요.");
     if (a.status === "executed") return a;
-    if (a.status !== "proposed") throw new ApiError(409, "action_closed", a.error_code === "replaced" ? "새 카드로 바뀐 제안이에요." : "이미 끝난 제안이에요.");
+    if (a.status !== "proposed") throw new ApiError(409, a.status === "expired" && a.error_code === "due" ? "expired" : "action_closed", a.error_code === "replaced" ? "새 카드로 바뀐 제안이에요." : "기한이 지난 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.");
     await sleep(700);
     if (a.kind === "vendor_confirm" && s.quoteFailOnce && s.quoteVer === 1) {
-      // 그사이 결도배가 2판을 보냈어요 → 옛 행동은 실패(quote_changed), 새 판 + 차액으로 새 행동
+      // 그사이 결도배가 2판을 보냈어요 → 옛 행동은 실패(quote_changed), 새 판 + 차액으로 새 행동(supersedes)
       s.quoteFailOnce = false;
       s.quoteVer = 2;
       s.clock = D.T("2026-11-26", "18:41");
-      setAction(s, { ...a, status: "failed", error_code: "quote_changed" });
+      const failed: ActionOut = { ...a, status: "failed", error_code: "quote_changed" };
+      s.actions[a.action_id] = failed;
       const fresh = confirmAction(s, a.action_id);
       s.items = s.items.map((it) => (it.role === "assistant" ? { ...it, parts: it.parts.map((p) => (p.t === "action" && p.action.action_id === a.action_id ? { t: "action" as const, action: fresh } : p)) } : it));
       s.items = replaceCard(s.items, compareCard(s));
@@ -709,7 +714,11 @@ export async function approve(pid: string, actionId: string, _clientKey: string)
                 : { text: "했어요" };
     const fin: ActionOut = { ...a, status: "executed", decided_at: at, executed_at: at, result };
     setAction(s, fin);
-    if (a.kind === "home_info") s.items = replaceCard(s.items, homeConfirm(a.action_id, true));
+    if (a.kind === "home_info") {
+      const picked = /전체/.test(a.summary.rows?.[0]?.value ?? "") ? "full" : /일부/.test(a.summary.rows?.[0]?.value ?? "") ? "partial" : "none";
+      s.demolition = picked;
+      s.items = replaceCard(s.items, homeCard(s, { action_id: a.action_id, saved: true }));
+    }
     save(s);
     follow(s, fin);
     return fin;
@@ -719,7 +728,7 @@ export async function reject(pid: string, actionId: string): Promise<ActionOut> 
   return enqueue(pid, async () => {
     const s = load(pid);
     const a = s.actions[actionId];
-    if (!a) throw new ApiError(404, "not_found", "제안을 찾지 못했어요.");
+    if (!a) throw new ApiError(404, "not_found", "제안을 찾을 수 없어요.");
     if (a.status !== "proposed") return a;
     const fin: ActionOut = { ...a, status: "rejected", decided_at: s.clock };
     setAction(s, fin);
@@ -727,28 +736,23 @@ export async function reject(pid: string, actionId: string): Promise<ActionOut> 
     return fin;
   });
 }
-export async function dismiss(pid: string, _nudgeId: string): Promise<CardOut | null> {
+export async function openNudge(_pid: string, _nudgeId: string): Promise<boolean> {
+  return true;
+}
+export async function dismiss(pid: string, nudgeId: string): Promise<boolean> {
   const s = load(pid);
-  s.todayDismissed = true;
-  const card = todayClosed(s);
-  s.items = replaceCard(s.items, card);
+  if (nudgeId === "nudge-today") {
+    s.todayDismissed = true;
+    s.items = replaceCard(s.items, { card_id: "today", kind: "today", data: todayData(s) });
+  }
   save(s);
-  return card;
+  return true;
 }
-export async function memory(pid: string): Promise<MemoryOut[]> {
-  return load(pid).memory;
+export async function memory(): Promise<MemoryOut[]> {
+  return readMemory();
 }
-export async function forget(pid: string, id: string): Promise<void> {
-  const s = load(pid);
-  s.memory = s.memory.filter((m) => m.id !== id);
-  save(s);
-}
-export async function searchAddress(q: string): Promise<AddressHit[]> {
-  await sleep(250);
-  const t = q.trim();
-  if (!t) return [];
-  const hits = D.HOME.hits.filter((h) => h.name.includes(t) || h.road.includes(t) || t.includes(h.name));
-  return hits.length ? hits : /상계|푸른|노원/.test(t) ? D.HOME.hits : [];
+export async function forget(id: string): Promise<void> {
+  writeMemory(readMemory().filter((m) => m.id !== id));
 }
 export async function notifications(pid: string): Promise<NotifyPage> {
   const s = load(pid);
@@ -778,7 +782,7 @@ export function scriptOf(pid: string): MockScript {
   return load(pid).script;
 }
 
-// ───── 업체(V1 · V3 · 오늘 브리핑)
+// ───── 업체(V1 · V3 · 오늘 브리핑 · 비서 소식 · 승인)
 
 const vendorActs = new Map<string, ActionOut>();
 /** 'YYYY-MM-DD'에 n일 더하기(목업 서버 안에서만) */
@@ -792,11 +796,16 @@ function halvesFrom(start: string): VendorBriefData["halves"] {
   const open = days.filter((d) => !d.off).length * 2 - Object.keys(taken).length;
   return { days, taken, open_count: open };
 }
+const windowAction = (id: string, start: string, end: string): ActionOut => vendorActs.get(id) ?? {
+  action_id: id, kind: "window_answer", status: "proposed",
+  summary: { title: "이 기간으로 답하기", rows: [{ label: "기간", value: rangeText(start, end, { weekday: true }) }], note: "고객이 이 기간 안에서 반나절을 골라요", approve_label: "이 기간으로 답하기" },
+  target_ver: "1", expires_at: D.T("2026-11-23", "10:06"),
+};
 
 export async function vendorBrief(visitId: string, seed?: BriefSeed): Promise<VendorBriefData> {
   await sleep(200);
   const region = seed?.region ?? "노원구 상계동";
-  const area = seed ? seed.area : "전용 84.97㎡";
+  const area = seed ? seed.area : "공급 112.4㎡";
   const grade = seed?.grade ?? "실크";
   const hapji = /합지/.test(grade);
   const wish = seed?.wish ?? { start: "2026-11-23", end: "2026-12-04" };
@@ -826,7 +835,7 @@ export async function vendorBrief(visitId: string, seed?: BriefSeed): Promise<Ve
     suggest: act && act.status !== "proposed" ? null : { action_id: id, start: work[0].day, end: work[work.length - 1].day, excluded: halves.days.filter((d) => d.off).map((d) => d.day), instant: false, open_count: halves.open_count },
     due_at: seed?.due_at ?? D.T("2026-11-23", "10:06"),
     memo: seed ? seed.memo ?? null : "아이 방은 냄새 적은 풀이면 좋겠어요.",
-    sentence: "희망 기간 첫 주에 빈 반나절이 많아요. 이 기간으로 답하면 고객이 바로 고를 수 있어요.",
+    sentence: null,
   };
 }
 export async function quoteChecklist(visitId: string): Promise<QuoteChecklistData> {
@@ -841,19 +850,33 @@ export async function quoteChecklist(visitId: string): Promise<QuoteChecklistDat
 }
 export async function approveVendor(actionId: string): Promise<ActionOut> {
   await sleep(700);
-  const a: ActionOut = {
-    action_id: actionId, kind: "window_answer", status: "executed",
-    summary: { title: "이 기간으로 답하기", approve_label: "이 기간으로 답하기" },
-    expires_at: D.T("2026-11-23", "10:06"), executed_at: D.T("2026-11-21", "11:20"),
-    result: { text: "기간을 보냈어요. 고객이 날짜를 고르면 알려 드릴게요", href: "/vendor?tab=waiting", label: "기다림 보기" },
-  };
+  const cur = windowAction(actionId, "2026-11-23", "2026-11-28");
+  if (cur.status === "executed") return cur;
+  if (cur.status !== "proposed") throw new ApiError(409, "action_closed", "거절한 제안이에요.");
+  const a: ActionOut = { ...cur, status: "executed", decided_at: D.T("2026-11-21", "11:20"), executed_at: D.T("2026-11-21", "11:20"),
+    result: { text: "기간을 보냈어요. 고객이 날짜를 고르면 알려 드릴게요", href: "/vendor?tab=waiting", label: "기다림 보기" } };
   vendorActs.set(actionId, a);
   return a;
 }
 export async function rejectVendor(actionId: string): Promise<ActionOut> {
-  const a: ActionOut = { action_id: actionId, kind: "window_answer", status: "rejected", summary: { title: "이 기간으로 답하기", approve_label: "이 기간으로 답하기" }, expires_at: D.T("2026-11-23", "10:06") };
+  const a: ActionOut = { ...windowAction(actionId, "2026-11-23", "2026-11-28"), status: "rejected", decided_at: D.T("2026-11-21", "11:20") };
   vendorActs.set(actionId, a);
   return a;
+}
+const VENDOR_SEED_ACT = "vact-feed-1";
+export async function vendorActions(status?: ActionStatus): Promise<ActionOut[]> {
+  const all = [windowAction(VENDOR_SEED_ACT, "2026-11-24", "2026-11-28"), ...[...vendorActs.values()].filter((a) => a.action_id !== VENDOR_SEED_ACT)];
+  return all.filter((a) => !status || a.status === status);
+}
+export async function vendorFeed(): Promise<FeedPage> {
+  const a = windowAction(VENDOR_SEED_ACT, "2026-11-24", "2026-11-28");
+  return {
+    items: [{
+      id: "va-1", role: "assistant", at: D.T("2026-11-21", "09:10"), turn_id: null, done: true,
+      parts: [{ t: "text", src: "guide", text: "중계동 새 요청에 답할 기간을 골라 뒀어요." }, { t: "action", action: a }],
+    }],
+    before: null, rev: 2, chips: [], now: D.T("2026-11-21", "09:30"),
+  };
 }
 export async function vendorToday(): Promise<VendorTodayData> {
   return {
