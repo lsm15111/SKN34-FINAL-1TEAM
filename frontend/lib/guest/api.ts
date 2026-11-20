@@ -2,18 +2,33 @@
 // mock(개발 예시)이면 API 대신 lib/mock/v3a 값을 써요. 예시 모듈은 그때만 불러와요(운영 화면 묶음에 넣지 않게).
 import { ApiError, call, type Schemas } from "@/lib/backend/client";
 import { readGuest, clearGuest, draftOf } from "./store";
-import { checkDraft, projectName, stepName, toHomeInfo, type HomeInfo } from "./info";
+import { checkDraft, projectName, stepName, toHomeInfo, type HomeBody } from "./info";
 
 export type GuestStandard = Schemas["GuestStandardOut"];
 
+/**
+ * 집 정보 몸통 보내기(POST /guest/standard · POST /projects · PATCH /projects/{id}).
+ * 철거 범위(demolition)는 백엔드 담당이 같은 키로 더하는 중이라, 아직 그 칸을 모르는 서버(422, fields에 demolition)면 그 칸만 빼고 한 번 더 보내요.
+ */
+export async function sendHome<T>(method: "POST" | "PATCH", path: string, body: HomeBody, headers?: Record<string, string>): Promise<T> {
+  try {
+    return await call<T>(method, path, body, headers);
+  } catch (e) {
+    const unknownKey = e instanceof ApiError && e.status === 422 && (e.fields ?? []).some((f) => f.loc.includes("demolition"));
+    if (body.demolition === undefined || !unknownKey) throw e;
+    const { demolition: _skip, ...rest } = body;
+    return call<T>(method, path, rest, headers);
+  }
+}
+
 /** 로그인 없이 표준견적서 계산(POST /guest/standard). 서버가 저장하지 않아요 */
-export async function calcGuest(info: HomeInfo, mock: boolean): Promise<GuestStandard> {
+export async function calcGuest(info: HomeBody, mock: boolean): Promise<GuestStandard> {
   if (mock) return (await import("@/lib/mock/v3a/standard")).mockGuestStandard(info);
-  return call<GuestStandard>("POST", "/guest/standard", info);
+  return sendHome<GuestStandard>("POST", "/guest/standard", info);
 }
 
 /** 기기에 둔 답이 다 찼으면 그 API 몸통 */
-export function guestBody(): { key: string; body: HomeInfo } | null {
+export function guestBody(): { key: string; body: HomeBody } | null {
   const g = readGuest();
   if (!g) return null;
   const d = draftOf(g);
@@ -32,7 +47,7 @@ export async function moveGuest(mock: boolean): Promise<{ id: string } | null> {
     clearGuest();
     return { id: g.body.scope === "partial" ? MOCK_PROJECT.part : MOCK_PROJECT.full };
   }
-  const p = await call<Schemas["ProjectOut"]>("POST", "/projects", g.body, { "Idempotency-Key": g.key });
+  const p = await sendHome<Schemas["ProjectOut"]>("POST", "/projects", g.body, { "Idempotency-Key": g.key });
   clearGuest();
   return { id: p.id };
 }

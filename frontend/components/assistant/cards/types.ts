@@ -1,5 +1,5 @@
 // 대화 카드가 받는 것. 카드는 값을 계산하지 않고, 고른 것을 턴(send)이나 승인(approve)으로만 넘겨요.
-import type { ActionOut, AddressHit, CardKind, CardOut, TurnIn } from "@/lib/api/assistant";
+import type { ActionOut, CardKind, CardOut, TurnIn } from "@/lib/api/assistant";
 
 export type CardCtx = {
   projectId: string;
@@ -12,8 +12,9 @@ export type CardCtx = {
   approve: (actionId: string) => void;
   actionOf: (actionId: string) => ActionOut | null;
   pendingOf: (actionId: string) => boolean;
+  /** 전체 화면 카드 안 v3 단추로 이미 처리한 행동 */
+  handledOf: (actionId: string) => boolean;
   dismissNudge: (cardId: string, nudgeId: string) => void;
-  searchAddress: (q: string) => Promise<AddressHit[]>;
 };
 
 export type CardProps<K extends CardKind> = { card: CardOut<K>; ctx: CardCtx; old: boolean };

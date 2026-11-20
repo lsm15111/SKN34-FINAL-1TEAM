@@ -1,15 +1,17 @@
 "use client";
 // 대화 목록(role=log): 날짜가 바뀌면 날짜 줄, 새 말이 오면 그 말 머리로 부드럽게 내려가요.
 // 위를 보고 있으면(사용자가 올려 본 뒤) 끌어내리지 않고 '새 소식 ↓' 단추만 띄워요.
+// 맨 위 '앞 대화 더 보기'는 서버 feed의 앞 쪽(턴 번호 커서)을 읽어 붙여요(보던 자리는 그대로). 대화가 처음이면 인사 한 줄만.
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { FeedItem } from "@/lib/api/assistant";
 import { dateSeoul, dateSpoken } from "@/lib/format";
 import type { CardCtx } from "./cards/types";
+import { SourceTag } from "./kit/StatusTag";
 import { I } from "./kit/icons";
 import { Message, type ActionHandlers } from "./Message";
 import s from "./assistant.module.css";
 
-export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply, scroller, headroom, onRetry }: {
+export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply, scroller, headroom, onRetry, fresh, hasOlder, olderBusy, onOlder }: {
   items: FeedItem[];
   loaded: boolean;
   loadError: string | null;
@@ -23,11 +25,18 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
   /** 단계 띠 높이(말 머리를 그 아래에 맞춰요) */
   headroom: () => number;
   onRetry: () => void;
+  /** 이 공사의 비서 대화가 아직 없어요 */
+  fresh: boolean;
+  hasOlder: boolean;
+  olderBusy: boolean;
+  onOlder: () => void;
 }) {
   const [news, setNews] = useState(false);
   const up = useRef(false);
   const lastTop = useRef(0);
   const first = useRef(true);
+  const keep = useRef<{ h: number; top: number } | null>(null);
+  const prepended = useRef(false);
   const sig = signature(items);
 
   // 사용자가 위로 올려 보면 끌어내리지 않아요. 맨 아래에 닿으면 다시 따라가요
@@ -44,9 +53,22 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
     return () => el.removeEventListener("scroll", onScroll);
   }, [scroller]);
 
+  // 앞 쪽을 붙이면 보던 말이 그 자리에 있게 늘어난 높이만큼 내려요
+  const head = items[0]?.id;
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const k = keep.current;
+    if (!el || !k) return;
+    keep.current = null;
+    prepended.current = true;
+    el.scrollTop = k.top + (el.scrollHeight - k.h);
+    lastTop.current = el.scrollTop;
+  }, [head, scroller]);
+
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el || !items.length) return;
+    if (prepended.current) { prepended.current = false; return; }
     if (first.current) {
       first.current = false;
       el.scrollTop = el.scrollHeight;
@@ -68,7 +90,24 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
   let day = "";
   return (
     <>
+      {hasOlder ? (
+        <div className={s.older}>
+          <button type="button" className={s.textBtn} disabled={olderBusy} aria-busy={olderBusy || undefined}
+            onClick={() => { const el = scroller.current; if (el) keep.current = { h: el.scrollHeight, top: el.scrollTop }; onOlder(); }}>
+            {olderBusy ? "불러오고 있어요" : "앞 대화 더 보기"}
+          </button>
+        </div>
+      ) : null}
       <div className={s.msgs} role="log" aria-label="비서 대화" aria-live="polite" aria-relevant="additions">
+        {fresh && !items.length ? (
+          <div className={s.msg}>
+            <div className={s.av} aria-hidden="true">AI</div>
+            <div className={s.msgBody}>
+              <span className={s.aiTag}><SourceTag src="guide" /></span>
+              <p className={`${s.bubble} ${s.say}`}>공사를 끝까지 챙기는 믿집 비서예요.{"\n"}표준견적서 풀이, 업체 추천, 실측 일정까지 물어보세요.</p>
+            </div>
+          </div>
+        ) : null}
         {items.map((it) => {
           const d = it.at ? dateSeoul(it.at) : day;
           const line = d && d !== day ? <div className={s.day} key={`d-${d}`}>{dateSpoken(d)}</div> : null;

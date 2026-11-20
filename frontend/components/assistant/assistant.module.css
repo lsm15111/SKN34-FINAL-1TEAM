@@ -85,8 +85,11 @@
 .skel i:nth-child(2) { width: 85%; height: 120px; border-radius: var(--mj-radius-card); }
 .newBtn { position: sticky; bottom: 150px; align-self: center; z-index: var(--mj-z-sticky); display: inline-flex; align-items: center; gap: 6px; min-height: var(--mj-hit-min); padding: 0 16px; border: 0; border-radius: var(--mj-radius-pill); background: var(--mj-surface-inverse); color: var(--mj-text-inverse); font: inherit; font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); box-shadow: var(--mj-shadow-overlay); cursor: pointer; }
 .newBtn svg { width: 16px; height: 16px; }
+.older { display: flex; justify-content: center; padding-top: 12px; }
 
 /* 입력 칸 */
+.free { justify-self: start; display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px; border-radius: var(--mj-radius-pill); background: var(--mj-surface-sub); color: var(--mj-text-sub); font-size: var(--mj-type-caption); }
+.free svg { width: 14px; height: 14px; color: var(--mj-text-mute); flex: none; }
 .composer { position: sticky; bottom: 0; z-index: 5; background: linear-gradient(to top, var(--mj-bg) 82%, transparent); padding: 14px 0 max(16px, env(safe-area-inset-bottom, 0px)); display: grid; gap: 10px; }
 .quick { display: flex; gap: 8px; overflow-x: auto; scrollbar-width: none; min-width: 0; }
 .quick::-webkit-scrollbar { display: none; }
@@ -198,7 +201,7 @@
   .composer { grid-template-columns: auto minmax(0, 1fr); }
   .composer > .band { grid-column: 1; grid-row: 1; }
   .composer > .quick { grid-column: 2; grid-row: 1; align-self: center; }
-  .composer > .cbox { grid-column: 1 / -1; }
+  .composer > .cbox, .composer > .free { grid-column: 1 / -1; }
   .drawer { top: auto; left: 0; width: 100%; max-height: 90dvh; border-radius: var(--mj-radius-sheet) var(--mj-radius-sheet) 0 0; animation: up var(--mj-dur-slow) var(--mj-ease-out); }
 }
 @media (max-width: 767px) {

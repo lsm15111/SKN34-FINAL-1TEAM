@@ -1,15 +1,24 @@
 "use client";
 // 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 지금(정할 일 · 기다리는 일) · 낼 금액 · 업체 · 공사 기간 · 서류 · 비서가 기억하는 것.
 // 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
+// 기억 칩은 GET /assistant/memory(다른 담당) 값이에요. API가 아직 없으면(404) 그 칸을 숨겨요. 칩을 누르고 있으면 내가 한 말이 보여요.
 import Link from "next/link";
 import { useEffect, useRef } from "react";
-import type { BoardOut } from "@/lib/api/assistant";
+import type { BoardOut, MemoryOut } from "@/lib/api/assistant";
 import { won } from "@/lib/format";
 import { StatusTag } from "./kit/StatusTag";
 import { I } from "./kit/icons";
 import s from "./assistant.module.css";
 
-export function Board({ board, open, flash, onClose, onForget }: { board: BoardOut | null; open: boolean; flash: number; onClose: () => void; onForget: (id: string) => void }) {
+export function Board({ board, memory, open, flash, onClose, onForget }: {
+  board: BoardOut | null;
+  /** 기억(undefined 읽는 중 · null API 없음) */
+  memory: MemoryOut[] | null | undefined;
+  open: boolean;
+  flash: number;
+  onClose: () => void;
+  onForget: (id: string) => void;
+}) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
     if (!flash || !ref.current) return;
@@ -34,13 +43,13 @@ export function Board({ board, open, flash, onClose, onForget }: { board: BoardO
           <h2 id="board-t" tabIndex={-1}>내 공사 보드</h2>
           <button type="button" className={`${s.x} ${s.boardX}`} aria-label="보드 닫기" onClick={onClose}><I n="x" /></button>
         </div>
-        {!board ? <p className={s.muted}>보드를 불러오고 있어요</p> : <Sections b={board} onForget={onForget} />}
+        {!board ? <p className={s.muted}>보드를 불러오고 있어요</p> : <Sections b={board} memory={memory === undefined ? board.memory : memory} onForget={onForget} />}
       </aside>
     </>
   );
 }
 
-function Sections({ b, onForget }: { b: BoardOut; onForget: (id: string) => void }) {
+function Sections({ b, memory, onForget }: { b: BoardOut; memory: MemoryOut[] | null; onForget: (id: string) => void }) {
   return (
     <>
       <section className={s.bsec}>
@@ -93,19 +102,22 @@ function Sections({ b, onForget }: { b: BoardOut; onForget: (id: string) => void
           <div className={s.links}>{b.docs.map((d) => <Link key={d.href + d.label} href={d.href} scroll={false}>{d.label}</Link>)}</div>
         </section>
       ) : null}
-      <section className={s.bsec}>
-        <h3 className={s.bsecT}>비서가 기억하는 것</h3>
-        {b.memory.length ? (
-          <ul className={s.mem}>
-            {b.memory.map((m) => (
-              <li key={m.id} title={`내가 한 말: ${m.evidence_quote}`}>
-                {m.value}
-                <button type="button" aria-label={`'${m.value}' 지우기`} onClick={() => onForget(m.id)}><I n="x" /></button>
-              </li>
-            ))}
-          </ul>
-        ) : <p className={s.muted}>내가 말한 것만 기억해요</p>}
-      </section>
+      {memory ? (
+        <section className={s.bsec}>
+          <h3 className={s.bsecT}>비서가 기억하는 것</h3>
+          {memory.length ? (
+            <ul className={s.mem}>
+              {memory.map((m) => (
+                <li key={m.id} title={`내가 한 말: ${m.evidence_quote}`}>
+                  {m.value}
+                  <button type="button" aria-label={`'${m.value}' 지우기`} onClick={() => onForget(m.id)}><I n="x" /></button>
+                </li>
+              ))}
+            </ul>
+          ) : <p className={s.muted}>내가 말한 것만 기억해요</p>}
+          <div className={s.links}><Link href="/account">내 정보에서 모두 보기</Link></div>
+        </section>
+      ) : null}
     </>
   );
 }

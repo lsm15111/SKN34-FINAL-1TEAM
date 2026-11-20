@@ -1,33 +1,81 @@
 "use client";
-// 비서 대화 상태 한 곳: feed 읽기 · 턴(SSE) 이어 붙이기 · 승인(멱등 키 · 본 판 · 409 · 만료) · 먼저 말 걸기 · 보드.
-// 대화 원본은 서버 feed예요. 새로 고치면 feed로 다시 그리고, 카드 값은 서버가 바꿔 보내요(화면은 계산하지 않아요).
-import { useCallback, useEffect, useRef, useState } from "react";
+// 비서 대화 상태 한 곳: 다시 열기(threads/latest · feed · board · today) · 턴(SSE) 이어 붙이기 · 끊기면 같은 client_key로 다시 잇기 ·
+// 승인(멱등 키 · 본 판 · 409 · 만료) · 먼저 말 걸기(nudges) · 기억 · 무료 모드 · 전체 화면 카드 안 v3 단추 뒤 다시 읽기.
+// 대화 원본은 서버 feed예요. 카드 값은 서버가 바꿔 보내요(화면은 계산하지 않아요).
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  applyTurnEvent, approveAction, dismissNudge as dismissApi, forgetMemory, getBoard, getFeed, newClientKey, rejectAction, replaceAction,
-  replaceCard, resetMock, searchAddress, seqFilter, streamTurn, subscribeTurns,
-  type ActionOut, type BoardOut, type FeedItem, type TurnEvent, type TurnIn,
+  actionsIn, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth, getLatestThread,
+  getMemory, getToday, kindsForWrite, listActions, newClientKey, openNudge as openApi, rejectAction, replaceAction, resetMock, resetTurn,
+  seqFilter, streamTurn, subscribeTurns,
+  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
-import { ApiError, errorText } from "@/lib/backend/client";
+import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { useStream } from "@/lib/backend/stream";
+import { dateSeoul } from "@/lib/format";
 import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 
 export type Assistant = ReturnType<typeof useAssistant>;
 
+/** 처음 대화(기록 없음)일 때 빠른 답 칩 */
+const FIRST_CHIPS = ["표준견적서 금액 풀이해 줘", "업체 추천해 줘", "공사는 어떤 순서로 해요?"];
+/** 끊긴 턴을 같은 client_key로 다시 이을 때 기다리는 시간(턴 상한 45초를 넘기도록) */
+const RETRY_MS = [1200, 2500, 4000, 6000, 8000, 10000, 12000];
+const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const handledKey = (pid: string) => `mj_v4_handled:${pid}`;
+
+class Dropped extends Error {}
+
 export function useAssistant(projectId: string) {
   const [items, setItems] = useState<FeedItem[]>([]);
+  const [before, setBefore] = useState<number | null>(null);
+  const [olderBusy, setOlderBusy] = useState(false);
+  const [fresh, setFresh] = useState(false);
   const [chips, setChips] = useState<string[]>([]);
   const [now, setNow] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [board, setBoard] = useState<BoardOut | null>(null);
+  const [today, setToday] = useState<TodayData | null>(null);
+  const [open, setOpen] = useState<ActionOut[]>([]);
+  const [handled, setHandled] = useState<Record<string, true>>({});
+  const [health, setHealth] = useState<HealthOut | null>(null);
+  const [memory, setMemory] = useState<MemoryOut[] | null | undefined>(undefined);
+  const [gone, setGone] = useState<Record<string, true>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [flash, setFlash] = useState(0);
   const nowRef = useRef("");
   const runningRef = useRef(false);
   const abortRef = useRef<AbortController | null>(null);
+  const revRef = useRef<number | null>(null);
+  /** 오늘 정할 일 카드 자리: 처음 열었을 때 오늘 비서 말이 없으면 그때 마지막 말 뒤(그날 첫 비서 말). 한 번 정하면 그대로 둬요 */
+  const [todayAt, setTodayAt] = useState<{ after: string | null } | null>(null);
+  const anchored = useRef(false);
+  const itemsRef = useRef<FeedItem[]>([]);
+  const openRef = useRef<ActionOut[]>([]);
   nowRef.current = now;
+  itemsRef.current = items;
+  openRef.current = open;
+
+  const fail = (id: string, msg: string | null) => setErrors((x) => { const { [id]: _, ...rest } = x; return msg ? { ...rest, [id]: msg } : rest; });
+
+  // 화면(v3 단추)에서 처리한 행동 id: 이 탭에만 둬요(서버 행은 그대로라 새 탭에서는 다시 열린 카드로 보여요)
+  useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(handledKey(projectId));
+      const ids: unknown = raw ? JSON.parse(raw) : [];
+      if (Array.isArray(ids)) setHandled(Object.fromEntries(ids.filter((x): x is string => typeof x === "string").map((x) => [x, true as const])));
+    } catch { /* 편의 기능이라 넘어가요 */ }
+  }, [projectId]);
+  const markHandled = useCallback((ids: string[]) => {
+    if (!ids.length) return;
+    setHandled((cur) => {
+      const next = { ...cur, ...Object.fromEntries(ids.map((x) => [x, true as const])) };
+      try { window.sessionStorage.setItem(handledKey(projectId), JSON.stringify(Object.keys(next).slice(-50))); } catch { /* 편의 */ }
+      return next;
+    });
+  }, [projectId]);
 
   const boardKey = useRef("");
   const refreshBoard = useCallback(async () => {
@@ -41,35 +89,71 @@ export function useAssistant(projectId: string) {
     } catch { /* 보드는 다음 소식 때 다시 읽어요 */ }
   }, [projectId]);
 
+  /** 보드 · 오늘 정할 일 · 열린 대기 행동 · 무료 모드 · 기억(대화 옆 값들) */
+  const refreshSide = useCallback(async () => {
+    await Promise.all([
+      refreshBoard(),
+      getToday(projectId).then(setToday).catch(() => undefined),
+      listActions(projectId, "proposed").then(setOpen).catch(() => undefined),
+      getHealth().then(setHealth),
+      getMemory().then(setMemory).catch(() => undefined),
+    ]);
+  }, [projectId, refreshBoard]);
+
+  /** 대화 기록 첫 쪽. 대화가 없으면(처음) 비우고 처음 칩을 보여요 */
+  const loadFeed = useCallback(async () => {
+    const [thread, page] = await Promise.all([getLatestThread(projectId), getFeed(projectId)]);
+    setItems(foldCards(page.items));
+    setBefore(page.before);
+    setNow(page.now);
+    setFresh(!thread && !page.items.length);
+    setChips(page.items.length ? page.chips : FIRST_CHIPS);
+    revRef.current = thread ? thread.rev : 0;
+    if (!anchored.current) {
+      anchored.current = true;
+      const day = dateSeoul(page.now);
+      if (!page.items.some((it) => dateSeoul(it.at) === day)) setTodayAt({ after: page.items[page.items.length - 1]?.id ?? null });
+    }
+  }, [projectId]);
+
   const load = useCallback(async () => {
     try {
-      const page = await getFeed(projectId);
-      setItems(page.items);
-      setChips(page.chips);
-      setNow(page.now);
+      await loadFeed();
       setLoadError(null);
     } catch (e) {
       setLoadError(errorText(e));
     } finally {
       setLoaded(true);
     }
-    void refreshBoard();
-  }, [projectId, refreshBoard]);
+    void refreshSide();
+  }, [loadFeed, refreshSide]);
 
   useEffect(() => {
     void load();
     return () => abortRef.current?.abort();
   }, [load]);
 
+  /** 서버 쪽이 바뀌었을 수 있을 때(실시간 소식 · v3 단추 뒤): 대화가 바뀌었으면(rev) 기록을 다시 읽고 옆 값들을 새로 읽어요 */
+  const resync = useCallback(async (force = false) => {
+    if (runningRef.current) return;
+    try {
+      const t = await getLatestThread(projectId);
+      if (force || (t?.rev ?? 0) !== (revRef.current ?? 0)) await loadFeed();
+    } catch { /* 다음 소식 때 다시 해요 */ }
+    void refreshSide();
+  }, [projectId, loadFeed, refreshSide]);
+
   /** 이벤트 하나 반영(사용자 턴 · 서버가 먼저 보낸 턴 같은 길) */
   const apply = useCallback((turnId: string, ev: TurnEvent) => {
     if (ev.type === "ack" && ev.data.at) setNow(ev.data.at);
     setItems((cur) => applyTurnEvent(cur, turnId, ev, nowRef.current || new Date().toISOString()));
     if (ev.type === "done") {
-      if (ev.data.chips) setChips(ev.data.chips);
-      void refreshBoard();
+      if (ev.data.chips?.length) setChips(ev.data.chips);
+      if (typeof ev.data.rev === "number") revRef.current = ev.data.rev;
+      setFresh(false);
+      void refreshSide();
     }
-  }, [refreshBoard]);
+  }, [refreshSide]);
 
   // 목업: 서버가 먼저 보내는 턴(승인 뒤 이어지는 일 · 먼저 말 걸기). 턴마다 seq를 따로 걸러요
   useEffect(() => {
@@ -81,13 +165,30 @@ export function useAssistant(projectId: string) {
     });
   }, [projectId, apply]);
 
-  // 실제: 실시간 한 줄기(/stream)의 상태 소식이 오면 feed · 보드를 다시 읽어요(턴이 도는 중이면 끝난 뒤)
+  // 실제: 실시간 한 줄기(/stream)의 상태 소식이 오면 대화 · 보드를 다시 읽어요(턴이 도는 중이면 끝난 뒤)
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  useStream(["state", "notif", "resync"], () => {
-    if (ASSISTANT_MOCK) return;
+  const later = useCallback((force: boolean, ms = 400) => {
     if (reloadTimer.current) clearTimeout(reloadTimer.current);
-    reloadTimer.current = setTimeout(() => { if (!runningRef.current) void load(); }, 400);
-  });
+    reloadTimer.current = setTimeout(() => { void resync(force); }, ms);
+  }, [resync]);
+  useStream(["state", "notif", "resync"], () => { if (!ASSISTANT_MOCK) later(false); });
+
+  // 전체 화면 카드 안 v3 단추(사람이 누른 확정 · 수락)가 쓰기를 마치면: 같은 일을 하던 열린 승인 카드는 '처리됨',
+  // 그리고 대화 · 보드 · 열린 대기 행동을 다시 읽어요
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { method, path } = (e as CustomEvent<ApiWrite>).detail ?? { method: "", path: "" };
+      if (!path.startsWith(`/projects/${projectId}`)) return;
+      const kinds = kindsForWrite(method, path, projectId);
+      if (kinds.length) {
+        const all = [...actionsIn(itemsRef.current), ...openRef.current];
+        markHandled([...new Set(all.filter((a) => a.status === "proposed" && kinds.includes(a.kind)).map((a) => a.action_id))]);
+      }
+      later(true, 300);
+    };
+    window.addEventListener(API_WRITE_EVENT, on);
+    return () => window.removeEventListener(API_WRITE_EVENT, on);
+  }, [projectId, markHandled, later]);
 
   const send = useCallback(async (text: string, context?: TurnIn["context"]) => {
     const t = text.trim();
@@ -95,71 +196,162 @@ export function useAssistant(projectId: string) {
     runningRef.current = true;
     setRunning(true);
     const key = newClientKey();
-    setItems((cur) => [...cur, { id: `u-${key}`, role: "user", at: nowRef.current || new Date().toISOString(), text: t }]);
+    const userId = `u-${key}`;
+    setItems((cur) => [...cur, { id: userId, role: "user", at: nowRef.current || new Date().toISOString(), text: t }]);
     const ctl = new AbortController();
     abortRef.current = ctl;
+    const body: TurnIn = { project_id: projectId, client_key: key, text: t, context: context ?? null };
     let turnId = "";
+    let tries = 0;
+    const failMsg = (message: string, code = "send") =>
+      setItems((cur) => [...cur, { id: `a-fail-${key}-${Date.now()}`, role: "assistant", at: nowRef.current, turn_id: null, parts: [], done: true, error: { code, message } }]);
     try {
-      await streamTurn({ project_id: projectId, client_key: key, text: t, context: context ?? null }, (ev) => {
-        if (ev.type === "ack") turnId = ev.data.turn_id;
-        if (turnId) apply(turnId, ev);
-      }, ctl.signal);
-    } catch (e) {
-      // 스트림을 열기 전 오류(409 turn_running · 429 · 404)는 대화에 실패 말로 남겨요
-      const msg = e instanceof ApiError && e.code === "turn_running" ? "앞 답을 만드는 중이에요. 끝나면 다시 보내 주세요." : errorText(e);
-      setItems((cur) => [...cur, { id: `a-fail-${key}`, role: "assistant", at: nowRef.current, turn_id: null, parts: [], done: true, error: { code: "send", message: msg } }]);
+      for (;;) {
+        const again = tries > 0;
+        try {
+          const ended = await streamTurn(body, (ev) => {
+            if (ev.type === "ack") {
+              turnId = ev.data.turn_id;
+              // 같은 client_key로 다시 이으면 서버가 저장한 것을 처음부터 보내요: 이 턴 조각을 비우고 받아요
+              if (again) setItems((cur) => resetTurn(cur, turnId));
+            }
+            if (turnId) apply(turnId, ev);
+          }, ctl.signal);
+          if (ended) break;
+          throw new Dropped();
+        } catch (e) {
+          if (ctl.signal.aborted) return;
+          const ours = e instanceof ApiError && e.code === "turn_running" && !!turnId; // 내 턴이 아직 도는 중(다시 잇기)
+          const drop = e instanceof Dropped || (e instanceof ApiError && e.code === "network");
+          if ((drop || ours) && tries < RETRY_MS.length) {
+            if (turnId) setItems((cur) => cur.map((x) => (x.role === "assistant" && x.turn_id === turnId ? { ...x, status: "연결이 끊겨 다시 잇고 있어요" } : x)));
+            await wait(RETRY_MS[tries++]);
+            continue;
+          }
+          if (e instanceof ApiError && e.code === "turn_running") {
+            // 다른 탭 · 앞 질문의 답이 아직 도는 중: 끝나면 대화를 다시 읽어 보여요
+            failMsg(e.message || "앞 답을 만드는 중이에요. 끝나면 다시 보내 주세요.", "turn_running");
+            later(false, 5000);
+          } else if (e instanceof ApiError && e.status === 429) {
+            failMsg(e.message, "too_many");
+          } else if (drop) {
+            // 끝내 잇지 못했어요: 서버는 끝까지 돌려 저장해요. 대화를 다시 읽으면 보여요
+            if (turnId) setItems((cur) => cur.map((x) => (x.role === "assistant" && x.turn_id === turnId ? { ...x, done: true, status: null, error: { code: "dropped", message: "연결이 끊겼어요. 대화를 다시 불러올게요." } } : x)));
+            else failMsg(errorText(e), "network");
+            later(true, 3000);
+          } else {
+            failMsg(errorText(e), e instanceof ApiError ? e.code : "send");
+          }
+          return;
+        }
+      }
     } finally {
       runningRef.current = false;
       setRunning(false);
     }
-  }, [projectId, apply]);
+  }, [projectId, apply, later]);
+
+  /** 행동 하나의 지금 상태를 서버에서 다시 읽어 그 자리에 그려요(판이 바뀌어 새 행동이 생겼으면 그 자리에 새 행동) */
+  const refreshAction = useCallback(async (id: string, msg: string | null) => {
+    try {
+      const all = await listActions(projectId);
+      const next = all.find((x) => x.supersedes === id);
+      const cur = all.find((x) => x.action_id === id);
+      setItems((list) => {
+        let out = cur ? replaceAction(list, cur) : list;
+        if (next) out = out.map((it) => (it.role === "assistant" ? { ...it, parts: it.parts.map((p) => (p.t === "action" && p.action.action_id === id ? { t: "action" as const, action: next } : p)) } : it));
+        return out;
+      });
+      if (next && msg) fail(next.action_id, msg);
+      setOpen(all.filter((x) => x.status === "proposed"));
+    } catch { /* 다음에 다시 읽어요 */ }
+    if (!runningRef.current) later(true, 200);
+  }, [projectId, later]);
 
   const approve = useCallback(async (a: ActionOut | string) => {
     const id = typeof a === "string" ? a : a.action_id;
-    const ver = typeof a === "string" ? null : a.target_ver ?? null;
+    const known = typeof a === "string" ? actionsIn(itemsRef.current).find((x) => x.action_id === a) ?? openRef.current.find((x) => x.action_id === a) : a;
+    const ver = known?.target_ver ?? null;
     setPending((p) => ({ ...p, [id]: true }));
-    setErrors((x) => { const { [id]: _, ...rest } = x; return rest; });
+    fail(id, null);
     try {
       const done = await approveAction(projectId, id, { client_key: newClientKey(), seen: ver });
       setItems((cur) => replaceAction(cur, done));
-      void refreshBoard();
+      // 실행됐으면 결과를 보이고 대화 · 보드를 다시 읽어요(뒤따른 상태 · 다음 카드)
+      if (done.status === "executed") later(true, 250);
+      else void refreshSide();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && /changed|stale|version/.test(e.code)) {
-        // 판이 바뀌었어요: 서버가 새 판 + 차액으로 만든 행동을 다시 읽어 그 자리에 그려요
-        await load();
+      if (e instanceof ApiError && e.status === 409) {
+        // 만료 · 판 바뀜(stale · quote_changed) · 닫힘 · 실패 · 처리 중: 카드를 서버의 새 상태로 바꿔요
+        fail(id, e.message);
+        if (e.code === "in_progress") setTimeout(() => { void refreshAction(id, null); }, 2500);
+        else await refreshAction(id, e.message);
+      } else if (e instanceof ApiError && e.status === 404) {
+        fail(id, e.message);
+        later(true, 200);
       } else {
-        setErrors((x) => ({ ...x, [id]: errorText(e) }));
+        fail(id, errorText(e));
       }
     } finally {
       setPending((p) => { const { [id]: _, ...rest } = p; return rest; });
     }
-  }, [projectId, load, refreshBoard]);
+  }, [projectId, later, refreshAction, refreshSide]);
 
   const reject = useCallback(async (a: ActionOut) => {
-    setPending((p) => ({ ...p, [a.action_id]: true }));
+    const id = a.action_id;
+    setPending((p) => ({ ...p, [id]: true }));
+    fail(id, null);
     try {
-      const done = await rejectAction(projectId, a.action_id);
+      const done = await rejectAction(projectId, id);
       setItems((cur) => replaceAction(cur, done));
+      void refreshSide();
     } catch (e) {
-      setErrors((x) => ({ ...x, [a.action_id]: errorText(e) }));
+      fail(id, errorText(e));
+      if (e instanceof ApiError && (e.status === 409 || e.status === 404)) await refreshAction(id, null);
     } finally {
-      setPending((p) => { const { [a.action_id]: _, ...rest } = p; return rest; });
+      setPending((p) => { const { [id]: _, ...rest } = p; return rest; });
     }
-  }, [projectId]);
+  }, [projectId, refreshAction, refreshSide]);
 
-  /** [오늘은 그만]: 서버가 바뀐 카드를 주면 그 카드만, 아니면 feed를 다시 읽어요 */
+  /** 먼저 말 건 제안 열기([해 볼게요] · 알림 링크). API가 없으면 숨겨요 */
+  const openNudge = useCallback(async (nudgeId: string) => {
+    try { if (!(await openApi(projectId, nudgeId))) setGone((g) => ({ ...g, [nudgeId]: true })); } catch { /* 열기 기록 실패는 넘어가요 */ }
+  }, [projectId]);
+  /** [괜찮아요] · [오늘은 그만]: 닫으면 같은 일을 3일 쉬어요(제안은 숨기고 오늘 정할 일은 접어요). API가 없어도 화면에서는 닫아요 */
   const dismissNudge = useCallback(async (_cardId: string, nudgeId: string) => {
+    setGone((g) => ({ ...g, [nudgeId]: true }));
+    const fold = (d: TodayData): TodayData => (d.nudge_id === nudgeId ? { ...d, dismissed: true } : d);
+    setToday((t) => (t ? fold(t) : t));
+    setItems((cur) => cur.map((it) => (it.role !== "assistant" ? it : {
+      ...it, parts: it.parts.map((p) => (p.t === "card" && p.card.kind === "today" ? { ...p, card: { ...p.card, data: fold(p.card.data as TodayData) } } : p)),
+    })));
     try {
-      const card = await dismissApi(projectId, nudgeId);
-      if (card) setItems((cur) => replaceCard(cur, card));
-      else await load();
-      void refreshBoard();
+      await dismissApi(projectId, nudgeId);
     } catch { /* 닫기 실패는 다음에 다시 보여요 */ }
-  }, [projectId, load, refreshBoard]);
+    if (ASSISTANT_MOCK) await loadFeed().catch(() => undefined);
+    void refreshSide();
+  }, [projectId, loadFeed, refreshSide]);
 
   const forget = useCallback(async (memoryId: string) => {
-    try { await forgetMemory(projectId, memoryId); } finally { void refreshBoard(); }
-  }, [projectId, refreshBoard]);
+    setMemory((m) => (m ? m.filter((x) => x.id !== memoryId) : m));
+    try { await forgetMemory(memoryId); } finally { void refreshSide(); }
+  }, [refreshSide]);
+
+  /** 앞 대화 더 보기(턴 번호 커서) */
+  const loadOlder = useCallback(async () => {
+    if (!before || olderBusy) return;
+    setOlderBusy(true);
+    try {
+      const page = await getFeed(projectId, before);
+      setItems((cur) => {
+        const have = new Set(cur.map((x) => x.id));
+        return foldCards([...page.items.filter((x) => !have.has(x.id)), ...cur]);
+      });
+      setBefore(page.before);
+    } catch { /* 다시 누르면 돼요 */ } finally {
+      setOlderBusy(false);
+    }
+  }, [projectId, before, olderBusy]);
 
   const reset = useCallback(async (script: "f1" | "today") => {
     abortRef.current?.abort();
@@ -167,16 +359,29 @@ export function useAssistant(projectId: string) {
     await load();
   }, [projectId, load]);
 
-  const actionOf = useCallback((id: string): ActionOut | null => {
-    for (const it of items) {
-      if (it.role !== "assistant") continue;
-      for (const p of it.parts) if (p.t === "action" && p.action.action_id === id) return p.action;
+  const actionOf = useCallback((id: string): ActionOut | null =>
+    actionsIn(items).find((x) => x.action_id === id) ?? open.find((x) => x.action_id === id) ?? null, [items, open]);
+
+  /** 보이는 대화: 기록 + 오늘 정할 일(그날 첫 비서 말 자리, 그날 카드가 기록에 없을 때) + (기록에 없는) 열린 대기 행동 */
+  const view = useMemo<FeedItem[]>(() => {
+    const out: FeedItem[] = [...items];
+    const hasToday = items.some((it) => it.role === "assistant" && it.parts.some((p) => p.t === "card" && p.card.kind === "today" && (p.card.data as TodayData).date === today?.date));
+    const rows = today ? today.todo.length + today.waiting.length + today.news.length : 0;
+    if (todayAt && today && rows && !hasToday) {
+      const at = todayAt.after ? out.findIndex((x) => x.id === todayAt.after) + 1 : out.length;
+      out.splice(at > 0 ? at : out.length, 0, { id: `today-${today.date}`, role: "assistant", at: now, turn_id: null, done: true, parts: [{ t: "card", card: { card_id: "today", kind: "today", data: today } }] } satisfies AssistantItem);
     }
-    return null;
-  }, [items]);
+    const inFeed = new Set(actionsIn(items).map((a) => a.action_id));
+    const orphans = open.filter((a) => !inFeed.has(a.action_id) && a.kind !== "home_info");
+    if (orphans.length) {
+      out.push({ id: "open-actions", role: "assistant", at: now, turn_id: null, done: true, parts: orphans.map((action) => ({ t: "action" as const, action })) } satisfies AssistantItem);
+    }
+    return out;
+  }, [items, open, today, todayAt, now]);
 
   return {
-    projectId, items, chips, now, loaded, loadError, running, board, pending, errors, flash,
-    send, approve, reject, dismissNudge, forget, reset, reload: load, actionOf, searchAddress,
+    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone, fresh,
+    hasOlder: !!before, olderBusy, loadOlder,
+    send, approve, reject, openNudge, dismissNudge, forget, reset, reload: load, actionOf,
   };
 }
