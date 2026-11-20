@@ -63,7 +63,7 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
         )
     )
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v2"] and a.brief is None
+    assert a.trace.prompts == ["composer_v3"] and a.brief is None
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
     assert "실크는 합지보다 37% 비싸요." not in texts
@@ -91,15 +91,91 @@ def test_lead_with_made_up_number_falls_back_to_free(stub):
     assert turn(Q).answer.trace.prompts == []
 
 
-def test_composer_skips_calc_only_answer(stub):
-    """계산 엔진 값으로만 답한 턴은 작성기를 부르지 않아요(되풀이 막기 · 숫자는 계산 그대로)."""
+PERIOD_Q = "34평 도배하면 며칠 걸려요?"
+PAINT = "도장과는 일정을 겹치지 않게 잡아요. 벽지 작업이 습해 페인트가 마르지 않을 수 있어요."
+
+
+def period_stub(stub) -> None:
+    """기간 질문(계산만 있는 답)에 덧붙일 글: 계산 숫자 되풀이 lead(빠짐) + 검색 위 조각 K182로 받친 문장."""
+    stub(Composed(
+        verdict="answer",
+        lead=CItem(text="34평 도배는 빈집이면 약 2.5일이에요.", cites=[]),
+        blocks=[CBlock(kind="body", rows=[], items=[CItem(text=PAINT, cites=["K182"])])],
+        follow=[],
+    ))  # fmt: skip
+
+
+def test_calc_only_answer_gets_composer_context_after_calc(stub):
+    """계산만 있는 답도 작성기를 불러요. 계산 묶음은 맨 앞에 그대로 두고, 작성기는 덧붙일 것만 써요(숫자 되풀이는 빠짐)."""
     from app.chat.tools import general_facts
 
-    q = "34평 도배하면 며칠 걸려요?"
-    stub(Composed(verdict="answer", lead=CItem(text="짐이 많으면 더 걸려요.", cites=[]), blocks=[], follow=[]))  # fmt: skip
-    a = turn(q, general=general_facts(q)).answer
-    assert a.sections[0].source == "calc" and a.trace.prompts == []
-    assert "작성기: 계산 답만" in a.trace.dropped
+    period_stub(stub)
+    a = turn(PERIOD_Q, general=general_facts(PERIOD_Q)).answer
+    assert a.trace.prompts == ["composer_v3"]
+    assert a.sections[0].source == "calc"
+    assert a.sections[0].sentences[0].text.startswith("믿집 계산으로 34평 도배는")
+    assert [x.text for s in a.sections if s.source == "llm" for x in s.sentences] == [PAINT]
+    assert "계산 되풀이" in a.trace.dropped
+
+
+def test_llm_mode_sends_fixed_part_first_and_keeps_it_in_front(stub):
+    """LLM 모드: 고정 몫(계산 결과 · 정해 둔 글)만 먼저 보내고, 마지막 답은 그 묶음을 그대로 앞에 둔 채 아래에 붙여요."""
+    from app.chat.tools import general_facts
+
+    period_stub(stub)
+    got = []
+
+    async def on_part(a):
+        got.append(a)
+
+    r = turn(PERIOD_Q, general=general_facts(PERIOD_Q), on_part=on_part)
+    assert len(got) == 1
+    first = got[0]
+    assert [s.source for s in first.sections] == ["calc"]
+    assert not (first.cards or first.calc or first.suggest or first.unknown or first.failed)
+    n = len(first.sections)
+    assert r.answer.sections[:n] == first.sections  # 화면에 이미 보인 글은 그대로
+    assert len(r.answer.sections) > n and r.answer.brief is None
+    assert r.answer.cards, "다음 단추 카드는 마지막 답에만 붙어요"
+
+
+def test_part_is_sent_even_without_fixed_lines_and_free_mode_sends_none(stub):
+    """고정 몫이 없어도 빈 part를 보내 화면이 'AI가 쓰는 중'을 알아요. 무료 모드는 보내지 않아요."""
+    stub(Composed(verdict="unknown", lead=CItem(text="모름", cites=[]), blocks=[], follow=[]))
+    got = []
+
+    async def on_part(a):
+        got.append(a)
+
+    turn(Q, on_part=on_part)
+    assert len(got) == 1 and got[0].sections == []
+    turn(Q, "free", on_part=on_part)
+    assert len(got) == 1
+
+
+def test_compose_keeps_template_lines_first():
+    """정해 둔 글(가이드 시작 순서 · 정책 줄)은 작성기 답에서도 원래 순서로 앞에 그대로 남아요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    fixed = Section(
+        title="[시작 순서]", source="template", route="guide",
+        sentences=[Sentence(text="처음이면 아래 순서로 하면 돼요."), Sentence(text="1. 기본 정보에 집 면적을 넣어요.")],
+    )  # fmt: skip
+    card = Section(
+        source="card", route="guide",
+        sentences=[Sentence(text="표준견적서는 공공 기준 단가로 계산한 참고 금액이라 업체 견적과 달라요.", cites=["card:t.std"])],
+    )  # fmt: skip
+    part = Part(sections=[fixed, card], route="guide")
+    llm.set_stub("composer", Composed(
+        verdict="answer", blocks=[], follow=[],
+        lead=CItem(text="표준견적서는 업체 견적이 아니라 공공 기준으로 계산한 참고 금액이에요.", cites=["card:t.std"]),
+    ))  # fmt: skip
+    new = asyncio.run(composer.compose(part, repo_kb(), "처음이라 순서를 알고 싶어요", trade=None))
+    assert new is not None
+    assert [s.source for s in new.sections] == ["template", "llm"]
+    assert new.sections[0] == fixed
 
 
 def test_composer_drops_repeats_and_data_talk():
@@ -150,3 +226,43 @@ def test_composer_drops_sentence_whose_cites_do_not_match(stub):
     texts = [x.text for s in a.sections for x in s.sentences]
     assert lead.text in texts and odd.text not in texts
     assert "인용 안 맞음" in a.trace.dropped
+
+
+def test_composer_drops_paraphrased_fixed_lines_and_table_repeats():
+    """먼저 보인 계산 문장을 말만 바꿔 되풀이한 문장(포함률 COVER 이상) · 계산 값을 다시 쓴 비교 표 줄 ·
+    '~에 따라 달라요'만 덧붙인 뻔한 말은 빼요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    calc = Section(
+        source="calc",
+        sentences=[
+            Sentence(text="믿집 표준견적서 계산으로 33평 전체 도배는 실크(기본형) 약 280만 원, 합지(저가형) 약 223만 원이에요."),
+            Sentence(text="기존 벽지를 뜯는 시간은 들어 있지 않아요. 실측 뒤 업체가 정해요."),
+        ],
+    )  # fmt: skip
+    part = Part(sections=[calc], route="trade", trade="dobae")
+    text = " ".join(x.text for x in calc.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": ""}
+    new_line = "짐이 많으면 옮기는 시간만큼 더 걸려요."
+    c = Composed(
+        verdict="answer",
+        lead=CItem(text="예상 일정에는 기존 벽지를 뜯는 시간이 포함되지 않으며, 실측 뒤 업체가 정해요.", cites=[]),
+        blocks=[
+            CBlock(kind="compare", items=[], rows=[["실크(기본형)", "약 280만 원"], ["합지(저가형)", "약 223만 원"]]),
+            CBlock(kind="body", rows=[], items=[
+                CItem(text=new_line, cites=[]),
+                CItem(text="실크와 합지 중 벽지 종류에 따라 비용 차이가 있어요.", cites=[]),  # 뻔한 말
+            ]),
+        ],
+        follow=[],
+    )  # fmt: skip
+    dropped: list[str] = []
+    secs = composer.to_sections(
+        c, ev, part, repo_kb(), route="trade", trade="dobae", dropped=dropped
+    )
+    assert [x.text for s in secs or [] for x in s.sentences] == [new_line]
+    assert not any(s.table for s in secs or [])
+    assert "정해 둔 글 되풀이" in dropped and dropped.count("계산 되풀이") == 2
+    assert "뻔한 말" in dropped

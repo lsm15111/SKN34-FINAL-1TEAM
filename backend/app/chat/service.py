@@ -197,10 +197,11 @@ def _public(ans) -> AiAnswer:
     )
 
 
-async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut:
+async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     """POST /ai/turns. 남의 대화 · 남의 프로젝트는 404, 같은 대화 동시 저장은 409.
 
-    on_draft(AiAnswer): LLM 모드에서 글을 다시 쓰기 전에 무료 답(검사 통과본)을 먼저 받는 쪽. 저장은 하지 않아요."""
+    on_part(AiAnswer): LLM 모드에서 답 작성기를 기다리기 전에 고정 몫(계산 결과 · 정해 둔 글, 검사 통과본)을
+    먼저 받는 쪽. 마지막 답은 이 묶음을 그대로 앞에 두고 아래에 이어 붙여요. 저장은 하지 않아요."""
     from app.agent.llm import embed_query
     from app.agent.v3 import check
     from app.agent.v3.answer import KB
@@ -256,9 +257,9 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut
         today=today,
     )
 
-    async def draft(a) -> None:
-        if on_draft is not None:
-            await on_draft(_public(a))
+    async def part(a) -> None:
+        if on_part is not None:
+            await on_part(_public(a))
 
     # 질문의 평수 · 예시 평수 · 방문 1개를 계산 엔진으로 미리 센다(DB 없음, 약 20ms). 기간 · 비용 답이 쓴다
     general = tools.general_facts(check.mask(body.text), today)
@@ -269,7 +270,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_draft=None) -> AiTurnOut
         facts=facts,
         waiting=waiting,
         button=body.button,
-        on_draft=draft,
+        on_part=part,
         general=general,
     )
     ans = res.answer

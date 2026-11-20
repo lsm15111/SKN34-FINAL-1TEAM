@@ -7,6 +7,7 @@
 - 지식: DB 적재본(knowledge.index) + 질문 임베딩 의미 순위(knowledge.nearest), 계산 값: chat.tools.general_facts
 - 프로젝트 있음 맥락: coverage_check.FACTS(69.4㎡ · 표준견적서 · 예상 공정표 · 실측 초안 · 가견적) + 예시 추천 업체 2곳
 - 남기는 것: .cache/<tag>/composer_answers.jsonl (공개 답 · 걸린 초 · 작성기 사용 · 뺀 이유 · 실제 토큰(입력 · 캐시 읽기 · 출력 · 추론) · 값)
+  + 먼저 보낸 고정 몫(part)이 보인 초 · 묶음 수 · 마지막 답 앞 묶음과 같은지(prefix_ok)
 """
 
 import argparse
@@ -121,18 +122,40 @@ async def main() -> None:
                 today = date(2026, 11, 19)
                 ctx = TurnContext(user_id=uuid.UUID(int=0), today=today, mode=a.mode)  # type: ignore[arg-type]
                 f = facts if c == "project" else None
+                parts: list = []
+
+                async def on_part(x, t0=t0, parts=parts):
+                    parts.append((round(time.perf_counter() - t0, 2), _public(x)))
+
                 r = await run_turn(
-                    q["q"], ctx, kb=kb, facts=f, general=general_facts(q["q"], today)
+                    q["q"],
+                    ctx,
+                    kb=kb,
+                    facts=f,
+                    general=general_facts(q["q"], today),
+                    on_part=on_part,
                 )
                 secs = round(time.perf_counter() - t0, 2)
                 pub = _public(r.answer)
+                part_s, part_n, prefix_ok = None, None, None
+                if parts:
+                    part_s, first = parts[0]
+                    part_n = len(first.sections)
+                    prefix_ok = pub.sections[:part_n] == first.sections
                 cost = sum(usd(u) for u in usage)
                 rows.append({"id": q["id"], "q": q["q"], "context": c, "route": r.answer.trace.route,
                              "prompts": r.answer.trace.prompts, "dropped": r.answer.trace.dropped,
-                             "s": secs, "usage": list(usage), "usd": round(cost, 6),
+                             "s": secs, "part_s": part_s, "part_n": part_n, "prefix_ok": prefix_ok,
+                             "usage": list(usage), "usd": round(cost, 6),
                              "answer": pub.model_dump(mode="json")})  # fmt: skip
                 print(
-                    q["id"], c, r.answer.trace.route, r.answer.trace.prompts, secs, f"${cost:.5f}"
+                    q["id"],
+                    c,
+                    r.answer.trace.route,
+                    r.answer.trace.prompts,
+                    secs,
+                    f"${cost:.5f}",
+                    f"part {part_s}s·{part_n}묶음" if parts else "",
                 )
     with (out_dir / "composer_answers.jsonl").open("w", encoding="utf-8") as fh:
         for x in rows:
@@ -145,6 +168,13 @@ async def main() -> None:
     print(
         f"작성기 쓴 턴 {used}/{len(rows)} · 실제 사용량 합계 ${tot:.4f} · 평균 {sum(x['s'] for x in rows) / max(len(rows), 1):.2f}초"
     )
+    ps = [x for x in rows if x["part_s"] is not None]
+    if ps:
+        bad = [f"{x['id']}/{x['context']}" for x in ps if not x["prefix_ok"]]
+        print(
+            f"먼저 보낸 part {len(ps)}턴 · 처음 보인 때 평균 {sum(x['part_s'] for x in ps) / len(ps):.2f}초 · "
+            f"고정 묶음 있는 턴 {sum(1 for x in ps if x['part_n'])} · 앞 묶음 다름 {len(bad)} {bad[:5]}"
+        )
     print(
         f"LLM 호출 {len(calls)}번 · 입력 {tin:,} (캐시 읽기 {tcache:,}, {tcache / max(tin, 1):.0%}) · 출력 {sum(u['output'] for u in calls):,} · 추론 {sum(u['reasoning'] for u in calls):,} 토큰"
     )

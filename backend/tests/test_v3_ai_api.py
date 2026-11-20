@@ -198,8 +198,9 @@ def test_someone_elses_project_is_404_and_writes_no_chat(api):
     assert api.get(f"/ai/threads?project_id={pid}").status_code == 404
 
 
-def test_llm_mode_sends_free_draft_first_then_done(api, monkeypatch):
-    """LLM 모드: 글을 다시 쓰기 전에 검사를 통과한 무료 답을 draft로 먼저 보내고, 저장 뒤 done으로 끝낸다."""
+def test_llm_mode_sends_fixed_part_first_then_done(api, monkeypatch):
+    """LLM 모드: 답 작성기를 기다리기 전에 고정 몫을 part로 먼저 보내고, 저장 뒤 done으로 끝낸다.
+    done의 앞 묶음은 part와 같아서 화면에 이미 보인 글은 바뀌지 않는다."""
     from app.agent import llm
     from app.agent.v3.llm_mode import LlmSection
     from app.chat import service
@@ -210,16 +211,18 @@ def test_llm_mode_sends_free_draft_first_then_done(api, monkeypatch):
     use(api, signup(api))
     ev = events(ask(api).text)
     names = [e for e, _ in ev]
-    assert names[0] == "draft" and names[-1] == "done"
-    draft, out = ev[0][1], ev[-1][1]
-    assert out["mode"] == "llm"
-    assert draft["sections"] and draft["sections"][0]["sentences"]
-    assert len(query("select 1 from chat_messages")) == 2  # 저장은 한 번(draft는 저장하지 않음)
+    assert names[0] == "part" and names[-1] == "done" and names.count("part") == 1
+    first, out = ev[0][1], ev[-1][1]
+    assert out["mode"] == "llm" and "notice" not in out["answer"]
+    n = len(first["sections"])
+    assert out["answer"]["sections"][:n] == first["sections"]  # 먼저 보인 글은 그대로 앞에
+    assert not first["cards"] and out["answer"]["cards"]  # 다음 단추는 마지막 답에만
+    assert len(query("select 1 from chat_messages")) == 2  # 저장은 한 번(part는 저장하지 않음)
 
 
-def test_free_mode_sends_no_draft(api):
+def test_free_mode_sends_no_part(api):
     use(api, signup(api))
-    assert "draft" not in [e for e, _ in events(ask(api).text)]
+    assert "part" not in [e for e, _ in events(ask(api).text)]
 
 
 def test_llm_daily_cap_falls_back_to_free_mode(api, monkeypatch):
@@ -236,4 +239,4 @@ def test_llm_daily_cap_falls_back_to_free_mode(api, monkeypatch):
     assert done(ask(api))["mode"] == "llm"
     second = ask(api)
     assert done(second)["mode"] == "free"
-    assert "draft" not in [e for e, _ in events(second.text)]
+    assert "part" not in [e for e, _ in events(second.text)]

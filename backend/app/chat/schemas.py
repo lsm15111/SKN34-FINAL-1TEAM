@@ -21,7 +21,6 @@ from app.agent.v3.schemas import (
     View,
 )
 
-NOTICE = "자동 답변"  # 9판 C09 · D01 화면 글(답 위 표시)
 FIRST_NOTICE = "AI가 답해요. 금액 · 날짜는 믿집 계산을 그대로 보여 주고, 저장 · 확정은 하지 않아요."
 
 
@@ -69,7 +68,6 @@ class AiBrief(BaseModel):
 
 
 class AiAnswer(BaseModel):
-    notice: str = NOTICE
     sections: list[AiSection] = []
     calc: list[CalcBox] = []
     cards: list[UiCard] = []

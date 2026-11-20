@@ -1,11 +1,12 @@
 """한 턴 (무료 · LLM 모드 공통). agents.md 2.1 · 10.1절.
 
-가림 · 길이 → 입구 관문 → (범위 밖 · 되묻기 · 담당 하나 · 오케스트레이터) → [LLM 모드면 글 다시 쓰기] → 출력 검사.
+가림 · 길이 → 입구 관문 → (범위 밖 · 되묻기 · 담당 하나 · 오케스트레이터) → 출력 검사.
+LLM 모드(guide · trade · multi): 고정 몫(계산 결과 · 정해 둔 글)을 검사해 on_part로 먼저 보내고, 답 작성기 묶음을
+그 아래에 붙인다. 먼저 보낸 묶음은 마지막 답에도 그대로 앞에 둬서 화면에 이미 보인 글은 바뀌지 않는다.
 DB · HTTP를 모른다: 프로젝트 사실(ProjectFacts)과 지식(KB)은 chat.service가 짧은 DB 세션으로 읽어 넘긴다.
 돌려주는 waiting은 되물은 담당의 칸(다음 턴의 짧은 답을 그 담당이 받게). 저장은 chat.service가 한다.
 """
 
-import copy
 import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
@@ -19,6 +20,7 @@ from app.agent.v3.schemas import (
     Button,
     GeneralFacts,
     ProjectFacts,
+    Section,
     Trace,
     TurnContext,
     UiCard,
@@ -109,7 +111,7 @@ async def run_turn(
     facts: ProjectFacts | None = None,
     waiting: dict | None = None,
     button: Button | None = None,
-    on_draft: Callable[[AgentAnswer], Awaitable[None]] | None = None,
+    on_part: Callable[[AgentAnswer], Awaitable[None]] | None = None,
     general: GeneralFacts | None = None,
 ) -> TurnResult:
     masked = check.mask(text or "").strip()[:TEXT_MAX]
@@ -147,11 +149,17 @@ async def run_turn(
     if photo and g.route not in ("out_of_scope", "ask_back"):
         part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
 
-    def finish(p: Part, routes: list[str]) -> AgentAnswer:
+    def finish(p: Part, routes: list[str], shown: list[Section] | None = None) -> AgentAnswer:
+        """검사 · 짧은 답. shown: 화면에 먼저 보낸 고정 묶음(검사를 마친 것)이라 그대로 앞에 두고 나머지만 검사해요."""
         prompts = [composer.VERSION if r == "composer" else llm_mode.VERSION[r] for r in routes]
         boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
+        rest = (
+            p.sections
+            if shown is None
+            else [s for s in p.sections if s.source not in composer.FIXED]
+        )
         ans = AgentAnswer(
-            sections=p.sections, calc=boxes, cards=p.cards, ask=p.ask,
+            sections=rest, calc=boxes, cards=p.cards, ask=p.ask,
             unknown=p.unknown, suggest=suggest_of(p)[:3],
             trace=Trace(
                 route=g.route, source=g.source, confidence=g.confidence, trades=g.trades,
@@ -162,6 +170,10 @@ async def run_turn(
         )  # fmt: skip
         texts = [composer.rules() if r == "composer" else llm_mode.prompt(r) for r in routes]
         ans = check.final(ans, prompt="\n".join(texts) or None)
+        if shown is not None:
+            ans.sections = [*shown, *ans.sections]
+            ans.failed = not (ans.sections or ans.cards or ans.calc or ans.unknown)
+            return ans  # 먼저 보인 글이 접힌 짧은 답으로 바뀌지 않게 통째로 보여요(brief 없음)
         ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
         if "composer" in routes:
             ans.brief = None  # 작성기 답은 블록 한 벌이 이미 짧아서 통째로 보여요
@@ -176,15 +188,24 @@ async def run_turn(
         return ans
 
     routes: list[str] = []
+    shown: list[Section] | None = None
     if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
-        if on_draft is not None:
-            # LLM을 기다리기 전에 무료 답(검사 통과본)을 먼저 보낸다. 글을 다시 쓴 답은 done으로 바꿔 보여요
-            await on_draft(finish(copy.deepcopy(part), []))
-        # 답 작성기 한 번(근거 묶음 → 블록). 근거가 질문에 안 맞거나 실패하면 무료 답 그대로
+        # 고정 몫(계산 결과 · 정해 둔 글)만 검사해 먼저 보낸다. 비어 있어도 보내서 화면이 'AI가 쓰는 중'을 알아요.
+        # 카드 · 계산 상자 · 이어 묻기는 마지막 답에만 둬요(먼저 보인 글 아래로 이어 붙게)
+        fixed = Part(
+            sections=[s for s in part.sections if s.source in composer.FIXED],
+            route=part.route, trade=part.trade,
+        )  # fmt: skip
+        first = finish(fixed, [])
+        first.failed, first.brief = False, None
+        shown = first.sections
+        if on_part is not None:
+            await on_part(first)
+        # 답 작성기 한 번(근거 묶음 → 블록). 근거가 질문에 안 맞거나 실패하면 무료 몫(카드 · 조각)을 붙여요
         composed = await composer.compose(part, kb, masked, trade=g.trades[0] if g.trades else None)
         if composed is not None:
             part, routes = composed, ["composer"]
-    ans = finish(part, routes)
+    ans = finish(part, routes, shown)
     new_wait = None
     if ans.ask is not None:
         new_wait = {"route": "trade", "trade": ans.ask.trade, "slot": ans.ask.slot, "q": masked}

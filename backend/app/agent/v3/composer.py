@@ -1,8 +1,10 @@
-"""답 작성기 (LLM 모드, 지시문 composer_v2). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
+"""답 작성기 (LLM 모드, 지시문 composer_v3). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
 
 흐름: 무료 몫(Part) → 근거 묶음(카드 · 조각 · 검색 위 조각 · 계산 결과 · 정해 둔 글, 모두 코드가 고름)
 → LLM 1회(JSON: verdict · lead · blocks · follow) → 블록을 Section으로 → 출력 검사(숫자 · 인용 · 금지 표현 · 누출)
-→ 계산 묶음(source=calc)은 앞에 그대로 두고 작성기 묶음을 붙인다.
+→ 고정 몫(source=calc · template, 계산 결과 · 정해 둔 글)은 원래 순서대로 앞에 그대로 두고 작성기 묶음을 붙인다.
+  고정 몫은 화면에 먼저 보이고(SSE part), 작성기 묶음은 그 아래에 이어 붙어요. 이미 보인 글은 바꾸지 않아요.
+- 계산만 있는 답도 부른다: 검색 위 조각으로 숫자를 읽는 법 · 늘어나는 조건 · 준비를 덧붙인다(숫자 되풀이는 뺌).
 - 숫자는 계산 결과 · 근거 글에 있는 것만 통과한다(check.section). 인용은 이번 근거 묶음 ref만 남는다.
 - verdict가 unknown이거나 첫 문장(lead)이 검사에서 빠지면 None → 부르는 쪽은 무료 답을 그대로 쓴다.
 - 지시문은 고정 글이라 앞쪽 1,600토큰쯤이 캐시돼요(OpenAI 자동 캐시는 1,024토큰부터).
@@ -25,11 +27,13 @@ from app.agent.v3.schemas import Section, Sentence, TradeCode
 from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
-VERSION = "composer_v2"
+VERSION = "composer_v3"
 TOP_CHUNKS = 6  # 검색 위 조각을 몇 개 더 넣을지
 CHUNK_CHARS = 420  # 조각 글 앞 몇 글자
 MAX_BLOCKS = 4
 MAX_ITEMS = 5
+# 고정 몫: 코드가 만든 글(계산 결과 · 정해 둔 글). 작성기 답에서도 앞에 그대로 남아요
+FIXED = ("calc", "template")
 
 
 class CItem(BaseModel):
@@ -107,7 +111,9 @@ def evidence(part: Part, kb: KB, question: str, trade: TradeCode | None) -> dict
     allowed = "\n".join(
         [*calc, *fixed, *(c["글"] for c in cards), *(c["글"] for c in chunks.values()), question]
     )
-    return {"data": data, "refs": refs, "allowed": allowed, "calc": " ".join(calc)}
+    return {
+        "data": data, "refs": refs, "allowed": allowed, "calc": " ".join(calc), "fixed": " ".join(fixed),
+    }  # fmt: skip
 
 
 def _sources(kb: KB, refs: set[str], part: Part) -> list[dict]:
@@ -187,22 +193,33 @@ def to_sections(
         return [x for x in (sent(i) for i in items) if x is not None]
 
     calc_nums = check.guard.numbers(calc) if calc else set()
-    shown = [
-        _grams(x.text)
-        for s in part.sections
-        if s.source in ("calc", "template")
-        for x in s.sentences
-    ]
+    shown = [_grams(x.text) for s in part.sections if s.source in FIXED for x in s.sentences]
+    fixed_grams: set[str] = set().union(*shown) if shown else set()
+
+    def covered(g: set[str]) -> bool:
+        """문장 글자 묶음이 고정 몫(화면에 먼저 보인 글)에 이만큼(COVER, 드문 묶음에 무게) 들어 있으면 말만 바꾼 되풀이."""
+        if not (g and fixed_grams and weight is not None):
+            return False
+        tot = sum(weight(x) for x in g)
+        return tot > 0 and sum(weight(x) for x in g if x in fixed_grams) / tot >= COVER
+
+    def repeat(text: str) -> str | None:
+        n = check.guard.numbers(text)
+        g = _grams(text)
+        if calc_nums and n and n <= calc_nums:
+            return "계산 되풀이"  # 계산 묶음이 이미 보이는 숫자만 든 문장 · 표 줄
+        if any(_overlap(g, h) >= SAME for h in shown) or covered(g):
+            return "정해 둔 글 되풀이"
+        if fixed_grams and VAGUE.search(text.strip()):
+            return "뻔한 말"  # 계산 · 정해 둔 글 아래에 '~에 따라 달라져요'만 덧붙이면 새 정보가 없어요
+        return None
 
     def checked(sec: Section) -> Section | None:
         keep = []
         for x in sec.sentences:
-            n = check.guard.numbers(x.text)
-            g = _grams(x.text)
-            if calc_nums and n and n <= calc_nums:
-                dropped.append("계산 되풀이")  # 계산 묶음이 이미 보이는 숫자만 든 문장
-            elif any(_overlap(g, h) >= SAME for h in shown):
-                dropped.append("정해 둔 글 되풀이")
+            why = repeat(x.text)
+            if why:
+                dropped.append(why)
             elif META.search(x.text):
                 dropped.append(
                     "자료 말"
@@ -221,8 +238,8 @@ def to_sections(
     lead = (
         checked(Section(sentences=first, source="llm", route=route, trade=trade)) if first else None
     )
-    if lead is None and not calc:
-        return None  # 계산 묶음이 있으면 그 묶음이 첫 줄 노릇을 해서 lead가 빠져도 이어 간다
+    if lead is None and not (calc or ev.get("fixed")):
+        return None  # 고정 몫(계산 · 정해 둔 글)이 있으면 그 글이 첫 줄 노릇을 해서 lead가 빠져도 이어 간다
     out = [lead] if lead else []
     for b in c.blocks[:MAX_BLOCKS]:
         items = sents([x for x in b.items[:MAX_ITEMS] if x.text.strip()])
@@ -236,6 +253,10 @@ def to_sections(
             rows = []
             for r in b.rows[:4]:
                 if len(r) != 2:
+                    continue
+                why = repeat(" ".join(r))
+                if why:
+                    dropped.append(why)  # 계산 상자 · 계산 묶음이 이미 보인 값을 표로 다시 쓴 줄
                     continue
                 cells = [Sentence(text=x.strip()) for x in r]
                 ok = [
@@ -283,13 +304,11 @@ def to_sections(
 
 async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None) -> Part | None:
     """작성기 한 번. 쓸 수 없으면 None(부르는 쪽은 무료 답 그대로).
-    계산 엔진 값으로만 답한 턴(카드 · 조각 없음)은 부르지 않아요: 같은 말을 되풀이하고 숫자는 어차피 계산 그대로예요."""
-    kinds = {s.source for s in part.sections}
-    if "calc" in kinds and not kinds & {"card", "extract"}:
-        part.dropped.append("작성기: 계산 답만")
-        return None
+    계산만 있는 답도 불러요: 숫자는 계산 묶음이 이미 보여서, 작성기는 검색 위 조각으로 덧붙일 것만 써요.
+    카드 · 조각 근거가 하나도 없으면 부르지 않아요(덧붙일 것이 없어요)."""
     ev = evidence(part, kb, question, trade)
-    if not (ev["data"]["카드"] or ev["data"]["근거"] or ev["data"]["계산 결과"]):
+    if not (ev["data"]["카드"] or ev["data"]["근거"]):
+        part.dropped.append("작성기: 근거 없음")
         return None
     messages = [
         ("system", prompt()),
@@ -311,9 +330,9 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
     part.dropped.extend(dropped)
     if not secs:
         return None
-    calc = [s for s in part.sections if s.source == "calc"]
+    fixed = [s for s in part.sections if s.source in FIXED]
     new = Part(
-        sections=[*calc, *secs], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
+        sections=[*fixed, *secs], calc=list(part.calc), cards=list(part.cards), ask=part.ask,
         # 일부만 답했으면 '확인하지 못했어요'는 빼고 확인할 곳 줄만 둬요(답 뒤에 모름이 붙으면 앞뒤가 안 맞아요)
         unknown=[] if c.verdict == "answer" else [u for u in part.unknown if u != templates.UNKNOWN],
         suggest=_follow(c.follow, kb) or list(part.suggest), near=list(part.near), used_cards=list(part.used_cards),
@@ -324,6 +343,14 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
 
 
 SAME = 0.5  # 정해 둔 글 · 계산 문장과 글자 묶음이 이만큼 겹치면 되풀이로 봐요
+# 작성기 문장이 고정 몫 글에 이만큼(IDF 무게 포함률) 들어 있으면 말만 바꾼 되풀이로 빼요.
+# c5 고정 몫 턴 AI 문장 44개: 되풀이는 0.47 이상, 새 정보는 0.36 이하(composer-v3.md)
+COVER = 0.45
+# 고정 몫 아래에 붙인 '~에 따라 (비용이) 달라져요' 같은 뻔한 끝맺음 문장(c6 · c7 금액 · 기간 질문에서 본 것)
+VAGUE = re.compile(
+    r"(?:에|과|와|지)\s{0,2}따라\s{0,2}(?:\S+\s{1,2}){0,3}"
+    r"(?:달라(?:요|져요|질\s{1,2}수\s{1,2}있어요)|차이가\s{1,2}(?:있어요|나요|날\s{1,2}수\s{1,2}있어요))[.!]?$"
+)
 # 인용 지지 기준(IDF 무게 겹침). c2 답 인용 154쌍: 맞는 짝 86% 통과 · 섞은 짝 6.5% 통과(support_cal)
 SUPPORT = 0.18
 

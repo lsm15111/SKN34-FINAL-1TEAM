@@ -1,8 +1,9 @@
 """AI 칸 API (`/ai/*`, api.md 16절). 고객만 묻는다(로그인 전은 자주 묻는 질문 칩만, 9판 N1 A).
 
-- POST /ai/turns → SSE(`draft` 먼저 보일 무료 답 · `token` 문장 · `card` 화면 조각 · `done` 전체 답).
+- POST /ai/turns → SSE(`part` 먼저 보일 고정 몫 · `token` 문장 · `card` 화면 조각 · `done` 전체 답).
   오류는 스트림을 열기 전에 같은 오류 모양으로. 답은 저장(commit)까지 끝난 뒤 보낸다(완료 신호는 commit 뒤).
-  LLM 모드는 글을 다시 쓰는 동안(수 초) 검사를 통과한 무료 답을 `draft`로 먼저 보낸다. 화면은 done이 오면 바꾼다.
+  LLM 모드는 답 작성기를 기다리는 동안(수 초) 고정 몫(계산 결과 · 정해 둔 글)을 `part`로 먼저 보낸다(비어 있어도).
+  done의 앞 묶음은 part와 같아서, 화면은 이미 보인 글을 바꾸지 않고 그 아래에 이어 붙인다.
 - 사용자 · 프로젝트는 세션 · 요청 경로로만 정하고(남의 것 404) 답 · 도구 인자로 받지 않는다.
 """
 
@@ -44,13 +45,13 @@ async def _stream(out: AiTurnOut) -> AsyncIterator[str]:
 
 @router.post(
     "/turns",
-    summary="AI 칸에 묻기 (SSE: token · card · done)",
+    summary="AI 칸에 묻기 (SSE: part · token · card · done)",
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}, "description": "done 몸통 = AiTurnOut"}},
 )
 async def turn(body: AiTurnIn, user: User = Depends(require_role("customer"))) -> StreamingResponse:
     q: asyncio.Queue[AiAnswer] = asyncio.Queue()
-    job = asyncio.create_task(service.ai_turn(user, body, today_seoul(), on_draft=q.put))
+    job = asyncio.create_task(service.ai_turn(user, body, today_seoul(), on_part=q.put))
     got = asyncio.create_task(q.get())
     await asyncio.wait({job, got}, return_when=asyncio.FIRST_COMPLETED)
     if job.done() and not got.done():
@@ -62,7 +63,7 @@ async def turn(body: AiTurnIn, user: User = Depends(require_role("customer"))) -
     first = got.result()
 
     async def stream() -> AsyncIterator[str]:
-        yield _event("draft", first.model_dump(mode="json"))
+        yield _event("part", first.model_dump(mode="json"))
         try:
             out = await job
         except Exception:  # noqa: BLE001 - 스트림이 열린 뒤라 오류 이벤트로 알려요(입력값은 넣지 않음)

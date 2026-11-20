@@ -30,7 +30,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** AI 칸에 묻기 (SSE: token · card · done) */
+        /** AI 칸에 묻기 (SSE: part · token · card · done) */
         post: operations["turn_ai_turns_post"];
         delete?: never;
         options?: never;
