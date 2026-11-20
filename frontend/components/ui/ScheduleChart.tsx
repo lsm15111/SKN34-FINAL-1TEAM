@@ -3,8 +3,8 @@
 //   웹(≥ 768): 표 — 줄(공정 · 업체 팀) × 열(날, half면 오전 · 오후). 쉬는 날 열은 흐리게, 오늘은 머리에 '오늘'. 넓으면 옆으로 넘김 상자.
 //   폰(< 768): 날마다 세로 목록(C36) — 칸이 있는 날과 쉬는 날(흐린 한 줄)만. heads면 V08처럼 '오늘 · 12월 15일(화)' 날짜 묶음 머리 + 줄(쉬는 날은 빼요).
 // 건조 · 청소 칸(엔진이 도배 뒤에 늘 붙여요)은 D22 B대로 기본 숨김이에요. 팀이 정하면 showAfter로 켜요.
-// 공사 사이 빈 날(어느 줄에도 칸이 없는 날, 오늘 빼고)은 웹 표에서 좁은 한 칸('12.5~6 · 쉬는 날')으로 접고,
-//   끊긴 같은 막대는 점선으로 이어요. 폰 목록도 이어진 쉬는 날을 한 줄로 묶어요(11-20 사용자 요청).
+// 공사 사이 빈 날(어느 줄에도 칸이 없는 날, 오늘 빼고)은 웹 표에서 날짜만 적은 좁은 한 칸('12.5~6')으로 접어요.
+//   폰 목록도 이어진 쉬는 날을 한 줄로 묶어요(11-20 사용자 요청).
 // "use client"가 아니라 서버 화면에서 바로 그려요(칸 링크는 Next Link).
 import Link from "next/link";
 import type { CSSProperties, ReactNode } from "react";
@@ -94,7 +94,7 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
   const textOf = (r: ChartRow, c: ChartCell) => c.label ?? r.name;
   const dayName = (d: ChartDay) => [dateSpoken(d.day), d.off ? "쉬는 날" : null, d.holiday ?? null, d.day === today ? "오늘" : null].filter(Boolean).join(", ");
   const md = (iso: string) => { const p = dayParts(iso); return { md: `${p.m}.${p.d}`, w: p.w }; };
-  /** 접은 빈 날 머리: '12.5(토)' 또는 '12.5~6' · '12.28~1.3' + '쉬는 날'(모두 쉬는 날일 때) · '공사 없음' */
+  /** 접은 빈 날 머리: 날짜만('12.5(토)' · '12.5~6' · '12.28~1.3'). '쉬는 날' · '공사 없음'은 읽기 글에만 둬요 */
   const gapHead = (g: ChartDay[]) => {
     const a = dayParts(g[0].day);
     const b = dayParts(g[g.length - 1].day);
@@ -102,7 +102,7 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
     const word = g.every((d) => d.off) ? "쉬는 날" : "공사 없음";
     const hol = g.map((d) => d.holiday).filter(Boolean).join(" · ");
     const spoken = [g.length === 1 ? dateSpoken(g[0].day) : `${dateSpoken(g[0].day)}부터 ${dateSpoken(g[g.length - 1].day)}까지`, word, hol || null].filter(Boolean).join(", ");
-    return { range, word, spoken };
+    return { range, spoken };
   };
 
   const bar = (r: ChartRow, c: ChartCell, wide: boolean, cont = false) => {
@@ -122,14 +122,13 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
       : <span className={cls} title={text}>{inner}</span>;
   };
 
-  // 줄마다: 붙어 있는 같은 칸은 한 칸(colSpan)으로 이어요. 접은 빈 날 양쪽이 같은 막대면 점선으로 잇고, 뒤 막대는 덧말 없이 보여요
+  // 줄마다: 붙어 있는 같은 칸은 한 칸(colSpan)으로 이어요. 접은 빈 날 뒤에 같은 막대가 다시 오면 덧말 없이 보여요
   const bodyRow = (r: ChartRow) => {
     const out: ReactNode[] = [];
     for (let i = 0; i < cols.length; ) {
       const col = cols[i];
       if (col.gap) {
-        const join = sameRun(cellAt(r, cols[i - 1]), cellAt(r, cols[i + 1]));
-        out.push(<td key={i} className={`${s.gapCell} ${s.off}`}>{join ? <span className={s.gapLine} aria-hidden="true" /> : null}</td>);
+        out.push(<td key={i} className={`${s.gapCell} ${s.off}`} />);
         i += 1;
         continue;
       }
@@ -199,10 +198,7 @@ export function ScheduleChart({ caption, days, rows, half, today, labelHead = "�
                     const h = gapHead(g.gap);
                     return (
                       <th key={`gap-${g.gap[0].day}`} scope="col" rowSpan={half ? 2 : 1} className={`${s.dh} ${s.gapH} ${s.off}`}>
-                        <span aria-label={h.spoken}>
-                          <time dateTime={g.gap[0].day} className={s.gapRange} aria-hidden="true">{h.range}</time>
-                          <span className={s.gapWord} aria-hidden="true">{h.word}</span>
-                        </span>
+                        <time dateTime={g.gap[0].day} aria-label={h.spoken}>{h.range}</time>
                       </th>
                     );
                   }

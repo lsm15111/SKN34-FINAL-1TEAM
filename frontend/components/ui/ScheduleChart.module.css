@@ -23,13 +23,10 @@
 .table td.pm { border-left: 1px dashed var(--mj-line-soft); }
 .off { background: var(--mj-fill); }
 .table .dh.off, .table .hh.off { color: var(--mj-text-mute); }
-/* 접은 빈 날(공사 사이 쉬는 날): 좁은 한 칸 + 같은 막대를 잇는 점선 */
+/* 접은 빈 날(공사 사이 쉬는 날): 날짜만 적은 좁은 한 칸 */
 .colGap { width: 64px; }
-.table .gapH { padding: 8px 2px 6px; white-space: normal; line-height: 1.25; }
-.gapRange { display: block; white-space: nowrap; }
-.gapWord { display: block; margin-top: 2px; font-weight: var(--mj-weight-regular); }
-.table td.gapCell { position: relative; padding: 0; }
-.gapLine { position: absolute; left: 0; right: 0; top: 50%; border-top: 2px dashed var(--mj-line-control); transform: translateY(-1px); }
+.table .gapH { padding: 8px 2px 6px; }
+.table td.gapCell { padding: 0; }
 
 /* 막대 */
 .bar {
