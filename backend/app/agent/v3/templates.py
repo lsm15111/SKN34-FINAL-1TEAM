@@ -107,6 +107,19 @@ QUOTE_COMPARE = (
     "무엇이 들어갔는지는 파일을 열거나 채팅으로 물어보세요."
 )
 NO_STANDARD = "아직 표준견적서가 없어요. 기본 정보를 넣으면 바로 계산해요."
+# ---- 견적 설명: 보던 화면(업체 자세히)의 가견적 줄 · 견주기. 숫자는 계산 상자에만 둬요 ----
+SCREEN_LINE = "{name} 줄은 {vendor} 확인한 단가에 이 집 수량({unit})을 곱했어요."
+SCREEN_BASIS = "수량은 {basis} 단위로 셌어요."
+SCREEN_MAN_DAY = "품 수는 이 집 벽 · 천장 도배 면적으로 셈하고 0.5품 단위로 올렸어요."
+SCREEN_MAN_DAY_LIVING = "살면서 하는 집이라 짐을 옮기며 붙이는 만큼 품을 더 셌어요."
+SCREEN_EXTRA = "{eun} 표준견적서에 없는 줄이라 표준견적서와 견줄 때는 빼요."
+SCREEN_INCLUDED = "{eun} 다른 줄에 포함돼 따로 받지 않아요."
+SCREEN_COMPARE_SAME = "업체 가견적은 모두 같은 믿집 수량에 업체 단가를 곱해서, 업체끼리는 같은 줄의 단가를 견주면 돼요."
+SCREEN_COMPARE_PCT = "{vendor} 가견적의 표준 대비 %는 표준견적서와 같은 일 줄만 견준 값이에요."
+SCREEN_COMPARE_EXTRA = (
+    "{lines} 줄은 표준견적서에 없어서 견줄 때 빼고, 다른 업체도 따로 받는지 봐요."
+)
+SCREEN_COMPARE_AFTER = "{lines} 실측 뒤 업체가 정해서 가견적에 없어요. 실측 견적서에서 꼭 확인해요."
 
 # ---- 일정 ----
 PLAN_READ = "예상 공정표는 이렇게 잡혔어요. 날짜는 믿집 계산이에요."

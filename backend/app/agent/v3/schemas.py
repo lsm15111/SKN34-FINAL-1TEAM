@@ -126,6 +126,42 @@ class EstimateFacts(BaseModel):
     separate: list[str] = []  # 따로 받는 줄 이름
 
 
+class ScreenLineFact(BaseModel):
+    """보는 화면의 가견적 줄 한 개. 값은 화면과 같은 계산 엔진 결과(vendor_detail) 그대로."""
+
+    key: str  # 업체 단가 키: putty · paper_hapji · paper_silk · material · labor · meal · truck
+    name: str  # 화면 이름: 퍼티작업 · 합지 · 실크 · 부자재 · 인건비 · 식대 · 운송비
+    qty: float
+    unit: str  # 공급 평 · 벽지 평 · 품 · 대
+    unit_price: int | None = None  # 다른 줄에 포함이면 비어요
+    amount: int = 0  # 포함 · 빼기 줄은 0
+    in_standard: bool = True  # 표준견적서에 같은 일이 있는 줄. 아니면 표준 대비 %에서 빼요
+    included_in: str | None = None
+    basis: str = (
+        ""  # 수량 1의 뜻(시장 기준값 표 unit_ko에서 '당'을 뗀 것): '공급면적 1평(3.3058㎡)'
+    )
+
+
+class VendorScreenFacts(BaseModel):
+    """업체 자세히 화면에 보이는 그 업체 가견적(부가세 포함 합계 · 줄)."""
+
+    vendor: str
+    grade: Literal["economy", "basic"] | None = None  # 보여 준 벽지
+    total: int
+    supply: int
+    vat: int
+    vs_standard: float | None = None  # 표준견적서 대비 %(표준에 없는 줄은 빼고 견줌, 계산 엔진)
+    grade_diff: int | None = None  # 다른 벽지로 바꾸면 차이(원, 계산 엔진)
+    lines: list[ScreenLineFact] = []
+
+
+class ScreenFacts(BaseModel):
+    """고객이 보던 화면과 그 화면에 보이는 값. 지금은 업체 자세히(vendor)만 값을 채워요."""
+
+    view: View | None = None
+    vendor: VendorScreenFacts | None = None
+
+
 class VendorPickFact(BaseModel):
     """업체 추천(코드): 조건 필터 + 계산 엔진 점수로 고른 업체 한 곳. 사유는 정해 둔 틀로 쓴다(LLM 아님)."""
 
@@ -195,6 +231,7 @@ class ProjectFacts(BaseModel):
     estimates: list[EstimateFacts] = []
     vendors: list[VendorPickFact] = []  # 코드가 고른 추천 업체(조건 필터 + 점수), 최대 3곳
     brief: dict[str, str] = {}  # 지금까지 모은 조건(도배 · 목공 브리프 칸)
+    screen: ScreenFacts | None = None  # 보던 화면에 보이는 값(업체 가견적 줄 등)
 
 
 # ---- 관문 ----

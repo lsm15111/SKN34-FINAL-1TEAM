@@ -7,8 +7,17 @@
 import re
 
 from app.agent.v3 import templates
-from app.agent.v3.answer import KB, Part, Task, calc_box, knowledge, line_box
-from app.agent.v3.schemas import CalcBox, Choice, StandardLineFact, UiCard
+from app.agent.v3.answer import KB, Part, Task, calc_box, knowledge, line_box, screen_box
+from app.agent.v3.schemas import (
+    CalcBox,
+    Choice,
+    ProjectFacts,
+    ScreenLineFact,
+    StandardFacts,
+    StandardLineFact,
+    UiCard,
+    VendorScreenFacts,
+)
 from app.knowledge import bm25
 from app.knowledge.suggest import COMMON
 
@@ -19,6 +28,10 @@ VENDOR_QUOTE_Q = re.compile(
     r"실측\s*견적서?|받은\s*견적서|견적서\s*(?:두|세|2|3)\s*(?:곳|장|개)|비교"
 )
 VAT_Q = re.compile(r"부가세|공급가|VAT", re.IGNORECASE)
+# 보던 업체 가견적을 무엇으로 견줄지 묻는 말(무료 모드 길. LLM 모드는 질문 분석이 맡을 자리예요)
+COMPARE_Q = re.compile(
+    r"비교|견주|견줘|뭘\s*(?:위주로\s*)?봐|무엇을\s*(?:위주로\s*)?봐|어떤\s*(?:걸|것을?)\s*봐"
+)
 # 줄 이름에 없는 말 → 줄 이름 낱말 (화면 말 그대로)
 ALIAS = {
     "뜯": "철거",
@@ -51,6 +64,74 @@ def match_line(q: str, lines: list[StandardLineFact]) -> StandardLineFact | None
     return best[1] if best and best[0] >= 0.3 else None
 
 
+def match_screen_line(q: str, lines: list[ScreenLineFact]) -> ScreenLineFact | None:
+    """보던 화면의 가견적 줄을 이름(화면 데이터 그대로)으로 맞춰요. 이름이 질문에 있거나, 세 글자 넘는 이름은
+    앞 두 글자('퍼티작업' → '퍼티')가 있으면. 여럿이면 질문에서 먼저 나온 줄."""
+    plain = re.sub(r"\s+", "", q)
+    best: tuple[int, ScreenLineFact] | None = None
+    for ln in lines:
+        name = re.sub(r"\s+", "", ln.name)
+        for probe in (name, name[:2] if len(name) > 2 else ""):
+            if len(probe) >= 2 and probe in plain:
+                at = plain.index(probe)
+                if best is None or at < best[0]:
+                    best = (at, ln)
+                break
+    return best[1] if best else None
+
+
+def _screen_line(
+    part: Part, lines: list[str], allowed: list[str], ln: ScreenLineFact, v: VendorScreenFacts,
+    f: ProjectFacts,
+) -> None:  # fmt: skip
+    """가견적 줄 하나: 무엇을 곱했는지 · 수량 단위 · 품 세는 법 · 표준에 없는 줄인지. 숫자는 상자에만."""
+    eun = templates.josa(ln.name, "은", "는")
+    if ln.unit_price is None and ln.included_in:
+        lines.append(templates.SCREEN_INCLUDED.format(eun=eun))
+    else:
+        who = templates.josa(v.vendor, "이", "가") if v.vendor else "업체가"
+        lines.append(templates.SCREEN_LINE.format(name=ln.name, vendor=who, unit=ln.unit))
+        if ln.basis:
+            lines.append(templates.SCREEN_BASIS.format(basis=ln.basis))
+    if ln.unit == "품":
+        lines.append(templates.SCREEN_MAN_DAY)
+        if f.living == "living":
+            lines.append(templates.SCREEN_MAN_DAY_LIVING)
+    if not ln.in_standard:
+        lines.append(templates.SCREEN_EXTRA.format(eun=eun))
+    part.calc.append(screen_box(ln, v.vendor))
+    allowed += [ln.name, v.vendor, ln.unit, ln.basis]
+
+
+def _screen_compare(
+    part: Part, lines: list[str], allowed: list[str], v: VendorScreenFacts, st: StandardFacts,
+    f: ProjectFacts,
+) -> None:  # fmt: skip
+    """보던 업체 가견적을 견줄 때 볼 것: 같은 수량 · 표준 대비 %의 뜻 · 표준에 없는 줄 · 실측 뒤 정하는 줄."""
+    lines.append(templates.SCREEN_COMPARE_SAME)
+    pct = v.vs_standard
+    if pct is not None:
+        lines.append(templates.SCREEN_COMPARE_PCT.format(vendor=v.vendor))
+    extra = [x.name for x in v.lines if not x.in_standard and x.amount > 0]
+    if extra:
+        lines.append(templates.SCREEN_COMPARE_EXTRA.format(lines=" · ".join(extra)))
+    after = [x.name for x in st.lines if x.state == "after_visit"]
+    if after:
+        names = [*after[:-1], templates.josa(after[-1], "은", "는")]
+        lines.append(templates.SCREEN_COMPARE_AFTER.format(lines=" · ".join(names)))
+    note = "" if pct is None else f"표준보다 {abs(pct):g}% {'많아요' if pct >= 0 else '적어요'}"
+    part.calc.append(
+        CalcBox(label=f"{v.vendor} 가견적", ref="screen.vendor.total", amount=v.total, note=note)
+    )
+    box = calc_box("standard.total", f)
+    if box:
+        part.calc.append(box)
+    part.cards.append(
+        UiCard(kind="next_step", choices=[Choice(text="업체 보기", action="vendors")])
+    )
+    allowed += [v.vendor, *extra, *after]
+
+
 def run(task: Task, kb: KB) -> Part:
     part = Part(route="quote_explanation")
     f = task.facts
@@ -66,7 +147,14 @@ def run(task: Task, kb: KB) -> Part:
     lines: list[str] = []
     allowed: list[str] = []
     trade = task.trades[0] if task.trades else None
-    if ESTIMATE_Q.search(q) and f.estimates:
+    seen = (
+        f.screen.vendor if f.screen else None
+    )  # 업체 자세히 화면에서 물으면 그 업체 가견적 줄부터 맞춰요
+    sline = match_screen_line(q, seen.lines) if seen is not None else None
+    if seen is not None and sline is not None:
+        _screen_line(part, lines, allowed, sline, seen, f)
+        trade = trade or "dobae"
+    elif ESTIMATE_Q.search(q) and f.estimates:
         lines.append(templates.ESTIMATE_GAP)
         for e in f.estimates[:3]:
             pct = e.vs_standard
@@ -111,6 +199,9 @@ def run(task: Task, kb: KB) -> Part:
         part.cards.append(
             UiCard(kind="next_step", choices=[Choice(text="실측 견적서 비교", action="quotes")])
         )
+    elif seen is not None and COMPARE_Q.search(q):
+        _screen_compare(part, lines, allowed, seen, st, f)
+        trade = trade or "dobae"
     else:
         ln = match_line(q, st.lines)
         if ln is not None:

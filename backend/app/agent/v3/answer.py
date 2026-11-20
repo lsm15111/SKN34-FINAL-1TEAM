@@ -453,3 +453,11 @@ def line_box(ln) -> CalcBox:
         label=ln.name, ref=f"standard.lines.{ln.key}", qty=ln.qty, unit=ln.unit,
         unit_price=ln.unit_price, amount=ln.amount, in_total=ln.state in ("included", "separate"),
     )  # fmt: skip
+
+
+def screen_box(ln, vendor: str) -> CalcBox:
+    """보던 화면(업체 자세히)의 가견적 줄 상자. 값은 화면과 같은 계산 엔진 값 그대로."""
+    return CalcBox(
+        label=f"{vendor} {ln.name}".strip(), ref=f"screen.vendor.lines.{ln.key}", qty=ln.qty,
+        unit=ln.unit, unit_price=ln.unit_price, amount=ln.amount, in_total=ln.amount > 0,
+    )  # fmt: skip

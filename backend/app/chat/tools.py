@@ -4,7 +4,8 @@
 - 숫자 · 날짜는 계산 엔진이 이미 만든 값만 옮긴다(표준견적서 · 공정표 · 실측 초안). 여기서 계산하지 않는다.
 - 남의 프로젝트는 기능 service가 404로 막는다(project.service.get_for). 동 · 호 · 연락처는 옮기지 않는다.
 - 부르는 함수는 B1a 계약(docs/v3/contract.md 5장)만: project.get_for · quote.standard_for · schedule.plan_for ·
-  schedule.overview_for · visit.vendors_for · visit.draft_for · visit.pick_view(날짜 고르기 화면, context.ids의 실측 id).
+  schedule.overview_for · visit.vendors_for · visit.draft_for · visit.pick_view(날짜 고르기 화면, context.ids의 실측 id) ·
+  visit.vendor_detail(업체 자세히 화면, context.ids의 업체 id → 화면 사실).
   1단계 함수가 아직 없거나 그 칸이 비면 그 사실을 비운다
   (답은 '계산 없음' 정해 둔 글로). 업체끼리 줄 차이는 계산 엔진 함수가 생기기 전까지 넘기지 않는다(여기서 빼기 계산 안 함).
 """
@@ -22,11 +23,14 @@ from app.agent.v3.schemas import (
     PlanBlockFact,
     PlanFacts,
     ProjectFacts,
+    ScreenFacts,
+    ScreenLineFact,
     SizeCalcFact,
     StandardFacts,
     StandardLineFact,
     VendorPickFact,
     VendorRangeFact,
+    VendorScreenFacts,
     VisitDraftFacts,
     VisitRecommendFact,
 )
@@ -42,10 +46,16 @@ PHASE = {"estimate": "standard", "progress": "visit", "work": "construction", "d
 
 
 async def project_facts(
-    s: AsyncSession, user: User, project_id: uuid.UUID, today: date, ids: Sequence[str] = ()
+    s: AsyncSession,
+    user: User,
+    project_id: uuid.UUID,
+    today: date,
+    ids: Sequence[str] = (),
+    view: str | None = None,
 ) -> ProjectFacts:
     """프로젝트 사실. 남의 것 · 없는 것은 404(AppError)를 그대로 올린다.
-    ids(보던 실측 id)가 있으면 업체가 답한 기간 · 추천 반나절도 옮긴다(날짜 고르기 화면)."""
+    ids(보던 실측 id)가 있으면 업체가 답한 기간 · 추천 반나절도 옮긴다(날짜 고르기 화면).
+    view가 업체 자세히(vendor)면 ids의 업체 가견적 줄을 화면 사실로 옮긴다(화면과 같은 계산 엔진 값)."""
     from app.project import service as project_service
 
     p = await project_service.get_for(s, user, project_id)
@@ -79,7 +89,64 @@ async def project_facts(
         facts.stage = stage  # type: ignore[assignment]
     # 모은 조건(맥락 L3): 고객이 되묻기에 답한 칸은 다시 묻지 않아요(answer.slot_known)
     facts.brief = await project_service.conditions(s, project_id)
+    if view is not None:
+        facts.screen = ScreenFacts(view=view)  # type: ignore[arg-type]
+        if view == "vendor" and ids and dobae is not None:
+            facts.screen.vendor = await _vendor_screen(s, user, project_id, ids[0], today)
+    seen = facts.screen.vendor if facts.screen else None
+    if seen is not None:  # 보는 업체의 따로 받는 줄(표준견적서에 없는 줄)을 가견적 칸에도 적어요
+        for e in facts.estimates:
+            if e.vendor == seen.vendor and not e.separate:
+                e.separate = [x.name for x in seen.lines if not x.in_standard and x.amount > 0]
     return facts
+
+
+async def _vendor_screen(
+    s: AsyncSession, user: User, project_id: uuid.UUID, raw: str, today: date
+) -> VendorScreenFacts | None:
+    """업체 자세히 화면의 가견적(도배 v3). 업체 id가 아니거나 고를 수 없는 업체면 비워요(404는 올리지 않음)."""
+    from app.visit import service as visit_service
+
+    try:
+        d = await visit_service.vendor_detail(
+            s, user, project_id, uuid.UUID(str(raw)), "dobae", today
+        )
+    except (ValueError, AppError):
+        return None
+    return vendor_screen(d)
+
+
+def vendor_screen(d) -> VendorScreenFacts | None:
+    """VendorDetailOut → 화면 사실. 값은 옮기기만 해요(셈 없음). 보여 준 벽지가 아닌 도배지 줄은 화면처럼 빼요."""
+    from app.refprice.vendor_baseline import VENDOR_BASE_2026_11
+
+    e = d.estimate_v3
+    if e is None:
+        return None
+    other = "paper_hapji" if e.grade == "basic" else "paper_silk"
+    lines = []
+    for ln in e.lines:
+        if ln.key == other or ln.mode == "excluded":
+            continue
+        base = VENDOR_BASE_2026_11.get(ln.code)
+        lines.append(
+            ScreenLineFact(
+                key=ln.key,
+                name=ln.name,
+                qty=float(ln.qty),
+                unit=ln.unit,
+                unit_price=ln.unit_price,
+                amount=ln.amount,
+                in_standard=ln.in_standard,
+                included_in=ln.included_in,
+                basis=base.unit_ko.removesuffix("당").strip() if base else "",
+            )
+        )
+    pct = e.vs_standard_pct
+    return VendorScreenFacts(
+        vendor=d.profile.biz_name or "", grade=e.grade, total=e.total, supply=e.supply, vat=e.vat,
+        vs_standard=None if pct is None else float(pct), grade_diff=d.grade_diff, lines=lines,
+    )  # fmt: skip
 
 
 async def _stage(s: AsyncSession, user: User, project_id: uuid.UUID, today: date) -> str | None:

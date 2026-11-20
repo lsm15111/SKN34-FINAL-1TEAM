@@ -241,7 +241,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
             rev, waiting_label, state = chat.rev, chat.waiting, chat.state
         if body.context.project_id is not None:
             facts = await tools.project_facts(
-                s, user, body.context.project_id, today, body.context.ids
+                s, user, body.context.project_id, today, body.context.ids, body.context.screen
             )
         kb = KB(
             ix=await knowledge.index(s),
