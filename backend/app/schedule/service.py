@@ -1745,6 +1745,7 @@ async def propose_dates(
     답하면 고객이 고른 시작일 중에서, 스스로 바꾸면 이유 필수. 수락하기 전까지 지금 날짜는 그대로다."""
     d = await _vendor_deal(s, vendor, deal_id)
     p = await project_service.get_out(s, d.project_id)
+    _need(p, d.trade, None)  # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
     plan = await ensure_expected(s, p, today)
     weekend = _weekend(plan)
     picked: list[date] | None = None
@@ -2024,6 +2025,8 @@ async def add_extra(
     묶음의 새 판(version + 1)이고 앞 판은 superseded가 된다(D23, 답 · 합계는 최신 판만).
     돌려주는 값: (공사 한 건 화면, 새로 만들었는지)."""
     d = await _vendor_deal(s, vendor, deal_id)
+    # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
+    _need(await project_service.get_out(s, d.project_id), d.trade, None)
     if data.client_key is not None and await _extra_by_key(s, d.id, data.client_key):
         return await job_for(s, vendor, deal_id, today), False
     tax = await vendor_service.tax_kind_of(s, vendor.id)
@@ -2357,6 +2360,8 @@ async def finish(
     끝나요'(+4일) · 자동 끝(+7일, D24). 고객 알림."""
     data = data or DoneIn()
     d = await _vendor_deal(s, vendor, deal_id)
+    # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
+    _need(await project_service.get_out(s, d.project_id), d.trade, None)
     await project_service.lock(s, d.project_id)
     d = await _lock_deal(s, d.id)
     if d is None or d.vendor_id != vendor.id:
