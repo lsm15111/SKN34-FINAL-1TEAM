@@ -1,0 +1,674 @@
+{"id": "iv1d:1", "text": "안녕하세요~ 처음 와봤어요", "label": "guide", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#1", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:2", "text": "집 전체 몰딩 교체하면 평균적으로 비용이 어느 정도인지 궁금합니다.", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#2", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:5", "text": "집 정보 넣을때 뭐 준비해야돼요 등기부 같은거 있어야 되나", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#5", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:6", "text": "천장 벽지 처진 것도 봐 주시고 그 부분 비용이 견적에서 왜 빠졌는지도 알려주세요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#6", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:7", "text": "하이", "label": "guide", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#7", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:8", "text": "여기 올라온 업체들은 검증된 곳인가요? 어떤 기준으로 받는지 궁금합니다", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#8", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:9", "text": "반갑습니다 ^^", "label": "guide", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#9", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:10", "text": "부가세 별도라는 말이 정확히 무슨 의미인가요?", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#10", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:11", "text": "작은방 벽지에 곰팡이 핀 거 상담하고 싶은데 지금 받은 견적서 금액도 설명해 주세요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#11", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:13", "text": "공급면적이랑 전용면적 중에 어떤 걸 넣어야 맞는 건가요?", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#13", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:14", "text": "가입만 하면 바로 견적 나와?", "label": "guide", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#14", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:15", "text": "업체 견적 금액이랑 공정표 날짜가 둘 다 처음 들은 거랑 달라요", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#15", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:16", "text": "도배 상담도 하고 싶고 우리집 공사 순서도 보고 싶어", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#16", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:17", "text": "걸레받이가 뭐에요?", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#17", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:18", "text": "구축 아파트 34평이면 도배 목공 합쳐서 천만원 안쪽으로 가능한가요?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#18", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:19", "text": "실측견적서랑 가견적 차이 설명해주고 공사 언제 시작하는지도", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#19", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:21", "text": "다음달에 결혼식이라 그 전에 공사를 꼭 끝내야 되거든요 근데 받은 견적 금액이 왜 이렇게 나왔는지도 모르겠고 날짜도 맞출 수 있는지 걱정이에요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#21", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:23", "text": "표준견적서에서 줄 하나가 이해가 안 가고, 목공 끝나는 날도 궁금해요", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#23", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:24", "text": "도배 상담하면서 지금 확정된 공사 일정 안에 넣을 수 있는지도 같이 봐주세요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#24", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:25", "text": "견적 설명이랑 일정 조정 둘 다 부탁드려요", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#25", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:26", "text": "가견적 왜 이렇게 나왔는지랑 공사 날짜도 같이 알려줘요", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#26", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:27", "text": "저기요 누구 있어요?", "label": "guide", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#27", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:28", "text": "방문 하나 갈면 보통 얼마 줘야되요", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#28", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:29", "text": "요즘 도배사 하루 인건비가 평균 얼마정도에요?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#29", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:30", "text": "가견적 보니까 도배가 좀 비싼데 공사 날짜를 바꾸면 더 싸지나요?", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#30", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:31", "text": "목공 업체 연기 승인했는데 그 다음 도배 날짜랑 비용 변동 있나요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#31", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:32", "text": "일정 미뤄진 거 승인하기 전에 견적서도 다시 한번 짚어 주실 수 있나요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#32", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:33", "text": "업체가 연기한다는데 그러면 견적 금액도 바뀌는 거예요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#33", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:34", "text": "실측 견적서 금액 설명 듣고 나서 확정하면 공사는 언제 들어오나요?", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#34", "v1_label": "orchestrator", "synthetic": false, "split": "dev"}
+{"id": "iv1d:35", "text": "집 전체 도배를 기본형으로 진행하고 싶습니다", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#35", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:36", "text": "작은방에 선반 짜 넣고 싶어 목공으로", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#36", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:37", "text": "방문이 내려앉아서 열때마다 바닥 긁혀 ㅠ", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#37", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:38", "text": "안방만 실크로 도배하려고 하는데요", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#38", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:39", "text": "거실 벽지 새로 붙이고 싶은데여", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#39", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:40", "text": "우물천장 없애고 평천장으로 목공 하고싶어요", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#40", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:41", "text": "문고리 말고 문짝 통째로 갈고 싶어", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#41", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:42", "text": "방 모서리 벽지에 까만 점들이 퍼져 있어요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#42", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:43", "text": "아기방 벽지에 얼룩이 너무 많아서 신경 쓰여요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#43", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:44", "text": "벽지 뒤로 공기 들어간 것처럼 볼록하게 부풀었어요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#44", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:45", "text": "천장이랑 벽 사이에 붙은 나무띠 끝이 떨어져서 덜렁거려요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#45", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:46", "text": "공급 32평, 전용 84㎡인데 전체 도배 상담 받고 싶습니다", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#46", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:47", "text": "방문이 잘 안 닫히고 열 때마다 끼익 소리가 나요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#47", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:48", "text": "몰딩 무몰딩으로 할수잇나", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#48", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:49", "text": "거실에 가벽 하나 세워서 방을 나누고 싶은데요", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#49", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:50", "text": "도배할 때 기존 벽지 다 뜯어내고 하는 걸로 하고 싶어요", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#50", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:51", "text": "벽지에서 꿉꿉한 곰팡이 냄새 나", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#51", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:53", "text": "거실 TV 뒤쪽에 아트월을 목공으로 하나 만들 수 있을까요?", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#53", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:54", "text": "벽 만지면 벽지가 바스락거리면서 부스러짐", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#54", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:55", "text": "현관에서 거실 들어오는 복도 벽만 도배 새로 하고 싶은데 그런 것도 받아줘요?", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#55", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:56", "text": "전에 살던 분이 담배를 많이 피웠는지 벽에 냄새가 배어 있어요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#56", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:57", "text": "신혼집 들어가기 전에 도배랑 몰딩 싹 바꾸고 싶어요", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#57", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:58", "text": "안방 창가 쪽에 커튼박스 만들고 싶어요", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#58", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:59", "text": "고양이가 벽지를 다 긁어놨어요 ㅠㅠ", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#59", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:60", "text": "문틀 교체도 목공으로 가능한가요?", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#60", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:61", "text": "20년 넘은 아파트라 벽지가 너무 낡고 칙칙해요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#61", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:62", "text": "방문 3개 교체하고 싶습니다", "label": "home_info", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#62", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:63", "text": "벽 맨 아래 붙어있는 띠 같은게 들떠서 틈이 생겼어요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#63", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:64", "text": "시아버님이 혼자 오래 사시던 집인데 벽지 색이 다 바래고 테이프 붙였던 자국이 여기저기 있어서 이번에 손을 좀 봐야 할 것 같아요", "label": "knowledge", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#64", "v1_label": "trade", "synthetic": false, "split": "dev"}
+{"id": "iv1d:65", "text": "표준견적서 합계가 생각보다 높은데 어느 항목에서 많이 나온 거예요?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#65", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:66", "text": "두번째 업체 가견적 혼자 싼데 뭐 빠진 거 있는 거 아님?", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#66", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:67", "text": "실측 견적서 올라온 거에 유효기간 적혀 있던데 그게 무슨 의미예요?", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#67", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:68", "text": "실측 견적서에 공사 기간이 5일로 돼 있는데 인건비는 며칠치로 들어간 거예요?", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#68", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:69", "text": "표준견적서에 '실측 후'라고 적힌 줄은 왜 금액이 비어 있어요?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#69", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:71", "text": "표준견적서보다 실측 견적서가 오히려 싸게 나왔는데 이래도 괜찮은 건가요", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#71", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:72", "text": "표준견적서에 초배 줄이 따로 있던데 이게 왜 들어갔나요", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#72", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:73", "text": "내 표준견적서에 몰딩이 선택으로 되있는 이유가 뭐에요", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#73", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:74", "text": "표준견적서에서 도배 품이 4.5로 나왔는데 이게 어떻게 계산된 건가요", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#74", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:75", "text": "실측 견적서 사진 보니까 폐기물 처리비가 있던데 이것도 원래 들어가는 거예요?", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#75", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:76", "text": "표준견적서랑 가견적 차이가 왜 이렇게 커요?", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#76", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:77", "text": "견적이 세개나 있는데 금액이 다 달라서 헷갈려요 어느게 진짜예요", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#77", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:78", "text": "표준견적서에 문짝 교체가 '안 함'으로 돼 있는데 왜 그런 거죠?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#78", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:79", "text": "업체가 준 대충 견적 그거 금액 어케 나온거에요", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#79", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:80", "text": "실측 견적서 칸에 적힌 금액이랑 첨부 파일 안 금액이 서로 달라요", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#80", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:81", "text": "제 표준견적서에 '묶음 포함'이라고 된 줄이 있는데 무슨 뜻이에요?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#81", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:82", "text": "가견젹 숫자가 너무 커서 놀랐어요 이거 맞는 거예요?", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#82", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:83", "text": "표준견적서 면적이 실제 집이랑 다른 것 같은데 공급면적으로 계산한 거예요?", "label": "standard_quote", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#83", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:84", "text": "가견적은 300이었는데 실측 견적서는 380이에요 뭐가 늘어난 거죠", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#84", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:85", "text": "가견적에 걸레받이 철거비가 왜 들어가 있죠", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#85", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:86", "text": "실측하고 온 견적서 금액 왜 이래", "label": "quote_compare", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#86", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:87", "text": "A업체 가견적에서 몰딩 단가만 유독 높네요", "label": "vendor_pick", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#87", "v1_label": "quote_explanation", "synthetic": false, "split": "dev"}
+{"id": "iv1d:88", "text": "우리 공정표 확정 다 된 건지 확인하고 싶어요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#88", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:89", "text": "업체 연기 요청 승인하면 뒤에 도배 날짜도 같이 밀려요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#89", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:90", "text": "공사날 일주일 뒤로 바꿔주세여", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#90", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:91", "text": "업체가 공사 날짜 올렸다고 알림 왔는데 어디서 확인해요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#91", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:92", "text": "공정표상 전체 공사 끝나는 날이 언제로 돼 있나요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#92", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:93", "text": "도배날 하루만 미뤄주세요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#93", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:94", "text": "목공이 연기되면 입주 전까지 공사가 다 끝날 수 있을지 걱정돼요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#94", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:95", "text": "도배 업체가 갑자기 다음주로 미룬대", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#95", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:96", "text": "공정표 보면 목공 끝나고 바로 다음날 도배 들어가는 거 맞아요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#96", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:97", "text": "아이 시험 기간이랑 겹쳐서 공사를 다음달로 옮기고 싶은데 가능할까요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#97", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:98", "text": "공사 날짜 수락했는데 그거 취소하고 다시 정할수 있나", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#98", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:99", "text": "제 공정표에 반나절이라고 되어 있는 건 오전만 작업한다는 뜻이에요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#99", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:100", "text": "공정표에서 목공이랑 도배 순서를 바꿔도 되나요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#100", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:101", "text": "목공 공사하는 날 몇 시쯤 오세요?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#101", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:102", "text": "업체가 미룬다는거 싫다고 해도 돼?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#102", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:103", "text": "공사 순서 어떻게 잡혔어?", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#103", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:104", "text": "울집 공사 일정표 보여줘", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#104", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:105", "text": "나무작업하는 업체가 이틀 미룬다는데 어캐해요", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#105", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:106", "text": "도배 시작 날짜 언제야", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#106", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:107", "text": "또 연기래요 ㅡㅡ 벌써 두번째인데", "label": "schedule", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#107", "v1_label": "schedule", "synthetic": false, "split": "dev"}
+{"id": "iv1d:108", "text": "공사비 할부로 나눠서 낼 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#108", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:109", "text": "믿집에서 전자계약서도 작성할 수 있어요?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#109", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:110", "text": "부엌 씽크대 통째로 바꿀라고요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#110", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:111", "text": "로또 번호 좀 찍어줘", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#111", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:112", "text": "마루 긁힌 데 보수 되나여", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#112", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:113", "text": "계약서 도장 찍으러 어디로 가야 돼요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#113", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:114", "text": "보일러 교체 견적도 받을 수 있나요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#114", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:116", "text": "현관 바닥 타일에 금이 갔어요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#116", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:117", "text": "스위치랑 콘센트 커버만 교체해 주시나요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#117", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:118", "text": "간편결제로 낼수 있어?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#118", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:119", "text": "심심하다", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#119", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:120", "text": "계좌이체로 선금 보내면 돼요?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#120", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:121", "text": "잔금은 공사 끝나고 어디로 입금하면 되나요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#121", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:123", "text": "거실 바닥을 강마루로 바꾸려고요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#123", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:124", "text": "장판 들떠서 새로 깔고 싶어", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#124", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:125", "text": "집값 오를까 내릴까", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#125", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:127", "text": "샷시 교체도 해줘요?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#127", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:128", "text": "앱 안에서 계약 체결까지 바로 되는 거죠?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#128", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:130", "text": "욕조 철거하고 샤워부스로 바꾸고 싶어요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#130", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:131", "text": "강아지 산책은 하루에 몇 번 시켜야 돼요?", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#131", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:132", "text": "화장실 타일 싹 다 깨고 새로 하고싶음", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#132", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "iv1d:133", "text": "주방 벽 타일 위에 덧방하려고 하는데요", "label": "out_of_scope", "surface": "customer", "src": "intent_v1", "src_id": "dev.jsonl#133", "v1_label": "out_of_scope", "synthetic": false, "split": "dev"}
+{"id": "syn:1", "text": "저희 집 정보부터 넣을게요. ○○아파트에 살아요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:2", "text": "거실이랑 안방만 도배하고 싶어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:3", "text": "천장은 빼고 벽만 해 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:4", "text": "아이 방만 합지로 하고 나머지는 실크로 할게요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:5", "text": "짐을 못 빼서 살면서 공사해야 해요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:6", "text": "방 개수가 잘못 들어가 있어요. 방은 세 개예요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:7", "text": "면적 기준을 공급면적 말고 전용면적으로 바꿔 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:8", "text": "도면 파일이 있는데 여기 올리면 되나요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:9", "text": "현관 신발장 옆에 선반 하나 짜 넣고 싶어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:10", "text": "작은방 방문이 낡아서 문짝까지 바꾸고 싶어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:11", "text": "걸레받이도 새로 해 주시나요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:12", "text": "문틀만 따로 교체하는 것도 가능한가요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:13", "text": "단지 이름이 비슷한 게 많아서 잘못 고른 것 같아요. 다시 고를게요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:14", "text": "공사 범위를 전체에서 부분으로 줄일게요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:15", "text": "베란다를 확장한 집이라 거실이 꽤 넓은 편이에요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:16", "text": "복도 벽이랑 현관 쪽도 도배 범위에 넣어 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:17", "text": "드레스룸 입구 쪽에 가벽을 세울 수 있을까요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:19", "text": "안방 붙박이장 뒤쪽 벽은 도배 안 해도 돼요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:20", "text": "거실 아트월 자리는 그대로 두고 나머지 벽만 할게요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:21", "text": "공사할 집은 ○○아파트야, 그걸로 넣어 줘", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:22", "text": "안방은 빼고 나머지 방만 할래", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:23", "text": "천장까지 싹 다 해 줘", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:24", "text": "방 하나 빠졌어, 네 개로 고쳐 줘", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:26", "text": "우리 살면서 해야 돼, 나갈 데가 없어", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:27", "text": "도면 사진 찍어서 보낼게", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:28", "text": "거실 한쪽 벽만 포인트 벽지로 하고 싶어", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:29", "text": "문틀이랑 방문 같이 바꾸고 싶은데 그것도 돼?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:30", "text": "작은방 하나는 창고로 써서 거긴 안 해도 돼", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:31", "text": "울집 전용84인데 공급으로 잘못들어갓어요", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:32", "text": "벽지 등급 아직 못정했는데 나중에 바꿔도되나여", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:33", "text": "도배 전체다 할게여 방이랑 거실 다요", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:34", "text": "합지 소폭으로 해주세여 젤 싼걸로", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:35", "text": "방3개 화장실2개 구조에요", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:37", "text": "천장몰딩 교체도 되나여", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:38", "text": "평면도 올리는데 어딧어요", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:40", "text": "25평형", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:41", "text": "합지로요", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:43", "text": "부분 도배만요", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:44", "text": "부모님 댁 공사를 제가 대신 알아보고 있어요. 두 분이 계속 지내셔야 해서 짐을 뺄 수가 없거든요. 살면서 하는 걸로 바꿔 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:45", "text": "입주할 때 한 번 하고 10년째 그대로라 벽지가 누렇게 변했어요. 작년에 거실은 따로 했으니까 이번엔 거실 빼고 방 세 개랑 복도만 할게요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:46", "text": "첫째랑 둘째가 큰 방 하나를 같이 쓰는데 이제 방을 나눠 달라고 해요. 가운데에 가벽을 세워서 방 두 개로 만들고 싶어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:47", "text": "20년 넘은 구축이라 도면이 없을 줄 알았는데 관리사무소에서 받아 왔어요. 이 도면 기준으로 면적 넣어 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:48", "text": "처음엔 집 전체를 하려고 했는데 견적을 보고 나니 예산이 좀 빠듯하네요. 안방이랑 거실은 빼고 작은방 두 개만 남겨 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:49", "text": "공급 109㎡, 전용 84㎡예요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:51", "text": "평수는 43평이고 방은 4개예요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:53", "text": "주방 쪽 벽도 도배해 주나요? 싱크대는 그대로 둘 거예요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:54", "text": "곰팡이 핀 작은방 벽도 이번 도배 범위에 넣어 주세요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:55", "text": "합지랑 실크 고민하다가 실크로 정했어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:57", "text": "베란다 창고에 선반 짜는 것도 되나요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:58", "text": "처음에 넣은 평수가 틀렸는데 지금이라도 고칠 수 있어요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:59", "text": "전용면적 59㎡로 고쳐 주시고요, 그럼 표준견적서도 다시 계산되나요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:60", "text": "방 하나 추가해 주세요. 그리고 실크로 하면 얼마나 더 나와요?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:61", "text": "우리 집 표준견적서 보여 주세요.", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:63", "text": "'실측 후'라고 적힌 줄은 왜 금액이 비어 있어요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:64", "text": "걸레받이 철거가 '묶음 포함'으로 돼 있는데 무슨 뜻이에요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:65", "text": "표준견적서에서 품이라는 게 뭘 말하는 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:66", "text": "천장 도배 줄이 빠져 있는데 왜 그런 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:67", "text": "요즘 도배 시세가 대충 어느 정도인가요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:68", "text": "등급별로 금액이 얼마나 차이 나는지 볼 수 있어요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:70", "text": "표준견적서 금액은 어떤 기준으로 계산한 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:71", "text": "폐기물 처리비는 표준견적서에 들어가 있나요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:73", "text": "문틀 교체는 한 짝에 보통 얼마 정도 해요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:74", "text": "표준견적서에 있는 '선택' 줄은 합계에 들어가나요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:75", "text": "보양비는 어떤 작업에 드는 돈이에요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:76", "text": "몰딩 교체 비용은 어느 줄을 보면 되나요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:77", "text": "살면서 공사하면 금액이 더 나오나요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:79", "text": "이 금액에 인건비도 다 포함된 건가요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:80", "text": "합계가 생각보다 높게 나왔는데 어떤 항목이 제일 커요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:81", "text": "표준견적서 다시 보여 줘", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:82", "text": "그래서 총 얼마 나왔어?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:83", "text": "인건비랑 자재비 나눠서 보여 줘", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:84", "text": "부자재비는 왜 이렇게 많이 잡혔어?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:86", "text": "평당 얼마 잡으면 돼?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:87", "text": "걸레받이 비용은 어디 있어?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:88", "text": "'안 함'으로 된 줄은 뭐야?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:89", "text": "요새 도배 얼마씩 해?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:90", "text": "공과잡비라는 건 뭐야?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:91", "text": "표준견적서 어디서봐요??", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:92", "text": "합계 부가세 포함된거 맞져?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:93", "text": "가벽 세우는거 대략 얼마들어요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:94", "text": "왜케 비싸게 나왔지 표준견적이", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:95", "text": "몰딩 철거비는 따로나오나여", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:96", "text": "목공 몇일 걸려요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:97", "text": "표준견적 이거 업체가 낸거에여?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:98", "text": "묶음포함 이거 돈 안내도 되는거죠?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:100", "text": "총액은?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:101", "text": "시세는요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:103", "text": "합계 보여 줘", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:104", "text": "친구가 작년에 비슷한 평수 아파트를 도배했는데 400 넘게 들었다고 하더라고요. 그런데 저희 표준견적서는 그보다 꽤 낮게 나와서요, 이 금액이 현실적인 건가요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:105", "text": "아직 업체를 고르기 전이라 대략적인 예산부터 잡아 보려고 해요. 저희 집 기준으로 도배랑 몰딩까지 하면 전체 얼마쯤 생각하면 될까요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:106", "text": "회사 휴가를 맞춰서 써야 해서 공사 기간이 중요해요. 지금 고른 범위대로면 도배랑 목공 합쳐서 며칠이나 걸리는지 알려 주세요.", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:107", "text": "표준견적서를 처음 받아 봤는데 줄이 너무 많아서 뭐가 뭔지 모르겠어요. 금액이 큰 줄 위주로 하나씩 풀어서 설명해 주실 수 있나요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:108", "text": "처음엔 실크로 하려다가 아이들이 낙서를 해서 합지로 바꿀까 고민 중이에요. 등급만 바꾸면 총액이 얼마나 내려가요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:109", "text": "기능공 품이 2.5로 나와 있는데 이게 이틀 반이라는 뜻이에요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:111", "text": "평당 10만 원이면 비싼 편이에요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:112", "text": "견적서에 '따로 계산'이라고 된 줄은 무슨 뜻이에요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:113", "text": "업체 견적 말고 보통 이 정도 공사면 얼마예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:114", "text": "실측 견적 받기 전에 우리 집 기준 금액부터 보고 싶어요.", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:115", "text": "견적서 합계에서 몰딩이 빠진 이유가 뭐예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:116", "text": "공사 날짜는 나중에 정하고 며칠 걸리는지만 먼저 알려 주세요.", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:119", "text": "표준견적서 합계가 얼마인지 알려 주시고, 업체 추천도 받아 볼 수 있을까요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:122", "text": "추천해 주신 업체 세 곳 목록 다시 보여 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:123", "text": "바른벽지를 왜 첫 번째로 추천했어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:124", "text": "나무결목공 후기 좀 볼 수 있을까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:125", "text": "이 업체 별점은 어떻게 매겨진 건가요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:126", "text": "이 업체가 최근에 끝낸 공사 사진 있나요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:127", "text": "가견적은 어떤 방식으로 계산된 거예요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:128", "text": "업체마다 가견적이 왜 이렇게 달라요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:129", "text": "다른 업체도 더 보여 주실 수 있어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:131", "text": "이 업체 믿고 맡겨도 될까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:132", "text": "목공 잘하는 곳으로만 다시 추천받고 싶어요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:133", "text": "추천 업체 중에 가장 저렴한 곳이 어디예요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:134", "text": "가견적에 몰딩 비용도 들어가 있나요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:135", "text": "별점은 높은데 후기 수가 적은 업체는 괜찮을까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:136", "text": "저희 단지에서 공사해 본 업체가 있나요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:137", "text": "업체 경력은 어디서 확인할 수 있어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:138", "text": "추천 이유에 적힌 '응답이 빠름'은 무슨 기준이에요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:139", "text": "살면서 하는 공사 경험이 많은 업체로 골라 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:140", "text": "이 세 곳 말고 다른 지역 업체도 볼 수 있어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:141", "text": "후기 중에 안 좋은 것도 보여 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:142", "text": "업체 사장님이 직접 시공하는 곳인지 알 수 있어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:143", "text": "바른벽지랑 한결인테리어 중에 어디가 더 나을까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:144", "text": "업체 소개에 사업자 등록 확인됐다고 나오는데 그게 무슨 뜻이에요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:145", "text": "도배랑 목공을 한 업체에서 다 하는 곳도 있나요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:147", "text": "여기 말고 다른 데 더 보여 줘", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:148", "text": "여기 후기 어때?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:150", "text": "이 업체 괜찮은 데야?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:151", "text": "왜 여기를 1등으로 뽑았어?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:152", "text": "여기 가견적 왜 이렇게 싸?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:153", "text": "목공만 하는 업체도 있어?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:154", "text": "이 집 끝낸 공사 사진 좀 보자", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:155", "text": "업체 목록 다시 띄워 줘", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:156", "text": "근처 업체로만 다시 골라 줘", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:157", "text": "후기 많은 순으로 정렬해 줘", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:158", "text": "업체추천 해주세여", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:159", "text": "바른벽지 후기 볼수잇나요", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:160", "text": "별점 몇점짜리에여 이업체", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:161", "text": "다른업체 더 없어요?? 맘에 드는데가 없음", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:162", "text": "가견적이 머예요", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:163", "text": "이업체 믿을만한가요 리뷰가 별로 없던데", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:165", "text": "목공 잘하는곳 추천좀", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:166", "text": "끝낸공사 사진 더 볼수있어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:168", "text": "후기 보여 줘", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:169", "text": "다른 업체는요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:170", "text": "별점 순으로", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:171", "text": "업체별 가견적", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:173", "text": "예전에 다른 곳에서 업체를 골랐다가 공사 중에 연락이 끊겨서 고생한 적이 있어요. 이번엔 정말 믿을 만한 곳으로 하고 싶은데 추천된 업체들은 어떤 기준으로 확인된 건가요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:174", "text": "아이가 비염이 있어서 친환경 자재를 쓰는 업체였으면 해요. 추천 목록 중에 그런 곳이 있는지 알려 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:175", "text": "맞벌이라 평일 낮에는 통화가 어려워서 저녁이나 주말에도 연락되는 업체면 좋겠어요. 이 조건으로 다시 추천해 주실 수 있어요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:176", "text": "추천받은 세 곳 가견적을 보니까 제일 싼 곳이랑 비싼 곳이 꽤 차이가 나네요. 계산 방식이 같다던데 왜 이렇게 벌어지는 건지 궁금해요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:177", "text": "인테리어를 처음 해 봐서 업체를 어떻게 봐야 할지 감이 안 와요. 후기랑 별점 말고 꼭 확인해야 할 게 있을까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:178", "text": "바른벽지가 별점은 제일 높은데 가견적도 제일 비싸더라고요. 비싼 만큼 값을 하는 건지, 두 번째 업체로 가도 괜찮을지 판단이 안 서요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:179", "text": "별점 4.5 이상인 업체만 보여 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:180", "text": "가견적이 320만 원인데 이 금액에 부가세도 포함돼 있나요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:181", "text": "끝낸 공사가 50건 넘는 업체만 추려 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:183", "text": "업체별로 얼마씩 나오는지 보고 싶어요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:184", "text": "실측 오기 전에 업체들 예상 금액부터 비교해 볼래요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:185", "text": "견적 꼼꼼하게 내 주는 업체를 고르려면 뭘 봐야 해요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:187", "text": "실측 요청 넣기 전에 업체를 한 곳 더 보고 싶어요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:188", "text": "후기에 하자 얘기가 있던데 이 업체 괜찮은 거예요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:189", "text": "가견적 받은 업체 중에 별점 높은 곳으로 추려 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:190", "text": "추천 업체 후기 좀 보여 주시고, 실측은 어떻게 요청하는지도 알려 주세요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:191", "text": "이 업체 별점이 왜 높은지 궁금하고요, 표준견적서 합계도 다시 보고 싶어요.", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:193", "text": "바른벽지에 실측 요청 보내 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:194", "text": "실측은 다음 주 평일 오전으로 받고 싶어요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:195", "text": "실측하러 언제 오시는지 알 수 있어요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:196", "text": "실측 날짜를 주말로 바꾸고 싶어요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:197", "text": "실측 요청 취소할게요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:198", "text": "업체가 실측 가능한 날짜를 답했나요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:200", "text": "업체한테 제 연락처가 넘어가는 건가요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:201", "text": "연락처 공개는 바른벽지에만 동의할게요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:202", "text": "오후 반나절로 골랐는데 몇 시쯤 오세요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:204", "text": "실측 요청 보낸 지 꽤 됐는데 아직 답이 없어요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:205", "text": "실측 요청할 때 희망 기간은 며칠까지 고를 수 있어요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:206", "text": "실측할 때 제가 집에 꼭 있어야 하나요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:207", "text": "희망 기간을 이번 주에서 다음 주까지로 늘려 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:208", "text": "업체가 제안한 실측 날짜 중에 수요일 오전으로 할게요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:209", "text": "실측 요청 보내면 업체는 언제쯤 답해 줘요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:210", "text": "나무결목공 실측은 취소하고 바른벽지만 남길게요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:211", "text": "실측 요청 넣은 업체 목록 좀 보여 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:212", "text": "실측은 오전이 좋아요, 오후엔 아이 하원 때문에 어려워요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:213", "text": "실측 요청 넣어 줘", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:216", "text": "그 실측 그냥 취소해 줘", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:217", "text": "업체에서 실측 답 왔어?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:218", "text": "실측은 토요일 오전으로 해 줘", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:219", "text": "실측 요청 아직 안 갔으면 기간 좀 바꿔 줘", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:220", "text": "내 번호 업체한테 알려 줘도 돼", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:221", "text": "실측은 오후 반나절로 고를게", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:222", "text": "세 군데 다 실측 불러 줘", "label": "visit", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:223", "text": "실측요청 어케 보내요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:224", "text": "실측 언제오나여 기다리고잇는데", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:225", "text": "실측날짜 변경 가능한가욤", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:226", "text": "실측취소 할래요 맘바꿈", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:227", "text": "업체가 고른 실측날짜 어디서 확인해요", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:228", "text": "연락처 공개 동의 해야되나요? 좀 찜찜해서ㅠ", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:229", "text": "담주 오전에 실측 ㄱㄴ?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:230", "text": "실측 머하러 하는거에요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:231", "text": "실측 요청", "label": "visit", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:232", "text": "실측 언제요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:233", "text": "오전 반나절", "label": "visit", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:234", "text": "실측 취소", "label": "visit", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:236", "text": "아랫집 누수 공사 때문에 이번 주 내내 집이 어수선해요. 실측은 다음 주로 미루고 싶은데 이미 보낸 요청 기간을 바꿀 수 있어요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:237", "text": "두 군데에 실측 요청을 보냈는데 한 곳은 바로 답이 왔고 다른 곳은 사흘째 아무 소식이 없어요. 기다려야 하나요, 아니면 다른 업체로 다시 보내야 하나요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:238", "text": "처음에는 연락처 공개에 동의를 안 했는데 업체가 연락할 방법이 없다고 하네요. 지금이라도 동의로 바꾸고 싶어요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:239", "text": "가견적만 보고 바로 정하면 안 되나 싶었는데 실측을 꼭 거쳐야 한다고 해서요. 실측에서 업체가 정확히 뭘 확인하는 건지 알고 싶어요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:240", "text": "실측은 12월 2일부터 6일 사이에 와 주시면 돼요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:241", "text": "수요일 오후 2시 이후로 실측 가능해요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:242", "text": "11월 28일 오전 실측으로 잡아 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:243", "text": "공사 말고 실측 날짜만 다음 주로 옮겨 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:245", "text": "이 업체로 실측 받아 볼게요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:246", "text": "업체 고르는 건 끝났으니 이제 실측 요청만 보내면 되죠?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:247", "text": "실측은 몇 시간이면 끝나요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:248", "text": "업체가 답한 실측 날짜가 이사 전이라 다행이에요, 그날로 할게요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:249", "text": "가견적 보니까 괜찮아서 그 업체 실측 잡아 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:250", "text": "실측 요청 보내 주시고, 업체 후기도 한 번 더 보여 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:251", "text": "실측은 언제쯤 오는지, 그리고 표준견적서 합계는 얼마였는지 알려 주세요.", "label": "visit", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:252", "text": "실측 날짜를 바꾸고 싶은데요, 그리고 공사는 보통 며칠 걸려요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:255", "text": "거리가 너무 멀어서 이 건은 거절하겠습니다.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:256", "text": "다음 주 화요일 오전이랑 목요일 오후에 갈 수 있어요.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:257", "text": "이 고객 집 정보랑 희망 기간 다시 보여 주세요.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:258", "text": "오늘 들어온 요청 중에 도배 건만 추려 주세요.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:260", "text": "이 요청은 살면서 하는 공사인가요, 빈집인가요?", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:262", "text": "이거 받을게, 수락 눌러 줘", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:264", "text": "수요일 오후 된다고 보내 줘", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:265", "text": "실측요청 들어온거 브리핑좀 해주세요", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:266", "text": "이번건 거절할께요 일정이 안되서", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:267", "text": "목욜 오전 금욜 오후 가능함", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:269", "text": "수락", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:270", "text": "거절할게요", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:271", "text": "요즘 목공 현장이 두 군데 겹쳐서 평일 낮에는 빠지기가 어려워요. 저녁 6시 이후나 토요일 오전이면 실측 갈 수 있다고 답해 주세요.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:272", "text": "지난번에 같은 단지 요청을 받았을 때는 고객이랑 연락이 안 돼서 헛걸음했어요. 이번 요청은 고객이 연락처 공개에 동의했는지 먼저 확인하고 수락하고 싶어요.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:273", "text": "12월 9일부터 11일까지 오전에 실측 가능합니다.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:274", "text": "실측은 수요일에 갈 수 있고, 공사 날짜는 실측 보고 나서 따로 올릴게요.", "label": "visit", "surface": "vendor", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:275", "text": "바른벽지에서 보낸 실측 견적서 보여 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:277", "text": "이 견적서는 부가세 별도라고 돼 있는데 포함하면 얼마예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:278", "text": "한 업체는 폐기물 처리가 빠져 있던데 맞나요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:279", "text": "견적서 유효기간이 언제까지예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:280", "text": "나무결목공이 견적서를 고쳐서 다시 보냈다던데 뭐가 바뀌었어요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:281", "text": "두 업체 공사 기간이 왜 다르게 적혀 있어요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:282", "text": "바른벽지로 최종 확정해 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:283", "text": "이미 확정한 업체를 다른 곳으로 바꿀 수도 있어요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:284", "text": "두 견적서 중에 포함 항목이 더 많은 쪽이 어디예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:285", "text": "견적서에 적힌 공사 기간이랑 유효기간을 표로 정리해 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:286", "text": "업체 견적서에 몰딩 철거가 들어 있는지 확인해 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:287", "text": "확정한 견적서는 나중에 다시 볼 수 있나요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:288", "text": "한결인테리어 견적서는 엑셀로 왔던데 요약해 주실 수 있어요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:289", "text": "견적서끼리 금액 차이가 제일 큰 항목이 뭐예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:290", "text": "업체에 걸레받이 포함인지 물어보고 싶은데 뭐라고 하면 될까요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:291", "text": "받은 견적서 보여 줘", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:293", "text": "여기로 확정할게", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:294", "text": "견적서 새 판 왔어?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:295", "text": "이거 부가세 따로야?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:296", "text": "유효기간 제일 긴 데가 어디야?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:297", "text": "다시 고를래, 둘 다 별로야", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:298", "text": "업체 견적서에 문틀 교체도 들어가 있어?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:299", "text": "견적서 받은거 어디서봐여", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:300", "text": "부가세별도 이거 무슨말이에요", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:301", "text": "이 업체로 확정 ㄱㄱ", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:302", "text": "두군데 견적 비교좀해주세요", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:303", "text": "새로온 견적서 금액이 더올랐네요 왜그렇죠", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:304", "text": "견적서 사진으로 온건 어케 봐요", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:305", "text": "확정한담에 견적 바뀌면 어케되요", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:306", "text": "견적서 비교", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:309", "text": "유효기간은요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:310", "text": "두 업체 견적서를 받아 봤는데 한 곳은 금액이 낮은 대신 유효기간이 일주일밖에 안 되고, 다른 곳은 조금 비싸도 한 달이에요. 이런 경우엔 어느 쪽을 고르는 게 나을까요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:311", "text": "남편이랑 상의해 보니 금액보다 꼼꼼하게 해 주는 게 중요하다는 결론이 났어요. 받은 견적서 중에 포함 항목이 더 자세히 적힌 쪽이 어디인지 알려 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:312", "text": "처음 받은 견적서에서 천장 도배가 빠져 있어서 업체에 말했더니 다시 보내 줬어요. 새로 온 판에 천장이 제대로 들어갔는지 확인해 주실 수 있어요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:313", "text": "실측하고 나서 업체가 벽 상태가 안 좋아 퍼티 작업을 추가해야 한다고 견적서에 적어 왔어요. 꼭 필요한 작업인지 업체한테 뭘 물어보면 좋을지 알려 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:314", "text": "한 곳은 380만 원, 다른 곳은 420만 원인데 40만 원 차이가 어디서 나는 거예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:315", "text": "견적서 유효기간이 12월 31일까지인데 그 전에 확정해야 하나요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:316", "text": "실측 견적서가 가견적보다 60만 원이나 올랐는데 이유가 뭘까요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:318", "text": "확정하기 전에 견적서 금액을 한 번만 더 보고 싶어요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:319", "text": "업체가 적은 공사 기간이 표준보다 긴데 왜 그런 거예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:321", "text": "받은 견적서가 별로라 바른벽지 말고 다시 고를래요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:322", "text": "두 견적서 차이 좀 알려 주시고, 공사 날짜는 언제 올라오는지도 궁금해요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:323", "text": "이 업체로 확정해 주세요. 그리고 공정표는 언제 나와요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:324", "text": "받은 견적서 유효기간이랑, 실측 다시 와 줄 수 있는지 알려 줘.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:325", "text": "실측 견적서 쓰는 것 좀 도와주세요.", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:327", "text": "도배 견적서에서 자주 빠뜨리는 항목 알려 주세요.", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:328", "text": "고객이 폐기물 처리비를 물어봐서 견적서를 고쳐서 다시 낼게요.", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:329", "text": "견적서 파일은 PDF 말고 사진으로 찍어서 올려도 되나요?", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:330", "text": "유효기간은 보통 며칠로 적으면 돼요?", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:331", "text": "견적서 체크리스트 보여 줘", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:332", "text": "수정한 견적서 새로 올릴게", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:333", "text": "부가세 별도로 적어도 되지?", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:334", "text": "견적서 수정해서 재제출 어케해요", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:335", "text": "낼칸에 공사기간 몇일로 적어야되나", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:336", "text": "견적서 작성", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:337", "text": "다시 낼게요", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:338", "text": "실측 가 보니 벽에 곰팡이 흔적이 있어서 제거랑 방지 작업을 더 해야 할 것 같아요. 견적서에 이걸 따로 적는 게 나을지, 금액에 합쳐서 적어도 될지 알려 주세요.", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:339", "text": "공사 금액 285만 원, 부가세 별도, 기간 3일로 적어서 낼게요.", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:340", "text": "고객이 가견적이랑 왜 다르냐고 물어서 견적서에 설명을 붙여 다시 내려고요.", "label": "quote_compare", "surface": "vendor", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:343", "text": "확정된 공정표를 한눈에 보고 싶어요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:346", "text": "그 연기 요청은 승인해 주세요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:347", "text": "이사 날짜에 맞춰서 공사가 끝났으면 좋겠어요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:348", "text": "목공 업체 날짜가 아직 안 올라왔어요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:349", "text": "업체가 제안한 날짜가 평일이라 어려운데 주말로 바꿀 수 있나요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:350", "text": "공사 날짜를 일주일 뒤로 미루고 싶어요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:351", "text": "연기되면 다른 공정 날짜도 같이 밀리나요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:352", "text": "공사 첫날 몇 시에 오시는지도 공정표에 나와요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:353", "text": "연기 요청을 거절하면 어떻게 돼요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:354", "text": "업체가 올린 날짜 중에 하루만 바꿔 달라고 할 수 있어요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:355", "text": "목공 끝나고 도배는 바로 이어서 들어오는 거죠?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:357", "text": "그 날짜로 수락할게", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:358", "text": "전체 공정표 펼쳐 줘", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:359", "text": "연기 요청 온 거 뭐야?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:360", "text": "연기 그냥 받아 줘", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:362", "text": "시작 날짜 하루만 당길 수 있어?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:363", "text": "공사날짜 올라왓나요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:364", "text": "연기요청 승인할께요", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:365", "text": "이사날짜랑 겹치는데 어케하죠ㅠㅠ", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:366", "text": "공정표 확정된거 맞나여", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:367", "text": "공사 언제시작해여", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:368", "text": "공정표", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:369", "text": "공사 날짜는요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:371", "text": "날짜 수락", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:372", "text": "전세 만기 때문에 지금 사는 집에서 이달 말에는 꼭 나와야 해요. 그래서 새 집 공사가 그 전에 끝나야 하는데, 지금 공정표대로면 날짜가 맞을까요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:373", "text": "업체에서 자재가 늦게 들어와서 사흘 미뤄야 한다고 연락이 왔어요. 저는 괜찮은데 이렇게 되면 목공 쪽 일정도 같이 바뀌는 건지 궁금해요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:374", "text": "아이 방학에 맞춰서 친정에 가 있을 거라 그동안 공사를 끝내고 싶어요. 업체가 올린 날짜가 방학 시작보다 이틀 빠른데 조금 늦춰 달라고 할 수 있을까요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:376", "text": "12월 15일에 이사라서 14일까지는 공사가 끝나야 해요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:377", "text": "실측 말고 공사 날짜가 언제인지 궁금해요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:379", "text": "우리 공정표에서는 목공이 며칠에 들어와요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:380", "text": "업체 확정은 했는데 공사 날짜는 언제 올라와요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:381", "text": "도배가 며칠 걸리는지 말고 정확히 무슨 날 끝나는지 알려 주세요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:382", "text": "처음에 말한 희망일 말고 업체가 올린 날짜로 갈게요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:383", "text": "공사 날짜 수락할게요, 그리고 도배하고 바로 들어가 살아도 돼요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:384", "text": "공정표에서 목공 날짜 확인해 주시고, 업체 견적서도 한 번 더 보고 싶어요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:385", "text": "공사 날짜 올리려고 하는데 어디서 하면 돼요?", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:386", "text": "다음 주 월요일부터 수요일까지로 공사 날짜 올려 주세요.", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:387", "text": "자재 입고가 늦어져서 이틀 연기 요청 드리고 싶어요.", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:388", "text": "고객님이 제가 올린 공사 날짜를 수락하셨나요?", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:389", "text": "공사 날짜 올릴게", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:390", "text": "하루만 미뤄야겠어, 연기 요청 넣어 줘", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:391", "text": "공사일정 올리는거 어케함", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:392", "text": "비 많이 와서 습도땜에 연기해야될듯 요청좀", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:393", "text": "연기 요청", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:394", "text": "앞 현장이 생각보다 길어져서 이 집은 예정보다 하루 늦게 들어가야 할 것 같아요. 고객님께 죄송한데 연기 사유를 어떻게 적으면 좋을지 같이 봐 주세요.", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:396", "text": "실측은 다녀왔고 이제 공사 날짜를 올리려고요.", "label": "schedule", "surface": "vendor", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:399", "text": "베란다 쪽 벽에 곰팡이가 자꾸 생기는데 원인이 뭘까요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:400", "text": "겨울에 도배해도 괜찮나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:404", "text": "이웃집에 공사 안내문은 어떻게 붙이는 게 좋아요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:405", "text": "계약금은 보통 전체 금액의 몇 퍼센트 정도 내요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:408", "text": "몰딩을 없애면 벽 마감은 어떻게 처리해요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:409", "text": "걸레받이는 원목이랑 PVC 중에 뭐가 나아요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:411", "text": "결로 생기는 벽에 도배만 새로 해도 괜찮을까요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:414", "text": "셀프로 부분 도배해 보려는데 풀은 어떤 걸 써야 해요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:415", "text": "실크 벽지 오래 가?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:416", "text": "벽지에 기포 생기면 어떡해?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:417", "text": "도배하고 냄새 언제 빠져?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:418", "text": "공사하는 동안 냉장고는 그대로 둬도 돼?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:419", "text": "문틀 시트지랑 페인트 중에 뭐가 나아?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:421", "text": "셀프 도배 할 만해?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:422", "text": "곰팡이 핀 데 그냥 덮어도 돼?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:425", "text": "벽지 누렇게 변하는거 왜그래요ㅠ", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:426", "text": "셀프로 몰딩 붙일때 본드 머써요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:427", "text": "공사 소음 몇시부터 괜찮아여? 아랫집 눈치보여서", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:428", "text": "공사중에 보일러 틀어도되요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:429", "text": "석고보드 벽에 도배 바로 해도되나여", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:430", "text": "벽걸이tv 떼고 도배해야되나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:431", "text": "들뜸 원인?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:433", "text": "곰팡이 원인", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:434", "text": "공사 전 준비물", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:435", "text": "실크 장점?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:436", "text": "작년 겨울에 북쪽 방 벽지 모서리가 까맣게 변하더니 올해는 더 번졌어요. 닦아도 다시 생기는데 이게 단열 문제인지 환기 문제인지 원인부터 알고 싶어요.", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:437", "text": "저희가 살면서 공사를 해야 해서 아이랑 강아지가 집에 있어야 하거든요. 도배하는 날이랑 그다음 날 생활할 때 특히 조심해야 할 게 뭐가 있을까요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:438", "text": "어머니가 예전에 도배하고 나서 벽지가 쭈글쭈글해졌던 적이 있으시대요. 그때 업체가 풀을 너무 많이 써서 그렇다고 했다던데, 실제로 그런 원인도 있나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:439", "text": "이번에 계약서를 처음 써 보는데 업체 쪽 양식을 그대로 써도 될지 걱정이에요. 하자나 추가 비용 같은 건 계약서에 어떻게 적어 두는 게 안전할까요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:440", "text": "실내 온도가 10도 아래면 도배하면 안 되나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:441", "text": "도배 후 48시간은 창문 닫아 두라던데 맞아요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:442", "text": "몰딩 높이 40mm랑 60mm는 느낌이 많이 달라요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:443", "text": "나중에 욕실이랑 바닥도 손볼 생각인데 도배를 먼저 해도 되나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:444", "text": "욕실 타일 줄눈이 자꾸 까매지는데 원인이 뭐예요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:446", "text": "계약금 걸 때 영수증은 꼭 받아 둬야 해요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:447", "text": "벽에 금이 가 있는데 도배로 가려도 괜찮은 건지 궁금해요.", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:451", "text": "공사 전날 뭘 준비하면 되는지 알려 주고, 업체가 올린 날짜도 다시 보여 줘.", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:452", "text": "오래된 벽지 위에 실크를 덧방해도 되는 기준이 있을까요?", "label": "knowledge", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:453", "text": "석고보드 이음매 퍼티는 몇 번 정도 하는 게 좋아요?", "label": "knowledge", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:454", "text": "겨울 현장이면 풀 마르는 시간 얼마나 잡아야 돼?", "label": "knowledge", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:455", "text": "걸레받이 실리콘으로 붙이는거랑 타카 중에 머가 나음?", "label": "knowledge", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:456", "text": "이번 현장이 결로가 심한 북향 방인데 고객은 실크를 원해요. 곰팡이 방지 처리를 하고 붙이면 되는지, 합지를 권하는 게 나은지 시공하는 입장에서 의견이 궁금해요.", "label": "knowledge", "surface": "vendor", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:459", "text": "지금 저희 공사가 어디까지 진행됐어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:461", "text": "다음엔 뭘 하면 되나요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:463", "text": "저희 집에 강아지가 있다는 거 기억해 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:464", "text": "아까 말한 거 기억에서 지워 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:465", "text": "감사합니다, 덕분에 많이 알았어요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:467", "text": "회원가입은 어떻게 하나요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:468", "text": "알겠어요, 조금 생각해 보고 다시 올게요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:469", "text": "남편 계정이랑 같이 볼 수 있어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:470", "text": "비서가 기억하고 있는 내용 좀 보여 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:471", "text": "전체 순서를 한 번에 정리해서 알려 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:472", "text": "좋은 아침이에요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:473", "text": "이 비서는 어떤 걸 도와줄 수 있어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:474", "text": "제가 지금 놓친 단계가 있을까요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:475", "text": "알림을 끄고 싶은데 어디서 해요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:476", "text": "그렇군요, 이해했어요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:477", "text": "수고 많으셨어요, 다음에 또 물어볼게요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:478", "text": "오래 걸렸는데 드디어 끝이 보이네요, 남은 일이 뭐예요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:479", "text": "안녕, 오늘도 잘 부탁해", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:480", "text": "나 뭐부터 해야 돼?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:481", "text": "우리 지금 어디까지 왔어?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:482", "text": "오늘 할 거 있어?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:484", "text": "오케이 무슨 말인지 알겠어", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:485", "text": "내 기억 목록 싹 지워 줘", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:486", "text": "근데 너 이름이 뭐야?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:487", "text": "다음 단계 알려 줘", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:488", "text": "나한테 온 알림 뭐야?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:491", "text": "가입 어케해요", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:492", "text": "지금 어디까지 한건지 몰겠어요", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:493", "text": "감사합니당ㅎㅎ", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:495", "text": "넵 알겟습니다", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:496", "text": "비서님 기억 지우는거 어케해여", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:497", "text": "오늘 할꺼 잇나요", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:500", "text": "다음은요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:502", "text": "인테리어는 처음이라 친구가 믿집을 알려 줘서 들어와 봤어요. 집 정보 넣는 것부터 업체 정하는 것까지 전체 흐름이 어떻게 되는지 쭉 알려 주실 수 있어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:503", "text": "며칠 바빠서 앱을 못 들어왔더니 알림이 여러 개 쌓여 있네요. 그사이에 뭐가 바뀌었고 지금 제가 해야 할 게 뭔지 정리해 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:504", "text": "제가 깜빡깜빡을 잘해서요, 앞으로 단계 넘어갈 때마다 다음에 뭘 해야 하는지 먼저 알려 주시면 좋겠어요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:505", "text": "지난번에 아이 알레르기 얘기를 했던 것 같은데 이제 상관없어졌어요. 그 내용은 기억에서 빼 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:506", "text": "공사 준비하면서 이것저것 물어봐도 친절하게 답해 주셔서 정말 도움이 많이 됐어요. 고맙다는 말 꼭 하고 싶었어요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:507", "text": "표준견적서랑 업체 추천까지는 본 것 같은데 그다음에 뭘 눌러야 할지 모르겠어요. 지금 단계에서 해야 할 일이 뭐예요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:508", "text": "3단계까지 끝낸 것 같은데 남은 게 뭐예요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:509", "text": "알림이 5개나 왔는데 중요한 것만 알려 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:510", "text": "2주 뒤에 다시 들어와도 진행 상황이 그대로 남아 있어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:511", "text": "표준견적서 다음엔 뭘 해야 돼요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:512", "text": "업체 추천 받기 전에 먼저 해 둘 게 있나요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:513", "text": "실측 요청은 아직 안 했는데 지금 단계가 어디쯤이에요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:516", "text": "제가 오전에만 통화가 된다는 거 기억해 두세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:517", "text": "오늘 날씨 좋네요, 그나저나 다음 할 일이 뭐예요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:518", "text": "지금 어디까지 왔는지 알려 주고, 표준견적서도 다시 보여 줘.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:519", "text": "가입은 어떻게 하는지랑 업체 추천은 언제 받는지 궁금해요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:520", "text": "오늘 정할 일 알려 주시고요, 실측 날짜도 바꾸고 싶어요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:521", "text": "안녕하세요, 오늘 처리할 일 정리해 주세요.", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:522", "text": "작업함은 어디서 볼 수 있어요?", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:523", "text": "오늘 확인 안 한 알림 있어요?", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:524", "text": "오늘 뭐부터 하면 돼?", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:525", "text": "작업함 어디잇어요 못찾겠네", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:526", "text": "수고하세요", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:527", "text": "오늘 할 일", "label": "guide", "surface": "vendor", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:531", "text": "인덕션 놓을 자리에 전기 증설이 필요하대요, 그것도 맡길게요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:532", "text": "샷시 교체 견적도 받아 볼 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:533", "text": "화장실 변기에서 물이 새는데 고쳐 주실 분 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:534", "text": "거실 전등이 안 켜지는데 전기 공사도 해 주세요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:535", "text": "에어컨 배관을 벽 속에 묻는 공사도 맡길 수 있어요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:536", "text": "현관 바닥 타일 깨진 거 보수도 가능할까요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:537", "text": "믿집에서 카드 결제도 받나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:538", "text": "업체한테 보낼 잔금을 믿집 계좌로 넣으면 되나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:539", "text": "공사하고 나면 집값이 좀 오를까요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:540", "text": "공사 중에 생긴 파손은 보험 처리해 주시나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:541", "text": "아랫집에서 누수 피해 보상을 요구하는데 대신 협상해 주실 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:542", "text": "오늘 저녁 메뉴 추천해 주세요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:545", "text": "이사 업체도 같이 알아봐 주실 수 있어요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:546", "text": "거실 장판 새로 깔고 싶은데 해 줘", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:548", "text": "방충망 찢어졌는데 갈아 줄 수 있어?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:549", "text": "주방 상판도 바꿔 줄 수 있어?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:550", "text": "업체한테 돈 여기서 보내 줘", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:553", "text": "심심한데 끝말잇기 하자", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:554", "text": "욕실 줄눈 시공도 해주나여", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:555", "text": "화장실 공사 견적 ㄱㄴ?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:556", "text": "베란다 샷시 바꾸고싶은데 업체좀 연결해주세용", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:557", "text": "바닥 마루 들뜬거 고쳐주세요ㅠㅠ", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:558", "text": "앱에서 입금하면 업체한테 바로가나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:559", "text": "전세대출 알아봐주실수있어요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:560", "text": "배고프다 머먹지", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn:561", "text": "욕실 공사", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:562", "text": "카드 결제", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:563", "text": "장판 견적", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:565", "text": "전자계약 돼요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "짧음", "synthetic": true, "split": "dev"}
+{"id": "syn:566", "text": "이번에 도배랑 같이 욕실도 손보려고 하는데요, 욕조를 뜯고 샤워부스로 바꾸고 싶어요. 그 공사도 믿집에서 업체를 찾아 주실 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:567", "text": "이사 날짜에 맞춰 돈 나갈 데가 한꺼번에 몰려서 목돈이 부족해요. 인테리어 비용 대출을 믿집에서 연결해 주실 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:569", "text": "주방이 너무 오래돼서 싱크대랑 상부장을 통째로 바꾸고 싶어요. 도배하는 김에 주방 가구 업체도 같이 잡아 주시면 좋겠어요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:570", "text": "요즘 공사 알아보느라 스트레스가 심해서 그런데, 기분 전환할 만한 노래 하나만 추천해 주실래요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn:571", "text": "욕실 타일 3평 정도 새로 까는 데 얼마예요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:572", "text": "계약금 50만 원 지금 여기서 이체할게요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn:573", "text": "도배하는 김에 주방 벽 타일도 붙여 주세요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:574", "text": "계약금은 믿집 앱에서 바로 결제하면 되죠?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:575", "text": "도배하는 날 스위치 위치도 같이 옮겨 주실 수 있어요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:576", "text": "베란다 결로가 심해서 샷시를 바꿔야 할 것 같은데 그것도 해 주실 수 있어요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:577", "text": "업체랑 계약서 쓰는 것도 믿집 안에서 바로 체결되나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:578", "text": "하자 생기면 업체 상대로 법적 대응도 대신 해 주시나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn:579", "text": "전기 배선도 손봐 주실 수 있는지, 그리고 도배는 며칠 걸리는지 알려 주세요.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:580", "text": "송금은 여기서 되는지 알려 주고, 업체 확정은 어떻게 하는지도 알려 줘.", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "복합", "synthetic": true, "split": "dev"}
+{"id": "syn:581", "text": "저희가 욕실 타일 시공도 하는데 그쪽 요청도 받을 수 있게 해 주세요.", "label": "out_of_scope", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:582", "text": "고객한테 공사 대금을 믿집에서 대신 받아 주실 수 있나요?", "label": "out_of_scope", "surface": "vendor", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn:583", "text": "오늘 야구 누가 이겼어?", "label": "out_of_scope", "surface": "vendor", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn:584", "text": "견적서는 냈고, 계약서는 여기서 전자 서명으로 보내면 되죠?", "label": "out_of_scope", "surface": "vendor", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:1", "text": "샷시는 내년 봄에나 바꿀 수 있는데, 도배를 지금 먼저 하면 그때 창 주변을 다시 손봐야 하나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:2", "text": "베란다를 확장한 거실 창 밑에 겨울마다 물방울이 맺혀요. 창을 이중창으로 바꾸면 이런 게 좀 줄어드는 건가요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:3", "text": "욕실 천장 점검구 쪽에서 곰팡이 냄새가 올라오는데 환풍기 문제일까요, 배관 문제일까요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:4", "text": "욕실 벽을 타일 대신 바스패널로 바꾸면 곰팡이가 덜 생기나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:5", "text": "강마루를 새로 깔 계획인데 걸레받이는 마루 깔고 나서 다는 게 맞죠?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:6", "text": "안방 장판 밑이 눅눅하고 들춰 보면 까만 얼룩이 있어요. 바닥 난방 배관에서 물이 새는 걸까요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:7", "text": "거실 조명을 전부 매입등으로 바꿀 계획이에요. 천장 타공은 도배 끝난 뒤에 해도 벽지가 안 상하나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:9", "text": "싱크대 담달 중순에 들어오는데 주방벽지는 그전에 붙여야 깔끔한가여 아님 후에?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:10", "text": "인덕션이랑 가스레인지 중에 주방 벽지가 덜 누레지는 건 어느 쪽이에요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:12", "text": "고양이가 벽을 긁는 버릇이 있는데 긁힘에 좀 더 버티는 벽지가 따로 있나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:13", "text": "가벽 세우면 옆방 소리 많이 넘어와? 안에 흡음재 넣을 수 있는지도 궁금해", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:14", "text": "새 벽지에 액자 걸려고 못 박으면 주변 찢어지지 않아? 꼭 박아야 하면 요령 있어?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:16", "text": "예전에 붙여논 시트지가 벽 몇군데 있는데 도배전에 다 떼야되나요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:17", "text": "살면서 도배하면 붙박이장 안 짐까지 다 빼야 하는지, 문만 닫아 두면 되는지 궁금해요.", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:18", "text": "포인트벽 한면만 제가 직접 붙여볼라는데 무늬 맞추는 요령 잇을까요", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:19", "text": "작은방 벽에 책장 대신 선반을 길게 달 건데, 폭이 1200mm면 18mm 합판으로도 책 무게에 안 휘어요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn2:20", "text": "도배하고 남은 벽지를 조금 받아 두면 나중에 찢어진 데 부분 보수할 때 쓸 수 있어요?", "label": "knowledge", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:21", "text": "방 하나를 범위에서 뺐는데 합계가 생각만큼 안 줄었어요. 방 하나 빼면 보통 얼마나 빠지는 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:22", "text": "도배 줄 수량이 ㎡로 적혀 있는데 저희 집 면적보다 훨씬 크게 잡혀 있어요. 벽 면적으로 계산해서 그런 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:23", "text": "짐 옮기는 비용 따로 잡혀있던데 저희가 미리 다빼두면 그거 빠지나여?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:24", "text": "천장까지 넣었더니 예상 일수가 하루 늘었는데, 천장이 벽보다 손이 더 가서 그런 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:25", "text": "드레스룸 선반을 넣었더니 목공 줄이 몇 개 더 생겼는데, 그 줄 금액은 어떤 기준으로 잡힌 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:26", "text": "같은 단지 사는 언니네는 평수가 같은데 표준견적서 금액이 우리보다 낮게 나왔대요. 같은 평수인데 왜 다를 수 있어요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:27", "text": "표준견적서 단가가 올해 기준인가요? 작년에 받아 둔 금액이랑 조금 달라서요.", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:28", "text": "요즘 인건비가 많이 올랐다던데 작년 이맘때보다 도배 비용이 얼마나 오른 거예요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:29", "text": "실크도 두꺼운 거 고르면 금액이 달라져, 아니면 실크는 다 같은 값이야?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:30", "text": "표준견적서 합계 옆에 '참고 금액'이라고 적혀 있던데, 이 금액 그대로 계약하는 건 아니죠?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:31", "text": "안방 벽 한면만 새로하면 최소금액 같은게 붙어서 오히려 비싸지나여?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:32", "text": "작은방 하나만 천장 포함으로 바꿨더니 합계가 15만 원쯤 늘었어요. 천장 한 칸이 원래 그 정도 해요?", "label": "standard_quote", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn2:33", "text": "남편이 어제 앱에서 뭔가 눌렀다는데 어느 단계였는지 모르겠어요. 지금 우리 집 공사가 어떤 상태로 바뀌었는지 짚어 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:34", "text": "다음 주부터 2주 동안 해외 출장이라 앱을 자주 못 봐요. 떠나기 전에 미리 정해 둬야 할 게 있으면 알려 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:35", "text": "앞으로 대답은 길게 말고 세 줄 안으로 짧게 해 주세요. 이거 기억해 두세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:36", "text": "아까 실수로 다른 집 주소 얘기를 했는데, 그건 우리 집 얘기가 아니니까 기억에 남기지 말아 주세요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:37", "text": "알림이 와서 들어왔는데 빨간 점만 있고 무슨 내용인지 안 보여요. 어디를 눌러야 확인할 수 있어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:38", "text": "너는 업체 쪽 편이야, 아니면 내 편에서 봐 주는 거야?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:39", "text": "업체랑 실측 일정까지 다 잡아 놨는데, 이제 제가 할 일은 그냥 기다리는 것밖에 없는 건가요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:40", "text": "엄마 폰으로 대신 들어왔는데 제 공사 내용이 그대로 보이네요. 다른 기기에서도 이렇게 같이 보이는 거 맞죠?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:41", "text": "공사 끝나면 이 대화방은 없어지나요? 나중에 하자 생기면 다시 찾아봐야 해서요.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:42", "text": "오, 표준견적서가 생각보다 자세하네. 좋다.", "label": "guide", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:43", "text": "어제 물어본거 답이 중간에 끊겻던데 이어서 해줄수잇어요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:44", "text": "가입할 때 휴대폰 인증이 계속 실패하는데 다른 방법으로 가입할 수 있나요?", "label": "guide", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:45", "text": "세탁실 배수구로 물이 거꾸로 올라오는데, 도배 업체 오는 날 배관도 같이 손봐 달라고 할 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:46", "text": "베란다 바닥 타일에 물이 고여서 잘 안 빠지는데 그 공사도 같이 맡아 줄 수 있어?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:47", "text": "업체한테 줄 중도금을 믿집이 맡아 두었다가 공사 끝나면 넘겨 주는 방식은 안 되나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:48", "text": "이번달 관리비 갑자기 많이나왔는데 내역좀 같이봐줄래요", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:49", "text": "주방 후드에서 소리가 심하게 나는데 후드 교체 기사님도 연결해 주실 수 있나요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:50", "text": "인테리어 끝나고 집들이에 12명쯤 오는데 음식은 몇 가지 준비하면 될까요?", "label": "out_of_scope", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn2:51", "text": "실측 오는 날 제가 회사에 있어서 어머니가 대신 문을 열어 드릴 건데, 그렇게 해도 실측 진행되나요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:53", "text": "실측 날 아이 낮잠 시간이 1시부터 3시라서 그 시간만 피해서 와 달라고 요청할 수 있어요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn2:54", "text": "실측 요청 넣을 때 연락처 공개에 동의했는데요, 실측만 받고 공사는 안 하기로 하면 제 번호는 업체 쪽에서 지워지나요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:55", "text": "전 주인이 이사 나가서 집이 비는 날 실측을 받으면 더 정확하다던데, 그 날짜로 요청을 다시 넣어도 돼요?", "label": "visit", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:56", "text": "실측와서 벽 뜯어보고 그러는건 아니죠? 살고있는 집이라 흠집날까봐 걱정되서요", "label": "visit", "surface": "customer", "src": "synthetic", "style": "오타", "synthetic": true, "split": "dev"}
+{"id": "syn2:57", "text": "아이 방 천장에 야광 별 스티커가 잔뜩 붙어 있는데, 이번에 천장까지 새로 하면서 그것도 싹 정리하고 싶어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:58", "text": "다음 달에 둘째가 태어나서 작은방을 아기방으로 꾸미려고요. 그 방만 벽지 등급을 한 단계 올리고 싶어요.", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:59", "text": "복층이라 위층 올라가는 계단 옆 벽이 꽤 높은데 거기도 도배 범위에 넣을 수 있어?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:60", "text": "평면도상으론 방이 셋인데 저희는 작은방 두 개를 터서 하나로 쓰고 있어요. 방 개수는 두 개로 넣는 게 맞죠?", "label": "home_info", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:61", "text": "하자 보수 때문에 공사 끝나고도 연락이 잘 닿아야 해서요. 추천 업체 중에 공사 뒤에 다시 와 줬다는 후기가 있는 곳이 어디예요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:62", "text": "집 정보에서 평수를 고쳤는데 업체별 가견적도 바로 다시 계산된 건가요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:63", "text": "나무결목공 후기 사진에 나온 얇은 몰딩이 딱 저희가 원하는 느낌이에요. 이런 작업을 자주 하는 업체인지 끝낸 공사를 더 볼 수 있을까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:64", "text": "추천된 세 곳 중 한 곳은 개업한 지 1년이 안 됐던데, 경력이 짧으면 피하는 게 나을까요?", "label": "vendor_pick", "surface": "customer", "src": "synthetic", "style": "숫자", "synthetic": true, "split": "dev"}
+{"id": "syn2:65", "text": "한결인테리어 실측 견적서에 '벽 보수 별도'라고 적혀 있는데, 이게 나중에 돈이 더 나올 수 있다는 뜻이에요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:66", "text": "업체가 견적서를 세 번째 판까지 보냈는데, 첫 판보다 금액이 내려간 대신 빠진 항목이 있는지 봐 주세요.", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:67", "text": "실측 견적서 유효기간이 이번 주 금요일까지인데 남편이랑 주말에 같이 보고 정하고 싶어요. 업체에 기간을 며칠만 늘려 달라고 할 때 뭐라고 하면 좋을까요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:68", "text": "받은 견적서가 예산을 넘어서 확정은 미루고 다른 업체로 다시 실측을 받아 보려는데, 지금 이 견적서는 어떻게 되는 거예요?", "label": "quote_compare", "surface": "customer", "src": "synthetic", "style": "경계", "synthetic": true, "split": "dev"}
+{"id": "syn2:69", "text": "업체가 올린 공사 시작일이 하필 저희 단지 엘리베이터 점검 날이에요. 이럴 땐 시작일을 옮겨 달라고 업체에 어떻게 요청해요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "긺", "synthetic": true, "split": "dev"}
+{"id": "syn2:70", "text": "확정 공정표에 반나절로 적힌 날은 업체가 오전만 작업하고 가는 건가요?", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
+{"id": "syn2:71", "text": "다음 주 화요일 시작이랑 목요일 시작 두 개가 올라왔던데, 화요일 쪽으로 수락할게.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "반말", "synthetic": true, "split": "dev"}
+{"id": "syn2:72", "text": "업체가 연기 요청을 보냈는데 사유가 '현장 사정'뿐이에요. 승인하기 전에 이틀 밀리면 끝나는 날이 언제가 되는지부터 알려 주세요.", "label": "schedule", "surface": "customer", "src": "synthetic", "style": "존댓말", "synthetic": true, "split": "dev"}
