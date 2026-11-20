@@ -74,8 +74,10 @@ function toTurn(el: HTMLElement) {
   }
 }
 
-export function AiPanel({ screen, projectId, ids, embed = false }: {
+export function AiPanel({ screen, projectId, ids, embed = false, draft }: {
   screen: AiScreen;
+  /** 입력 칸에 넣어 둘 말(백과 찾기 창에서 넘겨요). key가 바뀔 때마다 넣고, 보내지는 않아요 */
+  draft?: { text: string; key: number };
   projectId?: string;
   /** 보던 것(실측 · 업체 id 등, 5개까지). 서버가 본인 것인지 다시 봐요 */
   ids?: string[];
@@ -98,6 +100,10 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
   useEffect(() => {
     if (!seenNotice()) setNotice(true);
   }, []);
+  useEffect(() => {
+    if (draft?.text) setText(draft.text.slice(0, MAX));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [draft?.key]);
 
   function closeNotice() {
     setNotice(false);
