@@ -107,7 +107,11 @@ async def main() -> None:
             tag = (
                 "일반"
                 if gen
-                else ("작성기" if "composer_v3" in r.answer.trace.prompts else "그 밖")
+                else (
+                    "작성기"
+                    if any(p.startswith("composer_") for p in r.answer.trace.prompts)
+                    else "그 밖"
+                )
             )
             print(
                 q["id"],
@@ -124,7 +128,7 @@ async def main() -> None:
         g = [x for x in rows if x["group"] == grp]
         if not g:
             continue
-        c = Counter("일반" if x["general"] else ("작성기" if "composer_v3" in x["prompts"] else (
+        c = Counter("일반" if x["general"] else ("작성기" if any(p.startswith("composer_") for p in x["prompts"]) else (
             "모름" if any("확인하지 못했어요" in u for u in x["unknown"]) else "그 밖")) for x in g)  # fmt: skip
         print(f"{grp} {len(g)}개: {dict(c)}")
     bad = [x["id"] for x in rows if x["group"] == "exclude" and x["general"]]

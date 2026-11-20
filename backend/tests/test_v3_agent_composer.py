@@ -63,7 +63,7 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
         )
     )
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v3"] and a.brief is None
+    assert a.trace.prompts == ["composer_v4"] and a.brief is None
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
     assert "실크는 합지보다 37% 비싸요." not in texts
@@ -111,7 +111,7 @@ def test_calc_only_answer_gets_composer_context_after_calc(stub):
 
     period_stub(stub)
     a = turn(PERIOD_Q, general=general_facts(PERIOD_Q)).answer
-    assert a.trace.prompts == ["composer_v3"]
+    assert a.trace.prompts == ["composer_v4"]
     assert a.sections[0].source == "calc"
     assert a.sections[0].sentences[0].text.startswith("믿집 계산으로 34평 도배는")
     assert [x.text for s in a.sections if s.source == "llm" for x in s.sentences] == [PAINT]
@@ -335,3 +335,105 @@ def test_composer_drops_date_restatements_and_same_day_order_talk():
     secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
     assert [x.text for s in secs or [] for x in s.sentences] == [new]
     assert "날짜 되풀이" in dropped and "순서 되풀이" in dropped
+
+
+def test_composer_drops_guide_filler_but_keeps_new_can_sentences():
+    """'~확인할 수 있어요 · 계산할 수 있어요'로 고정 몫을 흐리게 다시 말하는 안내 빈말은 빼고(3300 두 대화),
+    같은 '~수 있어요'라도 근거의 새 사실(곰팡이 · 초배)이 든 문장은 남겨요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    period = Section(source="calc", title="[기간]", sentences=[
+        Sentence(text="믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 빈집 기준 이만큼 걸려요."),
+        Sentence(text="목공을 먼저 끝내고 도배를 해요. 기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."),
+        Sentence(text="자연 건조 · 입주 청소까지 넣으면 끝나는 날을 알려 드려요."),
+    ])  # fmt: skip
+    part = Part(sections=[period], route="multi")
+    text = " ".join(x.text for x in period.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    keep = [
+        "곰팡이가 있으면 없애고 말리는 시간이 더 들 수 있어요.",
+        "부직포 초배를 하면 오래된 벽의 작은 금도 가릴 수 있어요.",
+    ]
+    filler = [
+        "빈집 기준 공정표에서 두 공정의 날짜를 함께 확인할 수 있어요.",
+        "자연 건조와 입주 청소까지 포함한 일정도 함께 확인할 수 있어요.",
+    ]
+    body = CBlock(kind="body", rows=[], items=[CItem(text=t, cites=[]) for t in [*filler, *keep]])
+    c = Composed(verdict="answer", lead=CItem(text=filler[0], cites=[]), blocks=[body], follow=[])
+    dropped: list[str] = []
+    secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
+    assert [x.text for s in secs or [] for x in s.sentences] == keep
+    assert dropped.count("안내 빈말") == 3  # lead 한 번 + 본문 두 번
+
+
+def test_none_verdict_adds_no_ai_section(stub):
+    """작성기가 'none'(고정 몫이 다 답했고 덧붙일 새 사실 없음)을 내면 AI 묶음 없이 무료 답 그대로예요."""
+    stub(Composed(verdict="none", lead=CItem(text="", cites=[]), blocks=[], follow=[]))
+    a = turn("도배랑 목공 같이 하면 며칠 걸려요?").answer
+    assert a.sections and not [s for s in a.sections if s.source == "llm"]
+    assert "작성기: 덧붙일 것 없음" in a.trace.dropped and a.trace.prompts == []
+
+
+def test_composer_v4_first_check_sentences_are_dropped():
+    """composer_v4 첫 확인(두 턴 LLM 실제 호출)에서 남았던 문장: 순서를 '뒤에 · 겹치지 않고'로 바꿔 말함,
+    계산 묶음의 '주말 · 공휴일 빼고'를 다시 말함, '업체마다 다를 수 있어요' 같은 뻔한 말. 새 사실 문장은 남겨요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    period = Section(source="calc", title="[기간]", sentences=[
+        Sentence(text="믿집 계산으로 32평을 12.1(화)에 시작하면 목공은 12.1(화) ~ 12.3(목), 도배는 12.4(금) ~ 12.8(화)이에요(빈집 · 주말 · 공휴일 빼고)."),
+    ])  # fmt: skip
+    order = Section(
+        source="template", title="[순서]", sentences=[Sentence(text="목공이 끝난 뒤 도배해요.")]
+    )
+    part = Part(sections=[period, order], route="multi")
+    text = " ".join(x.text for s in (period, order) for x in s.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    new = "몰딩 실리콘이 굳은 다음에 도배해야 벽지가 들뜨지 않아요."
+    bad = [
+        "목공 뒤에 도배하고, 주말·공휴일은 작업일에서 제외해요.",
+        "목공과 도배는 날짜가 겹치지 않고 순서대로 이어져요.",
+        "같은 실크 벽지도 업체마다 시공 포함 가격이 다를 수 있어요.",
+    ]
+    body = CBlock(kind="body", rows=[], items=[CItem(text=t, cites=[]) for t in [*bad[1:], new]])
+    c = Composed(verdict="answer", lead=CItem(text=bad[0], cites=[]), blocks=[body], follow=[])
+    dropped: list[str] = []
+    secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
+    assert [x.text for s in secs or [] for x in s.sentences] == [new]
+    assert {"날짜 되풀이", "순서 되풀이", "뻔한 말"} <= set(dropped)
+
+
+def test_composer_trims_order_head_and_keeps_new_tail():
+    """앞 절만 고정 몫 순서를 되풀이하면('목공이 끝난 뒤 도배하고, …') 앞 절을 떼고 새 정보인 뒤 절만 남겨요.
+    앞 절에 새 정보가 있거나 뒤 절이 앞 절에 기대면('그다음 …') 떼지 않아요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    period = Section(source="calc", title="[기간]", sentences=[
+        Sentence(text="믿집 계산으로 32평을 12.1(화)에 시작하면 목공은 12.1(화) ~ 12.3(목), 도배는 12.4(금) ~ 12.8(화)이에요(빈집 · 주말 · 공휴일 빼고)."),
+    ])  # fmt: skip
+    order = Section(
+        source="template", title="[순서]", sentences=[Sentence(text="목공이 끝난 뒤 도배해요.")]
+    )
+    part = Part(sections=[period, order], route="multi")
+    text = " ".join(x.text for s in (period, order) for x in s.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    mixed = (
+        "목공이 끝난 뒤 도배하고, 살면서 진행하면 짐을 옮기며 작업해 일정이 더 길어질 수 있어요."
+    )
+    new_head = "몰딩 실리콘이 굳은 다음에 도배하고, 창문은 하루 닫아 둬요."
+    leaning = "목공이 끝난 뒤 도배하고, 그다음 남은 짐을 들여요."
+    guide_tail = "몰딩 목공이 끝난 뒤 도배하고, 전체 일정은 공정표를 참고해요."  # 앞 절을 떼면 안내 빈말만 남음(c8 C04)
+    items = [CItem(text=t, cites=[]) for t in [new_head, leaning, guide_tail]]
+    body = CBlock(kind="body", rows=[], items=items)
+    c = Composed(verdict="answer", lead=CItem(text=mixed, cites=[]), blocks=[body], follow=[])
+    dropped: list[str] = []
+    secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
+    got = [x.text for s in secs or [] for x in s.sentences]
+    assert got[:2] == ["살면서 진행하면 짐을 옮기며 작업해 일정이 더 길어질 수 있어요.", new_head]
+    assert "그다음 남은 짐을 들여요." not in got and "순서 앞 절 뗌" in dropped
+    assert not [x for x in got if "공정표를 참고해요" in x] and "안내 빈말" in dropped

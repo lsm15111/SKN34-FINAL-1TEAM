@@ -1,4 +1,4 @@
-"""답 작성기 (LLM 모드, 지시문 composer_v3). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
+"""답 작성기 (LLM 모드, 지시문 composer_v4). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
 
 흐름: 무료 몫(Part) → 근거 묶음(카드 · 조각 · 검색 위 조각 · 계산 결과 · 정해 둔 글, 모두 코드가 고름)
 → LLM 1회(JSON: verdict · lead · blocks · follow) → 블록을 Section으로 → 출력 검사(숫자 · 인용 · 금지 표현 · 누출)
@@ -28,7 +28,7 @@ from app.agent.v3.trades import BY_CODE, trades_in
 from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
-VERSION = "composer_v3"
+VERSION = "composer_v4"
 TOP_CHUNKS = 6  # 검색 위 조각을 몇 개 더 넣을지
 CHUNK_CHARS = 420  # 조각 글 앞 몇 글자
 MAX_BLOCKS = 4
@@ -49,7 +49,8 @@ class CBlock(BaseModel):
 
 
 class Composed(BaseModel):
-    verdict: Literal["answer", "partial", "unknown"]
+    # none: 고정 몫(계산 · 정해 둔 글)이 이미 답했고 근거에 덧붙일 새 사실이 없어요(작성기 묶음을 붙이지 않아요)
+    verdict: Literal["answer", "partial", "unknown", "none"]
     lead: CItem
     blocks: list[CBlock]
     follow: list[str]
@@ -206,6 +207,15 @@ def to_sections(
         tot = sum(weight(x) for x in g)
         return tot > 0 and sum(weight(x) for x in g if x in fixed_grams) / tot >= COVER
 
+    guide_known = fixed_grams | _grams(GUIDE_WORDS)
+
+    def guide_only(g: set[str]) -> bool:
+        """고정 몫 · 안내 낱말로 덮이는 몫(드문 묶음 무게)이 CAN_COVER 이상이면 새 말이 없는 안내 문장."""
+        if not g or weight is None:
+            return False
+        tot = sum(weight(x) for x in g)
+        return tot > 0 and sum(weight(x) for x in g if x in guide_known) / tot >= CAN_COVER
+
     def repeat(text: str) -> str | None:
         n = check.guard.numbers(text)
         g = _grams(text)
@@ -217,6 +227,8 @@ def to_sections(
             return "순서 되풀이"  # 고정 몫이 이미 말한 두 공종 순서를 말만 바꿔 다시 쓴 문장
         if calc_dates and (DATE_TALK.search(text) or CALC_TALK.search(text)):
             return "날짜 되풀이"  # 계산 묶음이 보인 날짜 · 요일을 다시 말하거나 조건을 다는 문장
+        if fixed_grams and GUIDE_END.search(text.strip()) and guide_only(g):
+            return "안내 빈말"  # '~확인할 수 있어요 · 공정표를 참고해요'처럼 새 말 없이 안내만 하는 문장
         if fixed_grams and VAGUE.search(text.strip()):
             return "뻔한 말"  # 계산 · 정해 둔 글 아래에 '~에 따라 달라져요'만 덧붙이면 새 정보가 없어요
         return None
@@ -225,6 +237,11 @@ def to_sections(
         keep = []
         for x in sec.sentences:
             why = repeat(x.text)
+            cut = x.text if why else trim_order_head(x.text, fixed_texts, weight)
+            if cut != x.text:  # 문장 전체는 지났고 앞 절만 순서 되풀이: 뒤 절만 다시 검사해요
+                dropped.append("순서 앞 절 뗌")
+                x = x.model_copy(update={"text": cut})
+                why = repeat(cut)
             if why:
                 dropped.append(why)
             elif META.search(x.text):
@@ -329,8 +346,10 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
     except llm.LLMError:
         part.dropped.append("작성기 실패")
         return None
-    if c.verdict == "unknown":
-        part.dropped.append("작성기: 근거 부족")
+    if c.verdict in ("unknown", "none"):
+        part.dropped.append(
+            "작성기: 근거 부족" if c.verdict == "unknown" else "작성기: 덧붙일 것 없음"
+        )
         return None
     dropped: list[str] = []
     secs = to_sections(c, ev, part, kb, route=part.route, trade=part.trade, dropped=dropped)
@@ -358,7 +377,8 @@ COVER = 0.45
 # 고정 몫 아래에 붙인 '~에 따라 (비용이) 달라져요' 같은 뻔한 끝맺음 문장(c6 · c7 금액 · 기간 질문에서 본 것)
 VAGUE = re.compile(
     r"(?:에|과|와|지)\s{0,2}따라\s{0,2}(?:\S+\s{1,2}){0,3}"
-    r"(?:달라(?:요|져요|질\s{1,2}수\s{1,2}있어요)|차이가\s{1,2}(?:있어요|나요|날\s{1,2}수\s{1,2}있어요))[.!]?$"
+    r"(?:달라(?:요|져요|질\s{1,2}수\s{1,2}있어요)|차이가\s{1,2}(?:있어요|나요|날\s{1,2}수\s{1,2}있어요))[.!]?$|"
+    r"마다\s{0,2}(?:\S+\s{1,2}){0,4}(?:달라요|달라져요|다를\s{1,2}수\s{1,2}있어요|차이가\s{1,2}(?:있어요|나요))[.!]?$"
 )
 # 인용 지지 기준(IDF 무게 겹침). c2 답 인용 154쌍: 맞는 짝 86% 통과 · 섞은 짝 6.5% 통과(support_cal)
 SUPPORT = 0.18
@@ -367,7 +387,7 @@ SUPPORT = 0.18
 # 빼고 남는 새 말(드문 글자 묶음 무게)이 적으면 되풀이예요. 3300 두 턴 답의 되풀이 문장 4개는 0.64~0.87,
 # 새 정보가 든 문장('페인트가 마른 다음에 도배해야 들뜨지 않아요' 등)은 0.09~0.41이라 그 사이 0.55로 둬요
 ORDER_CUE = re.compile(
-    r"먼저|나중|순서|차례|이어서|다음에|동시에|같은\s{0,2}날|"
+    r"먼저|나중|순서|차례|이어서|다음에|뒤에|동시에|같은\s{0,2}날|겹치지\s{0,2}않|"
     r"(?:끝난|끝나고|끝내고|끝나야|끝나면|마친|마치고|마쳐야|마치면|마무리하고|마무리한)\s{0,2}(?:뒤|다음|후)?"
 )
 TWO_WORK = re.compile(r"두\s{0,2}(?:공정|공종|작업)")
@@ -375,16 +395,30 @@ TWO_WORK = re.compile(r"두\s{0,2}(?:공정|공종|작업)")
 ORDER_WORDS = (
     "먼저 나중 순서대로 차례대로 이어서 이어 다음에 끝난 뒤 끝나고 끝내고 끝나야 끝나면 마친 뒤 마치고 마쳐야 "
     "마치면 마무리하고 진행해요 진행하고 진행돼요 진행하진 진행하지 해요 하고 할 수 들어가요 와요 "
-    "같은 날 동시에 함께 한꺼번에 실제 날짜 공정 공정표 일정 확인해요 작업 이뤄져요"
+    "같은 날 동시에 함께 한꺼번에 겹치지 않고 겹치지 않게 뒤에 이어져요 실제 날짜 공정 공정표 일정 확인해요 "
+    "작업 이뤄져요"
 )
 ORDER_COVER = 0.55
 # 계산 묶음이 날짜를 보였으면, 작성기 문장의 날짜 · 요일 · '계산 결과는 ~ 기준' 같은 말은 계산 되풀이나 헛조건이에요
 # (계산 엔진이 요일까지 셌어요). 숫자 검사는 같은 날짜라 지나서 따로 빼요(3300 날짜 대화 1턴)
 CALC_DATE = re.compile(r"\d{1,2}\.\d{1,2}\s{0,1}\([월화수목금토일]\)")
 DATE_TALK = re.compile(
-    r"\d{1,2}\.\d{1,2}\s{0,1}\([월화수목금토일]\)|\d{1,2}\s{0,2}월\s{0,2}\d{1,2}\s{0,2}일|요일"
+    r"\d{1,2}\.\d{1,2}\s{0,1}\([월화수목금토일]\)|\d{1,2}\s{0,2}월\s{0,2}\d{1,2}\s{0,2}일|요일|"
+    r"종료일|완료일|시작일|시작\s{0,2}날짜|끝나는\s{0,2}날|"
+    r"(?:주말|공휴일)\S{0,6}\s{0,2}(?:\S+\s{1,2}){0,2}(?:빼|제외|쉬)"
 )
 CALC_TALK = re.compile(r"계산\s{0,2}(?:결과|값)|기준이며|확정하기\s{0,2}어려")
+# 안내성 빈말: '~확인할 수 있어요 · 공정표를 참고해요'로 끝나는데 고정 몫 · 안내 낱말을 빼면 새 말이 거의 없는 문장
+GUIDE_END = re.compile(
+    r"(?:수\s{0,2}있(?:어요|습니다)|참고해\s{0,2}(?:요|보세요|주세요)|참고하세요|"
+    r"확인해\s{0,2}(?:요|보세요|주세요)|확인하세요)[.!]?$"
+)
+GUIDE_WORDS = (
+    "확인할 계산할 볼 알 잡을 드릴 받을 수 있어요 함께 같이 미리 따로 더 자세히 정확한 실제 일정 일정은 날짜 예상 "
+    "공정표 공정표를 공정표에서 전체 포함한 포함해 기준 확인되면 넣으면 알려 주시면 계산해 드려요 잡아 드려요 "
+    "참고해요 참고하세요 확인해요 확인하세요 확인해 보세요 화면 도 에서 를 을"
+)
+CAN_COVER = 0.6
 
 
 def _order_pair(text: str) -> frozenset[str] | None:
@@ -410,6 +444,22 @@ def order_repeat(text: str, fixed: list[str], weight: Callable[[str], float] | N
     g = _grams(text)
     tot = sum(weight(x) for x in g)
     return tot > 0 and sum(weight(x) for x in g if x in known) / tot >= ORDER_COVER
+
+
+# 앞 절만 고정 몫 순서를 되풀이하는 문장('목공이 끝난 뒤 도배하고, 살면서 하면 더 걸려요')은 앞 절을 떼고
+# 뒤 절만 남겨요. 뒤 절이 앞 절에 기대는 말로 시작하거나 문장으로 끝나지 않으면 그대로 둬요(composer_v4 두 턴 확인)
+LEANS = re.compile(r"그다음|그\s{0,2}뒤|그\s{0,2}후|그리고|그래서|따라서|이후|이어|이때|다음")
+ENDS = re.compile(r"(?:요|다)[.!?]?$")
+
+
+def trim_order_head(text: str, fixed: list[str], weight: Callable[[str], float] | None) -> str:
+    parts = re.split(r",\s*", text.strip(), maxsplit=1)
+    if len(parts) < 2:
+        return text
+    head, tail = parts[0], parts[1].strip()
+    if not (tail and ENDS.search(tail)) or LEANS.match(tail):
+        return text
+    return tail if order_repeat(head, fixed, weight) else text
 
 
 _IDF: dict[int, tuple[object, dict[str, float], float]] = {}  # 색인 하나만 들고 있어요
