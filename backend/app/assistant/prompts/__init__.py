@@ -8,8 +8,8 @@ from functools import cache
 from pathlib import Path
 
 VERSION = {
-    "customer": "customer_v1",
-    "vendor": "vendor_v1",
+    "customer": "customer_v2",
+    "vendor": "vendor_v2",
     "nudge_judge": "nudge_judge_v1",
     "nudge_write": "nudge_write_v1",
     "memory": "memory_v1",
