@@ -1,7 +1,9 @@
 // /projects/{id}/vendors/{vid} — 업체 자세히(C11 · D07 + 옆 AI 칸) · 시공 사례 크게 보기(C47, ?photo=n).
 // 가견적 = 업체가 확인한 단가 × 믿집 수량(계산 엔진). 벽지를 바꿔 보면(?grade=) 그 벽지의 가견적을 API가 다시 계산해 줘요.
 // 화면은 금액을 더하거나 빼지 않아요(다른 벽지 차이도 API grade_diff). 남의 공사 · 목록 밖 업체면 404예요.
+// v4(비서 화면 서랍)에서는 표준견적서와 견준 %를 보이지 않아요(리드 결정 2026-11-21).
 import { notFound } from "next/navigation";
+import { uiMode } from "@/components/assistant/mode";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead, WithAside } from "@/components/site/Frame";
@@ -71,6 +73,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
   const reply = replyText(d.reply_hours);
   const lines = est ? estimateLines(est.lines, grade) : null;
   const count = short?.count ?? (d.shortlisted ? 1 : 0);
+  const v4 = (await uiMode()) === "v4";
 
   const tabs: TabItem[] = [
     { id: "est", label: "가견적" },
@@ -115,7 +118,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
           <section id="est" className={s.group} aria-labelledby="est-t">
             <h2 id="est-t" className="mj-sr">가견적</h2>
             {state === "ok" && est ? (
-              <BigFigure label="가견적 · 부가세 포함" value={est.total} caption={["업체 단가 × 믿집 수량", compareText(est.vs_standard_pct)].filter(Boolean).join(" · ")} />
+              <BigFigure label="가견적 · 부가세 포함" value={est.total} caption={["업체 단가 × 믿집 수량", v4 ? null : compareText(est.vs_standard_pct)].filter(Boolean).join(" · ")} />
             ) : (
               <div>
                 <p className={s.eb}>가견적</p>
