@@ -31,7 +31,7 @@ from pathlib import Path
 
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
-from sqlalchemy import and_, event, or_, select
+from sqlalchemy import and_, delete, event, or_, select
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session
 from starlette.datastructures import Headers, UploadFile
@@ -58,6 +58,7 @@ from app.seed import LICENSE, sample_pdf
 from app.shared import clock
 from app.shared.clock import SEOUL, now_utc, today_seoul
 from app.shared.errors import AppError
+from app.shared.regions import SGG
 from app.thread import service as thread_service
 from app.thread.schemas import MessageIn
 from app.vendor import repository as vendor_repo
@@ -645,6 +646,8 @@ V3_REPLY = "좋게 봐 주셔서 고마워요. 들뜨는 곳이 생기면 1년 �
 V3_HOUSE = {"sido": "seoul", "sgg": "노원구", "emd": "상계동", "area": Decimal("69.4")}
 V3_QUOTE_PDF = sample_pdf(b"SAMPLE QUOTE - mitjip v3 demo data only")
 V3_GAP = 48  # 9판: 요청(11.17) → 공사 시작(1.4)
+# 시연 업체는 서울 25개 구를 모두 다녀요(11-20 사용자 요청: 노원 밖 공사에서도 업체가 보이게)
+SEOUL_ALL = tuple(sorted(SGG["seoul"]))
 
 
 def _mail(local: str) -> str:
@@ -678,7 +681,7 @@ class V3Vendor:
 V3_VENDORS = (
     V3Vendor(
         "maru", _mail("maru"), "마루와벽", "이마루", "9990003001", "01000003001", ("dobae",),
-        ("노원구", "도봉구", "강북구", "성북구"), "approved", instant=True,
+        SEOUL_ALL, "approved", instant=True,
         prices=(
             ("putty", "price", 20_000, None), ("paper_hapji", "price", 5_000, None),
             ("paper_silk", "price", 9_500, None), ("material", "price", 13_000, None),
@@ -696,7 +699,7 @@ V3_VENDORS = (
     ),
     V3Vendor(
         "gyeol", _mail("gyeol"), "결도배", "김결", "9990003002", "01000003002", ("dobae",),
-        ("노원구", "도봉구"), "approved",
+        SEOUL_ALL, "approved",
         prices=(
             ("putty", "price", 15_000, None), ("paper_hapji", "excluded", None, None),
             ("paper_silk", "price", 9_000, None), ("material", "price", 12_000, None),
@@ -711,23 +714,23 @@ V3_VENDORS = (
     ),
     V3Vendor(
         "hangyeol", _mail("hangyeol"), "한결인테리어", "박한결", "9990003003", "01000003003",
-        ("dobae", "mokgong"), ("노원구",), "approved",
+        ("dobae", "mokgong"), SEOUL_ALL, "approved",
         cases=(("공릉동 28평 거실", "거실", 28, "basic"),),
         intro="도배와 목공을 같이 해요. 도배 단가표는 아직 준비 중이에요.",
     ),
     V3Vendor(
         "pending", _mail("daon"), "다온도배", "정다온", "9990003004", "01000003004", ("dobae",),
-        ("노원구", "중랑구"), "pending",
+        SEOUL_ALL, "pending",
         links=(("지도 리뷰(시연)", "https://example.com/daon/place"),),
     ),
     V3Vendor(
         "needs_info", _mail("bareun"), "바른벽", "최바른", "9990003005", "01000003005", ("dobae",),
-        ("강북구",), "needs_info", code="blurry",
+        SEOUL_ALL, "needs_info", code="blurry",
         note="사업자등록증 사진이 흐려서 글자가 안 보여요. 다시 올려 주세요.",
     ),
     V3Vendor(
         "rejected", _mail("neulbom"), "늘봄벽지", "한늘봄", "9990003006", "01000003006", ("dobae",),
-        ("성북구",), "rejected", code="info_mismatch",
+        SEOUL_ALL, "rejected", code="info_mismatch",
         note="신청한 상호가 사업자등록증과 달라요. 맞게 고쳐 다시 신청해 주세요.",
     ),
 )  # fmt: skip
@@ -832,11 +835,23 @@ def _workday_before(day: date, off: frozenset[date]) -> date:
     return _workday_on_or_before(day - timedelta(days=1), off)
 
 
+async def _v3_areas(s, user: User, spec: V3Vendor) -> None:
+    """이미 있는 시연 업체의 다니는 지역만 spec에 맞춘다(다시 돌릴 때). 같으면 그대로 둔다."""
+    want = {("seoul", g) for g in spec.areas}
+    q = select(VendorArea.sido, VendorArea.sgg).where(VendorArea.vendor_id == user.id)
+    if {tuple(r) for r in (await s.execute(q)).all()} == want:
+        return
+    await s.execute(delete(VendorArea).where(VendorArea.vendor_id == user.id))
+    s.add_all([VendorArea(vendor_id=user.id, sido=a, sgg=b) for a, b in sorted(want)])
+    await s.commit()
+
+
 async def _v3_vendor(s, spec: V3Vendor, password: str, admin: User, n: int, today: date):
     """가입 신청(vendor.signup) → 관리자 결정(vendor.review) → 승인이면 업체 정보 · 사례 · v3 단가 · 링크.
-    이미 있는 계정이면 손대지 않는다. 돌려주는 값: (회원, 새로 만들었는지)"""
+    이미 있는 계정이면 다니는 지역만 맞추고 나머지는 손대지 않는다. 돌려주는 값: (회원, 새로 만들었는지)"""
     user = await auth_repo.user_by_email(s, spec.email)
     if user is not None:
+        await _v3_areas(s, user, spec)
         return user, False
     data = VendorSignupIn(
         biz_name=spec.biz,
@@ -1238,7 +1253,7 @@ async def _v3_stage(s, key: str, cust: User, vendors, off, now: datetime) -> dic
 
 
 async def build_v3(password: str, now: datetime | None = None) -> list[V3Row]:
-    """v3 시연 계정 · 공사를 만든다. 이미 있는 계정은 건너뛴다. 돌려주는 값: verification 표 줄"""
+    """v3 시연 계정 · 공사를 만든다. 이미 있는 계정은 건너뛴다(업체는 다니는 지역만 맞춘다). 돌려주는 값: verification 표 줄"""
     from app import worker  # 조립 층: 기한 일 처리 함수 표
 
     if settings.app_env not in DEMO_ENVS:  # staging · production에서는 시연 계정을 만들지 않는다

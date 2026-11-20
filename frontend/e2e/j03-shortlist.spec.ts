@@ -260,15 +260,16 @@ test("J3 표준견적서 → 업체 담기 3곳 → 실측 일정 요청 → 상
 
 test("J3 · C12 업체 0곳: 이 구에 업체가 없으면 가까운 구 업체", async ({ page }) => {
   await loginApi(page.context(), DEMO.c01);
-  // 승인된 시연 업체가 없는 중랑구(동 목록이 있는 구, 이웃: 노원구 · 성북구)에 새 공사 하나를 API로 만들어요(기본 정보 v3 몸통)
+  // 시연 업체는 서울 25개 구를 다 다녀서(11-20), 서울 밖 구리시에 새 공사 하나를 API로 만들어요(기본 정보 v3 몸통).
+  // 구리시는 이웃 구 자료가 없어 '가까운 구에도 아직 업체가 없어요' 갈래로 가요
   const p = await apiSend<{ id: string }>(page.context(), "POST", "/projects", {
     trade: "dobae", scope: "full", spaces: [], faces: ["wall", "ceiling"], housing: "apt",
-    sido: "seoul", sgg: "중랑구", emd: "면목동", area_m2: "59.9", area_basis: "exclusive", occupied: true, grade: "basic", budget_won: null, start_date: null,
+    sido: "gyeonggi", sgg: "구리시", emd: null, area_m2: "59.9", area_basis: "exclusive", occupied: true, grade: "basic", budget_won: null, start_date: null,
   }, { "Idempotency-Key": crypto.randomUUID() });
   const list = await apiGet<List>(page.context(), `/projects/${p.id}/vendors?trade=dobae`);
-  expect(list.local.length, "중랑구 업체").toBe(0);
+  expect(list.local.length, "구리시 업체").toBe(0);
   await page.goto(`/projects/${p.id}/vendors`);
-  await expect(page.getByRole("heading", { name: /중랑구에서 도배하는\s*믿집 업체가 아직 없어요/ })).toBeVisible();
+  await expect(page.getByRole("heading", { name: /구리시에서 도배하는\s*믿집 업체가 아직 없어요/ })).toBeVisible();
   if (list.nearby.length) {
     await expect(page.getByText(`가까운 구 · ${list.nearby_sgg.join(" · ")} ${list.nearby.length}곳`)).toBeVisible();
     // 9판 C12 · CF-30: 가까운 구 카드마다 그 업체의 구 이름('노원구')

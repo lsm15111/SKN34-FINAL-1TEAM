@@ -59,6 +59,12 @@ def test_v3_demo_builds_every_stage_with_9th_draft_numbers(api):
         "마루와벽": "approved", "결도배": "approved", "한결인테리어": "approved",
         "다온도배": "pending", "바른벽": "needs_info", "늘봄벽지": "rejected",
     }  # fmt: skip
+    # 시연 업체 6곳 모두 서울 25개 구를 다녀요(노원 밖 공사에서도 업체가 보이게)
+    areas = query(
+        "select v.biz_name, count(*) n from vendor_areas a join vendors v on v.user_id = a.vendor_id"
+        " where a.sido = 'seoul' group by v.biz_name"
+    )
+    assert {r["biz_name"]: r["n"] for r in areas} == dict.fromkeys(vendors, 25)
     got = {r["email"]: (r["visits"], r["deal"]) for r in query(STATE_SQL)}
     assert got == STAGES
     # 실측 요청 보냄: 답 기한은 지금 + 48시간(9판 V03)
@@ -145,11 +151,23 @@ def test_v3_demo_builds_every_stage_with_9th_draft_numbers(api):
         }
         assert all(steps[k] < today for k in ("visit", "deal", "dates")), (email, steps)
 
-    # 다시 돌리면 이미 있는 계정은 건너뛰고 아무것도 바꾸지 않는다(종 숫자 · 기한 일도 그대로)
+    # 다시 돌리면 이미 있는 계정은 건너뛰고 아무것도 바꾸지 않는다(종 숫자 · 기한 일도 그대로).
+    # 업체는 다니는 지역만 맞춘다: 노원구 하나로 좁혀 둔 마루와벽이 서울 25개 구로 돌아와요
+    maru = demo._mail("maru")
+    query(
+        "delete from vendor_areas a using users u"
+        " where u.id = a.vendor_id and u.email = $1 and a.sgg <> '노원구'",
+        maru,
+    )
     before = query(SAME_SQL)[0]
     again = _build()
     assert not any(r.made for r in again)
     assert query(SAME_SQL)[0] == before
+    left = query(
+        "select count(*) n from vendor_areas a join users u on u.id = a.vendor_id where u.email = $1",
+        maru,
+    )
+    assert left[0]["n"] == 25
 
 
 @pytest.mark.parametrize("env", ["staging", "production"])
