@@ -48,6 +48,7 @@ export default async function AccountPage() {
         </Group>
         <Group list>
           <Rows>
+            {vendor ? null : <Row label="믿집 백과" href="/guide" />}
             <Row label="자주 묻는 질문" href="/faq" />
             <Row label="약관 · 개인정보 처리방침" href="/legal" />
           </Rows>

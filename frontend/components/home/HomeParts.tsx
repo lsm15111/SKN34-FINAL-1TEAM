@@ -41,17 +41,22 @@ export function HowItWorks() {
   );
 }
 
-/** 폰: 자주 묻는 질문 줄 + 업체 가입(C01) · 웹: 바닥 링크(D10) */
+/** 폰: 믿집 백과 · 자주 묻는 질문 줄 + 업체 가입(C01) · 웹: 바닥 링크(D10) */
 /** 홈 아래 링크. '업체로 가입'은 로그인 전에만 보여요(로그인한 고객 홈 C40에는 없어요) */
 export function HomeLinks({ guest }: { guest: boolean }) {
   return (
     <>
+      <Link className={`${s.faqRow} ${s.phoneOnly}`} href="/guide">
+        <span className={s.stripText}><b>믿집 백과</b><span>처음 순서 · 용어 사전</span></span>
+        <Icon name="chevron-right" size={20} />
+      </Link>
       <Link className={`${s.faqRow} ${s.phoneOnly}`} href="/faq">
         <span className={s.stripText}><b>자주 묻는 질문</b><span>가견적 · 실측 · 업체 확인</span></span>
         <Icon name="chevron-right" size={20} />
       </Link>
       {guest ? <p className={`${s.meta} ${s.phoneOnly}`}>업체이신가요? <Button variant="inline" href="/signup/vendor">업체로 가입</Button></p> : null}
       <footer className={s.foot}>
+        <Link href="/guide">믿집 백과</Link>
         <Link href="/faq">자주 묻는 질문</Link>
         <Link href="/legal">약관 · 개인정보 처리방침</Link>
         {guest ? (
