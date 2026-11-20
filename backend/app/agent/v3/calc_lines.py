@@ -493,6 +493,39 @@ def vendors(facts: ProjectFacts | None) -> Lines:
 PAIR_ORDER = "목공을 먼저 끝내고 도배를 해요."
 
 
+def _pair_dates(start, rows: list[SizeCalcFact]) -> Lines:
+    """시작 날짜부터 목공 다음 도배를 이어 놓은 날짜(tools가 schedule.lay_out으로 셈). 평수 하나면 문장, 여럿이면 표."""
+    out = Lines(numbers=[md(start)])
+    for x in rows:
+        p = x.pair
+        out.numbers += [md(b.start) for b in p.blocks] + [md(b.end) for b in p.blocks]  # type: ignore[union-attr]
+        out.numbers += [md(p.end), f"{p.work_days}일"]  # type: ignore[union-attr]
+    tail = "(빈집 · 주말 · 공휴일 빼고)"
+    if len(rows) == 1:
+        x, p = rows[0], rows[0].pair
+        parts = ", ".join(f"{josa(b.ko, '은', '는')} {md(b.start)} ~ {md(b.end)}" for b in p.blocks)  # type: ignore[union-attr]
+        out.lines.append(
+            f"믿집 계산으로 {josa(x.label, '을', '를')} {md(start)}에 시작하면 {parts}이에요{tail}."
+        )
+        if p.after:  # type: ignore[union-attr]
+            out.lines.append(f"{p.after}까지 넣으면 {md(p.end)}에 끝나요.")  # type: ignore[union-attr]
+        note = f"{md(p.start)} ~ {md(p.end)}" + (f" · {p.after} 포함" if p.after else "")  # type: ignore[union-attr]
+        out.boxes.append(
+            CalcBox(label=f"{x.label} 목공 · 도배 일정", ref="general.asked.pair",
+                    qty=p.work_days, unit="일", note=note)  # type: ignore[union-attr]
+        )  # fmt: skip
+        return out
+    out.lines.append(f"믿집 계산으로 {md(start)}에 시작하면 목공 · 도배를 이 날짜에 해요{tail}.")
+    out.table = [
+        [x.label, " · ".join([*(f"{b.ko} {md(b.start)} ~ {md(b.end)}" for b in x.pair.blocks),  # type: ignore[union-attr]
+                              *([f"끝 {md(x.pair.end)}"] if x.pair.after else [])])]  # type: ignore[union-attr]
+        for x in rows
+    ]  # fmt: skip
+    if any(x.pair.after for x in rows):  # type: ignore[union-attr]
+        out.lines.append(f"끝 날짜는 {rows[0].pair.after}까지 넣은 날이에요.")  # type: ignore[union-attr]
+    return out
+
+
 def pair_period(facts: ProjectFacts | None, general: GeneralFacts | None) -> Lines:
     """'도배랑 몰딩 같이 하면 며칠'. 공정표가 있으면 공정표 값만, 없으면 평수별 목공 · 도배 일수를 따로(더하지 않음)."""
     out = Lines()
@@ -527,11 +560,15 @@ def pair_period(facts: ProjectFacts | None, general: GeneralFacts | None) -> Lin
     sizes = [general.asked] if general.asked else general.examples
     for x in sizes:
         out.numbers += _size_numbers(x)
-    out.lines.append("믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 빈집 기준 이만큼 걸려요.")
-    out.table = [
-        [x.label, f"목공 약 {days(x.mokgong_days or 0)} · 도배 약 {days(x.dobae_days)}"]
-        for x in sizes
-    ]
+    dated = [x for x in sizes if x.pair is not None and x.pair.blocks]
+    if general.start is not None and dated:
+        out.add(_pair_dates(general.start, dated))  # 시작 날짜를 알면 끝나는 날까지(계산 엔진 일정)
+    else:
+        out.lines.append("믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 빈집 기준 이만큼 걸려요.")
+        out.table = [
+            [x.label, f"목공 약 {days(x.mokgong_days or 0)} · 도배 약 {days(x.dobae_days)}"]
+            for x in sizes
+        ]
     out.lines.append(
         f"{PAIR_ORDER} 기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."
     )

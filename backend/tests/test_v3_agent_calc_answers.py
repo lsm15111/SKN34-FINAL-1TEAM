@@ -14,7 +14,7 @@ from app.agent.v3.schemas import (
     VendorPickFact,
 )
 from app.calc import vendor_pick
-from app.chat.tools import asked_area, general_facts, house_size
+from app.chat.tools import asked_area, general_facts, house_size, with_said
 from app.v2 import guard
 
 PLAN = PlanFacts(start=date(2027, 1, 4), end=date(2027, 1, 5), work_days=2)
@@ -264,3 +264,21 @@ def test_where_line_by_timing_and_topic():
     assert where_for("도배 비용이 궁금해요", "dobae") == "실측 때 업체"
     assert said_in("벽에 곰팡이나 물자국이 있나요?", "곰팡이 핀 벽은 어떻게 처리해요?")
     assert not said_in("벽에 곰팡이나 물자국이 있나요?", "도배 전에 뭘 준비해요?")
+
+
+def test_said_start_and_area_carry_into_pair_dates():
+    """앞 턴에 말한 32평 · 12월 1일을 이어받으면 목공 다음 도배를 그날부터 이어 놓은 날짜로 답해요(계산 엔진)."""
+    from app.agent.v3.context import SaidArea
+
+    today = date(2026, 11, 20)
+    a32 = SaidArea(m2=105.8, label="32평")
+    g = with_said(general_facts("목공도 같이 하면요?", today), a32, date(2026, 12, 1), today)
+    out = calc_lines.pair_period(None, g)
+    assert out.lines[0].startswith("믿집 계산으로 32평을 12.1(화)에 시작하면 목공은 12.1(화) ~ ")
+    assert ", 도배는 " in out.lines[0] and out.lines[1].endswith("에 끝나요.")
+    assert out.boxes[0].ref == "general.asked.pair"
+    _ok(out)
+    old = with_said(general_facts("목공도 같이 하면요?", today), a32, date(2026, 11, 1), today)
+    assert (
+        old.start is None and old.asked is not None
+    )  # 지난 날짜는 이어받지 않아요(평수는 이어받아요)

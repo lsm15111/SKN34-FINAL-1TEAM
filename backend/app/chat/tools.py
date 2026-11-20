@@ -272,7 +272,51 @@ def _with_dates(x: SizeCalcFact, start: date) -> SizeCalcFact:
     if x.mokgong_days:
         m0, m1, _ = schedule.span(start, x.mokgong_days, off)
         up["mokgong_dates"] = (m0, m1)
+    up["pair"] = _pair_plan(x, start, off)
     return x.model_copy(update=up)
+
+
+def _pair_plan(x: SizeCalcFact, start: date, off) -> PlanFacts | None:
+    """목공(몰딩 · 걸레받이) 다음 도배(기본형 · 빈집)를 시작 날짜부터 이어 놓은 일정.
+    공사 공정표와 같은 계산 엔진(schedule.lay_out)이 단계 반나절로 셈해요. 못 세면 None."""
+    from decimal import Decimal
+
+    from app.calc import dobae, mokgong, schedule
+    from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
+    from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+    from app.refprice.house import HOUSE_2026H2
+    from app.refprice.wallpaper_market import paper_market
+
+    m2 = Decimal(str(x.area_m2)).quantize(Decimal("0.1"))
+    try:
+        h = dobae.HomeV3(m2, x.area_basis, "basic", False)
+        std = dobae.standard_v3(
+            h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+        )
+        mk = mokgong.quote(
+            mokgong.MokgongInput(m2, x.area_basis, ("molding", "base"), False), MOKGONG_2026H2
+        )
+        p = schedule.lay_out(
+            [
+                schedule.TradePlan("mokgong", mk.steps, MOKGONG_2026H2.crew),
+                schedule.TradePlan("dobae", std.quote.steps, DOBAE_V3_2026_11.crew),
+            ],
+            start,
+            off,
+        )
+    except ValueError:
+        return None
+    ko = {"mokgong": "목공", "dobae": "도배"}
+    blocks = [
+        PlanBlockFact(trade=b.trade, ko=ko[b.trade], start=b.start, end=b.end)  # type: ignore[arg-type]
+        for b in p.blocks
+        if b.trade in ko
+    ]
+    if not blocks:
+        return None
+    last = blocks[-1].end
+    after = " · ".join(b.label for b in p.blocks if b.trade is None and b.start > last and b.label)
+    return PlanFacts(start=p.start, end=p.end, work_days=p.work_days, blocks=blocks, after=after)
 
 
 def _calc_area(p) -> tuple[float | None, str | None]:
@@ -297,14 +341,21 @@ def house_size(facts: ProjectFacts | None) -> SizeCalcFact | None:
     return _size_calc(m2, facts.calc_basis or facts.area_basis or "supply", "이 집")
 
 
-def with_said_area(g: GeneralFacts, area) -> GeneralFacts:
-    """이번 질문에 평수가 없으면 앞 턴에 말한 집 크기(대화 상태 SaidArea)로 계산 엔진 값을 다시 세요.
-    질문에 평수가 있으면 그 값을 써요(새로 말한 것이 이겨요)."""
-    if g.asked is not None or area is None:
-        return g
-    asked = _size_calc(area.m2, area.basis, area.label)
-    if g.start is not None:
-        asked = _with_dates(asked, g.start)
+def with_said(g: GeneralFacts, area, start: date | None, today: date) -> GeneralFacts:
+    """이번 질문에 없으면 앞 턴에 말한 집 크기(SaidArea) · 시작 날짜(대화 상태)로 계산 엔진 값을 다시 세요.
+    질문에 있으면 그 값을 써요(새로 말한 것이 이겨요). 오늘보다 앞선 날짜는 이어받지 않아요."""
+    asked = g.asked
+    if asked is None and area is not None:
+        asked = _size_calc(area.m2, area.basis, area.label)
+    begin = g.start if g.start is not None else (start if start and start >= today else None)
+    if begin is None:
+        return g.model_copy(update={"asked": asked})
+    if begin != g.start:  # 날짜를 이어받았어요: 질문 평수 · 예시 평수에 그 날짜를 새로 놓아요
+        examples = [_with_dates(x, begin) for x in g.examples]
+        asked = _with_dates(asked, begin) if asked is not None else None
+        return g.model_copy(update={"asked": asked, "examples": examples, "start": begin})
+    if asked is not None and asked is not g.asked:  # 날짜는 이번 질문에, 평수만 이어받았어요
+        asked = _with_dates(asked, begin)
     return g.model_copy(update={"asked": asked})
 
 

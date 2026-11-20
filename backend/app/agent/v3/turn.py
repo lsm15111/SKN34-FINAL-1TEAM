@@ -255,15 +255,15 @@ async def run_turn(
         if prev is not None and button is not None and button.trade:
             new_state = prev.model_copy(update={"trades": [button.trade], "turn": turn_no})
     else:
-        x = (
-            general.asked if general is not None else None
-        )  # 이번 질문의 집 크기(앞 턴에서 이어받은 값이어도 같아요)
+        # 이번 질문의 집 크기 · 시작 날짜(앞 턴에서 이어받은 값이어도 같아요)
+        x = general.asked if general is not None else None
         said = context.SaidArea(m2=x.area_m2, basis=x.area_basis, label=x.label) if x else None
         new_state = context.next_state(
-            prev, masked, route=g.route, trades=list(g.trades), turn=turn_no, area=said
-        )
+            prev, masked, route=g.route, trades=list(g.trades), turn=turn_no, area=said,
+            start=general.start if general is not None else None,
+        )  # fmt: skip
     filled = (task.trades[0] if task.trades else "common", slot, value) if slot and value else None
     return TurnResult(
         ans, new_wait, g.label, g.confidence, g.source,
-        state=new_state.model_dump() if new_state else None, filled=filled,
+        state=new_state.model_dump(mode="json") if new_state else None, filled=filled,
     )  # fmt: skip

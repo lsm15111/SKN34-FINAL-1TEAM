@@ -150,6 +150,19 @@ def test_area_said_before_carries_to_follow_up_without_project(api):
     assert [r[0] for r in rows] == ["24평", "34평", "44평"]
 
 
+def test_start_date_said_before_carries_to_follow_up_without_project(api):
+    """공사 없는 대화: 앞 턴의 '12월 1일부터 · 32평'을 '목공도 같이 하면요?'가 이어받아 두 공정 날짜로 답해요."""
+    use(api, signup(api, "start@mitjip.test"))
+    first = done(ask(api, text="12월 1일부터 도배하면 언제 끝나요? 32평이에요"))
+    cid = uuid.UUID(first["chat_id"])
+    st = json.loads(query("select state from chats where id = $1", cid)[0]["state"])
+    assert st["start"].endswith("-12-01") and st["area"]["label"] == "32평"
+    out = done(ask(api, text="목공도 같이 하면요?", chat_id=str(cid)))
+    period = next(s for s in out["answer"]["sections"] if s["title"] == "[기간]")["sentences"]
+    assert period[0].startswith("믿집 계산으로 32평을 12.1(")
+    assert "에 시작하면 목공은 " in period[0] and ", 도배는 " in period[0]
+
+
 def test_area_said_in_project_chat_still_uses_project_size(api):
     """공사 대화는 지금처럼 공사 크기(예상 공정표)로 답해요. 앞 턴의 평수를 이어받지 않아요."""
     use(api, signup(api, "areap@mitjip.test"))

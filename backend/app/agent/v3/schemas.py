@@ -83,6 +83,7 @@ class PlanFacts(BaseModel):
     end: date
     work_days: int
     blocks: list[PlanBlockFact] = []
+    after: str = ""  # 마지막 공정 뒤 날 이름(예: '자연 건조 · 입주 청소'). end는 그 날까지예요
 
 
 class VisitRecommendFact(BaseModel):
@@ -158,6 +159,8 @@ class SizeCalcFact(BaseModel):
     # 질문에 시작 날짜가 있을 때: 빈집 기준 일을 그날부터 일하는 날(주말 · 공휴일 빼고)에 놓은 첫날 · 끝날
     dobae_dates: tuple[date, date] | None = None
     mokgong_dates: tuple[date, date] | None = None
+    # 같은 시작 날짜에 목공 다음 도배를 이어 놓은 일정(계산 엔진 schedule.lay_out, '목공도 같이 하면' 답)
+    pair: PlanFacts | None = None
 
 
 class GeneralFacts(BaseModel):

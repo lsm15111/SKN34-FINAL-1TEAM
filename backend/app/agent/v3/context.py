@@ -8,6 +8,7 @@
 """
 
 import re
+from datetime import date
 from typing import Literal
 
 from pydantic import BaseModel
@@ -66,9 +67,9 @@ class ChatState(BaseModel):
     route: str = ""
     q: str = ""  # 앞 턴의 독립 질문(가린 글, Q_MAX자)
     turn: int = 0
-    area: SaidArea | None = (
-        None  # 앞 턴에서 말한 집 크기. 공사 없는 대화에서 평수 없는 다음 질문이 이어받아요
-    )
+    # 앞 턴에서 말한 집 크기 · 시작 날짜. 공사 없는 대화에서 그 값이 없는 다음 질문이 이어받아요
+    area: SaidArea | None = None
+    start: date | None = None
 
 
 def load(raw: dict | None) -> ChatState | None:
@@ -139,9 +140,10 @@ def next_state(
     trades: list[str],
     turn: int,
     area: SaidArea | None = None,
+    start: date | None = None,
 ) -> ChatState | None:
     """이 턴 뒤의 상태. 범위 밖 · 되묻기 후보 턴은 앞 상태를 그대로 둬요(잡담이 맥락을 지우지 않게).
-    area: 이번 질문에서 말한 집 크기. 없으면 앞 턴 값을 그대로 둬요(새로 말하면 바꿔요)."""
+    area · start: 이번 질문에서 말한 집 크기 · 시작 날짜. 없으면 앞 턴 값을 그대로 둬요(새로 말하면 바꿔요)."""
     if route in ("out_of_scope", "ask_back"):
         return prev
     return ChatState(
@@ -151,4 +153,5 @@ def next_state(
         q=(question or "")[:Q_MAX],
         turn=turn,
         area=area or (prev.area if prev else None),
+        start=start or (prev.start if prev else None),
     )

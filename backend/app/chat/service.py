@@ -267,11 +267,11 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
 
     # 질문의 평수 · 예시 평수 · 방문 1개를 계산 엔진으로 미리 센다(DB 없음, 약 20ms). 기간 · 비용 답이 쓴다
     general = tools.general_facts(check.mask(body.text), today)
-    if (
-        facts is None
-    ):  # 공사 없는 대화: 이번 질문에 평수가 없으면 앞 턴에 말한 평수(대화 상태)로 세요
+    # 공사 없는 대화: 이번 질문에 없으면 앞 턴에 말한 평수 · 시작 날짜(대화 상태)로 세요
+    if facts is None:
         said = context.load(state)
-        general = tools.with_said_area(general, said.area if said else None)
+        area, start = (said.area, said.start) if said else (None, None)
+        general = tools.with_said(general, area, start, today)
     general.here = tools.house_size(facts)  # 공사에 없는 공종의 기간을 이 집 크기로 세요
     res = await run_turn(
         body.text,

@@ -109,3 +109,17 @@ def test_out_of_scope_turn_keeps_previous_state():
 def test_broken_saved_state_is_ignored():
     r = turn("합지는요?", state={"trades": "도배", "turn": "x"})
     assert not r.answer.trace.inherited
+
+
+def test_said_start_stays_and_saves_as_iso_date():
+    """말한 시작 날짜도 집 크기와 같은 규칙이에요: 다음 턴에 남고, 새로 말하면 바뀌고, 글(ISO)로 저장해요."""
+    s1 = context.next_state(
+        None, "12월 1일부터 도배", route="trade", trades=["dobae"], turn=1, start=date(2026, 12, 1)
+    )
+    s2 = context.next_state(s1, "목공도 같이 하면요", route="multi", trades=["mokgong"], turn=2)
+    assert s2 and s2.start == date(2026, 12, 1)
+    s3 = context.next_state(
+        s2, "12월 8일부터면요", route="trade", trades=["dobae"], turn=3, start=date(2026, 12, 8)
+    )
+    raw = s3.model_dump(mode="json") if s3 else {}
+    assert raw["start"] == "2026-12-08" and context.load(raw) == s3
