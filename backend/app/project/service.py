@@ -8,7 +8,7 @@ v3: 몸통은 지금 화면(ProjectCreate)과 v3 기본 정보(HomeInfoIn, 손�
 import uuid
 from datetime import date
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -23,12 +23,14 @@ from app.project.models import (
     SPACE_NAMES,
     Project,
     ProjectCheck,
+    ProjectCondition,
     ProjectFile,
     ProjectSpace,
     ProjectTrade,
     ProjectTradeSpace,
 )
 from app.project.schemas import (
+    ConditionOut,
     DobaeOut,
     EmdOut,
     HomeInfoIn,
@@ -48,6 +50,7 @@ from app.project.schemas import (
 )
 from app.shared.clock import now_utc
 from app.shared.errors import AppError, app_error
+from app.shared.ids import uuid7
 from app.shared.regions import emd_list, is_region, region_label
 
 LOCKED = "실측을 요청한 뒤에는 집 정보를 고칠 수 없어요."
@@ -482,3 +485,69 @@ async def set_check(
         )
     await s.commit()
     return await checks(s, p.id)
+
+
+# ---- v3 모은 조건(맥락 L3, docs/v3/agent-context.md 3절) ----
+async def _own(s: AsyncSession, user: User, project_id: uuid.UUID) -> None:
+    """만든 고객만(남의 것 · 없는 것은 같은 404)."""
+    p = await repo.get(s, project_id)
+    if p is None or p.owner_id != user.id:
+        raise AppError(404, "not_found", "프로젝트를 찾을 수 없어요.")
+
+
+async def conditions(s: AsyncSession, project_id: uuid.UUID) -> dict[str, str]:
+    """{칸: 값}. 에이전트 사실(ProjectFacts.brief)로 넘겨요. 권한은 부르는 쪽이 get_for로 먼저 확인한다."""
+    rows = await s.execute(
+        select(ProjectCondition.key, ProjectCondition.value).where(
+            ProjectCondition.project_id == project_id
+        )
+    )
+    return {k: v for k, v in rows}
+
+
+async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[ConditionOut]:
+    """화면 칩 목록(만든 고객만, 먼저 모은 것부터)."""
+    from app.agent.v3.trades import slot_label
+
+    await _own(s, user, project_id)
+    rows = await s.scalars(
+        select(ProjectCondition)
+        .where(ProjectCondition.project_id == project_id)
+        .order_by(ProjectCondition.updated_at, ProjectCondition.key)
+    )
+    return [
+        ConditionOut(trade=r.trade, key=r.key, label=slot_label(r.key), value=r.value) for r in rows
+    ]
+
+
+async def save_condition(
+    s: AsyncSession, user: User, project_id: uuid.UUID, *, trade: str, key: str, value: str
+) -> None:
+    """고객이 되묻기에 답한 값 한 칸을 덮어써요. commit은 부르는 쪽(대화 저장과 같은 트랜잭션)이 해요."""
+    await _own(s, user, project_id)
+    v = (value or "").strip()[:40]
+    if not v or not 3 <= len(key) <= 40:
+        return
+    stmt = insert(ProjectCondition).values(
+        id=uuid7(), project_id=project_id, trade=trade[:20], key=key, value=v
+    )
+    await s.execute(
+        stmt.on_conflict_do_update(
+            constraint="uq_project_conditions_key",
+            set_={"value": v, "trade": trade[:20], "updated_at": func.now()},
+        )
+    )
+
+
+async def delete_condition(
+    s: AsyncSession, user: User, project_id: uuid.UUID, key: str
+) -> list[ConditionOut]:
+    """칩 X: 그 칸을 지우면 에이전트가 다음에 다시 물어요. 없는 칸을 지워도 그대로예요."""
+    await _own(s, user, project_id)
+    await s.execute(
+        delete(ProjectCondition).where(
+            ProjectCondition.project_id == project_id, ProjectCondition.key == key
+        )
+    )
+    await s.commit()
+    return await condition_list(s, user, project_id)

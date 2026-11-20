@@ -215,6 +215,33 @@ def test_someone_elses_project_is_404_and_writes_no_chat(api):
     assert api.get(f"/ai/threads?project_id={pid}").status_code == 404
 
 
+def test_project_slot_answer_becomes_condition_and_is_not_asked_again(api):
+    """모은 조건(맥락 L3): 공사 화면에서 되묻기에 답한 칸은 저장하고, 다음 대화에서도 다시 묻지 않아요."""
+    use(api, signup(api, "cond@mitjip.test"))
+    pid = _project(api)
+    ctx = {"screen": "standard", "project_id": pid}
+    q = "문 교체 견적에 손잡이랑 경첩도 포함돼요?"
+    first = done(ask(api, text=q, context=ctx))
+    assert first["answer"]["ask"]["slot"] == "mokgong.doors" and first["conditions"] == []
+    btn = {"route": "trade", "trade": "mokgong", "slot": "mokgong.doors", "value": "문짝만"}
+    second = done(ask(api, text="문짝만", chat_id=first["chat_id"], context=ctx, button=btn))
+    want = {"trade": "mokgong", "key": "mokgong.doors", "label": "방문", "value": "문짝만"}
+    assert second["conditions"] == [want]
+    assert done(ask(api, text=q, context=ctx))["answer"]["ask"] is None  # 새 대화에서도 안 물어요
+    assert api.get(f"/projects/{pid}/conditions").json() == [want]
+    assert (
+        api.delete(f"/projects/{pid}/conditions/mokgong.doors").json() == []
+    )  # 지우면 다시 물어요
+    assert done(ask(api, text=q, context=ctx))["answer"]["ask"]["slot"] == "mokgong.doors"
+    # 공사 밖 대화의 칸 답은 저장하지 않아요
+    out = done(ask(api, text=q))
+    done(ask(api, text="문짝만", chat_id=out["chat_id"], button=btn))
+    assert api.get(f"/projects/{pid}/conditions").json() == []
+    use(api, signup(api, "cond2@mitjip.test"))
+    assert api.get(f"/projects/{pid}/conditions").status_code == 404
+    assert api.delete(f"/projects/{pid}/conditions/mokgong.doors").status_code == 404
+
+
 def test_llm_mode_sends_fixed_part_first_then_done(api, monkeypatch):
     """LLM 모드: 답 작성기를 기다리기 전에 고정 몫을 part로 먼저 보내고, 저장 뒤 done으로 끝낸다.
     done의 앞 묶음은 part와 같아서 화면에 이미 보인 글은 바뀌지 않는다."""

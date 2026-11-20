@@ -213,6 +213,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     from app.db import SessionLocal
     from app.knowledge import cards
     from app.knowledge import service as knowledge
+    from app.project import service as project_service
     from app.shared import ratelimit
 
     if settings.app_env != "local":
@@ -299,12 +300,22 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
                 raise AppError(409, "conflict", CONFLICT)
             repository.add_turn(s, chat_id, rev, mask(body.text), ans.plain(), intent)
             await repository.set_state(s, user.id, chat_id, res.state)
+            if pid is not None and res.filled is not None:
+                # 고객이 되묻기에 답한 값만 모은 조건으로 남겨요(LLM이 짐작한 값은 넣지 않아요)
+                trade, slot, value = res.filled
+                await project_service.save_condition(
+                    s, user, pid, trade=trade, key=slot, value=mask(value)
+                )
             await s.commit()
+            conds = await project_service.condition_list(s, user, pid) if pid else []
         new_rev = rev + 1
         await _set_json(_key("wait", str(chat_id)), res.waiting, WAIT_TTL)
+    else:
+        conds = []
     out = AiTurnOut(
-        chat_id=chat_id, rev=new_rev, mode=ctx.mode, route=ans.trace.route, answer=_public(ans)
-    )
+        chat_id=chat_id, rev=new_rev, mode=ctx.mode, route=ans.trace.route, answer=_public(ans),
+        conditions=conds,
+    )  # fmt: skip
     await _set_json(replay_key, out.model_dump(mode="json"), REPLAY_TTL)
     return out
 

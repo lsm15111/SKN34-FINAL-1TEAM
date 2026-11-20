@@ -20,6 +20,7 @@ from app.agent.v3.schemas import (
     UiCard,
     View,
 )
+from app.project.schemas import ConditionOut
 
 FIRST_NOTICE = "AI가 답해요. 금액 · 날짜는 믿집 계산을 그대로 보여 주고, 저장 · 확정은 하지 않아요."
 
@@ -90,6 +91,8 @@ class AiTurnOut(BaseModel):
     mode: Literal["free", "llm"]
     route: Route
     answer: AiAnswer
+    # 공사 화면 대화의 모은 조건(맥락 L3). 이 턴에 답한 칸까지 들어 있어요. 공사 밖 대화는 빈 목록
+    conditions: list[ConditionOut] = []
 
 
 class AiThreadOut(BaseModel):

@@ -362,6 +362,15 @@ class ProjectBrief(BaseModel):
     ho: str | None
 
 
+class ConditionOut(BaseModel):
+    """AI 상담으로 모은 조건 한 칸(맥락 L3). 화면 칩은 'label: value'예요"""
+
+    trade: str
+    key: str
+    label: str
+    value: str
+
+
 class ProjectCheckOut(BaseModel):
     """공사 전에 할 일 한 줄"""
 

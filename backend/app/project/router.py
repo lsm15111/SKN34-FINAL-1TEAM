@@ -1,7 +1,7 @@
 import uuid
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Body, Depends, Header, Response
+from fastapi import APIRouter, Body, Depends, Header, Path, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.deps import current_user, require_role
@@ -9,6 +9,7 @@ from app.auth.models import User
 from app.db import get_session
 from app.project import service
 from app.project.schemas import (
+    ConditionOut,
     EmdOut,
     ProjectBody,
     ProjectCheckIn,
@@ -127,3 +128,30 @@ async def set_check(
     s: AsyncSession = Depends(get_session),
 ) -> list[ProjectCheckOut]:
     return await service.set_check(s, user, project_id, key, data.done)
+
+
+@router.get(
+    "/projects/{project_id}/conditions",
+    response_model=list[ConditionOut],
+    summary="AI 상담으로 모은 조건 (만든 고객만)",
+)
+async def list_conditions(
+    project_id: uuid.UUID,
+    user: User = Depends(require_role("customer")),
+    s: AsyncSession = Depends(get_session),
+) -> list[ConditionOut]:
+    return await service.condition_list(s, user, project_id)
+
+
+@router.delete(
+    "/projects/{project_id}/conditions/{key}",
+    response_model=list[ConditionOut],
+    summary="모은 조건 한 칸 지우기 (만든 고객만, 지우면 AI가 다시 물어요)",
+)
+async def delete_condition(
+    project_id: uuid.UUID,
+    key: Annotated[str, Path(min_length=3, max_length=40, pattern=r"^[a-z_]+\.[a-z_]+$")],
+    user: User = Depends(require_role("customer")),
+    s: AsyncSession = Depends(get_session),
+) -> list[ConditionOut]:
+    return await service.delete_condition(s, user, project_id, key)

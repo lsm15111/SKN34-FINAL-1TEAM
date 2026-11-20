@@ -23,6 +23,23 @@ class Slot:
     fact: str = ""  # ProjectFacts에서 이 칸을 채우는 필드(있으면 되묻지 않음)
 
 
+# 모은 조건 칩(맥락 L3)에 보일 칸 이름. '이름: 값'으로 보여요(예: '천장 도배: 천장도 해요')
+SLOT_LABEL = {
+    "dobae.grade": "집 쓰임",
+    "dobae.ceiling": "천장 도배",
+    "dobae.living": "살면서 공사",
+    "dobae.mold": "곰팡이 · 물자국",
+    "dobae.area_basis": "면적 기준",
+    "mokgong.molding": "몰딩",
+    "mokgong.doors": "방문",
+    "mokgong.ceiling": "천장 평탄화",
+}
+
+
+def slot_label(key: str) -> str:
+    return SLOT_LABEL.get(key, "조건")
+
+
 @dataclass(frozen=True)
 class TradeSpec:
     code: TradeCode

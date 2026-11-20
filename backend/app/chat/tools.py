@@ -76,6 +76,8 @@ async def project_facts(
     stage = await _stage(s, user, project_id, today)
     if stage:
         facts.stage = stage  # type: ignore[assignment]
+    # 모은 조건(맥락 L3): 고객이 되묻기에 답한 칸은 다시 묻지 않아요(answer.slot_known)
+    facts.brief = await project_service.conditions(s, project_id)
     return facts
 
 

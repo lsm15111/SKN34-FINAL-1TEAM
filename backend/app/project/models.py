@@ -267,3 +267,27 @@ class ProjectCheck(Base):
     key: Mapped[str] = mapped_column(String(30), primary_key=True)
     done_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+
+
+class ProjectCondition(Base):
+    """AI 상담으로 모은 조건(맥락 L3, agent-context.md 3절). 화면 이름 '모은 조건'.
+
+    고객이 되묻기에 답하거나 단추로 고른 값만 둔다(LLM 추측은 넣지 않는다). 칸(key)은 TradeSpec 칸 이름
+    (예: dobae.grade)이고 공사 · 칸마다 하나다. 다음 턴부터 에이전트가 같은 칸을 다시 묻지 않는다.
+    """
+
+    __tablename__ = "project_conditions"
+    __table_args__ = (
+        UniqueConstraint("project_id", "key", name="uq_project_conditions_key"),
+        CheckConstraint("char_length(key) between 3 and 40", name="key"),
+        CheckConstraint("char_length(btrim(value)) between 1 and 40", name="value"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), index=True
+    )
+    trade: Mapped[str] = mapped_column(String(20))
+    key: Mapped[str] = mapped_column(String(40))
+    value: Mapped[str] = mapped_column(String(40))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
