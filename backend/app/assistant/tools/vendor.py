@@ -46,12 +46,13 @@ REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 VAT = {"included": "부가세 포함", "excluded": "부가세 별도", "exempt": "면세"}
 
 
-async def open_halves(s: AsyncSession, vendor_id: uuid.UUID, start: date, end: date):
-    """업체 빈 반나절(도메인 담당 visit.service.open_halves_for: 날 → ["am", "pm"]). 아직 없으면 None."""
+async def open_halves(
+    s: AsyncSession, vendor_id: uuid.UUID, start: date, end: date
+) -> dict[date, list[str]]:
+    """업체 빈 반나절(visit.service.open_halves_for: 날 → ["am", "pm"] 중 빈 것, 고객 정보 없음)."""
     from app.visit import service as visit_service
 
-    fn = getattr(visit_service, "open_halves_for", None)
-    return None if fn is None else await fn(s, vendor_id, start, end)
+    return await visit_service.open_halves_for(s, vendor_id, start, end)
 
 
 def _visit_id(tc: ToolCtx, ref: str | None) -> uuid.UUID:
@@ -367,8 +368,6 @@ async def my_free_slots(tc: ToolCtx, a: FreeIn) -> ToolOut:
         if hi < lo or (hi - lo).days > slots.SPAN_MAX:
             raise ToolError("bad_range", "기간을 62일 안으로 다시 골라 주세요.")
         free = await open_halves(s, tc.user.id, lo, hi)
-    if free is None:
-        raise ToolError("not_ready", "빈 시간을 아직 볼 수 없어요.")
     wins = slots.best_windows(free, lo, hi, tc.today, days_off=days_off(lo, hi))
     out = []
     for w in wins:

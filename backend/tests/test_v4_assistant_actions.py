@@ -5,7 +5,6 @@
 import asyncio
 import json
 import uuid
-from datetime import timedelta
 
 import pytest
 from v3_kb import repo_index
@@ -16,7 +15,6 @@ from app.auth.models import User
 from app.db import SessionLocal
 from app.shared.clock import now_utc
 from app.shared.errors import AppError
-from app.visit import service as visit_service
 from tests.conftest import query
 from tests.helpers import use
 from tests.test_dates import days, propose
@@ -43,20 +41,6 @@ def script():
     llm.clear_stubs()
     yield llm.set_claude_script
     llm.clear_stubs()
-
-
-@pytest.fixture
-def free_halves(monkeypatch):
-    """도메인 담당 visit.service.open_halves_for 자리(병합 전 가짜): 기간의 날마다 오전 · 오후가 빈다."""
-
-    async def open_halves_for(s, vendor_id, start, end):
-        out, d = {}, start
-        while d <= end:
-            out[d] = ["am", "pm"]
-            d += timedelta(days=1)
-        return out
-
-    monkeypatch.setattr(visit_service, "open_halves_for", open_halves_for, raising=False)
 
 
 def acts(ev) -> list[dict]:
@@ -233,7 +217,7 @@ def test_quote_changed_fails_and_remakes_with_supersedes(api, script):
     assert query("select status from deals")[0]["status"] == "confirmed"
 
 
-def test_recommend_then_request_visit_after_approval(api, script, free_halves):
+def test_recommend_then_request_visit_after_approval(api, script):
     a = vendor(api, "maru@mitjip.test", "마루와벽")
     b = vendor(api, "gyeol@mitjip.test", "결도배")
     _, pid = customer(api)
@@ -346,7 +330,7 @@ def test_accept_dates_after_approval(api, script):
     assert query("select status from deals")[0]["status"] == "scheduled"
 
 
-def test_vendor_brief_then_window_answer_after_approval(api, script, free_halves):
+def test_vendor_brief_then_window_answer_after_approval(api, script):
     f = requested(api)
     login(api, f["email"])
     r = api.get(f"/vendor/assistant/briefs/{f['visit']}")
@@ -371,7 +355,7 @@ def test_vendor_brief_then_window_answer_after_approval(api, script, free_halves
     assert approve(api, aid, prefix="/vendor/assistant").status_code == 404
 
 
-def test_vendor_turn_proposes_decline_and_checklist(api, script, free_halves):
+def test_vendor_turn_proposes_decline_and_checklist(api, script):
     f = requested(api)
     login(api, f["email"])
     script(

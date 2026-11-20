@@ -34,7 +34,6 @@ from app.assistant.schemas import (
     VisitSlotsData,
     WishOut,
 )
-from app.assistant.tools import ToolError
 from app.auth.models import User
 from app.calc.common import COUNTED
 from app.shared.clock import SEOUL
@@ -276,10 +275,7 @@ async def wishes(
         today + timedelta(days=1),
         today + timedelta(days=slots.WISH_FALLBACK_DAYS),
     )
-    open_halves_for = getattr(visit_service, "open_halves_for", None)
-    if open_halves_for is None:  # 도메인 담당 함수가 아직 없으면(병합 전) 도구 오류로 알린다
-        raise ToolError("not_ready", "업체 빈 시간을 아직 볼 수 없어요.")
-    free = await open_halves_for(s, uuid.UUID(vendor["id"]), lo, hi)
+    free = await visit_service.open_halves_for(s, uuid.UUID(vendor["id"]), lo, hi)
     found = slots.wish_candidates(
         free, work, today, prefer=prefer, days=days, days_off=days_off(lo, hi)
     )

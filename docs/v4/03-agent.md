@@ -220,7 +220,7 @@
 - ref 머리글자: v 업체 · m 실측 요청 · r 희망 기간 · s 반나절 · w 업체 기간 · d 확정 · p 공사 날짜 제안 · n 공사 날 후보. 대화마다 Redis 30분.
 - `answer_question`은 `answer_only(mode="free")`로 근거 문장만 받아요(겹친 LLM 호출 없음). `v2.ask.answer_only`는 v2 파일이라 이번에 하지 않았어요.
 - `vendor_free_slots`는 `prefer`(any · am · pm)와 `days`(any · weekday · weekend)를 받아요. `find_floorplan_docs`는 고객이 말한 단지 이름(`complex`, 동 · 호수 뗌)을 받을 수 있어요.
-- `request_brief` · `my_free_slots`의 업체 빈 반나절은 도메인 담당 `visit.service.open_halves_for`를 늦게 불러요(없으면 기간 제안 없이 브리핑만). 가견적은 요청 때 고정한 값(`vendor_visit.estimate_total`)이에요.
+- `vendor_free_slots`(요청 전) · `request_brief` · `my_free_slots`의 업체 빈 반나절은 도메인 갈래의 `visit.service.open_halves_for`(실제 함수, 공사 날 · 잡기 반영)를 불러요. 가견적은 요청 때 고정한 값(`vendor_visit.estimate_total`)이에요.
 - `propose_dates`의 날 후보(n1~)는 `my_jobs`가 견적서 공사 기간 · 예상 공정표 시작일로 `calc.schedule.workdays`에서 만들어요.
 - `assistant_actions`에는 turn_id 칸을 두지 않았어요. 턴의 행동 id는 `assistant_turns.trace.actions`에 있어요.
 
