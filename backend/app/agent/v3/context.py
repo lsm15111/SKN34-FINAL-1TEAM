@@ -8,6 +8,7 @@
 """
 
 import re
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -49,6 +50,14 @@ FORMS = (
 )
 
 
+class SaidArea(BaseModel):
+    """고객이 대화에서 말한 집 크기(질문 속 평수 · ㎡). 금액 · 기간은 늘 계산 엔진이 이 값으로 다시 세요."""
+
+    m2: float
+    basis: Literal["supply", "exclusive"] = "supply"
+    label: str  # '32평' · '전용 84㎡'
+
+
 class ChatState(BaseModel):
     """대화방 하나의 맥락. chats.state(JSONB)에 저장해요."""
 
@@ -57,6 +66,9 @@ class ChatState(BaseModel):
     route: str = ""
     q: str = ""  # 앞 턴의 독립 질문(가린 글, Q_MAX자)
     turn: int = 0
+    area: SaidArea | None = (
+        None  # 앞 턴에서 말한 집 크기. 공사 없는 대화에서 평수 없는 다음 질문이 이어받아요
+    )
 
 
 def load(raw: dict | None) -> ChatState | None:
@@ -120,9 +132,16 @@ def resolve(text: str, state: ChatState | None) -> tuple[str, bool]:
 
 
 def next_state(
-    prev: ChatState | None, question: str, *, route: str, trades: list[str], turn: int
+    prev: ChatState | None,
+    question: str,
+    *,
+    route: str,
+    trades: list[str],
+    turn: int,
+    area: SaidArea | None = None,
 ) -> ChatState | None:
-    """이 턴 뒤의 상태. 범위 밖 · 되묻기 후보 턴은 앞 상태를 그대로 둬요(잡담이 맥락을 지우지 않게)."""
+    """이 턴 뒤의 상태. 범위 밖 · 되묻기 후보 턴은 앞 상태를 그대로 둬요(잡담이 맥락을 지우지 않게).
+    area: 이번 질문에서 말한 집 크기. 없으면 앞 턴 값을 그대로 둬요(새로 말하면 바꿔요)."""
     if route in ("out_of_scope", "ask_back"):
         return prev
     return ChatState(
@@ -131,4 +150,5 @@ def next_state(
         route=route,
         q=(question or "")[:Q_MAX],
         turn=turn,
+        area=area or (prev.area if prev else None),
     )

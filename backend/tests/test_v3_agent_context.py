@@ -47,6 +47,23 @@ def test_new_topic_or_own_form_is_not_inherited():
     assert context.resolve("합지는요?", None) == ("합지는요?", False)  # 첫 턴
 
 
+def test_said_area_stays_until_a_new_one_is_said():
+    """말한 집 크기는 다음 턴에도 남고, 새로 말하면 바뀌어요(범위 밖 턴은 상태를 그대로 둬요)."""
+    a32 = context.SaidArea(m2=105.8, basis="supply", label="32평")
+    s1 = context.next_state(
+        None, "도배 며칠 걸려 32평", route="trade", trades=["dobae"], turn=1, area=a32
+    )
+    s2 = context.next_state(
+        s1, "목공도 같이 하면요", route="multi", trades=["dobae", "mokgong"], turn=2
+    )
+    assert s2 and s2.area == a32
+    a84 = context.SaidArea(m2=84.0, basis="exclusive", label="전용 84㎡")
+    s3 = context.next_state(s2, "전용 84㎡면요", route="trade", trades=["dobae"], turn=3, area=a84)
+    assert s3 and s3.area == a84
+    assert context.next_state(s3, "주식 추천해 줘", route="out_of_scope", trades=[], turn=4) is s3
+    assert context.load(s3.model_dump()) == s3  # 저장했다 읽어도 같아요
+
+
 def test_follow_up_turn_answers_with_inherited_price_policy():
     r = turn("합지는요?", state=st(trades=["dobae"], form="price", q="실크벽지 평당 얼마예요"))
     t = r.answer.trace

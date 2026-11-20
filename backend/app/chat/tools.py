@@ -297,6 +297,17 @@ def house_size(facts: ProjectFacts | None) -> SizeCalcFact | None:
     return _size_calc(m2, facts.calc_basis or facts.area_basis or "supply", "이 집")
 
 
+def with_said_area(g: GeneralFacts, area) -> GeneralFacts:
+    """이번 질문에 평수가 없으면 앞 턴에 말한 집 크기(대화 상태 SaidArea)로 계산 엔진 값을 다시 세요.
+    질문에 평수가 있으면 그 값을 써요(새로 말한 것이 이겨요)."""
+    if g.asked is not None or area is None:
+        return g
+    asked = _size_calc(area.m2, area.basis, area.label)
+    if g.start is not None:
+        asked = _with_dates(asked, g.start)
+    return g.model_copy(update={"asked": asked})
+
+
 def general_facts(text: str, today: date | None = None) -> GeneralFacts:
     """질문만 보고 센 계산 엔진 값(DB 없음, 순수 계산). 질문 평수 · 예시 평수 3개 · 방문 1개.
     today를 주면 질문의 시작 날짜('12월 1일부터')로 끝나는 날도 센다."""

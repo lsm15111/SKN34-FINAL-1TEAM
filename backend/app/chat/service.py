@@ -205,7 +205,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
     on_part(AiAnswer): LLM 모드에서 답 작성기를 기다리기 전에 고정 몫(계산 결과 · 정해 둔 글, 검사 통과본)을
     먼저 받는 쪽. 마지막 답은 이 묶음을 그대로 앞에 두고 아래에 이어 붙여요. 저장은 하지 않아요."""
     from app.agent.llm import embed_query
-    from app.agent.v3 import check
+    from app.agent.v3 import check, context
     from app.agent.v3.answer import KB
     from app.agent.v3.schemas import TurnContext
     from app.agent.v3.turn import run_turn
@@ -267,6 +267,11 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
 
     # 질문의 평수 · 예시 평수 · 방문 1개를 계산 엔진으로 미리 센다(DB 없음, 약 20ms). 기간 · 비용 답이 쓴다
     general = tools.general_facts(check.mask(body.text), today)
+    if (
+        facts is None
+    ):  # 공사 없는 대화: 이번 질문에 평수가 없으면 앞 턴에 말한 평수(대화 상태)로 세요
+        said = context.load(state)
+        general = tools.with_said_area(general, said.area if said else None)
     general.here = tools.house_size(facts)  # 공사에 없는 공종의 기간을 이 집 크기로 세요
     res = await run_turn(
         body.text,

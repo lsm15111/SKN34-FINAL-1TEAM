@@ -131,6 +131,35 @@ def test_follow_up_adding_a_trade_not_in_the_project_answers_both(api):
     assert "몰딩 · 걸레받이 목공은 약" in period[i + 1]
 
 
+def test_area_said_before_carries_to_follow_up_without_project(api):
+    """공사 없는 대화: 앞 턴에 말한 32평을 '목공도 같이 하면요?'가 이어받아 32평으로 세요(예시 평수 표가 아님)."""
+    use(api, signup(api, "area@mitjip.test"))
+    first = done(ask(api, text="도배 며칠 걸려? 우리 집은 32평이에요"))
+    assert "32평 도배 기간" in [c["label"] for c in first["answer"]["calc"]]
+    cid = uuid.UUID(first["chat_id"])
+    st = json.loads(query("select state from chats where id = $1", cid)[0]["state"])
+    assert st["area"]["label"] == "32평" and st["area"]["basis"] == "supply"
+    out = done(ask(api, text="목공도 같이 하면요?", chat_id=str(cid)))
+    assert out["route"] == "multi"
+    period = next(s for s in out["answer"]["sections"] if s["title"] == "[기간]")
+    assert [r[0] for r in period["table"]] == ["32평"]
+    assert "목공 약" in period["table"][0][1] and "도배 약" in period["table"][0][1]
+    # 새 대화는 앞 대화의 평수를 모르고 예시 평수로 세요
+    fresh = done(ask(api, text="도배랑 목공 같이 하면 며칠 걸려요?"))
+    rows = next(s for s in fresh["answer"]["sections"] if s["title"] == "[기간]")["table"]
+    assert [r[0] for r in rows] == ["24평", "34평", "44평"]
+
+
+def test_area_said_in_project_chat_still_uses_project_size(api):
+    """공사 대화는 지금처럼 공사 크기(예상 공정표)로 답해요. 앞 턴의 평수를 이어받지 않아요."""
+    use(api, signup(api, "areap@mitjip.test"))
+    ctx = {"screen": "standard", "project_id": _project(api)}
+    first = done(ask(api, text="도배 며칠 걸려? 우리 집은 32평이에요", context=ctx))
+    out = done(ask(api, text="목공도 같이 하면요?", chat_id=first["chat_id"], context=ctx))
+    period = next(s for s in out["answer"]["sections"] if s["title"] == "[기간]")
+    assert period["sentences"][0].startswith("이 집 예상 공정표로는") and not period["table"]
+
+
 def test_someone_elses_chat_and_missing_project_are_404(api):
     use(api, signup(api, "a@mitjip.test"))
     cid = done(ask(api))["chat_id"]
