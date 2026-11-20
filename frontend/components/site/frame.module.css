@@ -76,7 +76,8 @@
     height: clamp(var(--mj-aside-start-min-h), calc(100dvh - var(--mj-aside-start, calc(var(--mj-sticky-top) + 108px)) - 16px), var(--mj-aside-h));
     align-self: start; min-width: 0;
   }
-  .layer { position: sticky; inset: auto; padding: 0; background: none; z-index: auto; }
+  /* inset: auto가 top을 지우니 붙는 자리(top)를 다시 줘요(?ai=1로 연 뒤 창을 넓혀도 칸이 따라와요) */
+  .layer { position: sticky; inset: auto; top: var(--mj-aside-top); padding: 0; background: none; z-index: auto; }
   .layer .panel { border-radius: var(--mj-radius-group); box-shadow: var(--mj-group-edge); padding: 18px; }
   .openBtn { display: none; }
 }
