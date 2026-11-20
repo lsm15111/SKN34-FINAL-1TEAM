@@ -53,6 +53,11 @@
   .taken { font-size: 0; }
 }
 
+/* 비서 소식(작업함): 승인 카드 · 짧은 소식 */
+.feed { gap: 12px; }
+.feedItem { display: grid; gap: 8px; justify-items: start; }
+.feedItem > section { justify-self: stretch; }
+
 /* 오늘 브리핑: 웹은 줄 셋을 한 줄로(목록이 먼저 보이게) */
 @media (min-width: 768px) {
   .row3 { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; }

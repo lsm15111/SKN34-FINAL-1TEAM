@@ -3,10 +3,13 @@
 // 요청 요약 · 우리 업체와 맞음/확인 필요(코드가 정함) · 확인한 단가로 만든 가견적(계산 엔진) · 빈 반나절 · 추천 응답(기간 초안).
 // [수락하고 시간 제안]은 비서가 만든 '이 기간으로 답하기' 제안의 승인이에요. [거절]은 v3 '못 받아요'(이유 고르기)로 가요.
 // 개인정보: 고객 이름 · 연락처 · 동 · 호는 없어요. 고객 메모는 인용 상자로만 보여요(비서 지시에 넣지 않아요). 비서는 금액을 제안하지 않아요.
+// 승인이 실행되면 요청 화면(서버)을 다시 읽어요. 409(만료 · 판 바뀜)면 브리핑을 다시 읽어 새 제안으로 그려요.
+// 요청 화면의 v3 단추(기간 답하기 · 못 받아요)를 누른 뒤에도 브리핑을 다시 읽어요(이미 답했으면 제안이 사라져요).
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { approveVendorAction, getVendorBrief, newClientKey, type ActionOut, type BriefSeed, type VendorBriefData } from "@/lib/api/assistant";
-import { errorText } from "@/lib/backend/client";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
+import { approveVendorAction, getVendorBrief, newClientKey, vendorKindsForWrite, type ActionOut, type BriefSeed, type VendorBriefData } from "@/lib/api/assistant";
+import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { dayParts, dueText, rangeText, won } from "@/lib/format";
 import { I } from "@/components/assistant/kit/icons";
 import { SourceTag, StatusTag } from "@/components/assistant/kit/StatusTag";
@@ -22,6 +25,7 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
   /** 작업함 옆 자세히: 반나절 칸 · 메모를 빼요 */
   compact?: boolean;
 }) {
+  const router = useRouter();
   const [d, setD] = useState<VendorBriefData | null>(data ?? null);
   const [fail, setFail] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -30,14 +34,29 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
   const [key] = useState(newClientKey);
   const seedKey = JSON.stringify(seed ?? null);
 
+  const reload = useCallback(async () => {
+    try { setD(await getVendorBrief(visitId, seed)); setFail(false); } catch { setFail(true); }
+    // seed는 값이 같으면 다시 읽지 않아요
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visitId, seedKey]);
+
   useEffect(() => {
     if (data) return;
     let alive = true;
     getVendorBrief(visitId, seed).then((x) => { if (alive) setD(x); }).catch(() => { if (alive) setFail(true); });
     return () => { alive = false; };
-    // seed는 값이 같으면 다시 읽지 않아요
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [visitId, seedKey, data]);
+
+  // 요청 화면의 v3 단추로 이 요청에 답했으면 브리핑(제안)을 다시 읽어요
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { method, path } = (e as CustomEvent<ApiWrite>).detail ?? { method: "", path: "" };
+      if (vendorKindsForWrite(method, path).length && path.includes(`/${visitId}/`)) void reload();
+    };
+    window.addEventListener(API_WRITE_EVENT, on);
+    return () => window.removeEventListener(API_WRITE_EVENT, on);
+  }, [visitId, reload]);
 
   if (fail) return <p className={k.muted} role="status">브리핑을 만들지 못했어요. 아래 요청 내용을 봐 주세요.</p>;
   if (!d) return <section className={`${k.card} ${p.skel}`} aria-busy="true" aria-label="요청 브리핑을 만들고 있어요"><i /><i /><i /></section>;
@@ -46,7 +65,16 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
     if (!d?.suggest || busy) return;
     setBusy(true);
     setErr(null);
-    try { setDone(await approveVendorAction(d.suggest.action_id, key)); } catch (e) { setErr(errorText(e)); } finally { setBusy(false); }
+    try {
+      const out = await approveVendorAction(d.suggest.action_id, key);
+      setDone(out);
+      if (out.status === "executed") router.refresh();
+    } catch (e) {
+      setErr(errorText(e));
+      if (e instanceof ApiError && e.status === 409) await reload();
+    } finally {
+      setBusy(false);
+    }
   }
   const sug = d.suggest;
   const days = d.halves.days;

@@ -1,10 +1,11 @@
 // 작업함(V03 v_inbox 폰 카드 · D04 d_inbox 웹 표 + 옆 자세히). 9판 N4 C: 상태는 작은 아이콘 + 글자, 색은 아이콘에만.
 // 탭: 할 일 · 기다림 · 일정 · 공사 · 끝남(+ 웹 '전체'). 일정 탭은 반나절 목록(V08, Schedule)이에요.
 // 웹 표의 줄을 누르면 ?sel=로 오른쪽 자세히가 바뀌어요(서버가 다시 그려요). 폰은 카드의 단추로 요청 화면에 가요.
-// v4: 맨 위 '오늘 브리핑'(할 일 탭), 새 요청 줄의 웹 옆 자세히 맨 위에 비서 요청 브리핑(V1, components/pro/assistant)을 얹어요.
+// v4: 맨 위 '오늘 브리핑' · '비서 소식'(할 일 탭), 새 요청 줄의 웹 옆 자세히 맨 위에 비서 요청 브리핑(V1, components/pro/assistant)을 얹어요.
 import Link from "next/link";
 import { BriefCard } from "@/components/pro/assistant/BriefCard";
 import { seedFromRow } from "@/components/pro/assistant/seed";
+import { VendorFeed } from "@/components/pro/assistant/VendorFeed";
 import { VendorToday } from "@/components/pro/assistant/VendorToday";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -68,7 +69,7 @@ export function Inbox({ tab, sort, summary, page, selRow, sel, now, schedule }: 
   return (
     <>
       <h1 className="mj-sr">작업함</h1>
-      {tab === "todo" || tab === "all" ? <VendorToday /> : null}
+      {tab === "todo" || tab === "all" ? <><VendorToday /><VendorFeed now={now} /></> : null}
       <div className={s.top}>
         <WebOnly><Tabs variant="pill" label="작업함 탭" value={tab} items={tabsAll} /></WebOnly>
         <PhoneOnly><Tabs variant="pill" label="작업함 탭" value={tab} items={tabsPhone} /></PhoneOnly>
