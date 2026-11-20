@@ -195,6 +195,7 @@ def to_sections(
 
     calc_nums = check.guard.numbers(calc) if calc else set()
     fixed_texts = [x.text for s in part.sections if s.source in FIXED for x in s.sentences]
+    calc_dates = bool(CALC_DATE.search(calc or "")) or any(CALC_DATE.search(t) for t in fixed_texts)
     shown = [_grams(t) for t in fixed_texts]
     fixed_grams: set[str] = set().union(*shown) if shown else set()
 
@@ -214,6 +215,8 @@ def to_sections(
             return "정해 둔 글 되풀이"
         if order_repeat(text, fixed_texts, weight):
             return "순서 되풀이"  # 고정 몫이 이미 말한 두 공종 순서를 말만 바꿔 다시 쓴 문장
+        if calc_dates and (DATE_TALK.search(text) or CALC_TALK.search(text)):
+            return "날짜 되풀이"  # 계산 묶음이 보인 날짜 · 요일을 다시 말하거나 조건을 다는 문장
         if fixed_grams and VAGUE.search(text.strip()):
             return "뻔한 말"  # 계산 · 정해 둔 글 아래에 '~에 따라 달라져요'만 덧붙이면 새 정보가 없어요
         return None
@@ -361,17 +364,27 @@ VAGUE = re.compile(
 SUPPORT = 0.18
 # 순서 되풀이: 고정 몫(정해 둔 순서 문장 · 기간 묶음)이 이미 두 공종의 순서를 말했으면, 작성기가 같은 두 공종의
 # 순서를 말만 바꿔 다시 쓴 문장('목공과 도배는 순서대로 진행해요')은 빼요. 순서 낱말 · 공종 이름 · 고정 몫 글을
-# 빼고 남는 새 말(드문 글자 묶음 무게)이 적으면 되풀이예요. 3300 두 턴 답의 되풀이 문장은 0.64~1.0,
-# 새 정보가 든 문장('페인트가 마른 다음에 도배해야 들뜨지 않아요' 등)은 0.06~0.38이라 그 사이 0.55로 둬요
+# 빼고 남는 새 말(드문 글자 묶음 무게)이 적으면 되풀이예요. 3300 두 턴 답의 되풀이 문장 4개는 0.64~0.87,
+# 새 정보가 든 문장('페인트가 마른 다음에 도배해야 들뜨지 않아요' 등)은 0.09~0.41이라 그 사이 0.55로 둬요
 ORDER_CUE = re.compile(
-    r"먼저|나중|순서|차례|이어서|다음에|(?:끝난|끝나고|끝내고|마친|마치고|마무리하고|마무리한)\s{0,2}(?:뒤|다음|후)?"
+    r"먼저|나중|순서|차례|이어서|다음에|동시에|같은\s{0,2}날|"
+    r"(?:끝난|끝나고|끝내고|끝나야|끝나면|마친|마치고|마쳐야|마치면|마무리하고|마무리한)\s{0,2}(?:뒤|다음|후)?"
 )
 TWO_WORK = re.compile(r"두\s{0,2}(?:공정|공종|작업)")
+# 순서에서 바로 나오는 말('같은 날 안 해요' · '끝나야 할 수 있어요')도 새 정보가 아니라 순서 낱말로 쳐요(3300 날짜 대화 2턴)
 ORDER_WORDS = (
-    "먼저 나중 순서대로 차례대로 이어서 이어 다음에 끝난 뒤 끝나고 끝내고 마친 뒤 마치고 마무리하고 "
-    "진행해요 진행하고 진행돼요 해요 하고 들어가요 와요 실제 날짜 공정 공정표 일정 확인해요 작업 이뤄져요"
+    "먼저 나중 순서대로 차례대로 이어서 이어 다음에 끝난 뒤 끝나고 끝내고 끝나야 끝나면 마친 뒤 마치고 마쳐야 "
+    "마치면 마무리하고 진행해요 진행하고 진행돼요 진행하진 진행하지 해요 하고 할 수 들어가요 와요 "
+    "같은 날 동시에 함께 한꺼번에 실제 날짜 공정 공정표 일정 확인해요 작업 이뤄져요"
 )
 ORDER_COVER = 0.55
+# 계산 묶음이 날짜를 보였으면, 작성기 문장의 날짜 · 요일 · '계산 결과는 ~ 기준' 같은 말은 계산 되풀이나 헛조건이에요
+# (계산 엔진이 요일까지 셌어요). 숫자 검사는 같은 날짜라 지나서 따로 빼요(3300 날짜 대화 1턴)
+CALC_DATE = re.compile(r"\d{1,2}\.\d{1,2}\s{0,1}\([월화수목금토일]\)")
+DATE_TALK = re.compile(
+    r"\d{1,2}\.\d{1,2}\s{0,1}\([월화수목금토일]\)|\d{1,2}\s{0,2}월\s{0,2}\d{1,2}\s{0,2}일|요일"
+)
+CALC_TALK = re.compile(r"계산\s{0,2}(?:결과|값)|기준이며|확정하기\s{0,2}어려")
 
 
 def _order_pair(text: str) -> frozenset[str] | None:

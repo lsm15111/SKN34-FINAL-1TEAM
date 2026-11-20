@@ -305,3 +305,33 @@ def test_composer_drops_order_repeats_and_keeps_new_order_info():
     kept, dropped = run(repeats[0], [*repeats[1:], new])
     assert kept == [new] and dropped.count("순서 되풀이") == 3
     assert run(repeats[0], repeats[1:])[0] == []  # 새 말이 없으면 작성기 묶음이 없어요
+
+
+def test_composer_drops_date_restatements_and_same_day_order_talk():
+    """날짜 대화(3300 '12월 1일부터 · 32평' → '목공도 같이 하면요?'): 계산 묶음이 보인 날짜 · 요일을 다시 말하거나
+    '계산 결과는 ~ 기준이며'처럼 조건을 다는 문장, 순서에서 바로 나오는 '같은 날 안 해요'는 빼고 새 정보만 남겨요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    period = Section(source="calc", title="[기간]", sentences=[
+        Sentence(text="믿집 계산으로 32평을 12.1(화)에 시작하면 목공은 12.1(화) ~ 12.3(목), 도배는 12.4(금) ~ 12.8(화)이에요(빈집 · 주말 · 공휴일 빼고)."),
+        Sentence(text="자연 건조 · 입주 청소까지 넣으면 12.11(금)에 끝나요."),
+    ])  # fmt: skip
+    order = Section(
+        source="template", title="[순서]", sentences=[Sentence(text="목공이 끝난 뒤 도배해요.")]
+    )
+    part = Part(sections=[period, order], route="multi")
+    text = " ".join(x.text for s in (period, order) for x in s.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    new = "목공에서 나온 톱밥과 먼지를 치운 뒤에 도배하면 벽지가 깨끗하게 붙어요."
+    lead = "계산 결과는 12.1(화) 시작 기준이며, 12월 1일이 다른 요일이면 날짜를 확정하기 어려워요."
+    same_day = "목공이 끝나야 도배할 수 있어 두 공정을 같은 날 진행하진 않아요."
+    body = CBlock(
+        kind="body", rows=[], items=[CItem(text=same_day, cites=[]), CItem(text=new, cites=[])]
+    )
+    c = Composed(verdict="answer", lead=CItem(text=lead, cites=[]), blocks=[body], follow=[])
+    dropped: list[str] = []
+    secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
+    assert [x.text for s in secs or [] for x in s.sentences] == [new]
+    assert "날짜 되풀이" in dropped and "순서 되풀이" in dropped
