@@ -342,7 +342,8 @@ def test_llm_mode_sends_fixed_part_first_then_done(api, monkeypatch):
     n = len(first["sections"])
     assert out["answer"]["sections"][:n] == first["sections"]  # 먼저 보인 글은 그대로 앞에
     assert first["fixed"] == out["answer"]["fixed"] == n
-    assert not first["cards"] and out["answer"]["cards"]  # 다음 단추는 마지막 답에만
+    # 카드는 마지막 답에만 붙어요. 답마다 붙던 단계 버튼은 뺐어요(2026-11-20)
+    assert not first["cards"] and not out["answer"]["cards"]
     assert len(query("select 1 from chat_messages")) == 2  # 저장은 한 번(part는 저장하지 않음)
 
 

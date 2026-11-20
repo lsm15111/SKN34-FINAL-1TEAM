@@ -332,3 +332,17 @@ def test_receipt_and_tax_invoice_questions_get_common_contract_cards(text, card)
 
 def test_paying_through_mitjip_is_still_out_of_scope():
     assert turn("믿집에서 카드 결제 돼요?").answer.trace.route == "out_of_scope"
+
+
+def test_answers_do_not_carry_stage_buttons():
+    """답마다 붙던 단계 버튼('표준견적서 보기 · 업체 보기' · '기본 정보 넣기 · 표준견적서 보기')은 빼요(2026-11-20).
+    '뭐부터 해요?'(시작 순서 답)에만 단계 버튼이 남아요."""
+
+    def stage_buttons(q: str) -> list[str]:
+        a = asyncio.run(run_turn(q, CTX, kb=KB)).answer
+        return [ch.text for c in a.cards if c.kind == "next_step" for ch in c.choices]
+
+    assert stage_buttons("퍼티 작업이 뭐예요?") == []
+    assert stage_buttons("인테리어 공사 업체 고를 때 뭘 봐요?") == []
+    assert stage_buttons("오늘 점심 뭐 먹지?") == []
+    assert stage_buttons("인테리어 처음인데 뭐부터 해요?")

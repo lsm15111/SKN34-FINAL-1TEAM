@@ -1,7 +1,7 @@
 """가이드: 처음 고객의 궁금증 · 시작 순서 · 서비스 · 공통 지식(계약 · 하자 · 관리사무소). 프로젝트 없이도 돈다.
 
 - 일반 금액 · 기간은 숫자 대신 표준견적서 · 예상 공정표(계산 엔진)로 안내한다(프로젝트가 있으면 계산 상자).
-- 답: 정책 글 → 서비스 카드 · 공통 카드(없으면 다른 공종 카드도) → 조각 문장 → 모름 + 단계별 다음 할 일.
+- 답: 정책 글 → 서비스 카드 · 공통 카드(없으면 다른 공종 카드도) → 조각 문장 → 모름. 단계 버튼은 시작 순서 답에만 붙여요.
 """
 
 from app.agent.v3 import calc_lines, templates
@@ -65,7 +65,8 @@ def run(task: Task, kb: KB) -> Part:
     elif how == "unknown" and lines:
         part.unknown = []  # 정책 글이 이미 확인할 곳(업체 · 1372 · 실측)을 말해요(r2 점검 xc088 · xc084)
         drop_promise(part)
+    # 단계 버튼은 '뭐부터 해요?'(시작 순서 답)에만 붙여요. 다른 답마다 붙이지 않아요(2026-11-20 사용자 요청)
     nxt = templates.NEXT.get(f.stage, []) if f else templates.NO_PROJECT_NEXT
-    if nxt:
+    if how == "template" and nxt:
         part.cards.append(UiCard(kind="next_step", choices=list(nxt)))
     return part

@@ -140,7 +140,8 @@ def test_llm_mode_sends_fixed_part_first_and_keeps_it_in_front(stub):
     assert r.answer.sections[:n] == first.sections  # 화면에 이미 보인 글은 그대로
     assert len(r.answer.sections) > n and r.answer.brief is None
     assert first.fixed == r.answer.fixed == n
-    assert r.answer.cards, "다음 단추 카드는 마지막 답에만 붙어요"
+    # 카드는 마지막 답에만 붙어요. 답마다 붙던 단계 버튼은 뺐어요(2026-11-20), 평수를 받은 기간 답은 카드가 없어요
+    assert not r.answer.cards
 
 
 def test_part_is_sent_even_without_fixed_lines_and_free_mode_sends_none(stub):

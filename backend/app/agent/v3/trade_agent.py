@@ -8,7 +8,7 @@
 """
 
 from app.agent.v3 import calc_lines, templates
-from app.agent.v3.answer import KB, OWN_TRADES, Part, Task, drop_promise, knowledge, trade_title
+from app.agent.v3.answer import KB, Part, Task, drop_promise, knowledge, trade_title
 from app.agent.v3.schemas import UiCard
 from app.agent.v3.trades import BY_CODE
 
@@ -93,17 +93,6 @@ def run(task: Task, kb: KB) -> Part:
     elif how == "unknown" and lines:
         part.unknown = []  # 정책 글이 이미 확인할 곳(업체 · 1372 · 실측)을 말해요(r2 점검 xc088 · xc084)
         drop_promise(part)
-    if not any(
-        c.kind == "next_step" for c in part.cards
-    ):  # 계산 안 하는 공종도 단계 버튼(r2 점검 C29)
-        stage = facts.stage if facts else None
-        nxt = templates.NEXT.get(stage or "", []) if facts else templates.NO_PROJECT_NEXT
-        if facts is None and code not in OWN_TRADES:
-            nxt = []  # 범위 밖 공종(전기 등) 질문에 '기본 정보 넣기 · 표준견적서 보기'는 딴말이에요(4.5)
-        if any(
-            c.kind == "vendor_reco" for c in part.cards
-        ):  # 추천 카드에 '업체 모두 보기'가 있어요
-            nxt = [x for x in nxt if x.action != "vendors"]
-        if nxt:
-            part.cards.append(UiCard(kind="next_step", choices=list(nxt)))
+    # 단계 버튼('표준견적서 보기 · 업체 보기')을 답마다 붙이지 않아요(2026-11-20 사용자 요청). 답 내용에 맞는
+    # 버튼(계산 줄의 '기본 정보 넣기 · 공정표 보기' 등)만 위에서 붙어요
     return part

@@ -97,8 +97,7 @@ def _out(text: str, flags: list[str], facts: ProjectFacts | None) -> Part:
     else:
         line = templates.OUT["service"]
     part.add(templates.section([line], route="out_of_scope"), f"{line}\n{templates.ALLOWED}")
-    nxt = templates.NEXT.get(facts.stage, []) if facts else templates.NO_PROJECT_NEXT
-    part.cards.append(UiCard(kind="next_step", choices=list(nxt)))
+    # 단계 버튼('표준견적서 보기 · 업체 보기')은 붙이지 않아요(2026-11-20 사용자 요청)
     return part
 
 
@@ -225,8 +224,9 @@ async def run_turn(
         return ans
 
     routes: list[str] = []
-    mode: explain.Kind | None = None
     shown: list[Section] | None = None
+    mode: explain.Kind | None = None
+    if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
         # 질문 꼴: 설명(일반 설명 섞기 · 길게) · 우리 집 조건(대략 답 + 끝에 확인할 곳). 그 밖은 자료로만 짧게
         mode = explain.kind(masked, g.route, list(g.trades), list(g.policy))
         # 우리 집 조건 질문의 '집 상태는 직접 봐야 …' 안내는 먼저 보이지 않아요(대략 답 뒤에 확인할 곳 줄이 붙어요)
@@ -235,7 +235,6 @@ async def run_turn(
             if mode == "house" and s.source == "template" and any(x.text == templates.MY_HOUSE for x in s.sentences)
         ]  # fmt: skip
         part.sections = [s for s in part.sections if s not in held]
-    if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
         # 고정 몫(계산 결과 · 정해 둔 글)만 검사해 먼저 보낸다. 비어 있어도 보내서 화면이 'AI가 쓰는 중'을 알아요.
         # 카드 · 계산 상자 · 이어 묻기는 마지막 답에만 둬요(먼저 보인 글 아래로 이어 붙게)
         fixed = Part(
