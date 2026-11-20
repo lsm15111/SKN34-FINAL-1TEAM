@@ -1,4 +1,4 @@
-// /guide — 믿집 백과 첫 화면: 찾기 칸 → '처음이에요' · '찾아볼래요' 나란히 → 많이 찾는 용어 그림 카드.
+// /guide — 믿집 백과 첫 화면: 찾기 칸 → (진행 중 공사 띠) → '처음이에요' · '찾아볼래요' 나란히 → 많이 찾는 용어 그림 카드.
 import Link from "next/link";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main } from "@/components/site/Frame";
@@ -6,11 +6,17 @@ import { TermCard } from "@/components/guide/TermCard";
 import { FindButton } from "@/components/guide/Triggers";
 import { Icon } from "@/components/ui/Icon";
 import { PATH, TERMS, popularTerms, topicHref, visibleTopics } from "@/lib/guide";
+import { listMyProjectsV3 } from "@/lib/api/schedule";
+import { projectName, stepName } from "@/lib/guest/info";
+import { getSession } from "@/lib/session";
 import s from "@/components/guide/guide.module.css";
 
 export const metadata = { title: "믿집 백과" };
 
-export default function GuidePage() {
+export default async function GuidePage() {
+  const me = await getSession();
+  const mine = me?.role === "customer" ? await listMyProjectsV3().catch(() => []) : [];
+  const now = mine.find((p) => p.phase !== "done");
   const popular = popularTerms();
 
   return (
@@ -22,6 +28,13 @@ export default function GuidePage() {
           <p className={s.lead}>도배 · 목공을 처음 하는 분을 위한 글과 용어 사전이에요.</p>
           <FindButton />
         </div>
+
+        {now ? (
+          <Link className={s.band} href="/guide/steps">
+            <span><b>{projectName(now.emd, now.region, now.trades)}</b> · 지금 {stepName(now.current)}</span>
+            <span className={s.go}>이 단계에서 알아 둘 것<Icon name="chevron-right" size={18} /></span>
+          </Link>
+        ) : null}
 
         <div className={s.two}>
           <section className={s.group} aria-labelledby="g-first">

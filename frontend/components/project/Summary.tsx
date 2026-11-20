@@ -91,6 +91,8 @@ export function Summary({ p, ov, compare }: { p: VisitProject; ov: ApiOverview; 
       </Group>
 
       <Strip label="기본 정보" sub={homeSub} href={`/start?edit=${encodeURIComponent(p.id)}`} />
+      {/* 믿집 백과 단계 안내로(지금 단계만 펼쳐요) */}
+      <Strip label="이 단계에서 알아 둘 것" sub={`믿집 백과 · ${PROJECT_STEPS[Math.min(current, PROJECT_STEPS.length - 1)].label}`} href={`/guide/steps?s=${Math.min(current, PROJECT_STEPS.length - 1) + 1}`} />
     </>
   );
 }
