@@ -15,6 +15,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
+import app.auth.models  # noqa: F401  users 표(FK)를 metadata에 올린다: 장부만 불러오는 worker · 평가 스크립트용
 from app.db import Base
 from app.shared.ids import uuid7
 

@@ -3,6 +3,7 @@ claude_json의 요청 꼴과 장부(llm_usage) 기록을 본다. 유료 호출 0
 
 import asyncio
 import importlib.util
+import json
 import re
 import uuid
 from typing import Literal, get_args
@@ -451,3 +452,141 @@ def test_available_follows_live_and_provider_key(monkeypatch):
     monkeypatch.setattr(settings, "llm_provider", "anthropic")
     monkeypatch.setattr(settings, "llm_live", False)
     assert not llm.available()
+
+
+# ── 진짜 SDK(AsyncAnthropic)를 가짜 HTTP 전송으로: 요청 꼴 · 응답 해석 · 오류 · 스트림 (네트워크 없음) ──
+
+
+def _real_sdk(monkeypatch, handler):
+    import httpx2
+    from anthropic import AsyncAnthropic
+
+    llm.clear_stubs()
+    monkeypatch.setattr(settings, "llm_live", True)
+    monkeypatch.setattr(settings, "llm_provider", "anthropic")
+    monkeypatch.setattr(settings, "anthropic_api_key", SecretStr("test-not-real"))
+
+    def install() -> None:
+        llm._clients[asyncio.get_running_loop()] = AsyncAnthropic(
+            api_key="test-not-real",
+            base_url=settings.llm_anthropic_base_url,
+            http_client=httpx2.AsyncClient(transport=httpx2.MockTransport(handler)),
+            max_retries=0,
+        )
+
+    return install
+
+
+def test_real_sdk_json_and_auth_error_are_recorded(monkeypatch):
+    import httpx2
+
+    sent: list[dict] = []
+    message = {
+        "id": "msg_1",
+        "type": "message",
+        "role": "assistant",
+        "model": "claude-haiku-5-5",
+        "content": [{"type": "text", "text": '{"send": true, "text": "pong"}'}],
+        "stop_reason": "end_turn",
+        "stop_sequence": None,
+        "usage": {"input_tokens": 1000, "output_tokens": 200},
+    }
+    denied = {"type": "error", "error": {"type": "authentication_error", "message": "x"}}
+    replies = [httpx2.Response(200, json=message), httpx2.Response(401, json=denied)]
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        return replies.pop(0)
+
+    install = _real_sdk(monkeypatch, handler)
+
+    async def go():
+        install()
+        ok = await llm.claude_json("check", Nudge, "s", "q")
+        with pytest.raises(llm.LLMError):
+            await llm.claude_json("check", Nudge, "s", "q")
+        return ok
+
+    assert run(monkeypatch, go) == Nudge(send=True, text="pong")
+    assert sent[0]["model"] == "claude-haiku-5-5"
+    assert sent[0]["output_config"]["format"]["type"] == "json_schema"
+    good, bad = rows()
+    # Haiku 1000 × $0.10 + 200 × $0.50 (백만 토큰당) = 100 + 100 마이크로달러
+    assert (good["ok"], good["input_tokens"], good["output_tokens"], good["cost_micros"]) == (
+        True,
+        1000,
+        200,
+        200,
+    )
+    assert (bad["ok"], bad["error"], bad["cost_micros"]) == (False, "AuthenticationError", 0)
+
+
+SSE = [
+    ("message_start", {"type": "message_start", "message": {
+        "id": "msg_2", "type": "message", "role": "assistant", "model": "claude-sonnet-5-5",
+        "content": [], "stop_reason": None, "stop_sequence": None,
+        "usage": {"input_tokens": 500, "output_tokens": 1, "cache_read_input_tokens": 2000},
+    }}),
+    ("content_block_start", {"type": "content_block_start", "index": 0,
+                             "content_block": {"type": "thinking", "thinking": "", "signature": ""}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 0,
+                             "delta": {"type": "signature_delta", "signature": "sig-real-sdk"}}),
+    ("content_block_stop", {"type": "content_block_stop", "index": 0}),
+    ("content_block_start", {"type": "content_block_start", "index": 1,
+                             "content_block": {"type": "text", "text": ""}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 1,
+                             "delta": {"type": "text_delta", "text": "집 정보를 "}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 1,
+                             "delta": {"type": "text_delta", "text": "볼게요."}}),
+    ("content_block_stop", {"type": "content_block_stop", "index": 1}),
+    ("content_block_start", {"type": "content_block_start", "index": 2, "content_block": {
+        "type": "tool_use", "id": "toolu_r1", "name": "get_home", "input": {}}}),
+    ("content_block_delta", {"type": "content_block_delta", "index": 2,
+                             "delta": {"type": "input_json_delta", "partial_json": "{}"}}),
+    ("content_block_stop", {"type": "content_block_stop", "index": 2}),
+    ("message_delta", {"type": "message_delta",
+                       "delta": {"stop_reason": "tool_use", "stop_sequence": None},
+                       "usage": {"output_tokens": 40}}),
+    ("message_stop", {"type": "message_stop"}),
+]  # fmt: skip
+
+
+def test_real_sdk_stream_keeps_thinking_signature_and_tool_use(monkeypatch):
+    import httpx2
+
+    sent: list[dict] = []
+
+    def handler(request):
+        sent.append(json.loads(request.content))
+        events = (f"event: {e}\ndata: {json.dumps(d, ensure_ascii=False)}\n\n" for e, d in SSE)
+        return httpx2.Response(
+            200, headers={"content-type": "text/event-stream"}, content="".join(events).encode()
+        )
+
+    install = _real_sdk(monkeypatch, handler)
+    got: list[str] = []
+
+    async def on_text(t: str) -> None:
+        got.append(t)
+
+    async def go():
+        install()
+        tools = [{"name": "get_home", "description": "집 정보", "parameters": {"type": "object"}}]
+        msgs = [{"role": "user", "content": "우리 집 정보 봐 줘"}]
+        return await llm.claude_stream("s", msgs, tools=tools, on_text=on_text)
+
+    reply = run(monkeypatch, go)
+    assert got == ["집 정보를 ", "볼게요."] and reply.text == "집 정보를 볼게요."
+    assert reply.content[0] == {"type": "thinking", "thinking": "", "signature": "sig-real-sdk"}
+    assert reply.tool_calls == [{"id": "toolu_r1", "name": "get_home", "input": {}}]
+    assert reply.stop == "tool_use"
+    assert (reply.usage["input"], reply.usage["cache_read"], reply.usage["output"]) == (
+        500,
+        2000,
+        40,
+    )
+    assert sent[0]["stream"] is True and sent[0]["tools"][0]["strict"] is True
+    (row,) = rows()
+    # Sonnet 500 × $2 + 2000 × $0.10 + 40 × $10 = 1000 + 200 + 400 마이크로달러
+    assert (row["purpose"], row["cost_micros"]) == ("assistant", 1600)
+    assert reply.cost_micros == 1600

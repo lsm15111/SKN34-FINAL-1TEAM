@@ -3,6 +3,9 @@ Redis 정수 카운터와 Redis가 안 될 때의 장부 합계, llm_usage 제�
 
 import asyncio
 import logging
+import os
+import subprocess
+import sys
 import uuid
 
 import asyncpg
@@ -13,7 +16,7 @@ from app import queue
 from app.agent import llm
 from app.config import settings
 from app.usage import prices, service
-from tests.conftest import query
+from tests.conftest import BACKEND, query
 from tests.test_v4_llm_claude import Plan, _user, rows, run
 
 
@@ -210,3 +213,26 @@ def test_llm_usage_constraints_and_no_text_columns():
         "cache_write_tokens", "output_tokens", "web_searches", "cost_micros", "price_ver", "ok",
         "error", "latency_ms", "created_at",
     }  # fmt: skip
+
+
+def test_record_works_when_only_usage_is_imported():
+    """worker · 평가 스크립트처럼 장부만 불러와도 넣기가 된다(users FK를 metadata에서 찾는다)."""
+    code = (
+        "import asyncio\n"
+        "from app.usage import service\n"
+        "asyncio.run(service.record(user_id=None, turn_id=None, purpose='check',"
+        " model='claude-haiku-5-5', output_tokens=10))\n"
+    )
+    r = subprocess.run(
+        [sys.executable, "-c", code],
+        check=False,
+        cwd=BACKEND,
+        env={**os.environ, "PYTHONIOENCODING": "utf-8"},
+        capture_output=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=120,
+    )
+    assert r.returncode == 0, r.stderr[-800:]
+    (row,) = rows()  # record는 넣기 오류를 삼키니 줄이 실제로 있는지 본다
+    assert (row["purpose"], row["cost_micros"]) == ("check", 5)
