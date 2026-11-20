@@ -141,6 +141,42 @@
  },
  "opening": "도배 업체 추천해 주세요. 평일 오후랑 토요일 오전만 돼요.",
  "max_turns": 8,
+ "script": {
+  "turns": [
+   {
+    "say": "도배 업체 추천해 주세요. 평일 오후랑 토요일 오전만 돼요."
+   },
+   {
+    "say": "추천한 이유를 알려 주세요."
+   },
+   {
+    "say": "두 곳만 골라서 실측 요청해 주세요. 평일 오후나 토요일 오전으로요."
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_visit_request",
+    "do": "reject",
+    "if": {
+     "vendors_min": 3
+    }
+   },
+   {
+    "kind": "propose_visit_request",
+    "do": "approve",
+    "if": {
+     "vendors_min": 2,
+     "vendors_max": 2,
+     "wish_has_weekday": [
+      "sat"
+     ]
+    }
+   }
+  ]
+ },
  "expected_end": {
   "visits": [
    {

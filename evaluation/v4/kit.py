@@ -119,10 +119,18 @@ class CostLog:
                         self.unknown += 1
 
     def add(
-        self, item: str, step: str, model: str | None, usage, *, estimated: bool
+        self,
+        item: str,
+        step: str,
+        model: str | None,
+        usage,
+        *,
+        estimated: bool,
+        ledger_usd: float | None = None,
     ) -> float | None:
+        """ledger_usd: 백엔드 장부(usage.record)가 센 값이 있으면 그 값을 써요(가격표 판 고정)."""
         u = prices.usage_of(usage)
-        cost = prices.cost_usd(model, u)
+        cost = prices.cost_usd(model, u) if ledger_usd is None else ledger_usd
         with self.lock:
             self.spent += cost or 0.0
             if not estimated:

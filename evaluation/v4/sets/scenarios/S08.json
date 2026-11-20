@@ -113,8 +113,43 @@
    }
   ]
  },
- "opening": "업체 추천 좀 해 주세요. 근데 아직 요청은 안 보낼 거예요.",
+ "opening": "업체 추천해 주세요. 요청 카드는 보여 줘도 되는데 바로 보내진 않을 거예요.",
  "max_turns": 10,
+ "script": {
+  "turns": [
+   {
+    "say": "업체 추천해 주세요. 요청 카드는 보여 줘도 되는데 바로 보내진 않을 거예요."
+   },
+   {
+    "say": "추천 이유가 뭐예요? 가견적은 얼마예요?"
+   },
+   {
+    "say": "토요일 오전에 실측 올 수 있는 곳이 어디예요?"
+   },
+   {
+    "say": "이제 요청해 주세요. 한 곳만요. 토요일 오전으로요."
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_visit_request",
+    "do": "reject",
+    "if": {
+     "before_turn": 4
+    }
+   },
+   {
+    "kind": "propose_visit_request",
+    "do": "approve",
+    "if": {
+     "after_turn": 4
+    }
+   }
+  ]
+ },
  "expected_end": {
   "visits": [
    {

@@ -9,9 +9,11 @@
   (core_run · composer_eval과 같음). v4에 chat.service.answer_only가 생기면 같은 자리에서 바꿔 끼워요
 - --dry-run(기본): LLM_LIVE=false 스텁. 키 환경변수를 이 프로세스에서 지우고, DB · Redis 대신 저장소 지식 색인 · 메모리를 써요.
   유료 호출 0회(v2는 스텁 글, v3는 운영 무료 모드 답)
-- --live: LLM_LIVE=true와 --max-usd가 있어야 돌아요. 시작 전 어림(budget.py)이 상한을 넘으면 시작하지 않아요
-- 공급자: app.agent.llm 함수만 거쳐요(SDK를 여기서 부르지 않음). 사용량은 llm._sink(있으면, Claude 전환 뒤) 또는
-  llm.USAGE_HOOK + chat_tools 결과로 받아요. 모델 값을 모르면 비용을 비워 두고 '값 모름'으로 세요
+- --live: LLM_LIVE=true와 --max-usd가 있어야 돌아요. 시작 전 어림(budget.py)이 상한을 넘으면 시작하지 않아요.
+  유료 호출은 비용 장부(llm_usage)와 상한(usage.allow)을 지나야 해서 DB · Redis가 꼭 있어야 해요(없으면 시작 전에 멈춤)
+- 공급자: app.agent.llm 함수만 거쳐요(SDK를 여기서 부르지 않음). Claude 관문 · OpenAI 되돌리기 길 모두
+  _guard(usage.allow) → 호출 → _sink(usage.record)를 지나요. 사용량 · 비용은 _sink를 감싸 받고, 비용은 장부 값을 써요
+- v3 모드(--v3-mode auto)는 llm.available()로 정해요(LLM_LIVE=true이고 고른 공급자 키가 있으면 llm)
 - 판정용 글(text): 화면에 보이는 것(묶음 · 계산 상자 · 카드 · 되묻기 · 모름 · 출처 이름)을 평문으로. 인용 번호 · 꾸밈은 지워요
 - 저장(runs/<tag>/): answers.jsonl(질문 × 시스템 한 줄, 끝날 때마다 씀) · errors.jsonl · cost.csv(유료일 때) · meta.json.
   같은 --tag면 이미 받은 (질문, 시스템)은 건너뛰어요
@@ -123,59 +125,28 @@ def render_v2(out: dict) -> str:
 
 # ---- 사용량 받기(공급자 무관) ----
 class UsageTap:
-    """한 답이 끝날 때 take()로 그 사이 LLM 사용량을 가져가요(한 번에 한 답만 돌려서 섞이지 않아요)."""
+    """장부 관문 llm._sink(call, model, u, error) → usage.record를 감싸 한 답 동안의 호출을 모아요.
 
-    def __init__(self, llm, settings):
+    유료 호출은 공급자와 상관없이 모두 _sink를 지나요. 비용은 장부가 돌려준 마이크로달러(가격표 판 고정)를 써요.
+    한 번에 한 답만 돌려서 섞이지 않아요. take()로 가져가요."""
+
+    source = "llm._sink(usage.record)"
+
+    def __init__(self, llm):
+        if not inspect.iscoroutinefunction(getattr(llm, "_sink", None)):
+            raise SystemExit("llm._sink(장부 관문)가 없어요. 백엔드가 v4 장부 판인지 확인해 주세요")
         self.rows: list[dict] = []
-        if hasattr(llm, "_sink"):  # Claude 전환 뒤(계약서: _sink → usage.record)
-            real = llm._sink
-            if inspect.iscoroutinefunction(real):
+        real = llm._sink
 
-                async def sink(*args, **kw):
-                    self._grab(args, kw)
-                    return await real(*args, **kw)
-            else:
+        async def sink(call, model, u, error=None):
+            cost = await real(call, model, u, error)
+            self.rows.append({
+                "model": model, "usage": prices.usage_of(u), "purpose": getattr(call, "purpose", None),
+                "error": error, "ledger_usd": (cost or 0) / 1_000_000,
+            })  # fmt: skip
+            return cost
 
-                def sink(*args, **kw):
-                    self._grab(args, kw)
-                    return real(*args, **kw)
-
-            llm._sink = sink
-            self.source = "llm._sink"
-            return
-        if hasattr(
-            llm, "USAGE_HOOK"
-        ):  # 지금(OpenAI): 구조화 호출마다 {role, model, input, cached, output}
-            llm.USAGE_HOOK = lambda u: self.rows.append(
-                {"model": u.get("model"), "usage": prices.usage_of(u)}
-            )
-        real_chat = llm.chat_tools
-
-        async def chat_tools(system, messages, tools):
-            r = await real_chat(system, messages, tools)
-            u = r.get("usage") or {}
-            if any(u.values()):  # 스텁은 0이라 남기지 않아요
-                model = (
-                    r.get("model")
-                    or u.get("model")
-                    or getattr(settings, "openai_agent_model", None)
-                )
-                self.rows.append({"model": model, "usage": prices.usage_of(u)})
-            return r
-
-        llm.chat_tools = chat_tools
-        self.source = "llm.USAGE_HOOK + chat_tools"
-
-    def _grab(self, args, kw) -> None:
-        for x in (*args, *kw.values()):
-            d = x if isinstance(x, dict) else getattr(x, "__dict__", None)
-            if (
-                isinstance(d, dict)
-                and "model" in d
-                and any(k in d for k in ("input_tokens", "input"))
-            ):
-                self.rows.append({"model": d.get("model"), "usage": prices.usage_of(d)})
-                return
+        llm._sink = sink
 
     def take(self) -> list[dict]:
         rows, self.rows = self.rows, []
@@ -308,11 +279,10 @@ class V3:
         from app.agent.v3.turn import run_turn
         from app.chat import tools
         from app.chat.service import _public
-        from app.chat.service import mode as chat_mode
 
         facts = homes.v3_facts(home, with_plan=not self.same_only) if home else None
         today = home.today if home else TODAY
-        mode = chat_mode() if self.mode == "auto" else self.mode
+        mode = v3_mode(self.mode)
         ctx = TurnContext(
             user_id=uuid.UUID(int=0), project_id=uuid.UUID(int=1) if facts else None,
             mode=mode, today=today,  # type: ignore[arg-type]
@@ -374,7 +344,7 @@ def parse_args(argv=None):
         "--v3-mode",
         choices=["auto", "free", "llm"],
         default="auto",
-        help="auto = 운영 chat.service.mode()",
+        help="auto = llm.available()(LLM_LIVE=true · 키 있음이면 llm)",
     )
     ap.add_argument("--max-usd", type=float, help="--live에는 꼭 줘요")
     ap.add_argument("--allow-partial", action="store_true")
@@ -389,6 +359,28 @@ def parse_args(argv=None):
         ap.error("--live에는 --max-usd가 필요해요")
     a.dry_run = not a.live
     return a
+
+
+def v3_mode(want: str) -> str:
+    """v3 답 모드: auto면 Claude 관문의 llm.available()(운영 chat.service.mode와 같은 규칙)."""
+    from app.agent import llm
+
+    if want != "auto":
+        return want
+    return "llm" if llm.available() else "free"
+
+
+async def ledger_ready() -> str | None:
+    """유료 호출 전 장부 · 상한 확인(usage.allow). 안 되면 까닭(종류 이름)을 돌려줘요."""
+    from app.usage import service as usage
+
+    try:
+        await usage.allow(None, "general")
+    except usage.OverCap as e:
+        return f"비용 상한({e.scope})"
+    except Exception as e:  # noqa: BLE001 - DB · Redis가 없으면 유료 호출이 모두 막혀요(닫힘 쪽)
+        return type(e).__name__
+    return None
 
 
 def pick_rows(a) -> list[dict]:
@@ -442,17 +434,19 @@ async def run(a) -> int:
         if log.spent + est > a.max_usd and not a.allow_partial:
             print("어림이 상한을 넘어 시작하지 않아요")
             return 2
-    from app.chat.service import mode as chat_mode
-
-    meta["v3_mode_resolved"] = chat_mode() if a.v3_mode == "auto" else a.v3_mode
+        why = await ledger_ready()
+        if why:  # 장부를 못 쓰면 _guard가 모든 유료 호출을 막아 답이 전부 실패 · 무료로 바뀌어요
+            print(f"비용 장부(llm_usage) · 상한을 확인하지 못해 시작하지 않아요({why}). "
+                  "DATABASE_URL(Alembic head) · REDIS_URL을 맞춰 주세요")  # fmt: skip
+            return 2
+    meta["v3_mode_resolved"] = v3_mode(a.v3_mode)
+    meta["provider"] = settings.llm_provider
     if a.live and "v3" in systems and meta["v3_mode_resolved"] != "llm":
-        print(
-            "주의: v3가 무료 모드로 돌아요(chat.service.mode가 llm이 아님). 필요하면 --v3-mode llm"
-        )
+        print("주의: v3가 무료 모드로 돌아요(llm.available()이 아님). 필요하면 --v3-mode llm")
     patch_v2_store()
     if a.kb == "repo":
         patch_v2_repo_kb()
-    tap = UsageTap(llm, settings)
+    tap = UsageTap(llm)
     meta["usage_source"] = tap.source
     (out / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=1), "utf-8")
     runners = {"v2": V2(), "v3": V3(a.kb, a.v3_mode, a.same_only)}
@@ -469,18 +463,23 @@ async def run(a) -> int:
                 stopped = f"상한 ${a.max_usd}에 닿아 멈췄어요"
                 break
             t0 = time.perf_counter()
-            try:
-                res = await asyncio.wait_for(runners[name].answer(row, home), timeout=a.timeout)
-                err = None
-            except Exception as e:  # noqa: BLE001 — 한 질문의 실패로 전체를 멈추지 않아요
-                res, err = None, e
+            with llm.call_ctx() as ctx:  # 장부 문맥: 이 답의 비용이 ctx.spent_micros에 쌓여요
+                try:
+                    res = await asyncio.wait_for(runners[name].answer(row, home), timeout=a.timeout)
+                    err = None
+                except Exception as e:  # noqa: BLE001 — 한 질문의 실패로 전체를 멈추지 않아요
+                    res, err = None, e
             ms = round((time.perf_counter() - t0) * 1000, 1)
             used = tap.take()
             calls += len(used)
             costs = [
-                log.add(row["id"], name, u["model"], u["usage"], estimated=False) for u in used
-            ]
-            cost = None if any(c is None for c in costs) else round(sum(costs), 6)
+                log.add(row["id"], f"{name}:{u['purpose']}", u["model"], u["usage"],
+                        estimated=False, ledger_usd=u["ledger_usd"])
+                for u in used
+            ]  # fmt: skip
+            cost = round(sum(costs), 6) if used else None
+            if used and abs(sum(costs) - ctx.spent_micros / 1_000_000) > 1e-6:
+                print(f"주의: {row['id']} {name} 장부 합과 문맥 합이 달라요")
             # 판정기에는 두 시스템이 같이 받은 집 조건만 보여요(공사 시작일 · 공정표는 v3 계산 값 쪽에 있어요)
             base = {"id": row["id"], "system": name, "mode": meta["mode"], "kb": a.kb, "turns": row["turns"],
                     "question": row["turns"][-1], "home": home.id if home else None,

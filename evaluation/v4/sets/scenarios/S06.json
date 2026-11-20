@@ -121,6 +121,28 @@
  },
  "opening": "견적 두 개 왔는데 뭐가 달라요? 어디가 싸요?",
  "max_turns": 8,
+ "script": {
+  "turns": [
+   {
+    "say": "견적 두 개 왔는데 뭐가 달라요? 어디가 싸요?"
+   },
+   {
+    "say": "부가세는 어떻게 달라요?"
+   },
+   {
+    "say": "업체에 뭘 물어보면 좋을까요?"
+   },
+   {
+    "say": "생각해 볼게요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_vendor_confirm",
+    "do": "reject"
+   }
+  ]
+ },
  "expected_end": {
   "visits": [
    {

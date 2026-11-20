@@ -308,6 +308,33 @@ def check_scenario(path: Path, s: dict) -> list[str]:
             errs.append(f"{sid}: 사건 {e.get('id')}의 업체 {ref}가 없어요")
     if not isinstance(s.get("max_turns"), int) or not 1 <= s["max_turns"] <= 30:
         errs.append(f"{sid}: max_turns")
+    return errs + check_script(s, kinds, vendors)
+
+
+def check_script(s: dict, kinds: set[str], vendors: set[str]) -> list[str]:
+    """대본(script): 첫 말 = opening, 말 수 ≤ max_turns, 요청 ref · 화면 · 승인 규칙 모양."""
+    from sim.check import SCREENS, rule_problems
+
+    sid, sc = s.get("id", "?"), s.get("script")
+    if not sc:
+        return [f"{sid}: script(대본)가 없어요"]
+    errs = []
+    says = [t["say"] for t in sc.get("turns", []) if "say" in t]
+    if not says or says[0] != s.get("opening"):
+        errs.append(f"{sid}: 대본 첫 말이 opening과 달라요")
+    if len(says) > s.get("max_turns", 0):
+        errs.append(f"{sid}: 대본 말 수({len(says)})가 max_turns보다 많아요")
+    visits = {v["ref"] for v in s.get("world", {}).get("visits") or []}
+    for t in sc.get("turns", []):
+        if t.get("visit") and t["visit"] not in visits:
+            errs.append(f"{sid}: 대본의 요청 {t['visit']}가 world.visits에 없어요")
+        name = t.get("screen")
+        if name and (name not in SCREENS or name.split("_")[0] != s.get("surface")):
+            errs.append(f"{sid}: 화면 {name}")
+    if sc.get("as") and sc["as"] not in vendors:
+        errs.append(f"{sid}: 대본 업체 {sc['as']}가 없어요")
+    for r in sc.get("decide", []):
+        errs += [f"{sid}: 승인 규칙 {p}" for p in rule_problems(r, kinds)]
     return errs
 
 

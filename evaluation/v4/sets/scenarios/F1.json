@@ -299,6 +299,124 @@
  ],
  "opening": "마포구 ○○아파트 살아요. 도배랑 몰딩을 살면서 바꾸고 싶은데 뭐부터 해요?",
  "max_turns": 18,
+ "script": {
+  "turns": [
+   {
+    "say": "마포구 ○○아파트 살아요. 도배랑 몰딩을 살면서 바꾸고 싶은데 뭐부터 해요?"
+   },
+   {
+    "say": "34평이고 84 타입이라고 들었어요. 전용 면적은 몰라요."
+   },
+   {
+    "say": "살면서 공사해요. 평일은 출근해서 주말(토 · 일)만 돼요."
+   },
+   {
+    "say": "공사는 1월 11일부터면 좋아요. 벽지는 실크로 할게요."
+   },
+   {
+    "say": "표준견적서로 보면 얼마쯤 나와요?"
+   },
+   {
+    "say": "도배 업체 추천해 주세요. 주말에 실측 올 수 있는 곳이면 좋겠어요."
+   },
+   {
+    "say": "추천한 곳 중 두 곳에 실측 요청해 주세요."
+   },
+   {
+    "say": "몰딩 · 걸레받이 목공 업체도 추천하고 요청해 주세요."
+   },
+   {
+    "say": "실측 날짜 잡아 주세요. 토 · 일 반나절로요."
+   },
+   {
+    "say": "견적서 두 개 왔어요? 비교해 주세요."
+   },
+   {
+    "say": "부가세랑 포함 항목은 뭐가 달라요?"
+   },
+   {
+    "say": "마루와벽으로 확정할게요."
+   },
+   {
+    "say": "공사 날짜 왔어요? 1월 11일 이후면 좋아요."
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_home_info",
+    "do": "approve",
+    "if": {
+     "area_in": [
+      [
+       84.0,
+       86.0
+      ],
+      [
+       110.0,
+       114.0
+      ]
+     ]
+    }
+   },
+   {
+    "kind": "propose_home_info",
+    "do": "reject"
+   },
+   {
+    "kind": "propose_visit_request",
+    "do": "approve",
+    "if": {
+     "after_turn": 7,
+     "wish_has_weekday": [
+      "sat",
+      "sun"
+     ],
+     "vendors_max": 3
+    }
+   },
+   {
+    "kind": "propose_visit_slot",
+    "do": "approve",
+    "if": {
+     "weekday_in": [
+      "sat",
+      "sun"
+     ]
+    }
+   },
+   {
+    "kind": "propose_visit_slot",
+    "do": "reject"
+   },
+   {
+    "kind": "propose_vendor_confirm",
+    "do": "reject",
+    "if": {
+     "missing": [
+      "amount",
+      "version"
+     ]
+    }
+   },
+   {
+    "kind": "propose_vendor_confirm",
+    "do": "approve",
+    "if": {
+     "after_turn": 11
+    }
+   },
+   {
+    "kind": "propose_dates_accept",
+    "do": "approve",
+    "if": {
+     "start_from": "2027-01-11"
+    }
+   }
+  ]
+ },
  "expected_end": {
   "visits": [
    {

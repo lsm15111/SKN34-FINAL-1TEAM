@@ -39,12 +39,20 @@ def usage_of(raw) -> dict:
     """공급자마다 다른 사용량을 한 모양으로: {input(캐시 아닌 입력), cache_write, cache_read, output}.
 
     - Anthropic 응답 usage(객체 · dict): input_tokens · cache_creation_input_tokens · cache_read_input_tokens · output_tokens
-    - 지금 llm.py(OpenAI): input(캐시 포함 전체) · cached · output
+    - 백엔드 장부 관문(llm._sink의 u): input · cache_read · cache_write_5m · cache_write_1h · output (· web_searches)
+    - 옛 llm.py USAGE_HOOK(OpenAI): input(캐시 포함 전체) · cached · output
     - 이 폴더의 어림: input · cache_write · cache_read · output
     """
     if raw is None:
         return {"input": 0, "cache_write": 0, "cache_read": 0, "output": 0}
     get = raw.get if isinstance(raw, dict) else (lambda k, d=None: getattr(raw, k, d))
+    if get("cache_write_5m") is not None or get("cache_write_1h") is not None:
+        return {
+            "input": int(get("input") or 0),
+            "cache_write": int(get("cache_write_5m") or 0) + int(get("cache_write_1h") or 0),
+            "cache_read": int(get("cache_read") or 0),
+            "output": int(get("output") or 0),
+        }
     if get("input_tokens") is not None:
         return {
             "input": int(get("input_tokens") or 0),
