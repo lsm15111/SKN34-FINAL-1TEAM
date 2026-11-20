@@ -437,3 +437,83 @@ def test_composer_trims_order_head_and_keeps_new_tail():
     assert got[:2] == ["살면서 진행하면 짐을 옮기며 작업해 일정이 더 길어질 수 있어요.", new_head]
     assert "그다음 남은 짐을 들여요." not in got and "순서 앞 절 뗌" in dropped
     assert not [x for x in got if "공정표를 참고해요" in x] and "안내 빈말" in dropped
+
+
+DATE_Q = "12월 1일부터 도배하면 언제 끝나요? 32평이에요"
+
+
+def date_turn(mode: str = "llm"):
+    from app.chat.tools import general_facts
+
+    return turn(DATE_Q, mode, general=general_facts(DATE_Q, date(2026, 11, 19))).answer
+
+
+@pytest.mark.parametrize(
+    ("verdict", "lead", "items", "why"),
+    [
+        ("none", "", [], "작성기: 덧붙일 것 없음"),
+        ("unknown", "모름", [], "작성기: 근거 부족"),
+        # 다 걸러짐: 계산 날짜를 다시 말한 문장과 '주말 · 공휴일 빼고'만 쓴 답
+        ("answer", "12.1(화)에 시작하면 12.3(목)에 끝나요.", ["주말과 공휴일은 작업일에서 빼요."],
+         "작성기: 다 걸러짐"),
+    ],
+)  # fmt: skip
+def test_quiet_composer_keeps_only_fixed_part_without_extracts(stub, verdict, lead, items, why):
+    """LLM 모드: 고정 몫(계산)이 답했고 작성기가 더할 것이 없으면(빈 답 · 모름 · 다 걸러짐) 무료 발췌로 채우지 않아요(3300 날짜 1턴)."""
+    assert any(s.source == "extract" for s in date_turn("free").sections), (
+        "무료 답에 발췌가 있어야 시험이 돼요"
+    )
+    body = (
+        [CBlock(kind="body", rows=[], items=[CItem(text=t, cites=[]) for t in items])]
+        if items
+        else []
+    )
+    stub(Composed(verdict=verdict, lead=CItem(text=lead, cites=[]), blocks=body, follow=[]))
+    a = date_turn()
+    assert [s.source for s in a.sections] == ["calc"]
+    assert why in a.trace.dropped and a.trace.prompts == []
+
+
+def test_composer_failure_keeps_free_part(stub):
+    """작성기 실패(스텁 없음 = LLM 오류)는 지금 길 그대로: 고정 몫 + 무료 몫(발췌)."""
+    a = date_turn()
+    assert "작성기 실패" in a.trace.dropped
+    assert a.sections[0].source == "calc" and any(s.source == "extract" for s in a.sections)
+
+
+def test_date_question_does_not_quote_noise_law():
+    """질문의 시작 날짜 · 평수는 검색 글에서 빼요. 날짜 조각이 법령 글과 맞물려 층간소음 규칙(K589)이 뽑히던 것."""
+    from app.agent.v3.answer import query_of
+
+    assert query_of(DATE_Q) == "도배하면 언제 끝나요?"
+    assert query_of("34평 도배하면 며칠 걸려요?") == "도배하면 며칠 걸려요?"
+    assert query_of("59㎡ 아파트 몰딩 교체") == "아파트 몰딩 교체"
+    assert query_of("32평이에요") == "32평이에요"  # 다 빠지면 원래 글
+    cites = {c for s in date_turn("free").sections for x in s.sentences for c in x.cites}
+    assert "K589" not in cites
+
+
+def test_composer_drops_order_line_that_names_no_trade():
+    """공종 이름 없이 '공정이 겹치지 않도록 순서대로 잡아요'처럼 순서를 다시 말한 문장도 빼요(3300 평수 2턴)."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    calc = Section(source="calc", title="[목공 · 도배]", sentences=[
+        Sentence(text="믿집 계산으로 몰딩 · 걸레받이 목공과 도배는 빈집 기준 이만큼 걸려요."),
+        Sentence(text="기본 정보를 넣으면 두 공정을 이어 붙인 예상 공정표 날짜로 잡아 드려요."),
+    ])  # fmt: skip
+    order = Section(
+        source="template", title="[순서]", sentences=[Sentence(text="목공이 끝난 뒤 도배해요.")]
+    )
+    part = Part(sections=[calc, order], route="multi")
+    text = " ".join(x.text for s in (calc, order) for x in s.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    new = "몰딩 실리콘이 굳은 다음에 도배해야 벽지가 들뜨지 않아요."
+    body = CBlock(kind="body", rows=[], items=[CItem(text=new, cites=[])])
+    lead = CItem(text="실제 일정은 공정이 겹치지 않도록 순서대로 잡아요.", cites=[])
+    c = Composed(verdict="answer", lead=lead, blocks=[body], follow=[])
+    dropped: list[str] = []
+    secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
+    assert [x.text for s in secs or [] for x in s.sentences] == [new]
+    assert "순서 되풀이" in dropped

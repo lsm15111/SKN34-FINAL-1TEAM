@@ -35,6 +35,8 @@ MAX_BLOCKS = 4
 MAX_ITEMS = 5
 # 고정 몫: 코드가 만든 글(계산 결과 · 정해 둔 글). 작성기 답에서도 앞에 그대로 남아요
 FIXED = ("calc", "template")
+# 작성기가 더할 것이 없었던 이유(실패와 달라요). 고정 몫이 있으면 무료 발췌를 붙이지 않아요(turn.py)
+QUIET = frozenset({"작성기: 덧붙일 것 없음", "작성기: 근거 부족", "작성기: 다 걸러짐"})
 
 
 class CItem(BaseModel):
@@ -355,6 +357,7 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
     secs = to_sections(c, ev, part, kb, route=part.route, trade=part.trade, dropped=dropped)
     part.dropped.extend(dropped)
     if not secs:
+        part.dropped.append("작성기: 다 걸러짐")
         return None
     fixed = [s for s in part.sections if s.source in FIXED]
     # 카드의 방법 · 업체에 물을 말 표는 검증된 카드 글이라 작성기 답 아래에 그대로 붙여요(작성기는 표를 다시 쓰지 않음)
@@ -391,12 +394,14 @@ ORDER_CUE = re.compile(
     r"(?:끝난|끝나고|끝내고|끝나야|끝나면|마친|마치고|마쳐야|마치면|마무리하고|마무리한)\s{0,2}(?:뒤|다음|후)?"
 )
 TWO_WORK = re.compile(r"두\s{0,2}(?:공정|공종|작업)")
+# 공종 이름 없이 '공정 · 작업'으로 순서를 말하는 문장('공정이 겹치지 않도록 순서대로 잡아요', 3300 평수 2턴)
+ANY_WORK = re.compile(r"(?:공정|공종|작업)(?!표)")
 # 순서에서 바로 나오는 말('같은 날 안 해요' · '끝나야 할 수 있어요')도 새 정보가 아니라 순서 낱말로 쳐요(3300 날짜 대화 2턴)
 ORDER_WORDS = (
     "먼저 나중 순서대로 차례대로 이어서 이어 다음에 끝난 뒤 끝나고 끝내고 끝나야 끝나면 마친 뒤 마치고 마쳐야 "
     "마치면 마무리하고 진행해요 진행하고 진행돼요 진행하진 진행하지 해요 하고 할 수 들어가요 와요 "
-    "같은 날 동시에 함께 한꺼번에 겹치지 않고 겹치지 않게 뒤에 이어져요 실제 날짜 공정 공정표 일정 확인해요 "
-    "작업 이뤄져요"
+    "같은 날 동시에 함께 한꺼번에 겹치지 않고 겹치지 않게 겹치지 않도록 뒤에 이어져요 실제 날짜 공정 공정표 일정 "
+    "확인해요 잡아요 정해요 작업 이뤄져요"
 )
 ORDER_COVER = 0.55
 # 계산 묶음이 날짜를 보였으면, 작성기 문장의 날짜 · 요일 · '계산 결과는 ~ 기준' 같은 말은 계산 되풀이나 헛조건이에요
@@ -428,7 +433,7 @@ def _order_pair(text: str) -> frozenset[str] | None:
     tr = frozenset(t for t in trades_in(text) if t != "common")
     if len(tr) >= 2:
         return tr
-    return frozenset({"*"}) if TWO_WORK.search(text) else None
+    return frozenset({"*"}) if TWO_WORK.search(text) or ANY_WORK.search(text) else None
 
 
 def order_repeat(text: str, fixed: list[str], weight: Callable[[str], float] | None) -> bool:

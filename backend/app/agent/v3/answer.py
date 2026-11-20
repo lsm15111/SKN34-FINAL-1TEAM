@@ -208,9 +208,22 @@ def card_allowed(kb: KB, card: cards.AnswerCard) -> str:
     return "\n".join(texts)
 
 
+# 검색 · 발췌 글에서 빼는 말: 계산 엔진이 이미 받아 쓰는 시작 날짜 · 집 크기('12월 1일부터 · 32평이에요').
+# 남겨 두면 숫자 조각이 날짜 많은 법령 · 보고서 글과 맞물려요(3300 날짜 질문에 층간소음 규칙이 뽑혔어요)
+FACT_WORDS = re.compile(
+    r"\d{1,2}\s{0,1}월\s{0,1}\d{1,2}\s{0,1}일(?:부터|에|까지|쯤|경|로)?|"
+    r"\d{1,3}(?:\.\d)?\s{0,1}(?:평형|평|㎡|m2|제곱미터)(?:이에요|이요|이고|이면|인데|이라서|이라|대|짜리|형)?"
+)
+
+
+def query_of(q: str) -> str:
+    """검색 · 발췌에 쓰는 질문 글(시작 날짜 · 집 크기를 뺌). 다 빠지면 원래 글."""
+    return re.sub(r"\s{2,}", " ", FACT_WORDS.sub(" ", q)).strip() or q
+
+
 def search(kb: KB, q: str, trade: TradeCode | None) -> bm25.Result:
     want = [trade] if trade and trade != "common" else []
-    return search3.search(kb.ix, q, trades=want, tags=kb.tags, k=8, dense=kb.dense)
+    return search3.search(kb.ix, query_of(q), trades=want, tags=kb.tags, k=8, dense=kb.dense)
 
 
 def knowledge(
@@ -269,7 +282,7 @@ def knowledge(
         )
         return "card"
     if allow_extract and hits.enough and not (NO_EXTRACT & set(policy)):
-        quotes = extract.pick(kb.ix, q, hits.hits)
+        quotes = extract.pick(kb.ix, query_of(q), hits.hits)
         if quotes:
             part.used_chunks.extend(x.ref for x in quotes)
             lead = (

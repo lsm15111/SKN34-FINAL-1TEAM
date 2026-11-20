@@ -226,6 +226,10 @@ async def run_turn(
         composed = await composer.compose(part, kb, masked, trade=g.trades[0] if g.trades else None)
         if composed is not None:
             part, routes = composed, ["composer"]
+        elif shown and composer.QUIET & set(part.dropped):
+            # 고정 몫이 이미 답했고 작성기가 더할 것이 없어요(빈 답 · 모름 · 다 걸러짐): 무료 발췌로 채우지 않아요.
+            # 카드는 검증된 글이라 둬요. 작성기 실패는 아래 길(무료 몫 그대로)이에요
+            part.sections = [s for s in part.sections if s.source != "extract"]
         elif (
             templates.UNKNOWN in part.unknown
             and not any(s.source in ("card", "extract") for s in part.sections)
