@@ -1745,6 +1745,7 @@ async def propose_dates(
     답하면 고객이 고른 시작일 중에서, 스스로 바꾸면 이유 필수. 수락하기 전까지 지금 날짜는 그대로다."""
     d = await _vendor_deal(s, vendor, deal_id)
     p = await project_service.get_out(s, d.project_id)
+    _need(p, d.trade, None)  # 응답(job_for)의 필요한 기간을 못 세는 공정이면 저장하기 전에 409
     plan = await ensure_expected(s, p, today)
     weekend = _weekend(plan)
     picked: list[date] | None = None
