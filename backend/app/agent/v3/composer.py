@@ -1,12 +1,13 @@
-"""답 작성기 (LLM 모드, 지시문 composer_v4). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
+"""답 작성기 (LLM 모드, 지시문 composer_v5). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
 
 흐름: 무료 몫(Part) → 근거 묶음(카드 · 조각 · 검색 위 조각 · 계산 결과 · 정해 둔 글, 모두 코드가 고름)
-→ LLM 1회(JSON: verdict · lead · blocks · follow) → 블록을 Section으로 → 출력 검사(숫자 · 인용 · 금지 표현 · 누출)
+→ LLM 1회(JSON: new · verdict · lead · blocks · follow) → 블록을 Section으로 → 출력 검사(숫자 · 인용 · 금지 표현 · 누출)
 → 고정 몫(source=calc · template, 계산 결과 · 정해 둔 글)은 원래 순서대로 앞에 그대로 두고 작성기 묶음을 붙인다.
   고정 몫은 화면에 먼저 보이고(SSE part), 작성기 묶음은 그 아래에 이어 붙어요. 이미 보인 글은 바꾸지 않아요.
 - 계산만 있는 답도 부른다: 검색 위 조각으로 숫자를 읽는 법 · 늘어나는 조건 · 준비를 덧붙인다(숫자 되풀이는 뺌).
 - 숫자는 계산 결과 · 근거 글에 있는 것만 통과한다(check.section). 인용은 이번 근거 묶음 ref만 남는다.
-- verdict가 unknown이거나 첫 문장(lead)이 검사에서 빠지면 None → 부르는 쪽은 무료 답을 그대로 쓴다.
+- verdict가 unknown · none이거나, 고정 몫이 있는데 새 사실 칸(new)이 비거나, 문장이 다 빠지면 None
+  → 부르는 쪽은 고정 몫만(고정 몫이 없으면 무료 답). 실패하면 무료 답을 그대로 쓴다.
 - 지시문은 고정 글이라 앞쪽 1,600토큰쯤이 캐시돼요(OpenAI 자동 캐시는 1,024토큰부터).
 """
 
@@ -18,7 +19,7 @@ from functools import cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.agent import llm
 from app.agent.v3 import check, llm_mode, templates
@@ -28,7 +29,7 @@ from app.agent.v3.trades import BY_CODE, trades_in
 from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
-VERSION = "composer_v4"
+VERSION = "composer_v5"
 TOP_CHUNKS = 6  # 검색 위 조각을 몇 개 더 넣을지
 CHUNK_CHARS = 420  # 조각 글 앞 몇 글자
 MAX_BLOCKS = 4
@@ -36,7 +37,9 @@ MAX_ITEMS = 5
 # 고정 몫: 코드가 만든 글(계산 결과 · 정해 둔 글). 작성기 답에서도 앞에 그대로 남아요
 FIXED = ("calc", "template")
 # 작성기가 더할 것이 없었던 이유(실패와 달라요). 고정 몫이 있으면 무료 발췌를 붙이지 않아요(turn.py)
-QUIET = frozenset({"작성기: 덧붙일 것 없음", "작성기: 근거 부족", "작성기: 다 걸러짐"})
+QUIET = frozenset(
+    {"작성기: 덧붙일 것 없음", "작성기: 새 사실 없음", "작성기: 근거 부족", "작성기: 다 걸러짐"}
+)
 
 
 class CItem(BaseModel):
@@ -51,6 +54,9 @@ class CBlock(BaseModel):
 
 
 class Composed(BaseModel):
+    # 먼저 쓰는 칸: 근거에 있고 고정 몫에 없는, 질문과 관련 있는 새 사실(한 줄씩). 고정 몫이 있는데 비면 none으로 봐요.
+    # 화면에 보이지 않아요. OpenAI 엄격 모드는 모든 칸을 필수로 보내서 기본값은 스텁 · 테스트용이에요
+    new: list[str] = Field(default_factory=list)
     # none: 고정 몫(계산 · 정해 둔 글)이 이미 답했고 근거에 덧붙일 새 사실이 없어요(작성기 묶음을 붙이지 않아요)
     verdict: Literal["answer", "partial", "unknown", "none"]
     lead: CItem
@@ -231,8 +237,8 @@ def to_sections(
             return "날짜 되풀이"  # 계산 묶음이 보인 날짜 · 요일을 다시 말하거나 조건을 다는 문장
         if fixed_grams and GUIDE_END.search(text.strip()) and guide_only(g):
             return "안내 빈말"  # '~확인할 수 있어요 · 공정표를 참고해요'처럼 새 말 없이 안내만 하는 문장
-        if fixed_grams and VAGUE.search(text.strip()):
-            return "뻔한 말"  # 계산 · 정해 둔 글 아래에 '~에 따라 달라져요'만 덧붙이면 새 정보가 없어요
+        if fixed_grams and (VAGUE.search(text.strip()) or HEDGE.search(text.strip())):
+            return "뻔한 말"  # 계산 · 정해 둔 글 아래에 '~에 따라 달라져요 · 정하기 어려워요'만 덧붙이면 새 정보가 없어요
         return None
 
     def checked(sec: Section) -> Section | None:
@@ -353,6 +359,11 @@ async def compose(part: Part, kb: KB, question: str, *, trade: TradeCode | None)
             "작성기: 근거 부족" if c.verdict == "unknown" else "작성기: 덧붙일 것 없음"
         )
         return None
+    if (ev["calc"] or ev["fixed"]) and not any(x.strip() for x in c.new):
+        part.dropped.append(
+            "작성기: 새 사실 없음"
+        )  # 고정 몫에 없는 새 사실을 못 적었으면 쓴 글도 되풀이예요
+        return None
     dropped: list[str] = []
     secs = to_sections(c, ev, part, kb, route=part.route, trade=part.trade, dropped=dropped)
     part.dropped.extend(dropped)
@@ -382,6 +393,11 @@ VAGUE = re.compile(
     r"(?:에|과|와|지)\s{0,2}따라\s{0,2}(?:\S+\s{1,2}){0,3}"
     r"(?:달라(?:요|져요|질\s{1,2}수\s{1,2}있어요)|차이가\s{1,2}(?:있어요|나요|날\s{1,2}수\s{1,2}있어요))[.!]?$|"
     r"마다\s{0,2}(?:\S+\s{1,2}){0,4}(?:달라요|달라져요|다를\s{1,2}수\s{1,2}있어요|차이가\s{1,2}(?:있어요|나요))[.!]?$"
+)
+# 고정 몫이 이미 답했는데 '~정하기 어려워요 · ~만으로 정해지지 않아요'로 흐리게 끝내는 문장(composer_v5 두 턴 확인)
+HEDGE = re.compile(
+    r"(?:정하기|확정하기|단정하기|예상하기)\s{0,2}어려|"
+    r"만으로(?:는)?\s{0,2}(?:\S+\s{1,2}){0,2}정해지지\s{0,2}않아요[.!]?$"
 )
 # 인용 지지 기준(IDF 무게 겹침). c2 답 인용 154쌍: 맞는 짝 86% 통과 · 섞은 짝 6.5% 통과(support_cal)
 SUPPORT = 0.18
@@ -485,7 +501,8 @@ def _idf(kb: KB) -> Callable[[str], float]:
 
 
 META = re.compile(
-    r"자료(?:로|에서|에는|에|상|만으로)|확인하지\s{0,2}못했|확인하기\s{0,2}어렵|근거(?:가|로|에)"
+    r"자료(?:로|에서|에는|에|상|만으로)|안내(?:만으로|로는)|확인하지\s{0,2}못했|확인하기\s{0,2}어렵|"
+    r"근거(?:가|로|에)"
 )
 
 

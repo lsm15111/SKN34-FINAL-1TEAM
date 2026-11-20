@@ -63,7 +63,7 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
         )
     )
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v4"] and a.brief is None
+    assert a.trace.prompts == ["composer_v5"] and a.brief is None
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
     assert "실크는 합지보다 37% 비싸요." not in texts
@@ -98,6 +98,7 @@ PAINT = "도장과는 일정을 겹치지 않게 잡아요. 벽지 작업이 습
 def period_stub(stub) -> None:
     """기간 질문(계산만 있는 답)에 덧붙일 글: 계산 숫자 되풀이 lead(빠짐) + 검색 위 조각 K182로 받친 문장."""
     stub(Composed(
+        new=["도장과 일정을 겹치지 않게 잡아요"],
         verdict="answer",
         lead=CItem(text="34평 도배는 빈집이면 약 2.5일이에요.", cites=[]),
         blocks=[CBlock(kind="body", rows=[], items=[CItem(text=PAINT, cites=["K182"])])],
@@ -111,7 +112,7 @@ def test_calc_only_answer_gets_composer_context_after_calc(stub):
 
     period_stub(stub)
     a = turn(PERIOD_Q, general=general_facts(PERIOD_Q)).answer
-    assert a.trace.prompts == ["composer_v4"]
+    assert a.trace.prompts == ["composer_v5"]
     assert a.sections[0].source == "calc"
     assert a.sections[0].sentences[0].text.startswith("믿집 계산으로 34평 도배는")
     assert [x.text for s in a.sections if s.source == "llm" for x in s.sentences] == [PAINT]
@@ -170,6 +171,7 @@ def test_compose_keeps_template_lines_first():
     )  # fmt: skip
     part = Part(sections=[fixed, card], route="guide")
     llm.set_stub("composer", Composed(
+        new=["표준견적서는 공공 기준 단가로 계산한 참고 금액이에요"],
         verdict="answer", blocks=[], follow=[],
         lead=CItem(text="표준견적서는 업체 견적이 아니라 공공 기준으로 계산한 참고 금액이에요.", cites=["card:t.std"]),
     ))  # fmt: skip
@@ -449,17 +451,22 @@ def date_turn(mode: str = "llm"):
 
 
 @pytest.mark.parametrize(
-    ("verdict", "lead", "items", "why"),
+    ("verdict", "lead", "items", "new", "why"),
     [
-        ("none", "", [], "작성기: 덧붙일 것 없음"),
-        ("unknown", "모름", [], "작성기: 근거 부족"),
+        ("none", "", [], [], "작성기: 덧붙일 것 없음"),
+        ("unknown", "모름", [], [], "작성기: 근거 부족"),
+        # 새 사실 칸이 비었는데 답을 썼으면 그 글도 되풀이로 봐요(composer_v5)
+        ("answer", "살면서 하면 하루쯤 더 걸려요.", [], [], "작성기: 새 사실 없음"),
         # 다 걸러짐: 계산 날짜를 다시 말한 문장과 '주말 · 공휴일 빼고'만 쓴 답
         ("answer", "12.1(화)에 시작하면 12.3(목)에 끝나요.", ["주말과 공휴일은 작업일에서 빼요."],
-         "작성기: 다 걸러짐"),
+         ["주말 · 공휴일은 빼요"], "작성기: 다 걸러짐"),
     ],
 )  # fmt: skip
-def test_quiet_composer_keeps_only_fixed_part_without_extracts(stub, verdict, lead, items, why):
-    """LLM 모드: 고정 몫(계산)이 답했고 작성기가 더할 것이 없으면(빈 답 · 모름 · 다 걸러짐) 무료 발췌로 채우지 않아요(3300 날짜 1턴)."""
+def test_quiet_composer_keeps_only_fixed_part_without_extracts(
+    stub, verdict, lead, items, new, why
+):
+    """LLM 모드: 고정 몫(계산)이 답했고 작성기가 더할 것이 없으면(빈 답 · 모름 · 새 사실 없음 · 다 걸러짐)
+    무료 발췌로 채우지 않아요(3300 날짜 1턴)."""
     assert any(s.source == "extract" for s in date_turn("free").sections), (
         "무료 답에 발췌가 있어야 시험이 돼요"
     )
@@ -468,7 +475,8 @@ def test_quiet_composer_keeps_only_fixed_part_without_extracts(stub, verdict, le
         if items
         else []
     )
-    stub(Composed(verdict=verdict, lead=CItem(text=lead, cites=[]), blocks=body, follow=[]))
+    c = Composed(new=new, verdict=verdict, lead=CItem(text=lead, cites=[]), blocks=body, follow=[])
+    stub(c)
     a = date_turn()
     assert [s.source for s in a.sections] == ["calc"]
     assert why in a.trace.dropped and a.trace.prompts == []
@@ -517,3 +525,46 @@ def test_composer_drops_order_line_that_names_no_trade():
     secs = composer.to_sections(c, ev, part, repo_kb(), route="multi", trade=None, dropped=dropped)
     assert [x.text for s in secs or [] for x in s.sentences] == [new]
     assert "순서 되풀이" in dropped
+
+
+def test_empty_new_is_fine_without_fixed_part(stub):
+    """고정 몫이 없는 질문(카드만 있는 비교 질문)은 새 사실 칸이 비어도 작성기 답을 써요(규칙은 고정 몫이 있을 때만)."""
+    a0 = turn(Q, "free").answer
+    assert not [s for s in a0.sections if s.source in ("calc", "template")], (
+        "고정 몫이 없어야 시험이 돼요"
+    )
+    _, refs = free_refs()
+    lead = CItem(text="실크는 코팅이 있어 관리가 쉽고, 합지는 값이 싸요.", cites=refs[:1])
+    stub(Composed(new=[], verdict="answer", lead=lead, blocks=[], follow=[]))
+    a = turn(Q).answer
+    assert a.trace.prompts == ["composer_v5"] and lead.text in [
+        x.text for s in a.sections for x in s.sentences
+    ]
+
+
+def test_composer_drops_hedges_under_fixed_part():
+    """고정 몫 아래 '~정하기 어려워요 · ~만으로 정해지지 않아요'로 흐리게 끝내는 문장은 빼요(composer_v5 두 턴 확인).
+    '겉으로 보고 알기 어려워요'처럼 새 사실인 주의 문장은 남겨요."""
+    from app.agent.v3 import composer
+    from app.agent.v3.answer import Part
+    from app.agent.v3.schemas import Section, Sentence
+
+    calc = Section(source="calc", title="[도배]", sentences=[
+        Sentence(text="믿집 표준견적서 계산으로 실크 전체 도배는 평수에 따라 약 224만~373만 원이에요(부가세 포함 · 빈집)."),
+    ])  # fmt: skip
+    part = Part(sections=[calc], route="trade")
+    text = " ".join(x.text for x in calc.sentences)
+    ev = {"refs": set(), "allowed": text, "calc": text, "fixed": text}
+    keep = "벽지 속 곰팡이는 겉으로 보고 알기 어려워요."
+    hedges = [
+        "목공 기간은 공사 내용에 따라 달라서 전체 기간은 이 안내만으로 정하기 어려워요.",
+        "실크 도배 비용은 바닥 평수만으로 정해지지 않아요.",
+    ]
+    body = CBlock(kind="body", rows=[], items=[CItem(text=t, cites=[]) for t in [hedges[1], keep]])
+    c = Composed(verdict="answer", lead=CItem(text=hedges[0], cites=[]), blocks=[body], follow=[])
+    dropped: list[str] = []
+    secs = composer.to_sections(
+        c, ev, part, repo_kb(), route="trade", trade="dobae", dropped=dropped
+    )
+    assert [x.text for s in secs or [] for x in s.sentences] == [keep]
+    assert dropped.count("뻔한 말") == 2
