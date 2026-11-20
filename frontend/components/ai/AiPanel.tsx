@@ -63,8 +63,15 @@ function toTurn(el: HTMLElement) {
     el.scrollIntoView({ block: "nearest", behavior });
     return;
   }
-  const top = el.getBoundingClientRect().top - box.getBoundingClientRect().top + box.scrollTop - TOP_GAP;
-  box.scrollTo({ top: Math.max(0, top), behavior });
+  const from = box.scrollTop;
+  const top = Math.max(0, el.getBoundingClientRect().top - box.getBoundingClientRect().top + from - TOP_GAP);
+  box.scrollTo({ top, behavior });
+  // 부드러운 스크롤이 시작도 못 했으면(화면에 안 그려지는 탭 등) 바로 옮겨요. 그사이 손으로 움직였으면 두어요
+  if (behavior === "smooth" && Math.abs(top - from) > 1) {
+    window.setTimeout(() => {
+      if (Math.abs(box.scrollTop - from) < 1) box.scrollTo({ top });
+    }, AUTO_MS);
+  }
 }
 
 export function AiPanel({ screen, projectId, ids, embed = false }: {
