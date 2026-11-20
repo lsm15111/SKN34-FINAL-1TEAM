@@ -1,4 +1,4 @@
-"""답 작성기 (LLM 모드, 지시문 composer_v6). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
+"""답 작성기 (LLM 모드, 지시문 composer_v8). 무료 답을 다시 쓰는 대신 근거 묶음으로 답 한 벌을 블록으로 쓴다.
 
 흐름: 무료 몫(Part) → 근거 묶음(카드 · 조각 · 검색 위 조각 · 계산 결과 · 정해 둔 글, 모두 코드가 고름)
 → LLM 1회(JSON: new · verdict · lead · blocks · follow) → 블록을 Section으로 → 출력 검사(숫자 · 인용 · 금지 표현 · 누출)
@@ -33,7 +33,7 @@ from app.agent.v3.trades import BY_CODE, trades_in
 from app.knowledge import bm25, cards
 
 PROMPTS = Path(__file__).with_name("prompts")
-VERSION = "composer_v7"
+VERSION = "composer_v8"  # v8: 표준견적서와 견준 비율 · 높낮이를 쓰지 않아요(사용자 결정 2026-11-21)
 TOP_CHUNKS = 6  # 검색 위 조각을 몇 개 더 넣을지
 CHUNK_CHARS = 420  # 조각 글 앞 몇 글자
 MAX_BLOCKS = 4

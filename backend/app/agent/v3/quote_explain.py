@@ -118,11 +118,9 @@ def _screen_compare(
     part: Part, lines: list[str], allowed: list[str], v: VendorScreenFacts, st: StandardFacts,
     f: ProjectFacts,
 ) -> None:  # fmt: skip
-    """보던 업체 가견적을 견줄 때 볼 것: 같은 수량 · 표준 대비 %의 뜻 · 표준에 없는 줄 · 실측 뒤 정하는 줄."""
+    """보던 업체 가견적을 견줄 때 볼 것: 같은 수량 · 표준에 없는 줄 · 실측 뒤 정하는 줄.
+    표준견적서와 견준 %는 글 · 계산 상자에 넣지 않아요(사용자 결정 2026-11-21)."""
     lines.append(templates.SCREEN_COMPARE_SAME)
-    pct = v.vs_standard
-    if pct is not None:
-        lines.append(templates.SCREEN_COMPARE_PCT.format(vendor=v.vendor))
     extra = [x.name for x in v.lines if not x.in_standard and x.amount > 0]
     if extra:
         lines.append(templates.SCREEN_COMPARE_EXTRA.format(lines=" · ".join(extra)))
@@ -130,10 +128,7 @@ def _screen_compare(
     if after:
         names = [*after[:-1], templates.josa(after[-1], "은", "는")]
         lines.append(templates.SCREEN_COMPARE_AFTER.format(lines=" · ".join(names)))
-    note = "" if pct is None else f"표준보다 {abs(pct):g}% {'많아요' if pct >= 0 else '적어요'}"
-    part.calc.append(
-        CalcBox(label=f"{v.vendor} 가견적", ref="screen.vendor.total", amount=v.total, note=note)
-    )
+    part.calc.append(CalcBox(label=f"{v.vendor} 가견적", ref="screen.vendor.total", amount=v.total))
     box = calc_box("standard.total", f)
     if box:
         part.calc.append(box)
@@ -180,17 +175,8 @@ def run(task: Task, kb: KB) -> Part:
     ):
         lines.append(templates.ESTIMATE_GAP)
         for i, e in enumerate(f.estimates[:3]):
-            pct = e.vs_standard
-            note = (
-                "" if pct is None else f"표준보다 {abs(pct)}% {'많아요' if pct >= 0 else '적어요'}"
-            )
             part.calc.append(
-                CalcBox(
-                    label=f"{e.vendor} 가견적",
-                    ref=f"estimates.{i}.total",
-                    amount=e.total,
-                    note=note,
-                )
+                CalcBox(label=f"{e.vendor} 가견적", ref=f"estimates.{i}.total", amount=e.total)
             )
             up = sorted((x for x in e.lines if x.diff > 0), key=lambda x: -x.diff)[:2]
             if up:

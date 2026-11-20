@@ -71,20 +71,14 @@ def pick(cands: Sequence[Candidate], n: int = 3) -> list[Pick]:
 
 
 def reasons(p: Pick) -> list[str]:
-    """화면 사유(틀). 숫자는 업체 자료 · 계산 엔진 값 그대로."""
+    """화면 사유(틀). 숫자는 업체 자료 · 계산 엔진 값 그대로.
+    표준견적서와 견준 %는 사유에 넣지 않는다(사용자 결정 2026-11-21, 점수에만 쓴다)."""
     c = p.c
     out: list[str] = []
     if c.rating is not None and c.review_count > 0:
         out.append(f"별점 {c.rating:.1f} · 리뷰 {c.review_count}개")
     if c.done_count > 0:
         out.append(f"믿집 공사 {c.done_count}건")
-    if c.vs_standard_pct is not None:
-        if c.vs_standard_pct < 0:
-            out.append(f"가견적이 표준견적서보다 {-c.vs_standard_pct}% 낮아요")
-        elif c.vs_standard_pct > 0:
-            out.append(f"가견적이 표준견적서보다 {c.vs_standard_pct}% 높아요")
-        else:
-            out.append("가견적이 표준견적서와 같아요")
     if c.instant:
         out.append("바로 확정할 수 있어요")
     if not c.local:
