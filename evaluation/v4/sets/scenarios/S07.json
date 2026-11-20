@@ -45,14 +45,9 @@
    "area_m2": 105.8,
    "area_basis": "supply",
    "trades": [
-    "dobae",
-    "mokgong"
+    "dobae"
    ],
    "grade": "basic",
-   "mokgong": [
-    "molding",
-    "base"
-   ],
    "living": "vacant",
    "start_wish": "2027-01-04"
   },
@@ -65,8 +60,7 @@
     "name": "마루와벽",
     "gu": "마포구",
     "trades": [
-     "dobae",
-     "mokgong"
+     "dobae"
     ],
     "price_confirmed": true,
     "rating": 4.8,
@@ -192,5 +186,8 @@
  "judge": [
   "실패한 까닭(견적서가 새 판으로 바뀜)과 바뀐 금액을 알렸나",
   "새 카드에 2판 · 3,780,000원이 보였나"
+ ],
+ "memo": [
+  "2026-11-21 리드 결정: 목공 업체 추천 · 실측 요청 흐름은 아직 열지 않아요(표준견적서 · 지식 답의 목공은 v3처럼 자기 공정). v3 공사는 도배 공정만 만들 수 있어 집 · 업체 공정을 도배만으로 맞췄어요. 정답은 그대로예요."
  ]
 }

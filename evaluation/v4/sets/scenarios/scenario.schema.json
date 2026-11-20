@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "mitjip/v4/eval/scenario.schema.json",
-  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 1 · 2026-11-21)",
+  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 2 · 2026-11-21 · 목공 업체 추천 · 실측 요청 흐름 없음)",
   "description": "시뮬레이터 러너(evaluation/v4/sim/run.py)가 world를 시험 DB에 심고, 사용자 대본(script.turns, 나중에는 persona를 흉내 내는 사용자 LLM)으로 비서(/assistant/turns · /vendor/assistant/turns)와 max_turns까지 대화한 뒤 끝 상태를 expected_end와 견줘요. 사람 승인은 script.decide 규칙대로 눌러요. 행동 · 도구 · 상태 이름은 03-비서 백엔드 설계(계약서) 2 · 5장과 같아요.",
   "type": "object",
   "required": ["id", "title", "surface", "split", "tags", "persona", "world", "opening", "max_turns", "expected_end"],
@@ -108,10 +108,28 @@
         "no_regex": {"type": "array", "items": {"type": "string"}},
         "no_tool_args": {"type": "array", "items": {"type": "string"}, "description": "도구 인자(웹 검색어 등)에 나오면 안 되는 말"},
         "max_tool_calls_per_turn": {"type": "integer"},
-        "max_cost_usd": {"type": "number"}
+        "max_cost_usd": {"type": "number"},
+        "answer_has": {
+          "type": "array",
+          "description": "사용자가 when_said를 말한 턴의 답(보인 것: 글 · 카드)을 봐요. any가 있으면 그중 하나, regex가 있으면 그 꼴이 나와야 하고 no_cards 카드는 없어야 해요. 예: '몰딩 교체는 언제 해요?' → 목공 순서 · 시기 답(목공은 자기 공정) · 업체 추천 · 실측 카드 없음, '목공 업체도 추천해 주세요' → '아직 도배 업체만 연결돼요' 꼴 안내",
+          "items": {
+            "type": "object",
+            "required": ["when_said"],
+            "anyOf": [{"required": ["any"]}, {"required": ["regex"]}],
+            "additionalProperties": false,
+            "properties": {
+              "when_said": {"type": "string", "minLength": 1, "description": "사용자 말에 들어 있는 말(대본 say 중 하나에 꼭 있어야 해요)"},
+              "any": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+              "regex": {"type": "string", "minLength": 1},
+              "no_cards": {"type": "array", "items": {"$ref": "#/$defs/card_kind"}},
+              "why": {"type": "string"}
+            }
+          }
+        }
       }
     },
-    "judge": {"type": "array", "items": {"type": "string"}, "description": "대화 기록을 읽는 판정기(Opus 5.5)가 예/아니요로 답할 물음. 끝 상태 채점을 돕기만 해요"}
+    "judge": {"type": "array", "items": {"type": "string"}, "description": "대화 기록을 읽는 판정기(Opus 5.5)가 예/아니요로 답할 물음. 끝 상태 채점을 돕기만 해요"},
+    "memo": {"type": "array", "items": {"type": "string"}, "description": "시나리오를 바꾼 까닭(날짜 · 결정). 러너는 읽지 않아요"}
   },
   "$defs": {
     "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
@@ -311,6 +329,7 @@
       "oneOf": [{"required": ["say"]}, {"required": ["screen"]}]
     },
     "view_key": {"enum": ["amount", "version", "day", "half", "wish_start", "wish_end", "vendors", "code", "start", "end"]},
+    "card_kind": {"enum": ["home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule", "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist"], "description": "비서 카드 종류(계약서 3장 CardKind)"},
     "weekday": {"enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
     "rule": {
       "type": "object",
