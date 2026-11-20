@@ -12,6 +12,7 @@ import re
 from pydantic import BaseModel
 
 from app.agent.v3 import brief, policy
+from app.agent.v3.templates import josa
 from app.agent.v3.trades import BY_CODE, trades_in
 
 Q_MAX = 80
@@ -111,6 +112,10 @@ def resolve(text: str, state: ChatState | None) -> tuple[str, bool]:
     if not pre and not post:
         return t, False
     core = re.sub(r"[?？.!\s]+$", "", t)
+    if pre and (now or len(pre) > 1):
+        # 공종 낱말은 '랑'으로 이어요. 띄어 쓰기만 하면 관문이 한 공종 질문으로 읽어 앞 공종만 답해요
+        last = len(pre) if now else len(pre) - 1
+        pre = [josa(p, "이랑", "랑") if i < last else p for i, p in enumerate(pre)]
     return " ".join(x for x in (*pre, core, post) if x), True
 
 

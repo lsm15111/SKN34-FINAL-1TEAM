@@ -6,9 +6,15 @@ from datetime import date
 from app.agent.v3 import calc_lines
 from app.agent.v3.gate import gate
 from app.agent.v3.policy import policy_of
-from app.agent.v3.schemas import PlanFacts, ProjectFacts, StandardFacts, VendorPickFact
+from app.agent.v3.schemas import (
+    PlanBlockFact,
+    PlanFacts,
+    ProjectFacts,
+    StandardFacts,
+    VendorPickFact,
+)
 from app.calc import vendor_pick
-from app.chat.tools import asked_area, general_facts
+from app.chat.tools import asked_area, general_facts, house_size
 from app.v2 import guard
 
 PLAN = PlanFacts(start=date(2027, 1, 4), end=date(2027, 1, 5), work_days=2)
@@ -37,6 +43,21 @@ def test_period_with_project_plan_gives_dates():
     assert out.lines[0] == "이 집 예상 공정표로는 1.4(월) ~ 1.5(화), 일하는 날 2일이에요."
     assert out.boxes[0].ref == "plan.range"
     _ok(out)
+
+
+def test_period_of_trade_not_in_project_says_so_and_counts_this_house():
+    """도배만 한 공사에 '목공도 같이 하면요?': 공정표에 없는 공종이라고 먼저 말하고 이 집 크기로 센 일수를 줘요."""
+    blocks = [PlanBlockFact(trade="dobae", ko="도배", start=date(2027, 1, 4), end=date(2027, 1, 5))]
+    facts = ProjectFacts(plan=PLAN.model_copy(update={"blocks": blocks}), area_m2=112.4)
+    g = general_facts("목공도 같이 하면요?")
+    g.here = house_size(facts)
+    out = calc_lines.period("mokgong", facts, g)
+    assert out.lines[0] == "이 공사에는 목공이 들어 있지 않아서 공정표에 목공 날짜는 없어요."
+    assert "몰딩 · 걸레받이 목공은 약" in out.lines[1]
+    assert out.boxes[0].ref == "general.here.mokgong_days"
+    assert not any("예상 공정표로는" in t for t in out.lines)  # 도배 공정표 줄을 되풀이하지 않아요
+    _ok(out)
+    assert calc_lines.period("dobae", facts, g).lines[1] == "도배는 1.4(월) ~ 1.5(화)에 해요."
 
 
 def test_period_without_project_uses_examples_or_asked_size():

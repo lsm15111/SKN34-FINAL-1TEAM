@@ -60,6 +60,7 @@ async def project_facts(
         living="living" if getattr(p, "occupied", False) else "vacant",
         start_wish=p.when.start if p.when else None,
     )
+    facts.calc_m2, facts.calc_basis = _calc_area(p)
     facts.standard = await _standard(s, user, project_id)
     facts.plan = await _plan(s, user, project_id, today)
     facts.visit_draft = await _visit_draft(s, user, project_id, today)
@@ -272,6 +273,28 @@ def _with_dates(x: SizeCalcFact, start: date) -> SizeCalcFact:
         m0, m1, _ = schedule.span(start, x.mokgong_days, off)
         up["mokgong_dates"] = (m0, m1)
     return x.model_copy(update=up)
+
+
+def _calc_area(p) -> tuple[float | None, str | None]:
+    """표준견적서와 같은 면적(평형대면 대표 평형의 공급면적). 못 세면 (None, None)."""
+    from app.calc.standard_quote import house_area
+    from app.refprice.house import HOUSE_2026H2
+
+    try:
+        m2, basis = house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    except (ValueError, KeyError):
+        return None, None
+    return float(m2), basis
+
+
+def house_size(facts: ProjectFacts | None) -> SizeCalcFact | None:
+    """이 집 면적으로 센 계산 엔진 값(공사에 없는 공종을 물을 때 씀). 면적을 모르면 None."""
+    if facts is None:
+        return None
+    m2 = facts.calc_m2 or facts.area_m2
+    if not m2:
+        return None
+    return _size_calc(m2, facts.calc_basis or facts.area_basis or "supply", "이 집")
 
 
 def general_facts(text: str, today: date | None = None) -> GeneralFacts:

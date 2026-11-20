@@ -93,7 +93,15 @@ def period(trade: str, facts: ProjectFacts | None, general: GeneralFacts | None)
     asked = g.asked if g else None
     far = asked is not None and (plan is None or _area_far(facts, asked))
     mine = Lines()  # 이 집 예상 공정표
-    if plan is not None:
+    missing = (
+        plan is not None
+        and trade in ("dobae", "mokgong")
+        and bool(plan.blocks)
+        and all(b.trade != trade for b in plan.blocks)
+    )
+    if missing:  # 공사에 없는 공종: 공정표 줄 대신 '들어 있지 않아요' + 이 집 크기로 센 일수
+        mine = _period_missing(trade, g.here if g else None)
+    elif plan is not None:
         pre = "참고로 " if far else ""
         mine.lines.append(
             f"{pre}이 집 예상 공정표로는 {md(plan.start)} ~ {md(plan.end)}, 일하는 날 {plan.work_days}일이에요."
@@ -161,6 +169,36 @@ def _period_dates(trade: str, g: GeneralFacts) -> Lines:
         )
         out.numbers += [md(getattr(x, key)[1]) for x in rows]
     out.numbers.append(md(start))
+    return out
+
+
+def _period_missing(trade: str, here: SizeCalcFact | None) -> Lines:
+    """공사에 없는 공종의 기간: 공정표에 날짜가 없다고 먼저 말하고, 이 집 크기로 센 일수를 붙여요."""
+    ko = "목공" if trade == "mokgong" else "도배"
+    out = Lines(
+        lines=[f"이 공사에는 {josa(ko, '이', '가')} 들어 있지 않아서 공정표에 {ko} 날짜는 없어요."]
+    )
+    if here is None:
+        return out
+    if trade == "mokgong" and here.mokgong_days is not None:
+        out.lines.append(
+            f"이 집 크기로 세면 몰딩 · 걸레받이 목공은 약 {days(here.mokgong_days)}이에요."
+        )
+        out.numbers.append(days(here.mokgong_days))
+        out.boxes.append(
+            CalcBox(label="이 집 목공 기간", ref="general.here.mokgong_days", qty=here.mokgong_days,
+                    unit="일", note="몰딩 · 걸레받이 · 빈집 기준")
+        )  # fmt: skip
+    elif trade == "dobae":
+        out.lines.append(
+            f"이 집 크기로 세면 도배는 빈집이면 약 {days(here.dobae_days)}, "
+            f"살면서 하면 약 {days(here.dobae_days_occupied)}이에요."
+        )
+        out.numbers += [days(here.dobae_days), days(here.dobae_days_occupied)]
+        out.boxes.append(
+            CalcBox(label="이 집 도배 기간", ref="general.here.dobae_days", qty=here.dobae_days,
+                    unit="일", note=f"빈집 · 벽 + 천장 · 살면서 {days(here.dobae_days_occupied)}")
+        )  # fmt: skip
     return out
 
 
@@ -476,6 +514,13 @@ def pair_period(facts: ProjectFacts | None, general: GeneralFacts | None) -> Lin
                 note=f"{md(plan.start)} ~ {md(plan.end)}",
             )
         )
+        have = {b.trade for b in plan.blocks}
+        for trade in (
+            "mokgong",
+            "dobae",
+        ):  # 공사에 없는 공종은 없다고 말하고 이 집 크기로 센 일수를 붙여요
+            if have and trade not in have:
+                out.add(_period_missing(trade, general.here if general else None))
         return out
     if general is None:
         return out

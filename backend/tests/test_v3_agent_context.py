@@ -33,7 +33,10 @@ def test_short_follow_up_takes_form_from_previous_turn():
 def test_added_trade_joins_previous_trade_and_form():
     prev = context.ChatState(trades=["dobae"], form="period", q="도배 며칠 걸려요")
     q, took = context.resolve("목공도 같이 하면요?", prev)
-    assert took and q.startswith("도배 목공도") and q.endswith("기간은 며칠 걸려요")
+    # '랑'으로 이어야 관문이 두 공종 질문(multi)으로 읽어요
+    assert took and q == "도배랑 목공도 같이 하면요 기간은 며칠 걸려요"
+    both = context.ChatState(trades=["dobae", "mokgong"], form="price", q="도배 목공 얼마예요")
+    assert context.resolve("그럼 할인은요?", both)[0].startswith("도배랑 목공 그럼 할인은요")
 
 
 def test_new_topic_or_own_form_is_not_inherited():
@@ -54,8 +57,10 @@ def test_follow_up_turn_answers_with_inherited_price_policy():
 def test_follow_up_adds_trade_and_keeps_period():
     r = turn("목공도 같이 하면요?", state=st(trades=["dobae"], form="period", q="도배 며칠 걸려요"))
     t = r.answer.trace
-    assert t.inherited and "period" in t.policy
-    assert {"dobae", "mokgong"} <= set(t.trades) | set(t.parts)
+    assert t.inherited and "period" in t.policy and t.route == "multi"
+    assert {"dobae", "mokgong"} <= set(t.trades) | set(
+        t.parts
+    )  # 공사 화면 답은 test_v3_ai_api에서 봐요
 
 
 def test_first_turn_and_topic_change_do_not_inherit():

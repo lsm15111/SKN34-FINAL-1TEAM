@@ -267,6 +267,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
 
     # 질문의 평수 · 예시 평수 · 방문 1개를 계산 엔진으로 미리 센다(DB 없음, 약 20ms). 기간 · 비용 답이 쓴다
     general = tools.general_facts(check.mask(body.text), today)
+    general.here = tools.house_size(facts)  # 공사에 없는 공종의 기간을 이 집 크기로 세요
     res = await run_turn(
         body.text,
         ctx,

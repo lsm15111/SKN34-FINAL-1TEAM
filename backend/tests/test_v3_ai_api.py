@@ -113,6 +113,24 @@ def test_chat_state_is_saved_and_follow_up_inherits_it(api):
     assert [r["text"] for r in rows] == ["도배 며칠 걸려요?", "목공도 같이 하면요?"]
 
 
+def test_follow_up_adding_a_trade_not_in_the_project_answers_both(api):
+    """도배만 한 공사: '도배 며칠 걸려요?' 뒤 '목공도 같이 하면요?'는 두 공종을 다 답하고, 목공은 공사에 없다고 말해요."""
+    use(api, signup(api, "addtrade@mitjip.test"))
+    photo = upload(api).json()["id"]
+    only = {"dobae": {"spaces": ["a", "b", "c"], "grade": "basic"}}
+    r = api.post("/projects", json=project_body([photo], trades=only))
+    assert r.status_code == 201, r.text
+    ctx = {"screen": "standard", "project_id": r.json()["id"]}
+    first = done(ask(api, text="도배 며칠 걸려요?", context=ctx))
+    out = done(ask(api, text="목공도 같이 하면요?", chat_id=first["chat_id"], context=ctx))
+    assert out["route"] == "multi"
+    # 두 공종 기간은 '[기간]' 묶음 하나(공정표 줄은 한 번만)에 목공이 없다는 말 + 이 집 크기로 센 목공 일수
+    period = next(s for s in out["answer"]["sections"] if s["title"] == "[기간]")["sentences"]
+    assert sum("예상 공정표로는" in t for t in period) == 1
+    i = period.index("이 공사에는 목공이 들어 있지 않아서 공정표에 목공 날짜는 없어요.")
+    assert "몰딩 · 걸레받이 목공은 약" in period[i + 1]
+
+
 def test_someone_elses_chat_and_missing_project_are_404(api):
     use(api, signup(api, "a@mitjip.test"))
     cid = done(ask(api))["chat_id"]

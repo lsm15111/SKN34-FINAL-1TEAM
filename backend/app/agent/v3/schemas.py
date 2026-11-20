@@ -169,6 +169,8 @@ class GeneralFacts(BaseModel):
     door_leaf: int | None = None  # 방문 1개 문짝만
     price_ver: str = ""
     start: date | None = None  # 질문에 나온 시작 날짜(서울 기준, 지난 날짜면 다음 해)
+    # 공사 화면에서 이 집 면적으로 센 값. 공사에 없는 공종(도배만 한 집에 '목공도 같이 하면요?')의 기간에 써요
+    here: SizeCalcFact | None = None
 
 
 class ProjectFacts(BaseModel):
@@ -177,6 +179,9 @@ class ProjectFacts(BaseModel):
     stage: Stage = "info"
     area_m2: float | None = None
     area_basis: Literal["supply", "exclusive"] | None = None
+    # 계산 엔진이 쓴 면적(평형대만 고른 집은 대표 평형의 공급면적). 공사에 없는 공종을 이 집 크기로 셀 때 써요
+    calc_m2: float | None = None
+    calc_basis: Literal["supply", "exclusive"] | None = None
     trades: list[TradeCode] = []
     grade: Literal["economy", "basic"] | None = None
     living: Literal["living", "vacant"] | None = None
