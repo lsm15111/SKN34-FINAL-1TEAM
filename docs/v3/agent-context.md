@@ -214,9 +214,57 @@
 4. L3 공사 브리프 저장 + '모은 조건' 칩
 5. (선택) L4 사용자 기억 + 내 정보에서 보기 · 지우기
 
-## 8. 근거(웹 조사)
+## 8. 근거(웹 조사, 2026-11-20)
 
-조사 결과를 받는 대로 채워요.
+- 하위 에이전트가 모은 요약이에요. 논문 수치는 재현하지 않았어요.
+
+### 8.1 대화 안 맥락
+
+- 최근 턴만 넣고 오래된 것은 자르거나 요약해요: [LangChain 단기 기억](https://docs.langchain.com/oss/python/langchain/short-term-memory) · [OpenAI Agents SDK 세션](https://openai.github.io/openai-agents-python/sessions/)(`limit=N`) · [mem0](https://arxiv.org/html/2504.19413).
+- 조건을 여러 턴에 나눠 말하면 15개 모델이 평균 39% 떨어지고, 조건을 다시 모아 주면 격차가 절반쯤 줄어요([2505.06120](https://arxiv.org/html/2505.06120)). L1에 '지금까지 조건'을 모으는 근거예요.
+- 검색어로 대화 전체를 넣으면 마지막 턴만 넣을 때보다 나빠요. 독립 질문으로 다시 쓰는 게 가장 좋아요([MTRAG](https://arxiv.org/html/2501.03468v1), BM25 R@5 0.20 → 0.25). 뒤 턴일수록 크게 떨어져요.
+- 규칙 이어 묻기가 통해요.
+  - [TREC CAsT 2019](https://ar5iv.labs.arxiv.org/html/2003.13624): 의미 있는 개선은 손으로 만든 규칙(질의어 가중 · 대화 불용어)에서만 나왔어요.
+  - [HQE](https://arxiv.org/pdf/2005.02230): 앞 발화 낱말을 BM25 점수로 골라 지금 발화가 모호할 때만 붙여요(자동 런 1위).
+- 수명 예: [Dialogflow](https://docs.cloud.google.com/dialogflow/docs/contexts-input-output) 컨텍스트 기본 5턴 · 20분, [Rasa](https://legacy-docs-oss.rasa.com/docs/rasa/domain) 세션 60분.
+- 상태 꼴: [KLUE-WoS](https://huggingface.co/datasets/klue/blob/main/README.md) 누적 상태, [ConvLab](https://arxiv.org/pdf/2002.04793) 규칙 추적기(직전 상태 + 마지막 사용자 행위), 독립 질문 정답 꼴 [CANARD](https://aclanthology.org/D19-1605/) · [QReCC](https://github.com/apple/ml-qrecc).
+
+### 8.2 세션 사이 기억
+
+- [ChatGPT](https://help.openai.com/en/articles/8590148-memory-in-chatgpt) · [Claude](https://support.claude.com/en/articles/11817273-use-claude-s-chat-search-and-memory-to-build-on-previous-context) · [Gemini](https://support.google.com/gemini/answer/13278892) 모두 보기 · 고치기 · 지우기 · 끄기 · 임시 채팅을 줘요. Claude는 민감 주제를 기본으로 저장하지 않아요.
+- [LangGraph](https://docs.langchain.com/oss/python/concepts/memory): 단기 = 체크포인터, 장기 = store(이름공간 `(user_id, "memories")`). [TTL](https://docs.langchain.com/langsmith/configure-ttl)을 정하지 않으면 만료되지 않아요.
+- mem0은 전체 문맥보다 정확도가 낮지만(66.88 vs 72.90) 지연 · 토큰이 크게 줄어요.
+
+### 8.3 한국 법 · 개인정보
+
+- [개인정보 보호법](https://www.law.go.kr/법령/개인정보보호법)(2026-09-11 시행): 제21조 파기 · 제15조③ 추가 이용 · 제23조 민감정보 · 제28조의8 국외 이전 · 제36조 정정 · 삭제 · 제37조의2 자동화 결정.
+- [표준 개인정보 보호지침](https://www.law.go.kr/행정규칙/표준개인정보보호지침) 제10조: 정당한 사유가 없으면 5일 안에 파기해요.
+- [이루다 처분](https://byline.network/2021/04/29-101)(2021): '서비스 개발' 문구만으로는 대화를 학습에 쓰는 동의로 보지 않았어요.
+- [AI 기본법 제31조](https://shinkim.com/kor/media/newsletter/3114)(2026-01-22 시행): 생성형 AI라는 사실을 미리 알려요. AI 칸 첫 알림이 이미 있어요.
+- [OpenAI API](https://developers.openai.com/api/docs/guides/your-data): 기본으로 학습에 쓰지 않고, 남용 감시 로그는 최대 30일이에요.
+- 확인 못 함: 개인정보위 생성형 AI 안내서(2025-08-06) PDF 원문, 대화 기록의 법정 보관 기간 조항.
+
+### 8.4 평가 · 위험
+
+- 공개 세트: [LongMemEval](https://arxiv.org/abs/2410.10813v2) · [LoCoMo](https://arxiv.org/html/2402.17753v1) · MTRAG.
+- 직접 만들 꼴: 고정 공사로 5~8턴, 턴마다 정답 상태 · 정답 독립 질문 · 턴 유형. 코드 채점(JGA · R@5 · 숫자 일치 · 샘 0건), 턴 깊이별로 나눠요.
+- 위험
+  - 기억 주입: [SpAIware](https://thehackernews.com/2024/09/chatgpt-macos-flaw-couldve-enabled-long.html) · [Gemini 가짜 기억](https://www.infoq.com/news/2025/02/gemini-long-term-memory-attack/) · [MINJA](https://arxiv.org/abs/2503.03704v1)(성공률 98.2%)
+  - 남의 것이 샘: [ChatGPT 2023-03 redis 버그](https://openai.com/index/march-20-chatgpt-outage) · [OWASP LLM08](https://genai.owasp.org/llmrisk/llm082025-vector-and-embedding-weaknesses/)
+  - 낡은 사실: 옛 값은 지우지 않고 무효로 표시해요([Zep](https://arxiv.org/pdf/2501.13956.pdf)).
+  - 잘못 안내한 책임: [Air Canada](https://www.mccarthy.ca/en/insights/blogs/techlex/moffatt-v-air-canada-misrepresentation-ai-chatbot)(2024) 챗봇 안내를 회사가 배상했어요.
+
+### 8.5 조사가 권한 것과 지금 구현
+
+| 권고 | 지금 | 남은 것 |
+|---|---|---|
+| 세션 사이 기억은 공사 조회로 대신하고, 금액 · 기간은 계산 엔진에서 다시 읽기 | 맞아요(L3 모은 조건, L4 없음, 기억에 숫자 없음) | |
+| 규칙 상태 추적을 Postgres에 | `chats.state` | '아니 · 말고' 정정, 후보가 둘 이상이면 되묻기 |
+| '그럼 X는요?'는 직전 주제를 이어받고 같은 종류 칸만 바꾸기 | `context.resolve`(공종 · 꼴 물려받기, 더한 공종은 '랑'으로 이음) | 같은 종류 칸(실크 ↔ 합지 등) 바꾸기 |
+| 검색어는 규칙으로 다시 쓰고 전체 이력은 넣지 않기 | 독립 질문을 규칙으로 만들어 검색 · 답에 써요 | LLM 모드에 상태 + 최근 2~3턴 넣기 |
+| 되물은 칸 키에 사용자 · 공사 · 대화 ID, 읽을 때 주인 확인 | 키는 대화 ID, 대화 주인을 확인한 뒤에만 읽어요 | 키에 사용자 · 공사도 넣기 |
+| L4는 명시 저장 · 보기 · 지우기 · 끄기, 민감정보 저장 안 함, 탈퇴 5일 안 파기 | L4 없음 | 만들 때 따라요 |
+| 처리방침: 대화 보관 기간 · 학습 거부 · 신고 · 국외 이전, LLM `store=false` | AI 첫 알림만 있어요 | 처리방침 글 · `store=false` 검토 |
 
 ## 9. 구현 상태(2026-11-20)
 
