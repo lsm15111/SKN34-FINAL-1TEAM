@@ -1,5 +1,5 @@
 "use client";
-// 도배 기본 정보(C02 · C03 · D11): '어떤 공사 · 우리 집 · 희망' 세 묶음. 웹 ≥1024는 오른쪽 '넣은 내용' 요약 칸.
+// 기본 정보(C02 · C03 · D11): '어떤 공사 · 우리 집 · 희망' 세 묶음. 웹 ≥1024는 오른쪽 '넣은 내용' 요약 칸.
 // - 손님: 답은 이 기기에만 저장돼요(mj_guest_v3). '표준견적서 보기'를 누르면 가입 없이 /start/standard로 가요(N1 A).
 // - 로그인한 고객: 같은 답으로 POST /projects(Idempotency-Key = 기기 답의 key) → 내 공사 표준견적서로 가요.
 // - 고치기(?edit=): 그 공사 값을 채우고 PATCH /projects/{id}(첫 요청 뒤에는 서버가 409 locked, 화면은 C50).
@@ -138,9 +138,9 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
   return (
     <>
       <Main>
-      <PageHead title="도배 기본 정보" crumbs={crumbs} />
+      <PageHead title="기본 정보" crumbs={crumbs} />
       <div className={s.layout}>
-        <form id="info-form" className={s.form} onSubmit={submit} noValidate aria-label="도배 기본 정보">
+        <form id="info-form" className={s.form} onSubmit={submit} noValidate aria-label="기본 정보">
           {tried && errKeys.length ? (
             <div ref={sumRef} className={s.summary} role="alert">
               <Icon name="error" size={18} />
@@ -223,9 +223,10 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
                   <span id="inf-start-v" className={d.start ? "mj-num" : s.ph}>{d.start ? dateShort(d.start, today) : "날짜 고르기"}</span>
                   <Icon name="chevron-down" size={18} />
                 </button>
+                {/* 예산 칸처럼 '아직 몰라요'는 날짜 칸 바로 아래(같은 묶음)에 둬요 */}
+                <ChoiceChips multiple legend="시작일을 모르면" hideLegend value={d.start ? [] : ["unknown"]} options={[{ value: "unknown", label: "아직 몰라요" }]}
+                  onChange={(v) => (v.includes("unknown") ? set({ start: null }) : setSheet("date"))} />
               </div>
-              <ChoiceChips multiple legend="시작일을 모르면" hideLegend value={d.start ? [] : ["unknown"]} options={[{ value: "unknown", label: "아직 몰라요" }]}
-                onChange={(v) => (v.includes("unknown") ? set({ start: null }) : setSheet("date"))} />
             </div>
           </section>
 

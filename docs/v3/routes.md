@@ -51,7 +51,7 @@ app/
 | 코드 | 키 | 화면 | 9판 경로 | Next.js 경로 | 파일 | 묶음 | 폰 · 웹 배치 | 쓰는 API |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | C01 | `home0` | 홈 (로그인 전) (웹 짝 d_home) | `/ · 로그인 전` | `/ (로그인 전)` | app/page.tsx (고침) | B2 | 폰: 머리 '로그인' · 탭 바 없음 / 웹: D10 | POST /guest/standard(견본 입력, 서버에서 캐시) |
-| C02 | `info` | 도배 기본 정보 (웹 짝 d_info) | `/start` | `/start` | app/start/page.tsx (고침) · components/start/* (고침) | B2 | 폰: 세 묶음 한 줄 / 웹: D11 오른쪽 '넣은 내용' 요약. 부분이면 공간 · 면 펼침 | GET /regions · /regions/{sido}/{sgg} · 로그인 전 답은 localStorage |
+| C02 | `info` | 기본 정보 (웹 짝 d_info, 11-20 '도배 기본 정보'에서 바꿈) | `/start` | `/start` | app/start/page.tsx (고침) · components/start/* (고침) | B2 | 폰: 세 묶음 한 줄 / 웹: D11 오른쪽 '넣은 내용' 요약. 부분이면 공간 · 면 펼침 | GET /regions · /regions/{sido}/{sgg} · 로그인 전 답은 localStorage |
 | C03 | `pyeong` | 평으로 넣기 | `/start · 시트` | `/start · 시트` | components/start/PyeongSheet.tsx (새) | B2 | 폰 아래 시트 / 웹 가운데 창 | 없음(평 → ㎡ 넣기 도움, 저장은 ㎡) |
 | C04 | `signup` | 가입 고르기 | `/signup` | `/signup` | app/signup/page.tsx (고침) | B2 | 같음. 카카오 '준비 중' | 없음 |
 | C05 | `email` | 이메일 가입 · 약관 동의 | `/signup` | `/signup?step=email` | components/auth/SignupForm.tsx (고침) | B2 | 같음. 제출할 때만 검사(I6 B) | POST /auth/signup → POST /projects(Idempotency-Key) |
@@ -122,7 +122,7 @@ app/
 | D08 | `d_req` | 실측 일정 요청서 + AI 칸 (데스크톱) | `/projects/{id}/visits · 요청서` | `/projects/{id}/visits/new` | C13과 같은 파일 | B2 · B5 | 웹 배치(끌어다 놓기 · AI 초안 카드) | GET /projects/{id}/visits/draft · POST /projects/{id}/visits |
 | D09 | `d_my` | 내 공사 + 알림 펼침 (데스크톱) | `/my` | `/my` | C42와 같은 파일 + components/site 알림 펼침(B4) | B2 · B4 | 웹 배치 | GET /projects · GET /notifications |
 | D10 | `d_home` | 홈 (데스크톱 · 로그인 전) | `/ · 로그인 전` | `/` | C01과 같은 파일 | B2 | 웹 배치(이렇게 진행돼요 6단계) | POST /guest/standard(견본) |
-| D11 | `d_info` | 도배 기본 정보 (데스크톱) | `/start` | `/start` | C02와 같은 파일 | B2 | 웹 배치(오른쪽 요약) | GET /regions … |
+| D11 | `d_info` | 기본 정보 (데스크톱) | `/start` | `/start` | C02와 같은 파일 | B2 | 웹 배치(오른쪽 요약) | GET /regions … |
 | D12 | `d_std_guest` | 표준견적서 + 로그인 전 AI 칸 (데스크톱) | `/start/standard` | `/start/standard` | C57과 같은 파일 | B2 · B5 | 웹 배치(옆 칸은 칩만) | POST /guest/standard |
 | D13 | `d_join` | 가입 · 로그인 카드 (데스크톱 가운데) | `/start/standard · 확인 창` | `/start/standard · 확인 창` | C59와 같은 파일 | B2 | 웹 가운데 카드 | 없음 |
 | D14 | `d_period` | 기간 답하기 (업체 데스크톱) | `/vendor/requests/{id}` | `/vendor/requests/[visitId]` | V04와 같은 파일 | B3 | 웹: 요청 내용 + 큰 달력 + 이미 잡힌 실측 | GET /vendor/visits/{vid} · POST …/window |

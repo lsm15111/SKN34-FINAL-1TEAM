@@ -1,4 +1,4 @@
-/* 도배 기본 정보(C02 · C03 · D11 · C50) */
+/* 기본 정보(C02 · C03 · D11 · C50) */
 .layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
 .form { display: flex; flex-direction: column; gap: var(--mj-gap-group); min-width: 0; }
 .group { display: flex; flex-direction: column; gap: 16px; padding: var(--mj-pad-group); border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); min-width: 0; }

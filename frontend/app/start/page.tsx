@@ -1,4 +1,4 @@
-// /start — 도배 기본 정보(C02 · C03 · D11). ?edit={id}면 그 공사를 고쳐요(만든 고객만, 남의 것은 404). 첫 실측 요청 뒤면 잠김(C50).
+// /start — 기본 정보(C02 · C03 · D11). ?edit={id}면 그 공사를 고쳐요(만든 고객만, 남의 것은 404). 첫 실측 요청 뒤면 잠김(C50).
 // 손님은 답을 이 기기에 두고 가입 없이 표준견적서로 가요(N1 A). 로그인한 고객은 같은 답으로 내 공사를 만들어요.
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/site/AppHeader";
@@ -13,7 +13,7 @@ import { EMPTY_DRAFT, fromSaved, placeText, roomsOf, type InfoDraft } from "@/li
 import { MOCK_V3A, mockKeyOf } from "@/lib/mock/v3a/mode";
 import { getSession, requireRole } from "@/lib/session";
 
-export const metadata = { title: "도배 기본 정보" };
+export const metadata = { title: "기본 정보" };
 
 /** v2로 만든 공사(기본 정보 v3 칸이 비었음)는 옛 칸에서 모아요 */
 function draftOfProject(p: ApiProject): InfoDraft {
@@ -40,13 +40,13 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
     if (!shell) notFound();
     const p = shell.mock ? null : await getMyProject(edit);
     const draft = shell.home ? fromSaved(shell.home) : p ? draftOfProject(p) : EMPTY_DRAFT;
-    const crumbs = [{ label: "내 공사", href: "/my" }, { label: shell.name, href: `/projects/${shell.id}` }, { label: "도배 기본 정보" }];
+    const crumbs = [{ label: "내 공사", href: "/my" }, { label: shell.name, href: `/projects/${shell.id}` }, { label: "기본 정보" }];
     if (shell.locked) {
       return (
         <>
-          <AppHeader phone={{ title: "도배 기본 정보", back: `/projects/${shell.id}` }} />
+          <AppHeader phone={{ title: "기본 정보", back: `/projects/${shell.id}` }} />
           <Main narrow>
-            <PageHead title="도배 기본 정보" crumbs={crumbs} />
+            <PageHead title="기본 정보" crumbs={crumbs} />
             <InfoLocked draft={draft} region={placeText(regions, draft)} today={today} rooms={roomsOf(draft, roomRule)} />
           </Main>
           <BottomBar>
@@ -57,7 +57,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
     }
     return (
       <>
-        <AppHeader phone={{ title: "도배 기본 정보", back: `/projects/${shell.id}/standard` }} />
+        <AppHeader phone={{ title: "기본 정보", back: `/projects/${shell.id}/standard` }} />
         <InfoForm key={shell.id} regions={regions} roomRule={roomRule} today={today} mode="edit" projectId={shell.id} initial={draft} mock={shell.mock} crumbs={crumbs} />
       </>
     );
@@ -65,9 +65,9 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <AppHeader phone={{ title: "도배 기본 정보", back: "/" }} />
+      <AppHeader phone={{ title: "기본 정보", back: "/" }} />
       <InfoForm regions={regions} roomRule={roomRule} today={today} mode={session?.role === "customer" ? "member" : "guest"} mock={MOCK_V3A}
-        crumbs={[{ label: "표준견적서 받기", href: "/start" }, { label: "도배 기본 정보" }]} />
+        crumbs={[{ label: "표준견적서 받기", href: "/start" }, { label: "기본 정보" }]} />
     </>
   );
 }

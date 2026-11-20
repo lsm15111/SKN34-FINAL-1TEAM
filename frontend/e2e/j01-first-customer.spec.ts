@@ -37,7 +37,7 @@ test("J1 처음 고객: 기본 정보 → 손님 표준견적서 → 가입 카�
   await test.step("C02 · D11 기본 정보", async () => {
     await shown(page.getByRole("link", { name: /견적서 받기/ })).first().click();
     await expect(page).toHaveURL(/\/start$/);
-    await expect(page.getByRole("heading", { name: "도배 기본 정보", level: 1 })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "기본 정보", level: 1 })).toBeVisible();
     for (const g of ["어떤 공사", "우리 집", "희망"]) await expect(page.getByRole("heading", { name: g, exact: true })).toBeVisible();
     await expect(page.getByText("빌라 · 다세대")).toBeVisible();
 
