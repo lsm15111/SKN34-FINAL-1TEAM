@@ -106,6 +106,329 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assistant/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 비서에게 묻기 (SSE) */
+        post: operations["turn_assistant_turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/turns/{turn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 턴 하나 다시 보기 */
+        get: operations["turn_detail_assistant_turns__turn_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/threads/latest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 이 공사의 비서 대화(없으면 null) */
+        get: operations["latest_assistant_threads_latest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 비서 대화 기록 한 쪽 */
+        get: operations["feed_assistant_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/board": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 내 공사 보드 */
+        get: operations["board_assistant_board_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 오늘 정할 일 */
+        get: operations["today_assistant_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 제안 행동 목록 */
+        get: operations["actions_list_assistant_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/actions/{action_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 승인(실행) */
+        post: operations["approve_assistant_actions__action_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/actions/{action_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 거절 */
+        post: operations["reject_assistant_actions__action_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 비서가 지금 LLM으로 답하는지 */
+        get: operations["health_assistant_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/turns": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 업체 비서에게 묻기 (SSE) */
+        post: operations["vendor_turn_vendor_assistant_turns_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/turns/{turn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 턴 하나 다시 보기 */
+        get: operations["vendor_turn_detail_vendor_assistant_turns__turn_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/feed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 업체 비서 대화 기록 한 쪽 */
+        get: operations["vendor_feed_vendor_assistant_feed_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/briefs/{visit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 요청 브리핑 */
+        get: operations["vendor_brief_vendor_assistant_briefs__visit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/checklists/{visit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 견적서 체크리스트 */
+        get: operations["vendor_checklist_vendor_assistant_checklists__visit_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/today": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 오늘 브리핑 */
+        get: operations["vendor_today_vendor_assistant_today_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/actions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 제안 행동 목록 */
+        get: operations["vendor_actions_vendor_assistant_actions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/actions/{action_id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 승인(실행) */
+        post: operations["vendor_approve_vendor_assistant_actions__action_id__approve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/vendor/assistant/actions/{action_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 거절 */
+        post: operations["vendor_reject_vendor_assistant_actions__action_id__reject_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/auth/signup": {
         parameters: {
             query?: never;
@@ -2613,6 +2936,93 @@ export interface components {
              */
             ack: "ok" | "talk";
         };
+        /** ActionOut */
+        ActionOut: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
+            summary: components["schemas"]["ActionSummary"];
+            /** Target Ver */
+            target_ver: string | null;
+            /**
+             * Expires At
+             * Format: date-time
+             */
+            expires_at: string;
+            /** Decided At */
+            decided_at?: string | null;
+            /** Executed At */
+            executed_at?: string | null;
+            /**
+             * Error Code
+             * @description 실패 코드. 만료면 까닭(due · replaced)
+             */
+            error_code?: string | null;
+            result?: components["schemas"]["ActionResult"] | null;
+            /**
+             * Supersedes
+             * @description 판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤)
+             */
+            supersedes?: string | null;
+        };
+        /** ActionPart */
+        ActionPart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            t: "action";
+            action: components["schemas"]["ActionOut"];
+        };
+        /** ActionResult */
+        ActionResult: {
+            /** Text */
+            text: string;
+            /** Href */
+            href?: string | null;
+            /** Label */
+            label?: string | null;
+        };
+        /**
+         * ActionSummary
+         * @description 무엇 · 얼마 · 어느 버전. 금액 · 차액은 계산 엔진 값(부가세 포함).
+         */
+        ActionSummary: {
+            /** Title */
+            title: string;
+            /** Amount Won */
+            amount_won?: number | null;
+            /**
+             * Amounts
+             * @default []
+             */
+            amounts: components["schemas"]["AmountRow"][];
+            diff?: components["schemas"]["DiffOut"] | null;
+            /** Version */
+            version?: string | null;
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["SummaryRow"][];
+            file?: components["schemas"]["LinkOut"] | null;
+            /** Note */
+            note?: string | null;
+            /** Approve Label */
+            approve_label: string;
+        };
         /** AdminActionOut */
         AdminActionOut: {
             /**
@@ -2756,6 +3166,13 @@ export interface components {
             context: components["schemas"]["AiContext"];
             button?: components["schemas"]["Button"] | null;
         };
+        /** AmountRow */
+        AmountRow: {
+            /** Label */
+            label: string;
+            /** Won */
+            won: number;
+        };
         /**
          * AnswerIn
          * @description v3 추가 금액 답 (C37, D23): 승인 · 거절 · 채팅으로 묻기. 최신 판에만.
@@ -2802,6 +3219,19 @@ export interface components {
              */
             open_fields: components["schemas"]["OpenFieldOut"][];
         };
+        /** ApproveIn */
+        ApproveIn: {
+            /**
+             * Client Key
+             * @description 누름마다 하나(기록용). 같은 행동의 두 번째 승인은 같은 결과(200)
+             */
+            client_key?: string | null;
+            /**
+             * Seen
+             * @description 화면이 본 target_ver. 다르면 409 stale
+             */
+            seen?: string | null;
+        };
         /** AreaIn */
         AreaIn: {
             /** Sido */
@@ -2817,6 +3247,106 @@ export interface components {
             sgg: string;
             /** Label */
             label: string;
+        };
+        /** AssistantItem */
+        AssistantItem: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            role: "assistant";
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Turn Id */
+            turn_id: string | null;
+            /** Parts */
+            parts: (components["schemas"]["TextPart"] | components["schemas"]["CardPart"] | components["schemas"]["TaskPart"] | components["schemas"]["ActionPart"] | components["schemas"]["NotePart"])[];
+            /**
+             * Done
+             * @default true
+             */
+            done: boolean;
+            /** Mode */
+            mode?: ("llm" | "free") | null;
+            error?: components["schemas"]["ErrorOut"] | null;
+            /** Status */
+            status?: string | null;
+        };
+        /** AssistantThreadOut */
+        AssistantThreadOut: {
+            /**
+             * Chat Id
+             * Format: uuid
+             */
+            chat_id: string;
+            /** Rev */
+            rev: number;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+        };
+        /** BoardMoneyOut */
+        BoardMoneyOut: {
+            /** Label */
+            label: string;
+            /** Won */
+            won?: number | null;
+            /**
+             * Range
+             * @description [가장 작은 값, 가장 큰 값]
+             */
+            range?: number[] | null;
+        };
+        /** BoardOut */
+        BoardOut: {
+            /** Project Name */
+            project_name: string;
+            /**
+             * Step
+             * @description 단계 띠 지금 칸(0 집 정보 ~ 6 공사)
+             */
+            step: number;
+            /** Facts */
+            facts: string[];
+            /** Confirmed */
+            confirmed: boolean;
+            /** Todo */
+            todo: number;
+            /** Waiting */
+            waiting: number;
+            money: components["schemas"]["BoardMoneyOut"] | null;
+            vendors: components["schemas"]["BoardVendors"] | null;
+            period: components["schemas"]["BoardPeriod"] | null;
+            /** Docs */
+            docs: components["schemas"]["LinkOut"][];
+            /** Plan Example */
+            plan_example: boolean;
+            /**
+             * Memory
+             * @description 기억(0042 담당이 채움)
+             * @default []
+             */
+            memory: {
+                [key: string]: unknown;
+            }[];
+            /** Today Pin */
+            today_pin: number;
+        };
+        /** BoardPeriod */
+        BoardPeriod: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Sub */
+            sub?: string | null;
         };
         /**
          * BoardRowOut
@@ -2865,6 +3395,27 @@ export interface components {
              * @description 기한이 지나 끝난 요청의 그 기한 시각 (답 없음 = 업체 답 기한 · 고르기 없음 = 고르기 기한)
              */
             expired_due_at?: string | null;
+        };
+        /** BoardVendorRow */
+        BoardVendorRow: {
+            /** Name */
+            name: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "waiting" | "done" | "failed" | "cancelled" | "need";
+            /** Text */
+            text: string;
+            /** Won */
+            won?: number | null;
+        };
+        /** BoardVendors */
+        BoardVendors: {
+            /** Title */
+            title: string;
+            /** Rows */
+            rows: components["schemas"]["BoardVendorRow"][];
         };
         /** Body_upload_files_post */
         Body_upload_files_post: {
@@ -2947,6 +3498,64 @@ export interface components {
              */
             hold_until: string | null;
         };
+        /** BriefDay */
+        BriefDay: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Off
+             * @default false
+             */
+            off: boolean;
+        };
+        /** BriefEstimate */
+        BriefEstimate: {
+            /** Total Won */
+            total_won: number;
+            /** Basis */
+            basis: string;
+        };
+        /** BriefHalves */
+        BriefHalves: {
+            /** Days */
+            days: components["schemas"]["BriefDay"][];
+            /**
+             * Taken
+             * @description 잡힌 칸 'YYYY-MM-DD:am' → 동네(고객 정보 없음)
+             */
+            taken: {
+                [key: string]: string;
+            };
+            /** Open Count */
+            open_count: number;
+        };
+        /** BriefSuggest */
+        BriefSuggest: {
+            /**
+             * Action Id
+             * Format: uuid
+             */
+            action_id: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Excluded */
+            excluded: string[];
+            /** Instant */
+            instant: boolean;
+            /** Open Count */
+            open_count: number;
+        };
         /** BudgetOut */
         BudgetOut: {
             /** Band */
@@ -2988,6 +3597,37 @@ export interface components {
             code: "changed" | "other_vendor" | "late_quote" | "other";
             /** Note */
             note?: string | null;
+        };
+        /**
+         * CardOut
+         * @description 카드 하나. 같은 card_id면 화면이 바꿔 끼운다. data는 kind의 *Data 모양(JSON).
+         */
+        CardOut: {
+            /** Card Id */
+            card_id: string;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist";
+            /** Data */
+            data: {
+                [key: string]: unknown;
+            };
+            /**
+             * Say
+             * @description 카드 위 한 줄(정해 둔 글)
+             */
+            say?: string | null;
+        };
+        /** CardPart */
+        CardPart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            t: "card";
+            card: components["schemas"]["CardOut"];
         };
         /**
          * ChangeOut
@@ -3057,6 +3697,20 @@ export interface components {
              * @description 남은 일 (fixing일 때 필수)
              */
             note?: string | null;
+        };
+        /** ChecklistRow */
+        ChecklistRow: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "ok" | "check" | "missing";
+            /** Hint */
+            hint?: string | null;
         };
         /** CompareDealOut */
         CompareDealOut: {
@@ -3520,6 +4174,17 @@ export interface components {
              */
             note?: string | null;
         };
+        /** DiffOut */
+        DiffOut: {
+            /** Label */
+            label: string;
+            /** From Won */
+            from_won: number;
+            /** To Won */
+            to_won: number;
+            /** Diff Won */
+            diff_won: number;
+        };
         /** DobaeIn */
         DobaeIn: {
             /** Spaces */
@@ -3612,6 +4277,13 @@ export interface components {
              * @description 행정동 코드 (있을 때만)
              */
             code?: string | null;
+        };
+        /** ErrorOut */
+        ErrorOut: {
+            /** Code */
+            code: string;
+            /** Message */
+            message: string;
         };
         /**
          * EstimateDetailOut
@@ -4005,6 +4677,32 @@ export interface components {
             /** Answer */
             answer: string;
         };
+        /** FeedPage */
+        FeedPage: {
+            /** Items */
+            items: (components["schemas"]["UserItem"] | components["schemas"]["AssistantItem"])[];
+            /**
+             * Before
+             * @description 더 앞 쪽을 읽을 커서(없으면 처음)
+             */
+            before: number | null;
+            /** Rev */
+            rev: number;
+            /** Chips */
+            chips: string[];
+            /**
+             * Now
+             * Format: date-time
+             */
+            now: string;
+        };
+        /** FieldValue */
+        FieldValue: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string | null;
+        };
         /** FileOut */
         FileOut: {
             /**
@@ -4041,6 +4739,20 @@ export interface components {
              * @description 뒤 공정 시작 전 마지막 일하는 날
              */
             end_by: string | null;
+        };
+        /** FitRow */
+        FitRow: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "trade" | "area" | "schedule" | "paper";
+            /** Label */
+            label: string;
+            /** Ok */
+            ok: boolean;
+            /** Text */
+            text: string;
         };
         /**
          * GuestLineOut
@@ -4153,6 +4865,22 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /**
+         * HealthOut
+         * @description 비서가 지금 LLM으로 답하는지(글 · 키 없음).
+         */
+        HealthOut: {
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "llm" | "free";
+            /**
+             * Reason
+             * @enum {string}
+             */
+            reason: "ok" | "off" | "budget" | "breaker";
         };
         /** HolidayOut */
         HolidayOut: {
@@ -4654,6 +5382,13 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** LinkOut */
+        LinkOut: {
+            /** Label */
+            label: string;
+            /** Href */
+            href: string;
+        };
         /**
          * LogItemOut
          * @description 기록 탭 한 줄 (C63 · I2 · V23). 글은 화면이 code · 날로 만든다.
@@ -5024,6 +5759,16 @@ export interface components {
              * @description 기한이면 그 시각
              */
             at: string | null;
+        };
+        /** NotePart */
+        NotePart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            t: "note";
+            /** Text */
+            text: string;
         };
         /** NotificationOut */
         NotificationOut: {
@@ -5530,6 +6275,13 @@ export interface components {
              * @description 화면 글 '공급 79.3㎡' (기준이 없으면 '79.3㎡', 면적이 없으면 비어 있다)
              */
             area_text?: string | null;
+        };
+        /** PrevQuote */
+        PrevQuote: {
+            /** Version */
+            version: number;
+            /** Total Won */
+            total_won: number;
         };
         /**
          * PreviewOut
@@ -6257,6 +7009,21 @@ export interface components {
              * Format: date-time
              */
             sent_at: string;
+        };
+        /** QuoteChecklistData */
+        QuoteChecklistData: {
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Items */
+            items: components["schemas"]["ChecklistRow"][];
+            /** Fields */
+            fields: components["schemas"]["FieldValue"][];
+            /** Easy Miss */
+            easy_miss: string[];
+            prev: components["schemas"]["PrevQuote"] | null;
         };
         /** QuoteDocOut */
         QuoteDocOut: {
@@ -7061,6 +7828,23 @@ export interface components {
              */
             room_kinds: string[];
         };
+        /** RowAction */
+        RowAction: {
+            /** Label */
+            label: string;
+            /** Href */
+            href?: string | null;
+            /**
+             * Say
+             * @description 누르면 비서에게 보낼 말
+             */
+            say?: string | null;
+            /**
+             * Primary
+             * @default false
+             */
+            primary: boolean;
+        };
         /**
          * SameNameOut
          * @description 같은 상호 · 등록번호 · 대표자인 다른 업체 (A01)
@@ -7574,6 +8358,15 @@ export interface components {
              */
             id: string;
         };
+        /** SummaryRow */
+        SummaryRow: {
+            /** Label */
+            label: string;
+            /** Value */
+            value: string;
+            /** Sub */
+            sub?: string | null;
+        };
         /** SuspendIn */
         SuspendIn: {
             /**
@@ -7584,6 +8377,76 @@ export interface components {
             scope: "new" | "all";
             /** Note */
             note: string;
+        };
+        /** TaskOut */
+        TaskOut: {
+            /** Task Id */
+            task_id: string;
+            /** Title */
+            title: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "waiting" | "done" | "failed" | "cancelled";
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Due */
+            due?: string | null;
+            /**
+             * Rows
+             * @default []
+             */
+            rows: components["schemas"]["TaskRow"][];
+            /**
+             * Sources
+             * @default []
+             */
+            sources: string[];
+            link?: components["schemas"]["LinkOut"] | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** TaskPart */
+        TaskPart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            t: "task";
+            task: components["schemas"]["TaskOut"];
+        };
+        /** TaskRow */
+        TaskRow: {
+            /** Label */
+            label: string;
+            /**
+             * State
+             * @enum {string}
+             */
+            state: "running" | "waiting" | "done" | "failed" | "cancelled" | "need";
+            /** Text */
+            text: string;
+            /** Note */
+            note?: string | null;
+        };
+        /** TextPart */
+        TextPart: {
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            t: "text";
+            /** Text */
+            text: string;
+            /**
+             * Src
+             * @enum {string}
+             */
+            src: "calc" | "ai" | "guide";
         };
         /** ThreadCanOut */
         ThreadCanOut: {
@@ -7711,6 +8574,52 @@ export interface components {
             status: "open" | "read_only";
             /** Ro Reason */
             ro_reason: ("other_chosen" | "cancelled" | "declined" | "withdrawn" | "blocked" | "admin") | null;
+        };
+        /** TodayData */
+        TodayData: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Nudge Id */
+            nudge_id?: string | null;
+            /**
+             * Dismissed
+             * @default false
+             */
+            dismissed: boolean;
+            /** Todo */
+            todo: components["schemas"]["TodayRow"][];
+            /** Waiting */
+            waiting: components["schemas"]["TodayRow"][];
+            /** News */
+            news: components["schemas"]["TodayRow"][];
+            /**
+             * Know
+             * @default []
+             */
+            know: components["schemas"]["TodayRow"][];
+        };
+        /** TodayRow */
+        TodayRow: {
+            /** Id */
+            id: string;
+            /**
+             * Icon
+             * @enum {string}
+             */
+            icon: "doc" | "calendar" | "file" | "chat" | "bulb" | "inbox";
+            /** Title */
+            title: string;
+            /** Sub */
+            sub?: string | null;
+            /**
+             * Due
+             * @default false
+             */
+            due: boolean;
+            action?: components["schemas"]["RowAction"] | null;
         };
         /**
          * TodoOut
@@ -7875,10 +8784,104 @@ export interface components {
             dobae?: components["schemas"]["DobaeOut"] | null;
             mokgong?: components["schemas"]["MokgongOut"] | null;
         };
+        /**
+         * TurnContextIn
+         * @description 카드에서 고른 것. 값은 도구가 준 ref(v1 · s2 …)만이고 LLM에는 ref만 간다(모르는 ref는 버린다).
+         */
+        TurnContextIn: {
+            /** Card Id */
+            card_id?: string | null;
+            /**
+             * Choice
+             * @description 고른 ref 하나 또는 여러 개
+             */
+            choice?: string | string[] | null;
+        };
+        /** TurnIn */
+        TurnIn: {
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            /** Client Key */
+            client_key: string;
+            /** Text */
+            text: string;
+            context?: components["schemas"]["TurnContextIn"] | null;
+        };
+        /**
+         * TurnOut
+         * @description GET …/turns/{id}: 턴 하나(대화를 다시 열 때 · 끊긴 SSE 다시 읽기).
+         */
+        TurnOut: {
+            /**
+             * Turn Id
+             * Format: uuid
+             */
+            turn_id: string;
+            /**
+             * Chat Id
+             * Format: uuid
+             */
+            chat_id: string;
+            /**
+             * Surface
+             * @enum {string}
+             */
+            surface: "customer" | "vendor";
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "running" | "done" | "stopped" | "failed";
+            /**
+             * Mode
+             * @enum {string}
+             */
+            mode: "llm" | "free";
+            /** Tool Calls */
+            tool_calls: number;
+            /**
+             * Text
+             * @description 저장한 답 글(검사를 지난 것)
+             */
+            text: string | null;
+            /** Cards */
+            cards: components["schemas"]["CardOut"][];
+            /** Actions */
+            actions: components["schemas"]["ActionOut"][];
+            /** Error Code */
+            error_code: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Ended At */
+            ended_at: string | null;
+        };
         /** UnsuspendIn */
         UnsuspendIn: {
             /** Note */
             note?: string | null;
+        };
+        /** UserItem */
+        UserItem: {
+            /** Id */
+            id: string;
+            /**
+             * @description discriminator enum property added by openapi-typescript
+             * @enum {string}
+             */
+            role: "user";
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /** Text */
+            text: string;
         };
         /** V2AcceptedIn */
         V2AcceptedIn: {
@@ -9984,6 +10987,35 @@ export interface components {
             license_file_id: string;
             license: components["schemas"]["LicenseOut"] | null;
         };
+        /** VendorBriefData */
+        VendorBriefData: {
+            /**
+             * Visit Id
+             * Format: uuid
+             */
+            visit_id: string;
+            /** Title */
+            title: string;
+            /** Facts */
+            facts: string[];
+            /** Fit */
+            fit: components["schemas"]["FitRow"][];
+            estimate: components["schemas"]["BriefEstimate"] | null;
+            halves: components["schemas"]["BriefHalves"];
+            suggest: components["schemas"]["BriefSuggest"] | null;
+            /** Due At */
+            due_at: string | null;
+            /**
+             * Memo
+             * @description 고객이 남긴 말(자료, 가림)
+             */
+            memo: string | null;
+            /**
+             * Sentence
+             * @description AI 문장 하나(없으면 비움)
+             */
+            sentence?: string | null;
+        };
         /**
          * VendorCardOut
          * @description v3 업체 보기 카드 한 줄 (C10 · D06). 고객 이름 · 연락처는 없다.
@@ -10488,6 +11520,29 @@ export interface components {
              * @description 진행 중이라 닫은 요청 수 (all일 때)
              */
             closed_visits: number;
+        };
+        /** VendorTodayData */
+        VendorTodayData: {
+            /**
+             * Date
+             * Format: date
+             */
+            date: string;
+            /** Rows */
+            rows: components["schemas"]["TodayRow"][];
+        };
+        /** VendorTurnIn */
+        VendorTurnIn: {
+            /**
+             * Visit Id
+             * @description 보던 요청(비우면 작업함 대화)
+             */
+            visit_id?: string | null;
+            /** Client Key */
+            client_key: string;
+            /** Text */
+            text: string;
+            context?: components["schemas"]["TurnContextIn"] | null;
         };
         /**
          * VendorVisitDetailOut
@@ -11376,6 +12431,590 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AiFaqOut"][];
+                };
+            };
+        };
+    };
+    turn_assistant_turns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TurnIn"];
+            };
+        };
+        responses: {
+            /** @description ack → status · card · action → token → done(실패면 error). data마다 seq */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    turn_detail_assistant_turns__turn_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    latest_assistant_threads_latest_get: {
+        parameters: {
+            query: {
+                project_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantThreadOut"] | null;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    feed_assistant_feed_get: {
+        parameters: {
+            query: {
+                project_id: string;
+                /** @description 이 턴보다 앞 쪽 */
+                before?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    board_assistant_board_get: {
+        parameters: {
+            query: {
+                project_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BoardOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    today_assistant_today_get: {
+        parameters: {
+            query: {
+                project_id: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TodayData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    actions_list_assistant_actions_get: {
+        parameters: {
+            query?: {
+                project_id?: string | null;
+                status?: ("proposed" | "approved" | "executed" | "rejected" | "expired" | "failed") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    approve_assistant_actions__action_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    reject_assistant_actions__action_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    health_assistant_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+        };
+    };
+    vendor_turn_vendor_assistant_turns_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VendorTurnIn"];
+            };
+        };
+        responses: {
+            /** @description ack → status · card · action → token → done(실패면 error). data마다 seq */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_turn_detail_vendor_assistant_turns__turn_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                turn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TurnOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_feed_vendor_assistant_feed_get: {
+        parameters: {
+            query?: {
+                before?: number | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FeedPage"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_brief_vendor_assistant_briefs__visit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorBriefData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_checklist_vendor_assistant_checklists__visit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["QuoteChecklistData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_today_vendor_assistant_today_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorTodayData"];
+                };
+            };
+        };
+    };
+    vendor_actions_vendor_assistant_actions_get: {
+        parameters: {
+            query?: {
+                status?: ("proposed" | "approved" | "executed" | "rejected" | "expired" | "failed") | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_approve_vendor_assistant_actions__action_id__approve_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveIn"] | null;
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_reject_vendor_assistant_actions__action_id__reject_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                action_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ActionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
