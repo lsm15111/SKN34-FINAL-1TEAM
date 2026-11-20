@@ -1,5 +1,7 @@
 // C6 공사 날짜 · 확정 공정표: 업체가 하루씩 고른 날(반나절 칸) · 일하는 날 n일 · 다른 공정과 겹침.
 // 날 · 일수는 계산 엔진 값이에요. 수락은 승인 카드가 맡고, 이 카드는 보여 주기만 해요.
+// (카드 data에 공사 날짜 제안 이름표(p…)가 없어서 카드 안 [수락](choice dates_accept · delay_accept)은 아직 두지 않아요)
+// 업체가 날짜를 바꾼 까닭은 '업체가 적은 말' 칸에만 보여요(업체 글 그대로).
 import Link from "next/link";
 import { dayParts, rangeText } from "@/lib/format";
 import { DecidedLine, SourceTag } from "../kit/StatusTag";
@@ -35,6 +37,7 @@ export function ScheduleCard({ card }: CardProps<"schedule">) {
       ) : (
         <DecidedLine>다른 공정과 겹치지 않아요</DecidedLine>
       )}
+      {d.vendor_note ? <blockquote className={c.vnote}><b>업체가 적은 말</b>{d.vendor_note}</blockquote> : null}
       <div className={k.row}>
         <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>공정표 열기</Link>
         {d.ics_href ? <a className={`${k.btn} ${k.sm}`} href={d.ics_href} download><I n="calendar" />달력에 넣기</a> : null}

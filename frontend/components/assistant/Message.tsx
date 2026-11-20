@@ -10,6 +10,7 @@ import { TaskCard } from "./kit/TaskCard";
 import { I } from "./kit/icons";
 import { Card } from "./cards/registry";
 import type { CardCtx } from "./cards/types";
+import k from "./kit/kit.module.css";
 import s from "./assistant.module.css";
 
 export type ActionHandlers = {
@@ -41,11 +42,14 @@ export function Message({ item, ctx, act, live, onRetry }: { item: FeedItem; ctx
   // 숨기는 조각: 닫은 먼저 말 걸기 · 집 정보 저장 행동(집 카드의 [맞아요]가 맡아요)
   const parts = item.parts.filter((p) => !(p.t === "suggest" && p.suggest.nudge_id && act.gone[p.suggest.nudge_id]) && !(p.t === "action" && p.action.kind === "home_info"));
   if (!parts.length && !waiting && !item.error) return null;
+  // 다음에 물을 말(턴 끝 done.suggest 0~3개 · 먼저 말 건 줄 하나)은 말 끝에 모아 그려요
+  const ideas = parts.flatMap((p) => (p.t === "suggest" ? [p.suggest] : []));
   return (
     <div className={`${s.msg} ${s.enter}`} data-id={item.id}>
       <div className={s.av} aria-hidden="true">AI</div>
       <div className={s.msgBody}>
-        {parts.map((p, i) => <Part key={partKey(p, i)} part={p} ctx={ctx} act={act} />)}
+        {parts.map((p, i) => (p.t === "suggest" ? null : <Part key={partKey(p, i)} part={p} ctx={ctx} act={act} />))}
+        <Suggests list={ideas} ctx={ctx} act={act} />
         {waiting ? (
           <span className={s.status} role="status">
             <span className={s.typing} aria-hidden="true"><i /><i /><i /></span>
@@ -94,20 +98,32 @@ function Part({ part: p, ctx, act }: { part: FeedPart; ctx: CardCtx; act: Action
         />
       );
     case "suggest":
-      return <Suggest suggest={p.suggest} ctx={ctx} act={act} />;
+      return null;
     case "note":
       return <p className={s.note}>{p.text}</p>;
   }
 }
 
-function Suggest({ suggest, ctx, act }: { suggest: SuggestOut; ctx: CardCtx; act: ActionHandlers }) {
-  const nid = suggest.nudge_id ?? null;
+/** 첫 제안은 제안 카드([해 볼게요] · [괜찮아요]), 둘째부터는 칩으로 짧게. 먼저 말 걸기에서 왔으면 누를 때 열었다고 알려요 */
+function Suggests({ list, ctx, act }: { list: SuggestOut[]; ctx: CardCtx; act: ActionHandlers }) {
+  if (!list.length) return null;
+  const [first, ...more] = list;
+  const go = (x: SuggestOut) => { if (x.nudge_id) act.openNudge(x.nudge_id); ctx.send(x.say); };
+  const nid = first.nudge_id ?? null;
   return (
-    <SuggestCard
-      suggest={suggest}
-      disabled={ctx.busy}
-      onAccept={(say) => { if (nid) act.openNudge(nid); ctx.send(say); }}
-      onDismiss={nid ? () => act.dismissNudge(nid) : undefined}
-    />
+    <>
+      <SuggestCard
+        key={first.id}
+        suggest={first}
+        disabled={ctx.busy}
+        onAccept={() => go(first)}
+        onDismiss={nid ? () => act.dismissNudge(nid) : undefined}
+      />
+      {more.length ? (
+        <div className={s.ideas} role="group" aria-label="이어서 물을 말">
+          {more.map((x) => <button key={x.id} type="button" className={`${k.chip} ${k.chipSm}`} disabled={ctx.busy} onClick={() => go(x)}><I n="sparkle" />{x.text}</button>)}
+        </div>
+      ) : null}
+    </>
   );
 }

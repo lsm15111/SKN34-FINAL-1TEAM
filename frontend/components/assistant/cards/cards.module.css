@@ -57,6 +57,9 @@
 .cand[aria-checked="true"] .radio::after { content: ""; width: 12px; height: 12px; border-radius: 50%; background: var(--mj-primary); }
 .cand b { font-size: var(--mj-type-body); }
 .cand small { grid-column: 2; font-size: var(--mj-type-caption); color: var(--mj-text-sub); }
+/* 업체가 적은 말(업체 글 그대로, 인용 상자로만) */
+.vnote { margin: 0; padding: 10px 14px; border-left: 3px solid var(--mj-line-control); background: var(--mj-surface-sub); border-radius: 0 var(--mj-radius-field) var(--mj-radius-field) 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
+.vnote b { display: block; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 
 /* ───── C5 견적서 비교 ───── */
 .cmpWrap { border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); overflow: hidden; }
@@ -66,6 +69,8 @@
 .cmp thead th:first-child { width: 112px; }
 .cmp thead th small { display: block; font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 .cmp tbody th { color: var(--mj-text-mute); font-weight: 500; }
+.cmp tbody th small { display: block; font-size: var(--mj-type-caption); }
+.vq { color: var(--mj-text-sub); }
 .cmp td b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-heavy); }
 .up { display: block; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-on-warn-weak); }
 .warn { color: var(--mj-badge-wait-fg); font-weight: var(--mj-weight-semibold); }

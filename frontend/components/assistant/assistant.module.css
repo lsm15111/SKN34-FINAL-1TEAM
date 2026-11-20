@@ -68,6 +68,9 @@
 .ai { display: grid; gap: 6px; }
 .aiTag { justify-self: start; }
 .note { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-mute); }
+/* 다음에 물을 말 둘째부터(칩, 긴 글은 줄을 바꿔요) */
+.ideas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
+.ideas button { white-space: normal; text-align: left; line-height: 1.35; padding-block: 8px; max-width: 100%; }
 .fail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: var(--mj-type-label); color: var(--mj-danger); }
 .day { display: flex; align-items: center; gap: 12px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); }
 .day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--mj-line); }

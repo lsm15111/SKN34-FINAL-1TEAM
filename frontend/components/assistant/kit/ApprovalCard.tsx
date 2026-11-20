@@ -1,6 +1,6 @@
 "use client";
 // 승인 카드: 무엇을(제목) · 얼마에(부가세 포함) · 어느 판 · 기한. 금액이 바뀌었으면 차액 줄을 맨 먼저.
-// 상태: 승인 기다림 → 작업 중 → 완료(결과 링크) / 거절 / 만료(새 카드로 바뀜 · 기한 지남) / 실패 / 처리됨(전체 화면 카드의 v3 단추로 이미 함).
+// 상태: 승인 기다림 → 작업 중 → 완료(결과 링크) / 거절 / 만료(새 카드로 바뀜 · 기한 지남 · 비서 밖에서 처리됨) / 실패 / 처리됨(전체 화면 카드의 v3 단추로 이미 함).
 // 판이 바뀌면(409) 서버가 새 판 + 차액으로 만든 행동이 이 자리에 와요.
 // 되돌릴 수 없는 일은 이 카드의 단추로만 실행돼요. 누르면 바로 단추를 끄고(aria-busy) 결과를 카드 안에서 보여요(따로 확인 창 없음).
 import Link from "next/link";
@@ -13,7 +13,11 @@ import k from "./kit.module.css";
 /** 닫힌 까닭(error_code) → 화면 말. 모르는 기능 오류 코드는 '실행하지 못했어요' */
 function closedWord(a: ActionOut): string {
   if (a.status === "rejected") return "거절했어요";
-  if (a.status === "expired") return a.error_code === "replaced" ? "새 카드로 바뀌었어요" : "기한이 지났어요";
+  if (a.status === "expired") {
+    if (a.error_code === "replaced") return "새 카드로 바뀌었어요";
+    // 비서 밖(화면 단추 · 업체)에서 대상 상태가 바뀌어 서버가 닫았어요
+    return a.error_code === "handled_elsewhere" ? "이미 처리됐거나 바뀌었어요" : "기한이 지났어요";
+  }
   if (a.error_code === "quote_changed") return "견적서가 새 판으로 바뀌었어요";
   if (a.error_code === "stalled") return "처리가 멈췄어요";
   return "실행하지 못했어요";
@@ -66,7 +70,7 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, er
           <b>{s.title}</b>
         </span>
         {error && a.status === "failed" ? <span className={k.err}>{error}</span> : null}
-        {onRemake && a.error_code !== "replaced" && a.error_code !== "quote_changed" ? <button type="button" className={k.text} onClick={onRemake}>다시 만들기</button> : null}
+        {onRemake && !["replaced", "quote_changed", "handled_elsewhere"].includes(a.error_code ?? "") ? <button type="button" className={k.text} onClick={onRemake}>다시 만들기</button> : null}
       </section>
     );
   }
