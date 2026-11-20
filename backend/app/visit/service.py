@@ -264,7 +264,7 @@ async def _cards(
     if not vendor_ids:
         return {}
     v3s = await vendor_service.estimates_v3_for(
-        s, vendor_ids=vendor_ids, project=p, trade=trade, grade=grade
+        s, vendor_ids=vendor_ids, project=p, trade=trade, grade=grade, price_ver=std.price_ver
     )
     prices = await vendor_service.confirmed_prices(s, vendor_ids, trade)
     tried = await repo.attempts(s, p.id, trade, vendor_ids)
@@ -533,18 +533,18 @@ async def _grade_view(
     if mine is None or base is None:
         if grade is not None and mine is not None and grade != mine:
             preview = await vendor_service.estimate_v3_for(
-                s, vendor_id=vendor_id, project=p, trade=trade, grade=grade
+                s, vendor_id=vendor_id, project=p, trade=trade, grade=grade, price_ver=std.price_ver
             )
             return preview, None
         return base, None
     if grade is not None and grade != mine:
         preview = await vendor_service.estimate_v3_for(
-            s, vendor_id=vendor_id, project=p, trade=trade, grade=grade
+            s, vendor_id=vendor_id, project=p, trade=trade, grade=grade, price_ver=std.price_ver
         )
         return preview, grade_diff(base.total, preview.total) if preview else None
     other = "economy" if mine == "basic" else "basic"
     alt = await vendor_service.estimate_v3_for(
-        s, vendor_id=vendor_id, project=p, trade=trade, grade=other
+        s, vendor_id=vendor_id, project=p, trade=trade, grade=other, price_ver=std.price_ver
     )
     return base, grade_diff(alt.total, base.total) if alt else None
 
@@ -2290,3 +2290,30 @@ def expired_due(v: Visit, window: VisitWindow | None) -> datetime | None:
 def visit_error(v: Visit, message: str) -> AppError:
     """지금 상태에서 못 하는 일: 기한이 지나 끝났으면 expired, 그 밖은 stale"""
     return app_error("expired" if v.status == "expired" else "stale", message)
+
+
+# ---- v4 비서: 업체 빈 반나절 (ADR 0001, 요청 전 실측 후보 재료). 날 · 반나절만 내고 고객 정보는 없다 ----
+
+SPAN_INVALID = "기간을 다시 골라 주세요. (62일 안)"
+
+
+async def open_halves_for(
+    s: AsyncSession, vendor_id: uuid.UUID, start: date, end: date
+) -> dict[date, list[str]]:
+    """그 업체가 start ~ end에 실측을 더 받을 수 있는 반나절: 날 → ["am", "pm"] 중 빈 것(날 순).
+    빈 반나절이 없는 날은 넣지 않는다. 실측 칸 규칙(calc.slots.open_halves) 그대로: 반나절마다 업체 칸 수에서
+    살아 있는 잡기(잡아 둠 · 확정)를 빼고, 오늘(서울)과 그 앞 날은 막는다. 공사 날(날짜를 수락한 공사 ·
+    고객 답을 기다리는 공사 날짜 제안)은 하루를 막는다. 주말 · 공휴일은 실측 규칙에 막는 날이 아니라 그대로 두고,
+    업체가 요청마다 고른 빼는 날(visit_windows)은 그 요청에만 걸린다. 승인 전 · 멈춘 · 없는 업체는 빈 dict.
+    기간이 거꾸로이거나 62일보다 길면 422(invalid)."""
+    if end < start or (end - start).days > slots.SPAN_MAX:
+        raise app_error("invalid", SPAN_INVALID, fields=[{"loc": ["end"], "msg": SPAN_INVALID}])
+    f = (await repo.vendor_facts(s, [vendor_id])).get(vendor_id)
+    if f is None or f.status != "approved" or f.suspended:
+        return {}
+    holds = await repo.vendor_holds(s, vendor_id, start, end)
+    taken = slots.taken_count((h.day, h.half) for h in holds)
+    spans = await repo.vendor_work_spans(s, vendor_id, start, end)
+    busy = slots.work_days_in(spans, start, end)
+    days = slots.open_halves(start, end, busy, taken, f.capacity, today_of(now_utc()))
+    return {x.day: [h for h in slots.HALVES if x.left(h) > 0] for x in days if x.am or x.pm}

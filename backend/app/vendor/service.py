@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import service as auth_service
 from app.auth.models import User
 from app.calc import dobae, estimate, mokgong
+from app.calc.common import COUNTED
 from app.calc.schedule import days_since
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
 from app.calc.standard_quote import house_area
@@ -27,7 +28,7 @@ from app.calc.visit_view import area_text
 from app.files import service as files_service
 from app.files.models import File
 from app.notify import service as notify_service
-from app.refprice.book import DOBAE_2026H2, DOBAE_V3_2026_11, MOKGONG_2026H2
+from app.refprice.book import DOBAE_2026H2, DOBAE_DEFAULT, MOKGONG_2026H2, dobae_prices_of
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.vendor_baseline import price_warning, vendor_base
 from app.refprice.wallpaper_market import paper_market
@@ -850,7 +851,7 @@ def _estimate_v3_out(
                 amount=x.amount,
                 mode=x.mode,
                 included_in=x.included_in,
-                in_standard=x.row.in_standard,
+                in_standard=x.in_standard,
                 label=x.row.label or x.row.name,
                 note=x.row.note,
             )
@@ -864,11 +865,15 @@ def _estimate_v3_out(
     )
 
 
-def _std_v3(h: dobae.HomeV3) -> dobae.StandardV3:
-    """v3 표준견적서 계산 (quote.service가 저장하는 값과 같은 계산 엔진 · 판)"""
-    return dobae.standard_v3(
-        h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
-    )
+def _std_v3(h: dobae.HomeV3, dp: dobae.DobaePrices = DOBAE_DEFAULT) -> dobae.StandardV3:
+    """v3 표준견적서 계산 (quote.service가 저장하는 값과 같은 계산 엔진 · 판). 판을 안 주면 공사 조건이
+    없는 집의 기준(도배만 하는 공사, ADR 0004)"""
+    return dobae.standard_v3(h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2)
+
+
+def _std_keys(std: dobae.StandardV3) -> set[str]:
+    """표준견적서에서 합계에 드는 줄 키 (가견적 비교 %를 그 집 기준대로 가른다)"""
+    return {ln.key for ln in std.quote.lines if ln.state in COUNTED}
 
 
 def _v3_out(v: Vendor, ps: VendorPriceSet | None, lines: list) -> PricesV3Out:
@@ -905,6 +910,7 @@ def _v3_out(v: Vendor, ps: VendorPriceSet | None, lines: list) -> PricesV3Out:
             grade=EXAMPLE_V3.grade,
             exempt=v.tax_kind in NO_VAT,
             standard_total=ex.quote.total,
+            standard_keys=_std_keys(ex),
         )
         example = _estimate_v3_out(e, ps, v.tax_kind)
     return PricesV3Out(
@@ -1231,10 +1237,12 @@ async def estimates_v3_for(
     project: "ProjectOut",
     trade: str,
     grade: str | None = None,
+    price_ver: str | None = None,
 ) -> dict[uuid.UUID, EstimateV3Out]:
     """고객 가견적 v3 여러 업체 (C10 · D06 목록): 승인된 업체가 확인한 v3 단가 × 이 집 계산 엔진 수량.
     확인한 v3 묶음이 없는 업체는 빠진다('가견적 준비 중', D06 A). 고른 벽지 줄이 '빼기'면 paper_ok False.
-    grade를 주면 그 벽지로 센다(비교 %의 표준견적서도 그 벽지)."""
+    grade를 주면 그 벽지로 센다(비교 %의 표준견적서도 그 벽지). price_ver는 이 집 저장한 표준견적서의
+    도배 판(기준, ADR 0004)이고 수량 · 비교 %를 그 판으로 센다(안 주면 도배만 하는 공사 기준)."""
     if trade != "dobae" or not vendor_ids:
         return {}
     sets = [
@@ -1246,7 +1254,8 @@ async def estimates_v3_for(
         return {}
     lines = await repo.price_lines(s, [x.id for x in sets])
     h = _home_v3(project, grade)
-    std = _std_v3(h)
+    std = _std_v3(h, dobae_prices_of(price_ver))
+    keys = _std_keys(std)
     out: dict[uuid.UUID, EstimateV3Out] = {}
     for x in sets:
         tax = vendors[x.vendor_id].tax_kind
@@ -1256,6 +1265,7 @@ async def estimates_v3_for(
             grade=h.grade,
             exempt=tax in NO_VAT,
             standard_total=std.quote.total,
+            standard_keys=keys,
         )
         out[x.vendor_id] = _estimate_v3_out(e, x, tax)
     return out
@@ -1268,14 +1278,15 @@ async def estimate_v3_for(
     project: "ProjectOut",
     trade: str,
     grade: str | None = None,
+    price_ver: str | None = None,
 ) -> EstimateV3Out | None:
     """고객 가견적 v3 (C11 · D07): 업체가 확인한 v3 단가 × 계산 엔진 수량.
 
     확인한 v3 단가 묶음이 없으면 None('가견적 없음'). grade를 주면 그 벽지로 미리 본다
-    (C11 '합지 −31만 1,850원' = grade 미리 보기 total − 고른 벽지 total).
+    (C11 '합지 −31만 1,850원' = grade 미리 보기 total − 고른 벽지 total). price_ver는 estimates_v3_for와 같다.
     """
     got = await estimates_v3_for(
-        s, vendor_ids=[vendor_id], project=project, trade=trade, grade=grade
+        s, vendor_ids=[vendor_id], project=project, trade=trade, grade=grade, price_ver=price_ver
     )
     return got.get(vendor_id)
 

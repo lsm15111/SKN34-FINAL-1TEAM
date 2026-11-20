@@ -96,8 +96,10 @@ def test_v3_demo_builds_every_stage_with_9th_draft_numbers(api):
     assert r.status_code == 200, r.text
     cards = {c["name"]: c for c in r.json()["local"]}
     assert (cards["마루와벽"]["estimate_total"], cards["결도배"]["estimate_total"]) == (
-        2_920_005,  # 판 2026H2-rooms 수량(69.4㎡ · 방 2개). 2.5배 판 9판 C10은 3,186,150 · 2,774,200
-        2_535_610,
+        # 도배만 하는 공사 기준 판 2026.11-market 수량(69.4㎡ · 방 2개, 실크 56.0 벽지 평).
+        # 옛 판 2026H2-rooms는 2,920,005 · 2,535,610, 2.5배 판 9판 C10은 3,186,150 · 2,774,200
+        2_941_950,
+        2_556_400,
     )
     assert (
         cards["마루와벽"]["rating"],

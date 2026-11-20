@@ -12,14 +12,14 @@ from app.calc.quote_diff import budget_fit
 from app.calc.space_share import ROOM_KINDS, ROOMS_MAX, ROOMS_MIN, SPACE_SHARE_ROOMS_2026_11
 from app.guest.schemas import GuestLineOut, GuestStandardOut, RoomBandOut, RoomRuleOut
 from app.project.schemas import HomeInfoIn, check_home
-from app.refprice.book import DOBAE_V3_2026_11
+from app.refprice.book import DOBAE_DEFAULT, DOBAE_PROFILES
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.wallpaper_market import paper_market
 
 
 def room_rule() -> RoomRuleOut:
     """GET /guest/room-rule: 방 개수 칸의 범위 · 평형 기본값 표 (계산 엔진 판 그대로)"""
-    p = DOBAE_V3_2026_11
+    p = DOBAE_DEFAULT  # 방 개수 표는 두 기준 판이 같다
     return RoomRuleOut(
         price_ver=p.version,
         share_ver=SPACE_SHARE_ROOMS_2026_11.version,
@@ -45,8 +45,11 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         tuple(data.faces),
         rooms=data.rooms,
     )
+    # 손님은 도배만 넣어요(목공 · 모은 조건 없음). 기준은 계산 엔진이 고른다(ADR 0004: 도배만 하는 공사)
+    pick = dobae.pick_profile(dobae.WorkFacts())
+    p = DOBAE_PROFILES[pick.profile]
     v = dobae.standard_v3(
-        h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+        h, p, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2, pick.why
     )
     q = v.quote
     return GuestStandardOut(
@@ -80,4 +83,6 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         man_day=q.man_days,
         budget_fit=budget_fit(q.total, data.budget_won),
         assumptions=list(q.assumptions),
+        profile=p.profile.key if p.profile else None,
+        profile_name=p.profile.name if p.profile else None,
     )

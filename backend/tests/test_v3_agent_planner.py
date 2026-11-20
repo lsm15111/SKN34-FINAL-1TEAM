@@ -14,7 +14,7 @@ from app.agent import llm
 from app.agent.v3 import planner, screen_tools, templates
 from app.agent.v3.composer import CBlock, CItem, Composed
 from app.agent.v3.planner import Ask, Plan
-from app.agent.v3.schemas import ProjectFacts, ScreenFacts, TurnContext
+from app.agent.v3.schemas import ProjectFacts, ScreenFacts, StandardLineFact, TurnContext
 from app.agent.v3.turn import run_turn
 
 
@@ -56,6 +56,25 @@ def test_items_are_screen_lines_without_numbers():
     assert planner.items_of("plan", _facts()) == []
 
 
+def test_standard_items_explain_profile_lines():
+    """조건별 두 기준 판의 새 표준 줄(부자재 · 퍼티 · 식대 · 운송 · 경비)도 짧은 해요체 뜻이 붙어요."""
+    names = {"material": "부자재", "putty": "퍼티작업", "meal": "식대", "truck": "운송 · 경비"}
+    f = std_facts()
+    assert f.standard is not None
+    f.standard.lines = [
+        StandardLineFact(
+            key=k, name=n, state="included", qty=1.0, unit="식", unit_price=1, amount=1
+        )
+        for k, n in names.items()
+    ]
+    got = {x["key"]: x["뜻"] for x in planner.items_of("standard", f)}
+    for k in names:
+        meaning = planner.STANDARD_MEANING[k]
+        assert meaning.endswith("요") and got[f"standard.{k}"].startswith(meaning), k
+    assert "밥값" in got["standard.meal"] and "합계에 들어감" in got["standard.meal"]
+    assert not any(re.search(r"\d{2,}|\d원|,\d", x) for x in got.values())
+
+
 def test_clean_drops_unknown_items_and_caps_pieces():
     p = Plan(
         asks=[Ask(text=f"질문{i}", kind="line", items=["vendor.truck", "vendor.made_up"], trades=["dobae"])
@@ -75,11 +94,14 @@ def test_screen_text_lists_lines_by_amount_with_market_and_other_vendors():
     body = t["글"]
     first = body.index("- 인건비"), body.index("- 실크벽지"), body.index("- 퍼티작업")
     assert first == tuple(sorted(first)), "금액 큰 순서"
-    assert "4.5 품 × 300,000원 = 1,350,000원" in body and "표준견적서보다 30.3% 많아요" in body
+    assert "4.5 품 × 300,000원 = 1,350,000원" in body
     assert "합지(저가형)으로 바꾸면 합계가 −266,805원" in body
     assert "실견적 279건" in body and "표준견적서에 없는 줄" in body
     s = screen_tools.screen_text("standard", std_facts())
     assert s is not None and "실측 뒤 업체가 정함" in s["글"] and "1,802,374원" in s["글"]
+    # 표준견적서와 견준 %는 '보는 화면' 글에 없어요(사용자 결정 2026-11-21)
+    for text in (body, s["글"]):
+        assert "표준견적서보다" not in text and "30.3%" not in text and "%" not in text
 
 
 def plan_stub(stub, *asks: Ask) -> None:
@@ -116,7 +138,7 @@ def test_judge_and_rank_answer_from_screen_numbers(stub):
         got.append(a)
 
     a = turn("이 견적 괜찮은 거야? 제일 비싼 건 뭐고?", _facts(), on_part=on_part)
-    assert a.trace.prompts == ["planner_v1", "composer_v7"]
+    assert a.trace.prompts == ["planner_v1", "composer_v8"]
     assert a.trace.parts == ["quote_explanation:compare"]
     # 비교 도구의 고정 몫(정해 둔 글 · 계산 상자)이 먼저 보이고, 그 아래 작성기 글이 붙어요
     assert (
@@ -126,6 +148,8 @@ def test_judge_and_rank_answer_from_screen_numbers(stub):
     )
     t = texts(a)
     assert judge in t and top in t and made_up not in t
+    # 작성기가 표준 대비 %를 써도 보는 화면에 그 숫자가 없어 숫자 검사에서 빠져요(사용자 결정 2026-11-21)
+    assert not [x for x in t if "표준보다" in x or "30.3" in x]
     assert any(src["ref"] == "rule:screen" for s in a.sections for src in s.sources)
     assert any(c.label == "마루와벽 가견적" for c in a.calc)
     assert a.unknown == []

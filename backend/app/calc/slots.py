@@ -5,6 +5,7 @@
 - 고를 수 있는 날: 업체 기간(start~end) 안 · 빼는 날 아님 · 오늘(서울)보다 뒤.
 - 희망 기간 초안(UC-VIS-01): 공사 시작 희망일 − 28일 ~ − 14일. 추천(D15): 희망일 − 20일에 가장 가까운 칸.
   AI는 이 값을 설명만 한다.
+- 업체 공사 날(v4 비서 빈 반나절, ADR 0001): 그날은 실측 칸을 모두 막는다.
 - v4 비서 후보: 요청 전 희망 기간(wish_candidates) · 업체 기간 안 반나절(candidates) · 업체가 답할 기간(best_windows).
 """
 
@@ -124,6 +125,23 @@ def recommend(work_start: date | None, days: Sequence[DayOpen]) -> Pick | None:
     target = work_start - timedelta(days=RECOMMEND_BEFORE_DAYS)
     d, h = min(choices, key=lambda c: (abs((c[0] - target).days), c[0], HALVES.index(c[1])))
     return Pick(d, h, target, "start_minus_20")
+
+
+def work_days_in(
+    spans: Iterable[tuple[date, date, Collection[date] | None]], start: date, end: date
+) -> set[date]:
+    """업체 공사 날 중 start ~ end 안의 날. spans = (시작, 끝, 날 목록)이고, 날 목록이 있으면 그 날만,
+    없으면(옛 길: 시작 ~ 끝으로 낸 날짜) 일하는 날을 몰라 그 사이 모든 날을 막는다."""
+    out: set[date] = set()
+    for first, last, days in spans:
+        if days:
+            out.update(d for d in days if start <= d <= end)
+            continue
+        d = max(first, start)
+        while d <= min(last, end):
+            out.add(d)
+            d += timedelta(days=1)
+    return out
 
 
 # ---- v4 비서: 실측 시간 후보 (계약서 5장 vendor_free_slots · my_free_slots) ----

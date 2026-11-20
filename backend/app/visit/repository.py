@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.notify.models import Notification
 from app.project.models import Project, ProjectTrade
 from app.review.models import Review
-from app.schedule.models import Deal
+from app.schedule.models import DateProposal, Deal
 from app.thread.models import Thread
 from app.vendor.models import Vendor, VendorReviewLink
 from app.visit.models import (
@@ -641,3 +641,29 @@ async def remove_vendor_shortlists(
         .execution_options(synchronize_session=False)
     )
     return [tuple(r) for r in res.all()]
+
+
+async def vendor_work_spans(
+    s: AsyncSession, vendor_id: uuid.UUID, start: date, end: date
+) -> list[tuple[date, date, list[date] | None]]:
+    """업체 공사 날짜 중 start ~ end와 겹치는 것 (시작, 끝, 날 목록): 날짜를 수락한 공사(scheduled)와
+    고객 답을 기다리는 공사 날짜 제안(pending, 확정 · 날짜 수락 상태 공사만). 고객 · 집 정보는 읽지 않는다."""
+    accepted = select(Deal.start_date, Deal.end_date, Deal.work_days).where(
+        Deal.vendor_id == vendor_id,
+        Deal.status == "scheduled",
+        Deal.start_date <= end,
+        Deal.end_date >= start,
+    )
+    pending = (
+        select(DateProposal.start_date, DateProposal.end_date, DateProposal.days)
+        .join(Deal, Deal.id == DateProposal.deal_id)
+        .where(
+            Deal.vendor_id == vendor_id,
+            Deal.status.in_(("confirmed", "scheduled")),
+            DateProposal.status == "pending",
+            DateProposal.start_date <= end,
+            DateProposal.end_date >= start,
+        )
+    )
+    rows = [*(await s.execute(accepted)).all(), *(await s.execute(pending)).all()]
+    return [(first, last, list(days) if days else None) for first, last, days in rows]

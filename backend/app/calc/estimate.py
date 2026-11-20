@@ -8,10 +8,11 @@
 - 부가세는 공급가에 한 번만 붙인다(common.with_vat). 면세 업체는 0원.
 - v3(dobae_v3, 1201~1208, dev-06): 업체 단가 × 계산 엔진 수량(QtyV3: 공급 평 · 벽지 평 · 품).
   받는 법은 단가 · 다른 줄에 포함(0원) · 빼기. 간이 · 면세 업체는 부가세 0(L02).
-  표준견적서에 없는 줄(퍼티 · 식대 · 운송비)은 비교 %에서 뺀다.
+  표준견적서 합계에 같은 일이 없는 줄은 비교 %에서 뺀다. 표준견적서 줄 키를 주면 그 집 기준대로
+  (ADR 0004: 리모델링 기준은 퍼티 · 식대 · 운송비도 합계에 있음), 안 주면 옛 고정값(퍼티 · 식대 · 운송비 뺌).
 """
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from decimal import Decimal
 from typing import Literal
@@ -61,6 +62,16 @@ V3_ROWS: tuple[PriceRowV3, ...] = (
     PriceRowV3("truck", "운송비", "대", "1208", "one", None, False),
 )
 V3_BY_KEY: dict[str, PriceRowV3] = {r.key: r for r in V3_ROWS}
+# v3 단가 줄 → 같은 일을 하는 표준견적서 줄 키. 부자재는 옛 판의 초배지와도 견준다(옛 판과 견주면 지금과 같은 값)
+V3_STD_KEYS: dict[str, tuple[str, ...]] = {
+    "putty": ("putty",),
+    "paper_hapji": ("paper",),
+    "paper_silk": ("paper",),
+    "material": ("material", "primer"),
+    "labor": ("wall", "ceiling"),
+    "meal": ("meal",),
+    "truck": ("truck",),
+}
 
 # 공정별로 업체 단가를 받는 표준 행. 키는 계산 엔진 줄 키와 같고, 도배지만 등급마다 따로 받는다
 PRICE_ROWS: dict[str, tuple[PriceRow, ...]] = {
@@ -213,6 +224,7 @@ class EstimateV3Line:
     unit_price: int | None
     included_in: str | None
     amount: int  # 포함 · 빼기 줄은 0
+    in_standard: bool = True  # 이 집 표준견적서 합계에 같은 일이 있는 줄(비교 %에 넣음)
 
 
 @dataclass(frozen=True)
@@ -247,19 +259,23 @@ def estimate_v3(
     grade: str,
     exempt: bool = False,
     standard_total: int | None = None,
+    standard_keys: Collection[str] | None = None,
 ) -> EstimateV3:
     """업체 v3 단가 × 계산 엔진 수량. 도배지는 고른 벽지 줄만, 단가가 없는 줄은 '빼기'로 본다.
-    exempt면(간이 · 면세, L02) 부가세 0. 비교 %는 표준견적서에 없는 줄을 빼고 센다."""
+    exempt면(간이 · 면세, L02) 부가세 0. 비교 %는 표준견적서 합계에 같은 일이 없는 줄을 빼고 센다.
+    standard_keys(표준견적서에서 합계에 드는 줄 키)를 주면 그 집 기준대로, 안 주면 줄의 옛 고정값으로 가른다."""
+    keys = frozenset(standard_keys) if standard_keys is not None else None
     out: list[EstimateV3Line] = []
     for row in V3_ROWS:
         if row.grade is not None and row.grade != grade:
             continue
         vp = prices.get(row.key) or PriceV3("excluded")
         n, amount = row_amount(row, vp, qty)
-        out.append(EstimateV3Line(row, n, vp.mode, vp.unit_price, vp.included_in, amount))
+        inside = row.in_standard if keys is None else bool(keys & set(V3_STD_KEYS[row.key]))
+        out.append(EstimateV3Line(row, n, vp.mode, vp.unit_price, vp.included_in, amount, inside))
     supply = sum(x.amount for x in out)
     money = Money(supply, 0, supply) if exempt else with_vat(supply)
-    same = sum(x.amount for x in out if x.row.in_standard)
+    same = sum(x.amount for x in out if x.in_standard)
     compare = same if exempt else with_vat(same).total
     pct = percent_vs(compare, standard_total) if standard_total else None
     paper_ok = all(x.mode != "excluded" for x in out if x.row.grade is not None)

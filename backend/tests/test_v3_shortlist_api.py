@@ -75,10 +75,11 @@ def fake_v3(monkeypatch, totals: dict[str, dict[str, int]], off: dict[str, str] 
             paper_ok=mode != "excluded",
         )
 
-    async def single(s, *, vendor_id, project, trade, grade=None):
+    # price_ver: 이 집 저장한 표준견적서 도배 판(ADR 0004). 가짜는 쓰지 않아요
+    async def single(s, *, vendor_id, project, trade, grade=None, price_ver=None):
         return one(vendor_id, project, grade)
 
-    async def many(s, *, vendor_ids, project, trade, grade=None):
+    async def many(s, *, vendor_ids, project, trade, grade=None, price_ver=None):
         got = {vid: one(vid, project, grade) for vid in vendor_ids}
         return {k: v for k, v in got.items() if v is not None}
 

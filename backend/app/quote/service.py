@@ -4,6 +4,8 @@
 저장본을 쓴다. 하나라도 바뀌면 새 버전을 쌓는다(예전 버전은 남는다). 숫자는 모두 계산 엔진이 만든다.
 v3(C07 · C60 · D01): 도배는 calc.dobae.standard_v3 — 도배지 줄만 벽지 평 × 시장 평균 가격(market_ver 고정),
 부분 공사는 공간 몫 표(share_ver 고정)로 벽 · 천장 면적을 줄인다. v2 공사는 전체 공사(벽 + 천장)로 본다.
+v4(ADR 0004): 도배 단가 판은 계산 엔진(calc.dobae.pick_profile)이 공사 조건(고른 목공 항목 · 모은 조건)으로
+고른 기준의 판이다. 모은 조건이 바뀌어 기준이 바뀌면 판(price_ver)이 달라져 새 버전을 쌓는다.
 """
 
 import uuid
@@ -47,7 +49,7 @@ from app.quote.schemas import (
     StandardTradeOut,
     VendorQuoteOut,
 )
-from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+from app.refprice.book import DOBAE_BY_VER, DOBAE_PROFILES, MOKGONG_2026H2
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.wallpaper_market import paper_market
 from app.shared.clock import SEOUL, now_utc
@@ -55,8 +57,6 @@ from app.shared.errors import AppError
 from app.shared.ids import uuid7
 from app.vendor import service as vendor_service
 
-# 공정별 단가 판. 도배는 v3 판(회귀식 · 방 개수, 2026H2-rooms), 목공은 2026H2
-PRICE_VER = {"dobae": DOBAE_V3_2026_11.version, "mokgong": MOKGONG_2026H2.version}
 ROOM = "방"  # 방문 개수: 목공을 고른 공간 중 이름에 '방'이 든 곳
 FULL_FACES = ("wall", "ceiling")
 VALID_SOON = "quote_valid_soon"  # 기한 일 kind (jobs.models.KINDS) · 알림 kind (notify.catalog)
@@ -83,6 +83,7 @@ class TradeCalc:
     share_ver: str | None = None
     market_ver: str | None = None
     days: Decimal | None = None  # 이 공정만 했을 때 예상 일수 (계산 엔진, 반나절 단위)
+    price_ver: str = MOKGONG_2026H2.version  # 이 공정 단가 판 (도배는 고른 기준의 판)
 
 
 def _area(p: ProjectOut) -> tuple[Decimal, str]:
@@ -103,18 +104,38 @@ def home_v3(p: ProjectOut, grade: str | None = None) -> dobae.HomeV3:
     )
 
 
-def standard_v3(h: dobae.HomeV3, crew: int | None = None) -> dobae.StandardV3:
-    """v3 도배 표준견적서 (계산 엔진 + refprice 판). 손님 계산 · 가견적도 같은 함수 꼴을 쓴다."""
-    dp = replace(DOBAE_V3_2026_11, crew=crew) if crew else DOBAE_V3_2026_11
-    return dobae.standard_v3(h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2)
+def work_facts(p: ProjectOut, said: Mapping[str, str] | None = None) -> dobae.WorkFacts:
+    """기준 고르기 입력: 공사에 고른 목공 항목 + 모은 조건(project.service.conditions)."""
+    items = tuple(p.trades.mokgong.items) if p.trades.mokgong else ()
+    return dobae.WorkFacts(items, dict(said or {}))
 
 
-def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[TradeCalc]:
+def standard_v3(
+    h: dobae.HomeV3, crew: int | None = None, pick: dobae.ProfilePick | None = None
+) -> dobae.StandardV3:
+    """v3 도배 표준견적서 (계산 엔진 + refprice 판). 손님 계산 · 가견적도 같은 함수 꼴을 쓴다.
+    pick(기준 고르기 결과)이 없으면 공사 조건이 없는 집으로 보고 계산 엔진이 고른 기준(도배만 하는 공사)."""
+    pick = pick or dobae.pick_profile(dobae.WorkFacts())
+    base = DOBAE_PROFILES[pick.profile]
+    dp = replace(base, crew=crew) if crew else base
+    return dobae.standard_v3(
+        h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2, pick.why
+    )
+
+
+def calc_trades(
+    p: ProjectOut,
+    crews: Mapping[str, int] | None = None,
+    said: Mapping[str, str] | None = None,
+) -> list[TradeCalc]:
     """이 집 정보로 고른 공정을 계산한다(목공 → 도배 순서). 공정표도 이 결과를 쓴다.
-    crews를 주면 그 공정의 하루 인원을 바꿔 기간을 센다(업체가 적은 인원)."""
+    crews를 주면 그 공정의 하루 인원을 바꿔 기간을 센다(업체가 적은 인원).
+    said(모은 조건)는 도배 기준 고르기에 쓴다. 품 · 기간은 기준과 상관없어 공정표는 비워도 같다."""
     crews = crews or {}
     mp = replace(MOKGONG_2026H2, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG_2026H2
-    dp = replace(DOBAE_V3_2026_11, crew=crews["dobae"]) if "dobae" in crews else DOBAE_V3_2026_11
+    pick = dobae.pick_profile(work_facts(p, said))
+    dp = DOBAE_PROFILES[pick.profile]
+    dp = replace(dp, crew=crews["dobae"]) if "dobae" in crews else dp
     area, basis = _area(p)
     out: list[TradeCalc] = []
     if p.trades.mokgong:
@@ -143,11 +164,12 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
                 m.steps,
                 notes,
                 days=m.days,
+                price_ver=mp.version,
             )
         )
     if p.trades.dobae:
         h = home_v3(p)
-        v = standard_v3(h, crews.get("dobae"))
+        v = standard_v3(h, crews.get("dobae"), pick)
         d = v.quote
         out.append(
             TradeCalc(
@@ -167,6 +189,7 @@ def calc_trades(p: ProjectOut, crews: Mapping[str, int] | None = None) -> list[T
                 share_ver=v.share_ver,
                 market_ver=v.market_ver,
                 days=d.days,
+                price_ver=dp.version,
             )
         )
     return out
@@ -190,16 +213,18 @@ def _fresh(row: StandardQuote, p: ProjectOut, c: TradeCalc) -> bool:
     return (
         row.project_rev == p.rev
         and row.formula_ver == FORMULA_VERSION
-        and row.price_ver == PRICE_VER.get(c.trade)
+        and row.price_ver == c.price_ver
         and row.market_ver == c.market_ver
         and row.share_ver == c.share_ver
     )
 
 
 async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQuote]:
-    """이 집의 최신 표준견적서(공정별). 없거나 바뀌었으면 새 버전을 저장하고 commit한다."""
+    """이 집의 최신 표준견적서(공정별). 없거나 바뀌었으면 새 버전을 저장하고 commit한다.
+    도배 기준은 모은 조건까지 읽어 고른다(조건이 바뀌어 기준 판이 바뀌면 새 버전)."""
     latest = await _latest(s, p.id)
-    wanted = {t.trade: t for t in calc_trades(p)}
+    said = await project_service.conditions(s, p.id)
+    wanted = {t.trade: t for t in calc_trades(p, said=said)}
     stale = [t for t in wanted if t not in latest or not _fresh(latest[t], p, wanted[t])]
     if not stale:
         return {t: latest[t] for t in wanted}
@@ -214,7 +239,7 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
                 version=(latest[trade].version + 1) if trade in latest else 1,
                 project_rev=p.rev,
                 formula_ver=FORMULA_VERSION,
-                price_ver=PRICE_VER[trade],
+                price_ver=c.price_ver,
                 grade=c.grade,
                 area_m2=area,
                 area_basis=basis,
@@ -307,6 +332,13 @@ async def standard_trade(
     return row, (await _lines(s, [row.id]))[row.id]
 
 
+def profile_out(row: StandardQuote) -> dict[str, str | None]:
+    """저장한 표준견적서의 도배 기준(판에 든 것, ADR 0004). 목공 · 옛 판(2026H2-rooms)은 비운다."""
+    dp = DOBAE_BY_VER.get(row.price_ver) if row.trade == "dobae" else None
+    pf = dp.profile if dp is not None else None
+    return {"profile": pf.key if pf else None, "profile_name": pf.name if pf else None}
+
+
 async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> StandardOut:
     """GET /projects/{id}/standard: 만든 사람 · 관리자만(남의 것은 404)."""
     p = await project_service.get_for(s, user, project_id)
@@ -338,6 +370,7 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
             man_day=rows[t].man_day,
             crew=rows[t].crew,
             notes=list(rows[t].notes),
+            **profile_out(rows[t]),
         )
         for t in order
     ]

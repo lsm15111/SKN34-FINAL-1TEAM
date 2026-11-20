@@ -16,6 +16,8 @@ export type StdLineIn = {
 };
 
 const STATES: LineState[] = ["included", "bundled", "separate", "optional", "after_visit", "excluded"];
+// 두 기준 줄(ADR 0004)은 이름 끝 괄호가 줄 아래 짧은 뜻이에요: '부자재 (풀 · 부직포 · 네바리 · 실리콘 등)' · '벽 도배 시공 (인건비)'
+const NOTE_KEYS = new Set(["wall", "ceiling", "material", "putty", "meal", "truck"]);
 
 /** 단위 글: 두 낱말 단위('벽지 평' = 도배지 3.3058㎡)는 수량과 띄워요('63 벽지 평'). ㎡ · 평 · 품은 붙여요 */
 export const unitText = (unit: string | null | undefined): string => (unit && unit.includes(" ") ? ` ${unit}` : unit ?? "");
@@ -29,6 +31,8 @@ function nameOf(l: StdLineIn): { name: string; note?: string } {
   // v3 API 줄 이름 '실크벽지 시장 평균 가격' → 이름 '실크벽지' + 설명 '시장 평균 가격'(9판 C07)
   const market = /^(\S+벽지) 시장 평균 가격$/.exec(l.name);
   if (market) return { name: market[1], note: "시장 평균 가격" };
+  const tail = NOTE_KEYS.has(l.key) ? /^(.+?)\s*\(([^()]+)\)$/.exec(l.name) : null;
+  if (tail) return { name: tail[1], note: tail[2] };
   if (l.key === "wall" || l.key === "ceiling") return { name: l.name, note: "풀 포함" };
   return { name: l.name };
 }

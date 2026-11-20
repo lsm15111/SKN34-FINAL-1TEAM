@@ -4428,7 +4428,7 @@ export interface components {
             included_in: string | null;
             /**
              * In Standard
-             * @description 표준견적서에 같은 일이 있는 줄. False(퍼티 · 식대 · 운송비)는 비교 %에서 빼고 '표준견적서에 없는 줄'로 따로 보여요
+             * @description 이 집 표준견적서 합계에 같은 일이 있는 줄. False는 비교 %에서 빼고 '표준견적서에 없는 줄'로 따로 보여요(도배만 하는 공사 기준이면 퍼티 · 식대 · 운송비, 리모델링 기준이면 모두 True)
              * @default true
              */
             in_standard: boolean;
@@ -4860,6 +4860,16 @@ export interface components {
              * @description 계산에 쓴 가정 (화면 '이렇게 셌어요')
              */
             assumptions: string[];
+            /**
+             * Profile
+             * @description 도배 금액 기준(계산 엔진이 고름). 손님은 도배만 넣어 paper_only(도배만 하는 공사)
+             */
+            profile?: ("paper_only" | "remodel") | null;
+            /**
+             * Profile Name
+             * @description 기준 화면 이름
+             */
+            profile_name?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -8219,6 +8229,16 @@ export interface components {
             crew: number;
             /** Notes */
             notes: string[];
+            /**
+             * Profile
+             * @description 도배 금액 기준(계산 엔진이 공사 조건으로 고름): paper_only 도배만 하는 공사 · remodel 리모델링. 목공 · 옛 판은 비움
+             */
+            profile?: ("paper_only" | "remodel") | null;
+            /**
+             * Profile Name
+             * @description 기준 화면 이름: 도배만 하는 공사 기준 · 리모델링 기준
+             */
+            profile_name?: string | null;
         };
         /** StartOptionOut */
         StartOptionOut: {
