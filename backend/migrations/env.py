@@ -20,6 +20,7 @@ import app.report.models
 import app.review.models
 import app.schedule.models
 import app.thread.models
+import app.usage.models
 import app.v2.models
 import app.vendor.models
 import app.visit.models  # noqa: F401

@@ -98,7 +98,8 @@ DATE = r"^\d{4}-\d{2}-\d{2}$"
 
 
 def health() -> v2.V2AskHealthOut:
-    return v2.V2AskHealthOut(ok=True, live=settings.llm_live)
+    # live: LLM_LIVE=true이고 고른 공급자(LLM_PROVIDER)의 키가 있을 때만
+    return v2.V2AskHealthOut(ok=True, live=llm.available())
 
 
 # ---- 지시문에 넣는 데이터 ----
