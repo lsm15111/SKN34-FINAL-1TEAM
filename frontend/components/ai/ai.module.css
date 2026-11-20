@@ -73,3 +73,13 @@
 .condX { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-mute); cursor: pointer; }
 .condX:hover { background: var(--surface-2); color: var(--ink); }
 .condX:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+/* 공사 없는 화면의 '○○ 기준' 칩과 고르기 메뉴(입력 칸 위라 메뉴는 위로 열려요) */
+.scopeWrap { position: relative; display: flex; }
+.scope { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 32px; padding: 0 8px 0 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
+.scope:hover { border-color: var(--line-strong); }
+.scope:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.scopeMenu { position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 5; display: flex; flex-direction: column; min-width: 220px; max-width: 100%; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.scopeMenu button { min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.scopeMenu button:hover { background: var(--surface-2); }
+.scopeMenu button[aria-checked="true"] { font-weight: 700; }
+.scopeMenu button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }

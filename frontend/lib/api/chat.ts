@@ -2,7 +2,8 @@
 // part: LLM 모드에서 먼저 보이는 고정 몫(계산 결과 · 정해 둔 글). done 답의 앞 묶음이 part와 같아서 화면은 이어 붙이기만 해요.
 // 타입은 백엔드 app/chat/schemas.py와 같은 모양이에요. main.py ROUTERS에 AI router가 들어가고 `pnpm gen:api`를
 // 다시 돌리면 schema.d.ts의 AiTurnOut 등으로 바꿔요(b5.md '다른 묶음에 부탁').
-import { ApiError, call } from "@/lib/backend/client";
+import { ApiError, call, type Schemas } from "@/lib/backend/client";
+import { projectName } from "@/lib/guest/info";
 
 export type AiRoute = "guide" | "trade" | "quote_explanation" | "schedule" | "multi" | "out_of_scope" | "ask_back";
 export type AiScreen =
@@ -93,6 +94,12 @@ export const getLatestAiThread = (projectId?: string) =>
   call<AiThreadDetail | null>("GET", projectId ? `/ai/threads/latest?project_id=${encodeURIComponent(projectId)}` : "/ai/threads/latest");
 export const getAiConditions = (projectId: string) =>
   call<AiCondition[]>("GET", `/projects/${encodeURIComponent(projectId)}/conditions`);
+/** 공사 없는 화면의 '공사 기준' 칩: 진행 중인 내 공사(끝난 공사는 빼요) */
+export type AiProjectPick = { id: string; name: string };
+export async function getAiProjects(): Promise<AiProjectPick[]> {
+  const list = await call<Schemas["MyProjectOut"][]>("GET", "/projects");
+  return list.filter((p) => p.phase !== "done").map((p) => ({ id: p.id, name: projectName(p.emd, p.region, p.trades) }));
+}
 /** 지우면 남은 목록이 와요. 지운 칸은 AI가 다시 물어요 */
 export const deleteAiCondition = (projectId: string, key: string) =>
   call<AiCondition[]>("DELETE", `/projects/${encodeURIComponent(projectId)}/conditions/${encodeURIComponent(key)}`);

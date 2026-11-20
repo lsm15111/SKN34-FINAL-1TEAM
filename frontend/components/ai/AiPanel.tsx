@@ -5,6 +5,8 @@
 // - 화면을 옮겨 새로 열려도 같은 공사(없으면 공사 밖)의 24시간 안 마지막 대화를 이어 가요(맥락 L2). 지난 턴은 저장된 글로만 보여요.
 //   '새 대화'를 누르면 비워요. 접은 대화는 이 기기에서 다시 잇지 않고, 다음 질문부터 새 대화방이에요.
 // - 공사 화면은 되묻기에 답한 칸을 '기억한 조건' 칩으로 보여요(맥락 L3). X로 지우면 AI가 그 칸을 다시 물어요.
+// - 공사가 없는 화면(자주 묻는 질문 등)은 진행 중인 내 공사를 '○○ 기준' 칩으로 보여요. 하나면 그 공사로 묻고,
+//   둘 이상이면 고르게 해요. 칩을 눌러 다른 공사로 바꾸거나 '공사 빼고 묻기'로 끌 수 있어요(고른 공사 id만 보내요).
 // - 질문 + 답을 한 턴으로 그려요. 보내면 새 질문이 대화 목록 맨 위로 올라가고 답은 그 아래로 자라요(긴 답도 첫 줄부터 읽게).
 //   마지막 턴은 목록 높이만큼 자리를 잡아 짧은 답이어도 질문이 위로 올라가요. 답이 오는 동안 · 온 뒤에는 스크롤을 건드리지 않아요.
 //   위로 올려 읽다가 마지막 질문이 목록 아래로 숨으면 '최신 대화로' 단추가 떠요.
@@ -17,8 +19,9 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { errorText } from "@/lib/backend/client";
 import {
-  askAi, deleteAiCondition, getAiConditions, getLatestAiThread, newClientKey,
-  type AiAnswer as AiAnswerT, type AiButton, type AiCondition, type AiScreen, type AiThreadDetail, type AiTurnOut,
+  askAi, deleteAiCondition, getAiConditions, getAiProjects, getLatestAiThread, newClientKey,
+  type AiAnswer as AiAnswerT, type AiButton, type AiCondition, type AiProjectPick, type AiScreen, type AiThreadDetail,
+  type AiTurnOut,
 } from "@/lib/api/chat";
 import { AiAnswer } from "./AiAnswer";
 import s from "./ai.module.css";
@@ -152,23 +155,57 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
   const lastRef = useRef<HTMLDivElement>(null);
   const autoUntil = useRef(0);
   const instant = useRef(false); // 이어 온 대화는 부드럽게 굴리지 않고 바로 마지막 턴으로 가요
+  const [mine, setMine] = useState<AiProjectPick[] | null>(null); // 공사 없는 화면: 진행 중인 내 공사(받기 전 null)
+  const [picked, setPicked] = useState<string | null | undefined>(undefined); // undefined: 안 고름 · null: 공사 빼고
+  const [menu, setMenu] = useState(false);
+  const scopeRef = useRef<HTMLDivElement>(null);
+  const auto = mine?.length === 1 ? mine[0].id : undefined;
+  /** 이 대화가 기준으로 삼는 공사: 공사 화면이면 그 공사, 아니면 칩에서 고른(하나뿐이면 그) 공사 */
+  const pid = projectId ?? (picked === undefined ? auto : picked ?? undefined);
+  const scopeReady = !!projectId || mine !== null;
   useEffect(() => {
     if (!seenNotice()) setNotice(true);
   }, []);
 
+  // 공사 없는 화면이면 진행 중인 내 공사를 받아 칩을 만들어요(못 받으면 칩 없이 공사 밖 대화)
+  useEffect(() => {
+    if (projectId) return;
+    let off = false;
+    getAiProjects()
+      .then((ps) => { if (!off) setMine(ps); })
+      .catch(() => { if (!off) setMine([]); });
+    return () => {
+      off = true;
+    };
+  }, [projectId]);
+
+  // 칩 메뉴는 바깥을 누르거나 Esc로 닫아요
+  useEffect(() => {
+    if (!menu) return;
+    const out = (e: PointerEvent) => { if (!scopeRef.current?.contains(e.target as Node)) setMenu(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setMenu(false); };
+    document.addEventListener("pointerdown", out);
+    document.addEventListener("keydown", esc);
+    return () => {
+      document.removeEventListener("pointerdown", out);
+      document.removeEventListener("keydown", esc);
+    };
+  }, [menu]);
+
   // 이어 볼 대화 · 기억한 조건을 받아요. 받기 전에 이미 물었거나 '새 대화'를 눌렀으면(seq가 바뀜) 대화는 덮지 않아요
   useEffect(() => {
+    if (!scopeReady) return;
     let off = false;
     const at = seq.current;
     setReady(false);
     void Promise.all([
-      getLatestAiThread(projectId).catch(() => null),
-      projectId ? getAiConditions(projectId).catch(() => null) : Promise.resolve([] as AiCondition[]),
+      getLatestAiThread(pid).catch(() => null),
+      pid ? getAiConditions(pid).catch(() => null) : Promise.resolve([] as AiCondition[]),
     ]).then(([d, cs]) => {
       if (off) return;
       if (cs) setConds(cs);
       if (seq.current === at) {
-        const past = d && d.chat_id !== closedChat(projectId) ? pastTurns(d) : [];
+        const past = d && d.chat_id !== closedChat(pid) ? pastTurns(d) : [];
         instant.current = past.length > 0;
         setChatId(past.length && d ? d.chat_id : null);
         setTurns(past);
@@ -178,7 +215,7 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
     return () => {
       off = true;
     };
-  }, [projectId]);
+  }, [pid, scopeReady]);
 
   function closeNotice() {
     setNotice(false);
@@ -249,10 +286,10 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
     try {
       const out = await askAi({
         client_key: newClientKey(), text: t, chat_id: chatId,
-        context: { screen, project_id: projectId ?? null, ids: ids?.slice(0, 5) ?? [] }, button: button ?? null,
+        context: { screen, project_id: pid ?? null, ids: ids?.slice(0, 5) ?? [] }, button: button ?? null,
       }, { onPart: (part) => put({ part }) });
       if (out.chat_id) setChatId(out.chat_id);
-      if (projectId && out.conditions) setConds(out.conditions);
+      if (pid && out.conditions) setConds(out.conditions);
       put({ out });
     } catch (e) {
       setError(errorText(e));
@@ -264,7 +301,7 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
   /** '새 대화': 지금 대화를 접고 비워요. 다음 질문부터 새 대화방이라 이어 묻기 맥락도 새로 시작해요 */
   function fresh() {
     if (busy) return;
-    if (chatId) closeChat(projectId, chatId);
+    if (chatId) closeChat(pid, chatId);
     seq.current += 1; // 아직 오는 이어 보기 결과가 비운 대화를 다시 채우지 않게
     setChatId(null);
     setTurns([]);
@@ -272,11 +309,22 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
     setAway(false);
   }
 
+  /** 칩에서 기준 공사를 바꿔요(null: 공사 빼고). 그 공사의 이어 볼 대화를 새로 받아요 */
+  function choose(id: string | null) {
+    setMenu(false);
+    if (busy || id === (pid ?? null)) return;
+    setPicked(id);
+    setChatId(null);
+    setTurns([]);
+    setConds([]);
+    setError("");
+  }
+
   async function dropCond(key: string) {
-    if (!projectId) return;
+    if (!pid) return;
     setError("");
     try {
-      setConds(await deleteAiCondition(projectId, key));
+      setConds(await deleteAiCondition(pid, key));
     } catch (e) {
       setError(errorText(e));
     }
@@ -288,8 +336,26 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
       <Icon name="plus" size={16} />새 대화
     </Button>
   ) : null;
+  const pidName = mine?.find((p) => p.id === pid)?.name;
+  const scope = !projectId && mine?.length ? (
+    <div ref={scopeRef} className={s.scopeWrap}>
+      <button type="button" className={s.scope} aria-expanded={menu} aria-haspopup="menu" onClick={() => setMenu((v) => !v)}>
+        <span className={s.condText}>{pidName ? `${pidName} 기준` : picked === null ? "공사 빼고 묻는 중" : "어느 공사 기준으로 볼까요?"}</span>
+        <Icon name="chevron-down" size={16} />
+      </button>
+      {menu ? (
+        <div className={s.scopeMenu} role="menu" aria-label="기준 공사">
+          {mine.map((p) => (
+            <button key={p.id} type="button" role="menuitemradio" aria-checked={p.id === pid} onClick={() => choose(p.id)}>{p.name}</button>
+          ))}
+          <button type="button" role="menuitemradio" aria-checked={!pid} onClick={() => choose(null)}>공사 빼고 묻기</button>
+        </div>
+      ) : null}
+    </div>
+  ) : null;
   const foot = (
     <>
+      {scope}
       {conds.length ? (
         <div className={s.conds} role="group" aria-label="기억한 조건">
           <span className={s.condsHead} aria-hidden="true">기억한 조건</span>
@@ -337,11 +403,11 @@ export function AiPanel({ screen, projectId, ids, embed = false }: {
             <div key={t.id} ref={last ? lastRef : undefined} className={last && !embed ? `${s.turn} ${s.turnLast}` : s.turn}>
               <p className={s.user}>{t.q}</p>
               {t.out ? (
-                <AiAnswer key="a" answer={t.out.answer} projectId={projectId} onPick={(q, b) => void send(q, b)} />
+                <AiAnswer key="a" answer={t.out.answer} projectId={pid} onPick={(q, b) => void send(q, b)} />
               ) : t.old !== undefined ? (
                 t.old ? <OldAnswer text={t.old} /> : null
               ) : t.part && (waiting || t.part.sections.length) ? (
-                <AiAnswer key="a" answer={t.part} projectId={projectId} pending={waiting} />
+                <AiAnswer key="a" answer={t.part} projectId={pid} pending={waiting} />
               ) : waiting ? (
                 <p className={s.working} role="status">
                   <span className="mj-sr">답을 기다리는 중이에요</span>
