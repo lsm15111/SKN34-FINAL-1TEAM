@@ -8,10 +8,13 @@
   부분 공사는 고른 공간 몫으로 벽 · 천장 면적을 줄인다. 가견적 v3 수량(QtyV3)도 같이 만든다.
 - 단가 판에 회귀 계수(area_per_supply · area_per_room)가 있으면 집 전체 도배 면적을
   '공급㎡ × 계수 + 방 개수 × ㎡'로 센다(whole-house-area.md 방안 4). 없으면 옛 '면적 × area_factor'.
+- v4 조건별 두 기준(ADR docs/v4/adr/0004): pick_profile()이 공사 조건으로 '도배만 하는 공사'(시장 가운데) ·
+  '리모델링'(서울 업체 실견적 보정)을 고른다. 단가 판에 profile이 있으면 초배지 줄 대신 부자재 줄을 두고
+  퍼티 · 식대 · 운송비 줄을 더한다. profile이 없는 옛 판은 옛 줄 그대로다.
 """
 
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
 from decimal import ROUND_CEILING, Decimal
 from typing import Literal, Protocol
 
@@ -20,7 +23,9 @@ from app.calc.common import (
     COUNTED,
     PYEONG_M2,
     AreaBasis,
+    Basis,
     Line,
+    LineState,
     Step,
     half_days,
     half_up,
@@ -41,6 +46,48 @@ GRADE_PAPER = {"economy": "합지", "basic": "실크"}
 Face = Literal["wall", "ceiling"]
 FACES: tuple[Face, ...] = ("wall", "ceiling")
 Scope = Literal["full", "partial"]
+# 조건별 두 기준(ADR 0004): 도배만 하는 공사 · 전체 철거나 큰 목공이 든 리모델링
+Profile = Literal["paper_only", "remodel"]
+
+
+@dataclass(frozen=True)
+class ProfilePrices:
+    """두 기준 중 하나의 줄 값 · 상태. refprice가 판마다 만들어 DobaePrices.profile에 넣는다."""
+
+    key: Profile
+    name: str  # 화면 이름: 도배만 하는 공사 기준 · 리모델링 기준
+    source: str  # 근거 이름: 시장 실견적 가운데(8출처 619건, 2026-11) …
+    labor_basis: Basis  # 벽 · 천장 시공 줄 근거 (공공 단가 그대로면 public)
+    labor_mult: Mapping[str, Decimal]  # 도배 유형별 시공 ㎡ 단가 배수 (합지 0.55 = 시장 품 비)
+    paper_ratio: Mapping[str, Decimal]  # 도배 유형별 정배지 소요량 (도배 면적 × 이 값 = 벽지 ㎡)
+    material_py: Mapping[str, int]  # 부자재 원/공급 평 (초배지 줄 대신)
+    putty_py: int  # 퍼티 원/공급 평
+    putty_state: LineState
+    meal_md: int | None  # 식대 원/품. None이면 줄 없음(일당에 식대가 든 시장 관행)
+    truck: int  # 운송비 · 경비 원/한 번
+    truck_state: LineState
+    sources: Mapping[str, str]  # material · putty · meal · truck · labor_mult → 출처
+
+
+# 두 기준 표준견적서 줄 이름 · 단위. 이름 끝 괄호는 고객 화면 줄 아래 짧은 뜻이에요
+# (지금 '벽 도배 시공 (풀 포함)'과 같은 꼴, 화면이 괄호를 떼어 보여요). 키는 가견적 v3 줄(estimate.V3_ROWS)과 같다
+PROFILE_LINES: dict[Profile, dict[str, tuple[str, str]]] = {
+    "paper_only": {
+        "wall": ("벽 도배 시공 (풀 포함)", "㎡"),
+        "ceiling": ("천장 도배 시공 (풀 포함)", "㎡"),
+        "material": ("부자재 (풀 · 부직포 · 네바리 · 실리콘 등)", "공급 평"),
+        "putty": ("퍼티작업 (사전퍼티 · 밑작업)", "공급 평"),
+        "truck": ("운송 · 경비 (자재 운반 · 주차 등)", "식"),
+    },
+    "remodel": {
+        "wall": ("벽 도배 시공 (인건비)", "㎡"),
+        "ceiling": ("천장 도배 시공 (인건비)", "㎡"),
+        "material": ("부자재 (풀 · 부직포 · 네바리 · 실리콘 등)", "공급 평"),
+        "putty": ("퍼티작업 (사전퍼티 · 밑작업)", "공급 평"),
+        "meal": ("식대 (1명 하루 밥값)", "품"),
+        "truck": ("운송비 (자재 운반 차)", "대"),
+    },
+}
 
 
 @dataclass(frozen=True)
@@ -74,6 +121,8 @@ class DobaePrices:
     # 방 개수 기본값: (공급 평 이상, 방 개수)를 작은 평부터. 고객이 방 개수를 안 넣었을 때 쓴다
     room_bands: tuple[tuple[Decimal, int], ...] = ()
     room_fallback: int = 3  # 면적을 모를 때 화면에 먼저 보이는 방 개수
+    # v4 조건별 두 기준(ADR 0004). 비우면 옛 v3 줄(초배지 · 퍼티 · 식대 · 운송비 없음)
+    profile: ProfilePrices | None = None
 
 
 def num(x: Decimal) -> str:
@@ -308,6 +357,8 @@ class DobaeV3Input:
     share: Decimal | None = None  # 부분 공사: 고른 공간 몫 합(0~1). 비우면 전체
     balcony_ext: bool = False
     rooms: int | None = None  # 방 개수 (회귀식 단가 판에서 꼭 필요)
+    # 부자재 · 퍼티 수량(공급 평, 부분 공사면 공간 몫을 곱한 값). 두 기준(profile) 판에서 꼭 필요
+    floor_py: Decimal | None = None
 
 
 def paper_py(paper_m2: Decimal) -> Decimal:
@@ -339,11 +390,77 @@ def _paper_source(paper: PaperPrice) -> str:
     return f"벽지 시장 평균 가격 · {paper.name} 근거 {paper.n}줄 ({paper.version})"
 
 
+def _profile_lines(
+    pf: ProfilePrices, grade: Grade, floor_py: Decimal, man_days: Decimal
+) -> list[Line]:
+    """두 기준 판의 부자재 · 퍼티 · 식대 · 운송비(경비) 줄. 금액은 줄마다 won() 한 번."""
+    names, src = PROFILE_LINES[pf.key], pf.sources
+    material = pf.material_py[grade]
+    out = [
+        Line(
+            "material",
+            names["material"][0],
+            floor_py,
+            names["material"][1],
+            material,
+            won(floor_py * material),
+            "included",
+            src["material"],
+            "market",
+        ),
+        Line(
+            "putty",
+            names["putty"][0],
+            floor_py,
+            names["putty"][1],
+            pf.putty_py,
+            won(floor_py * pf.putty_py),
+            pf.putty_state,
+            src["putty"],
+            "market",
+        ),
+    ]
+    if pf.meal_md is not None:
+        out.append(
+            Line(
+                "meal",
+                names["meal"][0],
+                man_days,
+                names["meal"][1],
+                pf.meal_md,
+                won(man_days * pf.meal_md),
+                "included",
+                src["meal"],
+                "market",
+            )
+        )
+    one = Decimal("1.0")
+    out.append(
+        Line(
+            "truck",
+            names["truck"][0],
+            one,
+            names["truck"][1],
+            pf.truck,
+            won(one * pf.truck),
+            pf.truck_state,
+            src["truck"],
+            "market",
+        )
+    )
+    return out
+
+
 def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote:
     """v3 표준견적서. 도배지 줄 = 벽지 평(도배 면적 × 소요량 ÷ 3.3058) × 시장 평균 가격(basis market).
-    부분 공사면 벽 · 천장 면적에 공간 몫을 곱하고, 고르지 않은 면은 '안 함'(수량 · 금액 없음)."""
+    부분 공사면 벽 · 천장 면적에 공간 몫을 곱하고, 고르지 않은 면은 '안 함'(수량 · 금액 없음).
+    두 기준 판(p.profile)이면 시공 ㎡ 단가에 도배 유형 배수(합지 0.55)를 곱해 원 단위로 끊고, 소요량은
+    도배 유형별 값을 쓰고, 초배지 줄 대신 부자재 · 퍼티 · 식대 · 운송비 줄을 둔다(합계는 포함 상태대로)."""
     if inp.area_m2 <= 0:
         raise ValueError("면적은 0보다 커야 해요")
+    pf = p.profile
+    if pf is not None and (inp.floor_py is None or inp.floor_py <= 0):
+        raise ValueError("부자재 · 퍼티 수량(공급 평)이 있어야 해요")
     if not inp.faces or not set(inp.faces) <= set(FACES):
         raise ValueError("벽 · 천장 중 하나 이상 골라야 해요")
     if inp.share is not None and not Decimal(0) < inp.share <= 1:
@@ -369,30 +486,48 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
     paper_area = wall_used + ceil_used
     src = p.sources
 
-    wall_amt = won(wall_used * p.labor_wall)
-    ceil_amt = won(ceil_used * p.labor_ceiling)
-    paper_qty = paper_py(m2(paper_area * p.paper_ratio))
-    primer_qty = m2(wall_used * p.primer_wall_ratio + ceil_used * p.primer_ceiling_ratio)
+    # 품 · 기간 (두 기준 판의 식대 줄이 품을 쓴다). 품은 도배 유형 · 기준과 상관없이 표준품셈 그대로
+    md = wall_used * p.md_wall + ceil_used * p.md_ceiling
+    if inp.occupied:
+        md = md / p.occupied_output
+    man_days = m2(half_up(md))  # 0.5 단위 값을 소수 한 자리 꼴로 (5 → 5.0, 값은 그대로)
+
+    mult = pf.labor_mult[inp.grade] if pf else Decimal(1)
+    labor_wall, labor_ceiling = won(p.labor_wall * mult), won(p.labor_ceiling * mult)
+    ratio = pf.paper_ratio[inp.grade] if pf else p.paper_ratio
+    names = PROFILE_LINES[pf.key] if pf else {}
+    labor_basis: Basis = "public" if pf is None else pf.labor_basis if mult == 1 else "market"
+
+    def labor_src(key: str) -> str:
+        if pf is None or mult == 1:
+            return src[key]
+        return f"{src[key]} × {num(mult)} ({pf.sources['labor_mult']})"
+
+    wall_amt = won(wall_used * labor_wall)
+    ceil_amt = won(ceil_used * labor_ceiling)
+    paper_qty = paper_py(m2(paper_area * ratio))
     lines = [
         Line(
             "wall",
-            "벽 도배 시공 (풀 포함)",
+            names.get("wall", ("벽 도배 시공 (풀 포함)",))[0],
             wall if do_wall else None,
             "㎡",
-            p.labor_wall,
+            labor_wall,
             wall_amt if do_wall else None,
             "included" if do_wall else "excluded",
-            src["wall"],
+            labor_src("wall"),
+            labor_basis,
         ),
         Line(
             "ceiling",
-            "천장 도배 시공 (풀 포함)",
+            names.get("ceiling", ("천장 도배 시공 (풀 포함)",))[0],
             ceiling if do_ceil else None,
             "㎡",
-            p.labor_ceiling,
+            labor_ceiling,
             ceil_amt if do_ceil else None,
             "included" if do_ceil else "excluded",
-            src["ceiling"],
+            labor_src("ceiling"),
+            labor_basis,
         ),
         Line(
             "paper",
@@ -405,17 +540,23 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
             _paper_source(paper),
             "market",
         ),
-        Line(
-            "primer",
-            "초배지",
-            primer_qty,
-            "㎡",
-            p.primer,
-            won(primer_qty * p.primer),
-            "included",
-            src["primer"],
-        ),
     ]
+    if pf is None:
+        primer_qty = m2(wall_used * p.primer_wall_ratio + ceil_used * p.primer_ceiling_ratio)
+        lines.append(
+            Line(
+                "primer",
+                "초배지",
+                primer_qty,
+                "㎡",
+                p.primer,
+                won(primer_qty * p.primer),
+                "included",
+                src["primer"],
+            )
+        )
+    else:
+        lines += _profile_lines(pf, inp.grade, inp.floor_py, man_days)
     if inp.occupied:
         extra = won(Decimal(wall_amt + ceil_amt) * p.labor_ratio * (1 / p.occupied_output - 1))
         lines.append(
@@ -463,10 +604,6 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
     subtotal = sum(ln.amount for ln in lines if ln.state in COUNTED and ln.amount is not None)
     vat = won(Decimal(subtotal) * p.vat_rate)
 
-    md = wall_used * p.md_wall + ceil_used * p.md_ceiling
-    if inp.occupied:
-        md = md / p.occupied_output
-    man_days = m2(half_up(md))  # 0.5 단위 값을 소수 한 자리 꼴로 (5 → 5.0, 값은 그대로)
     work = half_days(man_days, p.crew)
     steps = [Step("prep", "짐 정리 · 보양", 1)] if inp.occupied else []
     face_name = " · ".join({"wall": "벽", "ceiling": "천장"}[f] for f in FACES if f in inp.faces)
@@ -487,12 +624,22 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
         )
     else:
         area_note = f"도배 면적은 {BASIS_LABEL[inp.area_basis]} × {p.area_factor[inp.area_basis]}로 추정했어요. 실측 때 방마다 다시 재요."
+    paper_note = (
+        f"도배지는 {paper.name} 시장 평균 가격으로 셌어요(벽지 1평 = 3.3058㎡)."
+        if pf is None
+        else f"도배지는 {paper.name} 시장 평균 가격으로, 소요량은 도배 면적의 "
+        f"{num(ratio)}배로 셌어요(벽지 1평 = 3.3058㎡)."
+    )
     assumptions = [
         area_note,
         f"천장은 도배 면적의 {int(p.ceiling_share * 100)}%로 잡았어요.",
-        f"도배지는 {paper.name} 시장 평균 가격으로 셌어요(벽지 1평 = 3.3058㎡).",
+        paper_note,
         f"하루 도배공 {p.crew}명이 들어가는 것으로 기간을 잡았어요.",
     ]
+    if pf is not None and mult != 1:
+        assumptions.append(
+            f"{paper.name}는 실크보다 빨리 붙여 시공비를 {num(mult)}배로 셌어요(시장 품 비)."
+        )
     if inp.share is not None:  # 글: copy-fixes CF-45
         assumptions.insert(
             0, "부분 공사는 고른 공간의 넓이를 어림해 계산했어요. 실측 뒤 업체 견적서로 확정해요."
@@ -563,9 +710,13 @@ def standard_v3(
     paper: PaperPrice,
     shares: SpaceShares | RoomSpaceShares,
     house: HouseRules,
+    why: Sequence[str] = (),
 ) -> StandardV3:
     """기본 정보 → v3 표준견적서 + 가견적 수량. 표준견적서 저장 · 손님 계산 · 가견적이 같은 값을 쓴다.
-    부분 공사 몫은 방 개수에 맞는 표로 센다(방 개수에 없는 방 칩이면 ValueError)."""
+    부분 공사 몫은 방 개수에 맞는 표로 센다(방 개수에 없는 방 칩이면 ValueError).
+    두 기준 판이면 고른 기준과 근거(why, pick_profile 결과)를 가정 첫 줄에 적는다."""
+    if h.area_m2 <= 0:
+        raise ValueError("면적은 0보다 커야 해요")
     by_rooms = p.area_per_supply is not None
     rooms = rooms_of(h, p) if by_rooms else None
     share = None
@@ -575,19 +726,82 @@ def standard_v3(
         if unknown and isinstance(shares, RoomSpaceShares):
             raise ValueError("방 개수보다 많은 방을 골랐어요")
         share = share_of(h.spaces, table)
+    py = house_pyeong(None, h.area_m2, h.area_basis, house)
+    floor = py if share is None else m2(py * share)  # 부자재 · 퍼티 · 가견적 '공급 평' 수량
     q = quote_v3(
         DobaeV3Input(
-            h.area_m2, h.area_basis, h.grade, h.occupied, h.faces, share, h.balcony_ext, rooms
+            h.area_m2,
+            h.area_basis,
+            h.grade,
+            h.occupied,
+            h.faces,
+            share,
+            h.balcony_ext,
+            rooms,
+            floor if p.profile is not None else None,
         ),
         p,
         paper,
     )
-    py = house_pyeong(None, h.area_m2, h.area_basis, house)
+    if p.profile is not None:
+        q = replace(q, assumptions=[profile_note(p.profile, q.lines, why), *q.assumptions])
     paper_line = next(ln for ln in q.lines if ln.key == "paper")
-    qty = QtyV3(
-        floor_py=py if share is None else m2(py * share),
-        paper_py=paper_line.qty or Decimal(0),
-        man_day=q.man_days,
-    )
+    qty = QtyV3(floor_py=floor, paper_py=paper_line.qty or Decimal(0), man_day=q.man_days)
     share_ver = shares.version if share is not None else None
     return StandardV3(q, py, share, share_ver, paper.version, qty, rooms)
+
+
+# ---- v4 조건별 두 기준 고르기 (ADR docs/v4/adr/0004-금액-조건별-두-기준.md) ----
+
+
+@dataclass(frozen=True)
+class WorkFacts:
+    """기준 고르기에 쓰는 공사 조건. 서비스가 공사(고른 목공 항목)와 모은 조건(project_conditions)으로 만든다."""
+
+    mok_items: tuple[str, ...] = ()  # 고른 목공 항목 (molding · base · door · flatten)
+    said: Mapping[str, str] = field(default_factory=dict)  # 모은 조건 {칸: 고객이 고른 단추 글}
+
+
+@dataclass(frozen=True)
+class ProfilePick:
+    profile: Profile
+    why: tuple[str, ...]  # 리모델링으로 고른 근거 이름. 도배만 하는 공사면 비어 있다
+
+
+# 리모델링 신호(큰 목공): (근거 이름, 목공 항목, 모은 조건 칸, 그 칸의 '한다' 단추 글, '안 한다' 단추 글).
+# 단추 글은 agent.v3.trades 되묻기 칸과 같아요(테스트가 본다). 모은 조건이 '한다' · '안 한다'면 그 답을,
+# 칸이 없거나 '아직 몰라요' · 단추 글이 아닌 답이면 공사에 고른 목공 항목을 본다.
+# 몰딩 · 걸레받이 교체는 흔한 가벼운 공사라 신호가 아니에요(2026-11-21 리드 결정)
+REMODEL_SIGNALS: tuple[tuple[str, str, str, str, str], ...] = (
+    ("문틀 교체", "door", "mokgong.doors", "문틀까지", "문짝만"),
+    ("천장 평탄화", "flatten", "mokgong.ceiling", "네", "아니요"),
+)
+SCOPE_KEY = "mokgong.molding_scope"  # '이번 공사는 어디까지 하세요?'
+SCOPE_ALL = "벽 · 천장까지 새로"  # 철거 뒤 벽 · 천장을 새로 마감하는 공사 → 리모델링
+
+
+def _said(w: WorkFacts, key: str) -> str | None:
+    v = w.said.get(key)
+    return " ".join(v.split()) if v else None
+
+
+def pick_profile(w: WorkFacts) -> ProfilePick:
+    """공사 조건 → 두 기준 중 하나. 문틀 교체 · 천장 평탄화 · '벽 · 천장까지 새로' 중 하나라도 있으면
+    리모델링(서울 업체 실견적 보정), 없으면 도배만 하는 공사(시장 실견적 가운데). 몰딩 교체만은 도배만이다."""
+    why: list[str] = []
+    for name, item, key, yes, no in REMODEL_SIGNALS:
+        said = _said(w, key)
+        hit = said == yes if said in (yes, no) else item in w.mok_items
+        if hit:
+            why.append(name)
+    if _said(w, SCOPE_KEY) == SCOPE_ALL:
+        why.append(f"'{SCOPE_ALL}'")
+    return ProfilePick("remodel" if why else "paper_only", tuple(why))
+
+
+def profile_note(pf: ProfilePrices, lines: Sequence[Line], why: Sequence[str] = ()) -> str:
+    """가정 첫 줄: 고른 기준 · 근거 · 값 출처, 합계 밖 '선택' 줄 이름."""
+    head = f"{pf.name}으로 셌어요" + (f"(근거: {' · '.join(why)})" if why else "")
+    optional = [ln.name.split(" (")[0] for ln in lines if ln.state == "optional"]
+    tail = f" {' · '.join(optional)}는 '선택' 줄이라 합계에 넣지 않았어요." if optional else ""
+    return f"{head}. 값은 {pf.source}이에요.{tail}"

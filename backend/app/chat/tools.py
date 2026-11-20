@@ -275,7 +275,7 @@ def _size_calc(m2v: float, basis: str, label: str) -> SizeCalcFact:
 
     from app.calc import dobae, mokgong
     from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
-    from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_2026H2
     from app.refprice.house import HOUSE_2026H2
     from app.refprice.wallpaper_market import paper_market
 
@@ -284,7 +284,7 @@ def _size_calc(m2v: float, basis: str, label: str) -> SizeCalcFact:
     def std(grade: str, occupied: bool):
         h = dobae.HomeV3(m2, basis, grade, occupied)  # type: ignore[arg-type]
         return dobae.standard_v3(
-            h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+            h, DOBAE_DEFAULT, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
         )
 
     basic, eco, occ = std("basic", False), std("economy", False), std("basic", True)
@@ -364,7 +364,7 @@ def _pair_plan(x: SizeCalcFact, start: date, off) -> PlanFacts | None:
 
     from app.calc import dobae, mokgong, schedule
     from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
-    from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_2026H2
     from app.refprice.house import HOUSE_2026H2
     from app.refprice.wallpaper_market import paper_market
 
@@ -372,7 +372,7 @@ def _pair_plan(x: SizeCalcFact, start: date, off) -> PlanFacts | None:
     try:
         h = dobae.HomeV3(m2, x.area_basis, "basic", False)
         std = dobae.standard_v3(
-            h, DOBAE_V3_2026_11, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+            h, DOBAE_DEFAULT, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
         )
         mk = mokgong.quote(
             mokgong.MokgongInput(m2, x.area_basis, ("molding", "base"), False), MOKGONG_2026H2
@@ -380,7 +380,7 @@ def _pair_plan(x: SizeCalcFact, start: date, off) -> PlanFacts | None:
         p = schedule.lay_out(
             [
                 schedule.TradePlan("mokgong", mk.steps, MOKGONG_2026H2.crew),
-                schedule.TradePlan("dobae", std.quote.steps, DOBAE_V3_2026_11.crew),
+                schedule.TradePlan("dobae", std.quote.steps, DOBAE_DEFAULT.crew),
             ],
             start,
             off,
@@ -446,7 +446,7 @@ def general_facts(text: str, today: date | None = None) -> GeneralFacts:
     from decimal import Decimal
 
     from app.calc import mokgong
-    from app.refprice.book import DOBAE_V3_2026_11, MOKGONG_2026H2
+    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_2026H2
 
     area = asked_area(text)
     one = Decimal("79.3")  # 방문 값은 집 크기와 상관없어서 24평 집으로 센다(폐기물 등 최소 줄 포함)
@@ -469,7 +469,7 @@ def general_facts(text: str, today: date | None = None) -> GeneralFacts:
         examples=examples,
         door_set=door(True),
         door_leaf=door(False),
-        price_ver=DOBAE_V3_2026_11.version,
+        price_ver=DOBAE_DEFAULT.version,
         start=start,
     )
 

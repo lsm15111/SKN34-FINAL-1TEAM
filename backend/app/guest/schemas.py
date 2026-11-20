@@ -68,3 +68,8 @@ class GuestStandardOut(BaseModel):
         description="넣은 예산 안 · 밖 (예산을 안 넣었으면 비움)"
     )
     assumptions: list[str] = Field(description="계산에 쓴 가정 (화면 '이렇게 셌어요')")
+    profile: Literal["paper_only", "remodel"] | None = Field(
+        default=None,
+        description="도배 금액 기준(계산 엔진이 고름). 손님은 도배만 넣어 paper_only(도배만 하는 공사)",
+    )
+    profile_name: str | None = Field(default=None, description="기준 화면 이름")

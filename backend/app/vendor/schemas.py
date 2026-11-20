@@ -663,8 +663,9 @@ class EstimateV3LineOut(BaseModel):
     included_in: str | None
     in_standard: bool = Field(
         default=True,
-        description="표준견적서에 같은 일이 있는 줄. False(퍼티 · 식대 · 운송비)는 비교 %에서 빼고"
-        " '표준견적서에 없는 줄'로 따로 보여요",
+        description="이 집 표준견적서 합계에 같은 일이 있는 줄. False는 비교 %에서 빼고"
+        " '표준견적서에 없는 줄'로 따로 보여요(도배만 하는 공사 기준이면 퍼티 · 식대 · 운송비,"
+        " 리모델링 기준이면 모두 True)",
     )
     label: str = Field(default="", description="고객 화면 이름(실크벽지 · 합지벽지 …). 비면 name")
     note: str = Field(
