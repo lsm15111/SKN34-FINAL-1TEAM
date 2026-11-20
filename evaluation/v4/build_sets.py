@@ -308,12 +308,21 @@ def check_scenario(path: Path, s: dict) -> list[str]:
             errs.append(f"{sid}: 사건 {e.get('id')}의 업체 {ref}가 없어요")
     if not isinstance(s.get("max_turns"), int) or not 1 <= s["max_turns"] <= 30:
         errs.append(f"{sid}: max_turns")
-    flow = json.dumps([s.get("world"), s.get("events"), end], ensure_ascii=False)
-    if (
-        '"mokgong"' in flow
-    ):  # 2026-11-21 리드 결정: 공사 흐름은 도배만, 목공은 지식 질문(알아 두기)으로만
-        errs.append(f"{sid}: 목공 공사 흐름(world · events · 끝 상태의 mokgong)은 두지 않아요")
+    if mokgong_flow(s):
+        errs.append(
+            f"{sid}: 목공 실측 · 확정 흐름(요청 · 확정 · 사건 · 끝 상태의 mokgong)은 두지 않아요"
+        )
     return errs + check_script(s, kinds, vendors)
+
+
+def mokgong_flow(s: dict) -> bool:
+    """2026-11-21 리드 결정: 목공 업체 추천 · 실측 요청 흐름은 아직 없어요. 표준견적서 · 지식 답의 목공은
+    자기 공정이라 막지 않고, 실측 · 확정 · 사건 · 끝 상태에 목공이 있으면 막아요."""
+    w, end = s.get("world") or {}, s.get("expected_end") or {}
+    rows = [*(w.get("visits") or []), *(w.get("deals") or [])]
+    rows += [e.get("args") or {} for e in s.get("events") or []]
+    rows += [*(end.get("visits") or []), *(end.get("deals") or [])]
+    return any(r.get("trade") == "mokgong" for r in rows)
 
 
 def check_script(s: dict, kinds: set[str], vendors: set[str]) -> list[str]:
@@ -343,6 +352,10 @@ def check_script(s: dict, kinds: set[str], vendors: set[str]) -> list[str]:
     for a in (s.get("checks") or {}).get("answer_has", []):
         if not any(a.get("when_said", "") in x for x in says):
             errs.append(f"{sid}: answer_has '{a.get('when_said')}'를 대본에서 말하지 않아요")
+        try:
+            re.compile(a.get("regex") or "")
+        except re.error:
+            errs.append(f"{sid}: answer_has 정규식 {a.get('regex')}")
     return errs
 
 

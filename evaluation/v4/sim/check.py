@@ -349,16 +349,22 @@ def check_process(checks: dict, run: dict) -> list[dict]:
 
 
 def _answer_has(spec: dict, turns: list[dict]) -> list[dict]:
-    """사용자가 when_said를 말한 턴의 답(보인 것)에 any 중 하나가 있고, no_cards 카드는 없어야 해요.
-    예: 목공은 지식 질문으로만 → '몰딩 교체'를 물은 턴에 '알아 두기', 업체 추천 · 실측 카드 없음."""
+    """사용자가 when_said를 말한 턴의 답(보인 것: 글 · 카드)을 봐요. any가 있으면 그중 하나가, regex가 있으면
+    그 꼴이 나와야 하고, no_cards 카드는 없어야 해요.
+    예: '몰딩 교체는 언제 해요?' → 목공 순서 · 시기 답(목공은 자기 공정), 업체 추천 · 실측 카드 없음.
+        '목공 업체도 추천해 주세요' → '아직 도배 업체만 연결돼요' 꼴의 짧은 안내."""
     said = [t for t in turns if spec["when_said"] in (t.get("say") or "")]
-    what = f"'{spec['when_said']}' 답에 {' · '.join(spec['any'])}"
+    want = [" · ".join(spec["any"])] if spec.get("any") else []
+    want += ["정규식"] if spec.get("regex") else []
+    what = f"'{spec['when_said']}' 답에 {' + '.join(want)}"
     if not said:
         return [_item("check", what, True, None, na=True, why="그 말을 하지 않음")]
     out = []
     for t in said:
         shown = t.get("shown") or ""
-        out.append(_item("check", what, any(x in shown for x in spec["any"]), t.get("text")))
+        ok = not spec.get("any") or any(x in shown for x in spec["any"])
+        ok = ok and (not spec.get("regex") or re.search(spec["regex"], shown) is not None)
+        out.append(_item("check", what, ok, t.get("text")))
         bad = sorted(set(t.get("cards") or []) & set(spec.get("no_cards") or []))
         if spec.get("no_cards"):
             out.append(_item("check", f"'{spec['when_said']}' 답에 카드 없음", not bad, bad))
