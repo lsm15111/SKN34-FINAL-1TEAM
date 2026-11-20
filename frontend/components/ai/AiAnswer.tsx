@@ -38,6 +38,11 @@ function calcLine(c: AiCalc): CalcLine | null {
 
 const STEP = /^(\d)\.\s(.+)$/; // 서버가 쓴 단계 문장('1. …')은 번호 동그라미로 그려요
 
+/** 묶음 제목은 서로 다른 제목이 둘 이상일 때만 보여요(한 공정 답의 '[도배]'는 빼요) */
+function titled(list: { title: string }[]): boolean {
+  return new Set(list.map((x) => x.title).filter(Boolean)).size > 1;
+}
+
 /** 묶음 출처 표시. 같은 표시가 이어지면 맨 앞에 한 번만 보여요 */
 export function byLabel(source?: string): string {
   if (source === "calc") return "믿집 계산";
@@ -145,7 +150,10 @@ export function AiAnswer({ answer, projectId, onPick, pending = false }: {
   pending?: boolean;
 }) {
   const [open, setOpen] = useState(false);
-  const many = answer.sections.length > 1;
+  // 먼저 보낸 고정 묶음(fixed개)은 그 묶음끼리만 보고 제목을 정해서, 아래에 AI 글이 붙어도 모양이 바뀌지 않아요
+  const fixed = Math.min(answer.fixed ?? 0, answer.sections.length);
+  const titleHead = titled(answer.sections.slice(0, fixed));
+  const titleRest = titled(answer.sections);
   const lines = answer.calc.map(calcLine).filter((x): x is CalcLine => x !== null);
   const notes = answer.calc.filter((c) => calcLine(c) === null && (c.note || c.qty != null));
   // 짧은 답(brief): 자세히에 남는 문장이 있을 때만 접어서 보여요. 문장은 서버가 sections에서 고른 그대로예요
@@ -168,7 +176,7 @@ export function AiAnswer({ answer, projectId, onPick, pending = false }: {
             {i === 0 || byLabel(answer.sections[i - 1].source) !== byLabel(sec.source) ? (
               <p className={s.by}>{byLabel(sec.source)}</p>
             ) : null}
-            {many && sec.title ? <p className={s.secTitle}>{sec.title}</p> : null}
+            {sec.title && (i < fixed ? titleHead : titleRest) ? <p className={s.secTitle}>{sec.title}</p> : null}
             {sec.steps ? (
               <ol className={s.steps}>
                 {sec.sentences.map((t, j) => (
@@ -210,7 +218,7 @@ export function AiAnswer({ answer, projectId, onPick, pending = false }: {
         </p>
       ) : null}
       {!answer.sections.length && !pending && !brief ? <p className={s.by}>{byLabel()}</p> : null}
-      {!(brief && !open) && refs.length ? <RefList refs={refs} fallback={[]} /> : null}
+      {!(brief && !open) && !pending && refs.length ? <RefList refs={refs} fallback={[]} /> : null}
       {brief ? (
         <Button variant="text" size="sm" className={s.more} aria-expanded={open} onClick={() => setOpen((v) => !v)}>
           {open ? "짧게 보기" : `자세히 보기 · ${brief.more}문장 더`}

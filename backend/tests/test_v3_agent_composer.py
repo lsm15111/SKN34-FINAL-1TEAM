@@ -136,6 +136,7 @@ def test_llm_mode_sends_fixed_part_first_and_keeps_it_in_front(stub):
     n = len(first.sections)
     assert r.answer.sections[:n] == first.sections  # 화면에 이미 보인 글은 그대로
     assert len(r.answer.sections) > n and r.answer.brief is None
+    assert first.fixed == r.answer.fixed == n
     assert r.answer.cards, "다음 단추 카드는 마지막 답에만 붙어요"
 
 

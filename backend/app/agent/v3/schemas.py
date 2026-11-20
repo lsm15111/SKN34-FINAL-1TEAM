@@ -319,6 +319,9 @@ class AgentAnswer(BaseModel):
     suggest: list[str] = []
     failed: bool = False
     brief: Brief | None = None
+    fixed: int = (
+        0  # 앞에서부터 먼저 보낸(SSE part) 고정 묶음 수. 화면이 그 묶음 모양을 part와 같게 그려요
+    )
     trace: Trace = Trace()
 
     def plain(self) -> str:

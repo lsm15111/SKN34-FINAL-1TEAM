@@ -191,6 +191,7 @@ def _public(ans) -> AiAnswer:
         unknown=ans.unknown,
         suggest=ans.suggest,
         failed=ans.failed,
+        fixed=ans.fixed,
         brief=AiBrief(form=b.form, lines=[x.text for x in b.lines], more=b.more, cites=lines)
         if b
         else None,

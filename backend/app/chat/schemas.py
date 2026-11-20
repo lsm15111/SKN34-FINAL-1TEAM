@@ -76,6 +76,7 @@ class AiAnswer(BaseModel):
     suggest: list[str] = []
     failed: bool = False
     brief: AiBrief | None = None
+    fixed: int = 0  # 앞에서부터 먼저 보낸(SSE part) 고정 묶음 수
     refs: list[
         AiSource
     ] = []  # 이 답의 출처. 번호는 코드가 처음 나온 순서로 매겨요(LLM이 매기지 않음)

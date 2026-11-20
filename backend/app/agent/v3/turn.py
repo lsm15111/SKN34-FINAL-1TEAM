@@ -173,6 +173,7 @@ async def run_turn(
         if shown is not None:
             ans.sections = [*shown, *ans.sections]
             ans.failed = not (ans.sections or ans.cards or ans.calc or ans.unknown)
+            ans.fixed = len(shown)
             return ans  # 먼저 보인 글이 접힌 짧은 답으로 바뀌지 않게 통째로 보여요(brief 없음)
         ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
         if "composer" in routes:
@@ -197,7 +198,7 @@ async def run_turn(
             route=part.route, trade=part.trade,
         )  # fmt: skip
         first = finish(fixed, [])
-        first.failed, first.brief = False, None
+        first.failed, first.brief, first.fixed = False, None, len(first.sections)
         shown = first.sections
         if on_part is not None:
             await on_part(first)
