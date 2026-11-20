@@ -91,17 +91,29 @@ def test_condition_switches_profile_and_keeps_the_old_version(api):
     assert (third["version"], third["profile"], third["total"]) == (3, "paper_only", first["total"])
 
 
-def test_v2_project_with_molding_is_remodel_and_mokgong_has_no_profile(api):
-    """옛 v2 공사: 목공 항목에 몰딩 교체가 있으면 리모델링 기준. 목공 표준견적서 줄에는 기준이 없어요."""
+def test_v2_project_profile_follows_carpentry_items(api):
+    """옛 v2 공사: 몰딩 · 걸레받이만이면 도배만 하는 공사 기준, 방문(문틀) 교체가 있으면 리모델링 기준.
+    목공 표준견적서 줄에는 기준이 없어요."""
     signup(api)
-    r = api.post("/projects", json=v2_body())
-    assert r.status_code == 201, r.text
-    st = api.get(f"/projects/{r.json()['id']}/standard").json()
+    light = api.post("/projects", json=v2_body())  # 목공: 몰딩 · 걸레받이
+    assert light.status_code == 201, light.text
+    st = api.get(f"/projects/{light.json()['id']}/standard").json()
     by = {t["trade"]: t for t in st["trades"]}
-    assert (by["dobae"]["profile"], by["mokgong"]["profile"]) == ("remodel", None)
-    assert by["dobae"]["notes"][0].startswith("리모델링 기준으로 셌어요(근거: 몰딩 교체)")
-    prices = query("select trade, price_ver from standard_quotes order by trade")
+    assert (by["dobae"]["profile"], by["mokgong"]["profile"]) == ("paper_only", None)
+    trades = {
+        "dobae": {"spaces": ["a", "b", "c"], "grade": "basic"},
+        "mokgong": {"spaces": ["b", "c"], "items": ["molding", "door"]},
+    }
+    big = api.post("/projects", json=v2_body(trades=trades))
+    assert big.status_code == 201, big.text
+    st2 = api.get(f"/projects/{big.json()['id']}/standard").json()
+    dobae = _dobae(st2)
+    assert dobae["profile"] == "remodel"
+    assert dobae["notes"][0].startswith("리모델링 기준으로 셌어요(근거: 문틀 교체)")
+    prices = query("select trade, price_ver from standard_quotes order by trade, price_ver")
     assert [(x["trade"], x["price_ver"]) for x in prices] == [
+        ("dobae", "2026.11-market"),
         ("dobae", "2026.11-remodel"),
+        ("mokgong", "2026H2"),
         ("mokgong", "2026H2"),
     ]

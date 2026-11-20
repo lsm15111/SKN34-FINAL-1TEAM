@@ -768,17 +768,16 @@ class ProfilePick:
     why: tuple[str, ...]  # 리모델링으로 고른 근거 이름. 도배만 하는 공사면 비어 있다
 
 
-# 리모델링 신호: (근거 이름, 목공 항목, 모은 조건 칸, 그 칸의 '한다' 단추 글, '안 한다' 단추 글).
+# 리모델링 신호(큰 목공): (근거 이름, 목공 항목, 모은 조건 칸, 그 칸의 '한다' 단추 글, '안 한다' 단추 글).
 # 단추 글은 agent.v3.trades 되묻기 칸과 같아요(테스트가 본다). 모은 조건이 '한다' · '안 한다'면 그 답을,
-# 칸이 없거나 '아직 몰라요' · 단추 글이 아닌 답이면 공사에 고른 목공 항목을 본다
+# 칸이 없거나 '아직 몰라요' · 단추 글이 아닌 답이면 공사에 고른 목공 항목을 본다.
+# 몰딩 · 걸레받이 교체는 흔한 가벼운 공사라 신호가 아니에요(2026-11-21 리드 결정)
 REMODEL_SIGNALS: tuple[tuple[str, str, str, str, str], ...] = (
     ("문틀 교체", "door", "mokgong.doors", "문틀까지", "문짝만"),
-    ("몰딩 교체", "molding", "mokgong.molding", "바꿔요", "그대로 둬요"),
     ("천장 평탄화", "flatten", "mokgong.ceiling", "네", "아니요"),
 )
 SCOPE_KEY = "mokgong.molding_scope"  # '이번 공사는 어디까지 하세요?'
 SCOPE_ALL = "벽 · 천장까지 새로"  # 철거 뒤 벽 · 천장을 새로 마감하는 공사 → 리모델링
-SCOPE_KEEP_MOLDING = ("도배만 새로", "몰딩 색만 바꾸기")  # 몰딩은 바꾸지 않음
 
 
 def _said(w: WorkFacts, key: str) -> str | None:
@@ -787,21 +786,15 @@ def _said(w: WorkFacts, key: str) -> str | None:
 
 
 def pick_profile(w: WorkFacts) -> ProfilePick:
-    """공사 조건 → 두 기준 중 하나. 문틀 교체 · 몰딩 교체 · 천장 평탄화 · '벽 · 천장까지 새로' 중 하나라도
-    있으면 리모델링(서울 업체 실견적 보정), 없으면 도배만 하는 공사(시장 실견적 가운데)."""
-    scope = _said(w, SCOPE_KEY)
+    """공사 조건 → 두 기준 중 하나. 문틀 교체 · 천장 평탄화 · '벽 · 천장까지 새로' 중 하나라도 있으면
+    리모델링(서울 업체 실견적 보정), 없으면 도배만 하는 공사(시장 실견적 가운데). 몰딩 교체만은 도배만이다."""
     why: list[str] = []
     for name, item, key, yes, no in REMODEL_SIGNALS:
         said = _said(w, key)
-        if item == "molding" and scope in SCOPE_KEEP_MOLDING:
-            hit = False
-        elif said in (yes, no):
-            hit = said == yes
-        else:
-            hit = item in w.mok_items
+        hit = said == yes if said in (yes, no) else item in w.mok_items
         if hit:
             why.append(name)
-    if scope == SCOPE_ALL:
+    if _said(w, SCOPE_KEY) == SCOPE_ALL:
         why.append(f"'{SCOPE_ALL}'")
     return ProfilePick("remodel" if why else "paper_only", tuple(why))
 

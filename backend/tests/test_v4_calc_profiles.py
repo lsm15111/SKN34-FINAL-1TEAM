@@ -47,21 +47,29 @@ def pick(items=()) -> dobae.ProfilePick:
 
 def test_no_conditions_is_paper_only():
     assert pick() == dobae.ProfilePick("paper_only", ())
-    assert pick(["base"]).profile == "paper_only"  # 걸레받이만은 큰 목공이 아니에요
     assert DOBAE_DEFAULT is DOBAE_MARKET_2026_11  # 공사 조건이 없는 계산(손님 · 평수 질문)
+
+
+def test_molding_or_base_only_is_paper_only():
+    """몰딩 · 걸레받이만 바꾸는 집은 흔한 가벼운 공사라 도배만 하는 공사 기준이에요(리드 결정)."""
+    w = dobae.WorkFacts
+    assert pick(["molding", "base"]) == dobae.ProfilePick("paper_only", ())
+    assert pick(["base"]).profile == "paper_only"
+    said = {"mokgong.molding": "바꿔요", "mokgong.molding_scope": "도배만 새로"}
+    assert dobae.pick_profile(w(("molding",), said)).profile == "paper_only"
+    # 몰딩을 바꿔도 문틀 · 천장이 같이 있으면 리모델링이고, 근거에 몰딩은 안 적어요
+    assert dobae.pick_profile(w(("molding", "door"))).why == ("문틀 교체",)
 
 
 @pytest.mark.parametrize(
     ("items", "said", "why"),
     [
         (["door"], {}, ("문틀 교체",)),
-        (["molding", "base"], {}, ("몰딩 교체",)),
         (["flatten"], {}, ("천장 평탄화",)),
         ([], {"mokgong.doors": "문틀까지"}, ("문틀 교체",)),
-        ([], {"mokgong.molding": "바꿔요"}, ("몰딩 교체",)),
         ([], {"mokgong.ceiling": "네"}, ("천장 평탄화",)),
         ([], {"mokgong.molding_scope": "벽 · 천장까지 새로"}, ("'벽 · 천장까지 새로'",)),
-        (["door", "molding"], {}, ("문틀 교체", "몰딩 교체")),
+        (["door", "flatten", "molding"], {}, ("문틀 교체", "천장 평탄화")),
     ],
 )
 def test_big_carpentry_or_full_scope_is_remodel(items, said, why):
@@ -73,9 +81,7 @@ def test_said_answer_wins_over_project_item():
     """모은 조건(고객이 고른 단추)이 같은 일의 목공 항목보다 먼저예요. '아직 몰라요' · 단추가 아닌 답은 항목을 봐요"""
     w = dobae.WorkFacts
     assert dobae.pick_profile(w(("door",), {"mokgong.doors": "문짝만"})).profile == "paper_only"
-    assert dobae.pick_profile(w(("molding",), {"mokgong.molding": "그대로 둬요"})).why == ()
-    for keep in ("도배만 새로", "몰딩 색만 바꾸기"):
-        assert dobae.pick_profile(w(("molding",), {"mokgong.molding_scope": keep})).why == ()
+    assert dobae.pick_profile(w(("flatten",), {"mokgong.ceiling": "아니요"})).why == ()
     assert dobae.pick_profile(w(("door",), {"mokgong.doors": "아직 몰라요"})).why == ("문틀 교체",)
     assert dobae.pick_profile(w((), {"mokgong.doors": "글쎄요"})).profile == "paper_only"
     # 띄어쓰기만 다른 단추 글은 같은 답
@@ -87,8 +93,8 @@ def test_signal_values_are_the_agent_buttons():
     options = {s.key: set(s.options) for spec in SPECS for s in spec.slots}
     for _, item, key, yes, no in dobae.REMODEL_SIGNALS:
         assert {yes, no} <= options[key], key
-        assert item in ("door", "molding", "flatten")
-    assert {dobae.SCOPE_ALL, *dobae.SCOPE_KEEP_MOLDING} <= options[dobae.SCOPE_KEY]
+        assert item in ("door", "flatten")
+    assert dobae.SCOPE_ALL in options[dobae.SCOPE_KEY]
 
 
 # ---- 도배만 하는 공사 기준 (시장 가운데, 추천안 R) ----
