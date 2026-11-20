@@ -1,6 +1,8 @@
 // 믿집 백과 용어 사전 데이터(자동 생성 · 손으로 고치지 않아요).
 // 원본: 용어집 백업(backup-20261120-glossary, wt-guide feat-quote-guide) + 고칠 표시 36개를 고친 것.
-// 그림은 AI로 그린 이해용 그림이에요(화면에 그렇게 적어요). 출처는 공공 기관 · 법령 · 제조사만 보여요.
+// 그림은 AI로 그린 이해용 그림이에요(화면 그림 아래에는 따로 적지 않아요, 11-20 사용자 결정).
+// 출처는 법령 · 정부 · 공공기관 자료만 보여요. 업체 · 제조사 · 플랫폼 글과 사본 링크는 // 주석으로 숨겨 뒀어요(주석을 풀면 다시 보여요).
+// 뺀 용어(11-20 사용자 결정, 꼭 필요한 것만 남김): 조인트 테이프, 로스, HB 마크, 환경성적표지, 별도, 공사장 생활폐기물, 경미한 행위, 행위허가, 비내력벽, 실내건축공사업, 경미한 건설공사, KISCON, 소비자분쟁해결기준, 1372 소비자상담센터, 내용증명, 명의대여, 사용검사
 import type { Term } from "./types";
 
 export const TERMS: Term[] = [
@@ -27,16 +29,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   },
-   {
-    "title": "[초급] 벽지 시공 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/109"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "[초급] 벽지 시공 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/109"},
   ]
  },
  {
@@ -62,16 +56,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   },
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [고급] 벽지", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5959"},
   ]
  },
  {
@@ -99,21 +85,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   },
-   {
-    "title": "라이프데일리코리아 도배 공정 가이드",
-    "publisher": "라이프데일리코리아(공테)",
-    "url": "https://lifedailykorea.com/process/dobae/"
-   },
-   {
-    "title": "얼마드나 우물천장 비용 단가표",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/coffered-ceiling-cost"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "라이프데일리코리아 도배 공정 가이드", "publisher": "라이프데일리코리아(공테)", "url": "https://lifedailykorea.com/process/dobae/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 우물천장 비용 단가표", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/coffered-ceiling-cost"},
   ]
  },
  {
@@ -136,16 +110,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   },
-   {
-    "title": "시공백과 열여섯번째: 도배 공사",
-    "publisher": "디자인 담결",
-    "url": "https://www.damgyeol.com/5/?bmode=view&idx=86952313"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "시공백과 열여섯번째: 도배 공사", "publisher": "디자인 담결", "url": "https://www.damgyeol.com/5/?bmode=view&idx=86952313"},
   ]
  },
  {
@@ -174,11 +140,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
   ]
  },
  {
@@ -205,16 +167,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   },
-   {
-    "title": "2026 건설공사 표준품셈(건축 5-3-7 도배바름·유지관리 도배 해체·교체)",
-    "publisher": "국토교통부(한국표준품셈정보원 배포)",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=64699193400142&pgno=1"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
+   {"title": "2026 건설공사 표준품셈(건축 5-3-7 도배바름·유지관리 도배 해체·교체)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=64699193400142&pgno=1
   ]
  },
  {
@@ -241,16 +195,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   },
-   {
-    "title": "도배의 민족 고양캠프(부직포 vs 텍스, 배꼽짐)",
-    "publisher": "도배의 민족",
-    "url": "https://altgoodsave.co.kr/new-%EC%86%8C%EC%8B%9D/?pageid=4&mod=document&uid=8"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도배의 민족 고양캠프(부직포 vs 텍스, 배꼽짐)", "publisher": "도배의 민족", "url": "https://altgoodsave.co.kr/new-%EC%86%8C%EC%8B%9D/?pageid=4&mod=document&uid=8"},
   ]
  },
  {
@@ -271,16 +217,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   },
-   {
-    "title": "도배의 민족 고양캠프(부직포 vs 텍스, 배꼽짐)",
-    "publisher": "도배의 민족",
-    "url": "https://altgoodsave.co.kr/new-%EC%86%8C%EC%8B%9D/?pageid=4&mod=document&uid=8"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도배의 민족 고양캠프(부직포 vs 텍스, 배꼽짐)", "publisher": "도배의 민족", "url": "https://altgoodsave.co.kr/new-%EC%86%8C%EC%8B%9D/?pageid=4&mod=document&uid=8"},
   ]
  },
  {
@@ -306,11 +244,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "시공백과 열여섯번째: 도배 공사",
-    "publisher": "디자인 담결",
-    "url": "https://www.damgyeol.com/5/?bmode=view&idx=86952313"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "시공백과 열여섯번째: 도배 공사", "publisher": "디자인 담결", "url": "https://www.damgyeol.com/5/?bmode=view&idx=86952313"},
   ]
  },
  {
@@ -352,16 +286,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   },
-   {
-    "title": "[초급] 벽지 시공 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/109"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [고급] 벽지", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5959"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "[초급] 벽지 시공 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/109"},
   ]
  },
  {
@@ -391,11 +317,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "라이프데일리코리아 도배 공정 가이드",
-    "publisher": "라이프데일리코리아(공테)",
-    "url": "https://lifedailykorea.com/process/dobae/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "라이프데일리코리아 도배 공정 가이드", "publisher": "라이프데일리코리아(공테)", "url": "https://lifedailykorea.com/process/dobae/"},
   ]
  },
  {
@@ -426,11 +348,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 합지 휘앙세93 49605-01",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/product/101019"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 합지 휘앙세93 49605-01", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/zin/product/101019"},
   ]
  },
  {
@@ -457,16 +375,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 실크 베스띠 샌드스톤 82558-02",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/product/101329"
-   },
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 실크 베스띠 샌드스톤 82558-02", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/zin/product/101329"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [고급] 벽지", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5959"},
   ]
  },
  {
@@ -488,16 +398,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 디아망 모던회벽 PR028-01",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/product/13396"
-   },
-   {
-    "title": "LX Z:IN 관리하기 쉬운 벽지 선택 기준",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/8949?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 디아망 모던회벽 PR028-01", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/zin/product/13396"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 관리하기 쉬운 벽지 선택 기준", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/8949?guideTab=AZ01"},
   ]
  },
  {
@@ -519,16 +421,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "당근 비즈프로필 '구름도배'",
-    "publisher": "당근",
-    "url": "https://daangn.com/kr/local-profile/%EA%B5%AC%EB%A6%84%EB%8F%84%EB%B0%B0-eqqqokh8dmr1/"
-   },
-   {
-    "title": "LX Z:IN 실크벽지 카테고리",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/category/a070000?mcate=a070300"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "당근 비즈프로필 '구름도배'", "publisher": "당근", "url": "https://daangn.com/kr/local-profile/%EA%B5%AC%EB%A6%84%EB%8F%84%EB%B0%B0-eqqqokh8dmr1/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 실크벽지 카테고리", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/zin/category/a070000?mcate=a070300"},
   ]
  },
  {
@@ -555,16 +449,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 뮤럴 범내려온다 M534-01",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/product/13901"
-   },
-   {
-    "title": "[초급] 벽지 시공 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/109"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 뮤럴 범내려온다 M534-01", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/zin/product/13901"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "[초급] 벽지 시공 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/109"},
   ]
  },
  {
@@ -580,21 +466,9 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   },
-   {
-    "title": "한국화재보험협회 자료(방염 대상)",
-    "publisher": "한국화재보험협회",
-    "url": "https://kfpa.or.kr/mem/pdf_file/H/130/H130_18.pdf"
-   },
-   {
-    "title": "[초급] 벽지 시공 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/109"
-   }
+   {"title": "한국화재보험협회 자료(방염 대상)", "publisher": "한국화재보험협회", "url": "https://kfpa.or.kr/mem/pdf_file/H/130/H130_18.pdf"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [고급] 벽지", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5959"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "[초급] 벽지 시공 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/109"},
   ]
  },
  {
@@ -611,21 +485,9 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "LX Z:IN [초급] 마감재 소요량 계산법",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/641"
-   },
-   {
-    "title": "Resene Wallpaper information",
-    "publisher": "Resene",
-    "url": "https://www.resene.co.nz/homeown/Habitat-plus/09-wallpaper-information.htm"
-   },
-   {
-    "title": "Non-woven paste-the-wall 설치 가이드",
-    "publisher": "vinylwalls",
-    "url": "https://vinylwalls-com.pages.dev/blog/non-woven-wallpaper-paste-wall-installation-guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [초급] 마감재 소요량 계산법", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/641"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "Resene Wallpaper information", "publisher": "Resene", "url": "https://www.resene.co.nz/homeown/Habitat-plus/09-wallpaper-information.htm"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "Non-woven paste-the-wall 설치 가이드", "publisher": "vinylwalls", "url": "https://vinylwalls-com.pages.dev/blog/non-woven-wallpaper-paste-wall-installation-guide/"},
   ]
  },
  {
@@ -642,21 +504,9 @@ export const TERMS: Term[] = [
   "use": "기존 마감을 뜯지 않고 그 위에 새로 덧대 비용 · 시간을 줄일 때 해요.",
   "images": [],
   "sources": [
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "[초급] 벽지의 세계 ② 도배 외 LX 벽지 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/865"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [고급] 벽지", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5959"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "[초급] 벽지의 세계 ② 도배 외 LX 벽지 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/865"},
   ]
  },
  {
@@ -679,16 +529,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   },
-   {
-    "title": "라이프데일리코리아 도배 공정 가이드",
-    "publisher": "라이프데일리코리아(공테)",
-    "url": "https://lifedailykorea.com/process/dobae/"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "라이프데일리코리아 도배 공정 가이드", "publisher": "라이프데일리코리아(공테)", "url": "https://lifedailykorea.com/process/dobae/"},
   ]
  },
  {
@@ -710,11 +552,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
   ]
  },
  {
@@ -742,11 +580,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
   ]
  },
  {
@@ -775,21 +609,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   },
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   },
-   {
-    "title": "도배가격",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/blog/interior/도배가격/"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도배가격", "publisher": "숨고", "url": "https://soomgo.com/blog/interior/도배가격/"},
   ]
  },
  {
@@ -814,21 +636,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCC 석고보드 표준시방서",
-    "publisher": "KCC",
-    "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "KCC 석고보드 표준시방서", "publisher": "KCC", "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
   ]
  },
  {
@@ -853,11 +663,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
   ]
  },
  {
@@ -882,47 +688,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
-  ]
- },
- {
-  "id": "조인트-테이프",
-  "term": "조인트 테이프",
-  "aliases": [
-   "망사테이프",
-   "메쉬테이프"
-  ],
-  "trade": "common",
-  "easy": "석고보드 이음이나 균열 위에 붙이는 보강 테이프",
-  "tip": "보드 이음 보강 테이프예요. 석고보드 이음에 붙이고 퍼티로 덮어요.",
-  "detail": "이음 위에 붙이고 퍼티(콤파운드)로 덮어 크랙을 막아요. 제조사 시방은 하도 · 중도 · 상도로 여러 번 바르고 충분히 말린 뒤 마감하라고 해요.",
-  "use": "석고보드 이음 · 균열 위에 붙여 크랙이 다시 생기지 않게 할 때 써요.",
-  "images": [
-   {
-    "src": "/guide-img/terms/joint_tape_b.webp",
-    "kind": "입체 그림"
-   }
-  ],
-  "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   },
-   {
-    "title": "KCC 석고보드 표준시방서",
-    "publisher": "KCC",
-    "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN [고급] 벽지", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5959"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -939,16 +706,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "[초급] 벽지 시공 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/109"
-   },
-   {
-    "title": "라이프데일리코리아 도배 공정 가이드",
-    "publisher": "라이프데일리코리아(공테)",
-    "url": "https://lifedailykorea.com/process/dobae/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "[초급] 벽지 시공 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/109"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "라이프데일리코리아 도배 공정 가이드", "publisher": "라이프데일리코리아(공테)", "url": "https://lifedailykorea.com/process/dobae/"},
   ]
  },
  {
@@ -966,11 +725,7 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)",
-    "publisher": "국토교통부(대한건축사협회 합본 경유)",
-    "url": "https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf"
-   }
+   {"title": "KCS 41 51 05 도배공사 · KCS 41 51 01 수장공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://kirahub.kira.or.kr/KCS%2041%2000%2000%20%EA%B1%B4%EC%B6%95%EA%B3%B5%EC%82%AC%20%ED%91%9C%EC%A4%80%EC%8B%9C%EB%B0%A9%EC%84%9C%20(%ED%95%A9%EB%B3%B8).pdf
   ]
  },
  {
@@ -997,16 +752,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "Tempaper 무늬 맞춤 유형 차이",
-    "publisher": "Tempaper",
-    "url": "https://tempaper.com/blogs/news/the-differences-between-wallpaper-match-types"
-   },
-   {
-    "title": "Materio 벽지 계산기",
-    "publisher": "Materio",
-    "url": "https://materio.co/wallpaper-calculator"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "Tempaper 무늬 맞춤 유형 차이", "publisher": "Tempaper", "url": "https://tempaper.com/blogs/news/the-differences-between-wallpaper-match-types"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "Materio 벽지 계산기", "publisher": "Materio", "url": "https://materio.co/wallpaper-calculator"},
   ]
  },
  {
@@ -1033,54 +780,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "Tempaper 무늬 맞춤 유형 차이",
-    "publisher": "Tempaper",
-    "url": "https://tempaper.com/blogs/news/the-differences-between-wallpaper-match-types"
-   }
-  ]
- },
- {
-  "id": "로스",
-  "term": "로스",
-  "aliases": [
-   "여유분",
-   "여분",
-   "할증"
-  ],
-  "trade": "common",
-  "easy": "재단 · 무늬 맞춤으로 버려지는 자재와 그만큼의 여유 주문",
-  "tip": "버려지는 자재와 여유분이에요. 딱 맞게 주문하면 모자라니 여유분을 넣어요.",
-  "detail": "표준품셈은 정배지를 ㎡당 1.2㎡(할증 포함)로 잡고, 시장은 1~2롤 · 5% · 10~15% 등 자료마다 달라요. 자재를 딱 맞게 주문하면 모자라 일정이 밀려요.",
-  "use": "",
-  "ask": "자재 여유분은 얼마나 넣었나요?",
-  "images": [],
-  "sources": [
-   {
-    "title": "2026 건설공사 표준품셈(건축 5-3-7 도배바름·유지관리 도배 해체·교체)",
-    "publisher": "국토교통부(한국표준품셈정보원 배포)",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=64699193400142&pgno=1"
-   },
-   {
-    "title": "LX Z:IN [고급] 벽지",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5959"
-   },
-   {
-    "title": "숨고 블로그 도배 견적 내는 법",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/blog/interior/도배-견적/"
-   },
-   {
-    "title": "그레이씨어리스튜디오 벽지 물량 계산법",
-    "publisher": "그레이씨어리스튜디오",
-    "url": "https://graytheorystudio.com/insight/?bmode=view&idx=171161425"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "Tempaper 무늬 맞춤 유형 차이", "publisher": "Tempaper", "url": "https://tempaper.com/blogs/news/the-differences-between-wallpaper-match-types"},
   ]
  },
  {
@@ -1098,21 +798,9 @@ export const TERMS: Term[] = [
   "ask": "평당 가격의 평은 분양 평인가요, 도배 평인가요?",
   "images": [],
   "sources": [
-   {
-    "title": "숨고 블로그 도배 견적 내는 법",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/blog/interior/도배-견적/"
-   },
-   {
-    "title": "숨고 도배 시공 가격",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/prices/%EB%8F%84%EB%B0%B0-%EC%8B%9C%EA%B3%B5"
-   },
-   {
-    "title": "도배 견적 내는 법",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/blog/interior/도배-견적/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "숨고 블로그 도배 견적 내는 법", "publisher": "숨고", "url": "https://soomgo.com/blog/interior/도배-견적/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "숨고 도배 시공 가격", "publisher": "숨고", "url": "https://soomgo.com/prices/%EB%8F%84%EB%B0%B0-%EC%8B%9C%EA%B3%B5"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도배 견적 내는 법", "publisher": "숨고", "url": "https://soomgo.com/blog/interior/도배-견적/"},
   ]
  },
  {
@@ -1137,11 +825,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "도배의 민족 고양캠프(부직포 vs 텍스, 배꼽짐)",
-    "publisher": "도배의 민족",
-    "url": "https://altgoodsave.co.kr/new-%EC%86%8C%EC%8B%9D/?pageid=4&mod=document&uid=8"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도배의 민족 고양캠프(부직포 vs 텍스, 배꼽짐)", "publisher": "도배의 민족", "url": "https://altgoodsave.co.kr/new-%EC%86%8C%EC%8B%9D/?pageid=4&mod=document&uid=8"},
   ]
  },
  {
@@ -1168,11 +852,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "집꾸 걸레받이(굽도리) 교체 비용",
-    "publisher": "집꾸",
-    "url": "https://jibggu.com/posts/baseboard-cost"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "집꾸 걸레받이(굽도리) 교체 비용", "publisher": "집꾸", "url": "https://jibggu.com/posts/baseboard-cost"},
   ]
  },
  {
@@ -1201,21 +881,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   },
-   {
-    "title": "공사 전 관리사무소 신고부터 엘리베이터 보양까지",
-    "publisher": "꾸미고",
-    "url": "https://kkumigo.co.kr/space/공사-전-관리사무소-신고부터/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "공사 전 관리사무소 신고부터 엘리베이터 보양까지", "publisher": "꾸미고", "url": "https://kkumigo.co.kr/space/공사-전-관리사무소-신고부터/"},
   ]
  },
  {
@@ -1231,16 +899,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   },
-   {
-    "title": "(구) 대한주택공사 전문시방서 32940 도배 공사",
-    "publisher": "대한주택공사(eom.co.kr 게재)",
-    "url": "https://www.eom.co.kr/2.regulation/4.common/ju_tack_kong_sa_sibangseo/construction/32940.htm"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
+   {"title": "(구) 대한주택공사 전문시방서 32940 도배 공사", "publisher": "대한주택공사"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.eom.co.kr/2.regulation/4.common/ju_tack_kong_sa_sibangseo/construction/32940.htm
   ]
  },
  {
@@ -1256,77 +916,9 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "노루페인트 환경표지 인증서(기관·EL 체계 확인용)",
-    "publisher": "노루페인트",
-    "url": "https://www.noroopaint.com/kor/file/certificate/환경표지_34905호_NOROOWAY%20CLEAR%203종(260331).pdf"
-   },
-   {
-    "title": "청사 환경 개선 공사 건축 시방서(2025.07)",
-    "publisher": "서울특별시 강서도로사업소(나라장터)",
-    "url": "https://www.g2b.go.kr/pn/pnp/pnpe/UntyAtchFile/downloadFile.do?bidPbancNo=R25BK01003466&bidPbancOrd=000&fileType=&fileSeq=1"
-   },
-   {
-    "title": "스케치 제품 페이지",
-    "publisher": "KCC신한벽지",
-    "url": "https://www.shinhanwall.co.kr/brands/view.html?depth1=1&depth2=5"
-   }
-  ]
- },
- {
-  "id": "HB-마크",
-  "term": "HB 마크",
-  "aliases": [
-   "HB 인증",
-   "친환경건축자재 단체표준"
-  ],
-  "trade": "common",
-  "easy": "한국공기청정협회의 실내공기 오염물질 저방출 자재 인증",
-  "tip": "실내공기 자재 인증이에요. 등급(최우수 · 우수 · 양호)을 품번으로 확인해요.",
-  "detail": "최우수 · 우수 · 양호 3등급이 있고 일반자재 최우수는 TVOC 0.10, HCHO 0.008 mg/㎡ · h 미만이에요. HB를 받으면 환경부 사전적합확인이 면제되고 실내마크를 붙여야 해요.",
-  "use": "",
-  "images": [],
-  "sources": [
-   {
-    "title": "한국공기청정협회 친환경건축자재 단체표준(HB)",
-    "publisher": "한국공기청정협회",
-    "url": "https://www.kaca.or.kr/web_basic/product/product.php?pagen=559"
-   }
-  ]
- },
- {
-  "id": "환경성적표지",
-  "term": "환경성적표지",
-  "aliases": [
-   "EPD"
-  ],
-  "trade": "common",
-  "easy": "제품의 환경 영향 정보를 공개했다는 표지",
-  "tip": "환경 정보 공개 표지예요. 품번별로 확인해요.",
-  "detail": "LX 베스띠 · 디아망, 신한벽지 제품 등에 표기돼요. 친환경 표기는 브랜드 전체가 아니라 품번별로 확인해요.",
-  "use": "",
-  "images": [],
-  "sources": [
-   {
-    "title": "LX Z:IN 실크 베스띠 샌드스톤 82558-02",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/product/101329"
-   },
-   {
-    "title": "LX Z:IN 디아망 모던회벽 PR028-01",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/zin/product/13396"
-   },
-   {
-    "title": "신한벽지 인증 및 수상",
-    "publisher": "KCC신한벽지",
-    "url": "https://www.shinhanwall.co.kr/pr/award.html"
-   },
-   {
-    "title": "스케치 제품 페이지",
-    "publisher": "KCC신한벽지",
-    "url": "https://www.shinhanwall.co.kr/brands/view.html?depth1=1&depth2=5"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "노루페인트 환경표지 인증서(기관·EL 체계 확인용)", "publisher": "노루페인트", "url": "https://www.noroopaint.com/kor/file/certificate/환경표지_34905호_NOROOWAY%20CLEAR%203종(260331).pdf"},
+   // 숨김(특정 공사 하나의 문서): {"title": "청사 환경 개선 공사 건축 시방서(2025.07)", "publisher": "서울특별시 강서도로사업소(나라장터)", "url": "https://www.g2b.go.kr/pn/pnp/pnpe/UntyAtchFile/downloadFile.do?bidPbancNo=R25BK01003466&bidPbancOrd=000&fileType=&fileSeq=1"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "스케치 제품 페이지", "publisher": "KCC신한벽지", "url": "https://www.shinhanwall.co.kr/brands/view.html?depth1=1&depth2=5"},
   ]
  },
  {
@@ -1353,21 +945,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 몰딩이란? 뜻·종류·시공",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/120"
-   },
-   {
-    "title": "내만집 매거진(도배 비용·몰딩 비용·목공 글)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/magazine/"
-   },
-   {
-    "title": "마미견적서 '아파트 몰딩 교체 가격은 어떻게 결정되나요'",
-    "publisher": "마미견적서",
-    "url": "https://mommyestimate.com/reading-contents/65"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩이란? 뜻·종류·시공", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/120"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 매거진(도배 비용·몰딩 비용·목공 글)", "publisher": "내만집", "url": "https://nmjib.com/magazine/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "마미견적서 '아파트 몰딩 교체 가격은 어떻게 결정되나요'", "publisher": "마미견적서", "url": "https://mommyestimate.com/reading-contents/65"},
   ]
  },
  {
@@ -1393,21 +973,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)",
-    "publisher": "몰딩닷컴",
-    "url": "https://m.mol-ding.com/product/list.html?cate_no=343"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "키자드 인테리어 몰딩 종류·시공비",
-    "publisher": "키자드",
-    "url": "https://keyzard.cc/views/nb/bTE7bWVlbW1ra21qaGZnaGpv"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)", "publisher": "몰딩닷컴", "url": "https://m.mol-ding.com/product/list.html?cate_no=343"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "키자드 인테리어 몰딩 종류·시공비", "publisher": "키자드", "url": "https://keyzard.cc/views/nb/bTE7bWVlbW1ra21qaGZnaGpv"},
   ]
  },
  {
@@ -1433,11 +1001,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)",
-    "publisher": "몰딩닷컴",
-    "url": "https://m.mol-ding.com/product/list.html?cate_no=343"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)", "publisher": "몰딩닷컴", "url": "https://m.mol-ding.com/product/list.html?cate_no=343"},
   ]
  },
  {
@@ -1459,16 +1023,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 몰딩이란? 뜻·종류·시공",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/120"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩이란? 뜻·종류·시공", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/120"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -1494,21 +1050,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 몰딩 선택·시공·교체 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"
-   },
-   {
-    "title": "몰딩 선택·시공·교체 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"
-   },
-   {
-    "title": "몰딩 시공 업체 글(동작구·청주)",
-    "publisher": "미소",
-    "url": "https://miso.kr/blog/thread/동작구/몰딩-시공-업체-순위"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩 선택·시공·교체 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "몰딩 선택·시공·교체 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "몰딩 시공 업체 글(동작구·청주)", "publisher": "미소", "url": "https://miso.kr/blog/thread/동작구/몰딩-시공-업체-순위"},
   ]
  },
  {
@@ -1534,16 +1078,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 몰딩 선택·시공·교체 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩 선택·시공·교체 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -1569,16 +1105,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 몰딩 선택·시공·교체 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"
-   },
-   {
-    "title": "몰딩 선택·시공·교체 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩 선택·시공·교체 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "몰딩 선택·시공·교체 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"},
   ]
  },
  {
@@ -1603,26 +1131,10 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "2026년 하반기 건설공사 표준시장단가(공고 제2026-652호)",
-    "publisher": "국토교통부·한국건설기술연구원",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142"
-   },
-   {
-    "title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)",
-    "publisher": "국토교통부",
-    "url": "https://eastca.co.kr/Data/?bmode=view&idx=169205679"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   }
+   {"title": "2026년 하반기 건설공사 표준시장단가(공고 제2026-652호)", "publisher": "국토교통부·한국건설기술연구원"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142
+   {"title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://eastca.co.kr/Data/?bmode=view&idx=169205679
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
   ]
  },
  {
@@ -1648,21 +1160,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "집꾸 걸레받이(굽도리) 교체 비용",
-    "publisher": "집꾸",
-    "url": "https://jibggu.com/posts/baseboard-cost"
-   },
-   {
-    "title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)",
-    "publisher": "몰딩닷컴",
-    "url": "https://m.mol-ding.com/product/list.html?cate_no=343"
-   },
-   {
-    "title": "부동산모아 걸레받이 시공 종류",
-    "publisher": "부동산모아",
-    "url": "https://realtymoa.com/%EA%B1%B8%EB%A0%88%EB%B0%9B%EC%9D%B4-%EC%8B%9C%EA%B3%B5-%EC%A2%85%EB%A5%98-3%EA%B0%80%EC%A7%80%EC%97%AD%ED%95%A0-%EC%86%8C%EC%9E%AC-%EA%B0%80%EA%B2%A9-%EA%B5%90%EC%B2%B4-%EC%A0%9C%EA%B1%B0-%ED%8C%81/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "집꾸 걸레받이(굽도리) 교체 비용", "publisher": "집꾸", "url": "https://jibggu.com/posts/baseboard-cost"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)", "publisher": "몰딩닷컴", "url": "https://m.mol-ding.com/product/list.html?cate_no=343"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "부동산모아 걸레받이 시공 종류", "publisher": "부동산모아", "url": "https://realtymoa.com/%EA%B1%B8%EB%A0%88%EB%B0%9B%EC%9D%B4-%EC%8B%9C%EA%B3%B5-%EC%A2%85%EB%A5%98-3%EA%B0%80%EC%A7%80%EC%97%AD%ED%95%A0-%EC%86%8C%EC%9E%AC-%EA%B0%80%EA%B2%A9-%EA%B5%90%EC%B2%B4-%EC%A0%9C%EA%B1%B0-%ED%8C%81/"},
   ]
  },
  {
@@ -1688,21 +1188,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)",
-    "publisher": "몰딩닷컴",
-    "url": "https://m.mol-ding.com/product/list.html?cate_no=343"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)", "publisher": "몰딩닷컴", "url": "https://m.mol-ding.com/product/list.html?cate_no=343"},
   ]
  },
  {
@@ -1728,21 +1216,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -1767,21 +1243,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -1806,16 +1270,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "베이직 ABS도어 문틀 세트",
-    "publisher": "힐림",
-    "url": "https://hillim.co.kr/product/베이직-abs도어-문틀-세트/913/"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "베이직 ABS도어 문틀 세트", "publisher": "힐림", "url": "https://hillim.co.kr/product/베이직-abs도어-문틀-세트/913/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -1840,16 +1296,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
   ]
  },
  {
@@ -1874,16 +1322,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
   ]
  },
  {
@@ -1908,21 +1348,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)",
-    "publisher": "몰딩닷컴",
-    "url": "https://m.mol-ding.com/product/list.html?cate_no=343"
-   },
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)",
-    "publisher": "트렌드쿨",
-    "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "평몰딩·걸레받이·문선·천정·계단몰딩 목록(우딘 원장)", "publisher": "몰딩닷컴", "url": "https://m.mol-ding.com/product/list.html?cate_no=343"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)", "publisher": "트렌드쿨", "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"},
   ]
  },
  {
@@ -1950,16 +1378,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)",
-    "publisher": "트렌드쿨",
-    "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)", "publisher": "트렌드쿨", "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -1984,11 +1404,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2013,16 +1429,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "아정당 히든 도어 시공 장단점(홍보성)",
-    "publisher": "아정당",
-    "url": "https://www.ajd.co.kr/contents/basic-tip/detail/%ED%9E%88%EB%93%A0_%EB%8F%84%EC%96%B4_%EC%9D%B8%ED%85%8C%EB%A6%AC%EC%96%B4_%EC%8B%9C%EA%B3%B5_%EC%9E%A5%EB%8B%A8%EC%A0%90_%ED%95%9C%EB%88%88%EC%97%90_%EB%B9%84%EA%B5%90_%EA%BF%80%ED%8C%81-83772"
-   },
-   {
-    "title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)",
-    "publisher": "트렌드쿨",
-    "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "아정당 히든 도어 시공 장단점(홍보성)", "publisher": "아정당", "url": "https://www.ajd.co.kr/contents/basic-tip/detail/%ED%9E%88%EB%93%A0_%EB%8F%84%EC%96%B4_%EC%9D%B8%ED%85%8C%EB%A6%AC%EC%96%B4_%EC%8B%9C%EA%B3%B5_%EC%9E%A5%EB%8B%A8%EC%A0%90_%ED%95%9C%EB%88%88%EC%97%90_%EB%B9%84%EA%B5%90_%EA%BF%80%ED%8C%81-83772"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)", "publisher": "트렌드쿨", "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"},
   ]
  },
  {
@@ -2048,16 +1456,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2082,16 +1482,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "우딘 ABS 라인도어(시공가 표)",
-    "publisher": "목문닷컴",
-    "url": "https://mokmun.com/product/방문교체-문짝-우딘-abs-라인-도어-코로스-셀프시공or시공서비스/98/"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "우딘 ABS 라인도어(시공가 표)", "publisher": "목문닷컴", "url": "https://mokmun.com/product/방문교체-문짝-우딘-abs-라인-도어-코로스-셀프시공or시공서비스/98/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2118,21 +1510,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "도어 구성·종류·소재 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"
-   },
-   {
-    "title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)",
-    "publisher": "트렌드쿨",
-    "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "도어 구성·종류·소재 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7500?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "트렌드쿨 방 도어 선택 주의사항(히든도어, 9~12mm 문선)", "publisher": "트렌드쿨", "url": "https://trendkool.com/culture/ex-interior/%eb%b0%a9-%eb%8f%84%ec%96%b4-%ec%a3%bc%eb%ac%b8-%ec%84%a0%ed%83%9d-%ed%9e%88%eb%93%a0-9-12%eb%af%b8%eb%a6%ac-%eb%ac%b8%ec%84%a0/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2157,11 +1537,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 52 00 천장공사(2021)",
-    "publisher": "국토교통부(제3자 미러 경유)",
-    "url": "https://nogada.kwoody01.com/604"
-   }
+   {"title": "KCS 41 52 00 천장공사(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://nogada.kwoody01.com/604
   ]
  },
  {
@@ -2183,16 +1559,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "얼마드나 우물천장 비용 단가표",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/coffered-ceiling-cost"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 우물천장 비용 단가표", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/coffered-ceiling-cost"},
   ]
  },
  {
@@ -2219,21 +1587,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCC 석고보드 표준시방서",
-    "publisher": "KCC",
-    "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"
-   },
-   {
-    "title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)",
-    "publisher": "국토교통부",
-    "url": "https://eastca.co.kr/Data/?bmode=view&idx=169205679"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   {"title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://eastca.co.kr/Data/?bmode=view&idx=169205679
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "KCC 석고보드 표준시방서", "publisher": "KCC", "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2259,11 +1615,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 33 01 목공사 일반(2021)",
-    "publisher": "국토교통부(제3자 미러 경유)",
-    "url": "https://nogada.kwoody01.com/498"
-   }
+   {"title": "KCS 41 33 01 목공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://nogada.kwoody01.com/498
   ]
  },
  {
@@ -2289,16 +1641,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "KCS 41 52 00 천장공사(2021)",
-    "publisher": "국토교통부(제3자 미러 경유)",
-    "url": "https://nogada.kwoody01.com/604"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   {"title": "KCS 41 52 00 천장공사(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://nogada.kwoody01.com/604
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2319,21 +1663,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "Komachine 석고보드 제품(KS F 3504)",
-    "publisher": "코머신",
-    "url": "https://komachine.com/en/companies/byucksan/products/137224"
-   },
-   {
-    "title": "KCC 석고보드 표준시방서",
-    "publisher": "KCC",
-    "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"
-   },
-   {
-    "title": "2026년 하반기 건설공사 표준시장단가(공고 제2026-652호)",
-    "publisher": "국토교통부·한국건설기술연구원",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142"
-   }
+   {"title": "2026년 하반기 건설공사 표준시장단가(공고 제2026-652호)", "publisher": "국토교통부·한국건설기술연구원"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "Komachine 석고보드 제품(KS F 3504)", "publisher": "코머신", "url": "https://komachine.com/en/companies/byucksan/products/137224"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "KCC 석고보드 표준시방서", "publisher": "KCC", "url": "https://www.kccworld.co.kr/data/product/KCC_석고보드_시방서.pdf"},
   ]
  },
  {
@@ -2356,21 +1688,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)",
-    "publisher": "국토교통부",
-    "url": "https://eastca.co.kr/Data/?bmode=view&idx=169205679"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "내만집 매거진(도배 비용·몰딩 비용·목공 글)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/magazine/"
-   }
+   {"title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://eastca.co.kr/Data/?bmode=view&idx=169205679
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 매거진(도배 비용·몰딩 비용·목공 글)", "publisher": "내만집", "url": "https://nmjib.com/magazine/"},
   ]
  },
  {
@@ -2395,16 +1715,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "우물천장 VS 평천장",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5135"
-   },
-   {
-    "title": "얼마드나 우물천장 비용 단가표",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/coffered-ceiling-cost"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "우물천장 VS 평천장", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5135"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 우물천장 비용 단가표", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/coffered-ceiling-cost"},
   ]
  },
  {
@@ -2429,16 +1741,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "우물천장 VS 평천장",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/5135"
-   },
-   {
-    "title": "얼마드나 우물천장 비용 단가표",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/coffered-ceiling-cost"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "우물천장 VS 평천장", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/5135"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 우물천장 비용 단가표", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/coffered-ceiling-cost"},
   ]
  },
  {
@@ -2464,16 +1768,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "얼마드나 우물천장 비용 단가표",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/coffered-ceiling-cost"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 우물천장 비용 단가표", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/coffered-ceiling-cost"},
   ]
  },
  {
@@ -2498,16 +1794,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "티엠티티 '반셀프 인테리어 실전 #4 목공'",
-    "publisher": "티엠티티",
-    "url": "https://tmtt.ghost.io/carpentry/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "티엠티티 '반셀프 인테리어 실전 #4 목공'", "publisher": "티엠티티", "url": "https://tmtt.ghost.io/carpentry/"},
   ]
  },
  {
@@ -2532,11 +1820,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2562,16 +1846,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
   ]
  },
  {
@@ -2597,16 +1873,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)",
-    "publisher": "국토교통부",
-    "url": "https://eastca.co.kr/Data/?bmode=view&idx=169205679"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   {"title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://eastca.co.kr/Data/?bmode=view&idx=169205679
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2632,21 +1900,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   },
-   {
-    "title": "LX Z:IN 몰딩이란? 뜻·종류·시공",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/120"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩이란? 뜻·종류·시공", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/120"},
   ]
  },
  {
@@ -2662,16 +1918,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "KCS 41 33 01 목공사 일반(2021)",
-    "publisher": "국토교통부(제3자 미러 경유)",
-    "url": "https://nogada.kwoody01.com/498"
-   },
-   {
-    "title": "KCS 41 55 01 창호공사 일반 · 41 55 05 목제 창호공사(2021)",
-    "publisher": "국토교통부(제3자 미러 경유)",
-    "url": "https://nogada.kwoody01.com/610"
-   }
+   {"title": "KCS 41 33 01 목공사 일반(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://nogada.kwoody01.com/498
+   {"title": "KCS 41 55 01 창호공사 일반 · 41 55 05 목제 창호공사(2021)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://nogada.kwoody01.com/610
   ]
  },
  {
@@ -2687,16 +1935,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "2026년 하반기 적용 건설업 임금실태조사 보고서(지정통계 제365004호)",
-    "publisher": "대한건설협회",
-    "url": "https://www.cak.or.kr/lay1/bbs/S1T41C42/A/14/view.do?article_seq=160598"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   {"title": "2026년 하반기 적용 건설업 임금실태조사 보고서(지정통계 제365004호)", "publisher": "대한건설협회", "url": "https://www.cak.or.kr/lay1/bbs/S1T41C42/A/14/view.do?article_seq=160598"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2713,16 +1953,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "2026 건설공사 표준품셈(건축 5-3-7 도배바름·유지관리 도배 해체·교체)",
-    "publisher": "국토교통부(한국표준품셈정보원 배포)",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=64699193400142&pgno=1"
-   },
-   {
-    "title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)",
-    "publisher": "국토교통부",
-    "url": "https://eastca.co.kr/Data/?bmode=view&idx=169205679"
-   }
+   {"title": "2026 건설공사 표준품셈(건축 5-3-7 도배바름·유지관리 도배 해체·교체)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=64699193400142&pgno=1
+   {"title": "2026년 건설공사 표준품셈(국토부 공고 제2025-1574호)", "publisher": "국토교통부"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://eastca.co.kr/Data/?bmode=view&idx=169205679
   ]
  },
  {
@@ -2738,16 +1970,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "2026년 하반기 건설공사 표준시장단가(공고 제2026-652호)",
-    "publisher": "국토교통부·한국건설기술연구원",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142"
-   },
-   {
-    "title": "2026년 하반기 건설공사 표준시장단가(도배지바름)",
-    "publisher": "국토교통부·한국건설기술연구원",
-    "url": "https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142&pgno=1"
-   }
+   {"title": "2026년 하반기 건설공사 표준시장단가(공고 제2026-652호)", "publisher": "국토교통부·한국건설기술연구원"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142
+   {"title": "2026년 하반기 건설공사 표준시장단가(도배지바름)", "publisher": "국토교통부·한국건설기술연구원"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://www.kseis.co.kr/bbs/data/dataDetail.do?bbs_seq=3756196310142&pgno=1
   ]
  },
  {
@@ -2764,16 +1988,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "2026년 하반기 적용 건설업 임금실태조사 보고서(지정통계 제365004호)",
-    "publisher": "대한건설협회",
-    "url": "https://www.cak.or.kr/lay1/bbs/S1T41C42/A/14/view.do?article_seq=160598"
-   },
-   {
-    "title": "2026년 하반기 적용 건설업 임금실태조사 보고서",
-    "publisher": "대한건설협회",
-    "url": "https://info.cak.or.kr/lay1/bbs/S1T41C42/A/14/view.do?article_seq=160598"
-   }
+   {"title": "2026년 하반기 적용 건설업 임금실태조사 보고서(지정통계 제365004호)", "publisher": "대한건설협회", "url": "https://www.cak.or.kr/lay1/bbs/S1T41C42/A/14/view.do?article_seq=160598"},
+   {"title": "2026년 하반기 적용 건설업 임금실태조사 보고서", "publisher": "대한건설협회", "url": "https://info.cak.or.kr/lay1/bbs/S1T41C42/A/14/view.do?article_seq=160598"},
   ]
  },
  {
@@ -2789,16 +2005,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)",
-    "publisher": "interiorguide 외",
-    "url": "https://interiorguide.co.kr/3079/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)", "publisher": "interiorguide 외", "url": "https://interiorguide.co.kr/3079/"},
   ]
  },
  {
@@ -2815,16 +2023,8 @@ export const TERMS: Term[] = [
   "ask": "이 금액은 부가세 포함인가요?",
   "images": [],
   "sources": [
-   {
-    "title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)",
-    "publisher": "interiorguide 외",
-    "url": "https://interiorguide.co.kr/3079/"
-   },
-   {
-    "title": "모모랩디자인 스토리(계약·무등록·부가세·하자 접수 등)",
-    "publisher": "모모랩디자인",
-    "url": "https://momolabdesign.com/story/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)", "publisher": "interiorguide 외", "url": "https://interiorguide.co.kr/3079/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "모모랩디자인 스토리(계약·무등록·부가세·하자 접수 등)", "publisher": "모모랩디자인", "url": "https://momolabdesign.com/story/"},
   ]
  },
  {
@@ -2842,16 +2042,8 @@ export const TERMS: Term[] = [
   "ask": "실측 뒤 금액이 바뀐다면 어떤 항목이 바뀌나요?",
   "images": [],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
   ]
  },
  {
@@ -2869,16 +2061,8 @@ export const TERMS: Term[] = [
   "ask": "가견적과 달라진 줄은 어느 것이고 왜 달라졌나요?",
   "images": [],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "소비자분쟁해결기준(공정위 고시 제2025-14호) 실내건축공사업",
-    "publisher": "공정거래위원회",
-    "url": "https://www.law.go.kr/행정규칙/소비자분쟁해결기준"
-   }
+   {"title": "소비자분쟁해결기준(공정위 고시 제2025-14호) 실내건축공사업", "publisher": "공정거래위원회", "url": "https://www.law.go.kr/행정규칙/소비자분쟁해결기준"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -2894,38 +2078,7 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "소비자분쟁해결기준(공정위 고시 제2025-14호) 실내건축공사업",
-    "publisher": "공정거래위원회",
-    "url": "https://www.law.go.kr/행정규칙/소비자분쟁해결기준"
-   }
-  ]
- },
- {
-  "id": "별도",
-  "term": "별도",
-  "aliases": [
-   "별도 항목",
-   "내역 외 별도"
-  ],
-  "trade": "common",
-  "easy": "견적 총액에 들어 있지 않아 따로 내야 하는 항목",
-  "tip": "총액 밖 항목이에요. 믿집 표준견적서는 줄마다 포함 · 묶음 포함 · 따로 계산 · 선택 · 실측 후 · 안 함으로 보여 줘요.",
-  "detail": "폐기물 · 양중 · 보양 · 부가세가 '별도'로 빠져 총액이 낮아 보이는 경우가 많아요. 업체 견적끼리 견줄 때는 항목마다 포함 · 별도 · 빠짐을 표시해요.",
-  "use": "",
-  "ask": "총액에 들지 않은 별도 항목은 무엇인가요?",
-  "images": [],
-  "sources": [
-   {
-    "title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)",
-    "publisher": "interiorguide 외",
-    "url": "https://interiorguide.co.kr/3079/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   {"title": "소비자분쟁해결기준(공정위 고시 제2025-14호) 실내건축공사업", "publisher": "공정거래위원회", "url": "https://www.law.go.kr/행정규칙/소비자분쟁해결기준"},
   ]
  },
  {
@@ -2943,16 +2096,8 @@ export const TERMS: Term[] = [
   "ask": "실측 뒤에 정할 항목과 그 단가는 무엇인가요?",
   "images": [],
   "sources": [
-   {
-    "title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)",
-    "publisher": "interiorguide 외",
-    "url": "https://interiorguide.co.kr/3079/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)", "publisher": "interiorguide 외", "url": "https://interiorguide.co.kr/3079/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
   ]
  },
  {
@@ -2977,21 +2122,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)",
-    "publisher": "interiorguide 외",
-    "url": "https://interiorguide.co.kr/3079/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)", "publisher": "interiorguide 외", "url": "https://interiorguide.co.kr/3079/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
   ]
  },
  {
@@ -3007,76 +2140,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   },
-   {
-    "title": "공사 전 관리사무소 신고부터 엘리베이터 보양까지",
-    "publisher": "꾸미고",
-    "url": "https://kkumigo.co.kr/space/공사-전-관리사무소-신고부터/"
-   }
-  ]
- },
- {
-  "id": "공사장-생활폐기물",
-  "term": "공사장 생활폐기물",
-  "aliases": [
-   "5톤 미만 폐기물"
-  ],
-  "trade": "common",
-  "easy": "한 공사에서 5톤 미만으로 나오는 공사 폐기물",
-  "tip": "작은 공사에서 나온 폐기물이에요. 누가 어떻게 버리는지, 처리비가 견적에 들었는지 확인해요.",
-  "detail": "한 공사에서 5톤 이상 나오면 건설폐기물이라 배출자가 폐기물 처리계획서를 구청 등에 신고해요. 5톤 미만은 생활폐기물로 보고, 지자체 조례가 정한 방법으로 버려요. 서울은 버리기 전에 자치구에 신고하게 해서, 자세한 방법은 사는 곳 구청 청소 부서에 확인해요.",
-  "use": "인테리어 공사에서 나온 폐기물을 어떻게 버릴지 정할 때 따져요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "건설폐기물의 재활용촉진에 관한 법률 제2조 · 제17조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설폐기물의재활용촉진에관한법률/제2조"
-   },
-   {
-    "title": "폐기물관리법 제15조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/폐기물관리법/제15조"
-   },
-   {
-    "title": "소규모 공사장 쓰레기 신고하고 배출하세요",
-    "publisher": "서울특별시(자원순환과)",
-    "url": "https://news.seoul.go.kr/env/archives/523432"
-   }
-  ]
- },
- {
-  "id": "경미한-행위",
-  "term": "경미한 행위",
-  "aliases": [
-   "경미한 공사(공동주택)"
-  ],
-  "trade": "common",
-  "easy": "구청 허가 · 신고 없이 할 수 있는 세대 내부 공사",
-  "tip": "구청 신고 없이 하는 집 안 공사예요. 도배 · 문틀 교체가 여기에 들지만 관리사무소 동의는 받아야 해요.",
-  "detail": "창틀 · 문틀 교체, 세대 안 천장 · 벽 · 바닥 마감재 교체, 급 · 배수관 같은 배관설비 교체, 세대 안 난방설비 교체(시설을 부수거나 철거하는 것은 빼요) 등이 들어가요(공동주택관리법 시행규칙 제15조제1항). 그래도 주택 안 구조물 · 설비를 바꾸는 일이라 관리주체(관리사무소) 동의는 받아야 해요(같은 법 시행령 제19조제2항).",
-  "use": "도배 · 문틀 교체처럼 구청 신고 없이 하는 공사인지 가릴 때 써요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "공동주택관리법 시행규칙 제15조(행위허가 신청 등)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행규칙/제15조"
-   },
-   {
-    "title": "공동주택관리법 시행령 제19조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행령/제19조"
-   },
-   {
-    "title": "아파트 입주 전 내부 인테리어 공사를 하려고 합니다. 구청에 신고를 해야 하나요?",
-    "publisher": "법제처 찾기 쉬운 생활법령정보",
-    "url": "https://easylaw.go.kr/CSP/EasyLawInfoR.laf?csmSeq=1222&easySeq=1641"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "공사 전 관리사무소 신고부터 엘리베이터 보양까지", "publisher": "꾸미고", "url": "https://kkumigo.co.kr/space/공사-전-관리사무소-신고부터/"},
   ]
  },
  {
@@ -3093,192 +2158,10 @@ export const TERMS: Term[] = [
   "use": "도배 · 문틀 교체 같은 집 안 공사를 시작하기 전에 받아요.",
   "images": [],
   "sources": [
-   {
-    "title": "공동주택관리법 시행령 제19조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행령/제19조"
-   },
-   {
-    "title": "공동주택관리법 제18조(관리규약)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법/제18조"
-   },
-   {
-    "title": "아파트 입주 전 내부 인테리어 공사를 하려고 합니다. 구청에 신고를 해야 하나요?",
-    "publisher": "법제처 찾기 쉬운 생활법령정보",
-    "url": "https://easylaw.go.kr/CSP/EasyLawInfoR.laf?csmSeq=1222&easySeq=1641"
-   },
-   {
-    "title": "서울특별시 공동주택관리규약 준칙",
-    "publisher": "서울특별시",
-    "url": "https://openapt.seoul.go.kr/include/mngAgreeInfo.html"
-   }
-  ]
- },
- {
-  "id": "행위허가",
-  "term": "행위허가",
-  "aliases": [
-   "행위신고"
-  ],
-  "trade": "common",
-  "easy": "구조 변경 같은 공사 전에 구청에 받는 허가나 신고",
-  "tip": "벽을 헐거나 구조를 바꾸는 공사의 허가 · 신고예요. 도배 · 문틀 교체 같은 마감 교체는 대상이 아니에요.",
-  "detail": "공동주택관리법 제35조는 용도 변경, 증축 · 개축 · 대수선, 파손 · 철거, 세대구분형 공동주택 설치, 비내력벽 철거 같은 공사를 하려면 시장 · 군수 · 구청장의 허가를 받거나 신고하게 해요. 시공 업체도 허가 · 신고를 했는지 미리 확인해야 해요. 공사를 마치면 사용검사를 받아요. 처리기간은 구청 민원 안내를 봐요(예: 서울 도봉구 안내는 허가 10일 · 신고 7일).",
-  "use": "벽을 헐거나 용도를 바꾸는 공사를 하기 전에 받아요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "공동주택관리법 제35조(행위허가 기준 등)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법/제35조"
-   },
-   {
-    "title": "공동주택관리법 시행령 제35조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행령/제35조"
-   },
-   {
-    "title": "아파트 입주 > 아파트 구조 변경 공사 > 인테리어 공사",
-    "publisher": "법제처 찾기 쉬운 생활법령정보",
-    "url": "https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=1222&ccfNo=2&cciNo=1&cnpClsNo=1"
-   },
-   {
-    "title": "공동주택관리 > 행위허가/신고",
-    "publisher": "서울 도봉구청(주택과)",
-    "url": "https://www.dobong.go.kr/Contents.asp?code=10009392"
-   }
-  ]
- },
- {
-  "id": "비내력벽",
-  "term": "비내력벽",
-  "aliases": [
-   "비내력 벽"
-  ],
-  "trade": "common",
-  "easy": "건물 무게를 받치지 않는 벽",
-  "tip": "무게를 받치지 않는 벽이에요. 헐려면 구청 허가 · 신고와 같은 동 입주자 동의가 필요해요.",
-  "detail": "자기 무게만 버티고 바닥 · 지붕 같은 다른 무게는 받지 않는 벽이에요. 아파트에서 비내력벽을 헐려면 구청의 허가를 받거나 신고해야 해요. 철거해도 구조안전에 이상이 없다고 인정되고, 해당 동에 사는 입주자등 2분의 1 이상이 동의해야 해요. 신청할 때 비내력벽임을 증명하는 도면 · 사진과 동의서를 내요.",
-  "use": "건물 무게를 받치지 않는 벽이에요. 헐려면 구청 허가 · 신고와 동의가 필요해요.",
-  "images": [
-   {
-    "src": "/guide-img/terms/non_bearing_b.webp",
-    "kind": "입체 그림"
-   },
-   {
-    "src": "/guide-img/terms/non_bearing_c.webp",
-    "kind": "단면 그림"
-   }
-  ],
-  "sources": [
-   {
-    "title": "공동주택관리법 시행령 제35조 · 별표 3",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행령/제35조"
-   },
-   {
-    "title": "공동주택관리법 시행규칙 제15조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행규칙/제15조"
-   },
-   {
-    "title": "아파트 입주 > 아파트 구조 변경 공사 > 인테리어 공사",
-    "publisher": "법제처 찾기 쉬운 생활법령정보",
-    "url": "https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=1222&ccfNo=2&cciNo=1&cnpClsNo=1"
-   },
-   {
-    "title": "소방용어집 > 비내력벽",
-    "publisher": "횡성소방서",
-    "url": "https://gfsa.gwd.go.kr/hs119/partici/partici_law/partici_law_terms?articleSeq=10003233"
-   }
-  ]
- },
- {
-  "id": "실내건축공사업",
-  "term": "실내건축공사업",
-  "aliases": [
-   "실내건축 면허",
-   "인테리어 면허"
-  ],
-  "trade": "common",
-  "easy": "실내 인테리어 공사를 하는 전문건설업 업종",
-  "tip": "인테리어 공사의 건설업 업종이에요. 공사예정금액이 1,500만 원 이상이면 건설업 등록 업체인지 확인해요.",
-  "detail": "건설산업기본법 시행령 별표 1의 전문공사 업종 가운데 하나예요. 공사예정금액 1,500만 원 미만인 전문공사는 등록 없이 할 수 있고(경미한 건설공사), 그 이상이면 건설업을 등록한 업체만 할 수 있어요. 등록 여부는 KISCON(건설산업지식정보시스템)의 '건설업체정보조회'에서 업체명 · 대표자 · 사업자등록번호로 찾아요.",
-  "use": "인테리어 업체가 건설업을 등록했는지 볼 때 확인하는 업종이에요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "건설산업기본법 제9조(건설업 등록 등)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법/제9조"
-   },
-   {
-    "title": "건설산업기본법 시행령 제8조 · 별표 1",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법시행령/제8조"
-   },
-   {
-    "title": "[피해예방주의보] 인테리어 하자 보수 분쟁 다발, 사업자 선정에 유의해야",
-    "publisher": "한국소비자원 대구경북지원",
-    "url": "https://www.kca.go.kr/home/sub.do?menukey=4005&mode=view&no=1004580544"
-   },
-   {
-    "title": "건설업체정보조회",
-    "publisher": "건설산업지식정보시스템(KISCON)",
-    "url": "https://www.kiscon.net/"
-   }
-  ]
- },
- {
-  "id": "경미한-건설공사",
-  "term": "경미한 건설공사",
-  "aliases": [
-   "1,500만원 기준"
-  ],
-  "trade": "common",
-  "easy": "건설업 등록 없이 할 수 있는 작은 공사",
-  "tip": "등록 없이 할 수 있는 작은 공사예요. 실내건축 같은 전문공사는 공사예정금액 1,500만 원 미만이 기준이에요.",
-  "detail": "건설산업기본법 시행령 제8조는 전문공사는 공사예정금액 1,500만 원 미만, 종합공사는 5,000만 원 미만인 공사를 경미한 건설공사로 정해요. 같은 공사를 여러 계약으로 나눠 맡겨도 금액을 합치고, 고객이 재료를 대면 그 재료의 시장가격과 운임도 더해요.",
-  "use": "건설업 등록이 없는 업체에 맡길 수 있는 공사 규모인지 볼 때 따져요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "건설산업기본법 제9조(건설업 등록 등)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법/제9조"
-   },
-   {
-    "title": "건설산업기본법 시행령 제8조(경미한 건설공사등)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법시행령/제8조"
-   },
-   {
-    "title": "[피해예방주의보] 인테리어 하자 보수 분쟁 다발, 사업자 선정에 유의해야",
-    "publisher": "한국소비자원 대구경북지원",
-    "url": "https://www.kca.go.kr/home/sub.do?menukey=4005&mode=view&no=1004580544"
-   }
-  ]
- },
- {
-  "id": "KISCON",
-  "term": "KISCON",
-  "aliases": [
-   "건설산업지식정보시스템",
-   "키스콘"
-  ],
-  "trade": "common",
-  "easy": "건설업체 등록 · 행정처분을 조회하는 공공 시스템",
-  "tip": "업체 등록 조회 시스템이에요. 계약 전에 등록 · 처분 이력을 조회해요.",
-  "detail": "업체명 · 대표자 · 사업자번호로 등록 여부와 행정처분 · 폐업 · 벌점을 확인해요.",
-  "use": "",
-  "images": [],
-  "sources": [
-   {
-    "title": "KISCON 건설산업지식정보시스템 건설업체 정보조회",
-    "publisher": "국토교통부 건설산업지식정보시스템",
-    "url": "https://www.kiscon.net/"
-   }
+   {"title": "공동주택관리법 시행령 제19조", "publisher": "국가법령정보센터(법제처)", "url": "https://www.law.go.kr/법령/공동주택관리법시행령/제19조"},
+   {"title": "공동주택관리법 제18조(관리규약)", "publisher": "국가법령정보센터(법제처)", "url": "https://www.law.go.kr/법령/공동주택관리법/제18조"},
+   {"title": "아파트 입주 전 내부 인테리어 공사를 하려고 합니다. 구청에 신고를 해야 하나요?", "publisher": "법제처 찾기 쉬운 생활법령정보", "url": "https://easylaw.go.kr/CSP/EasyLawInfoR.laf?csmSeq=1222&easySeq=1641"},
+   {"title": "서울특별시 공동주택관리규약 준칙", "publisher": "서울특별시", "url": "https://openapt.seoul.go.kr/include/mngAgreeInfo.html"},
   ]
  },
  {
@@ -3295,26 +2178,10 @@ export const TERMS: Term[] = [
   "use": "계약서에 하자 보수 기간을 적을 때 기준으로 써요.",
   "images": [],
   "sources": [
-   {
-    "title": "건설산업기본법 제28조(건설공사 수급인 등의 하자담보책임)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법/제28조"
-   },
-   {
-    "title": "건설산업기본법 시행령 제30조 · 별표 4",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법시행령/제30조"
-   },
-   {
-    "title": "커피전문점 창업ㆍ운영 > 창업준비 > 영업시설 > 인테리어 공사",
-    "publisher": "법제처 찾기 쉬운 생활법령정보",
-    "url": "https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=706&ccfNo=3&cciNo=3&cnpClsNo=1"
-   },
-   {
-    "title": "정책Q&A 건설공사 하자담보책임제도",
-    "publisher": "국토교통부(건설정책과)",
-    "url": "https://www.molit.go.kr/USR/policyTarget/m_24066/dtl.jsp?idx=832"
-   }
+   {"title": "건설산업기본법 제28조(건설공사 수급인 등의 하자담보책임)", "publisher": "국가법령정보센터(법제처)", "url": "https://www.law.go.kr/법령/건설산업기본법/제28조"},
+   {"title": "건설산업기본법 시행령 제30조 · 별표 4", "publisher": "국가법령정보센터(법제처)", "url": "https://www.law.go.kr/법령/건설산업기본법시행령/제30조"},
+   {"title": "정책Q&A 건설공사 하자담보책임제도", "publisher": "국토교통부(건설정책과)", "url": "https://www.molit.go.kr/USR/policyTarget/m_24066/dtl.jsp?idx=832"},
+   // 숨김(제목이 내용과 동떨어져 헷갈릴 수 있음): {"title": "커피전문점 창업ㆍ운영 > 창업준비 > 영업시설 > 인테리어 공사", "publisher": "법제처 찾기 쉬운 생활법령정보", "url": "https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=706&ccfNo=3&cciNo=3&cnpClsNo=1"},
   ]
  },
  {
@@ -3331,21 +2198,9 @@ export const TERMS: Term[] = [
   "use": "계약 전에 업체가 하자보수 보증서를 낼 수 있는지 물을 때 써요.",
   "images": [],
   "sources": [
-   {
-    "title": "건설산업기본법 제56조(공제조합의 사업)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법/제56조"
-   },
-   {
-    "title": "건설산업기본법 시행령 제30조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법시행령/제30조"
-   },
-   {
-    "title": "주택 리모델링 소비자피해, 부실시공과 계약불이행이 절반 이상",
-    "publisher": "한국소비자원(경기지원 주택공산품팀)",
-    "url": "https://www.kca.go.kr/home/sub.do?menukey=4002&mode=view&no=1002951945"
-   }
+   {"title": "건설산업기본법 제56조(공제조합의 사업)", "publisher": "국가법령정보센터(법제처)", "url": "https://www.law.go.kr/법령/건설산업기본법/제56조"},
+   {"title": "건설산업기본법 시행령 제30조", "publisher": "국가법령정보센터(법제처)", "url": "https://www.law.go.kr/법령/건설산업기본법시행령/제30조"},
+   {"title": "주택 리모델링 소비자피해, 부실시공과 계약불이행이 절반 이상", "publisher": "한국소비자원(경기지원 주택공산품팀)", "url": "https://www.kca.go.kr/home/sub.do?menukey=4002&mode=view&no=1002951945"},
   ]
  },
  {
@@ -3362,91 +2217,10 @@ export const TERMS: Term[] = [
   "use": "인테리어 공사 계약서를 쓸 때 양식으로 써요.",
   "images": [],
   "sources": [
-   {
-    "title": "실내건축·창호 공사 표준계약서 (표준약관 제10079호)",
-    "publisher": "공정거래위원회",
-    "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?key=202&bordCd=201&nttSn=11181"
-   },
-   {
-    "title": "실내건축·창호 공사 표준계약서 제정(보도자료)",
-    "publisher": "공정거래위원회(약관심사과)",
-    "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?pageUnit=10&pageIndex=10&searchCnd=all&key=12&bordCd=3&searchViolt=100&nttSn=40720&rltnNttSn=36780"
-   },
-   {
-    "title": "주택 리모델링 소비자피해, 부실시공과 계약불이행이 절반 이상",
-    "publisher": "한국소비자원(경기지원 주택공산품팀)",
-    "url": "https://www.kca.go.kr/home/sub.do?menukey=4002&mode=view&no=1002951945"
-   }
+   {"title": "실내건축·창호 공사 표준계약서 (표준약관 제10079호)", "publisher": "공정거래위원회", "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?key=202&bordCd=201&nttSn=11181"},
+   {"title": "실내건축·창호 공사 표준계약서 제정(보도자료)", "publisher": "공정거래위원회(약관심사과)", "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?pageUnit=10&pageIndex=10&searchCnd=all&key=12&bordCd=3&searchViolt=100&nttSn=40720&rltnNttSn=36780"},
+   {"title": "주택 리모델링 소비자피해, 부실시공과 계약불이행이 절반 이상", "publisher": "한국소비자원(경기지원 주택공산품팀)", "url": "https://www.kca.go.kr/home/sub.do?menukey=4002&mode=view&no=1002951945"},
   ]
- },
- {
-  "id": "소비자분쟁해결기준",
-  "term": "소비자분쟁해결기준",
-  "aliases": [
-   "분쟁해결기준"
-  ],
-  "trade": "common",
-  "easy": "분쟁 때 쓰는 공정위 고시의 합의 · 권고 기준",
-  "tip": "분쟁 때 쓰는 기준이에요. 업체와 따로 정한 해결 방법이 없을 때 기준이 돼요.",
-  "detail": "소비자기본법에 따라 공정거래위원회가 고시로 정해요(지금은 고시 제2025-14호, 2025. 12. 18. 시행). 분쟁 당사자가 해결 방법을 따로 정하지 않았을 때 합의 또는 권고의 기준이 돼요. 실내건축공사업 기준은 2023년 12월에 새로 생겼고, 그전 기준은 창호공사만 다뤘어요. 계약서를 못 받았을 때, 공사가 늦어졌을 때, 시공 하자가 생겼을 때 등의 해결 기준이 있어요.",
-  "use": "업체와 하자 · 지연 · 계약 해제로 다툴 때 해결 기준을 찾아봐요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "소비자기본법 제16조(소비자분쟁의 해결)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/소비자기본법/제16조"
-   },
-   {
-    "title": "소비자분쟁해결기준(공정거래위원회고시 제2025-14호)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/행정규칙/소비자분쟁해결기준"
-   },
-   {
-    "title": "의류건조기·관리기 품질 보증기간 1년…독서실 이용료 반환기준 마련",
-    "publisher": "대한민국 정책브리핑(공정거래위원회)",
-    "url": "https://www.korea.kr/news/policyNewsView.do?newsId=148923999"
-   },
-   {
-    "title": "이사 > 집 꾸미기 > 주택수리 하자에 관한 분쟁해결기준",
-    "publisher": "법제처 찾기 쉬운 생활법령정보",
-    "url": "https://easylaw.go.kr/CSP/CnpClsMain.laf?popMenu=ov&csmSeq=666&ccfNo=2&cciNo=3&cnpClsNo=2"
-   }
-  ]
- },
- {
-  "id": "1372-소비자상담센터",
-  "term": "1372 소비자상담센터",
-  "aliases": [
-   "1372"
-  ],
-  "trade": "common",
-  "easy": "소비자 피해를 상담하는 공공 창구",
-  "tip": "소비자 상담 창구예요. 업체와 해결이 안 되면 여기서 상담해요.",
-  "detail": "업체가 하자를 부인하거나 연락이 끊기면 상담받고, 한국소비자원 피해구제와 분쟁조정으로 이어갈 수 있어요.",
-  "use": "",
-  "images": [],
-  "sources": [
-   {
-    "title": "소비자기본법 제55·67조",
-    "publisher": "법제처 국가법령정보센터",
-    "url": "https://www.law.go.kr/법령/소비자기본법/제67조"
-   }
-  ]
- },
- {
-  "id": "내용증명",
-  "term": "내용증명",
-  "aliases": [
-   "내용증명 우편"
-  ],
-  "trade": "common",
-  "easy": "보낸 내용과 날짜를 우체국이 증명해 주는 우편",
-  "tip": "보낸 내용을 증명하는 우편이에요. 업체가 하자 보수를 거부할 때 보내요.",
-  "detail": "업체가 하자 보수를 거부하면 하자 내용과 보수 기한을 적어 보내요. 제3자 하자 감정과 함께 손해배상의 근거가 돼요.",
-  "use": "",
-  "images": [],
-  "sources": []
  },
  {
   "id": "잔금",
@@ -3461,76 +2235,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   },
-   {
-    "title": "실내건축·창호 공사 표준계약서(표준약관 제10079호)",
-    "publisher": "공정거래위원회",
-    "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?key=202&bordCd=201&nttSn=11181"
-   }
-  ]
- },
- {
-  "id": "명의대여",
-  "term": "명의대여",
-  "aliases": [
-   "면허 대여"
-  ],
-  "trade": "common",
-  "easy": "건설업 등록증 · 상호를 빌려주고 빌리는 것",
-  "tip": "남의 건설업 등록증 · 상호로 공사하는 거예요. 계약서의 상호 · 대표자가 등록 정보와 같은지 확인해요.",
-  "detail": "건설산업기본법 제21조는 건설사업자가 자기 이름 · 상호나 등록증 · 등록수첩을 남에게 빌려주는 것, 빌리는 것, 이를 알선하는 것을 금지해요. 건축주가 이런 업체와 짜고 공사를 맡기는 것도 금지하고, 벌칙은 같은 법 제95조의2에 있어요. 등록 정보는 KISCON '건설업체정보조회'에서 찾아봐요.",
-  "use": "계약할 업체의 등록 정보를 확인할 때 함께 봐요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "건설산업기본법 제21조 · 제95조의2",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/건설산업기본법/제21조"
-   },
-   {
-    "title": "건설업체정보조회",
-    "publisher": "건설산업지식정보시스템(KISCON)",
-    "url": "https://www.kiscon.net/"
-   },
-   {
-    "title": "실내건축·창호 공사 표준계약서 제정(보도자료)",
-    "publisher": "공정거래위원회(약관심사과)",
-    "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?pageUnit=10&pageIndex=10&searchCnd=all&key=12&bordCd=3&searchViolt=100&nttSn=40720&rltnNttSn=36780"
-   }
-  ]
- },
- {
-  "id": "사용검사",
-  "term": "사용검사",
-  "aliases": [
-   "사용검사 신청"
-  ],
-  "trade": "common",
-  "easy": "허가 · 신고한 공사를 마친 뒤 구청에서 받는 검사",
-  "tip": "구청에 허가 · 신고한 공사를 마쳤을 때 받는 검사예요. 구청 신고 없이 하는 도배 · 문틀 교체와는 상관없어요.",
-  "detail": "공동주택관리법 제35조제5항은 허가를 받거나 신고한 공사를 마치면 시장 · 군수 · 구청장의 사용검사를 받게 해요. 신청서에 시공자의 공사확인서(감리 대상이면 감리자의 감리의견서도)를 붙이고, 구청은 허가 · 신고 내용과 맞는지 확인한 뒤 사용검사필증을 내줘요. 처리기간은 구청 민원 안내를 봐요(예: 서울 도봉구 안내는 15일).",
-  "use": "허가 · 신고한 공사를 마친 뒤 구청에 신청해요.",
-  "images": [],
-  "sources": [
-   {
-    "title": "공동주택관리법 제35조(행위허가 기준 등)",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법/제35조"
-   },
-   {
-    "title": "공동주택관리법 시행규칙 제15조",
-    "publisher": "국가법령정보센터(법제처)",
-    "url": "https://www.law.go.kr/법령/공동주택관리법시행규칙/제15조"
-   },
-   {
-    "title": "공동주택관리 > 행위허가/신고",
-    "publisher": "서울 도봉구청(주택과)",
-    "url": "https://www.dobong.go.kr/Contents.asp?code=10009392"
-   }
+   {"title": "실내건축·창호 공사 표준계약서(표준약관 제10079호)", "publisher": "공정거래위원회", "url": "https://www.ftc.go.kr/www/selectBbsNttView.do?key=202&bordCd=201&nttSn=11181"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
   ]
  },
  {
@@ -3548,21 +2254,9 @@ export const TERMS: Term[] = [
   "oos": true,
   "images": [],
   "sources": [
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   },
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
   ]
  },
  {
@@ -3579,16 +2273,8 @@ export const TERMS: Term[] = [
   "oos": true,
   "images": [],
   "sources": [
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   },
-   {
-    "title": "LHCS 41 51 05 도배공사",
-    "publisher": "한국토지주택공사(LH)",
-    "url": "https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/"
-   }
+   {"title": "LHCS 41 51 05 도배공사", "publisher": "한국토지주택공사(LH)"}, // 링크 숨김(공식 누리집이 아닌 사본 링크): https://enc.ksocket.com/lhcs/lhcs-lhcs-41-51-05-%EB%8F%84%EB%B0%B0%EA%B3%B5%EC%82%AC/
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
   ]
  },
  {
@@ -3616,21 +2302,9 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   },
-   {
-    "title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)",
-    "publisher": "내만집",
-    "url": "https://nmjib.com/guide/"
-   },
-   {
-    "title": "인테리어 공사 순서 이해하기",
-    "publisher": "오늘의집",
-    "url": "https://ohou.se/advices/8467"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "내만집 가이드(공정 순서·작업일·신고·체크리스트 등)", "publisher": "내만집", "url": "https://nmjib.com/guide/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "인테리어 공사 순서 이해하기", "publisher": "오늘의집", "url": "https://ohou.se/advices/8467"},
   ]
  },
  {
@@ -3656,11 +2330,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
   ]
  },
  {
@@ -3687,16 +2357,8 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "숨고 블로그 필름시공 비용",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/blog/interior/필름시공/"
-   },
-   {
-    "title": "LX Z:IN 인테리어 공정별 체크리스트",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "숨고 블로그 필름시공 비용", "publisher": "숨고", "url": "https://soomgo.com/blog/interior/필름시공/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 인테리어 공정별 체크리스트", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/7398?guideTab=AZ01"},
   ]
  },
  {
@@ -3722,11 +2384,7 @@ export const TERMS: Term[] = [
    }
   ],
   "sources": [
-   {
-    "title": "LX Z:IN 몰딩 선택·시공·교체 가이드",
-    "publisher": "LX하우시스(LX Z:IN)",
-    "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "LX Z:IN 몰딩 선택·시공·교체 가이드", "publisher": "LX하우시스(LX Z:IN)", "url": "https://www.lxzin.com/styling/style-guide/detail/6979?guideTab=AZ01"},
   ]
  },
  {
@@ -3743,16 +2401,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "goodservice '도배 장판 비용 25평·34평'",
-    "publisher": "goodservice",
-    "url": "https://goodservice.kr/659"
-   },
-   {
-    "title": "숨고 블로그 '도배비용 기준표와 숨은 추가비 7가지'",
-    "publisher": "숨고",
-    "url": "https://soomgo.com/blog/interior/도배비용/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "goodservice '도배 장판 비용 25평·34평'", "publisher": "goodservice", "url": "https://goodservice.kr/659"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "숨고 블로그 '도배비용 기준표와 숨은 추가비 7가지'", "publisher": "숨고", "url": "https://soomgo.com/blog/interior/도배비용/"},
   ]
  },
  {
@@ -3769,16 +2419,8 @@ export const TERMS: Term[] = [
   "use": "",
   "images": [],
   "sources": [
-   {
-    "title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)",
-    "publisher": "얼마드나",
-    "url": "https://ulmadna.com/blog/"
-   },
-   {
-    "title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)",
-    "publisher": "interiorguide 외",
-    "url": "https://interiorguide.co.kr/3079/"
-   }
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "얼마드나 블로그(목공 비용·공정·체크리스트 글 모음)", "publisher": "얼마드나", "url": "https://ulmadna.com/blog/"},
+   // 숨김(업체 · 제조사 · 플랫폼 · 개인 글): {"title": "견적서 읽기 가이드 모음(interiorguide, demade51, goodservice/778, ganatoday)", "publisher": "interiorguide 외", "url": "https://interiorguide.co.kr/3079/"},
   ]
  }
 ];
