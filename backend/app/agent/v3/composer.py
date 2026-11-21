@@ -179,9 +179,14 @@ def evidence(
         [*calc, *fixed, *(c["글"] for c in cards), *(c["글"] for c in chunks.values()),
          *(r["글"] for r in every), question]
     )  # fmt: skip
+    # 알아 두기 글(믿집이 계산하지 않는 공종)의 숫자는 근거 글이 아니라 계산 결과 · 고객 글에 있어야 해요
+    know = (
+        check.calc_numbers(part.calc, *calc, question),
+        check.turn_out(trades or ([trade] if trade else [])),
+    )
     return {
         "data": data, "refs": refs, "allowed": allowed, "calc": " ".join(calc), "fixed": " ".join(fixed),
-        "rules": {r["ref"]: r["글"] for r in every}, "rule_src": explain.sources(every),
+        "rules": {r["ref"]: r["글"] for r in every}, "rule_src": explain.sources(every), "know": know,
     }  # fmt: skip
 
 
@@ -385,6 +390,16 @@ def to_sections(
         sec = sec.model_copy(update={"sentences": keep})
         kept, why = check.section(sec, allowed, calc_text=calc or None, shown=None, prompt=rules())
         dropped.extend(why)
+        return know_checked(kept)
+
+    know_nums, know_out = ev.get("know") or (check.calc_numbers([], calc), False)
+
+    def know_checked(sec: Section | None) -> Section | None:
+        """알아 두기 글(믿집이 계산하지 않는 공종)은 계산 결과 · 고객 글에 없는 숫자가 든 문장을 빼요(문장 단위)."""
+        if sec is None:
+            return None
+        kept, why = check.know(sec, know_nums, know_out)
+        dropped.extend(why)
         return kept
 
     def sections(
@@ -439,7 +454,7 @@ def to_sections(
                 if all(ok):
                     rows.append([x.text for x in ok])  # type: ignore[union-attr]
             if len(rows) >= 2:
-                out.append(
+                table = know_checked(
                     Section(
                         sentences=[x for s in cap for x in s.sentences],
                         table=rows,
@@ -449,6 +464,8 @@ def to_sections(
                         title=title,
                     )
                 )
+                if table is not None:
+                    out.append(table)
             continue
         out += sections(items, title=title, code=code, steps=b.kind == "steps")
     if not out:
