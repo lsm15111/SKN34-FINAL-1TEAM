@@ -956,7 +956,8 @@ class WithdrawIn(BaseModel):
 @tool(
     "withdraw_proposal",
     surface="customer",
-    kind="propose",
+    # 승인 카드를 만들지 않아 엄격(제안 도구 propose_* 20개 한도)에 넣지 않아요. 입력은 run이 pydantic으로 검사해요
+    kind="read",
     status="카드를 거두고 있어요",
     description="고객이 아직 누르지 않은 승인 카드(승인 기다리는 카드)를 고객 말로 거둬요('그 카드 취소해 줘' · "
     "'아까 요청 카드 거둬 줘'). 거절과 같게 남아 다시 만들지 않아요. kind는 카드 종류(모르면 any), about은 거둘 "
