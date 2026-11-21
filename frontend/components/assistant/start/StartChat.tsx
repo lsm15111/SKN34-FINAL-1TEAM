@@ -1,7 +1,7 @@
 "use client";
 // /start 첫 대화(v4): 주소 · 단지 이름(글) → 집 정보 확인 카드(지역 · 면적 · 공사할 때 집 · 벽지 · 철거 범위) → 표준견적서.
 // - AI 글은 쓰지 않아요(로그인 전 · 공사 전). 말은 정해 둔 글('믿집 안내')이고, 금액 · 일수는 계산 엔진 값(POST /guest/standard)이에요.
-// - 주소 찾기 API는 범위 밖이라 적은 글에서 시 · 군 · 구만 찾아 채워요(못 찾으면 골라요). 적은 글 · 단지 이름 · 동 · 호는 저장하지 않아요.
+// - 주소 찾기 API는 범위 밖이라 적은 글에서 시 · 군 · 구 · 평형 · 공사할 때 집만 찾아 채워요(lib/guest/guess, 못 찾으면 골라요). 적은 글 · 단지 이름 · 동 · 호는 저장하지 않아요.
 // - 손님: 답은 이 기기에만(mj_guest_v3) → 표준견적서 요약 + 가입 카드. 가입하면 같은 답으로 내 공사가 만들어져요(auth/after).
 // - 로그인한 고객: POST /projects(Idempotency-Key = 기기 답 key) → /projects/{id}/standard(비서 대화 위 표준견적서 카드).
 // - 철거 범위(demolition: full · partial · none)는 백엔드 담당이 같은 키로 더해요. 아직 모르는 서버면 그 칸만 빼고 보내요(sendHome).
@@ -14,6 +14,7 @@ import type { Region } from "@/lib/api/project";
 import { errorText, type Schemas } from "@/lib/backend/client";
 import { decText } from "@/lib/format";
 import { calcGuest, sendHome, type GuestStandard } from "@/lib/guest/api";
+import { guessArea, guessOccupied } from "@/lib/guest/guess";
 import { checkDraft, EMPTY_DRAFT, GRADE_WORD, pyeongToM2, toHomeInfo, type InfoDraft } from "@/lib/guest/info";
 import { toQuoteLines } from "@/lib/guest/standard";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
@@ -110,9 +111,18 @@ export function StartChat({ regions, mode, mock }: { regions: Region[]; mode: "g
     const v = raw.trim().slice(0, 80);
     if (!v) return;
     const r = guessRegion(v, regions);
+    // 같이 적은 평형 · 공사할 때 집도 미리 골라요(못 찾은 칸은 그대로 둬요)
+    const a = guessArea(v, PYEONG);
+    const o = guessOccupied(v);
     setSaid(v);
     setFound(!!r);
-    if (r) set({ sido: r.sido, sgg: r.sgg });
+    const patch: Partial<InfoDraft> = {
+      ...(r ? { sido: r.sido, sgg: r.sgg } : {}),
+      ...(a ? { area: a.area, basis: a.basis } : {}),
+      ...(o !== null ? { occupied: o } : {}),
+    };
+    if (a) setManual(!a.chip);
+    if (Object.keys(patch).length) set(patch);
     setText("");
     setPhase("confirm");
   }
