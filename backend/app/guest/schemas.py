@@ -1,9 +1,12 @@
 """로그인 전 표준견적서 계산 (dev-03). 입력은 project.schemas.HomeInfoIn(가입 뒤 POST /projects와 같은 칸)."""
 
+from datetime import date
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, Field
+
+from app.calc.start_wish import StartWish
 
 LineState = Literal["included", "bundled", "separate", "optional", "after_visit", "excluded"]
 
@@ -42,6 +45,15 @@ class RoomRuleOut(BaseModel):
     fallback: int = Field(description="면적을 아직 안 넣었을 때 보이는 방 개수")
     bands: list[RoomBandOut] = Field(description="면적 기준별, 작은 면적부터")
     room_kinds: list[str] = Field(description="방 칩 순서 (방 1개 = 첫 칸, 5개 = 다섯 칸)")
+
+
+class StartWishOut(BaseModel):
+    """공사 희망 시기 칩 하나(v4 첫 대화 집 확인 카드). 화면은 고른 칩의 날짜를 start_date로 보내기만 한다."""
+
+    key: StartWish = Field(
+        description="this_month 이번 달 · next_month 다음 달 · in_2_3_months 2~3달 뒤"
+    )
+    start_date: date = Field(description="공사 시작 희망일 (계산 엔진, 오늘 서울 기준)")
 
 
 class GuestStandardOut(BaseModel):

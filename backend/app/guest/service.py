@@ -10,7 +10,14 @@ from app.calc import dobae
 from app.calc.common import FORMULA_VERSION
 from app.calc.quote_diff import budget_fit
 from app.calc.space_share import ROOM_KINDS, ROOMS_MAX, ROOMS_MIN, SPACE_SHARE_ROOMS_2026_11
-from app.guest.schemas import GuestLineOut, GuestStandardOut, RoomBandOut, RoomRuleOut
+from app.calc.start_wish import START_WISHES, start_wish
+from app.guest.schemas import (
+    GuestLineOut,
+    GuestStandardOut,
+    RoomBandOut,
+    RoomRuleOut,
+    StartWishOut,
+)
 from app.project.schemas import HomeInfoIn, check_home
 from app.refprice.book import DOBAE_DEFAULT, DOBAE_PROFILES
 from app.refprice.house import HOUSE_2026H2
@@ -29,6 +36,11 @@ def room_rule() -> RoomRuleOut:
         bands=[RoomBandOut(area_basis=b, min_m2=m, rooms=n) for b, m, n in dobae.room_bands_m2(p)],
         room_kinds=list(ROOM_KINDS),
     )
+
+
+def start_options(today: date) -> list[StartWishOut]:
+    """GET /guest/start-options: 공사 희망 시기 칩(이번 달 · 다음 달 · 2~3달 뒤) → 공사 시작 희망일(계산 엔진)"""
+    return [StartWishOut(key=k, start_date=start_wish(k, today)) for k in START_WISHES]
 
 
 async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:

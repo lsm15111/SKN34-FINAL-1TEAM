@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 
 from app.guest import service
-from app.guest.schemas import GuestStandardOut, RoomRuleOut
+from app.guest.schemas import GuestStandardOut, RoomRuleOut, StartWishOut
 from app.project.schemas import HomeInfoIn
 from app.shared import ratelimit
 from app.shared.clock import today_seoul
@@ -19,6 +19,16 @@ rule_router = APIRouter(tags=["손님 (로그인 없음)"])
 )
 async def guest_room_rule() -> RoomRuleOut:
     return service.room_rule()
+
+
+@rule_router.get(
+    "/guest/start-options",
+    response_model=list[StartWishOut],
+    summary="공사 희망 시기 칩: 이번 달 · 다음 달 · 2~3달 뒤 → 공사 시작 희망일 (첫 대화 집 확인 카드)",
+)
+async def guest_start_options() -> list[StartWishOut]:
+    """오늘(서울) 기준 계산 엔진 값. 화면 서버가 페이지마다 읽어서 IP 한도를 세지 않는다."""
+    return service.start_options(today_seoul())
 
 
 @router.post(
