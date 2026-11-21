@@ -1,0 +1,206 @@
+{
+ "id": "S15",
+ "title": "고객: 공사 중 업체가 올린 추가 금액을 보고 승인",
+ "surface": "customer",
+ "split": "dev",
+ "tags": [
+  "07-B",
+  "추가 금액",
+  "C7"
+ ],
+ "persona": {
+  "role": "customer",
+  "who": "도배 공사 날짜를 잡아 둔 고객",
+  "goal": "업체가 올린 추가 금액을 확인하고 30만 원 이하면 승인하기",
+  "style": "금액을 먼저 물어요.",
+  "knows": {
+   "추가로 낼 수 있는 돈": "30만 원까지"
+  },
+  "approve": [
+   {
+    "kind": "propose_extra_answer",
+    "when": "부가세 포함 30만 원 이하이고 내가 승인하겠다고 한 뒤"
+   }
+  ],
+  "reject": [
+   {
+    "kind": "propose_extra_answer",
+    "when": "부가세 포함 30만 원이 넘을 때"
+   }
+  ],
+  "never": [],
+  "done_when": "승인하면 끝내요"
+ },
+ "world": {
+  "today": "2026-12-07",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae"
+   ],
+   "grade": "basic",
+   "living": "vacant",
+   "start_wish": "2026-12-21"
+  },
+  "project": {
+   "stage": "construction"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "phone": "010-3333-4444"
+   }
+  ],
+  "deals": [
+   {
+    "ref": "d_dob",
+    "vendor": "maru",
+    "trade": "dobae",
+    "status": "scheduled",
+    "start": "2026-12-21",
+    "end": "2026-12-23"
+   }
+  ]
+ },
+ "events": [
+  {
+   "id": "e1",
+   "when": {
+    "at_start": true
+   },
+   "do": "vendor_add_extra",
+   "args": {
+    "deal": "d_dob",
+    "title": "곰팡이 방지 처리",
+    "reason": "안방 창가 벽에 곰팡이가 있어 방지 처리가 필요해요.",
+    "amount": 150000,
+    "vat": "excluded"
+   },
+   "note": "부가세 별도 15만 원 → 계산 엔진 합계 16만 5,000원"
+  },
+  {
+   "id": "e2",
+   "when": {
+    "after_action": {
+     "kind": "propose_extra_answer",
+     "status": "executed"
+    }
+   },
+   "do": "clock_tick",
+   "args": {
+    "days": 2,
+    "hour": 14
+   },
+   "note": "답한 뒤라 1일 뒤 알림 줄은 보내지 않아야 해요"
+  }
+ ],
+ "opening": "추가 금액이 올라왔다는데 얼마예요?",
+ "max_turns": 5,
+ "script": {
+  "turns": [
+   {
+    "say": "추가 금액이 올라왔다는데 얼마예요?"
+   },
+   {
+    "say": "그 정도면 괜찮아요. 추가 금액 승인할게요."
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_extra_answer",
+    "do": "reject",
+    "if": {
+     "amount_min": 300001
+    }
+   },
+   {
+    "kind": "propose_extra_answer",
+    "do": "approve",
+    "if": {
+     "after_turn": 2,
+     "amount_max": 300000
+    }
+   }
+  ]
+ },
+ "expected_end": {
+  "extras": [
+   {
+    "vendor": "maru",
+    "status_in": [
+     "approved"
+    ],
+    "count": 1
+   }
+  ],
+  "actions": {
+   "executed": [
+    {
+     "kind": "propose_extra_answer",
+     "count": 1
+    }
+   ],
+   "none_without_approval": true
+  },
+  "nudges": {
+   "sent": [
+    {
+     "trigger": "extra_added",
+     "channel": "feed",
+     "count": 1
+    }
+   ],
+   "not_sent": [
+    {
+     "trigger": "extra_added",
+     "channel": "notify"
+    }
+   ],
+   "false_alarm_max": 0
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "no_text": [
+   "010-5555-0101",
+   "101동 1203호",
+   "010-3333-4444"
+  ],
+  "max_cost_usd": 0.2,
+  "answer_has": [
+   {
+    "when_said": "얼마예요",
+    "any": [
+     "165000",
+     "16만 5,000원"
+    ],
+    "why": "부가세 포함 합계(계산 엔진 값)를 보여 줘요"
+   }
+  ]
+ },
+ "judge": [
+  "금액을 계산 엔진 값 그대로 말했나",
+  "승인 카드를 누르기 전에는 업체에 답이 가지 않는다고 했나"
+ ],
+ "memo": [
+  "2026-11-21 07 자동화 4.6: 먼저 말 걸기가 카드 · 승인 카드를 준비하고 사람이 눌러야 실행돼요. clock_tick 뒤 사람이 이미 끝낸 일의 줄을 보내면 거짓 경보예요. 추가 금액은 extra_added가 금액 카드 + 승인 카드를 만들어요."
+ ]
+}

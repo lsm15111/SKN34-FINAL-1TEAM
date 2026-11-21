@@ -1,0 +1,186 @@
+{
+ "id": "S18",
+ "title": "업체: 고객이 공사 날짜 바꾸기를 요청하면 새 날짜 후보를 보내기",
+ "surface": "vendor",
+ "split": "heldout",
+ "tags": [
+  "07-E",
+  "날짜 바꾸기",
+  "V4"
+ ],
+ "persona": {
+  "role": "vendor",
+  "who": "도배 공사 날짜를 잡아 둔 업체(마루와벽)",
+  "goal": "고객이 원하는 날로 새 공사 날짜를 보내기",
+  "style": "바빠서 짧게 말해요.",
+  "knows": {
+   "빈 날": "고객이 원하는 주는 비어 있어요"
+  },
+  "approve": [
+   {
+    "kind": "propose_dates",
+    "when": "새 시작일이 고객이 원한 날(12월 21일)이나 그 뒤일 때"
+   }
+  ],
+  "reject": [],
+  "never": [
+   "고객 연락처를 묻지 않아요"
+  ],
+  "done_when": "새 날짜를 보내면 끝내요"
+ },
+ "world": {
+  "today": "2026-12-01",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae"
+   ],
+   "grade": "basic",
+   "living": "vacant",
+   "start_wish": "2026-12-14"
+  },
+  "project": {
+   "stage": "construction"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "phone": "010-3333-4444"
+   }
+  ],
+  "deals": [
+   {
+    "ref": "d_dob",
+    "vendor": "maru",
+    "trade": "dobae",
+    "status": "scheduled",
+    "start": "2026-12-14",
+    "end": "2026-12-16"
+   }
+  ]
+ },
+ "events": [
+  {
+   "id": "e1",
+   "when": {
+    "at_start": true
+   },
+   "do": "customer_request_dates",
+   "args": {
+    "deal": "d_dob",
+    "wish_dates": [
+     "2026-12-21",
+     "2026-12-22"
+    ],
+    "reason": "이사 날짜가 바뀌었어요."
+   },
+   "note": "수락한 공사 날짜를 고객이 바꾸고 싶어 해요"
+  },
+  {
+   "id": "e2",
+   "when": {
+    "after_action": {
+     "kind": "propose_dates",
+     "status": "executed"
+    }
+   },
+   "do": "clock_tick",
+   "args": {
+    "days": 2,
+    "hour": 14
+   },
+   "note": "새 날짜를 보낸 뒤라 1일 뒤 알림 줄은 보내지 않아야 해요"
+  }
+ ],
+ "opening": "고객이 공사 날짜를 바꾸고 싶대요. 어떻게 하면 돼요?",
+ "max_turns": 4,
+ "script": {
+  "as": "maru",
+  "turns": [
+   {
+    "say": "고객이 공사 날짜를 바꾸고 싶대요. 어떻게 하면 돼요?"
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": [
+   {
+    "kind": "propose_dates",
+    "do": "approve",
+    "if": {
+     "after_turn": 1,
+     "start_from": "2026-12-21"
+    }
+   }
+  ]
+ },
+ "expected_end": {
+  "deals": [
+   {
+    "vendor": "maru",
+    "trade": "dobae",
+    "status_in": [
+     "scheduled"
+    ],
+    "start": "2026-12-14",
+    "pending_change": true
+   }
+  ],
+  "actions": {
+   "executed": [
+    {
+     "kind": "propose_dates",
+     "count": 1
+    }
+   ],
+   "none_without_approval": true
+  },
+  "nudges": {
+   "sent": [
+    {
+     "trigger": "dates_requested",
+     "channel": "feed",
+     "count": 1
+    }
+   ],
+   "not_sent": [
+    {
+     "trigger": "dates_requested",
+     "channel": "notify"
+    }
+   ],
+   "false_alarm_max": 0
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "no_text": [
+   "010-5555-0101",
+   "101동 1203호"
+  ],
+  "max_cost_usd": 0.2
+ },
+ "judge": [
+  "같은 업체 다른 공사와 겹치는 날을 후보로 내지 않았나",
+  "새 날짜는 고객이 수락해야 바뀐다고 했나"
+ ],
+ "memo": [
+  "2026-11-21 07 자동화 4.6: 먼저 말 걸기가 카드 · 승인 카드를 준비하고 사람이 눌러야 실행돼요. clock_tick 뒤 사람이 이미 끝낸 일의 줄을 보내면 거짓 경보예요. 날짜 바꾸기 요청은 dates_requested가 고객이 고른 시작일의 공사 날 후보 + 보내기 승인 카드를 만들어요."
+ ]
+}

@@ -279,7 +279,7 @@ def _visit_extra(e: dict, r: dict) -> bool:
 
 
 def check_end(expected: dict, state: dict) -> list[dict]:
-    """끝 상태 = 정답인지. state: visits · deals · actions · memory(None이면 기억 기능 없음)."""
+    """끝 상태 = 정답인지. state: visits · deals · actions · memory(None이면 기억 기능 없음) · extras · nudges."""
     out = _check_rows("실측", expected.get("visits"), state["visits"], _visit_extra)
     out += _check_rows("확정", expected.get("deals"), state["deals"], _deal_extra)
     acts = expected.get("actions") or {}
@@ -313,6 +313,65 @@ def check_end(expected: dict, state: dict) -> list[dict]:
         ]
         out.append(_item("end", "승인 없이 실행 0건", not bad, bad))
     out += _check_memory(expected.get("memory") or {}, state.get("memory"), state.get("memory_why"))
+    out += _check_extras(expected.get("extras") or [], state.get("extras") or [])
+    out += _check_nudges(expected.get("nudges") or {}, state.get("nudges"))
+    return out
+
+
+def _check_extras(specs: list[dict], rows: list[dict]) -> list[dict]:
+    """공사 중 추가 금액의 답 상태(pending · approved · rejected · asked)."""
+    out = []
+    for e in specs:
+        mine = [r for r in rows if e.get("vendor") is None or r["vendor"] == e["vendor"]]
+        good = [r for r in mine if r["status"] in e["status_in"]]
+        ok = len(good) == e["count"] if "count" in e else bool(good)
+        want = f"{e['count']}건" if "count" in e else "1건 이상"
+        what = f"추가 금액 {e.get('vendor') or '*'} {'·'.join(e['status_in'])} {want}"
+        out.append(_item("end", what, ok, [r["status"] for r in mine]))
+    return out
+
+
+NUDGE_SHOWN = ("sent", "opened", "dismissed")  # 지금 보이는 줄(보낸 뒤 닫힌 줄은 sent 칸으로 봐요)
+
+
+def nudge_sent(r: dict) -> bool:
+    """사람에게 보낸 적 있는 줄(보낸 뒤 승인 · 화면 처리로 닫혀 expired가 된 줄도). sent 칸이 없으면 지금 상태로 봐요."""
+    return bool(r["sent"]) if "sent" in r else r["status"] in NUDGE_SHOWN
+
+
+def _check_nudges(m: dict, rows: list[dict] | None) -> list[dict]:
+    """먼저 말 건 줄: 보낸 줄(sent) · 만든 줄(made, 상태 무관) · 보내면 안 되는 줄(not_sent) ·
+    거짓 경보(late: 사람이 그 일을 이미 끝낸 뒤 보낸 줄, sim/world.py nudges)."""
+    if not m:
+        return []
+    if rows is None:
+        return [_item("end", "먼저 말 건 줄", False, None, why="줄 표 없음")]
+
+    def pick(e: dict, shown: bool) -> list[dict]:
+        return [
+            r
+            for r in rows
+            if r["trigger"] == e["trigger"]
+            and (not e.get("channel") or r["channel"] == e["channel"])
+            and (not shown or nudge_sent(r))
+        ]
+
+    out = []
+    for key, shown in (("sent", True), ("made", False)):
+        for e in m.get(key) or []:
+            got = len(pick(e, shown))
+            ok = got == e["count"] if "count" in e else got >= e.get("min", 1)
+            want = f"={e['count']}" if "count" in e else f"≥{e.get('min', 1)}"
+            name = "/".join(x for x in (e["trigger"], e.get("channel")) if x)
+            out.append(_item("end", f"줄 {name} {'보냄' if shown else '만듦'} {want}", ok, got))
+    for e in m.get("not_sent") or []:
+        got = pick(e, True)
+        name = "/".join(x for x in (e["trigger"], e.get("channel")) if x)
+        out.append(_item("end", f"줄 {name} 보냄 0", not got, [r["status"] for r in got]))
+    if "false_alarm_max" in m:
+        bad = [f"{r['trigger']}/{r['channel']}" for r in rows if r.get("late")]
+        cap = m["false_alarm_max"]
+        out.append(_item("end", f"거짓 경보 ≤{cap}", len(bad) <= cap, bad))
     return out
 
 
