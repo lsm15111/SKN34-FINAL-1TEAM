@@ -3,7 +3,8 @@
 // L01: 줄마다 무엇 1단위당인지 분명히 쓰고(PRICE_UNIT), 기준 단가와 10배쯤 다르면 경고해요(저장은 한 번 더 물어요). 빈 단가는 저장을 막아요.
 // '공급 69.4㎡ 집이면' 금액 · 아래 가견적 합계는 계산 엔진 값이에요: 저장한 값 그대로일 때만 보이고, 바꾼 줄은 '수량 × 단가' 식만 보여요(화면은 곱하지 않아요).
 // 예시 가견적에서 '선택'인 줄(퍼티 · 운송비)은 괄호 금액 · '선택 · 합계 밖'으로 보여요(아래 합계에 안 들어가요, ADR 0006).
-// 벽지별 줄(API grade: 도배지 · 부자재 1205 실크 · 1209 합지)은 같은 벽지 줄이나 모든 집 줄에만 '다른 줄에 포함'할 수 있어요.
+// '다른 줄에 포함'은 그 줄이 나오는 집에 늘 같이 나오는 줄에만 할 수 있어요: 벽지별 줄(API grade: 도배지 · 부자재 1205 실크 · 1209 합지)은
+// 같은 벽지 줄이나 모든 집 줄에, 모든 집 줄(인건비 · 식대 등)은 모든 집 줄에만(벽지별 줄에 넣으면 다른 벽지 집 가견적에서 그 금액이 빠져요).
 // 확인한 묶음에 없던 새 줄(1209를 더하기 전에 확인한 묶음)은 받는 법이 비어 와서 위에 알려요.
 // 저장 → POST /vendor/prices/dobae/confirm {base_version, lines}(멱등 키). 본 판이 아니면 409(다른 곳에서 먼저 저장).
 import { useMemo, useState } from "react";
@@ -33,8 +34,10 @@ const digits = (v: string) => v.replace(/\D/g, "").slice(0, 9);
 const PAPER = new Set(["paper_hapji", "paper_silk"]);
 const OPTIONAL_WORD = `${LINE_STATES.optional} · 합계 밖`; // 표준견적서 · 고객 가견적의 선택 줄과 같은 말(QuoteLines)
 
-/** 한 집 가견적에 같이 나오는 줄인지: 벽지별 줄끼리는 같은 벽지만(API grade, 서버도 같은 규칙으로 막아요) */
-const sameHome = (a: PriceRowV3, b: PriceRowV3) => !a.grade || !b.grade || a.grade === b.grade;
+/** row를 host에 포함할 수 있는지: host가 row가 나오는 집마다 같이 나와야 해요. host가 모든 집 줄이거나 row와 같은 벽지 줄이면 돼요
+ *  (모든 집 줄 → 벽지별 줄은 안 돼요. API grade, 서버도 같은 규칙으로 막아요) */
+const canHold = (host: PriceRowV3, row: PriceRowV3) => !host.grade || host.grade === row.grade;
+const holdError = (row: PriceRowV3) => (row.grade ? "같은 벽지 줄이나 모든 집에 쓰는 줄로 골라 주세요" : "모든 집에 쓰는 줄로 골라 주세요(벽지별 줄에는 포함할 수 없어요)");
 
 function warnOf(r: PriceRowV3, l: Line): "high" | "low" | null {
   if (l.mode !== "price" || !l.price) return null;
@@ -53,7 +56,11 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
     included_in: r.included_in ?? (r.key === "meal" ? "labor" : null),
   }])) as Record<string, Line>, [prices.lines]);
   const [lines, setLines] = useState<Record<string, Line>>(init);
-  const [err, setErr] = useState<Record<string, string | undefined>>({});
+  // 앞서 저장한 묶음에 안 되는 포함(모든 집 줄 → 벽지별 줄)이 있으면 처음부터 그 줄에 알려요(그대로면 저장되지 않아요)
+  const [err, setErr] = useState<Record<string, string | undefined>>(() => Object.fromEntries(prices.lines.flatMap((r) => {
+    const host = init[r.key].mode === "included" ? prices.lines.find((x) => x.key === init[r.key].included_in) : undefined;
+    return host && !canHold(host, r) ? [[r.key, holdError(r)]] : [];
+  })));
   const [busy, setBusy] = useState(false);
   const [ask, setAsk] = useState(false);
   const [idem] = useState(newKey);
@@ -67,7 +74,7 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
   const anyChanged = prices.lines.some(changed) || prices.needs_setup;
   const priceRows = prices.lines.filter((r) => lines[r.key].mode === "price");
   /** '다른 줄에 포함'으로 고를 수 있는 줄: 단가를 넣은 다른 줄 중 같은 집 가견적에 같이 나오는 줄 */
-  const targets = (r: PriceRowV3) => priceRows.filter((x) => x.key !== r.key && sameHome(x, r));
+  const targets = (r: PriceRowV3) => priceRows.filter((x) => x.key !== r.key && canHold(x, r));
   // 확인한 묶음에 없던 새 줄(받는 법이 비어 와요). 넣고 확인하기 전에는 고객 가견적이 앞 줄 값을 써요
   const fresh = prices.needs_setup ? [] : prices.lines.filter((r) => r.mode == null);
   const nameOf = (key: string | null) => { const r = prices.lines.find((x) => x.key === key); return r ? `${r.code} ${r.name}` : "다른 줄"; };
@@ -83,7 +90,7 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
       if (l.mode === "included") {
         const host = prices.lines.find((x) => x.key === l.included_in);
         if (!host || lines[host.key]?.mode !== "price") e[r.key] = "포함할 줄을 골라 주세요(단가를 넣은 줄만)";
-        else if (!sameHome(host, r)) e[r.key] = "같은 벽지 집에 쓰는 줄로 골라 주세요";
+        else if (!canHold(host, r)) e[r.key] = holdError(r);
       }
     }
     setErr(e);
