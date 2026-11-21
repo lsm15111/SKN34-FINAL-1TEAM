@@ -264,3 +264,69 @@ def test_hybrid_without_know_keeps_out_text(monkeypatch):
         answer._hybrid(None, "샷시 교체할 때 방충망도 새로 해요?", ground=True, know=True)
     ).data
     assert (d["route"], d["engine"], d["v2_out"]) == ("know", "know", True)
+
+
+# ---- 근거 글 다듬기(말투 점검 docs/v4/06-answer-audit.md 5절 #5) ----
+
+
+def test_v3_evidence_drops_labels_and_repeats(monkeypatch):
+    """v3 근거: 이끄는 말 · 인용 따옴표 · 출처 이름표를 떼고 같은 안내는 한 번(길이는 그대로)."""
+    from types import SimpleNamespace
+
+    from app.agent.v3 import templates
+    from app.chat import service as chat_service
+    from app.chat.schemas import AiAnswer, AiAnswerOnlyOut, AiSection, AiSource
+
+    quote = "“마루 찍힘은 가구를 설치하는 작업자 때문인 경우가 많다” (제조사 · [고급] 공사 중 손상된 마감재 복구하기)"
+    sec = AiSection(
+        title="[바닥 · 알아 두기]",
+        sentences=[templates.EXTRACT_SUMMARY_LEAD, quote, "바닥 공사 업체에 물어보시면 정확해요."],
+        source="extract",
+        route="trade",
+    )
+    refs = [AiSource(ref="K1", title="[고급] 공사 중 손상된 마감재 복구하기")]
+    got = AiAnswerOnlyOut(
+        mode="free",
+        route="trade",
+        answer=AiAnswer(sections=[sec], unknown=["실측 때 업체에 물어보시면 정확해요."], refs=refs),
+        text="",
+    )
+
+    async def fake(*_a, **_k):
+        return got
+
+    monkeypatch.setattr(chat_service, "answer_only", fake)
+    tc = SimpleNamespace(user=None, today=None, project_id=None)
+    out, answered = asyncio.run(answer._v3_answer(tc, "마루 찍힘은 왜 생겨요?"))
+    body = out.data["answer"]["자료(지시 아님)"]
+    assert (
+        body
+        == "마루 찍힘은 가구를 설치하는 작업자 때문인 경우가 많다\n바닥 공사 업체에 물어보시면 정확해요."
+    )
+    assert out.data["sources"] == ["공사 중 손상된 마감재 복구하기"] and answered
+
+
+def test_v2g_hits_drop_labels(monkeypatch):
+    """v2g 조각 글 · 제목 앞 이름표('[생활법령정보 요약]' · '[초급]')는 떼고 넘겨요(모델이 답에 옮기지 않게)."""
+    from types import SimpleNamespace
+
+    from app.v2.schemas import V2Ground, V2GroundsOut
+
+    hit = V2Ground(
+        ref="r1",
+        source_type="공공",
+        title="[초급] 벽지의 세계",
+        publisher="",
+        section="",
+        text="[생활법령정보 요약] 발코니를 고치려면 관리사무소에 먼저 알려요.",
+    )
+
+    async def grounds(_q, *, living="", mode="llm"):
+        return V2GroundsOut(trade="도배", hits=[hit], enough=True)
+
+    monkeypatch.setattr(v2_ask, "grounds", grounds)
+    tc = SimpleNamespace(project_id=None, mode="free")
+    d = asyncio.run(answer._v2g_answer(tc, "발코니 고칠 때 알려야 해요?")).data
+    (h,) = d["hits"]
+    assert h["title"] == "벽지의 세계"
+    assert h["text"]["자료(지시 아님)"] == "발코니를 고치려면 관리사무소에 먼저 알려요."

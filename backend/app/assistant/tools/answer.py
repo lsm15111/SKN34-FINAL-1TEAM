@@ -135,15 +135,17 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
 
 
 async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
-    """v3 근거(무료 모드). 둘째 값: 실제로 답했는지(범위 밖 · 되묻기가 아니고, 모름 줄 말고 문장이 있음)."""
+    """v3 근거(무료 모드). 둘째 값: 실제로 답했는지(범위 밖 · 되묻기가 아니고, 모름 줄 말고 문장이 있음).
+    근거 글은 이름표 · 이끄는 말 · 인용 따옴표를 떼고 같은 안내는 한 번만 넘긴다(길이는 그대로, 모델이 근거로 쓴다)."""
+    from app.agent.v3 import brief
     from app.chat import service as chat_service
 
     ans = await chat_service.answer_only(
         tc.user, question, tc.today, project_id=tc.project_id, mode="free"
     )
     said = [x for sec in ans.answer.sections for x in sec.sentences]
-    lines = said + list(ans.answer.unknown)
-    sources = list(dict.fromkeys(r.title for r in ans.answer.refs if r.title))[:4]
+    lines = brief.clean_lines([*said, *ans.answer.unknown], unquote=True)
+    sources = list(dict.fromkeys(brief.unlabel(r.title) for r in ans.answer.refs if r.title))[:4]
     out = ToolOut(
         data={
             "route": ans.route,
@@ -193,7 +195,9 @@ async def _hybrid(
 
 async def _v2g_answer(tc: ToolCtx, question: str) -> ToolOut:
     """v2 근거만(LLM 없이, v2.ask.grounds). 비서가 이 근거로 글을 한 번에 쓴다.
-    금액 · 기간 질문은 v2 평형 금액 대신 이 공사 계산 엔진 값(표준견적서 · 공정표)을 쓰는 v3로 넘긴다(engine v3)."""
+    금액 · 기간 질문은 v2 평형 금액 대신 이 공사 계산 엔진 값(표준견적서 · 공정표)을 쓰는 v3로 넘긴다(engine v3).
+    조각 글 · 제목 앞 이름표('[생활법령정보 요약]' · '[초급]')는 뗀다(모델이 답에 옮기지 않게)."""
+    from app.agent.v3 import brief
     from app.v2 import ask
 
     living = ""
@@ -218,11 +222,11 @@ async def _v2g_answer(tc: ToolCtx, question: str) -> ToolOut:
         "route": GROUND,
         "hits": [
             {
-                "title": h.title,
+                "title": brief.unlabel(h.title),
                 "publisher": h.publisher,
                 "section": h.section,
                 "source": h.source_type,
-                "text": policy.data(h.text, limit=GROUND_CHARS),
+                "text": policy.data(brief.unlabel(h.text), limit=GROUND_CHARS),
             }
             for h in g.hits
         ],

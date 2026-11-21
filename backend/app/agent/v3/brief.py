@@ -7,9 +7,12 @@
 - 문장 점수 = 질문 낱말 덮기(글자 두 개 묶음) + 앞 문장 덤(카드는 결론부터 쓴다) + 꼴에 맞는 끝말 덤.
   정해 둔 정책 글(추천 거절 · 하자 판정 안 함 · 표준견적서 안내)과 순서 문장은 그 꼴이면 맨 앞에 둔다.
 - 여러 공종 답은 묶음마다 가장 맞는 문장 하나씩(공종이 빠지지 않게), 못 찾은 공종 한 줄은 늘 보인다.
+- 비서에게 넘기는 평문(short_text, answer_only text): 짧은 답 문장 먼저, 세 문장 · 150자 안쪽, 묶음 이름표 ·
+  따옴표 인용 없이, 같은 안내는 한 번만(말투 점검 docs/v4/06-answer-audit.md 5절 #5). 무료 모드에서는 그대로 보여요.
 """
 
 import re
+from difflib import SequenceMatcher
 
 from app.agent.v3 import policy, templates
 from app.agent.v3.schemas import AgentAnswer, Brief, Sentence
@@ -232,3 +235,112 @@ def lead(ans: AgentAnswer, n: int = 2) -> Brief:
     rows = sum(len(s.table) for s in ans.sections)
     more = sum(1 for x in every if x not in chosen) + extras + rows
     return Brief(form="define", lines=chosen, more=more)
+
+
+# ---- 비서에게 넘기는 평문(answer_only text) ----
+SHORT_SENTS, SHORT_CHARS = 3, 150
+SENT_END = re.compile(r"(?<=[.!?。])[ \t]+")  # 문장 끝(evaluation/v4/style_lint와 같은 꼴)
+BULLET = re.compile(r"^(?:[-*•·]|\d{1,2}[.)])\s+")  # 줄 앞 목록 표시(1. · -)
+# 묶음 이름표('[도배]' · '[순서]' · '[욕실 · 알아 두기]')
+LABEL = re.compile(r"^\[[^\]\n]{1,30}\]\s*")
+QUOTED = re.compile(r"^“(.+?)”", re.DOTALL)  # 원문 인용: “…” (종류 · 제목)
+# 같은 안내(확인할 곳 · 확인 못 함)는 공종마다 붙어도 한 번만
+ONCE = (re.compile(r"물어보시면\s*정확해요"), re.compile(r"확인하지\s*못했어요"))
+ECHO_CHARS = 12  # 두 문장이 빈칸 뺀 같은 토막을 이만큼 · 짧은 문장의 절반 넘게 나누면 되풀이로 봐요
+START_TITLE = "[시작 순서]"
+
+
+def unlabel(text: str) -> str:
+    """글 앞 묶음 이름표를 뗀다."""
+    return LABEL.sub("", (text or "").strip())
+
+
+def sentences(text: str) -> list[str]:
+    """글 → 문장(줄 바꿈 · 마침표 뒤 빈칸). 줄 앞 목록 표시는 떼요(한 줄로 이어도 '1.'이 문장으로 갈리지 않게)."""
+    out: list[str] = []
+    for line in (text or "").split("\n"):
+        line = BULLET.sub("", unlabel(line))
+        out += [x.strip() for x in SENT_END.split(line) if x.strip()]
+    return out
+
+
+def _formal(t: str) -> bool:
+    """'-ㅂ니다 · -습니다'로 끝나는지(니다 앞 글자 받침이 ㅂ). '아니다'는 아니에요."""
+    head = t[-3:-2]
+    return t.endswith("니다") and "가" <= head <= "힣" and (ord(head) - ord("가")) % 28 == 17
+
+
+def hearsay(quote: str) -> str | None:
+    """원문 인용 한 문장('-다' 끝) → '…다고 해요.'(해요체 전하는 말). 못 바꾸면 None(인용은 빼요)."""
+    t = quote.strip().rstrip(".").strip()
+    if not t or len(sentences(t)) != 1 or _formal(t):
+        return None
+    if t.endswith(("요", "죠")):
+        return f"{t}."
+    if t.endswith(("이다", "아니다")):
+        return f"{t[:-1]}라고 해요."  # 원인이다 → 원인이라고 해요
+    return f"{t}고 해요." if t.endswith("다") else None
+
+
+def clean_lines(lines: list[str], *, unquote: bool = False) -> list[str]:
+    """문장 목록 → 이름표 · 목록 표시 · 이끄는 말을 떼고, 같은 문장 · 같은 안내는 한 번만.
+    따옴표 인용은 '…다고 해요'로 바꾸거나 빼요. unquote면 따옴표 · 뒤 출처 괄호만 떼고 글은 둬요(근거 자료용)."""
+    out: list[str] = []
+    seen: set[str] = set()
+    said: set[int] = set()
+    for raw in lines:
+        t = (raw or "").strip()
+        m = QUOTED.match(t)
+        if m:
+            t = m.group(1) if unquote else hearsay(m.group(1)) or ""
+        for s in sentences(t):
+            key = re.sub(r"\s+", "", s)
+            kinds = {i for i, p in enumerate(ONCE) if p.search(s)}
+            if s in LEADS or key in seen or kinds & said:
+                continue
+            seen.add(key)
+            said |= kinds
+            out.append(s)
+    return out
+
+
+def _heads(ans: AgentAnswer) -> list[str]:
+    """먼저 볼 문장: 짧은 답(brief) 문장, 없으면 읽는 순서. 시작 순서 답은 지금 단계 줄이 있으면 그것만
+    (오늘 할 일 카드가 같이 가요), 없으면 단계 목록(목록 머리 '아래 순서로'는 빼요)."""
+    every = [x.text for s in ans.sections for x in s.sentences]
+    if ans.sections and ans.sections[0].title == START_TITLE:
+        here = [t for t in every if t in templates.START_HERE.values()]
+        return here or [t for t in every if t != templates.START_STEPS[0]]
+    return [x.text for x in ans.brief.lines] if ans.brief and ans.brief.lines else every
+
+
+def _echo(a: str, b: str) -> bool:
+    """두 문장이 같은 말을 되풀이하는지('마루는 도배 전에, 장판은 도배 뒤에 …' 두 번)."""
+    x, y = re.sub(r"\s+", "", a), re.sub(r"\s+", "", b)
+    m = SequenceMatcher(None, x, y, autojunk=False).find_longest_match(0, len(x), 0, len(y))
+    return m.size >= ECHO_CHARS and m.size * 2 >= min(len(x), len(y))
+
+
+def short_text(ans: AgentAnswer) -> str:
+    """비서에게 넘기는 평문: 먼저 볼 문장 → 모름 줄 순서로 세 문장 · 150자 안쪽(무료 모드에서는 그대로 보여요).
+    새 글을 만들지 않고(검사를 지난 문장에서 고름) 문장을 자르지 않아요(첫 문장은 넘쳐도 둬요).
+    앞 문장을 되풀이하는 문장은 빼요. 인용만 남으면 따옴표를 떼고, 문장이 없으면(표만) 표 줄로."""
+    every = [x.text for s in ans.sections for x in s.sentences]
+    got = (
+        clean_lines([*_heads(ans), *ans.unknown])
+        or clean_lines([*every, *ans.unknown])
+        or clean_lines([*every, *ans.unknown], unquote=True)
+        or clean_lines(ans.plain().split("\n"), unquote=True)
+    )
+    out: list[str] = []
+    size = -1
+    for s in got:
+        if len(out) >= SHORT_SENTS:
+            break
+        if out and size + 1 + len(s) > SHORT_CHARS:
+            continue  # 넘치는 긴 문장은 건너뛰고 더 짧은 다음 문장을 봐요
+        if any(_echo(s, o) for o in out):
+            continue
+        out.append(s)
+        size += 1 + len(s)
+    return " ".join(out)

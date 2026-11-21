@@ -102,7 +102,10 @@ class AiAnswerOnlyOut(BaseModel):
     mode: Literal["free", "llm"]
     route: Route
     answer: AiAnswer
-    text: str = Field(description="대화 표에 남길 글(검사를 지난 문장 · 표 줄만)")
+    text: str = Field(
+        description="비서에게 넘기는 평문(검사를 지난 문장에서 짧은 답 먼저, 세 문장 · 150자 안쪽). "
+        "무료 모드에서는 그대로 보여요"
+    )
 
 
 class AiThreadOut(BaseModel):
