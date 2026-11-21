@@ -143,8 +143,8 @@ def test_card_claim_words(text, kind):
 
 
 def test_press_words_with_a_shown_button(api, script):
-    """이 턴에 보인 공사 날짜 카드에 수락 단추가 있으면 '카드에서 수락을 눌러 주세요'는 그대로, 단추 이름 없이
-    승인 카드를 누르라는 말은 승인 카드가 없으니 정직한 한 줄."""
+    """이 턴에 보인 공사 날짜 카드에 수락 단추가 있으면 눌러 달라는 말은 그대로 둔다(단추 이름이 없어도: 누를 것이
+    있으니 확실히 틀린 말이 아니다, 08-rules)."""
     _, pid, _did = with_delay(api)
     script(
         [
@@ -161,24 +161,28 @@ def test_press_words_with_a_shown_button(api, script):
         ]
     )
     text = tokens(ok(ask(api, pid, "어떻게 하면 돼요?")))
-    assert "확인하고 눌러 주세요" not in text and policy.NO_CARD in text
+    assert "확인하고 눌러 주세요" in text and policy.NO_CARD not in text
 
 
-def test_press_needs_a_named_button_or_an_approval_card():
+def test_press_and_made_words_change_only_when_surely_wrong():
     named = policy.card_claim("카드에서 수락을 눌러 주세요.")
     assert policy.claim_ok(
         named, set(), set(), policy.buttons_of("schedule", {"proposal_ref": "p1"})
     )
-    assert not policy.claim_ok(named, set(), set(), policy.buttons_of("schedule", {}))
-    plain = policy.card_claim("카드를 확인하고 눌러 주세요.")
     assert not policy.claim_ok(
-        plain, set(), set(), {"dates_accept"}
-    )  # 화면 카드 단추만으로는 아니다
+        named, set(), set(), policy.buttons_of("schedule", {})
+    )  # 누를 것 없음
+    plain = policy.card_claim("카드를 확인하고 눌러 주세요.")
+    assert policy.claim_ok(plain, set(), set(), {"dates_accept"})  # 보인 화면 카드 단추도 누를 것
     assert policy.claim_ok(plain, set(), {"home_info"})  # 열린 승인 카드
+    assert not policy.claim_ok(plain, set(), set(), set())
     made = policy.card_claim("수락 카드를 만들었어요.")
     assert not policy.claim_ok(
         made, set(), {"dates_accept"}, {"dates_accept"}
-    )  # 만들었다는 말은 이 턴에 만든 것만
+    )  # 만들었다는 말은 이 턴에 만든 카드가 있어야
+    assert policy.claim_ok(
+        made, {"visit_slot"}, set()
+    )  # 이 턴에 만든 카드가 있으면 종류 낱말은 따지지 않는다
 
 
 def test_card_claim_names_the_kind():

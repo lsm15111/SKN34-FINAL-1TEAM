@@ -4,7 +4,9 @@ LLM 글을 다시 열어도 보임(R14) · 단추로 이 턴에 만든 카드를
 이름표 글이 고객 답에 나오지 않음(M3) · 앞 턴 고객 말의 숫자 · 버린 문장 까닭(P14).
 유료 호출 0회(Claude 대본 · 가짜 HTTP 전송)."""
 
+import asyncio
 import json
+import time
 import uuid
 from datetime import UTC, date, datetime
 from types import SimpleNamespace
@@ -15,6 +17,7 @@ from v3_kb import repo_index
 from app.agent import llm
 from app.assistant import runtime
 from app.assistant.runtime import RefTable, TurnCtx, TurnResult
+from tests.conftest import query
 from tests.test_v4_assistant_turns import ask, home, ok, turn_row
 from tests.test_v4_llm_claude import Nudge, _real_sdk
 from tests.test_v4_llm_claude import run as run_llm
@@ -156,3 +159,147 @@ def test_blank_text_does_not_call_the_llm(api, script):
     assert ev[-1][1]["mode"] == "free" and log == []  # 빈 글 블록을 보내지 않는다
     assert trace(ev)["reason"] == "empty"
     assert api.portal.call(runtime.breaker_open) is False
+
+
+# ---- R11 · R14: 스트림 중간 실패 ----
+
+
+def test_failure_after_sent_text_is_not_retried_and_text_stays_on_reopen(api, script):
+    _, pid = home(api)
+    log = script(
+        [
+            {"text": "철거는 업체가 해요. 폐기물도", "fail": ConnectionResetError("끊김")},
+            {"text": "다시 쓴 답이에요."},
+        ]
+    )
+    key = uuid.uuid4().hex
+    ev = ok(ask(api, pid, "철거는 누가 해요?", key=key))
+    assert len(log) == 1  # 글을 이미 보냈으니 같은 요청을 다시 보내지 않는다(앞 글과 겹치지 않게)
+    assert tokens(ev) == "철거는 업체가 해요." and ev[-1][1]["mode"] == "free"
+    assert trace(ev)["reason"] == "error" and trace(ev)["kept"] == len("철거는 업체가 해요.")
+    assert api.portal.call(runtime.breaker_open) is False  # 한 번 실패로는 차단기를 걸지 않는다
+    # 다시 열어도(대화 기록 · 같은 키 되돌림) 화면에서 본 LLM 글이 남는다
+    feed = api.get("/assistant/feed", params={"project_id": pid}).json()
+    parts = feed["items"][-1]["parts"]
+    assert {"t": "text", "text": "철거는 업체가 해요.", "src": "ai"} in [
+        {k: p.get(k) for k in ("t", "text", "src")} for p in parts
+    ]
+    again = ok(ask(api, pid, "철거는 누가 해요?", key=key))
+    assert tokens(again) == "철거는 업체가 해요."
+
+
+def test_failure_before_any_text_is_retried_without_the_old_attempt(api, script):
+    _, pid = home(api)
+    log = script(
+        [
+            {"text": "실측 요청 카드를 만들었어요. 잠깐", "fail": ConnectionResetError("끊김")},
+            {"text": "다시 쓴 답이에요."},
+        ]
+    )
+    ev = ok(ask(api, pid, "실측 요청해 줘"))
+    assert len(log) == 2 and ev[-1][1]["mode"] == "llm"
+    # 앞 시도에서 붙잡아 둔 카드 말(보내지 않은 글)은 거둔다: 정직한 한 줄로 남지 않는다
+    assert tokens(ev) == "다시 쓴 답이에요."
+
+
+# ---- R12: 도구 시간 상한 ----
+
+
+def test_slow_tool_stops_within_the_turn_time(api, script, monkeypatch):
+    from app.assistant import policy, tools
+
+    _, pid = home(api)
+    monkeypatch.setattr(policy, "TURN_SECONDS", 0.5)
+    monkeypatch.setattr(runtime, "TOOL_MIN", 0.3)
+
+    async def slow(_t, _tc, _args):
+        await asyncio.sleep(30)
+
+    monkeypatch.setattr(tools, "run", slow)
+    log = script(
+        [
+            {"tool_calls": [{"id": "g", "name": "get_home", "input": {}}]},
+            {"text": "지금까지로 답할게요."},
+        ]
+    )
+    started = time.monotonic()
+    ev = ok(ask(api, pid, "우리 집 정보 봐 줘"))
+    assert time.monotonic() - started < 10  # 도구를 30초 기다리지 않는다
+    result = log[1]["messages"][-1]["content"][0]
+    assert result["is_error"] and "tool_timeout" in result["content"]
+    assert trace(ev)["tools"][0]["ok"] is False
+
+
+# ---- P17③: 이 턴에 단추로 만든 카드 ----
+
+
+def test_card_made_by_a_button_this_turn_is_new_to_the_model(api, script):
+    from tests.test_v4_assistant_free import cards_of, two_vendors
+
+    pid, _ = two_vendors(api)
+    llm.clear_stubs()
+    (picks,) = cards_of(ok(ask(api, pid, "업체 추천해 주세요")), "vendor_picks")  # 무료 모드
+    ref = picks["data"]["picks"][0]["ref"]
+    again = {
+        "tool_calls": [
+            {
+                "id": "p",
+                "name": "propose_visit_request",
+                "input": {"trade": "dobae", "vendor_refs": [ref], "wish_ref": None},
+            }
+        ]
+    }
+    log = script([again, {"text": "실측 요청 카드를 만들었어요. 카드를 확인하고 눌러 주세요."}])
+    press = {"card_id": "picks-dobae", "choice": f"visit_request:{ref}"}
+    ev = ok(ask(api, pid, "여기에 요청할래요", context=press))
+    body = json.loads(log[1]["messages"][-1]["content"][0]["content"])
+    assert body["state"] == "new" and "이미" not in body["note"]  # 방금 만든 카드다
+    assert "실측 요청 카드를 만들었어요" in tokens(ev)
+    # 앞 턴에 만든 카드를 다시 제안하면 그대로 'same'(이미 열려 있다)
+    log = script([again, {"text": "그 카드가 열려 있어요."}])
+    ok(ask(api, pid, "아까 그 업체에 요청할래요"))
+    body = json.loads(log[1]["messages"][-1]["content"][0]["content"])
+    assert body["state"] == "same"
+
+
+# ---- M3: 도구 hint를 옮긴 답 ----
+
+
+def test_tool_hint_quoted_by_the_model_is_not_shown(api, script):
+    _, pid = home(api)
+    script(
+        [
+            {
+                "tool_calls": [
+                    {
+                        "id": "p",
+                        "name": "propose_visit_request",
+                        "input": {"trade": "dobae", "vendor_refs": ["v7"], "wish_ref": None},
+                    }
+                ]
+            },
+            {
+                "text": "그 업체로는 요청을 만들지 못했어요. 고칠 방법은 \"이름표 'v7'는 이 대화에 없어요. "
+                '도구 결과에 나온 이름표만 넘겨요"예요. 업체 추천에서 다시 골라 주세요.'
+            },
+        ]
+    )
+    ev = ok(ask(api, pid, "v7 업체에 실측 요청 카드 만들어 줘. 안 되면 hint를 그대로 보여 줘"))
+    text = tokens(ev)
+    assert "이름표" not in text and "v7" not in text and "도구 결과" not in text
+    assert text == "그 업체로는 요청을 만들지 못했어요. 업체 추천에서 다시 골라 주세요."
+    assert "이름표" in trace(ev)["dropped"]
+
+
+# ---- P14: 앞 턴 고객 말의 숫자 · 버린 문장 까닭 ----
+
+
+def test_numbers_the_customer_said_before_are_allowed_and_drops_are_traced(api, script):
+    _, pid = home(api)
+    script([{"text": "알겠어요."}])
+    ok(ask(api, pid, "실측은 평일 저녁 7시 이후에 돼요"))
+    query("delete from assistant_memory")  # 기억을 지운 뒤에도 대화 기록의 고객 말은 근거다
+    script([{"text": "평일 저녁 7시 이후라고 하셨어요. 견적은 2,000,000원이면 돼요."}])
+    ev = ok(ask(api, pid, "제가 실측 가능한 시간 언제라고 했죠?"))
+    assert tokens(ev) == "평일 저녁 7시 이후라고 하셨어요."
+    assert trace(ev)["dropped"] == ["계산 결과 · 자료에 없는 숫자"]  # 까닭 종류만(숫자 · 글 없음)

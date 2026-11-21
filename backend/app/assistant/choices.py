@@ -307,3 +307,4 @@ async def _send(out: ToolOut, emit: "Emit", res: "TurnResult", send_card) -> Non
         await emit("action", a.model_dump(mode="json"))
     if out.data.get("state") == "new":  # 모델이 '카드를 만들었어요'라고 해도 맞는 턴(SentenceGate)
         res.made |= {a.kind for a in out.actions}
+        res.made_ids |= {str(a.action_id) for a in out.actions}  # 같은 턴 다시 제안도 '새로 만듦'
