@@ -2,7 +2,9 @@
 // - 키 mj_guest_v3 = { v: 3, key: UUID(가입 뒤 POST /projects의 Idempotency-Key), saved_at, info }
 // - 두는 것: 공종 · 범위 · 주거 · 지역 코드 · 면적 · 집 상태 · 벽지 · 예산 · 희망일(+ 고른 시기 칩) · 직접 할 일. 이름 · 연락처 · 동 · 호 · 사진 · 금액은 두지 않아요.
 // - 읽을 때 믿지 않고 모양을 검사해요. 틀리거나 30일이 지나면 지워요. 옛 키(mj_start_draft_v4)는 읽어 옮기고 지워요.
-import { DIY, EMPTY_DRAFT, SPACES, START_PICKS, type InfoDraft } from "./info";
+// - 멱등 키는 보낼 조건(API 몸통)마다 하나예요: 같은 조건이면 같은 키(응답을 잃고 다시 보내도 공사 하나), 조건이 바뀌면 새 키
+//   (서버는 같은 키면 몸통을 보지 않고 처음 공사를 돌려줘서, 고친 조건이 소리 없이 버려지지 않게).
+import { DIY, EMPTY_DRAFT, SPACES, START_PICKS, toHomeInfo, type InfoDraft } from "./info";
 
 const KEY = "mj_guest_v3";
 const LEGACY = "mj_start_draft_v4";
@@ -156,15 +158,23 @@ export function readGuest(): GuestSaved | null {
   return null;
 }
 
-/** 답 저장. 키(멱등 키)는 처음 저장할 때 한 번 만들고 그대로 둬요 */
+/** 보낼 조건(API 몸통) 모양. 같으면 같은 멱등 키를 써요 */
+const bodyOf = (d: InfoDraft) => JSON.stringify(toHomeInfo(d));
+/** 저장소를 못 쓰는 브라우저: 이 탭에서 마지막 키와 조건을 들고 있어요(저장마다 새 키가 되어 공사가 둘 생기지 않게) */
+let held: { key: string; body: string } | null = null;
+
+/** 답 저장. 멱등 키는 조건이 같으면 그대로, 바뀌면 새로 만들어요 */
 export function writeGuest(d: InfoDraft): GuestSaved {
-  let key: string;
+  const body = bodyOf(d);
+  let prev: { key: string; body: string } | null = null;
   try {
     const now = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    key = valid(now) ? now.key : uuid();
+    if (valid(now)) prev = { key: now.key, body: bodyOf(draftOf(now)) };
   } catch {
-    key = uuid();
+    prev = held;
   }
+  const key = prev && prev.body === body ? prev.key : uuid();
+  held = { key, body };
   const g: GuestSaved = { v: 3, key, saved_at: new Date().toISOString(), info: toStored(d) };
   try { localStorage.setItem(KEY, JSON.stringify(g)); } catch { /* 저장소가 가득 차거나 막혔으면 이 화면에서만 써요 */ }
   emit();
@@ -173,6 +183,7 @@ export function writeGuest(d: InfoDraft): GuestSaved {
 
 /** 답 지우기(가입 뒤 옮긴 다음 · '지우기' · 탈퇴 · 로그아웃) */
 export function clearGuest() {
+  held = null;
   try {
     localStorage.removeItem(KEY);
     localStorage.removeItem(LEGACY);
