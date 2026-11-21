@@ -669,13 +669,15 @@ async def _send(
         user = await s.get(User, n.user_id)
         if user is None:
             return "expired"
+        refs = None
         try:
-            card, action_id = await _build(s, t, n, user, c, now)
+            refs = await _chat_refs(s, n)
+            card, action_id = await _build(s, t, n, user, c, now, refs)
         except Exception as e:  # noqa: BLE001 - 카드 · 승인 카드를 못 만들어도 문장은 보낸다(종류 이름만 로그)
             if not isinstance(e, AppError):
                 log.warning("먼저 말 걸기 카드 실패 (%s, %s)", n.trigger, type(e).__name__)
             await s.rollback()
-            card, action_id = None, None
+            card, action_id, refs = None, None, None
         got = await repo.set_nudge(
             s,
             n.id,
@@ -704,8 +706,20 @@ async def _send(
                 project_id=n.project_id,
             )
         await s.commit()
+    if refs is not None and card is not None:
+        await refs.save()  # 카드 이름표를 대화 표에 넣는다(commit 뒤: 대화 행이 남은 다음)
     await _signal(n, t)
     return "sent"
+
+
+async def _chat_refs(s: AsyncSession, n: AssistantNudge):
+    """보낼 카드의 이름표 표: 그 사람 비서 대화의 표(없으면 대화를 만든다). 카드 단추를 누르면 대화가 같은 이름표를
+    알아 그 대상으로 승인 카드를 만든다(따로 만든 표면 단추가 버려지거나 같은 번호의 다른 대상으로 갔다)."""
+    from app.assistant.runtime import RefTable
+    from app.assistant.service import ensure_chat
+
+    chat = await ensure_chat(s, n.user_id, n.project_id if n.surface == "customer" else None)
+    return await RefTable.load(chat.id)
 
 
 def _link(t: Trigger, n: AssistantNudge) -> str:
@@ -731,18 +745,17 @@ async def _signal(n: AssistantNudge, t: Trigger) -> None:
 
 
 async def _build(
-    s: AsyncSession, t: Trigger, n: AssistantNudge, user, c: Ctx, now: datetime
+    s: AsyncSession, t: Trigger, n: AssistantNudge, user, c: Ctx, now: datetime, refs
 ) -> tuple[dict | None, uuid.UUID | None]:
     """보낼 때 카드(CardOut JSON 통째) · 승인 카드(origin nudge, 같은 트랜잭션). 못 만들면 (None, None).
-    이름표는 이 줄에만 쓰는 표(대화 이름표와 따로)라 승인은 행동 id로, 다른 후보는 비서에게 물어 다시 찾는다."""
+    이름표는 그 사람 비서 대화의 표(refs)에 넣는다: 카드 단추(vendor_confirm:m… 등)를 대화가 안다. 표는 commit 뒤
+    _send가 저장한다. 표가 지워진 뒤 누르면 choices가 카드를 새로 불러온다."""
     from app.assistant import actions, memory
-    from app.assistant.runtime import RefTable
     from app.assistant.tools import ToolError, cards, propose
     from app.assistant.tools import vendor as vendor_tools
     from app.schedule import service as schedule_service
     from app.visit import service as visit_service
 
-    refs = RefTable(uuid.uuid4())
     today = now.astimezone(SEOUL).date()
     pid = n.project_id
     card = None

@@ -20,6 +20,7 @@ from app.assistant.schemas import (
     BriefEstimate,
     BriefHalves,
     BriefSuggest,
+    BriefWindow,
     CardOut,
     ChecklistRow,
     FieldValue,
@@ -81,7 +82,8 @@ async def brief(
     propose_window: bool = True,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
     """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지) · 가견적(요청 때 고정한 값) ·
-    빈 반나절 · 추천 응답(기간 초안 → window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀).
+    빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 → window_answer 제안 행,
+    요청함 상태일 때만) · 한 문장(틀).
     AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
     (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
     말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
@@ -119,10 +121,30 @@ async def brief(
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    ask = d.status == "requested" and propose_window
-    free = await open_halves(s, vendor.id, start, end) if ask else None
+    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게)
+    live = d.status == "requested"
+    free = await open_halves(s, vendor.id, start, end) if live else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
-    if wins:
+    windows = [
+        BriefWindow(
+            ref=refs.put(
+                "window",
+                {
+                    "visit_id": str(visit_id),
+                    "start": w.start.isoformat(),
+                    "end": w.end.isoformat(),
+                    "excluded": [x.isoformat() for x in w.excluded],
+                    "open_count": w.open_count,
+                },
+            ),
+            start=w.start,
+            end=w.end,
+            excluded=list(w.excluded),
+            open_count=w.open_count,
+        )
+        for w in wins
+    ]
+    if wins and propose_window:
         w = wins[0]
         instant = bool(d.instant_default)
         summary = ActionSummary(
@@ -191,6 +213,7 @@ async def brief(
             open_count=d.open_count or 0,
         ),
         suggest=suggest,
+        windows=windows,
         due_at=d.reply_due_at,
         memo=policy.mask_in(d.message or "") or None,
     )
@@ -209,6 +232,10 @@ async def brief(
         "due_at": d.reply_due_at,
         "memo": policy.data(d.message),
         "proposed": bool(made),
+        "windows": [
+            {"ref": w.ref, "start": w.start, "end": w.end, "open_count": w.open_count}
+            for w in windows
+        ],
     }
     return card, model, data, made, closed
 

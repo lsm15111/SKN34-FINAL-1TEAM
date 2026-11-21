@@ -119,6 +119,22 @@ def _choices(ctx: TurnContextIn | None) -> list[str]:
     return [ctx.choice] if isinstance(ctx.choice, str) else list(ctx.choice)[:5]
 
 
+async def ensure_chat(s, user_id: uuid.UUID, project_id: uuid.UUID | None) -> Chat:
+    """그 사람 · 그 공사의 비서 대화(없으면 만든다, commit은 부르는 쪽). 고객 공사는 공사 행을 먼저 잠가 같은 대화를
+    둘 만들지 않는다. 턴 · 먼저 말 걸기 · 업체 브리핑(REST)이 같은 대화의 이름표 표를 쓰게 한다."""
+    from app.project import service as project_service
+
+    chat = await repo.assistant_chat(s, user_id, project_id)
+    if chat is not None:
+        return chat
+    if project_id is not None:
+        await project_service.lock(s, project_id)
+        chat = await repo.assistant_chat(s, user_id, project_id)
+        if chat is not None:
+            return chat
+    return await chat_repo.insert_chat(s, user_id, project_id=project_id, kind="assistant")
+
+
 async def start_turn(
     user: User,
     *,
@@ -153,9 +169,7 @@ async def start_turn(
             await ratelimit.hit(
                 ratelimit.key("assistant-turn", str(user.id)), TURNS_PER_HOUR, 3600, TOO_MANY
             )
-        chat = await repo.assistant_chat(s, user.id, project_id)
-        if chat is None:
-            chat = await chat_repo.insert_chat(s, user.id, project_id=project_id, kind="assistant")
+        chat = await ensure_chat(s, user.id, project_id)
         await repo.fail_stalled(s, now, now - STALL, chat_id=chat.id)
         turn = AssistantTurn(
             user_id=user.id,
@@ -195,8 +209,12 @@ async def start_turn(
         )
         rev = chat.rev
         await s.commit()
-    # 이번 대화에서 도구가 준 이름표와 카드의 집 정보 칸 고르기(칸:값)만 넘긴다. 모르는 값은 버린다
-    choice = [r for r in _choices(context) if choices.valid(r, refs)]
+    # 이번 대화에서 도구 · 카드가 준 이름표와 카드의 집 정보 칸 고르기(칸:값)만 넘긴다. 이 화면의 행동 꼴인데
+    # 이름표를 모르거나 보던 카드의 대상과 다르면(지난 카드 단추) 버리지 않고 카드를 새로 불러온다. 그 밖은 버린다
+    card_id = context.card_id if context else None
+    picked = _choices(context)
+    choice = [r for r in picked if choices.valid(r, refs) and choices.fits_card(r, refs, card_id)]
+    stale = [r for r in picked if r not in choice and choices.stale(r, surface)]
     return TurnCtx(
         turn_id=turn.id,
         chat_id=chat.id,
@@ -213,7 +231,8 @@ async def start_turn(
         rev=rev,
         refs=refs,
         client_key=client_key,
-        card_id=context.card_id if context else None,
+        card_id=card_id,
+        stale=stale,
     )
 
 
@@ -892,13 +911,18 @@ async def suggest_for(
 
 async def brief_for(vendor: User, visit_id: uuid.UUID) -> VendorBriefData:
     """업체 요청 브리핑(REST). 요청함이면 추천 기간 답하기 제안 행을 만든다(실행은 승인 뒤).
+    기간 후보 이름표(w…)는 업체 비서 대화의 표에 넣어 카드 단추(window_answer:w…)로 고를 수 있게 한다.
     한 문장은 세션을 닫은 뒤 Haiku가 쓴다(같은 사실이면 하루 캐시, 실패하면 틀)."""
     from app.assistant.tools import vendor as vendor_tools
 
     async with SessionLocal() as s:
+        chat = await ensure_chat(s, vendor.id, None)
+        refs = await RefTable.load(chat.id)
         _, _, data, _, _ = await vendor_tools.brief(
-            s, vendor, visit_id, today_seoul(), now_utc(), RefTable(uuid.uuid4())
+            s, vendor, visit_id, today_seoul(), now_utc(), refs
         )
+        await s.commit()  # 처음이면 만든 업체 대화를 남긴다(제안 행은 brief가 commit했다)
+    await refs.save()
     data.sentence = await vendor_tools.brief_sentence(data, vendor.id)
     return data
 

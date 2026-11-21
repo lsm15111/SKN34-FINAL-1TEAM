@@ -3661,6 +3661,28 @@ export interface components {
             /** Open Count */
             open_count: number;
         };
+        /**
+         * BriefWindow
+         * @description 답할 기간 후보 하나(계산 엔진 calc.slots.best_windows). 단추는 choice 'window_answer:<ref>'.
+         */
+        BriefWindow: {
+            /** Ref */
+            ref: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Excluded */
+            excluded: string[];
+            /** Open Count */
+            open_count: number;
+        };
         /** BudgetOut */
         BudgetOut: {
             /** Band */
@@ -9041,7 +9063,10 @@ export interface components {
          * @description 카드에서 고른 것. LLM에는 이 대화에서 도구가 준 ref(v1 · s2 …)만 가고 모르는 값은 버린다.
          */
         TurnContextIn: {
-            /** Card Id */
+            /**
+             * Card Id
+             * @description 보던 카드 id(slots- · brief- · dates- + id는 42자)
+             */
             card_id?: string | null;
             /**
              * Choice
@@ -11255,6 +11280,12 @@ export interface components {
             estimate: components["schemas"]["BriefEstimate"] | null;
             halves: components["schemas"]["BriefHalves"];
             suggest: components["schemas"]["BriefSuggest"] | null;
+            /**
+             * Windows
+             * @description 답할 기간 후보 w…(요청함일 때, 첫 것이 suggest와 같은 기간)
+             * @default []
+             */
+            windows: components["schemas"]["BriefWindow"][];
             /** Due At */
             due_at: string | null;
             /**

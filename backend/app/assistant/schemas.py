@@ -40,7 +40,11 @@ Choice = Annotated[str, Field(min_length=1, max_length=40)]
 class TurnContextIn(BaseModel):
     """카드에서 고른 것. LLM에는 이 대화에서 도구가 준 ref(v1 · s2 …)만 가고 모르는 값은 버린다."""
 
-    card_id: str | None = Field(default=None, max_length=40)
+    card_id: str | None = Field(
+        default=None,
+        max_length=64,
+        description="보던 카드 id(slots- · brief- · dates- + id는 42자)",
+    )
     choice: Choice | Annotated[list[Choice], Field(max_length=5)] | None = Field(
         default=None, description="고른 ref 하나 또는 여러 개(5개까지)"
     )
@@ -338,6 +342,16 @@ class BriefSuggest(BaseModel):
     open_count: int
 
 
+class BriefWindow(BaseModel):
+    """답할 기간 후보 하나(계산 엔진 calc.slots.best_windows). 단추는 choice 'window_answer:<ref>'."""
+
+    ref: str
+    start: date
+    end: date
+    excluded: list[date]
+    open_count: int
+
+
 class VendorBriefData(BaseModel):
     visit_id: uuid.UUID
     title: str
@@ -346,6 +360,9 @@ class VendorBriefData(BaseModel):
     estimate: BriefEstimate | None
     halves: BriefHalves
     suggest: BriefSuggest | None
+    windows: list[BriefWindow] = Field(
+        default=[], description="답할 기간 후보 w…(요청함일 때, 첫 것이 suggest와 같은 기간)"
+    )
     due_at: datetime | None
     memo: str | None = Field(description="고객이 남긴 말(자료, 가림)")
     sentence: str | None = Field(default=None, description="AI 문장 하나(없으면 비움)")
