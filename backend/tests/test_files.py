@@ -6,6 +6,7 @@ from PIL import ExifTags, Image, PngImagePlugin
 
 from app.files import images, service
 from tests.helpers import JPEG, PDF, signup, upload, vendor_signup
+from tests.test_vendor_profile import approved_vendor
 
 pillow_heif.register_heif_opener()
 
@@ -138,7 +139,7 @@ def heic_bytes() -> bytes:
 
 
 def test_vendor_uploads_price_and_quote_docs(api):
-    vendor_signup(api)
+    approved_vendor(api)  # 업체 종류 파일은 승인된 업체만(sec M5)
     sheet = xlsx_bytes()
     x = upload(api, kind="price_doc", content=sheet, name="단가표_2026.xlsx")
     assert x.status_code == 201, x.text
@@ -156,7 +157,7 @@ def test_vendor_uploads_price_and_quote_docs(api):
 
 
 def test_only_real_xlsx_is_accepted(api):
-    vendor_signup(api)
+    approved_vendor(api)
 
     def doc(content: bytes, name: str = "단가표.xlsx") -> int:
         return upload(api, kind="price_doc", content=content, name=name).status_code
@@ -176,6 +177,6 @@ def test_vendor_docs_are_vendor_only_and_limited(api, monkeypatch):
     signup(api)
     for kind in ("price_doc", "quote_doc", "work_photo"):
         assert upload(api, kind=kind).status_code == 403
-    vendor_signup(api)
+    approved_vendor(api)
     monkeypatch.setitem(service.RULES, "price_doc", (service.DOCS, 10))
     assert upload(api, kind="price_doc", content=PDF, name="a.pdf").status_code == 413

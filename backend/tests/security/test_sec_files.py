@@ -10,6 +10,7 @@ from tests.conftest import query
 from tests.helpers import PASSWORD, PDF, make_admin, signup, upload, vendor_signup
 from tests.security.sec_util import photo_with_gps, prepare
 from tests.test_files import xlsx_bytes
+from tests.test_vendor_profile import approved_vendor
 
 # (Pillow 형식, 저장 뒤 형식, 원본에 든 EXIF 표시 바이트)
 FORMATS = [
@@ -45,7 +46,7 @@ def test_download_headers_keep_files_from_running(api):
 
 
 def test_spreadsheets_are_downloaded_not_opened(api):
-    vendor_signup(api)
+    approved_vendor(api)  # 업체 종류 파일은 승인된 업체만(sec M5)
     x = upload(api, kind="price_doc", content=xlsx_bytes(), name="단가표 1.xlsx").json()
     r = api.get(f"/files/{x['id']}")
     assert r.headers["content-disposition"] == (
@@ -69,7 +70,7 @@ def test_new_photo_kinds_are_stored_without_location(api, kind, role):
     if role == "customer":
         signup(api)
     else:
-        vendor_signup(api)
+        approved_vendor(api)  # 업체 종류 파일은 승인된 업체만(sec M5)
     r = upload(api, kind=kind, content=photo_with_gps("JPEG"), name="IMG_0001.jpg")
     assert r.status_code == 201, r.text
     assert (r.json()["kind"], r.json()["content_type"]) == (kind, "image/jpeg")
