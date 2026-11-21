@@ -1,0 +1,257 @@
+{
+  "version": "diy_know_v1",
+  "about": "반셀프(고객이 직접 할 일) 알아 두기: 칩 키마다 언제(도배 · 목공 기준) · 하는 방법 · 준비물 · 주의점 · 출처. 글에 숫자 · 금액을 넣지 않아요(날짜는 계산 엔진 calc.diy가 만들어요). 공공 · 제조사 자료를 먼저 두고, 순서처럼 공공 자료를 못 찾은 것만 블로그 · 언론 자료로 적었어요. why · living · pet 줄은 믿집 안내예요(출처 자료의 말이 아니에요).",
+  "sources": {
+    "kcc-sup": {
+      "title": "숲으로 홈앤멀티멜 데이터시트(2026-06-18 개정)",
+      "publisher": "KCC",
+      "kind": "maker",
+      "public": true,
+      "url": "https://www.kccworld.co.kr/techdoc/c01/cvt/C01F201506030016147kor.pdf",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 웹으로 읽고 요약(덧칠 간격 · 완전 건조 · 칠하지 않는 날씨 · 테이프 떼는 때)"
+    },
+    "noroo-gesso": {
+      "title": "팬톤 젯소 기술자료(2019-12)",
+      "publisher": "노루페인트",
+      "kind": "maker",
+      "public": true,
+      "url": "https://www.noroopaint.com/inc/filedown2.asp?fileloc=%2Ffile%2Fprod_file%2F&filenm=%EA%B8%B0%EC%88%A0%EC%9E%90%EB%A3%8C%EC%A7%91%28%EC%88%98%EC%84%B1%29+-+%ED%8C%AC%ED%86%A4+%EC%A0%AF%EC%86%8C%28191211%29.pdf",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 기술자료 PDF를 읽고 요약(바탕 닦기 · 사포 · 마스킹 · 시험 칠 · 환기 · 보관)"
+    },
+    "samhwa-gesso": {
+      "title": "홈스타 젯소 제품 안내",
+      "publisher": "에스피삼화",
+      "kind": "maker",
+      "public": true,
+      "url": "https://spsamhwa.com/paint/3050649",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 제품 쪽을 읽고 요약(시트지 · 필름 면에 쓰는 젯소)"
+    },
+    "sika-seal": {
+      "title": "SikaSeal-129 제품설명서(2026-04)",
+      "publisher": "씨카코리아",
+      "kind": "maker",
+      "public": true,
+      "url": "https://kor.sika.com/dms/getdocument.get/11698d9c-a446-4a1b-9545-66674bdb275b_kr01/pds-sikaseal-129.pdf",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 PDF를 읽고 요약(마른 면 · 테이프는 겉이 굳기 전에 떼기 · 막힌 공간에서는 안 굳음)"
+    },
+    "sika-grout": {
+      "title": "SikaCeram CleanGrout 제품설명서(2022-01)",
+      "publisher": "씨카코리아",
+      "kind": "maker",
+      "public": true,
+      "url": "https://kor.sika.com/dam/dms/kr01/u/sikaceram_cleangrout.pdf",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 PDF를 읽고 요약(굳는 동안 물 · 센 바람 · 급한 온도 변화 피하기)"
+    },
+    "korea-shock": {
+      "title": "감전사고 예방 안내(2017-07-07)",
+      "publisher": "정책브리핑(국민안전처)",
+      "kind": "public",
+      "public": true,
+      "url": "https://m.korea.kr/news/interviewView.do?newsId=148839243",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 웹으로 읽고 요약(차단기 먼저 내리기 · 젖은 손 금지 · 절연 장갑)"
+    },
+    "kca-ladder": {
+      "title": "사다리 · 발판 안전사고 주의(한국소비자원 위해정보 인용 기사, 2021-05-25)",
+      "publisher": "한국소비자원(아시아경제 보도)",
+      "kind": "press",
+      "public": true,
+      "url": "https://www.asiae.co.kr/en/article/2021052506451854654",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 기사를 읽고 요약(사다리 사고는 대부분 추락 · 집에서 등을 갈다 다친 사례)"
+    },
+    "kca-bleach": {
+      "title": "욕실세정제, 락스와 함께 쓰면 위험(소비자시대 2019-04)",
+      "publisher": "한국소비자원",
+      "kind": "public",
+      "public": true,
+      "url": "https://www.kca.go.kr/webzine/board/view?menuId=MENU00307&linkId=36&div=kca_1904",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 웹으로 읽고 요약(락스와 산성 세정제를 섞지 않기 · 장갑 · 아이 손이 닿지 않게)"
+    },
+    "kca-clean": {
+      "title": "청소 서비스 피해예방주의보(2024-09-20)",
+      "publisher": "한국소비자원",
+      "kind": "public",
+      "public": true,
+      "url": "https://www.kca.go.kr/home/sub.do?menukey=4005&mode=view&no=1003792725",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 웹으로 읽고 요약(계약 조건 · 추가 비용 미리 확인 · 대화 내역 남기기)"
+    },
+    "seoul-bakeout": {
+      "title": "새집 베이크아웃 안내(서울시보건환경연구원, 내 손안에 서울 2026-02-24)",
+      "publisher": "서울특별시",
+      "kind": "public",
+      "public": true,
+      "url": "https://mediahub.seoul.go.kr/archives/2017199",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 웹으로 읽고 요약(난방을 올렸다가 환기하기를 되풀이)"
+    },
+    "schlage-lever": {
+      "title": "통로용 레버 손잡이 제품 안내(해외)",
+      "publisher": "Schlage",
+      "kind": "maker",
+      "public": true,
+      "url": "https://www.schlage.com/en/home/products/F10LATFFF.html",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 제품 쪽을 읽고 요약(문 두께 · 백셋에 맞는 제품 고르기)"
+    },
+    "lady-handle": {
+      "title": "집수리: 문 손잡이 바꾸기(레이디경향 2010-08)",
+      "publisher": "레이디경향",
+      "kind": "press",
+      "public": true,
+      "url": "https://lady.khan.co.kr/living/article/201008041612311",
+      "checked": "2026-11-21",
+      "verify": "조사 담당이 기사를 읽고 요약(문을 열어 두고 작업 · 받이판은 원래 나사)"
+    },
+    "toss-order": {
+      "title": "인테리어 공정 순서(토스피드 2024-09-04)",
+      "publisher": "토스피드",
+      "kind": "blog",
+      "public": false,
+      "url": "https://toss.im/tossfeed/article/home-buyers-guide-9",
+      "checked": "2026-11-21",
+      "verify": "공공 · 제조사 순서 자료를 못 찾아 쓴 칼럼(목공 → 필름 · 페인트 → 도배 → 커버 · 조명 · 손잡이 → 입주 청소)"
+    },
+    "miso-outlet": {
+      "title": "콘센트 커버 셀프 교체 안내(미소 블로그)",
+      "publisher": "미소",
+      "kind": "blog",
+      "public": false,
+      "url": "https://miso.kr/blog/thread/콘센트-열-남-셀프-해결",
+      "checked": "2026-11-21",
+      "verify": "검전기 확인 · 그을림 보이면 전문가는 블로그 자료예요(공공 자료에서 같은 절차는 확인 못 함)"
+    },
+    "miso-grout": {
+      "title": "줄눈 시공 전 타일 청소 순서(미소 블로그)",
+      "publisher": "미소",
+      "kind": "blog",
+      "public": false,
+      "url": "https://miso.kr/blog/thread/줄눈-시공-전-타일-청소-순서",
+      "checked": "2026-11-21",
+      "verify": "줄눈 · 실리콘을 먼저 하고 입주 청소를 나중에 하는 순서는 블로그 자료예요"
+    }
+  },
+  "items": {
+    "paint": {
+      "label": "페인트(문틀 · 몰딩)",
+      "when": "목공이 끝난 뒤, 도배 전에 칠하고 다 말려요.",
+      "why": "벽지를 붙인 뒤 칠하면 벽지에 페인트가 묻기 쉬워요. 다 마르기 전에는 칠한 면을 건드리지 않아요.",
+      "how": [
+        "중성세제로 닦고 사포로 가볍게 갈아요.",
+        "벽 · 바닥은 마스킹 테이프와 비닐로 가려요.",
+        "필름 문틀은 시트지용 젯소를 먼저 발라요.",
+        "앞 칠이 마른 뒤 한 번 더 칠하고, 테이프는 칠한 직후 떼요."
+      ],
+      "tools": ["사포", "마스킹 테이프 · 비닐", "젯소(필름 문틀이면 시트지용)", "붓 · 털 짧은 롤러", "중성세제 · 헝겊"],
+      "cautions": [
+        "창을 열어 환기하고 마스크 · 장갑을 써요.",
+        "필름 문틀은 작은 곳에 먼저 시험 칠을 해요.",
+        "습하거나 추운 날은 칠이 잘 마르지 않아요.",
+        "덧칠 · 건조 시간은 쓰는 제품 설명서를 따라요."
+      ],
+      "living": ["칠하는 방은 문을 닫고 창을 열어 냄새를 빼요."],
+      "pet": ["페인트 통 · 붓은 아이 · 반려동물이 닿지 않게 둬요."],
+      "sources": ["kcc-sup", "noroo-gesso", "samhwa-gesso", "toss-order"]
+    },
+    "outlet": {
+      "label": "콘센트 · 스위치 커버",
+      "when": "도배 전에 덮개를 떼고, 도배가 끝나면 새 커버를 달아요.",
+      "why": "덮개를 단 채 도배하면 벽지를 덮개 둘레로 오려야 해서 마감이 지저분해지기 쉬워요.",
+      "how": [
+        "분전함 차단기를 내리고 검전기로 전기가 없는지 확인해요.",
+        "나사를 풀어 덮개만 떼요. 본체 배선은 건드리지 않아요.",
+        "도배가 끝나면 새 커버를 나사로 달아요."
+      ],
+      "tools": ["절연 장갑", "검전기", "드라이버", "새 커버", "커터칼"],
+      "cautions": [
+        "벽 스위치만 끄지 말고 분전함 차단기를 내려요.",
+        "젖은 손으로 만지지 않아요.",
+        "그을림 · 변색 · 흔들림이 보이면 손대지 말고 전기 공사업체에 맡겨요.",
+        "콘센트를 옮기거나 늘리는 일은 전기 공사업체가 해요."
+      ],
+      "living": ["덮개를 뗀 동안은 그 콘센트를 쓰지 않아요."],
+      "pet": ["덮개를 뗀 콘센트는 아이 · 반려동물이 닿지 않게 막아 둬요."],
+      "sources": ["korea-shock", "miso-outlet", "toss-order"]
+    },
+    "light": {
+      "label": "조명 교체",
+      "when": "도배가 끝난 뒤 달아요.",
+      "why": "천장 벽지를 먼저 붙여야 등 둘레가 깔끔해요.",
+      "how": [
+        "분전함 차단기를 내리고 검전기로 전기가 없는지 확인해요.",
+        "옛 등을 떼고 같은 자리에 새 등을 달아요."
+      ],
+      "tools": ["사다리 · 발판", "절연 장갑", "검전기", "드라이버"],
+      "cautions": [
+        "차단기를 내리고 작업해요.",
+        "사다리 사고는 대부분 떨어지는 사고예요. 누가 사다리를 잡아 줘요.",
+        "등 자리를 옮기거나 배선을 새로 하는 일은 전기 공사업체에 맡겨요."
+      ],
+      "living": ["작업하는 방의 짐을 치워 사다리 놓을 자리를 만들어요."],
+      "pet": ["작업하는 동안 아이 · 반려동물은 다른 방에 있게 해요."],
+      "sources": ["korea-shock", "kca-ladder", "toss-order"]
+    },
+    "silicone": {
+      "label": "실리콘 · 줄눈",
+      "when": "업체 공사가 끝난 뒤, 입주 청소 전에 하고 굳는 동안 물이 닿지 않게 해요.",
+      "why": "덜 굳은 실리콘 · 줄눈에 물이 닿으면 하얗게 일어나거나 떨어지기 쉬워요.",
+      "how": [
+        "옛 실리콘 · 줄눈을 떼고 깨끗이 닦아요.",
+        "물기가 다 마른 뒤 마스킹 테이프를 붙이고 쏴요.",
+        "테이프는 겉이 굳기 전에 떼요."
+      ],
+      "tools": ["실리콘 건", "마스킹 테이프", "커터칼", "마감 헤라", "솔 · 중성세제"],
+      "cautions": [
+        "젖은 면에는 쏘지 않아요.",
+        "굳는 동안 물이 닿지 않게 하고, 굳는 시간은 제품 설명서를 따라요.",
+        "락스와 산성 세정제를 섞지 않아요."
+      ],
+      "living": ["굳는 동안 쓰지 않을 욕실 · 싱크대를 미리 정해요."],
+      "pet": ["굳기 전에 반려동물이 밟지 않게 문을 닫아 둬요."],
+      "sources": ["sika-seal", "sika-grout", "kca-bleach", "miso-grout"]
+    },
+    "handle": {
+      "label": "손잡이 · 문고리",
+      "when": "업체 공사가 끝난 뒤, 입주 청소 전에 바꿔요.",
+      "why": "칠 · 도배가 끝난 문에 달아야 새 손잡이가 더러워지지 않아요.",
+      "how": [
+        "문 두께와 손잡이 거리(백셋)를 재고 맞는 제품을 골라요.",
+        "문을 열어 둔 채 옛 손잡이를 풀고 새것을 달아요.",
+        "받이판은 원래 나사를 다시 쓰면 튼튼해요."
+      ],
+      "tools": ["드라이버", "줄자", "새 손잡이(래치 · 받이판 · 나사)"],
+      "cautions": [
+        "작업하는 동안 문을 열어 둬요. 잠기면 열기 어려워요.",
+        "문 두께 · 백셋이 맞는 제품인지 먼저 확인해요."
+      ],
+      "living": [],
+      "pet": ["작업하는 동안 반려동물이 문틈에 끼지 않게 해요."],
+      "sources": ["schlage-lever", "lady-handle", "toss-order"]
+    },
+    "clean": {
+      "label": "입주 청소",
+      "when": "모든 공사와 건조가 끝난 뒤 마지막에 해요.",
+      "why": "공사 먼지가 다 가라앉은 뒤에 해야 다시 닦지 않아요.",
+      "how": [
+        "실리콘 · 줄눈이 다 굳은 뒤에 물청소해요.",
+        "새 집 냄새가 나면 난방을 올렸다가 창을 열어 환기하기를 되풀이해요."
+      ],
+      "tools": ["고무장갑", "중성세제 · 스펀지 · 마른 천", "솔 · 청소기"],
+      "cautions": [
+        "락스와 산성 세정제를 섞지 않아요.",
+        "세제는 아이 손이 닿지 않게 둬요.",
+        "청소 업체에 맡기면 추가 비용 조건을 미리 묻고 작업 전후 사진을 남겨요."
+      ],
+      "living": [],
+      "pet": ["세제를 쓴 바닥은 반려동물이 핥지 않게 물걸레로 한 번 더 닦아요."],
+      "sources": ["kca-bleach", "seoul-bakeout", "kca-clean", "miso-grout"]
+    }
+  }
+}
