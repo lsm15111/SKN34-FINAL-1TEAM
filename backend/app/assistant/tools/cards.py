@@ -788,6 +788,11 @@ async def today(
             )
         )
         model_todo.append({"title": o.todo.text})
+    from app.assistant.tools import diy as diy_tools  # 반셀프: 마감이 7일 안인 직접 할 일
+
+    diy_rows, diy_items = await diy_tools.today_rows(s, user, pid, today_)
+    todo += diy_rows
+    model_todo += diy_items
     waiting: list[TodayRow] = []
     model_wait: list[dict] = []
     for v in o.vendors:

@@ -392,6 +392,10 @@ class VendorBriefData(BaseModel):
     due_at: datetime | None
     memo: str | None = Field(description="고객이 남긴 말(자료, 가림)")
     sentence: str | None = Field(default=None, description="AI 문장 하나(없으면 비움)")
+    diy: list[str] = Field(
+        default=[],
+        description="고객이 직접 할 일(반셀프 칩 화면 말, 요청 때 고객이 승인해 고정한 사본 · 자료)",
+    )
 
 
 class ChecklistRow(BaseModel):

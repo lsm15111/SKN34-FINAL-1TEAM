@@ -29,6 +29,8 @@
 .legend i.t { background: repeating-linear-gradient(135deg, var(--mj-fill) 0 3px, var(--mj-surface-sub) 3px 6px); box-shadow: inset 0 0 0 1px var(--mj-line); }
 .memo { margin: 0; padding: 12px 14px; border-left: 3px solid var(--mj-line-control); background: var(--mj-surface-sub); border-radius: 0 var(--mj-radius-field) var(--mj-radius-field) 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
 .memo b { display: block; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+.diy { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+.diy b { display: block; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 .skel { display: grid; gap: 10px; }
 .skel i { display: block; height: 14px; border-radius: 6px; background: var(--mj-fill); }
 .skel i:nth-child(1) { width: 40%; height: 20px; }

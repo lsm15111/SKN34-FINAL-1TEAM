@@ -87,6 +87,8 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
       </div>
       <h3>{d.title}</h3>
       <ul className={k.facts}>{d.facts.map((f) => <li key={f}>{f}</li>)}</ul>
+      {/* 반셀프: 요청 때 고객이 '업체에 알릴 것'으로 승인한 직접 할 일(칩 화면 말 그대로) */}
+      {d.diy?.length ? <p className={p.diy}><b>고객이 직접 할 일</b>{d.diy.join(" · ")}</p> : null}
       {d.sentence ? <p className={p.say}><I n="sparkle" />{d.sentence}</p> : null}
       <ul className={p.fit} aria-label="우리 업체와 맞는지">
         {d.fit.map((f) => {

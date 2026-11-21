@@ -838,8 +838,11 @@ async def _build(
             if row is not None:
                 kind = propose.dates_kind(row.deal.status)
                 offer = propose.dates_offer(sch, str(n.ref_id), kind, now)
-        elif t.name == "work_eve":
+        elif t.name == "work_eve":  # 공정 준비물 + 반셀프 직접 할 일(오늘까지 · 끝냈는지 · 공사 뒤)
+            from app.assistant.tools import diy as diy_tools
+
             card = cards.prep_card(f"prep-{n.ref_id}", [c.names.get("trade_code", "dobae")])
+            card = await diy_tools.eve_card(s, user, pid, today, card)
         elif t.name == "no_pick":
             card, _ = await cards.vendor_picks(s, user, pid, "dobae", refs)
             if not card.data.get("picks"):

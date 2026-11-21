@@ -56,7 +56,7 @@ ALLOWED = frozenset(
         "summary", "approve_label", "expires_at", "proposed", "replaced", "deals", "jobs",
         "requests", "checklist", "fields", "value", "easy_miss", "prev", "cautions", "prep",
         "survey", "dates_state", "proposal", "proposals", "change", "conflicts", "fits",
-        "money", "period", "decided", "days_off", "vendor_note",
+        "money", "period", "decided", "days_off", "vendor_note", "diy",
     }
 )  # fmt: skip
 DENY_PREFIX = ("vs_", "contact", "phone", "owner")  # 허용 목록에 잘못 들어와도 버리는 칸
