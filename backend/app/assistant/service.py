@@ -1152,15 +1152,17 @@ async def sweep(now: datetime) -> dict[str, int]:
     기억 뽑기는 sweep_jobs(jobs kind=assistant_memory)가 한다."""
     from app.assistant import proactive
 
+    # 시작부터 정한 시간 예산(앞 단계가 길어도 worker 시간 제한 60초 안)
+    settle_until, eval_until = proactive.deadlines()
     expired, stuck = await actions.expire_due(now)
     handled = await actions.close_handled()
     # 할 일이 끝난 먼저 말 건 줄(실행 · 대상 상태 바뀜)
-    settled = await proactive.close_settled(now)
+    settled = await proactive.close_settled(now, until=settle_until)
     async with SessionLocal() as s:
         stalled = await repo.fail_stalled(s, now, now - STALL)
         await s.commit()
     events = await proactive.scan_events(now)
-    tally = await proactive.evaluate_due(now)
+    tally = await proactive.evaluate_due(now, until=eval_until)
     return {
         "expired": expired,
         "stuck": stuck,

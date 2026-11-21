@@ -409,7 +409,6 @@ async def open_count(s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID 
 # ---- 먼저 말 걸기 ----
 
 SHOWN = ("sent", "opened")  # 대화 기록에 보이는 줄
-SENT = ("sent", "opened", "dismissed")  # 보낸 줄(상한 · 점수가 센다)
 
 
 async def insert_nudge(s: AsyncSession, **values) -> bool:
@@ -464,12 +463,10 @@ async def set_nudge(
 async def sent_count(
     s: AsyncSession, user_id: uuid.UUID, since: datetime, channel: str | None = None
 ) -> int:
+    """since 뒤에 보낸 먼저 말 건 줄 수(하루 알림 상한 · 24시간 감점). 보낸 뒤 할 일이 끝나 닫힌 줄(expired:
+    acted · handled · replaced)도 보낸 줄이라 상태와 상관없이 sent_at으로 센다."""
     q = select(func.count()).select_from(AssistantNudge)
-    q = q.where(
-        AssistantNudge.user_id == user_id,
-        AssistantNudge.status.in_(SENT),
-        AssistantNudge.sent_at >= since,
-    )
+    q = q.where(AssistantNudge.user_id == user_id, AssistantNudge.sent_at >= since)
     if channel is not None:
         q = q.where(AssistantNudge.channel == channel)
     return int(await s.scalar(q) or 0)

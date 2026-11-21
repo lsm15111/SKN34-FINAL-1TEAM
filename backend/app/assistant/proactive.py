@@ -5,14 +5,19 @@
 - scan_time(매시간): 공사 시작 전날(10시) · 표준견적서 뒤 3일 담기 없음 · 무응답(보낸 feed 뒤 48시간 · 3일 ·
   2일(연기 1일), 상태 그대로)에 알림(notify) 제안을 만든다.
 - evaluate_due(2분): 기한이 된 제안마다 ① 상태가 그대로인지(아니면 expired) ② 규칙(policy.NudgeRules: 쉬기 · 멈춤 ·
-  밤 · 하루 상한) ③ 점수(score) ④ 40~69면 Haiku 판정(judge) ⑤ 문장(write, 검사에 걸리면 틀) ⑥ 보냄(카드 · 승인
-  카드 · 알림을 같은 트랜잭션에). LLM은 DB 세션 밖에서 부른다. 보낸 뒤 화면 신호(state · notif)를 보낸다.
+  밤 · 하루 상한, 미루면 기한이 지나는 알림은 대화 줄로 지금) ③ 점수(score) ④ 40~69면 Haiku 판정(judge) ⑤ 문장
+  (write, 검사에 걸리면 틀) ⑥ 보냄(상태를 다시 보고, 카드 · 승인 카드 · 알림을 같은 트랜잭션에). LLM은 DB 세션 밖에서
+  부른다. 보낸 뒤 화면 신호(state · notif)를 보낸다. 근원 알림이 이미 종을 울린 사건(done_remind)은 종 알림을 더하지
+  않는다(같은 사건 알림은 하나).
+- close_settled(2분): 보이는 줄 중 할 일이 끝난 줄을 닫는다. 새로 보낸 줄 + 오래 안 본 줄부터 돌아가며(보이는 줄의
+  due_at = 정리가 마지막으로 본 때) 상태만 가볍게 본다. sweep 시작부터 정한 시간 예산 안에서만 돈다.
 - 점수: 기본 50, 기한 24시간 안 +50(48시간 안 +30), 승인 카드 준비 +20, 돈 · 날짜 결정 +15, 같은 알림 읽음 −30,
   24시간 안 보낸 제안마다 −20, 같은 trigger를 7일 안에 닫음 −30. 70 이상 보냄, 40~69 판정, 40 미만 기록만(held).
   판정을 못 부르면(꺼짐 · 상한 · 실패) 대화 기록(feed)은 보내고 알림(notify)은 기록만 한다.
 - 대상마다 보이는 제안은 하나: 같은 대상의 새 제안을 보내면 앞 것은 expired(replaced).
 """
 
+import asyncio
 import json
 import logging
 import re
@@ -41,6 +46,22 @@ RULES = policy.NudgeRules()
 LOOKBACK = timedelta(hours=48)  # 아웃박스로 읽는 알림 기간(worker가 멈췄다 돌아와도 놓치지 않게)
 BATCH = 50
 EVAL_SECONDS = 40.0  # 한 차례 평가 시간(assistant_sweep 시간 제한 60초 안)
+# sweep 시작부터 앞 단계가 멈추는 때(초): 정리(close_settled)는 15초, 평가(evaluate_due)는 45초까지. worker 시간 제한
+# 60초 안에서 앞 단계(만료 · 화면 처리 · 정리)가 길어져도 평가가 남은 시간만 쓰게 한다
+SETTLE_SECONDS = 15.0
+SWEEP_SECONDS = 45.0
+
+
+def deadlines() -> tuple[float, float]:
+    """sweep 시작에 부르면 (정리를 멈출 때, 평가를 멈출 때)를 time.monotonic 값으로 준다."""
+    started = time_mod.monotonic()
+    return started + SETTLE_SECONDS, started + SWEEP_SECONDS
+
+
+# 판정 · 문장 한 번(Haiku)의 시간 제한: 느린 응답 하나가 sweep 시간 제한을 넘지 않게
+NUDGE_LLM_SECONDS = 10.0
+# 기한이 이 안이면 '천천히' 같은 말을 쓰지 않고, 틀이 있으면 기한을 말하는 틀(soon)을 쓴다
+SOON_HOURS = 24
 BASE = 50
 SEND_AT = 70
 JUDGE_AT = 40
@@ -73,6 +94,7 @@ class Trigger:
     feed: str = ""  # 문장 틀(대화 기록)
     notify: str = ""  # 문장 틀(알림)
     ask: str = ""  # 제안 카드 한 줄(먼저 말 건 문장을 되풀이하지 않게 할 일을 묻는 말)
+    soon: str = ""  # 기한이 하루 안일 때 문장 틀(채널과 상관없이, {until}이 있을 때만)
 
 
 TRIGGERS: dict[str, Trigger] = {
@@ -91,6 +113,7 @@ TRIGGERS: dict[str, Trigger] = {
             ask="받은 견적서를 견줘 볼까요?",
             feed="{vendor_i_ga} 실측 견적서를 보냈어요. 받은 견적서를 견줘 볼까요?",
             notify="받은 실측 견적서를 아직 확인하지 않았어요. 견줘 볼까요?",
+            soon="{vendor_i_ga} 보낸 실측 견적서는 {until}까지 유효해요. 견줘 볼까요?",
         ),
         Trigger(
             "dates_proposed", "customer", ("dates_proposed",), follow=timedelta(days=2),
@@ -208,14 +231,17 @@ async def judge(f: Facts, user_id: uuid.UUID | None) -> bool | None:
 
     try:
         with llm.call_ctx(user_id=user_id, purpose="nudge"):
-            got = await llm.claude_json(
-                "nudge",
-                JudgeOut,
-                prompts.text("nudge_judge"),
-                json.dumps(f.public(), ensure_ascii=False),
-                max_tokens=512,
+            got = await asyncio.wait_for(
+                llm.claude_json(
+                    "nudge",
+                    JudgeOut,
+                    prompts.text("nudge_judge"),
+                    json.dumps(f.public(), ensure_ascii=False),
+                    max_tokens=512,
+                ),
+                NUDGE_LLM_SECONDS,
             )
-    except llm.LLMError:
+    except (llm.LLMError, TimeoutError):
         return None
     return got.send
 
@@ -225,16 +251,47 @@ class _Safe(dict):
         return ""
 
 
+def _soon(f: Facts) -> bool:
+    return f.hours_left is not None and f.hours_left <= SOON_HOURS
+
+
 def template(f: Facts) -> str:
     t = TRIGGERS[f.trigger]
     raw = t.notify if f.channel == "notify" and t.notify else t.feed or t.notify
+    h = f.hours_left
+    # 기한이 하루 안: 기한을 말한다(유효기간이 오늘인 견적서에 '견줘 볼까요?'만 하지 않게)
+    if t.soon and f.names.get("until") and h is not None and 0 <= h <= SOON_HOURS:
+        raw = t.soon
     names = {**f.names, "vendor_i_ga": i_ga(f.names["vendor"]) if f.names.get("vendor") else ""}
     return " ".join(raw.format_map(_Safe(names)).split())
 
 
+# 이 길이 이상의 이름 조각이 이름 밖에 있으면 잘린 이름이다('도배' 같은 2자 공정 이름은 빼요)
+NAME_PIECE = 3
+# 기한이 하루 안인데 미뤄도 된다고 읽히는 말
+SLOW = re.compile(
+    r"천천히|여유(?:\s|롭|있|가|를)|느긋|급하지\s{0,2}않|나중에|편하실\s{0,2}때|편할\s{0,2}때|시간\s{0,2}(?:날|나실)\s{0,2}때"
+)
+
+
+def name_cut(text: str, name: str | None) -> bool:
+    """업체 이름이 잘리거나 바뀌어 들어갔는지('믿집시험도배' → '시험도배'). 이름 그대로 쓴 곳은 빼고, 이름의 3자
+    이상 조각(이름 전체는 빼고)이 남았는지 본다."""
+    name = (name or "").strip()
+    n = len(name)
+    if n <= NAME_PIECE:
+        return False
+    rest = (text or "").replace(name, " ")
+    return any(
+        name[i:j] in rest for i in range(n) for j in range(i + NAME_PIECE, n + 1) if j - i < n
+    )
+
+
 async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
-    """문장 하나(60자 안): Haiku가 쓰고 검사(vendor.sentence_ok)에 걸리거나 못 부르면 틀. (글, 출처 ai · guide)
-    업체 쪽은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린 적이 있다(QA r1 c6)."""
+    """문장 하나(60자 안): Haiku가 쓰고 검사에 걸리거나 못 부르면 틀. (글, 출처 ai · guide)
+    검사: vendor.sentence_ok(길이 · 숫자 · 한 일처럼 …) + 업체 이름이 잘리지 않았는지 + 기한이 하루 안인데 '천천히'
+    같은 말을 쓰지 않았는지. 업체 쪽은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린
+    적이 있다(QA r1 c6)."""
     from app.agent import llm
     from app.assistant.tools.vendor import sentence_ok
 
@@ -243,13 +300,17 @@ async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
     facts = json.dumps(f.public(), ensure_ascii=False)
     try:
         with llm.call_ctx(user_id=user_id, purpose="nudge"):
-            got = await llm.claude_json(
-                "nudge", WriteOut, prompts.text("nudge_write"), facts, max_tokens=512
+            got = await asyncio.wait_for(
+                llm.claude_json(
+                    "nudge", WriteOut, prompts.text("nudge_write"), facts, max_tokens=512
+                ),
+                NUDGE_LLM_SECONDS,
             )
-    except llm.LLMError:
+    except (llm.LLMError, TimeoutError):
         return template(f), "guide"
     text = " ".join(got.text.split())
-    if not sentence_ok(text, facts):
+    slow = _soon(f) and bool(SLOW.search(text))
+    if not sentence_ok(text, facts) or name_cut(text, f.names.get("vendor")) or slow:
         return template(f), "guide"
     return text, "ai"
 
@@ -265,7 +326,14 @@ def _start_of(d: date) -> datetime:
     return datetime.combine(d, time(0), SEOUL)
 
 
-async def _visit_ctx(s: AsyncSession, t: Trigger, ref: uuid.UUID, user_id: uuid.UUID) -> Ctx | None:
+async def _visit_ctx(
+    s: AsyncSession,
+    t: Trigger,
+    ref: uuid.UUID,
+    user_id: uuid.UUID,
+    today: date,
+    check: bool = False,
+) -> Ctx | None:
     from app.notify.catalog import work_name
     from app.project.models import Project
     from app.quote.models import VendorQuote
@@ -295,6 +363,8 @@ async def _visit_ctx(s: AsyncSession, t: Trigger, ref: uuid.UUID, user_id: uuid.
             "area": work_name(p.sgg, p.emd, v.trade) if t.surface == "vendor" else p.sgg,
         },
     )
+    if check:  # 정리: 상태가 그대로인지만 본다(기한 · 평형 · 고른 날 사실은 보낼 때만)
+        return c
     if t.name == "visit_offered":
         c.due = await s.scalar(
             select(VisitWindow.pick_due_at)
@@ -310,6 +380,15 @@ async def _visit_ctx(s: AsyncSession, t: Trigger, ref: uuid.UUID, user_id: uuid.
             .limit(1)
         )
         c.due = _end_of(until) if until else None
+        # 유효기간(문장 사실 · 기한이 하루 안이면 쓰는 틀): '오늘' · '내일' · '12월 3일(목)'
+        if until:
+            c.names["until"] = (
+                "오늘"
+                if until == today
+                else "내일"
+                if until == today + timedelta(days=1)
+                else _ko_day(until)
+            )
     elif t.name == "visit_requested":
         c.due = v.reply_due_at
         c.names["size"] = await _size(s, v.project_id, v.trade)  # '32평'(업체 틀: 어느 요청인지)
@@ -418,22 +497,26 @@ async def _project_ctx(s: AsyncSession, ref: uuid.UUID, user_id: uuid.UUID) -> C
     return Ctx(project_id=p.id, names={"area": p.sgg, "trade": "도배", "trade_code": "dobae"})
 
 
-async def context(s: AsyncSession, n: AssistantNudge, now: datetime) -> Ctx | None:
-    """제안 대상의 지금 상태. 상태가 바뀌었거나(상태가 그대로일 때만 보낸다) 대상이 없으면 None."""
+async def context(
+    s: AsyncSession, n: AssistantNudge, now: datetime, *, check: bool = False
+) -> Ctx | None:
+    """제안 대상의 지금 상태. 상태가 바뀌었거나(상태가 그대로일 때만 보낸다) 대상이 없으면 None.
+    check(정리): 상태가 그대로인지만 가볍게 본다. 기한 · 이름 사실 · 근원 알림 읽음은 읽지 않고, 업체 빠짐 줄은 이을
+    업체가 잠깐 없어도(추천 계산) 닫지 않는다(아무것도 안 했는데 '완료'로 보이지 않게)."""
     from app.notify.models import Notification
 
     t = TRIGGERS[n.trigger]
     today = now.astimezone(SEOUL).date()
     if t.name in ("visit_offered", "quote_sent", "visit_requested", "visit_picked"):
-        c = await _visit_ctx(s, t, n.ref_id, n.user_id)
+        c = await _visit_ctx(s, t, n.ref_id, n.user_id, today, check)
     elif t.name in ("dates_proposed", "work_eve", "deal_confirmed"):
         c = await _deal_ctx(s, t, n.ref_id, n.user_id, today)
     elif t.name in aftercare.NAMES:
-        c = await aftercare.context(s, t, n, now)
+        c = await aftercare.context(s, t, n, now, check=check)
     else:
         c = await _project_ctx(s, n.ref_id, n.user_id)
-    if c is None:
-        return None
+    if c is None or check:
+        return c
     src = UUID_RE.search(n.dedup_key) if n.dedup_key.startswith("ev:") else None
     if src is not None:
         read_at = await s.scalar(
@@ -581,6 +664,8 @@ async def scan_time(now: datetime) -> int:
                     AssistantNudge.channel == "feed",
                     AssistantNudge.status.in_(repo.SHOWN),
                     AssistantNudge.sent_at <= now - FOLLOW_MIN,
+                    # 무응답 알림이 밤 · 상한으로 대화 줄이 된 것(규칙 quiet)에는 또 무응답 알림을 만들지 않는다
+                    ~AssistantNudge.dedup_key.endswith(":notify"),
                     ~exists().where(
                         and_(
                             late.c.user_id == AssistantNudge.user_id,
@@ -620,15 +705,19 @@ def _day_start(now: datetime) -> datetime:
     return _start_of(now.astimezone(SEOUL).date())
 
 
-async def evaluate_due(now: datetime, limit: int = BATCH) -> Counter[str]:
+async def evaluate_due(
+    now: datetime, limit: int = BATCH, *, until: float | None = None
+) -> Counter[str]:
     """기한이 된 기다리는 제안을 평가해 보낸다 · 미룬다 · 기록만 한다 · 닫는다. 결과 이름 → 수.
-    worker 차례(60초) 안에 끝나게 EVAL_SECONDS가 지나면 멈추고 남은 줄은 다음 차례에 본다."""
+    worker 차례(60초) 안에 끝나게 EVAL_SECONDS가 지나거나 until(sweep이 정한 멈출 때, time.monotonic 값)이 지나면
+    멈추고 남은 줄은 다음 차례에 본다."""
     started = time_mod.monotonic()
+    stop = started + EVAL_SECONDS if until is None else min(until, started + EVAL_SECONDS)
     async with SessionLocal() as s:
         due = await repo.due_nudges(s, now, limit)
     tally: Counter[str] = Counter()
     for n in due:
-        if time_mod.monotonic() - started > EVAL_SECONDS:
+        if time_mod.monotonic() > stop:
             tally["later"] += 1
             continue
         try:
@@ -643,19 +732,52 @@ async def evaluate_due(now: datetime, limit: int = BATCH) -> Counter[str]:
     return tally
 
 
-SETTLE_BATCH = 200  # 정리 한 번에 보는 보이는 줄 수(새것부터)
+SETTLE_BATCH = 200  # 정리 한 번에 보는 보이는 줄 수
 
 
-async def close_settled(now: datetime, limit: int = SETTLE_BATCH) -> int:
+async def _settle_rows(s: AsyncSession, limit: int) -> list[AssistantNudge]:
+    """정리가 볼 보이는 줄: 새로 보낸 줄(새것부터, 넷 중 하나) + 오래 안 본 줄부터(due_at 순) 나머지. 보이는 줄의
+    due_at은 정리가 마지막으로 본 때라 창보다 줄이 많아도 옛 줄까지 돌아가며 본다(새것 200만 보던 창)."""
+    shown = AssistantNudge.status.in_(repo.SHOWN)
+    new = list(
+        (
+            await s.scalars(
+                select(AssistantNudge)
+                .where(shown)
+                .order_by(AssistantNudge.sent_at.desc())
+                .limit(min(limit, max(1, limit // 4)))
+            )
+        ).all()
+    )
+    old = (
+        await s.scalars(
+            select(AssistantNudge)
+            .where(shown, AssistantNudge.id.not_in([n.id for n in new]))
+            .order_by(AssistantNudge.due_at, AssistantNudge.id)
+            .limit(max(0, limit - len(new)))
+        )
+    ).all()
+    return [*new, *old]
+
+
+async def close_settled(
+    now: datetime, limit: int = SETTLE_BATCH, *, until: float | None = None
+) -> int:
     """정리(2분): 보이는 먼저 말 건 줄(sent · opened) 중 할 일이 끝난 줄을 닫는다. 달린 승인 카드가 실행됐으면
     acted, 대상 상태가 바뀌었으면(context 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도) handled. 닫은 줄 수.
     (승인으로 실행한 행동은 actions.execute가 바로 닫는다. 이것은 화면 단추 · 상대 응답 · 시간으로 바뀐 줄을 닫는다)
+    상태는 가볍게(context check) 보고, 본 줄은 줄 뒤로 보낸다(due_at = now). until(sweep이 정한 멈출 때,
+    time.monotonic 값, 없으면 지금부터 SETTLE_SECONDS)이 지나면 멈추고 남은 줄은 다음 차례에 본다.
     닫은 줄은 대화 기록에 '완료'로 남고, commit 뒤 그 사람에게 화면 신호(state)를 보낸다."""
     from app.assistant.models import AssistantAction
 
+    stop = time_mod.monotonic() + SETTLE_SECONDS if until is None else until
     closed: list[AssistantNudge] = []
+    seen: list[uuid.UUID] = []
+    if time_mod.monotonic() > stop:
+        return 0
     async with SessionLocal() as s:
-        rows = await repo.shown_all(s, limit)
+        rows = await _settle_rows(s, limit)
         ids = [n.action_id for n in rows if n.action_id is not None]
         ran = (
             set(
@@ -669,18 +791,29 @@ async def close_settled(now: datetime, limit: int = SETTLE_BATCH) -> int:
             else set()
         )
         for n in rows:
+            # 시간 예산: 남은 줄은 다음 차례(아직 안 본 줄이라 앞에 선다)
+            if time_mod.monotonic() > stop:
+                break
             try:
                 if n.action_id in ran:
                     reason = "acted"
-                elif await context(s, n, now) is None:
+                elif await context(s, n, now, check=True) is None:
                     reason = "handled"
                 else:
+                    seen.append(n.id)
                     continue
             except Exception as e:  # noqa: BLE001 - 줄 하나를 못 읽어도 다른 줄은 정리한다(종류 이름만 로그)
                 log.warning("먼저 말 건 줄 정리 실패 (%s, %s)", n.trigger, type(e).__name__)
+                seen.append(n.id)
                 continue
             if await repo.set_nudge(s, n.id, repo.SHOWN, status="expired", reason=reason):
                 closed.append(n)
+        if seen:  # 본 줄은 줄 뒤로: 다음 차례는 오래 안 본 줄부터
+            await s.execute(
+                update(AssistantNudge)
+                .where(AssistantNudge.id.in_(seen), AssistantNudge.status.in_(repo.SHOWN))
+                .values(due_at=now)
+            )
         await s.commit()
     for n in closed:  # 열어 둔 대화가 그 줄을 '완료'로 다시 그리게(commit 뒤)
         await _signal(n, TRIGGERS[n.trigger], unread=False)
@@ -712,6 +845,7 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         now=now,
         sent_today=sent_today,
         dismissals=dismissals,
+        due=c.due,
     )
     if rule.verdict == "hold":
         await _close(n, "held", rule.reason or "rule")
@@ -721,9 +855,11 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
             await repo.set_nudge(s, n.id, ["pending"], due_at=rule.until, reason=rule.reason)
             await s.commit()
         return "deferred"
+    # 미루면 기한이 지나요(밤 · 상한에 걸린 공사 전날 알림): 종 알림 대신 조용한 대화 줄로 지금 보낸다
+    channel = "feed" if rule.verdict == "quiet" else n.channel
     f = Facts(
         trigger=t.name,
-        channel=n.channel,
+        channel=channel,
         surface=n.surface,
         hours_left=(c.due - now).total_seconds() / 3600 if c.due else None,
         action_ready=t.action,
@@ -740,26 +876,58 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
     if points < SEND_AT:
         yes = await judge(f, n.user_id)
         if yes is None:
-            yes = n.channel == "feed"  # 판정을 못 하면 조용한 줄만 보낸다
+            yes = channel == "feed"  # 판정을 못 하면 조용한 줄만 보낸다
         if not yes:
             await _close(n, "held", "judge", score=points)
             return "held"
     text, src = await write(f, n.user_id)
-    return await _send(n, t, c, now, text, src, points)
+    return await _send(n, t, c, now, text, src, points, channel)
+
+
+async def _rang(s: AsyncSession, n: AssistantNudge, t: Trigger) -> bool:
+    """이 줄의 근원 알림이 이미 종을 울린 사건(t.notify_kinds: 자동 끝 3일 전 done_remind)인지. 그러면 비서 알림을
+    더하지 않는다(같은 사건 종 알림이 1분 사이 두 번 가던 것)."""
+    from app.notify.models import Notification
+
+    src = UUID_RE.search(n.dedup_key) if t.notify_kinds and n.dedup_key.startswith("ev:") else None
+    if src is None:
+        return False
+    kind = await s.scalar(
+        select(Notification.kind).where(
+            Notification.id == uuid.UUID(src.group(0)), Notification.user_id == n.user_id
+        )
+    )
+    return kind in t.notify_kinds
 
 
 async def _send(
-    n: AssistantNudge, t: Trigger, c: Ctx, now: datetime, text: str, src: str, points: int
+    n: AssistantNudge,
+    t: Trigger,
+    c: Ctx,
+    now: datetime,
+    text: str,
+    src: str,
+    points: int,
+    channel: str | None = None,
 ) -> str:
-    """카드 · 승인 카드 · (알림) · 상태 바꾸기를 한 트랜잭션으로. 보낸 뒤 화면 신호."""
+    """카드 · 승인 카드 · (알림) · 상태 바꾸기를 한 트랜잭션으로. 보낸 뒤 화면 신호.
+    판정 · 문장(LLM)을 기다리는 사이 상태가 바뀌었을 수 있어 보내기 직전 상태를 다시 보고, 바뀌었으면 보내지 않고
+    닫는다(gone). channel은 이번에 보낼 채널(규칙이 알림을 조용한 대화 줄로 바꿨으면 feed)."""
     from app.auth.models import User
     from app.notify import service as notify_service
     from app.shared.errors import AppError
 
+    channel = channel or n.channel
     async with SessionLocal() as s:
         user = await s.get(User, n.user_id)
         if user is None:
             return "expired"
+        fresh = await context(s, n, now)
+        if fresh is None:
+            await repo.set_nudge(s, n.id, ["pending"], status="expired", reason="gone")
+            await s.commit()
+            return "expired"
+        c = fresh
         refs = None
         try:
             refs = await _chat_refs(s, n)
@@ -773,7 +941,7 @@ async def _send(
             # 업체 쪽 틀은 카드를 만든 뒤 사실(고객이 바란 날이 겹침 · 후보 없음)로 채운다
             if card is None and action_id is None:
                 c.names.setdefault("next", NO_CARD_NEXT)
-            text = template(Facts(t.name, n.channel, n.surface, names=c.names))
+            text = template(Facts(t.name, channel, n.surface, names=c.names))
         got = await repo.set_nudge(
             s,
             n.id,
@@ -786,6 +954,7 @@ async def _send(
             reason=None,
             card=card,
             action_id=action_id,
+            channel=channel,
         )
         if got is None:  # 다른 평가가 먼저 바꿨다
             await s.rollback()
@@ -804,7 +973,8 @@ async def _send(
                 )
                 .values(status="expired", reason="replaced")
             )
-        if n.channel == "notify":
+        ring = channel == "notify" and not await _rang(s, n, t)
+        if ring:
             await notify_service.add(
                 s,
                 user_id=n.user_id,
@@ -817,7 +987,7 @@ async def _send(
         await s.commit()
     if refs is not None and card is not None:
         await refs.save()  # 카드 이름표를 대화 표에 넣는다(commit 뒤: 대화 행이 남은 다음)
-    await _signal(n, t)
+    await _signal(n, t, unread=ring)
     return "sent"
 
 
@@ -841,15 +1011,16 @@ def _link(t: Trigger, n: AssistantNudge) -> str:
     return f"/vendor/requests/{n.ref_id}"
 
 
-async def _signal(n: AssistantNudge, t: Trigger, *, unread: bool = True) -> None:
-    """commit 뒤 화면 신호: 대화 기록을 다시 읽게(state, 그 공사 · 업체는 공사 없음), 알림이면 안 읽은 수(notif).
-    보낼 때와 할 일이 끝나 닫을 때(unread=False) 보낸다. 실패해도 바꾼 것은 그대로(화면은 다음에 다시 읽어 맞춘다)."""
+async def _signal(n: AssistantNudge, t: Trigger, *, unread: bool) -> None:
+    """commit 뒤 화면 신호: 대화 기록을 다시 읽게(state, 그 공사 · 업체는 공사 없음), 종 알림을 더했으면(unread) 안
+    읽은 수(notif). 보낼 때와 할 일이 끝나 닫을 때(unread=False) 보낸다. 실패해도 바꾼 것은 그대로(화면은 다음에 다시
+    읽어 맞춘다)."""
     from app.notify import service as notify_service
     from app.realtime import service as realtime
 
     try:
         await realtime.push_state([n.user_id], t.state, n.ref_id, n.project_id)  # type: ignore[arg-type]
-        if unread and n.channel == "notify":
+        if unread:
             async with SessionLocal() as s:
                 await notify_service.push_unread(s, [n.user_id])
     except Exception as e:  # noqa: BLE001 - 신호는 지워져도 되는 것(화면은 다시 읽어 맞춘다)
