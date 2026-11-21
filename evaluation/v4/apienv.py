@@ -4,6 +4,7 @@
   LLM 키 · LLM_LIVE는 읽지 않아요. 무료 모드는 키 환경변수를 이 프로세스에서 비우고 LLM_LIVE=false로 둬요.
 - LLM 모드(--live)는 부르는 쪽 환경변수(LLM_LIVE=true · ANTHROPIC_API_KEY)를 그대로 쓰고, 다른 유료 키는 비우고
   Jev는 꺼요(live_mode). 비용은 판마다 장부(llm_usage)로 세요(sim/drive.usage).
+- 판마다 새로 가입하니 두 모드 모두 새 계정 몫(LLM_NEW_USER_DAYS=0)을 꺼요. 상한 동작은 백엔드 시험이 지켜요.
 - 시험 DB는 따로 써요(기본 mitjip_eval_sim · Redis 12번). 백엔드 pytest(mitjip_test · 15번)와 섞이지 않아요.
 - 앱은 backend/tests/conftest.py와 같은 방법으로 올려요: DB 새로 만들기 → Alembic head → 판마다 표 비우기.
 - 시험 DB에는 지식 자료가 없어서, 백엔드 시험처럼 저장소 CSV 색인(tests/v3_kb.repo_index)을 넘겨요.
@@ -23,6 +24,7 @@ TESTS = BACKEND / "tests"
 
 KEY_ENVS = ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY")
 DB_KEYS = ("POSTGRES_USER", "POSTGRES_PASSWORD", "DB_HOST_PORT", "REDIS_HOST_PORT")
+NEW_USER_DAYS = "0"  # 새 계정 몫(usage, 가입 7일 안 고객) 끔: 판마다 새로 가입해요
 
 
 def env_files() -> list[Path]:
@@ -49,6 +51,7 @@ def load_db_env(path: Path | None = None) -> Path | None:
 def free_mode() -> None:
     """유료 호출 0회: LLM_LIVE=false, 키 환경변수 비움(설정은 환경변수만 읽어요)."""
     os.environ["LLM_LIVE"] = "false"
+    os.environ["LLM_NEW_USER_DAYS"] = NEW_USER_DAYS
     for k in KEY_ENVS:
         os.environ[k] = ""
 
@@ -67,6 +70,7 @@ def live_mode() -> None:
         os.environ[k] = ""
     os.environ["JEV_ENABLED"] = "false"
     os.environ["LLM_PROVIDER"] = "anthropic"
+    os.environ["LLM_NEW_USER_DAYS"] = NEW_USER_DAYS
 
 
 class ToolTap:
@@ -230,6 +234,9 @@ def live_settings() -> dict:
         "light_effort": settings.llm_claude_light_effort,
         "cap_turn_usd": settings.llm_cap_turn_usd,
         "cap_user_day_usd": settings.llm_cap_user_day_usd,
+        "cap_new_user_day_usd": settings.llm_cap_new_user_day_usd,
+        "cap_new_pool_day_usd": settings.llm_cap_new_pool_day_usd,
+        "new_user_days": settings.llm_new_user_days,
         "cap_service_day_usd": settings.llm_cap_service_day_usd,
         "jev_enabled": settings.jev_enabled,
     }

@@ -64,7 +64,10 @@ class LLMOff(LLMError):
 
 
 class OverBudget(LLMError):
-    """비용 상한(사용자 하루 · 서비스 하루 · 전체)의 90%를 넘었거나 셀 수 없어 막았다(무료 모드로)."""
+    """비용 상한(사용자 하루 · 새 계정 · 서비스 하루 · 전체)의 90%를 넘었거나 셀 수 없어 막았다(무료 모드로).
+
+    scope: user_day · new_user_day · new_pool_day · service_day · total(usage.Scope) 또는 셀 수 없으면 unknown.
+    """
 
     def __init__(self, scope: str) -> None:
         super().__init__(f"LLM 비용 상한({scope})")
@@ -161,7 +164,7 @@ def available() -> bool:
 
 
 async def budget_ok(user_id: uuid.UUID | None, label: str = "turn") -> bool:
-    """비용 상한(사용자 하루 · 서비스 하루 · 전체)의 90% 안인지. 턴 시작에 무료 모드로 갈지 정할 때 쓴다.
+    """비용 상한(사용자 하루 · 새 계정 · 서비스 하루 · 전체)의 90% 안인지. 턴 시작에 무료 모드로 갈지 정할 때 쓴다.
 
     셀 수 없으면 False(닫힘 쪽). 호출마다 _guard가 다시 본다. label은 로그에만 쓴다.
     """
