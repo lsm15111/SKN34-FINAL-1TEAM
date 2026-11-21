@@ -150,4 +150,5 @@ async def run(t: Tool, tc: ToolCtx, args: Any) -> ToolOut:
 
 
 # 도구 모듈을 불러 REGISTRY를 채운다(정의 순서와 상관없이 defs는 이름순)
+import app.assistant.tools.research  # noqa: F401  조사 담당(09-research)
 from app.assistant.tools import aftercare, answer, customer, diy, floorplan, propose, vendor  # noqa: F401

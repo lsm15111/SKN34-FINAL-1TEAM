@@ -5,6 +5,7 @@
 - 사용자 · 공사 · 요청은 세션 · 요청 경로로만 정하고 LLM 출력으로 받지 않는다. 남의 것은 404, 역할이 다르면 403.
 - 먼저 말 걸기: POST …/nudges/{id}/open · dismiss(고객 · 업체 같은 꼴, 닫으면 같은 일을 3일 쉰다).
 - 기억: GET /assistant/memory · DELETE /assistant/memory/{id}(고객만). 기억 쓰기 API · 도구는 없다.
+- 조사 담당: GET /assistant/research/{id}(진행 · 결과) · POST …/{id}/stop(고객만, 남의 것 404).
 """
 
 import uuid
@@ -13,8 +14,9 @@ from typing import Literal
 from fastapi import APIRouter, Depends, Query, Response
 from fastapi.responses import StreamingResponse
 
-from app.assistant import service
+from app.assistant import research, service
 from app.assistant.models import AssistantTurn
+from app.assistant.research import ResearchData
 from app.assistant.schemas import (
     ActionOut,
     ApproveIn,
@@ -161,6 +163,22 @@ async def forget(memory_id: uuid.UUID, user: User = Customer) -> Response:
 @router.get("/health", response_model=HealthOut, summary="비서가 지금 LLM으로 답하는지")
 async def health(user: User = Customer) -> HealthOut:
     return await service.health(user)
+
+
+@router.get(
+    "/research/{research_id}", response_model=ResearchData, summary="조사 하나(진행 · 결과)"
+)
+async def research_detail(research_id: uuid.UUID, user: User = Customer) -> ResearchData:
+    return await research.get_out(user, research_id)
+
+
+@router.post(
+    "/research/{research_id}/stop",
+    response_model=ResearchData,
+    summary="조사 멈추기(그때까지 찾은 것으로 끝냄)",
+)
+async def research_stop(research_id: uuid.UUID, user: User = Customer) -> ResearchData:
+    return await research.stop_out(user, research_id)
 
 
 # ---- 업체 ----

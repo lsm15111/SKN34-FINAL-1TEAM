@@ -148,6 +148,10 @@ async def _customer_facts(s, user: User, pid: uuid.UUID, today, opened: list, de
     remembered = memory.facts_line(await repo.memories(s, user.id))
     if remembered:
         lines.append(remembered)
+    from app.assistant import research  # 조사 담당(09): 진행 중 · 방금 끝난 조사 한 줄
+
+    if looked := await research.facts_line(s, user.id, pid, now_utc()):
+        lines.append(looked)
     return "\n".join(lines)
 
 
@@ -555,7 +559,7 @@ async def feed_for(
     """대화 기록 한 쪽(오래된 것부터). 카드는 턴에 남긴 것, 승인 카드는 지금 상태(새 판이면 새 행동)로 그린다.
     먼저 말 건 줄은 보낸 때 자리에 끼운다(대화가 없어도): 그 쪽 말 사이에 보낸 줄만(첫 쪽은 맨 뒤까지, 앞 쪽은
     다음 쪽 첫 말 앞까지). 고객은 할 일이 끝나 닫힌 줄(acted · handled)도 '완료'로 남긴다(settled)."""
-    from app.assistant import proactive
+    from app.assistant import proactive, research
     from app.assistant.tools import cards
     from app.project import service as project_service
 
@@ -565,6 +569,7 @@ async def feed_for(
     acts: dict = {}
     failed: list = []
     nudges: list = []
+    looked: list = []  # 끝난 조사 줄(조사 담당 09, 먼저 말 걸기 규칙 밖)
     task = None
     async with SessionLocal() as s:
         if surface == "customer":
@@ -605,6 +610,8 @@ async def feed_for(
                     s, user.id, [n.action_id for n in nudges if n.action_id not in (None, *acts)]
                 )
             )
+            if surface == "customer":
+                looked = await research.feed_items(s, user.id, project_id, since, until)
             if (
                 before is None
                 and surface == "customer"
@@ -659,6 +666,7 @@ async def feed_for(
     tasked = next((n.id for n in tasks if not _settled(n)), tasks[0].id if tasks else None)
     for n in nudges:
         items.append(_nudge_item(n, acts, task if n.id == tasked else None, proactive))
+    items.extend(looked)
     items.sort(key=lambda x: x.at)  # 같은 때면 원래 순서(질문 → 답)
     last = turns.get(max(turns)) if turns else None
     more = _has_older(rows, limit)
