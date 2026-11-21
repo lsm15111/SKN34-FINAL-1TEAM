@@ -1,8 +1,13 @@
 """시나리오(sets/scenarios)를 대본 사용자로 돌려 끝 상태를 정답과 견줘요: pass^1 · pass^3.
 
     cd backend && uv run python ../evaluation/v4/sim/run.py --tag sim-free --trials 3
+    cd backend && LLM_LIVE=true uv run python ../evaluation/v4/sim/run.py --live --max-usd 7 --tag sim-live1   # 허락 뒤
 
-- 무료 모드만 돌아요(LLM_LIVE=false, 키 환경변수 비움, 유료 호출 0회). --live는 키 · 리드 허락이 생기면 열어요.
+- 기본은 무료 모드(LLM_LIVE=false, 키 환경변수 비움, 유료 호출 0회).
+- --live(LLM 모드): 환경변수 LLM_LIVE=true · ANTHROPIC_API_KEY와 --max-usd가 있어야 돌아요(apienv.live_mode).
+  판마다 reset 전에 장부(llm_usage)를 읽어 비용 · 호출 수 · 턴 비용(turn_id) · 지연을 적어요. 누적 + 다음 판 어림
+  (drive.next_estimate: 같은 시나리오 지난 판 최댓값 × 1.25, 처음이면 시나리오 checks.max_cost_usd와
+  대본 턴 수 × 지금까지 본 턴당 비용 중 큰 값)이 --max-usd를 넘으면 시작하지 않고 멈춰요.
 - 판마다 시험 DB(기본 mitjip_eval_sim, Redis 12번)를 비우고 world를 다시 심어요(sim/world.py).
   날짜는 7의 배수 날만큼 옮겨요(요일 그대로, check.week_shift). 대본 글의 'M월 D일'도 같이 옮겨요.
 - 사용자: script.turns 대본(say = 비서 턴, screen = 화면 열기, press = 카드 단추 누르기). LLM 사용자 시뮬레이터는
@@ -30,7 +35,7 @@ V4 = HERE.parent
 sys.path.insert(0, str(V4))
 
 import apienv
-from kit import RUNS, SCENARIOS, append_jsonl, jsonl, utf8_stdout
+from kit import RUNS, SCENARIOS, Budget, append_jsonl, jsonl, utf8_stdout
 
 from sim import check, drive, press
 from sim.world import SeedError, World
@@ -305,6 +310,7 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
             else "무료 모드: 기억할 낱말이 든 고객 말이 없어 기억 뽑기 일 0건"
         )
     use = drive.usage(app)
+    drive.add_turn_costs(turns, use)
     run = {
         "turns": turns,
         "shown": "\n".join(t.get("shown") or "" for t in turns),
@@ -415,12 +421,14 @@ def summarize(rows: list[dict], trials: int) -> dict:
                     k: sum((r.get("memory_jobs") or {}).get(k, 0) for r in rs)
                     for k in ("memory_done", "memory_skipped")
                 },
+                "cost_usd": round(sum((r.get("usage") or {}).get("cost_usd", 0) for r in rs), 6),
             }
         )
     full = [x for x in out if x["trials"] == trials]
     counts = [x["passed"] for x in full]
     all_ok, all_n = _items(rows)
     tool_ok, tool_n = _items(rows, "필수 도구")
+    forb_ok, forb_n = _items(rows, "금지 도구")
 
     def hat(xs: list[dict], key: str, k: int):
         v = check.pass_hat([x[key] for x in xs], trials, k)
@@ -445,6 +453,7 @@ def summarize(rows: list[dict], trials: int) -> dict:
         "runs": len(full) * trials,
         "item_rate": round(all_ok / all_n, 4) if all_n else None,
         "required_tools_recall": round(tool_ok / tool_n, 4) if tool_n else None,
+        "forbidden_tools": {"items": forb_n, "used": forb_n - forb_ok},
         "paid_calls": sum(r.get("usage", {}).get("calls", 0) for r in rows),
         "cost_usd": round(sum(r.get("usage", {}).get("cost_usd", 0) for r in rows), 6),
         "presses": press_stats(rows),
@@ -455,19 +464,30 @@ def summarize(rows: list[dict], trials: int) -> dict:
 
 def report(summary: dict, mode: str) -> None:
     k = summary["trials"]
+    live = bool(summary.get("cost"))
     print(f"\n# 시뮬레이터 결과 ({mode} 모드, 시나리오마다 {k}번)")
-    print("| 시나리오 | 나눔 | 화면 | 통과 | 끝 상태만 | 확인만 | 맞은 항목 | 단추 | 주된 실패 |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| 시나리오 | 나눔 | 화면 | 통과 | 끝 상태만 | 확인만 | 맞은 항목 | 단추 |"
+          + (" 비용 |" if live else "") + " 주된 실패 |")  # fmt: skip
+    print("| --- " * (10 if live else 9) + "|")
     for x in summary["scenarios"]:
         why = x["seed_error"] or " · ".join(x["fails"][:3]) or "-"
+        usd = f" ${x.get('cost_usd', 0):.4f} |" if live else ""
         print(f"| {x['id']} | {x['split']} | {x['surface']} | {x['passed']}/{x['trials']} | "
               f"{x['end_ok']}/{x['trials']} | {x['checks_ok']}/{x['trials']} | "
-              f"{x['items_ok']}/{x['items']} | {press_cell(x.get('presses'))} | {why} |")  # fmt: skip
+              f"{x['items_ok']}/{x['items']} | {press_cell(x.get('presses'))} |{usd} {why} |")  # fmt: skip
+    f = summary.get("forbidden_tools") or {}
     print(f"\npass^1 {summary['pass^1']} · pass^{k} {summary[f'pass^{k}']} "
           f"· 끝 상태만 pass^1 {summary['end_only_pass^1']} · 확인만 pass^1 "
           f"{summary['checks_only_pass^1']} · 맞은 항목 {summary['item_rate']} "
-          f"· 필수 도구 재현율 {summary['required_tools_recall']}")  # fmt: skip
+          f"· 필수 도구 재현율 {summary['required_tools_recall']} "
+          f"· 금지 도구 {f.get('used', 0)}/{f.get('items', 0)}항목")  # fmt: skip
     print(f"유료 호출 {summary['paid_calls']}회 · 비용 ${summary['cost_usd']}")
+    if live:
+        c = summary["cost"]
+        print(drive.cost_line(c))
+        print("목적별:", c["by_purpose"], "· 실패한 호출:", c["errors"] or "없음")
+    if summary.get("stopped"):
+        print("멈춤:", summary["stopped"])
     p = summary.get("presses") or {}
     print(f"단추 걸음 {p.get('steps', 0)} · 누름 {p.get('pressed', 0)} · 건너뜀 {p.get('skip', 0)} "
           f"· 못 누름 {p.get('missed', 0)} · 이름표 표에서 찾음 {p.get('from_refs', 0)} "
@@ -492,7 +512,14 @@ def main(argv=None) -> int:
     ap.add_argument("--db", default="mitjip_eval_sim")
     ap.add_argument("--redis-db", type=int, default=12)
     ap.add_argument("--env-file", type=Path, help="DB 접속값을 읽을 .env(키는 읽지 않아요)")
-    ap.add_argument("--live", action="store_true", help="유료 모드(지금은 막아 둠)")
+    ap.add_argument(
+        "--live",
+        action="store_true",
+        help="LLM 모드(유료). 환경변수 LLM_LIVE=true · ANTHROPIC_API_KEY와 --max-usd가 있어야 해요",
+    )
+    ap.add_argument(
+        "--max-usd", type=float, help="--live 상한(달러). 누적 + 다음 판 어림이 넘으면 멈춰요"
+    )
     ap.add_argument("--resummarize", action="store_true", help="돌린 sim.jsonl로 요약만 다시 내요")
     ap.add_argument(
         "--no-worker", action="store_true", help="worker(기억 뽑기 · 먼저 말 걸기)를 돌리지 않아요"
@@ -501,17 +528,29 @@ def main(argv=None) -> int:
         "--no-nudges", action="store_true", help="기억 뽑기만 돌리고 먼저 말 걸기는 빼요"
     )
     a = ap.parse_args(argv)
-    if a.live:
-        print("유료 모드는 아직 막아 뒀어요(키 무효 · 리드 허락 전). 무료 모드로만 돌려요.")
-        return 2
     if a.resummarize:
         out = RUNS / a.tag
-        summary = summarize(jsonl(out / "sim.jsonl"), a.trials)
-        summary["mode"] = "free"
+        old = (
+            json.loads((out / "meta.json").read_text("utf-8"))
+            if (out / "meta.json").exists()
+            else {}
+        )
+        live = a.live or old.get("run_mode") == "live"
+        rows = jsonl(out / "sim.jsonl")
+        summary = summarize(rows, a.trials)
+        summary["mode"] = "live" if live else "free"
+        if live:
+            summary.update(cost=drive.cost_summary(rows), max_usd=old.get("max_usd"),
+                           stopped=old.get("stopped"))  # fmt: skip
         write_json(out / "summary.json", summary)
-        report(summary, "무료")
+        report(summary, "LLM" if live else "무료")
         return 0
-    apienv.free_mode()
+    if a.live and (a.max_usd is None or a.max_usd <= 0):
+        ap.error("--live에는 --max-usd(0보다 큰 값)가 필요해요")
+    if a.live:
+        apienv.live_mode()
+    else:
+        apienv.free_mode()
     env = apienv.load_db_env(a.env_file)
     scen = load(a.only.split(",") if a.only else None, a.split)
     out = RUNS / a.tag
@@ -520,14 +559,31 @@ def main(argv=None) -> int:
     path.write_text("", encoding="utf-8")
     app = apienv.App(a.db, a.redis_db).boot()
     mode = apienv.settings_mode()
-    if mode["available"]:
+    if mode["available"] != a.live:
         app.close()
-        print("LLM이 켜져 있어 멈춰요(무료 모드여야 해요).")
+        print("LLM을 부를 수 없어 멈춰요(LLM_LIVE · 키 · 공급자를 확인해 주세요)." if a.live
+              else "LLM이 켜져 있어 멈춰요(무료 모드여야 해요).")  # fmt: skip
         return 2
+    llm_set = apienv.live_settings() if a.live else None
     rows = []
+    book = Budget(a.max_usd if a.live else None)
+    prev: dict[str, list[float]] = {}  # 시나리오별 지난 판 비용
+    seen = 0.0  # 지금까지 본 판의 턴당 비용 최댓값(처음 판 어림에 써요)
+    stopped = None
     try:
         for sc in scen:
             for t in range(a.trials):
+                est = 0.0
+                if a.live:
+                    steps = [
+                        x for x in (sc.get("script") or {}).get("turns") or [] if "screen" not in x
+                    ]
+                    floor = (sc.get("checks") or {}).get("max_cost_usd")
+                    est = drive.next_estimate(prev.get(sc["id"], []), len(steps), seen, floor)
+                    if not book.reserve(est):
+                        stopped = (f"상한 ${a.max_usd}: 지금까지 ${book.spent:.4f} + 다음 판 어림 "
+                                   f"${est:.4f}({sc['id']} #{t + 1})이 넘어 시작하지 않았어요")  # fmt: skip
+                        break
                 app.reset()
                 try:
                     row = run_one(app, sc, t, worker=not a.no_worker, nudges=not a.no_nudges)
@@ -536,21 +592,35 @@ def main(argv=None) -> int:
                            "surface": sc["surface"], "passed": False,
                            "crash": f"{type(e).__name__}: {e}"[:300],
                            "trace": traceback.format_exc()[-1500:]}  # fmt: skip
+                if a.live:
+                    stopped = drive.live_cost(app, row, book, est)
+                    prev.setdefault(sc["id"], []).append(row["cost_usd"])
+                    n = sum(1 for x in row.get("turns") or [] if x.get("turn_id"))
+                    seen = max(seen, row["cost_usd"] / max(n, 1))
                 append_jsonl(path, row)
                 rows.append(row)
                 mark = "통과" if row.get("passed") else "실패"
-                print(f"{sc['id']} #{t + 1} {mark} ({row.get('secs', '-')}초)", flush=True)
+                usd = f" · ${row['cost_usd']:.4f} · 누적 ${book.spent:.4f}" if a.live else ""
+                print(f"{sc['id']} #{t + 1} {mark} ({row.get('secs', '-')}초{usd})", flush=True)
+                if stopped:
+                    break
+            if stopped:
+                break
     finally:
         app.close()
     summary = summarize(rows, a.trials)
-    summary["mode"] = "free"
+    summary["mode"] = "live" if a.live else "free"
+    if a.live:
+        summary.update(cost=drive.cost_summary(rows), max_usd=a.max_usd, stopped=stopped)
     write_json(out / "summary.json", summary)
-    meta = {"tag": a.tag, "mode": mode, "db": a.db, "redis_db": a.redis_db,
-            "env_file": env.name if env else None, "scenarios": [s["id"] for s in scen],
-            "trials": a.trials, "worker": not a.no_worker,
+    meta = {"tag": a.tag, "mode": mode, "run_mode": summary["mode"], "db": a.db,
+            "redis_db": a.redis_db, "env_file": env.name if env else None,
+            "scenarios": [s["id"] for s in scen], "trials": a.trials, "worker": not a.no_worker,
             "nudges": not a.no_worker and not a.no_nudges}  # fmt: skip
+    if a.live:
+        meta.update(llm=llm_set, max_usd=a.max_usd, stopped=stopped, cost=summary["cost"])
     write_json(out / "meta.json", meta)
-    report(summary, "무료")
+    report(summary, "LLM" if a.live else "무료")
     return 0
 
 

@@ -2,14 +2,17 @@
 
 - 턴: 고객 POST /assistant/turns(project_id), 업체 POST /vendor/assistant/turns(visit_id는 있으면).
 - 보인 글(shown): token 글 + card data + action 요약 + status 글 + error 문장. 누출 · 금지 말 확인은 이 글로 해요.
-- 턴 흔적: assistant_turns(status · mode · tool_calls · trace.tools 이름 · trace.llm)과 ToolTap의 도구 입력.
-- 비용: llm_usage(장부) 합. 판마다 DB를 비우니 합이 곧 그 판 비용이에요.
+- 턴 흔적: assistant_turns(status · mode · tool_calls · trace.tools 이름 · trace.llm · trace.ms)과 ToolTap의 도구 입력.
+- 비용: llm_usage(장부) 줄. 판마다 DB를 비우니(app.reset) 그 전에 읽은 줄이 곧 그 판 것이에요.
+  턴 비용은 turn_id로 묶어요(턴 밖 = 기억 뽑기 · 먼저 말 걸기 · 브리핑 문장). 지연은 호출마다 latency_ms예요.
 - worker 한 차례(tick): 기억 뽑기 일(jobs kind=assistant_memory)과 비서 정리(만료 · 먼저 말 걸기)를 앱과 같은
   이벤트 루프에서 돌려요. 운영 worker는 1분 · 2분마다 도는데, 시뮬레이터는 걸음마다 한 번 돌려요.
 """
 
 import json
+import math
 import uuid
+from collections import Counter
 
 TEXT_KEEP = 800  # 기록에 남길 답 글 길이(채점은 전체 글로 해요)
 
@@ -125,6 +128,7 @@ def turn(
         tools=[x.get("name") for x in trace.get("tools") or []],
         tools_ok=[x.get("name") for x in trace.get("tools") or [] if x.get("ok")],
         llm=trace.get("llm") or 0,
+        ms=trace.get("ms"),
         cards=[c.get("kind") for c in cards],
         card_data=[
             {"card_id": c.get("card_id"), "kind": c.get("kind"), "data": c.get("data")}
@@ -252,10 +256,146 @@ def tick(app, nudges: bool = True) -> dict:
     return out
 
 
+LEDGER_SQL = (
+    "select turn_id::text as turn_id, purpose, model, cost_micros, latency_ms, ok, error,"
+    " input_tokens, cache_read_tokens, cache_write_tokens, output_tokens, web_searches"
+    " from llm_usage order by created_at, id"
+)
+TOKENS = ("input_tokens", "cache_read_tokens", "cache_write_tokens", "output_tokens")
+TURN_USD = 0.06  # 처음 문항 어림의 턴당 비용(계약서 비서 턴 상한 llm_cap_turn_usd와 같음, 보수적)
+MARGIN = 1.25  # 같은 시나리오 지난 판 최댓값에 곱하는 여유
+
+
 def usage(app) -> dict:
-    """장부(llm_usage) 합: 유료 호출 수 · 비용 · 웹 검색 수."""
-    row = app.query(
-        "select count(*) as n, coalesce(sum(cost_micros), 0) as micros,"
-        " coalesce(sum(web_searches), 0) as web from llm_usage"
-    )[0]
-    return {"calls": int(row["n"]), "cost_usd": int(row["micros"]) / 1e6, "web": int(row["web"])}
+    """장부(llm_usage) 그 판 합. app.reset()이 표를 비우니 reset 전에 불러요."""
+    return usage_of([dict(r) for r in app.query(LEDGER_SQL)])
+
+
+def usage_of(rows: list[dict]) -> dict:
+    """장부 줄 → 판 합(글 없음): 호출 수 · 비용 · 웹 검색 · turn_id별 · 목적별 · 모델별 · 토큰 ·
+    호출마다 지연(latency_ms) · 실패한 호출의 오류 종류 수."""
+    micros = 0
+    books: dict[str, dict[str, list[int]]] = {"turns": {}, "by_purpose": {}, "by_model": {}}
+    errors: Counter[str] = Counter()
+    for r in rows:
+        c = int(r.get("cost_micros") or 0)
+        micros += c
+        for name, key in (("turns", "turn_id"), ("by_purpose", "purpose"), ("by_model", "model")):
+            if r.get(key):
+                b = books[name].setdefault(str(r[key]), [0, 0])
+                b[0] += 1
+                b[1] += c
+        if r.get("ok") is False:
+            errors[str(r.get("error") or "unknown")] += 1
+    out: dict = {"calls": len(rows), "cost_usd": micros / 1e6,
+                 "web": sum(int(r.get("web_searches") or 0) for r in rows)}  # fmt: skip
+    for name, book in books.items():
+        out[name] = {k: {"calls": n, "cost_usd": m / 1e6} for k, (n, m) in book.items()}
+    out["tokens"] = {
+        k.removesuffix("_tokens"): sum(int(r.get(k) or 0) for r in rows) for k in TOKENS
+    }
+    out["latency_ms"] = [int(r.get("latency_ms") or 0) for r in rows]
+    out["errors"] = dict(errors)
+    return out
+
+
+def add_turn_costs(turns: list[dict], use: dict) -> None:
+    """턴 기록에 장부의 그 턴 비용 · 호출 수를 적어요(turn_id가 있는 턴만)."""
+    book = use.get("turns") or {}
+    for t in turns:
+        if t.get("turn_id"):
+            got = book.get(t["turn_id"]) or {}
+            t["cost_usd"] = round(got.get("cost_usd", 0.0), 6)
+            t["ledger_calls"] = got.get("calls", 0)
+
+
+def pctl(xs: list[float], q: float) -> float | None:
+    """백분위(선형 보간, q는 0~1). 값이 없으면 None."""
+    if not xs:
+        return None
+    s = sorted(xs)
+    pos = (len(s) - 1) * q
+    lo, hi = math.floor(pos), math.ceil(pos)
+    return s[lo] + (s[hi] - s[lo]) * (pos - lo)
+
+
+def _r(x: float | None, nd: int = 6) -> float | None:
+    return None if x is None else round(x, nd)
+
+
+def cost_summary(rows: list[dict]) -> dict:
+    """판(문항) 줄 → 비용 · 지연 요약. 턴 비용 = 장부의 그 turn_id 합(LLM을 안 부른 턴은 0).
+    턴 밖 = 기억 뽑기 · 먼저 말 걸기 · 브리핑 문장. 호출 지연 = latency_ms, 턴 시간 = trace.ms
+    (TestClient는 SSE를 다 받은 뒤 돌려줘서 첫 조각 시간은 못 재요)."""
+    uses = [r.get("usage") or {} for r in rows]
+    turns = [t for r in rows for t in r.get("turns") or [] if t.get("turn_id")]
+    tc = [float(t.get("cost_usd") or 0.0) for t in turns]
+    llm_tc = [float(t.get("cost_usd") or 0.0) for t in turns if t.get("ledger_calls")]
+    lat = [x for u in uses for x in u.get("latency_ms") or []]
+    ms = [t["ms"] for t in turns if isinstance(t.get("ms"), (int, float))]
+    total = sum(float(u.get("cost_usd") or 0.0) for u in uses)
+    by: dict[str, dict] = {}
+    errors: Counter[str] = Counter()
+    for u in uses:
+        for k, v in (u.get("by_purpose") or {}).items():
+            b = by.setdefault(k, {"calls": 0, "cost_usd": 0.0})
+            b["calls"] += v["calls"]
+            b["cost_usd"] += v["cost_usd"]
+        errors.update(u.get("errors") or {})
+    return {
+        "cost_usd": round(total, 6),
+        "calls": sum(int(u.get("calls") or 0) for u in uses),
+        "turns": len(turns),
+        "turns_with_llm": len(llm_tc),
+        "turn_usd_median": _r(pctl(tc, 0.5)),
+        "turn_usd_p90": _r(pctl(tc, 0.9)),
+        "llm_turn_usd_median": _r(pctl(llm_tc, 0.5)),
+        "llm_turn_usd_p90": _r(pctl(llm_tc, 0.9)),
+        "outside_turns_usd": round(total - sum(tc), 6),
+        "call_ms_median": _r(pctl(lat, 0.5), 0),
+        "call_ms_p90": _r(pctl(lat, 0.9), 0),
+        "turn_ms_median": _r(pctl(ms, 0.5), 0),
+        "turn_ms_p90": _r(pctl(ms, 0.9), 0),
+        "by_purpose": {
+            k: {"calls": v["calls"], "cost_usd": round(v["cost_usd"], 6)}
+            for k, v in sorted(by.items())
+        },
+        "errors": dict(sorted(errors.items())),
+    }
+
+
+def next_estimate(
+    prev: list[float], turns: int, seen_turn_usd: float = 0.0, floor: float | None = None
+) -> float:
+    """다음 판(문항) 어림(달러). 같은 시나리오 지난 판이 있으면 그 최댓값 × MARGIN.
+    처음이면 floor(시나리오 비용 상한 checks.max_cost_usd)와 턴 수 × 지금까지 본 턴당 비용 중 큰 값,
+    floor가 없으면 턴 수 × max(TURN_USD, 지금까지 본 턴당 비용)."""
+    if prev:
+        return max(prev) * MARGIN
+    if floor is not None:
+        return max(floor, max(turns, 1) * seen_turn_usd)
+    return max(turns, 1) * max(TURN_USD, seen_turn_usd)
+
+
+def live_cost(app, row: dict, book, est: float) -> str | None:
+    """LLM 모드 한 판(문항) 뒤: 장부 비용 · 호출 수를 행에 적고 누적(kit.Budget)을 바꿔요.
+    깨진 판 · 심기 실패도 reset 전에 장부를 읽어 세요. 장부를 못 읽으면 어림으로 세고 멈출 까닭을 돌려줘요."""
+    why = None
+    if "usage" not in row:
+        try:
+            row["usage"] = usage(app)
+        except Exception as e:  # noqa: BLE001 - 셀 수 없으면 더 돌리지 않아요
+            row["usage_error"] = type(e).__name__
+            why = "장부(llm_usage)를 읽지 못해 쓴 돈을 셀 수 없어 멈췄어요"
+    use = row.get("usage") or {}
+    row["cost_usd"] = round(use.get("cost_usd", est), 6)
+    row["llm_calls"] = use.get("calls")
+    book.settle(est, row["cost_usd"])
+    return why
+
+
+def cost_line(s: dict) -> str:
+    """결과 출력 한 줄: 총비용 · 턴당 비용 · 지연."""
+    return (f"LLM 비용 ${s['cost_usd']} · 호출 {s['calls']}회 · 턴 {s['turns']}(LLM 턴 {s['turns_with_llm']}) "
+            f"· 턴당 중앙값 ${s['turn_usd_median']} · p90 ${s['turn_usd_p90']} · 턴 밖 ${s['outside_turns_usd']} "
+            f"· 호출 지연 p90 {s['call_ms_p90']}ms · 턴 시간 p90 {s['turn_ms_p90']}ms")  # fmt: skip

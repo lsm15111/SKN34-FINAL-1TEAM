@@ -1,7 +1,9 @@
-"""v4 평가 러너(시뮬레이터 · 레드팀)가 같이 쓰는 앱 준비: 시험 DB · Redis · ASGI 클라이언트 · 무료 모드.
+"""v4 평가 러너(시뮬레이터 · 레드팀)가 같이 쓰는 앱 준비: 시험 DB · Redis · ASGI 클라이언트 · 무료 · LLM 모드.
 
 - DB · Redis 접속값만 .env에서 읽어요(POSTGRES_USER · POSTGRES_PASSWORD · DB_HOST_PORT · REDIS_HOST_PORT).
   LLM 키 · LLM_LIVE는 읽지 않아요. 무료 모드는 키 환경변수를 이 프로세스에서 비우고 LLM_LIVE=false로 둬요.
+- LLM 모드(--live)는 부르는 쪽 환경변수(LLM_LIVE=true · ANTHROPIC_API_KEY)를 그대로 쓰고, 다른 유료 키는 비우고
+  Jev는 꺼요(live_mode). 비용은 판마다 장부(llm_usage)로 세요(sim/drive.usage).
 - 시험 DB는 따로 써요(기본 mitjip_eval_sim · Redis 12번). 백엔드 pytest(mitjip_test · 15번)와 섞이지 않아요.
 - 앱은 backend/tests/conftest.py와 같은 방법으로 올려요: DB 새로 만들기 → Alembic head → 판마다 표 비우기.
 - 시험 DB에는 지식 자료가 없어서, 백엔드 시험처럼 저장소 CSV 색인(tests/v3_kb.repo_index)을 넘겨요.
@@ -49,6 +51,22 @@ def free_mode() -> None:
     os.environ["LLM_LIVE"] = "false"
     for k in KEY_ENVS:
         os.environ[k] = ""
+
+
+LIVE_OFF = ("OPENAI_API_KEY", "OPENROUTER_API_KEY", "VOYAGE_API_KEY")  # LLM 모드에서도 비우는 키
+
+
+def live_mode() -> None:
+    """LLM 모드(유료): 환경변수에 LLM_LIVE=true와 ANTHROPIC_API_KEY가 있어야 해요(키 값은 찍지 않아요).
+    Claude 말고 다른 유료 키(OpenAI · OpenRouter · Voyage)는 비우고 Jev는 꺼요. 앱을 불러오기 전에 불러요."""
+    if os.environ.get("LLM_LIVE", "").strip().lower() != "true":
+        raise SystemExit("LLM 모드에는 환경변수 LLM_LIVE=true가 필요해요.")
+    if not os.environ.get("ANTHROPIC_API_KEY", "").strip():
+        raise SystemExit("LLM 모드에는 환경변수 ANTHROPIC_API_KEY가 필요해요.")
+    for k in LIVE_OFF:
+        os.environ[k] = ""
+    os.environ["JEV_ENABLED"] = "false"
+    os.environ["LLM_PROVIDER"] = "anthropic"
 
 
 class ToolTap:
@@ -187,4 +205,20 @@ def settings_mode() -> dict:
         "llm_live": bool(settings.llm_live),
         "provider": settings.llm_provider,
         "available": llm.available(),
+    }
+
+
+def live_settings() -> dict:
+    """LLM 모드 meta에 남길 설정(모델 · effort · 상한 · Jev, 키 없음)."""
+    from app.config import settings
+
+    return {
+        "model": settings.llm_claude_model,
+        "effort": settings.llm_claude_effort,
+        "light_model": settings.llm_claude_light_model,
+        "light_effort": settings.llm_claude_light_effort,
+        "cap_turn_usd": settings.llm_cap_turn_usd,
+        "cap_user_day_usd": settings.llm_cap_user_day_usd,
+        "cap_service_day_usd": settings.llm_cap_service_day_usd,
+        "jev_enabled": settings.jev_enabled,
     }

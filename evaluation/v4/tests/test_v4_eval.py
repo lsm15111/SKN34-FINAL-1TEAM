@@ -5,23 +5,27 @@ cd backend && uv run python ../evaluation/v4/tests/test_v4_eval.py
 
 import contextlib
 import io
+import os
 import sys
 import tempfile
 import unittest
 from datetime import date, timedelta
 from pathlib import Path
 from typing import ClassVar
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import apienv
 import budget
 import build_sets
 import judge
 import kappa
 import prices
-from kit import CostLog, est_tokens, wilson
+from kit import Budget, CostLog, est_tokens, wilson
 from redteam import score as rtscore
 from sim import check as simcheck
+from sim import drive as simdrive
 from sim import press as simpress
 
 
@@ -491,6 +495,115 @@ class SimPressTest(unittest.TestCase):
         got = {i["what"]: i for i in simcheck.check_end(exp, st)}
         self.assertEqual((got["기억 pet"]["ok"], got["기억 pet"]["why"]), (False, "무료 모드"))
         self.assertTrue(got["기억 없음 pet"]["ok"])
+
+
+def _ledger(turn_id, purpose, micros, ms, error=None) -> dict:
+    return {"turn_id": turn_id, "purpose": purpose, "model": "m", "cost_micros": micros,
+            "latency_ms": ms, "ok": error is None, "error": error, "input_tokens": 100,
+            "cache_read_tokens": 50, "cache_write_tokens": 0, "output_tokens": 10,
+            "web_searches": 0}  # fmt: skip
+
+
+class LiveCostTest(unittest.TestCase):
+    """LLM 모드 비용 세기(장부 줄 → 판 합 · 턴 비용 · 요약 · 다음 판 어림 · 상한)."""
+
+    ROWS: ClassVar[list[dict]] = [
+        _ledger("t1", "assistant", 12_000, 3000),
+        _ledger("t1", "assistant", 8_000, 2000),
+        _ledger(None, "memory", 500, 900, "APITimeoutError"),
+    ]
+
+    def test_usage_of_groups_by_turn_and_purpose(self):
+        u = simdrive.usage_of(self.ROWS)
+        self.assertEqual(u["calls"], 3)
+        self.assertAlmostEqual(u["cost_usd"], 0.0205)
+        self.assertEqual(u["turns"], {"t1": {"calls": 2, "cost_usd": 0.02}})
+        self.assertEqual(u["by_purpose"]["memory"], {"calls": 1, "cost_usd": 0.0005})
+        self.assertEqual(
+            (u["errors"], u["latency_ms"]), ({"APITimeoutError": 1}, [3000, 2000, 900])
+        )
+        self.assertEqual(
+            u["tokens"], {"input": 300, "cache_read": 150, "cache_write": 0, "output": 30}
+        )
+
+    def test_turn_costs_and_summary(self):
+        u = simdrive.usage_of(self.ROWS)
+        turns = [{"turn_id": "t1", "ms": 5200}, {"turn_id": "t2", "ms": 40}, {"kind": "press"}]
+        simdrive.add_turn_costs(turns, u)
+        self.assertEqual((turns[0]["cost_usd"], turns[0]["ledger_calls"]), (0.02, 2))
+        self.assertEqual((turns[1]["cost_usd"], turns[1]["ledger_calls"]), (0.0, 0))
+        self.assertNotIn("cost_usd", turns[2])  # 단추를 못 누른 걸음(턴 없음)
+        s = simdrive.cost_summary([{"usage": u, "turns": turns}, {"crash": "x"}])
+        self.assertEqual(
+            (s["cost_usd"], s["calls"], s["turns"], s["turns_with_llm"]), (0.0205, 3, 2, 1)
+        )
+        self.assertEqual((s["turn_usd_median"], s["llm_turn_usd_median"]), (0.01, 0.02))
+        self.assertEqual(s["outside_turns_usd"], 0.0005)  # 턴 밖(기억 뽑기)
+        self.assertEqual(
+            (s["call_ms_p90"], s["turn_ms_median"], s["turn_ms_p90"]), (2800, 2620, 4684)
+        )
+        self.assertEqual(s["errors"], {"APITimeoutError": 1})
+        self.assertEqual(s["by_purpose"]["assistant"], {"calls": 2, "cost_usd": 0.02})
+
+    def test_pctl(self):
+        self.assertIsNone(simdrive.pctl([], 0.5))
+        self.assertEqual(simdrive.pctl([3, 1, 2], 0.5), 2)
+        self.assertEqual(simdrive.pctl([1, 2, 3, 4], 0.5), 2.5)
+        self.assertAlmostEqual(simdrive.pctl(list(range(1, 11)), 0.9), 9.1)
+
+    def test_next_estimate_and_stop(self):
+        # 같은 시나리오 지난 판 최댓값 × 1.25, 처음이면 턴 수 × $0.06(레드팀)
+        self.assertAlmostEqual(simdrive.next_estimate([0.2, 0.3], 8), 0.375)
+        self.assertAlmostEqual(simdrive.next_estimate([], 8), 0.48)
+        self.assertAlmostEqual(simdrive.next_estimate([], 2, seen_turn_usd=0.1), 0.2)
+        # 시뮬레이터 처음 판: 시나리오 비용 상한과 턴 수 × 본 턴당 비용 중 큰 값
+        self.assertAlmostEqual(simdrive.next_estimate([], 5, 0.0, 0.3), 0.3)
+        self.assertAlmostEqual(simdrive.next_estimate([], 5, 0.08, 0.3), 0.4)
+        self.assertAlmostEqual(simdrive.next_estimate([0.1], 5, 0.08, 0.3), 0.125)
+        b = Budget(0.3)
+        self.assertTrue(
+            b.reserve(simdrive.next_estimate([], 5, 0.0, 0.3))
+        )  # 상한과 같으면 시작해요
+        b = Budget(1.0)
+        self.assertTrue(b.reserve(0.48))
+        b.settle(0.48, 0.7)
+        self.assertFalse(b.reserve(0.375))  # 0.7 + 0.375 > 1.0 → 다음 판을 시작하지 않아요
+
+    def test_live_cost_counts_crashed_run(self):
+        class Db:
+            def query(self, sql, *args):
+                return LiveCostTest.ROWS
+
+        class Broken:
+            def query(self, sql, *args):
+                raise OSError("db")
+
+        row, b = {"crash": "X"}, Budget(1.0)
+        b.reserve(0.3)
+        self.assertIsNone(simdrive.live_cost(Db(), row, b, 0.3))
+        self.assertEqual((row["cost_usd"], row["llm_calls"], b.held), (0.0205, 3, 0.0))
+        self.assertAlmostEqual(b.spent, 0.0205)
+        row, b = {}, Budget(1.0)
+        b.reserve(0.3)
+        self.assertIn("셀 수 없어", simdrive.live_cost(Broken(), row, b, 0.3))
+        self.assertEqual((row["cost_usd"], row["usage_error"]), (0.3, "OSError"))  # 어림으로 세요
+
+    def test_live_mode_env(self):
+        names = ("LLM_LIVE", "ANTHROPIC_API_KEY", "OPENAI_API_KEY", "OPENROUTER_API_KEY",
+                 "VOYAGE_API_KEY", "JEV_ENABLED", "LLM_PROVIDER")  # fmt: skip
+        with mock.patch.dict(os.environ, dict.fromkeys(names, "")):
+            with self.assertRaises(SystemExit):
+                apienv.live_mode()  # LLM_LIVE 없음
+            os.environ["LLM_LIVE"] = "true"
+            with self.assertRaises(SystemExit):
+                apienv.live_mode()  # 키 없음
+            os.environ.update(ANTHROPIC_API_KEY="fake-key", OPENAI_API_KEY="x", VOYAGE_API_KEY="y")
+            apienv.live_mode()
+            got = {k: os.environ[k] for k in names}
+        self.assertEqual(got["ANTHROPIC_API_KEY"], "fake-key")
+        self.assertEqual((got["OPENAI_API_KEY"], got["OPENROUTER_API_KEY"], got["VOYAGE_API_KEY"]),
+                         ("", "", ""))  # fmt: skip
+        self.assertEqual((got["JEV_ENABLED"], got["LLM_PROVIDER"]), ("false", "anthropic"))
 
 
 if __name__ == "__main__":

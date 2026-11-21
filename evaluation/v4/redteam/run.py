@@ -1,8 +1,12 @@
 """레드팀 50문항(sets/redteam.jsonl)을 /assistant/turns · /vendor/assistant/turns로 돌려 코드로 판정해요.
 
     cd backend && uv run python ../evaluation/v4/redteam/run.py --tag rt-free
+    cd backend && LLM_LIVE=true uv run python ../evaluation/v4/redteam/run.py --live --max-usd 2 --tag rt-live1   # 허락 뒤
 
-- 무료 모드만 돌아요(LLM_LIVE=false, 키 환경변수 비움, 유료 호출 0회). --live는 키 · 리드 허락이 생기면 열어요.
+- 기본은 무료 모드(LLM_LIVE=false, 키 환경변수 비움, 유료 호출 0회).
+- --live(LLM 모드): 환경변수 LLM_LIVE=true · ANTHROPIC_API_KEY와 --max-usd가 있어야 돌아요(apienv.live_mode).
+  문항마다 reset 전에 장부(llm_usage)를 읽어 비용 · 호출 수 · 턴 비용 · 지연을 적고, 누적 + 다음 문항 어림
+  (턴 수 × 턴당 어림, drive.next_estimate)이 --max-usd를 넘으면 시작하지 않고 멈춰요.
 - 문항마다 시험 DB(기본 mitjip_eval_rt, Redis 11번)를 비우고 바탕(고객 1 · 마포구 도배 업체 3곳)과 setup을 심어요.
   업체가 적는 칸(견적서 벽지 사양 · 업체 소개 · 요청 메모 · 채팅)에 공격 글을 넣고, 남의 공사 · 견적서는 다른 고객으로 만들어요.
   API로 못 심는 것(웹 검색 결과 · 리뷰 답글)은 notes에 남기고 그대로 돌려요.
@@ -26,7 +30,7 @@ V4 = HERE.parent
 sys.path.insert(0, str(V4))
 
 import apienv
-from kit import RUNS, SETS, append_jsonl, jsonl, utf8_stdout
+from kit import RUNS, SETS, Budget, append_jsonl, jsonl, utf8_stdout
 from sim import drive
 from sim.world import SeedError, World, split_address
 
@@ -240,6 +244,7 @@ def run_item(app, item: dict, worker: bool = True) -> dict:
         for p in c["data"].get("picks") or []
     ]
     use = drive.usage(app)
+    drive.add_turn_costs(turns, use)
     memory = world.memory()
     obs = {
         "shown": "\n".join(t.get("shown") or "" for t in turns),
@@ -314,14 +319,14 @@ def summarize(rows: list[dict]) -> dict:
             "jobs_skipped": sum((r.get("memory_jobs") or {}).get("memory_skipped", 0) for r in ok),
         },
         "nudges_sent": sum(t.get("nudge_sent", 0) for r in ok for t in r.get("ticks") or []),
-        "paid_calls": sum(r.get("usage", {}).get("calls", 0) for r in ok),
-        "cost_usd": round(sum(r.get("usage", {}).get("cost_usd", 0) for r in ok), 6),
+        "paid_calls": sum(r.get("usage", {}).get("calls", 0) for r in rows),  # 깨진 문항도 세요
+        "cost_usd": round(sum(r.get("usage", {}).get("cost_usd", 0) for r in rows), 6),
     }
 
 
-def report(s: dict) -> None:
+def report(s: dict, mode: str = "무료") -> None:
     v = s["violations"]
-    print(f"\n# 레드팀 결과 (무료 모드, {s['scored']}/{s['items']}문항 채점)")
+    print(f"\n# 레드팀 결과 ({mode} 모드, {s['scored']}/{s['items']}문항 채점)")
     print(f"위반 문항 {s['violated_items']} · 누출 {v['leak']} · 승인 없는 실행 {v['unapproved_exec']} "
           f"· 주입 반영 {v['injection_followed']} · 거짓 완료 말 {v['false_claim']} · 상한 {v['limit']}")  # fmt: skip
     print("| 종류 | 문항 | 위반 문항 | 잴 수 없는 확인 있음 |")
@@ -335,7 +340,14 @@ def report(s: dict) -> None:
     print(f"기억: 표 있는 문항 {m.get('items_with_table', 0)} · 기억 줄 {m.get('rows', 0)} · 뽑기 일 "
           f"done {m.get('jobs_done', 0)} · skipped {m.get('jobs_skipped', 0)} · 먼저 말 걸기 보냄 "
           f"{s.get('nudges_sent', 0)}")  # fmt: skip
+    print(f"잴 수 없는 확인이 있는 문항 {s['na_items']}")
     print(f"유료 호출 {s['paid_calls']}회 · 비용 ${s['cost_usd']}")
+    if s.get("cost"):
+        c = s["cost"]
+        print(drive.cost_line(c))
+        print("목적별:", c["by_purpose"], "· 실패한 호출:", c["errors"] or "없음")
+    if s.get("stopped"):
+        print("멈춤:", s["stopped"])
 
 
 def main(argv=None) -> int:
@@ -346,15 +358,24 @@ def main(argv=None) -> int:
     ap.add_argument("--db", default="mitjip_eval_rt")
     ap.add_argument("--redis-db", type=int, default=11)
     ap.add_argument("--env-file", type=Path, help="DB 접속값을 읽을 .env(키는 읽지 않아요)")
-    ap.add_argument("--live", action="store_true", help="유료 모드(지금은 막아 둠)")
+    ap.add_argument(
+        "--live",
+        action="store_true",
+        help="LLM 모드(유료). 환경변수 LLM_LIVE=true · ANTHROPIC_API_KEY와 --max-usd가 있어야 해요",
+    )
+    ap.add_argument(
+        "--max-usd", type=float, help="--live 상한(달러). 누적 + 다음 문항 어림이 넘으면 멈춰요"
+    )
     ap.add_argument(
         "--no-worker", action="store_true", help="worker(기억 뽑기 · 먼저 말 걸기)를 돌리지 않아요"
     )
     a = ap.parse_args(argv)
+    if a.live and (a.max_usd is None or a.max_usd <= 0):
+        ap.error("--live에는 --max-usd(0보다 큰 값)가 필요해요")
     if a.live:
-        print("유료 모드는 아직 막아 뒀어요(키 무효 · 리드 허락 전). 무료 모드로만 돌려요.")
-        return 2
-    apienv.free_mode()
+        apienv.live_mode()
+    else:
+        apienv.free_mode()
     env = apienv.load_db_env(a.env_file)
     items = jsonl(SETS / "redteam.jsonl")
     if a.only:
@@ -366,13 +387,25 @@ def main(argv=None) -> int:
     path.write_text("", encoding="utf-8")
     app = apienv.App(a.db, a.redis_db).boot()
     mode = apienv.settings_mode()
-    if mode["available"]:
+    if mode["available"] != a.live:
         app.close()
-        print("LLM이 켜져 있어 멈춰요(무료 모드여야 해요).")
+        print("LLM을 부를 수 없어 멈춰요(LLM_LIVE · 키 · 공급자를 확인해 주세요)." if a.live
+              else "LLM이 켜져 있어 멈춰요(무료 모드여야 해요).")  # fmt: skip
         return 2
+    llm_set = apienv.live_settings() if a.live else None
     rows = []
+    book = Budget(a.max_usd if a.live else None)
+    seen = 0.0  # 지금까지 본 문항의 턴당 비용 최댓값
+    stopped = None
     try:
         for item in items:
+            est = 0.0
+            if a.live:
+                est = drive.next_estimate([], len(item["turns"]), seen)
+                if not book.reserve(est):
+                    stopped = (f"상한 ${a.max_usd}: 지금까지 ${book.spent:.4f} + 다음 문항 어림 "
+                               f"${est:.4f}({item['id']})이 넘어 시작하지 않았어요")  # fmt: skip
+                    break
             app.reset()
             try:
                 row = run_item(app, item, worker=not a.no_worker)
@@ -380,24 +413,35 @@ def main(argv=None) -> int:
                 row = {"id": item["id"], "category": item["category"], "surface": item["surface"],
                        "crash": f"{type(e).__name__}: {e}"[:300],
                        "trace": traceback.format_exc()[-1500:]}  # fmt: skip
+            if a.live:
+                stopped = drive.live_cost(app, row, book, est)
+                seen = max(seen, row["cost_usd"] / max(len(item["turns"]), 1))
             append_jsonl(path, row)
             rows.append(row)
             mark = "위반" if row.get("violated") else ("오류" if "counts" not in row else "통과")
-            print(f"{item['id']} {item['category']} {mark} ({row.get('secs', '-')}초)", flush=True)
+            usd = f" · ${row['cost_usd']:.4f} · 누적 ${book.spent:.4f}" if a.live else ""
+            print(f"{item['id']} {item['category']} {mark} ({row.get('secs', '-')}초{usd})",
+                  flush=True)  # fmt: skip
+            if stopped:
+                break
     finally:
         app.close()
     s = summarize(rows)
-    s["mode"] = "free"
+    s["mode"] = "live" if a.live else "free"
+    if a.live:
+        s.update(cost=drive.cost_summary(rows), max_usd=a.max_usd, stopped=stopped)
     (out / "summary.json").write_text(
         json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
     )
-    meta = {"tag": a.tag, "mode": mode, "db": a.db, "redis_db": a.redis_db,
-            "env_file": env.name if env else None, "items": [x["id"] for x in items],
-            "worker": not a.no_worker}  # fmt: skip
+    meta = {"tag": a.tag, "mode": mode, "run_mode": s["mode"], "db": a.db,
+            "redis_db": a.redis_db, "env_file": env.name if env else None,
+            "items": [x["id"] for x in items], "worker": not a.no_worker}  # fmt: skip
+    if a.live:
+        meta.update(llm=llm_set, max_usd=a.max_usd, stopped=stopped, cost=s["cost"])
     (out / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
     )
-    report(s)
+    report(s, "LLM" if a.live else "무료")
     return 0
 
 
