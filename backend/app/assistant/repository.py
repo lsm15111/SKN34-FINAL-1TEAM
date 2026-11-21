@@ -203,16 +203,25 @@ async def decided_of(
     *,
     project_id: uuid.UUID | None = None,
     limit: int = 4,
+    closed: Sequence[str] = ("due", "handled_elsewhere"),
 ) -> list[AssistantAction]:
-    """사람이 최근에 처리한 제안(실행됨 · 거절함 · 실행 못 함), 처리한 때 새것부터. 턴 사실 '최근 처리한 카드'."""
+    """사람이 최근에 처리한 제안(실행됨 · 거절함 · 실행 못 함)과 실행 없이 닫힌 제안(만료 까닭이 closed), 처리한 때
+    (닫힌 제안은 만든 때) 새것부터. 턴 사실 '최근 처리한 카드'."""
+    shut = and_(
+        AssistantAction.status == "expired",
+        AssistantAction.result["reason"].astext.in_(list(closed)),
+    )
     q = select(AssistantAction).where(
         AssistantAction.user_id == user_id,
         AssistantAction.surface == surface,
-        AssistantAction.status.in_(("executed", "rejected", "failed")),
+        or_(AssistantAction.status.in_(("executed", "rejected", "failed")), shut),
     )
     if project_id is not None:
         q = q.where(AssistantAction.project_id == project_id)
-    rows = await s.scalars(q.order_by(AssistantAction.decided_at.desc()).limit(limit))
+    when = func.coalesce(AssistantAction.decided_at, AssistantAction.created_at)
+    rows = await s.scalars(
+        q.order_by(when.desc()).limit(limit).execution_options(populate_existing=True)
+    )
     return list(rows.all())
 
 
