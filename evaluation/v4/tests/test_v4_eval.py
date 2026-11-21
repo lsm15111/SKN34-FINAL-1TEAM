@@ -726,6 +726,21 @@ class V4AnswersTest(unittest.TestCase):
         self.assertAlmostEqual(v4ans.next_estimate([]), v4ans.TURN_USD)
         self.assertAlmostEqual(v4ans.next_estimate([0.02, 0.04]), 0.05)
 
+    def test_ground_system_and_paths(self):
+        """v4_hybrid_g = v2g+v3(v2 근거만). 길 기록에는 v2g · v3(금액 · 기간) · know(알아 두기만)가 남아요."""
+        self.assertEqual(v4ans.SYSTEMS["v4_hybrid_g"], "v2g+v3")
+        self.assertEqual(v4ans.parse_args(["--tag", "t", "--systems", "v4_hybrid_g"]).systems, "v4_hybrid_g")
+
+        def tool(engine, v2_out):
+            return {"name": "answer_question", "data": {"route": "v2g", "engine": engine, "v2_out": v2_out}}
+
+        rows = [
+            {"system": "v4_hybrid_g", "cost_usd": 0.01, "ms": 5000, "answer_paths": v4ans.answer_paths([tool(e, o)])}
+            for e, o in (("v2g", False), ("v3", False), ("know", True))
+        ]  # fmt: skip
+        g = v4ans.summarize(rows, [])["v4_hybrid_g"]
+        self.assertEqual((g["engine"], g["v2_out"], g["to_v3"]), ({"v2g": 1, "v3": 1, "know": 1}, 1, 0))
+
 
 if __name__ == "__main__":
     unittest.main()
