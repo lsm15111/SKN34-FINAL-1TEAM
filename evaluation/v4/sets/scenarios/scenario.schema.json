@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "mitjip/v4/eval/scenario.schema.json",
-  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 3 · 2026-11-21 · 목공 업체 추천 · 실측 요청 흐름 없음 · 07 자동화 S14~S18)",
+  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 3 · 2026-11-21 · 목공 업체 추천 · 실측 요청 흐름 없음 · 07 자동화 S14~S18 · 반셀프 S19~S20)",
   "description": "시뮬레이터 러너(evaluation/v4/sim/run.py)가 world를 시험 DB에 심고, 사용자 대본(script.turns, 나중에는 persona를 흉내 내는 사용자 LLM)으로 비서(/assistant/turns · /vendor/assistant/turns)와 max_turns까지 대화한 뒤 끝 상태를 expected_end와 견줘요. 사람 승인은 script.decide 규칙대로 눌러요. 행동 · 도구 · 상태 이름은 03-비서 백엔드 설계(계약서) 2 · 5장과 같아요.",
   "type": "object",
   "required": ["id", "title", "surface", "split", "tags", "persona", "world", "opening", "max_turns", "expected_end"],
@@ -59,7 +59,8 @@
             "grade": {"enum": ["economy", "basic", null]},
             "mokgong": {"type": "array", "items": {"type": "string"}},
             "living": {"enum": ["living", "vacant", null]},
-            "start_wish": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]}
+            "start_wish": {"anyOf": [{"$ref": "#/$defs/date"}, {"type": "null"}]},
+            "diy": {"type": ["array", "null"], "items": {"enum": ["paint", "outlet", "light", "silicone", "handle", "clean"]}, "description": "반셀프 직접 할 일 칩(project.diy, 빈 목록은 '없어요', null은 아직 안 물음). world가 set_diy로 심어요"}
           }
         },
         "project": {
@@ -139,7 +140,7 @@
     "trade": {"enum": ["dobae", "mokgong"]},
     "memory_key": {"enum": ["avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"]},
     "action_kind": {"enum": ["propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "propose_extra_answer", "propose_work_check", "propose_visit_again"]},
-    "tool": {"enum": ["get_home", "get_standard_quote", "recommend_vendors", "vendor_free_slots", "compare_quotes", "get_schedule", "today_tasks", "search_knowledge", "answer_question", "find_floorplan_docs", "show_card", "request_brief", "my_free_slots", "quote_checklist", "my_jobs", "propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "draft_notice", "check_list", "get_extras", "propose_extra_answer", "propose_work_check", "propose_visit_again"]},
+    "tool": {"enum": ["get_home", "get_standard_quote", "recommend_vendors", "vendor_free_slots", "compare_quotes", "get_schedule", "today_tasks", "search_knowledge", "answer_question", "find_floorplan_docs", "show_card", "request_brief", "my_free_slots", "quote_checklist", "my_jobs", "propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "draft_notice", "check_list", "get_extras", "propose_extra_answer", "propose_work_check", "propose_visit_again", "diy_plan"]},
     "visit_status": {"enum": ["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen", "declined", "expired", "cancelled", "no_show", "closed"]},
     "deal_status": {"enum": ["confirmed", "scheduled", "checking", "fixing", "done", "reselected"]},
     "decision": {
@@ -258,6 +259,7 @@
         "trade": {"$ref": "#/$defs/trade"},
         "status_in": {"type": "array", "items": {"$ref": "#/$defs/visit_status"}, "minItems": 1},
         "decline_code": {"enum": ["full", "out_of_area", "other"]},
+        "diy": {"type": "array", "items": {"enum": ["paint", "outlet", "light", "silicone", "handle", "clean"]}, "description": "요청에 고정한 '업체에 알릴 것'(visits.diy, 순서 상관없이 같아야 해요)"},
         "count": {"type": "integer", "minimum": 0, "description": "이 조건에 맞는 실측 수(주지 않으면 1개 이상)"}
       }
     },
@@ -385,7 +387,7 @@
         "say": {"type": "string", "minLength": 1, "description": "단추와 같이 보낼 말(비우면 화면 문구처럼 러너가 만들어요)"}
       }
     },
-    "view_key": {"enum": ["amount", "version", "day", "half", "wish_start", "wish_end", "vendors", "code", "start", "end"]},
+    "view_key": {"enum": ["amount", "version", "day", "half", "wish_start", "wish_end", "vendors", "code", "start", "end", "diy"]},
     "card_kind": {"enum": ["home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule", "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist", "extra", "notice"], "description": "비서 카드 종류(계약서 3장 CardKind)"},
     "weekday": {"enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
     "rule": {

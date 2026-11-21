@@ -421,7 +421,7 @@ def check_all() -> int:
     print(
         f"scenarios {len(scen)}개 · {dict(Counter(f'{s.get("surface")}/{s.get("split")}' for s in scen))}"
     )
-    sizes = {"compare": (len(comp), 107), "redteam": (len(rt), 50), "scenarios": (len(scen), 18)}
+    sizes = {"compare": (len(comp), 107), "redteam": (len(rt), 50), "scenarios": (len(scen), 20)}
     for name, (n, want) in sizes.items():
         if n != want:
             errs.append(f"{name}: {n}개(정한 수 {want})")
