@@ -1,7 +1,8 @@
 """비서 API (계약서 3장): 고객 /assistant(require_role customer) · 업체 /vendor/assistant(approved_vendor).
 
 - POST …/turns → SSE(ack · status · card · action · token · done | error). 스트림을 열기 전 오류(404 · 409 ·
-  429)는 같은 오류 모양이다. 같은 client_key로 끝난 턴이면 저장한 결과를 같은 이벤트로 다시 보낸다.
+  429 · 503)는 같은 오류 모양이다. 같은 client_key로 끝난 턴이면 저장한 결과를 같은 이벤트로 다시 보낸다.
+  로그인 확인은 짧은 세션으로 끝내 스트림 동안 DB 연결을 쥐지 않고, 동시 턴 자리가 다 차면 503 busy(Retry-After).
 - 사용자 · 공사 · 요청은 세션 · 요청 경로로만 정하고 LLM 출력으로 받지 않는다. 남의 것은 404, 역할이 다르면 403.
 - 먼저 말 걸기: POST …/nudges/{id}/open · dismiss(고객 · 업체 같은 꼴, 닫으면 같은 일을 3일 쉰다).
 - 기억: GET /assistant/memory · DELETE /assistant/memory/{id}(고객만). 기억 쓰기 API · 도구는 없다.
@@ -32,9 +33,10 @@ from app.assistant.schemas import (
     VendorTodayData,
     VendorTurnIn,
 )
-from app.auth.deps import require_role
+from app.auth.deps import require_role, require_role_short
 from app.auth.models import User
-from app.vendor.deps import approved_vendor
+from app.shared.request_guards import turn_slot
+from app.vendor.deps import approved_vendor, approved_vendor_short
 
 router = APIRouter(prefix="/assistant", tags=["assistant"])
 vendor_router = APIRouter(prefix="/vendor/assistant", tags=["assistant"])
@@ -47,6 +49,10 @@ SSE_DOC = {
 }
 Customer = Depends(require_role("customer"))
 Vendor = Depends(approved_vendor)
+# SSE 턴: 같은 검사를 짧은 세션으로(스트림 동안 DB 연결을 쥐지 않음) + 동시 턴 자리(로그인 확인 뒤에 잡는다)
+TurnCustomer = Depends(require_role_short("customer"))
+TurnVendor = Depends(approved_vendor_short)
+TurnSlot = Depends(turn_slot)
 Status = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 
 
@@ -64,7 +70,9 @@ def _sse(user: User, got) -> StreamingResponse:
     response_class=StreamingResponse,
     responses=SSE_DOC,
 )
-async def turn(body: TurnIn, user: User = Customer) -> StreamingResponse:
+async def turn(
+    body: TurnIn, user: User = TurnCustomer, _slot: None = TurnSlot
+) -> StreamingResponse:
     got = await service.start_turn(
         user,
         surface="customer",
@@ -172,7 +180,9 @@ async def health(user: User = Customer) -> HealthOut:
     response_class=StreamingResponse,
     responses=SSE_DOC,
 )
-async def vendor_turn(body: VendorTurnIn, vendor: User = Vendor) -> StreamingResponse:
+async def vendor_turn(
+    body: VendorTurnIn, vendor: User = TurnVendor, _slot: None = TurnSlot
+) -> StreamingResponse:
     got = await service.start_turn(
         vendor,
         surface="vendor",

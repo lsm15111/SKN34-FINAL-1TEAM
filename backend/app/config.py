@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     allowed_origins: str = "http://localhost:3000,http://localhost:3100"
     # 로그인 세션 유지 기간(일)
     session_days: int = 14
+    # 몰릴 때(API 프로세스 하나마다). DB 풀(5 + 넘침 5)에서 빈 연결을 기다리는 초. 넘으면 503(Retry-After)
+    db_pool_timeout: float = 3.0
+    # 동시에 도는 대화 턴(비서 · 업체 비서 · AI 칸 SSE) 자리. 다 차면 기다리지 않고 503(Retry-After).
+    # 기본 10 = 풀 연결 수(부하 재기 2026-11-22: 20이면 60명에서 풀 기다림 초과가 남고 10이면 30명까지 0)
+    turn_slots: int = 10
+    # 넘쳐서(턴 자리 · DB 풀) 503으로 거절할 때 다시 해 보라고 알려 줄 초(Retry-After)
+    busy_retry_after: int = 5
     # 올린 파일을 두는 폴더. 운영에서 객체 저장소로 바꾸면 files/storage.py만 고친다
     files_dir: str = "./data/files"
     # 스테이징/운영에서만 사용. 비어 있으면 기존 로컬 디스크 저장소 유지
