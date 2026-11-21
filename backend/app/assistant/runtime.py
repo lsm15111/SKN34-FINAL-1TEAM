@@ -17,7 +17,7 @@ import re
 import time
 import uuid
 from collections import Counter
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import ClassVar
@@ -367,22 +367,31 @@ async def _trip() -> None:
         return
 
 
-CHIPS = {
-    "standard_quote": ["업체 추천해 줘", "가견적은 어떻게 계산해요?"],
-    "vendor_picks": ["가견적은 어떻게 계산해요?", "실측은 무엇을 봐요?"],
-    "visit_slots": ["다른 시간도 볼래요", "실측은 무엇을 봐요?"],
-    "quote_compare": ["폐기물 처리도 포함인가요?", "표준견적서 다시 보기"],
-    "schedule": ["공사 전날 준비물", "공정표 보기"],
-    "today": ["견적서 비교 보기", "오늘 할 일 다시 보기"],
-    "vendor_brief": ["빈 시간 보여 줘", "견적서 체크리스트"],
+# 카드 종류 → 빠른 답 칩(정해 둔 글, 그 칩이 맞는 단계 사실). 사실(service.chip_facts, 코드 값):
+# visits 실측을 요청함 · quote 받은 실측 견적서가 있음 · dates 수락한 공사 날짜가 있음(고객),
+# requested 답할 요청 · visited 견적서를 낼 요청(업체 브리핑의 요청). '!사실'은 그 사실이 없을 때만
+CHIPS: dict[str, tuple[tuple[str, str | None], ...]] = {
+    "standard_quote": (("업체 추천해 줘", "!visits"), ("가견적은 어떻게 계산해요?", None)),
+    "vendor_picks": (("가견적은 어떻게 계산해요?", None), ("실측은 무엇을 봐요?", None)),
+    "visit_slots": (("다른 시간도 볼래요", None), ("실측은 무엇을 봐요?", None)),
+    "quote_compare": (("폐기물 처리도 포함인가요?", "quote"), ("표준견적서 다시 보기", None)),
+    "schedule": (("공사 전날 준비물", "dates"), ("공정표 보기", None)),
+    "today": (("견적서 비교 보기", "quote"), ("오늘 할 일 다시 보기", None)),
+    "vendor_brief": (("빈 시간 보여 줘", "requested"), ("견적서 체크리스트", "visited")),
 }
 
 
-def chips_for(cards: list[dict]) -> list[str]:
-    """마지막 카드 종류로 고른 빠른 답 칩(정해 둔 글)."""
+def _chip_ok(need: str | None, facts: Collection[str]) -> bool:
+    if need is None:
+        return True
+    return need[1:] not in facts if need.startswith("!") else need in facts
+
+
+def chips_for(cards: list[dict], facts: Collection[str] = ()) -> list[str]:
+    """마지막 카드 종류로 고른 빠른 답 칩(정해 둔 글) 중 지금 공사 단계 사실(facts)에 맞는 것만."""
     for c in reversed(cards):
         if c["kind"] in CHIPS:
-            return CHIPS[c["kind"]]
+            return [text for text, need in CHIPS[c["kind"]] if _chip_ok(need, facts)]
     return []
 
 

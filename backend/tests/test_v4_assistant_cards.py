@@ -165,3 +165,23 @@ def test_vendor_checklist_line_names_match_the_customer_screen(api):
     labels = [x["label"] for x in r.json()["items"]]
     assert "실크벽지" in labels, labels
     assert not any(x.endswith("시장 평균 가격") or "(풀 포함)" in x for x in labels), labels
+
+
+# ---- 공사 단계에 맞는 칩 ----
+
+
+def test_chips_wait_for_quotes_before_offering_compare(api):
+    """견적서가 오기 전에는 '견적서 비교 보기' 칩을 보이지 않는다(턴 끝 · 대화 기록 둘 다)."""
+    _, pid = home(api)
+    ev = ok(ask(api, pid, "오늘 뭐 하면 돼요?"))
+    assert cards_of(ev, "today")
+    chips = ev[-1][1]["chips"]
+    assert chips and "견적서 비교 보기" not in chips
+    feed = api.get("/assistant/feed", params={"project_id": pid}).json()
+    assert feed["chips"] == chips
+
+
+def test_chips_offer_compare_once_quotes_arrived(api):
+    _token, pid, _va, _vb, _ = deal_setup(api)
+    ev = ok(ask(api, pid, "오늘 뭐 하면 돼요?"))
+    assert cards_of(ev, "today") and "견적서 비교 보기" in ev[-1][1]["chips"]

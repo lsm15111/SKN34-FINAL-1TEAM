@@ -19,7 +19,7 @@ from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.assistant import actions, choices, policy, runtime
 from app.assistant import repository as repo
@@ -334,6 +334,9 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
                 },
             )
             res = await runtime.run_turn(ctx, emit)
+            res.chips = runtime.chips_for(
+                res.cards, await chip_facts(ctx.user, ctx.surface, ctx.project_id, res.cards)
+            )
             rev = await finish_turn(ctx, res)
             ideas = await suggest_for(
                 ctx.user, ctx.surface, ctx.project_id, said=ctx.text, chips=res.chips
@@ -397,6 +400,7 @@ async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
         yield ev("token", {"text": text})
     r = (turn.trace or {}).get("rev")
     rev = r + 1 if isinstance(r, int) else (chat.rev if chat else 1)
+    facts = await chip_facts(user, turn.surface, turn.project_id, turn.cards or [])
     yield ev(
         "done",
         {
@@ -405,7 +409,7 @@ async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
             "cards": [c["card_id"] for c in turn.cards or []],
             "actions": [str(i) for i in ids],
             "stopped": turn.status == "stopped",
-            "chips": runtime.chips_for(turn.cards or []),
+            "chips": runtime.chips_for(turn.cards or [], facts),
             "suggest": [],
         },
     )
@@ -590,13 +594,66 @@ async def feed_for(
     items.sort(key=lambda x: x.at)  # 같은 때면 원래 순서(질문 → 답)
     last = turns.get(max(turns)) if turns else None
     more = len(rows) == limit and rows and rows[0].turn > 1
+    chips = (
+        runtime.chips_for(last.cards, await chip_facts(user, surface, project_id, last.cards))
+        if last
+        else []
+    )
     return FeedPage(
         items=items,
         before=rows[0].turn if more else None,
         rev=chat.rev if chat is not None else 1,
-        chips=runtime.chips_for(last.cards) if last else [],
+        chips=chips,
         now=now,
     )
+
+
+async def chip_facts(
+    user: User, surface: str, project_id: uuid.UUID | None, cards: list[dict]
+) -> set[str]:
+    """칩을 고를 공사 단계 사실(코드 값만, runtime.CHIPS): 고객은 visits 실측을 요청함 · quote 받은 실측 견적서가 있음 ·
+    dates 수락한 공사 날짜가 있음, 업체는 마지막 브리핑 카드 요청의 requested(답할 요청) · visited(견적서를 낼
+    요청). 읽기 조인만 하고, 못 읽으면 빈 집합(사실이 필요한 칩은 빠진다)."""
+    from sqlalchemy import exists
+
+    from app.quote.models import VendorQuote
+    from app.schedule.models import Deal
+    from app.visit.models import Visit
+
+    out: set[str] = set()
+    try:
+        async with SessionLocal() as s:
+            if surface == "customer" and project_id is not None:
+                mine = Visit.project_id == project_id
+                if await s.scalar(select(exists().where(mine))):
+                    out.add("visits")
+                sent = exists().where(
+                    VendorQuote.visit_id == Visit.id, VendorQuote.sent_at.is_not(None), mine
+                )
+                if await s.scalar(select(sent)):
+                    out.add("quote")
+                dated = exists().where(Deal.project_id == project_id, Deal.start_date.is_not(None))
+                if await s.scalar(select(dated)):
+                    out.add("dates")
+            elif surface == "vendor":
+                brief = next((c for c in reversed(cards) if c.get("kind") == "vendor_brief"), None)
+                vid = (brief or {}).get("data", {}).get("visit_id")
+                status = (
+                    await s.scalar(
+                        select(Visit.status).where(
+                            Visit.id == uuid.UUID(str(vid)), Visit.vendor_id == user.id
+                        )
+                    )
+                    if vid
+                    else None
+                )
+                if status == "requested":
+                    out.add("requested")
+                if status in ("visited", "quoted"):
+                    out.add("visited")
+    except (SQLAlchemyError, ValueError) as e:
+        log.warning("비서 칩 사실 읽기 실패 (%s)", type(e).__name__)
+    return out
 
 
 NUDGE_FEED = 10  # 첫 쪽에 끼우는 먼저 말 건 줄 수
