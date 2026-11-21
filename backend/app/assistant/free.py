@@ -15,6 +15,7 @@
   (propose_date_change, 며칠 뒤 · 이날부터는 말에서 코드가 읽고 없으면 일주일 뒤)로 안내한다. 바라는 말이 없으면
   ('미루면 어떻게 돼요?') 안내 글만. 업체가 낸 날짜에 답하는 말 · 업체가 미루자는 말 · 실측 날짜는 여기로 오지 않는다.
 - 글이 카드를 말하면 같은 턴에 그 카드가 있어야 한다(fit_cards): 없으면 만들고, 못 만들면 그 문장을 뺀다.
+  '믿집 공정표는 …'처럼 일반 규칙을 말한 문장은 카드 말이 아니다. 앞 문장을 빼서 '다만 …'으로 시작하면 이음말을 뗀다.
 - 업체를 확정한 뒤 견적 비교를 물으면 확정한 업체 · 견적서 판을 말한다(확정 단추 안내를 하지 않는다).
 """
 
@@ -176,6 +177,13 @@ MEMORY_SAY_RX = re.compile(
     r"^\s*기억(?:해|하세요|해\s*줘|해\s*둬|해\s*두세요)\s*[:：,.]?|기억해\s*(?:줘|주세요|둬|두세요)"
 )
 LEGAL_RX = re.compile(r"내용증명|소송|고소|변호사|손해배상\s*청구|법적으로\s*(?:어떻게|대응|문제)")
+# 앞 문장을 빼서 맨 앞에 온 이음말('다만 …')
+LEAD_JOIN = re.compile(
+    r"^(?:다만|그래서|그리고|그런데|하지만|또한|또|그러면|그럼|따라서|그러나|반면에?|대신|게다가|아울러|특히|이때)"
+    r"\s*,?\s+"
+)
+# 일반 규칙을 말한 문장('믿집 공정표는 도배 다음에 바닥을 놓아요.')은 카드 말이 아니다
+GENERIC = re.compile(r"믿집\s{0,2}공정표\S{0,3}\s")
 
 
 def prefs_said(text: str) -> bool:
@@ -565,7 +573,9 @@ MENTION: tuple[tuple[str, re.Pattern[str], Handler], ...] = (
 
 
 async def fit_cards(tc: ToolCtx, text: str, out: ToolOut) -> str:
-    """글이 말하는 카드가 이 턴에 없으면 만들어 out에 더하고, 못 만들면 그 문장을 뺀다. 남은 글을 돌려준다."""
+    """글이 말하는 카드가 이 턴에 없으면 만들어 out에 더하고, 못 만들면 그 문장을 뺀다. 남은 글을 돌려준다.
+    '믿집 공정표는 …'처럼 일반 규칙을 말한 문장은 카드 말로 보지 않는다. 남은 첫 문장 앞 이음말('다만 …')은 뗀다
+    (앞 문장이 빠져 '다만'으로 시작하던 답, mt-028)."""
     if tc.project_id is None or not text:
         return text
     have = {c.kind for c in out.cards}
@@ -574,7 +584,7 @@ async def fit_cards(tc: ToolCtx, text: str, out: ToolOut) -> str:
     for sent in (x.strip() for x in SENT.split(text) if x.strip()):
         ok = True
         for kind, rx, make in MENTION:
-            if not rx.search(sent) or kind in have:
+            if not rx.search(sent) or kind in have or GENERIC.search(sent):
                 continue
             if kind not in tried:
                 try:
@@ -590,6 +600,8 @@ async def fit_cards(tc: ToolCtx, text: str, out: ToolOut) -> str:
             ok = ok and tried[kind]
         if ok:
             kept.append(sent)
+    if kept:
+        kept[0] = LEAD_JOIN.sub("", kept[0])
     return " ".join(kept)
 
 
