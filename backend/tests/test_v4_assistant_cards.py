@@ -9,12 +9,13 @@ import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
+from app.assistant import free
 from app.shared.clock import SEOUL, today_seoul
 from tests.conftest import query
 from tests.test_deal import setup as deal_setup
 from tests.test_v4_assistant_actions import acts
-from tests.test_v4_assistant_free import cards_of
-from tests.test_v4_assistant_turns import ask, ok
+from tests.test_v4_assistant_free import cards_of, said
+from tests.test_v4_assistant_turns import ask, home, ok
 
 
 @pytest.fixture(autouse=True)
@@ -50,3 +51,30 @@ def test_compare_received_on_is_the_seoul_day(api):
     (card,) = cards_of(ev, "quote_compare")
     col = next(c for c in card["data"]["cols"] if c["visit_id"] == va)
     assert col["received_on"] == today_seoul().isoformat()
+
+
+# ---- 업체 이름은 공종 낱말이 아니에요 ----
+
+
+def test_vendor_name_is_not_read_as_a_trade(api):
+    """'마루와벽으로 확정할게요'의 '마루'는 바닥 공사가 아니라 업체 이름이에요."""
+    _token, pid, _va, _vb, _ = deal_setup(api)
+    ev = ok(ask(api, pid, "마루와벽으로 확정할게요"))
+    assert "아직 도배 업체만" not in said(ev)
+    assert cards_of(ev, "quote_compare") and said(ev).startswith("실측 견적서가 2곳 왔어요")
+    # 업체 이름이 아닌 다른 공사 말은 그대로 '아직 도배 업체만'
+    ev = ok(ask(api, pid, "바닥 업체 추천해 줘"))
+    assert said(ev).startswith(free.OTHER_TRADE)
+
+
+# ---- 기억은 어디서 보고 지워요 ----
+
+
+def test_where_to_see_and_forget_memory_is_a_fixed_guide(api):
+    _, pid = home(api)
+    for text in ("기억한 건 어디서 보고 지워요?", "비서가 기억한 거 지우고 싶어요"):
+        got = said(ok(ask(api, pid, text)))
+        assert "내 정보" in got and "비서가 기억한 것" in got, got
+        assert "확인하지 못했어요" not in got
+    # 기억해 달라는 말은 안내가 아니다
+    assert "내 정보" not in said(ok(ask(api, pid, "평일 오전이 편한 거 기억해 줘")))
