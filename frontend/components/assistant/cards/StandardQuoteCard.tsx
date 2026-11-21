@@ -38,12 +38,13 @@ export function StandardSummary({ id, data: d, more }: { id: string; data: Stand
   );
 }
 
-export function StandardQuoteCard({ card, ctx }: CardProps<"standard_quote">) {
+/** 할 일이 끝난 줄의 카드(old)는 금액만 남겨요([금액 풀이 듣기] 없음, 견적서 열기는 그대로) */
+export function StandardQuoteCard({ card, ctx, old }: CardProps<"standard_quote">) {
   return (
     <StandardSummary
       id={card.card_id}
       data={card.data}
-      more={<button type="button" className={k.text} disabled={ctx.busy} onClick={() => ctx.send("표준견적서 금액 풀이해 줘")}><I n="sparkle" />금액 풀이 듣기</button>}
+      more={old ? null : <button type="button" className={k.text} disabled={ctx.busy} onClick={() => ctx.send("표준견적서 금액 풀이해 줘")}><I n="sparkle" />금액 풀이 듣기</button>}
     />
   );
 }

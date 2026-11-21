@@ -36,7 +36,9 @@ export const CARDS: Registry = {
   notice: NoticeCard,
 };
 
+/** old: 할 일이 끝난 먼저 말 건 줄의 카드(보낸 때 모습). 서버는 그 카드 id에 '@줄 id'를 붙여 보내요(뒤 카드와 합쳐지지 않게).
+ *  그런 카드는 줄 표시와 상관없이 끝난 카드로 그려요(단추를 두지 않아요: 눌러도 지난 카드라 받지 않아요) */
 export function Card({ card, ctx, old }: { card: CardOut; ctx: CardCtx; old: boolean }) {
   const C = CARDS[card.kind] as ComponentType<CardProps<CardKind>> | undefined;
-  return C ? <C card={card} ctx={ctx} old={old} /> : null;
+  return C ? <C card={card} ctx={ctx} old={old || card.card_id.includes("@")} /> : null;
 }
