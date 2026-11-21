@@ -158,6 +158,20 @@ def _joined(uid: uuid.UUID, at: datetime) -> uuid.UUID:
     return uid
 
 
+def _account(email: str, role: str, at: datetime) -> uuid.UUID:
+    """at에 가입한 role 계정."""
+    uid = uuid.uuid4()
+    query(
+        "insert into users (id, email, password_hash, name, role, created_at)"
+        " values ($1, $2, 'x', '시험', $3, $4)",
+        uid,
+        email,
+        role,
+        at,
+    )
+    return uid
+
+
 def _go(monkeypatch, redis: str, make):
     """redis가 up이면 이 루프의 Redis로, down이면 연결이 안 되는 Redis(장부 합계로 셈)로 돌린다."""
     if redis == "down":
@@ -260,12 +274,38 @@ def test_new_accounts_share_one_dollar_a_day(monkeypatch, caps, redis):
     assert counted == summed == 900_000  # Redis 카운터와 장부 합계가 같다
 
 
+@pytest.mark.parametrize("redis", ["up", "down"])
+def test_vendor_and_admin_are_not_new_accounts(monkeypatch, caps, redis):
+    """업체(사업자등록증 + 관리자 승인) · 관리자(CLI로만)는 가입 1일이어도 새 계정 몫을 보지 않는다."""
+    day_ago = clock.now_utc() - timedelta(days=1)
+    vendor = _account("v1@mitjip.test", "vendor", day_ago)
+    admin = _account("a1@mitjip.test", "admin", day_ago)
+    customer = _account("c1@mitjip.test", "customer", day_ago)
+
+    async def go():
+        await service.allow(customer, "assistant")  # 새 계정 합 카운터를 먼저 채운다
+        for uid in (vendor, admin, customer):
+            await spend(uid, "assistant", output_tokens=19_000)  # $0.19 = $0.20의 95%
+        await service.allow(vendor, "assistant")
+        await service.allow(admin, "assistant")
+        with pytest.raises(service.OverCap) as e:
+            await service.allow(customer, "assistant")
+        (pool,) = [b for b in service.buckets(customer, joined=day_ago) if b.new_days]
+        return e.value, await service.spent(pool), await service.db_spent(pool)
+
+    e, counted, summed = _go(monkeypatch, redis, go)
+    assert (e.scope, e.spent, e.cap) == ("new_user_day", 190_000, 200_000)
+    assert counted == summed == 190_000  # 업체 · 관리자 돈은 새 계정 합에 들어가지 않는다
+
+
 def test_new_pool_counts_only_calls_made_while_new(caps):
-    """새 계정 합의 장부 합계는 오늘, 부른 때 가입 7일 안이던 계정의 호출만 센다."""
+    """새 계정 합의 장부 합계는 오늘, 부른 때 가입 7일 안이던 고객 계정의 호출만 센다."""
     now = datetime(2026, 11, 22, 12, 0, tzinfo=clock.SEOUL)
     x = _joined(_user("x@mitjip.test"), now - timedelta(days=7, hours=2))  # 오늘 10시에 7일이 됨
     y = _joined(_user("y@mitjip.test"), now - timedelta(hours=4))  # 오늘 8시 가입
     z = _joined(_user("z@mitjip.test"), now - timedelta(days=30))
+    v = _account("v@mitjip.test", "vendor", now - timedelta(days=1))
+    a = _account("a@mitjip.test", "admin", now - timedelta(days=1))
     sql = (
         "insert into llm_usage (id, user_id, purpose, model, price_ver, ok, cost_micros, created_at)"
         " values ($1, $2, 'assistant', 'claude-haiku-5-5', 'v', true, $3, $4)"
@@ -277,6 +317,8 @@ def test_new_pool_counts_only_calls_made_while_new(caps):
         (y, 2, 1000),  # 10시: 센다
         (z, 1, 10_000),  # 오래된 계정
         (None, 1, 100_000),  # 사용자 없는 일
+        (v, 1, 1_000_000),  # 가입 1일 업체
+        (a, 1, 10_000_000),  # 가입 1일 관리자
     ]:
         query(sql, uuid.uuid4(), uid, cost, now - timedelta(hours=hours_ago))
     (pool,) = [b for b in service.buckets(y, now, now - timedelta(hours=4)) if b.new_days]
@@ -284,7 +326,7 @@ def test_new_pool_counts_only_calls_made_while_new(caps):
 
 
 def test_join_time_is_cached_and_unknown_join_time_blocks(monkeypatch, caps):
-    """가입 시각은 Redis에 둔다: DB가 잠깐 안 돼도 Redis 카운터로 센다(전과 같음).
+    """가입 시각 · 역할은 Redis에 둔다: DB가 잠깐 안 돼도 Redis 카운터로 센다(전과 같음).
     가입 시각을 Redis · DB 어디서도 못 읽으면 막는다(닫힘 쪽). 새 계정 몫을 끄면 가입 시각을 읽지 않는다."""
     a = _user("cached@mitjip.test")
 
@@ -293,7 +335,7 @@ def test_join_time_is_cached_and_unknown_join_time_blocks(monkeypatch, caps):
 
     async def go():
         assert await llm.budget_ok(a, "t")  # 가입 시각 · 카운터를 Redis에 채운다
-        key = f"llm:joined:{service._tag()}:{a}"
+        key = f"llm:newacct:{service._tag()}:{a}"
         assert await queue.redis.get(key) is not None
         monkeypatch.setattr(service, "SessionLocal", no_db)
         cached = await llm.budget_ok(a, "t")
