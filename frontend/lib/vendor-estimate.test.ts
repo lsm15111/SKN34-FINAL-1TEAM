@@ -45,3 +45,11 @@ test("다른 줄에 포함 · 빼기로 둔 선택 줄은 그 꼴 그대로예�
     ["운송비", null, "excluded"],
   ]);
 });
+
+test("다른 줄에 포함 대상은 API 줄 키('labor')로 찾아 이름을 보여요(옛 줄 번호도 찾아요)", () => {
+  const meal = (included_in: string) => L("1207", "meal", "식대", "4.5", "품", null, 0, { in_standard: false, mode: "included", included_in });
+  const labor = L("1206", "labor", "인건비", "4.5", "품", 300000, 1350000);
+  expect(estimateLines([labor, meal("labor")], "basic").outside[0].note).toBe("인건비에 포함");
+  expect(estimateLines([labor, meal("1206")], "basic").outside[0].note).toBe("인건비에 포함");
+  expect(estimateLines([labor, meal("truck")], "basic").outside[0].note).toBe("다른 줄에 포함"); // 없는 줄
+});
