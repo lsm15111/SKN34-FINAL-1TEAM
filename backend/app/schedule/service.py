@@ -352,6 +352,20 @@ async def ensure_expected(s: AsyncSession, p: ProjectOut, today: date) -> Plan:
     return got
 
 
+async def period_now(s: AsyncSession, p: ProjectOut) -> PeriodOut | None:
+    """지금 공정표 기간(읽기만, 저장하지 않음): 확정 공정표가 있으면 그것, 없으면 지금 공사 판(rev)으로 만든 예상
+    공정표. 예상이 낡았거나(공사 정보가 바뀐 뒤 아직 다시 안 만듦) 없으면 None. 비서 턴 사실처럼 트랜잭션 중간에
+    쓰기 없이 빨리 읽는 곳이 쓴다(다시 만들기는 보드 · 공정표 읽기의 ensure_expected)."""
+    plan = await _latest(s, p.id, "final")
+    if plan is None:
+        plan = await _latest(s, p.id, "expected")
+        if plan is None or plan.project_rev != p.rev or plan.formula_ver != FORMULA_VERSION:
+            return None
+    return PeriodOut(
+        kind=plan.kind, start=plan.start_date, end=plan.end_date, work_days=plan.work_days
+    )
+
+
 async def _out(s: AsyncSession, plan: Plan) -> PlanOut:
     steps = (
         await s.scalars(select(PlanStep).where(PlanStep.plan_id == plan.id).order_by(PlanStep.sort))

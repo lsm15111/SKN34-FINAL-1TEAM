@@ -3,6 +3,7 @@
 - 공급자: LLM_PROVIDER=anthropic(기본, Claude) · openai(되돌리기용). 임베딩은 늘 OpenAI다.
 - 유료 호출은 모두 _guard(usage.allow: 비용 상한) → 호출 → _sink(usage.record: 토큰 · 비용 장부)를 지난다.
   상한을 넘으면 OverBudget(LLMError)이라 부르는 쪽은 지금처럼 무료 · 실패 길로 간다. 임베딩 · Jev는 장부 밖이다.
+  부르는 쪽 시간 제한으로 끊겨 usage를 못 받은 호출은 보수적 추정치로 남긴다(error ESTIMATED).
 - 누가 · 어느 턴에서 · 무슨 일로 부르는지는 CALL_CTX에 둔다. 장부와 로그에는 글을 남기지 않는다.
 - usage(기반)는 함수 안에서 늦게 import한다: 계약서 1장이 정한 층 규칙 예외(agent.llm → usage).
 - Claude: 강제 tool_choice는 400이라 auto + strict로 쓴다. 생각(thinking)은 모델 기본(adaptive)이고 effort로 줄인다.
@@ -587,12 +588,45 @@ def _claude() -> Any:
     return client
 
 
+def warm() -> None:
+    """실호출 SDK(anthropic · openai)를 미리 불러온다. 함수 안 늦은 import가 처음이면 anthropic 12~14초 · openai
+    6초쯤 걸리고(Windows 개발 PC에서 잼) 그동안 이벤트 루프가 멈춰, 프로세스의 첫 LLM 턴이 그만큼 늦었다(QA r2 c5 첫
+    턴 33.5초). 앱 시작 때 작업 스레드로 부른다. LLM이 꺼져 있으면 아무것도 하지 않는다."""
+    if not settings.llm_live:
+        return
+    try:
+        import anthropic  # noqa: F401
+        import openai  # noqa: F401
+    except ImportError as e:  # 없으면 실호출 때 같은 오류가 난다(시작은 막지 않는다)
+        log.warning("LLM SDK 미리 불러오기 실패 (%s)", type(e).__name__)
+
+
+def estimate(req: dict, *, output: bool = True) -> dict[str, int]:
+    """끊겨 usage를 못 받은 호출의 보수적 추정 토큰(장부 error ESTIMATED): 입력은 보낸 글(지시문 · 메시지 · 도구 ·
+    출력 꼴)의 글자 수를 토큰 수로(한국어 · 영어 모두 실제보다 많게), 출력은 max_tokens 전부."""
+    sent = json.dumps(
+        [req.get(k) for k in ("system", "messages", "tools", "output_config")],
+        ensure_ascii=False,
+        default=str,
+    )
+    return {"input": len(sent), "output": int(req.get("max_tokens") or 0) if output else 0}
+
+
+# 부르는 쪽 시간 제한(asyncio.wait_for: 먼저 말 걸기 판정 · 문장 10초, 턴 45초)으로 끊겨 공급자 usage를 못 받은 호출.
+# 공급자는 청구할 수 있어 장부에 보수적 추정치(estimate)로 남기고 이 표시를 붙인다
+ESTIMATED = "cancelled_estimate"
+
+
 async def _create(purpose: str | None, default: str, req: dict) -> tuple[Any, _Call]:
-    """스트림 아닌 Claude 호출 한 번: 클라이언트 → 상한 → 호출. 장부는 부르는 쪽이 결과를 보고 남긴다."""
+    """스트림 아닌 Claude 호출 한 번: 클라이언트 → 상한 → 호출. 장부는 부르는 쪽이 결과를 보고 남긴다.
+    부르는 쪽 시간 제한으로 끊기면 추정치 한 줄(ESTIMATED)을 남기고 그대로 끊는다."""
     client = _claude()
     call = await _guard(purpose, default)
     try:  # 공급자 오류 · 시간 초과를 한곳에서 LLMError로(요청이 틀렸으면 LLMRejected). 입력값은 남기지 않음
         msg = await client.messages.create(**req)
+    except asyncio.CancelledError:
+        await asyncio.shield(_sink(call, req["model"], estimate(req), ESTIMATED))
+        raise
     except Exception as e:
         await _sink(call, req["model"], {}, _kind(e))
         raise _failed(call.purpose, e) from e
@@ -771,7 +805,9 @@ async def claude_stream(
         await _sink(call, name, seen, "callback")
         raise e.error from None
     except asyncio.CancelledError:  # 턴 시간 상한 등으로 끊김: 쓴 만큼 남기고 그대로 끊는다
-        await asyncio.shield(_sink(call, name, seen, "cancelled"))
+        # 첫 이벤트(입력 토큰) 전에 끊겼으면 입력만 보수적 추정치로(출력은 아직 없다)
+        used, why = (seen, "cancelled") if seen else (estimate(req, output=False), ESTIMATED)
+        await asyncio.shield(_sink(call, name, used, why))
         raise
     except Exception as e:  # 공급자 오류 · 시간 초과 · 끊김. 입력값은 남기지 않음
         await _sink(call, name, seen, _kind(e))

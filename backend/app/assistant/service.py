@@ -58,7 +58,8 @@ from app.chat import repository as chat_repo
 from app.chat.models import Chat, ChatMessage
 from app.config import settings
 from app.db import SessionLocal
-from app.shared.clock import now_utc, today_seoul
+from app.shared import kdate
+from app.shared.clock import SEOUL, now_utc, today_seoul
 from app.shared.errors import AppError
 
 log = logging.getLogger(__name__)
@@ -130,17 +131,63 @@ def decided_line(rows: list) -> str | None:
     return "최근 처리한 카드: " + " · ".join(got) if got else None
 
 
-async def _customer_facts(s, user: User, pid: uuid.UUID, today, opened: list, decided: list) -> str:
+def time_lines(now: datetime) -> list[str]:
+    """턴 사실의 시각 줄(고객 · 업체 같음): 지금 서울 시각 · 올해(다른 해 날짜를 가르게) · 밤 알림 규칙. 알림 때는
+    먼저 말 걸기 규칙 값(proactive.RULES)에서 읽는다(글에 손으로 적지 않는다). 때 말은 표 하나(kdate.PERIODS)."""
+    from app.assistant import proactive
+
+    r = proactive.RULES
+    night = f"{kdate.hour_text(r.night_from)}~{kdate.hour_text(r.night_to)}"
+    return [
+        f"지금: {kdate.now_text(now)}",
+        f"올해: {now.astimezone(SEOUL).year}년",
+        f"알림: {night}엔 {kdate.period(r.night_to)}에 보내요",
+    ]
+
+
+# 실측 요청 뒤(집 정보 잠김)에는 공사 시작 희망을 집 정보 카드로 바꿀 수 없다: '아직 몰라요' 대신 업체와 정한다는 사실
+# (QA r2 c5: 잠긴 뒤에도 시작 희망일을 거듭 물음). 집 카드 · 보드의 사실 글(cards.home)은 그대로 둔다
+START_WISH = "공사 시작 희망"
+START_LOCKED = "공사 시작 희망 안 정함(실측 요청 뒤라 업체와 정해요)"
+
+
+def home_facts(home: dict) -> list[str]:
+    """턴 사실 '집:' 줄의 사실(집 카드와 같은 글). 잠긴 뒤 비어 있는 시작 희망만 바꾼다."""
+    facts = list(home["facts"])
+    if home["locked"] and home.get("start_date") is None:
+        facts = [START_LOCKED if f.startswith(START_WISH) else f for f in facts]
+    return facts
+
+
+def period_line(period, today) -> str | None:
+    """턴 사실 '공정표:' 줄(공정표 기간). 확정 전이면 예상이라고 밝힌다(QA r2 c5: 예상 공정표가 있는데 '도배는 언제
+    해요?'에 정해지지 않았다고 답함)."""
+    if period is None:
+        return None
+    days = kdate.long_range(period.start, period.end, today)
+    if period.kind == "final":
+        return f"공정표: 공사 {days} · 일하는 날 {period.work_days}일(수락한 공사 날짜)"
+    return (
+        f"공정표: 예상 공사 {days} · 일하는 날 {period.work_days}일"
+        "(업체가 공사 날짜를 올리기 전 예상)"
+    )
+
+
+async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided: list) -> str:
     from app.assistant import memory
     from app.assistant.tools import cards
+    from app.schedule import service as schedule_service
 
-    _, home = await cards.home(s, user, pid)
+    _, home = await cards.home(s, user, p.id)
     lines = [
-        f"오늘: {today.isoformat()}",
+        *time_lines(now),
         "화면: 고객 비서",
         "단계: " + ("실측 요청 뒤(집 정보는 잠김)" if home["locked"] else "실측 요청 전"),
-        "집: " + " · ".join(home["facts"]),
+        "집: " + " · ".join(home_facts(home)),
     ]
+    period = period_line(await schedule_service.period_now(s, p), now.astimezone(SEOUL).date())
+    if period:
+        lines.append(period)
     if opened:
         lines.append("승인 기다리는 카드: " + " · ".join(a.summary["title"] for a in opened))
     if done := decided_line(decided):
@@ -151,8 +198,8 @@ async def _customer_facts(s, user: User, pid: uuid.UUID, today, opened: list, de
     return "\n".join(lines)
 
 
-def _vendor_facts(today, visit_ref: str | None, opened: list, decided: list) -> str:
-    lines = [f"오늘: {today.isoformat()}", "화면: 업체 비서"]
+def _vendor_facts(now: datetime, visit_ref: str | None, opened: list, decided: list) -> str:
+    lines = [*time_lines(now), "화면: 업체 비서"]
     if visit_ref:
         lines.append(f"지금 보는 요청: {visit_ref}")
     if opened:
@@ -223,8 +270,9 @@ async def start_turn(
             if old.status == "running":
                 raise AppError(409, "turn_running", RUNNING)
             return old
+        project = None
         if surface == "customer":
-            await project_service.get_for(s, user, project_id)  # 남의 공사 · 없는 공사 404
+            project = await project_service.get_for(s, user, project_id)  # 남의 · 없는 공사 404
             await project_service.lock(s, project_id)  # 같은 공사의 대화 만들기가 줄 선다
         elif visit_id is not None:
             await visit_service.vendor_visit(s, user, visit_id, today)  # 남의 요청 404
@@ -269,9 +317,9 @@ async def start_turn(
             refs.put("visit", {"id": str(visit_id)}) if surface == "vendor" and visit_id else None
         )
         facts = (
-            await _customer_facts(s, user, project_id, today, opened, decided)
-            if surface == "customer"
-            else _vendor_facts(today, visit_ref, opened, decided)
+            await _customer_facts(s, user, project, now, opened, decided)
+            if project is not None
+            else _vendor_facts(now, visit_ref, opened, decided)
         )
         rev = chat.rev
         await s.commit()
@@ -381,14 +429,25 @@ def _sse(turn_id: uuid.UUID, name: str, seq: int, data: dict) -> str:
 
 
 async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
-    """한 턴의 SSE. 일은 따로 돈다(화면이 끊어도 저장까지 간다)."""
+    """한 턴의 SSE. 일은 따로 돈다(화면이 끊어도 저장까지 간다).
+    턴 자리(request_guards.TURNS)는 router 의존성이 응답 끝까지 쥔다. 화면이 끊어 응답이 먼저 끝나면 남은 일이 자리를
+    넘겨받아 같이 세고, 대화를 저장하면(또는 실패로 끝나면) 바로 놓는다(자리를 쥔 채 뒷일을 하지 않게)."""
+    from app.shared import request_guards as guards
+
     q: asyncio.Queue[str | None] = asyncio.Queue()
     seq = 0
+    held = False  # 화면이 끊은 뒤 남은 일이 턴 자리를 쥐었다
 
     async def emit(name: str, data: dict) -> None:
         nonlocal seq
         seq += 1
         q.put_nowait(_sse(ctx.turn_id, name, seq, data))
+
+    def let_go() -> None:
+        nonlocal held
+        if held:
+            held = False
+            guards.TURNS.give()
 
     async def work() -> None:
         res: TurnResult | None = None
@@ -406,6 +465,7 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
                 res.cards, await chip_facts(ctx.user, ctx.surface, ctx.project_id, res.cards)
             )
             rev = await finish_turn(ctx, res)
+            let_go()  # 저장했다: 끊긴 턴이 쥔 자리는 바로 놓는다
             ideas = await suggest_for(
                 ctx.user, ctx.surface, ctx.project_id, said=ctx.text, chips=res.chips
             )
@@ -429,13 +489,21 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
             await fail_turn(ctx, "failed", res)
             await emit("error", {"code": "failed", "message": FAILED})
         finally:
+            let_go()
             q.put_nowait(None)
 
     task = asyncio.create_task(work())
     _BACKGROUND.add(task)
     task.add_done_callback(_BACKGROUND.discard)
-    while (item := await q.get()) is not None:
-        yield item
+    try:
+        while (item := await q.get()) is not None:
+            yield item
+    finally:
+        if not task.done():
+            # 화면이 끊었다: router가 응답과 함께 자리를 돌려줘도 남은 일(저장까지)은 자리에 센다. 이미 들어온 턴이라
+            # 자리 수를 넘겨도 세고(새 턴이 503을 받는다), 저장하면 let_go가 놓는다
+            guards.TURNS.used += 1
+            held = True
 
 
 async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
@@ -884,7 +952,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         vendors=BoardVendors(title="업체", rows=rows) if rows else None,
         period=BoardPeriod(
             label="공사" if final else "예상 공사",
-            value=f"{cards.md_week(o.period.start)} ~ {cards.md_week(o.period.end)}",  # 화면 날짜 꼴
+            value=kdate.md_range(o.period.start, o.period.end, today),  # 화면 날짜 꼴(F2 · F5)
             sub=f"일하는 날 {o.period.work_days}일",
         )
         if o.period.start
@@ -1020,6 +1088,15 @@ STEP_CARD = {
     "eve": "knowledge",
     "check": "knowledge",
 }
+# 그 단계의 다음 일이 이미 열린 승인 카드로 와 있으면(누르기만 남음) 단계 제안을 하지 않아요(QA r2 c5: 업체를 골라
+# 실측 요청 카드가 열렸는데 '업체 3곳을 골라 둘까요?')
+STEP_OPEN = {
+    "standard": frozenset({"visit_request"}),
+    "pick": frozenset({"visit_request"}),
+    "visit": frozenset({"visit_slot"}),
+    "deal": frozenset({"vendor_confirm"}),
+    "dates": frozenset({"dates_accept", "delay_accept"}),
+}
 RECENT_SAID = 6  # 고객이 최근에 한 말 줄 수(이미 물은 제안은 빼요)
 VENDOR_IDEAS = {
     "new": ("새 요청을 정리해 볼까요?", "답할 새 요청이 있어요", "새 요청 브리핑해 줘"),
@@ -1073,6 +1150,13 @@ async def suggest_for(
                 if key == "pick":  # 담은 업체가 없으면 실측 시간이 아니라 업체 고르기부터
                     lst = await visit_service.shortlist_for(s, user, project_id, "dobae")
                     key = "pick" if lst.items else "standard"
+                if key in STEP_OPEN:  # 다음 일이 열린 승인 카드로 와 있으면 그 카드가 다음 걸음
+                    now = now_utc()
+                    live = await repo.actions_of(
+                        s, user.id, surface, project_id=project_id, status="proposed", limit=20
+                    )
+                    if any(a.kind in STEP_OPEN[key] and a.expires_at > now for a in live):
+                        key = None
                 last, recent = await _recent(s, user.id, project_id)
                 if key is not None and STEP_CARD.get(key) not in last:
                     text, why, say = STEP_IDEAS[key]
