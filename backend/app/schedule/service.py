@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.calc import deadline, work_view
+from app.calc import diy as calc_diy
 from app.calc.common import FORMULA_VERSION, VAT_RATE, Money, add_money, from_entered, sum_won
 from app.calc.progress import TradeFacts, first_todo, progress, project_phase
 from app.calc.quote_diff import budget_gap
@@ -398,17 +399,88 @@ async def plan_for(
     s: AsyncSession, user: User, project_id: uuid.UUID, today: date, kind: str | None = None
 ) -> PlanOut:
     """GET /projects/{id}/plan: 만든 사람 · 관리자만. 공사 날짜를 하나라도 수락했으면 확정 공정표,
-    아니면 예상 공정표. kind로 골라 볼 수 있다."""
+    아니면 예상 공정표. kind로 골라 볼 수 있다. 고객이 고른 직접 할 일은 '고객이 직접' 줄로 얹는다."""
     p = await project_service.get_for(s, user, project_id)
     expected = await ensure_expected(s, p, today)
     final = await _latest(s, p.id, "final")
     if kind == "expected" or (kind is None and final is None):
-        return await _out(s, expected)
+        return await _with_diy(s, p, await _out(s, expected), today)
     if final is None:
         raise AppError(
             404, "not_found", "확정 공정표가 아직 없어요. 공사 날짜를 수락하면 만들어져요."
         )
-    return await _final_out(s, p, expected, final, today)
+    return await _with_diy(s, p, await _final_out(s, p, expected, final, today), today)
+
+
+# ---- 반셀프 직접 할 일: 공정표 '고객이 직접' 줄(읽을 때 계산 엔진으로 얹고 저장하지 않는다) ----
+
+
+def move_in_of(p: ProjectOut) -> date | None:
+    return p.when.start if p.when.kind == "movein" else None
+
+
+def diy_tasks(
+    plan: PlanOut,
+    keys: Iterable[str],
+    today: date,
+    *,
+    free: calc_diy.Free = "any",
+    move_in: date | None = None,
+) -> list[calc_diy.DiyTask]:
+    """공정표 블록(공사 날 · 자연 건조 · 입주 청소) → 직접 할 일 '언제부터 · 언제까지'(calc.diy).
+    free는 고객이 할 수 있는 날(any · weekend: 주말 · 공휴일)이에요."""
+    work = {b.trade: (b.start, b.end) for b in plan.blocks if b.kind == "work" and b.trade}
+    dry = next(((b.start, b.end) for b in plan.blocks if b.kind == "dry"), None)
+    clean = next(((b.start, b.end) for b in plan.blocks if b.kind == "clean"), None)
+    lo = min([today, *(a for a, _ in work.values())])
+    return calc_diy.plan(
+        keys, work, today, dry=dry, clean=clean, move_in=move_in, free=free, days_off=_off(lo)
+    )
+
+
+def diy_day_name(t: calc_diy.DiyTask) -> str:
+    """공정표 날 칸 이름: '페인트(문틀 · 몰딩) 칠하기 · 고객이 직접'(입주 청소 줄과 같은 꼴)."""
+    return f"{t.name} · {calc_diy.SELF}"
+
+
+async def _with_diy(s: AsyncSession, p: ProjectOut, out: PlanOut, today: date) -> PlanOut:
+    """고른 직접 할 일(project.diy 칩)을 '고객이 직접' 블록(kind diy, 할 수 있는 기간)과 날 칸 이름으로 얹는다.
+    입주 청소는 공정표에 이미 '고객이 직접' 줄이 있어 더하지 않는다. 날 칸이 공정표 밖(도배 전 페인트 마감 등)이면
+    그날을 kind diy로 더한다. 칩이 없으면 그대로."""
+    from app.project.diy import diy_for
+
+    keys = await diy_for(s, p.id)
+    if not keys:
+        return out
+    tasks = [t for t in diy_tasks(out, keys, today, move_in=move_in_of(p)) if t.key != "clean"]
+    days = {d.day: d for d in out.days}
+    blocks = list(out.blocks)
+    for t in tasks:
+        if t.day is None:
+            continue
+        name = diy_day_name(t)
+        a, b = (t.start, t.end) if t.start and t.end and t.start <= t.end else (t.day, t.day)
+        blocks.append(
+            PlanBlockOut(
+                trade=None,
+                kind="diy",
+                label=t.name,
+                start=a,
+                end=b,
+                days=(b - a).days + 1,
+                crew=None,
+                man_day=None,
+            )
+        )
+        d = days.get(t.day)
+        if d is None:
+            days[t.day] = PlanDayOut(
+                day=t.day, trade=None, kind="diy", names=[name], holiday=HOLIDAYS.get(t.day)
+            )
+        else:
+            kind = "diy" if d.kind == "off" else d.kind
+            days[t.day] = d.model_copy(update={"kind": kind, "names": [*d.names, name]})
+    return out.model_copy(update={"blocks": blocks, "days": [days[k] for k in sorted(days)]})
 
 
 async def redo(
@@ -429,7 +501,7 @@ async def redo(
     await _save(s, p, data.start, data.weekend_work, prev)
     got = await _latest(s, p.id, "expected")
     assert got is not None
-    return await _out(s, got)
+    return await _with_diy(s, p, await _out(s, got), today)
 
 
 # ---- 업체 확정: 고객이 누른 요청으로만. 요청 상태는 visit.service, 확정(deal)은 여기서 ----

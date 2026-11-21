@@ -1,6 +1,6 @@
 // 예상 공정표(C08): 큰 일수 + 공정표 칸(B4 ScheduleChart, 하루 단위) + '도배 1.4(월)~1.5(화) · 2일'.
 // 날짜 · 일수는 계산 엔진 값(GET /projects/{id}/plan)을 그대로 써요. 칸은 첫 공사 날부터 마지막 공사 날까지(사이 쉬는 날 포함)만 보여요.
-// 건조 · 청소 칸은 응답에 남고 화면은 숨겨요(D22 B).
+// 건조 · 청소 칸은 응답에 남고 화면은 숨겨요(D22 B). 반셀프 직접 할 일은 범례 아래 '고객이 직접' 줄로 보여요.
 // 시작 · 끝 날 문장은 두지 않고, 확정 공정표 안내는 '!' 도움말에 넣어요(웹은 제목 옆, 폰은 이 칸 위).
 import { HelpTip } from "@/components/ui/HelpTip";
 import { BigFigure } from "@/components/ui/Money";
@@ -8,6 +8,7 @@ import { ScheduleChart, type ChartDay, type ChartRow } from "@/components/ui/Sch
 import type { ApiPlan } from "@/lib/api/project";
 import { dayParts, rangeText } from "@/lib/format";
 import { tradeLabel } from "@/lib/labels";
+import { SelfRows } from "./SelfRows";
 import s from "./planv3.module.css";
 
 /** 공사 날이 있는 줄 · 칸(쉬는 날은 열로만). final이면 하루를 오전 · 오후 두 칸으로 */
@@ -51,6 +52,7 @@ export function ExpectedPlan({ plan }: { plan: ApiPlan }) {
         <ScheduleChart caption="예상 공정표" days={days} rows={rows} legend={["work", "off"]} fold />
         <ul className={s.legend}>
           {works.map((b) => <li key={`${b.trade}-${b.start}`}><i aria-hidden="true" /><b>{tradeLabel(b.trade ?? "")}</b> <span className="mj-num">{rangeText(b.start, b.end, { weekday: true })} · {b.days}일</span></li>)}
+          <SelfRows plan={plan} />
         </ul>
       </section>
     </>

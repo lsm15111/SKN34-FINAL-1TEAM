@@ -15,6 +15,7 @@ import { planChart } from "./ExpectedPlan";
 import { FileLink } from "./FileLink";
 import { PlanChecks, type Check } from "./PlanChecks";
 import { PlanViewTabs } from "./PlanViewTabs";
+import { SelfRows, selfBlocks } from "./SelfRows";
 import s from "./planv3.module.css";
 
 export function finalHead(plan: ApiPlan) {
@@ -56,6 +57,14 @@ export function FinalPlanBody({ plan, projectId, checks, mock }: { plan: ApiPlan
         />
         {crewText ? <p className={`${s.sm} ${s.phoneOnly}`}>{crewText}</p> : null}
       </section>
+
+      {/* 반셀프: 고객이 고른 직접 할 일(계산 엔진 날짜, 예상 공정표와 같은 꼴) */}
+      {selfBlocks(plan).length ? (
+        <section className={s.group} aria-labelledby="self-t">
+          <h2 id="self-t" className={s.eb}>고객이 직접 할 일</h2>
+          <ul className={s.legend}><SelfRows plan={plan} /></ul>
+        </section>
+      ) : null}
 
       {/* 웹: 요약 칸 */}
       {deal ? (
