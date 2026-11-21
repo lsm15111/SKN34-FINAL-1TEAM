@@ -39,9 +39,10 @@ class Settings(BaseSettings):
     llm_cap_total_usd: float = 45.0
     # 비서 한 턴 상한(달러). 비서 runtime이 CALL_CTX.spent_micros와 비교한다
     llm_cap_turn_usd: float = 0.06
-    # 비서 answer_question이 질문 종류별로 부를 답 파이프라인: v3(chat.service.answer_only) · v2(v2.ask.answer_only).
-    # 'v3'처럼 하나면 모두, 'price=v2,material=v2'처럼 종류=엔진을 쉼표로 적으면 그 종류만(나머지 v3). 평가로 고른다
-    assistant_answer_route: str = "v3"
+    # 비서 answer_question이 질문 종류별로 부를 답 파이프라인: v3(chat.service.answer_only) · v2(v2.ask.answer_only)
+    # · v2+v3(v2 먼저, v2 관문이 범위 밖으로 보고 v3가 답하면 v3). 'v3'처럼 하나면 모두, 'price=v3,*=v2+v3'처럼
+    # 종류=엔진을 쉼표로 적으면 그 종류만(* = 나머지, 없으면 v3). 기본값은 v4 턴 판정(2026-11-21, j-v4route1)으로 골랐다
+    assistant_answer_route: str = "period=v3,price=v3,*=v2+v3"
     # 수동 임베딩 CLI와 에이전트 LLM(agent/llm.py)이 쓴다. 키는 repr·오류에 표시하지 않는다.
     openai_api_key: SecretStr = SecretStr("")
     openai_embedding_model: str = "text-embedding-3-small"

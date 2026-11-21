@@ -198,6 +198,19 @@ def test_engine_for_route_setting():
     assert answer.engine_for("material", "price=v2+v3") == "v3"
 
 
+def test_default_route_is_hybrid_except_price_and_period():
+    """기본값(v4 턴 판정 j-v4route1): 지식 · 방법 · 자재 · 일반은 v2+v3, 금액 · 기간은 v3(계산 엔진 값 근거)."""
+    route = "period=v3,price=v3,*=v2+v3"
+    assert answer.engine_for("general", route) == "v2+v3"
+    assert answer.engine_for("process", route) == "v2+v3"
+    assert answer.engine_for("material", route) == "v2+v3"
+    assert answer.engine_for("price", route) == "v3"
+    assert answer.engine_for("period", route) == "v3"
+    from app.config import Settings
+
+    assert Settings.model_fields["assistant_answer_route"].default == route
+
+
 def test_answer_question_goes_to_v2_when_routed(api, script, monkeypatch):
     _, pid = home(api)
     monkeypatch.setattr(settings, "assistant_answer_route", "price=v2")
