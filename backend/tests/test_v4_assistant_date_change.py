@@ -1,7 +1,7 @@
 """v4 비서 공사 날짜 바꾸기 제안(propose_date_change → 행동 date_change): 확정 이름표(d…) · 까닭 코드 · 바라는 때
 (며칠 뒤 · 이날부터) → 시작해도 되는 날 1~3개(계산 엔진) · 승인하면 POST …/date-requests와 같은 schedule service 함수 ·
 같은 대상의 '공사 전날' 먼저 말 건 줄을 닫음(SETTLES) · 거절한 요청은 다시 만들지 않음 · 무료 모드 '공사 미루고 싶어요'도
-승인 카드로 · 묻는 말은 안내만. 유료 호출 0회(Claude 대본)."""
+승인 카드로 · 묻는 말은 안내만 · 업체 대화도 고객의 날짜 요청에 먼저 말 걸기와 같은 카드로 답함. 유료 호출 0회(Claude 대본)."""
 
 import json
 import uuid
@@ -17,9 +17,11 @@ from app.refprice.holidays import days_off
 from app.shared.clock import today_seoul
 from tests.conftest import query
 from tests.test_v4_assistant_actions import action_row, acts, approve
+from tests.test_v4_assistant_free import vendor_turn
 from tests.test_v4_assistant_nudges import add_nudge
 from tests.test_v4_assistant_offers import scheduled
 from tests.test_v4_assistant_turns import ask, ok
+from tests.test_visit_inbox import login
 
 TODAY = today_seoul()
 OFF = days_off(TODAY, TODAY + timedelta(days=400))
@@ -165,3 +167,48 @@ def test_free_postpone_makes_a_change_card_and_a_question_only_guides(api):
     assert wish[0] == workdays(start + timedelta(days=14), 1, OFF)[0].isoformat()
     text = [d for e, d, _ in ev if e == "card" and d["kind"] == "answer"][-1]["data"]["text"]
     assert "승인 카드" in text and "눌러" in text
+
+
+# ---- 업체: 대화로 고객의 날짜 바꾸기 요청에 답하기 ----
+
+
+def test_vendor_chat_answers_a_change_request_like_the_nudge(api, script):
+    """수락한 뒤 고객이 날짜 바꾸기를 요청하면(change_requested) 업체 대화도 먼저 말 걸기(dates_requested)와 같은
+    조건으로 공사 날짜 보내기 카드를 만든다(고객이 고른 시작일 · kind change · 요청 id)."""
+    _token, pid, did = scheduled(api)
+    w1 = workdays(TODAY + timedelta(days=35), 1, OFF)[0].isoformat()
+    body = {"wish_dates": [w1], "reason": "이사 날짜가 바뀌었어요."}
+    r = api.post(f"/projects/{pid}/deals/{did}/date-requests", json=body)
+    assert r.status_code == 201, r.text
+    login(api, "maru@mitjip.test")
+    script(
+        [
+            {"tool_calls": [{"id": "j", "name": "my_jobs", "input": {}}]},
+            {
+                "tool_calls": [
+                    {
+                        "id": "p",
+                        "name": "propose_dates",
+                        "input": {"deal_ref": "d1", "days_ref": "n1"},
+                    }
+                ]
+            },
+            {
+                "text": "고객이 고른 날로 공사 날짜 보내기 카드를 만들었어요. 카드를 확인하고 눌러 주세요."
+            },
+        ]
+    )
+    ev = ok(vendor_turn(api, None, "고객이 날짜를 바꿔 달래요. 답해 줘"))
+    (a,) = proposed(ev)
+    row = action_row(a["action_id"])
+    pl = json.loads(row["payload"])
+    assert (a["kind"], row["target_ver"], pl["kind"], pl["days"][0]) == (
+        "dates",
+        "change_requested",
+        "change",
+        w1,
+    )
+    r = approve(api, a["action_id"], prefix="/vendor/assistant")
+    assert r.json()["status"] == "executed", r.text
+    (p,) = query("select start_date, kind from date_proposals where status = 'pending'")
+    assert (p["start_date"].isoformat(), p["kind"]) == (w1, "change")

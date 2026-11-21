@@ -857,11 +857,13 @@ def vendor_dates_offer(job, deal_id: uuid.UUID, days: dict, now) -> dict:
     surface="vendor",
     kind="propose",
     status="공사 날짜 보내기를 준비하고 있어요",
-    description="확정된 공사(d1…)에 공사 날 후보(n1…)를 보내는 승인 카드를 만들어요.",
+    description="확정된 공사(d1…)에 공사 날 후보(n1…)를 보내는 승인 카드를 만들어요. 고객이 다른 날짜 · 날짜 "
+    "바꾸기를 요청했으면 그 요청에 답하는 카드예요(후보는 고객이 고른 시작일).",
     model=DatesPropose,
     schema=obj({"deal_ref": REF, "days_ref": REF}),
 )
 async def propose_dates(tc: ToolCtx, a: DatesPropose) -> ToolOut:
+    from app.assistant.tools import aftercare as aftercare_tools
     from app.schedule import service as schedule_service
 
     deal = tc.refs.get(a.deal_ref, "deal")
@@ -871,5 +873,14 @@ async def propose_dates(tc: ToolCtx, a: DatesPropose) -> ToolOut:
     deal_id = uuid.UUID(deal["id"])
     async with SessionLocal() as s:
         job = await schedule_service.job_for(s, tc.user, deal_id, tc.today)
-    out, _ = await _offer(tc, **vendor_dates_offer(job, deal_id, days, tc.now))
+    if job.dates_state in ("requested", "change_requested") and job.request is not None:
+        # 고객의 날짜 요청에 답한다: 먼저 말 걸기(dates_requested)와 같은 조건 · 같은 행동 값(kind · request_id).
+        # 이름표 값의 kind 칸은 이름표 종류('days')라 쓰지 않고 공사 상태로 정한다
+        kind = "change" if job.status == "scheduled" else "initial"
+        days = {**days, "kind": kind}
+        days.setdefault("request_id", str(job.request.id))
+        offer = aftercare_tools.request_dates_offer(job, deal_id, days, tc.now)
+    else:
+        offer = vendor_dates_offer(job, deal_id, days, tc.now)
+    out, _ = await _offer(tc, **offer)
     return out
