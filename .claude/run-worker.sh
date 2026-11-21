@@ -9,7 +9,8 @@ fi
 # live(두 번째 인자): 메인 .env의 Anthropic 키만 살리고 LLM_LIVE=true(사용자 결정 2026-11-21, 상한 $50). OpenAI · 다른 키는 그대로 비워요
 if [ "${2:-}" = live ]; then
   ANTHROPIC_API_KEY="$(sed -n 's/^ANTHROPIC_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
-  export ANTHROPIC_API_KEY LLM_LIVE=true
+  # 흐름 시험: 사용자 하루 상한($0.40)에 걸려 흐름 중간에 무료 모드로 떨어지지 않게 올려요(쓴 돈은 장부로 따로 봐요)
+  export ANTHROPIC_API_KEY LLM_LIVE=true LLM_CAP_USER_DAY_USD="${LLM_CAP_USER_DAY_USD:-2}"
 fi
 export APP_ENV=local DEMO_AUTO=false JEV_ENABLED=false
 export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER:-mitjip}:${POSTGRES_PASSWORD}@127.0.0.1:${DB_HOST_PORT:-5433}/${V3_DB_NAME:-mitjip_v3}"
