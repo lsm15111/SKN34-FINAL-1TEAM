@@ -210,20 +210,23 @@ def test_particles_and_line_endings():
         "도배",
     )
     assert news_line("새 소식") == ("새 소식", None)
-    # 먼저 말 걸기 틀(이 갈래가 고친 줄)은 '· 지역.'이 아니라 '요'로 끝난다
-    mine = ("visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick")
-    mine += ("visit_requested", "visit_picked", "deal_confirmed")
-    for name in mine:
+    # 먼저 말 걸기 틀(이 갈래가 고친 줄. 자동화 갈래가 더한 글은 빼요)은 '· 지역.'이 아니라 '요'로 끝난다
+    mine = [
+        (x, c)
+        for x in ("visit_offered", "quote_sent", "dates_proposed")
+        for c in ("feed", "notify")
+    ]
+    mine += [("work_eve", "notify"), ("no_pick", "notify"), ("visit_requested", "feed")]
+    mine += [("visit_picked", "feed"), ("deal_confirmed", "feed")]
+    for name, channel in mine:
         t = proactive.TRIGGERS[name]
-        for channel in ("feed", "notify"):
-            if getattr(t, channel):
-                f = proactive.Facts(
-                    trigger=t.name,
-                    channel=channel,
-                    surface=t.surface,
-                    names={"vendor": "마루와벽", "trade": "도배", "area": "노원구 상계동 도배"},
-                )
-                assert proactive.template(f).endswith(("요.", "요?")), t.name
+        f = proactive.Facts(
+            trigger=t.name,
+            channel=channel,
+            surface=t.surface,
+            names={"vendor": "마루와벽", "trade": "도배", "area": "노원구 상계동 도배"},
+        )
+        assert proactive.template(f).endswith(("요.", "요?")), (name, channel)
 
 
 # ---- #11 도구 값 ----

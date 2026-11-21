@@ -121,7 +121,7 @@ TRIGGERS: dict[str, Trigger] = {
             "deal_confirmed", "vendor", ("deal_confirmed",), follow=timedelta(days=1),
             decision=True, action=True, state="deal", say="공사 할 일 보여 줘", why="고객이 확정했어요",
             feed="{area} 요청에서 고객이 보낸 견적서로 확정했어요. 공사 날짜 후보를 골라 뒀어요.",
-            notify="{area} 요청에서 고객이 확정했는데 공사 날짜를 아직 내지 않았어요. 후보를 확인해 주세요.",
+            notify="고객이 확정한 공사 날짜를 아직 내지 않았어요 · {area}. 후보를 확인해 주세요.",
         ),
         *(Trigger(**x) for x in aftercare.TRIGGERS),  # 07 자동화(업체 빠짐 · 추가 금액 · 공사 끝 …)
     )
