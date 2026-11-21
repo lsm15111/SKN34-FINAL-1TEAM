@@ -23,6 +23,7 @@ from app.auth.models import User
 from app.db import SessionLocal
 from app.project import diy
 from app.shared.clock import SEOUL, now_utc, today_seoul
+from app.v2 import guard
 from tests.conftest import query
 from tests.helpers import use
 from tests.test_dates import SEEN0, days
@@ -510,7 +511,7 @@ def test_home_start_date_card_shows_korean_dates(api, script):
     ev = ok(ask(api, pid, "공사는 좀 늦게 시작해요"))
     (a,) = [x for x in acts(ev) if x["status"] == "proposed"]
     summary = json.dumps(a["summary"], ensure_ascii=False)
-    assert not ISO.search(summary) and cards.md_week(new) in summary
+    assert not ISO.search(summary) and cards.md_long(new) in summary
     (card,) = cards_of(ev, "home_info")
     assert not ISO.search(json.dumps(card["data"], ensure_ascii=False))
 
@@ -526,8 +527,12 @@ def test_slot_and_confirm_summaries_show_korean_dates():
         status="offered", window=w, proposal=None, vendor_name="마루와벽", visit_id=uuid.uuid4()
     )
     got = propose.slot_offer(v, {"via": "pick", "day": "2026-12-15", "half": "am"})["summary"]
-    assert got.title == "마루와벽 실측 12.15(화) 오전"
+    assert got.title == "마루와벽 실측 12월 15일(화) 오전"
+    # 제목은 긴 꼴: 비서가 '12월 15일'이라고 말해도 문장 숫자 검사를 지난다
+    assert {12, 15} <= guard.numbers(got.title)
     assert got.version == "업체가 답한 기간 12.14(월)~12.18(금)"
     s = actions.confirm_summary("마루와벽", 2, 3_000_000, 3, date(2026, 12, 31))
     assert {r.label: r.value for r in s.rows}["유효기간"] == "12.31(목)까지"
     assert cards.md_range(date(2026, 12, 7), date(2026, 12, 21)) == "12.07(월)~12.21(월)"
+    assert cards.long_range(date(2026, 12, 1), date(2026, 12, 4)) == "12월 1일(화)~4일(금)"
+    assert cards.long_range(date(2026, 12, 29), date(2027, 1, 2)) == "12월 29일(화)~1월 2일(토)"

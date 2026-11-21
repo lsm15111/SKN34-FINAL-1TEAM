@@ -8,12 +8,14 @@
 
 import json
 import uuid
+from datetime import date
 
 import asyncpg
 import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
+from app.assistant.tools.cards import md_long
 from tests.conftest import query
 from tests.helpers import signup, use
 from tests.test_v3_project_home import HOME, create
@@ -176,7 +178,8 @@ def test_get_home_knows_start_rooms_and_diy(api, script):
     pid = create(api, {**HOME, "rooms": 3, "diy": ["clean", "paint"]}).json()["id"]
     facts, model, turn = _get_home(api, script, pid)
     said = f"직접 할 일 {PAINT}, {CLEAN}"
-    assert {"방 3개", f"공사 시작 희망 {HOME['start_date']}", said} <= set(facts)
+    start = md_long(date.fromisoformat(HOME["start_date"]))  # 카드 사실은 한국어 날짜 글(ISO 아님)
+    assert {"방 3개", f"공사 시작 희망 {start}", said} <= set(facts)
     assert (model["rooms"], model["start_date"], model["diy"]) == (
         3,
         HOME["start_date"],

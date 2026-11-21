@@ -113,7 +113,9 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         )
         if h.rooms:
             facts.append(f"방 {h.rooms}개")
-        start = md_week(h.start_date) if h.start_date else "아직 몰라요"
+        # 사실 줄은 카드 · 보드 · 턴 사실이 같이 써요: '12월 15일(화)'(ISO 날짜를 보이지 않고, 비서 문장의 월 · 일
+        # 숫자 검사에도 그 숫자가 들어가게)
+        start = md_long(h.start_date) if h.start_date else "아직 몰라요"
         facts.append(f"공사 시작 희망 {start}")
     if demo is not None:
         facts.append(DEMOLITION[demo])
@@ -890,8 +892,21 @@ def md_list(days) -> str:
 
 
 def md_range(start: date, end: date) -> str:
-    """'12.07(월)~12.21(월)'(승인 카드 · 카드 글의 기간. ISO 날짜를 화면에 그대로 보이지 않는다)."""
+    """'12.07(월)~12.21(월)': 승인 카드 요약 줄 · 판 글의 기간(짧은 꼴). ISO 날짜를 화면에 그대로 보이지 않는다."""
     return f"{md_week(start)}~{md_week(end)}"
+
+
+def md_long(d: date) -> str:
+    """'12월 15일(화)': 승인 카드 제목 · 사실 줄처럼 비서도 읽는 날짜 글(긴 꼴). 짧은 꼴 '12.15'는 문장 숫자 검사가
+    한 수(12.15)로 읽어 비서가 '12월 15일'이라고 말하면 그 문장을 버리므로, 비서가 읽는 글은 월 · 일이 따로 보이게 쓴다."""
+    return f"{d.month}월 {d.day}일({WEEK[d.weekday()]})"
+
+
+def long_range(start: date, end: date) -> str:
+    """'12월 1일(화)~4일(금)', 달이 바뀌면 '12월 29일(화)~1월 2일(토)'(긴 꼴 기간)."""
+    if (start.year, start.month) == (end.year, end.month):
+        return f"{md_long(start)}~{end.day}일({WEEK[end.weekday()]})"
+    return f"{md_long(start)}~{md_long(end)}"
 
 
 def day_list(days: list[date]) -> str:

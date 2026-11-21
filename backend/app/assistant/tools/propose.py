@@ -5,7 +5,8 @@
 - 같은 대상의 열린 제안은 하나(서로 바꾸는 묶음, actions.swap_kinds): 새로 만들면 옛 것은 만료(replaced)되고 그
   action 이벤트도 보낸다. 같은 제안이 열려 있으면 그 행을 쓰고(state same), 고객이 거절한 같은 제안이면 오류 대신 모델
   값으로 알린다(state rejected). 단, 사람이 이번 턴에 분명히 해 달라고 했으면(asks_again) 새 결정으로 보고 만든다.
-- 승인 카드 글의 날짜는 한국어 짧은 꼴(cards.md_week · md_range)이다. payload(실행할 값)는 ISO 날짜 그대로다.
+- 승인 카드 글의 날짜는 한국어 글이다: 비서도 읽는 제목 · 오류 글은 긴 꼴(cards.md_long · long_range, 문장 숫자
+  검사가 월 · 일을 보게), 요약 줄 · 판 글은 짧은 꼴(md_week · md_range). payload(실행할 값)는 ISO 날짜 그대로다.
 """
 
 import re
@@ -83,8 +84,8 @@ def _show(key: str, v) -> str:
 
     if v is None:
         return "없음"
-    if key == "start_date":  # 화면 글: '12.15(화)'(ISO 날짜를 그대로 보이지 않는다)
-        return cards.md_week(date.fromisoformat(str(v)))
+    if key == "start_date":  # 집 카드 사실과 같은 꼴 '12월 15일(화)'(ISO 날짜 아님)
+        return cards.md_long(date.fromisoformat(str(v)))
     if key == "area_basis":
         return cards.BASIS.get(v, v)
     if key == "grade":
@@ -414,7 +415,7 @@ def slot_offer(v, slot: dict) -> dict:
         ver = f"업체가 답한 기간 {cards.md_range(w.start, w.end)}"
     day = date.fromisoformat(slot["day"])
     summary = ActionSummary(
-        title=f"{v.vendor_name} 실측 {cards.md_week(day)} {HALF[slot['half']]}",
+        title=f"{v.vendor_name} 실측 {cards.md_long(day)} {HALF[slot['half']]}",
         version=ver,
         rows=[
             SummaryRow(
@@ -503,7 +504,7 @@ async def propose_vendor_confirm(tc: ToolCtx, a: VisitRefIn) -> ToolOut:
         state = cards.DATES_STATE.get(t.dates_state) if t else None
         d = t.deal if t else None
         if t is not None and t.dates_state == "scheduled" and d.start_date and d.end_date:
-            state = f"공사 날짜 {cards.md_range(d.start_date, d.end_date)}도 수락했어요"
+            state = f"공사 날짜 {cards.long_range(d.start_date, d.end_date)}도 수락했어요"
         raise ToolError(
             "already_chosen",
             f"이미 {euro(done.vendor_name)} 확정했어요." + (f" {state}." if state else ""),
@@ -554,7 +555,7 @@ def dates_offer(sch, proposal_id: str, kind: str, now) -> dict:
     x = t.proposal
     name = cards.TRADE.get(t.deal.trade, t.deal.trade)
     summary = ActionSummary(
-        title=f"{name} {cards.md_range(x.start, x.end)} 수락",
+        title=f"{name} {cards.long_range(x.start, x.end)} 수락",
         version=f"공정표 {sch.final_version}판" if sch.final_version else "첫 공사 날짜",
         rows=[
             SummaryRow(label="업체", value=t.deal.vendor_name),
@@ -923,7 +924,7 @@ def vendor_dates_offer(job, deal_id: uuid.UUID, days: dict, now) -> dict:
         raise ToolError("stale", "지금은 공사 날짜를 낼 수 없어요. 공사 화면에서 확인해 주세요.")
     picked = [date.fromisoformat(x) for x in days["days"]]
     summary = ActionSummary(
-        title=f"공사 날짜 {cards.md_range(picked[0], picked[-1])} 보내기",
+        title=f"공사 날짜 {cards.long_range(picked[0], picked[-1])} 보내기",
         rows=[
             # 주말 · 휴일을 건너뛴 날이 보이게
             SummaryRow(label="일하는 날", value=cards.day_list(picked)),
