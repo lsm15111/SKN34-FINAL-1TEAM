@@ -2,10 +2,14 @@
 
 - 대상은 ref로만 받고 코드가 id로 푼다(모르는 ref는 unknown_ref). 금액 · 날짜 · 판은 기능 service 값이다.
 - 제안할 수 없는 상태(잠김 · 견적서 없음 · 겹침 …)는 도구 오류로 돌려준다(행을 만들지 않음).
-- 같은 대상의 열린 제안은 하나: 새로 만들면 옛 것은 만료(replaced)되고 그 action 이벤트도 보낸다. 같은 제안이
-  열려 있으면 그 행을 쓰고(state same), 고객이 거절한 같은 제안이면 오류 대신 모델 값으로 알린다(state rejected).
+- 같은 대상의 열린 제안은 하나(서로 바꾸는 묶음, actions.swap_kinds): 새로 만들면 옛 것은 만료(replaced)되고 그
+  action 이벤트도 보낸다. 같은 제안이 열려 있으면 그 행을 쓰고(state same), 고객이 거절한 같은 제안이면 오류 대신 모델
+  값으로 알린다(state rejected). 단, 사람이 이번 턴에 분명히 해 달라고 했으면(asks_again) 새 결정으로 보고 만든다.
+- 승인 카드 글의 날짜는 한국어 글이다: 비서도 읽는 제목 · 오류 글은 긴 꼴(cards.md_long · long_range, 문장 숫자
+  검사가 월 · 일을 보게), 요약 줄 · 판 글은 짧은 꼴(md_week · md_range). payload(실행할 값)는 ISO 날짜 그대로다.
 """
 
+import re
 import uuid
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
@@ -44,12 +48,34 @@ OFFER_NOTE = {
 }
 CLOSED_NOTE = "이미 닫힌 제안이에요(새로 만들지 않았어요)."
 
+# 이번 턴에 사람이 분명히 해 달라고 한 말: 하는 말(저장 · 바꿔 · 요청 · 수락 …) 뒤에 부탁 · 다짐 끝말(주세요 · 줘 ·
+# 부탁 · 할게요 …), 또는 '…로 해 주세요'. 하지 말라는 말은 빼요. 거절한 제안을 다시 만들 새 결정으로 본다
+ASK_DO = re.compile(
+    r"(?:저장|바꿔|바꾸어|변경|수정|고쳐|반영|적용|넣어|빼|만들어|요청|보내|수락|확정|진행|미뤄|당겨|옮겨|골라|"
+    r"잡아|승인|거절|답해|올려|그걸로|그것으로|이걸로|이것으로|그대로|그렇게|직접)"
+    r"\S{0,3}\s{0,2}(?:좀\s{0,2})?(?:해\s{0,2})?"
+    r"(?:주세요|주십시오|주실래요|주시겠어요|주실\s{0,2}수\s{0,2}있|줘요|줘|주라|줄래요|줄래|부탁|할게요|할께요|"
+    r"할래요|하겠습니다)"
+    r"|로\s{0,2}(?:해|바꿔)\s{0,2}(?:주세요|주십시오|주실래요|주시겠어요|줘요|줘|주라|줄래요|줄래)"
+)
+NOT_DO = re.compile(
+    r"(?:하|되)?지\s{0,2}(?:마|말)|안\s{0,2}(?:해도|하셔도)|필요\s{0,2}없|그만\s{0,2}(?:해|두)"
+)
+
+
+def asks_again(text: str) -> bool:
+    """사람이 이번 턴 말로 분명히 해 달라고 했는지('32평 맞아요. 저장해 주세요'). 거절 막기는 먼저 말 걸기 · 비서가
+    스스로 낸 제안에만 걸고, 이렇게 새로 부탁한 턴에는 거절한 같은 제안도 다시 만든다(계약서 '거절한 것을 다시 밀지
+    않는다'의 예외: 사람이 새로 정함)."""
+    t = text or ""
+    return bool(ASK_DO.search(t)) and not NOT_DO.search(t)
+
 
 def rejected_note(surface: str) -> str:
     who = "고객이" if surface == "customer" else "업체가"
     return (
-        f"{who} 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. "
-        "다시 원하면 카드 단추로 직접 고르게 안내해요."
+        f"{who} 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. 다시 원하면 카드 단추로 직접 "
+        "고르거나 해 달라고 분명히 말해 달라고 안내해요(그렇게 말한 턴에는 새로 만들어요)."
     )
 
 
@@ -58,6 +84,8 @@ def _show(key: str, v) -> str:
 
     if v is None:
         return "없음"
+    if key == "start_date":  # 집 카드 사실과 같은 꼴 '12월 15일(화)'(ISO 날짜 아님)
+        return cards.md_long(date.fromisoformat(str(v)))
     if key == "area_basis":
         return cards.BASIS.get(v, v)
     if key == "grade":
@@ -75,7 +103,10 @@ def _show(key: str, v) -> str:
 
 async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
     """행동 행을 만들고 commit한다. (도구 결과, 모델용 요약). 새 행 · 열린 같은 행만 승인 카드(action)로 보내고,
-    거절한 같은 제안 · 닫힌 행은 보내지 않는다(모델 값 state · note로만 알림)."""
+    거절한 같은 제안 · 닫힌 행은 보내지 않는다(모델 값 state · note로만 알림). 사람이 새로 정한 제안(카드 단추 ·
+    LLM 턴에서 분명히 해 달라고 한 말)은 거절한 같은 제안도 다시 만든다. 무료 모드는 낱말 규칙이 말을 잘못 읽을 수
+    있어 말로는 다시 만들지 않는다."""
+    fresh = tc.pressed or (tc.mode == "llm" and asks_again(tc.text))
     async with SessionLocal() as s:
         got = await actions.offer(
             s,
@@ -83,7 +114,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
             surface=tc.surface,
             now=tc.now,
             turn_id=tc.turn_id,
-            pressed=tc.pressed,
+            pressed=fresh,
             **kw,
         )
         await s.commit()
@@ -254,7 +285,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         kind="home_info",
         target_kind="project",
         target_id=pid,
-        target_ver=str(p.rev),
+        target_ver=actions.home_ver(p.rev, changes, diy_now),  # 직접 할 일을 바꾸면 칩 지문까지
         payload={"fields": changes},
         summary=ActionSummary(
             title="직접 할 일 저장" if set(changes) == {"diy"} else "집 정보 저장",
@@ -337,7 +368,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         title=f"{' · '.join(c.name for c in rows)}에 실측 요청 보내기",  # 턴 사실에 업체가 보이게
         amounts=[AmountRow(label=c.name, won=c.estimate_total) for c in rows],
         rows=[
-            SummaryRow(label="희망 기간", value=f"{start.isoformat()} ~ {end.isoformat()}"),
+            SummaryRow(label="희망 기간", value=cards.md_range(start, end)),
             SummaryRow(label="가견적", value="업체가 확인한 단가로 고정돼요"),
             *([told] if told else []),
         ],
@@ -381,10 +412,10 @@ def slot_offer(v, slot: dict) -> dict:
             raise ToolError("stale", "고를 수 있는 때가 아니에요. 시간 후보를 다시 찾아 주세요.")
         w = v.window
         due, instant = w.pick_due_at, w.instant
-        ver = f"업체가 답한 기간 {w.start.isoformat()} ~ {w.end.isoformat()}"
+        ver = f"업체가 답한 기간 {cards.md_range(w.start, w.end)}"
     day = date.fromisoformat(slot["day"])
     summary = ActionSummary(
-        title=f"{v.vendor_name} 실측 {day.isoformat()} {HALF[slot['half']]}",
+        title=f"{v.vendor_name} 실측 {cards.md_long(day)} {HALF[slot['half']]}",
         version=ver,
         rows=[
             SummaryRow(
@@ -473,7 +504,7 @@ async def propose_vendor_confirm(tc: ToolCtx, a: VisitRefIn) -> ToolOut:
         state = cards.DATES_STATE.get(t.dates_state) if t else None
         d = t.deal if t else None
         if t is not None and t.dates_state == "scheduled" and d.start_date and d.end_date:
-            state = f"공사 날짜 {d.start_date.isoformat()} ~ {d.end_date.isoformat()}도 수락했어요"
+            state = f"공사 날짜 {cards.long_range(d.start_date, d.end_date)}도 수락했어요"
         raise ToolError(
             "already_chosen",
             f"이미 {euro(done.vendor_name)} 확정했어요." + (f" {state}." if state else ""),
@@ -524,7 +555,7 @@ def dates_offer(sch, proposal_id: str, kind: str, now) -> dict:
     x = t.proposal
     name = cards.TRADE.get(t.deal.trade, t.deal.trade)
     summary = ActionSummary(
-        title=f"{name} {x.start.isoformat()} ~ {x.end.isoformat()} 수락",
+        title=f"{name} {cards.long_range(x.start, x.end)} 수락",
         version=f"공정표 {sch.final_version}판" if sch.final_version else "첫 공사 날짜",
         rows=[
             SummaryRow(label="업체", value=t.deal.vendor_name),
@@ -668,10 +699,10 @@ def date_change_offer(
     rows = [
         SummaryRow(
             label="지금 날짜" if change else "업체가 낸 날짜",
-            value=f"{base[0].isoformat()} ~ {base[1].isoformat()}",
+            value=cards.md_range(base[0], base[1]),
         ),
         *[
-            SummaryRow(label=f"후보 {i}", value=f"{a.isoformat()} ~ {b.isoformat()}")
+            SummaryRow(label=f"후보 {i}", value=cards.md_range(a, b))
             for i, (a, b) in enumerate(picked, 1)
         ],
         SummaryRow(label="까닭", value=actions.CHANGE_REASONS[reason]),
@@ -795,8 +826,15 @@ async def propose_window_answer(tc: ToolCtx, a: WindowAnswerIn) -> ToolOut:
     summary = ActionSummary(
         title="이 기간으로 답하기",
         rows=[
-            SummaryRow(label="기간", value=f"{w['start']} ~ {w['end']}"),
-            SummaryRow(label="빼는 날", value=", ".join(w.get("excluded") or []) or "없음"),
+            SummaryRow(
+                label="기간",
+                value=cards.md_range(date.fromisoformat(w["start"]), date.fromisoformat(w["end"])),
+            ),
+            SummaryRow(
+                label="빼는 날",
+                value=cards.md_list(date.fromisoformat(x) for x in w.get("excluded") or [])
+                or "없음",
+            ),
             SummaryRow(label="빈 반나절", value=f"{w.get('open_count', 0)}칸"),
             SummaryRow(label="바로 확정", value="켜요" if instant else "꺼요"),
         ],
@@ -886,7 +924,7 @@ def vendor_dates_offer(job, deal_id: uuid.UUID, days: dict, now) -> dict:
         raise ToolError("stale", "지금은 공사 날짜를 낼 수 없어요. 공사 화면에서 확인해 주세요.")
     picked = [date.fromisoformat(x) for x in days["days"]]
     summary = ActionSummary(
-        title=f"공사 날짜 {picked[0].isoformat()} ~ {picked[-1].isoformat()} 보내기",
+        title=f"공사 날짜 {cards.long_range(picked[0], picked[-1])} 보내기",
         rows=[
             # 주말 · 휴일을 건너뛴 날이 보이게
             SummaryRow(label="일하는 날", value=cards.day_list(picked)),

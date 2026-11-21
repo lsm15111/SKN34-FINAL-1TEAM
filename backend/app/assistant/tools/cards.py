@@ -113,7 +113,9 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         )
         if h.rooms:
             facts.append(f"방 {h.rooms}개")
-        start = h.start_date.isoformat() if h.start_date else "아직 몰라요"
+        # 사실 줄은 카드 · 보드 · 턴 사실이 같이 써요: '12월 15일(화)'(ISO 날짜를 보이지 않고, 비서 문장의 월 · 일
+        # 숫자 검사에도 그 숫자가 들어가게)
+        start = md_long(h.start_date) if h.start_date else "아직 몰라요"
         facts.append(f"공사 시작 희망 {start}")
     if demo is not None:
         facts.append(DEMOLITION[demo])
@@ -232,13 +234,15 @@ async def vendor_picks(
 ) -> tuple[CardOut, dict]:
     """업체 고르기 화면과 같은 카드에서 계산 엔진 점수로 3곳(calc.vendor_pick). 사유는 틀 글(표준 대비 % 뗌).
     exclude: 고르지 않을 업체(07 업체가 빠짐: 이미 요청 · 확정한 업체). 이 공사에서 빠진 업체(못 받음 · 무응답 ·
-    멈춤)는 늘 뺀다. 열린 실측 요청 승인 카드에 든 업체는 모델 값에 proposed로 알린다(새로 만들지 않게)."""
+    멈춤)와 이미 실측을 요청해 진행 중인 업체는 늘 뺀다(다시 [실측 요청] 단추로 넣지 않게, 진행 중인 업체는 모델 값
+    note로 알린다). 열린 실측 요청 승인 카드에 든 업체는 모델 값에 proposed로 알린다(새로 만들지 않게)."""
     from app.assistant import aftercare
     from app.assistant import repository as repo
     from app.calc import vendor_pick
     from app.visit import service as visit_service
 
-    exclude = exclude | await aftercare.out_vendors(s, pid, trade)
+    live = {v for _p, t, v in await repo.live_visits(s, [pid]) if t == trade and v is not None}
+    exclude = exclude | live | await aftercare.out_vendors(s, pid, trade)
     opened = [
         a
         for a in await repo.open_on(s, user.id, "project", pid)
@@ -312,12 +316,18 @@ async def vendor_picks(
         ],
         "count": len(picks),
     }
+    notes = []
     if opened:
         names = [x.name for x in picks if x.vendor_id in asked]
-        model["note"] = (
+        notes.append(
             f"{' · '.join(names) or '고른 업체'}에 보낼 실측 요청 승인 카드가 이미 열려 있어요. "
             "새로 만들지 말고 그 카드를 확인하고 눌러 달라고 안내해요."
         )
+    going = sorted(by_id[v].name for v in live if v in by_id)
+    if going:  # 진행 중인 요청은 추천에서 뺐다: 다시 요청하라고 하지 않고 그 진행을 안내한다
+        notes.append(f"{' · '.join(going)}에는 이미 실측을 요청해 진행 중이라 추천에서 뺐어요.")
+    if notes:
+        model["note"] = " ".join(notes)
     return card, model
 
 
@@ -879,6 +889,24 @@ def md_week(d: date) -> str:
 def md_list(days) -> str:
     """'12.24(목) · 12.28(월)'(날마다, 주말 · 휴일을 건너뛴 날이 보이게)."""
     return " · ".join(md_week(d) for d in days)
+
+
+def md_range(start: date, end: date) -> str:
+    """'12.07(월)~12.21(월)': 승인 카드 요약 줄 · 판 글의 기간(짧은 꼴). ISO 날짜를 화면에 그대로 보이지 않는다."""
+    return f"{md_week(start)}~{md_week(end)}"
+
+
+def md_long(d: date) -> str:
+    """'12월 15일(화)': 승인 카드 제목 · 사실 줄처럼 비서도 읽는 날짜 글(긴 꼴). 짧은 꼴 '12.15'는 문장 숫자 검사가
+    한 수(12.15)로 읽어 비서가 '12월 15일'이라고 말하면 그 문장을 버리므로, 비서가 읽는 글은 월 · 일이 따로 보이게 쓴다."""
+    return f"{d.month}월 {d.day}일({WEEK[d.weekday()]})"
+
+
+def long_range(start: date, end: date) -> str:
+    """'12월 1일(화)~4일(금)', 달이 바뀌면 '12월 29일(화)~1월 2일(토)'(긴 꼴 기간)."""
+    if (start.year, start.month) == (end.year, end.month):
+        return f"{md_long(start)}~{end.day}일({WEEK[end.weekday()]})"
+    return f"{md_long(start)}~{md_long(end)}"
 
 
 def day_list(days: list[date]) -> str:
