@@ -11,6 +11,7 @@
 .legend { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--mj-type-label); }
 .legend li { display: flex; align-items: center; gap: 8px; }
 .legend i { flex: none; width: 14px; height: 14px; border-radius: 4px; background: var(--mj-accent-fill); }
+.legend i.self { background: var(--mj-surface-sub); border: 1px dashed var(--mj-line-control); }
 
 .kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; margin: 0; }
 .kv div { display: flex; flex-direction: column; gap: 4px; }

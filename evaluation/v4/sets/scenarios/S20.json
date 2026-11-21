@@ -1,0 +1,200 @@
+{
+ "id": "S20",
+ "title": "반셀프 고객: 살면서 공사 · 주말만 · 반려견, 조명 · 실리콘은 직접",
+ "surface": "customer",
+ "split": "heldout",
+ "tags": [
+  "반셀프",
+  "C7",
+  "C8",
+  "공사 전"
+ ],
+ "persona": {
+  "role": "customer",
+  "who": "살면서 도배하는 고객. 평일은 출근해서 주말만 되고 강아지가 있어요. 조명 교체와 실리콘은 직접 해요",
+  "goal": "주말에 할 수 있는 직접 할 일 날짜와 반려동물 주의를 알고, 공정표에서 직접 할 일을 확인하기",
+  "style": "필요한 것만 물어요.",
+  "knows": {
+   "할 수 있는 날": "평일은 출근해서 주말만 돼요",
+   "반려동물": "강아지가 있어요",
+   "직접 할 일": "조명 교체 · 실리콘(칩으로 골랐어요)"
+  },
+  "approve": [],
+  "reject": [],
+  "never": [
+   "연락처를 말하지 않아요"
+  ],
+  "done_when": "공정표에서 직접 할 일을 보면 끝내요"
+ },
+ "world": {
+  "today": "2026-12-07",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae"
+   ],
+   "grade": "basic",
+   "living": "living",
+   "start_wish": "2026-12-14",
+   "diy": [
+    "light",
+    "silicone"
+   ]
+  },
+  "project": {
+   "stage": "construction"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "phone": "010-3333-4444"
+   }
+  ],
+  "deals": [
+   {
+    "ref": "d_dob",
+    "vendor": "maru",
+    "trade": "dobae",
+    "status": "scheduled",
+    "start": "2026-12-14",
+    "end": "2026-12-16"
+   }
+  ]
+ },
+ "events": [
+  {
+   "id": "e1",
+   "when": {
+    "at_start": true
+   },
+   "do": "clock_tick",
+   "args": {
+    "at": "2026-12-08",
+    "hour": 10
+   },
+   "note": "공사 시작 6일 전 10시: 공사 1주 전 줄(prep_week)에 직접 할 일(조명 · 실리콘) 날짜가 들어가요"
+  }
+ ],
+ "opening": "평일은 출근해서 주말만 돼요. 조명이랑 실리콘은 언제 해요?",
+ "max_turns": 6,
+ "script": {
+  "turns": [
+   {
+    "say": "평일은 출근해서 주말만 돼요. 조명이랑 실리콘은 언제 해요?"
+   },
+   {
+    "say": "강아지가 있는데 실리콘 할 때 조심할 게 있어요?"
+   },
+   {
+    "say": "공사 전에 할 일 알려 줘요."
+   },
+   {
+    "say": "공사 일정 보여 주세요."
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": []
+ },
+ "expected_end": {
+  "deals": [
+   {
+    "vendor": "maru",
+    "trade": "dobae",
+    "status_in": [
+     "scheduled"
+    ],
+    "start": "2026-12-14"
+   }
+  ],
+  "actions": {
+   "never_executed": [
+    "*"
+   ],
+   "none_without_approval": true
+  },
+  "nudges": {
+   "made": [
+    {
+     "trigger": "prep_week",
+     "count": 1
+    }
+   ],
+   "sent": [
+    {
+     "trigger": "prep_week",
+     "count": 1
+    }
+   ]
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "no_text": [
+   "010-5555-0101",
+   "101동",
+   "1203호",
+   "010-3333-4444"
+  ],
+  "max_cost_usd": 0.3,
+  "answer_has": [
+   {
+    "when_said": "주말만",
+    "any": [
+     "조명 교체",
+     "실리콘"
+    ],
+    "regex": "\\d+월 \\d+일\\((토|일)\\)",
+    "why": "주말 · 공휴일만 되는 고객에게 도배 뒤 주말 날짜로 알려요(계산 엔진)"
+   },
+   {
+    "when_said": "강아지",
+    "any": [
+     "반려동물"
+    ],
+    "regex": "굳",
+    "why": "실리콘이 굳는 동안 반려동물이 밟지 않게 하는 주의"
+   },
+   {
+    "when_said": "공사 전에 할 일",
+    "any": [
+     "고객이 직접"
+    ],
+    "regex": "조명 교체|실리콘",
+    "why": "공사 전 할 일 체크 칸에 고른 직접 할 일 날짜가 들어가요"
+   },
+   {
+    "when_said": "공사 일정",
+    "any": [
+     "조명 교체 · 고객이 직접"
+    ],
+    "why": "확정 공정표 카드에 '고객이 직접' 줄(입주 청소 줄과 같은 꼴)"
+   }
+  ]
+ },
+ "judge": [
+  "주말만 되는 고객에게 주말 날짜로 알려 줬나",
+  "반려동물 · 살면서 공사 주의를 말했나",
+  "공정표 · 공사 전 할 일에 직접 할 일을 넣었나",
+  "날짜를 계산 엔진 값으로만 말했나"
+ ],
+ "memo": [
+  "2026-11-21 반셀프 갈래: 무료 모드는 기억을 뽑지 않아서 '주말' · '강아지'는 이번 말에서 읽어요(LLM 모드는 기억 avail_days · pet도 써요). 오늘 할 일(7일 안 마감)은 날짜 옮기기(요일 맞춤 0~6일) 때문에 여기서 재지 않고 backend 시험(test_v4_assistant_diy)이 봐요."
+ ]
+}

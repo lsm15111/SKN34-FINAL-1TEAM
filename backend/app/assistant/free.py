@@ -27,6 +27,7 @@ from app.assistant import policy
 from app.assistant.schemas import CardOut, TodayData
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards
 from app.assistant.tools import aftercare as aftercare_tools
+from app.assistant.tools import diy as diy_tools
 from app.db import SessionLocal
 from app.shared.errors import AppError
 
@@ -751,6 +752,8 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         return MEMORY_SAY, ToolOut(data={})
     if LEGAL_RX.search(text):  # 내용증명 · 소송: 법률 판단은 하지 않는다
         return LEGAL, ToolOut(data={})
+    if (more := await diy_tools.free_answer(tc, text)) is not None:  # 반셀프 직접 할 일 카드
+        return more
     # 업체 이름을 뺀 뒤 공종을 찾는다(업체 이름 속 '마루' · '목공'은 공종 말이 아니에요)
     found = trades_in(without_names(text, await vendor_names(tc)))
     if tc.project_id is None:

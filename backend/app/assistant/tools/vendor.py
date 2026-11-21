@@ -198,6 +198,9 @@ async def brief(
         facts.append(f"공사 시작 희망 {d.work_wish_on.isoformat()}")
     if d.photos:
         facts.append(f"사진 {len(d.photos)}장")
+    from app.assistant.tools import diy as diy_tools  # 반셀프: 요청 때 고정한 '고객이 직접 할 일'
+
+    told = await diy_tools.told_labels(s, visit_id)
     data = VendorBriefData(
         visit_id=visit_id,
         title=" · ".join(
@@ -219,6 +222,7 @@ async def brief(
         windows=windows,
         due_at=d.reply_due_at,
         memo=policy.mask_in(d.message or "") or None,
+        diy=told,
     )
     data.sentence = brief_template(data)
     card = CardOut(
@@ -233,6 +237,7 @@ async def brief(
         "estimate_won": d.estimate_total,
         "due_at": d.reply_due_at,
         "memo": policy.data(d.message),
+        "diy": policy.data("고객이 직접 할 일: " + " · ".join(told)) if told else None,
         "proposed": bool(made),
         # 공정 · 지역이 맞지 않음(무료 모드 답이 쓴다, 허용 칸이 아니라 모델 값에는 안 감)
         "misfit": misfit.label if misfit else None,

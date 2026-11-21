@@ -150,6 +150,8 @@ export type VendorBriefData = {
   memo: string | null;
   /** 문장 하나만 AI(없으면 null) */
   sentence: string | null;
+  /** 고객이 직접 할 일(반셀프 칩 화면 말). 요청 때 고객이 승인해 고정한 사본이에요. 없으면 빈 목록 */
+  diy?: string[];
 };
 export type QuoteChecklistData = {
   visit_id: string;

@@ -592,7 +592,8 @@ async def _visit_request(
         wish_start=date.fromisoformat(pl["wish_start"]),
         wish_end=date.fromisoformat(pl["wish_end"]),
     )
-    got = await flow.request(s, user, p.id, body, now)
+    # 승인 카드의 '업체에 알릴 것'(고객이 직접 할 일)을 요청에 고정한다(반셀프, tools.diy.offer_part)
+    got = await flow.request(s, user, p.id, body, now, diy=pl.get("diy"))
     if got.failed:  # 일부만 보냈으면 결과 글을 실제 수로 고친다(이미 실행됨)
         text = f"{len(got.created)}곳에 보냈어요 · {len(got.failed)}곳은 보내지 못했어요"
         await repo.set_action(

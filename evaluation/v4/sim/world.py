@@ -238,12 +238,29 @@ class World:
             self.note("공사 시작 희망일이 맞지 않아 비우고 만들었어요")
             r = self.api.post("/projects", json=project)
         pid = self.need(r, "공사 만들기")["id"]
+        if home.get("diy") is not None:  # 반셀프 직접 할 일 칩(기본 정보 갈래의 칩 화면 대신)
+            self.set_chips(pid, home["diy"])
         if "mokgong" in (home.get("trades") or []) or home.get("mokgong"):
             self.note("v3 집 정보는 도배만이라 목공 공정은 공사에 넣지 못했어요")
         got = {"ref": ref, "email": email, "token": token, "id": str(self._uid(email)), "pid": pid,
                "gu": project["sgg"]}  # fmt: skip
         self.customers[ref] = got
         return got
+
+    def set_chips(self, pid: str, keys: list[str]) -> None:
+        """반셀프 직접 할 일 칩을 저장 약속(project.diy.set_diy)으로 넣어요. 빈 목록은 '없어요'예요."""
+        from app.db import SessionLocal
+        from app.project.diy import set_diy
+
+        if self.call is None:
+            raise SeedError("직접 할 일 칩은 앱 루프가 있어야 심을 수 있어요")
+
+        async def go():
+            async with SessionLocal() as s:
+                await set_diy(s, uuid.UUID(pid), list(keys))
+                await s.commit()
+
+        self.call(go)
 
     # ---- 실측 ----
 
@@ -792,7 +809,7 @@ class World:
         pids = [uuid.UUID(c["pid"]) for c in self.customers.values()]
         vmap = {v["id"]: ref for ref, v in self.vendors.items()}
         visits = self.q(
-            "select trade, status, vendor_id, decline_code from visits"
+            "select trade, status, vendor_id, decline_code, diy from visits"
             " where project_id = any($1::uuid[])",
             pids,
         )
@@ -824,6 +841,7 @@ class World:
                     "status": r["status"],
                     "vendor": vmap.get(str(r["vendor_id"])),
                     "decline_code": r["decline_code"],
+                    "diy": list(r["diy"] or []),
                 }
                 for r in visits
             ],

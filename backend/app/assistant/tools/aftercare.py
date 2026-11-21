@@ -104,8 +104,11 @@ async def deal_of(s: AsyncSession, user: User, pid: uuid.UUID, deal_id: uuid.UUI
 # ---- 카드 ----
 
 
-def check_card(card_id: str, stage: str, trades: list[str], lines: list[str]) -> CardOut:
-    """공사 전 할 일(before) · 공사 끝 점검표(after): knowledge 카드의 체크 칸(공정 설정 값, 정해 둔 글)."""
+def check_card(
+    card_id: str, stage: str, trades: list[str], lines: list[str], extra: list[str] | None = None
+) -> CardOut:
+    """공사 전 할 일(before) · 공사 끝 점검표(after): knowledge 카드의 체크 칸(공정 설정 값, 정해 둔 글).
+    extra는 공정 설정 뒤에 더할 체크 칸(반셀프 직접 할 일, tools.diy.prep_part)이에요."""
     from app.agent.v3.trades import BY_CODE, CHECK_NOTE, CHECK_SOURCE
 
     codes = [c for c in dict.fromkeys(trades) if c in BY_CODE and c != "common"] or ["dobae"]
@@ -126,7 +129,8 @@ def check_card(card_id: str, stage: str, trades: list[str], lines: list[str]) ->
         lines=[*lines, *tail],
         source=source,
         checklist=[
-            CheckItem(key=f"{stage}{i}", label=x) for i, x in enumerate(dict.fromkeys(items), 1)
+            CheckItem(key=f"{stage}{i}", label=x)
+            for i, x in enumerate(dict.fromkeys([*items, *(extra or ())]), 1)
         ],
     )
     return CardOut(card_id=card_id, kind="knowledge", data=data.model_dump(mode="json"))
@@ -153,7 +157,10 @@ async def prep_card(s: AsyncSession, user: User, pid: uuid.UUID, today: date) ->
     ]
     lines = [f"{trade_ko(d.trade)} 공사가 {ko_day(d.start_date)}에 시작해요." for d in dated[:2]]
     trades = [d.trade for d in dated] or [t.deal.trade for t in sch.trades]
-    return check_card(f"before-{pid}", "before", trades, lines)
+    from app.assistant.tools import diy as diy_tools  # 반셀프: 고른 직접 할 일의 마감 · 시작
+
+    more, extra = await diy_tools.prep_part(s, user, pid, today)
+    return check_card(f"before-{pid}", "before", trades, [*lines, *more], extra)
 
 
 def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
@@ -276,6 +283,7 @@ async def out_offer(
     s: AsyncSession, user: User, pid: uuid.UUID, v, card: CardOut, today: date, now: datetime
 ) -> dict:
     """첫 추천 업체에 실측 요청(visit_request). 희망 기간은 빠진 요청의 기간(지난 날은 빼고, 다 지났으면 믿집 초안)."""
+    from app.assistant.tools import diy as diy_tools
     from app.calc import slots
     from app.calc.visit_view import again_wish
     from app.project import service as project_service
@@ -283,6 +291,7 @@ async def out_offer(
 
     pick = card.data["picks"][0]
     p = await project_service.get_for(s, user, pid)
+    told, diy_keys = await diy_tools.offer_part(s, user.id, pid)  # 반셀프: 업체에 알릴 것
     same = v.wish_start is not None and v.wish_end is not None and v.wish_end > today
     if same:
         start, end = again_wish(v.wish_start, v.wish_end, today)
@@ -301,7 +310,11 @@ async def out_offer(
     summary = ActionSummary(
         title="실측 요청 보내기",
         amounts=[AmountRow(label=pick["name"], won=pick["estimate_won"])],
-        rows=[period, SummaryRow(label="가견적", value="업체가 확인한 단가로 고정돼요")],
+        rows=[
+            period,
+            SummaryRow(label="가견적", value="업체가 확인한 단가로 고정돼요"),
+            *([told] if told else []),
+        ],
         note="업체가 48시간 안에 갈 수 있는 기간을 답해요. 연락은 믿집 채팅으로 이어져요",
         approve_label="1곳에 요청 보내기",
     )
@@ -315,6 +328,7 @@ async def out_offer(
             "vendor_ids": [str(pick["vendor_id"])],
             "wish_start": start.isoformat(),
             "wish_end": end.isoformat(),
+            **({"diy": diy_keys} if diy_keys else {}),
         },
         "summary": summary,
         "expires_at": now + TTL,
@@ -594,9 +608,16 @@ class CheckListIn(BaseModel):
     ),
 )
 async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
+    from app.assistant.tools import diy as diy_tools
+
     pid = pid_of(tc)
     async with SessionLocal() as s:
         sch = await _schedule(s, tc.user, pid, tc.today)
+        more, extra = (  # 공사 전 할 일에는 반셀프 직접 할 일의 마감 · 시작도 넣어요
+            await diy_tools.prep_part(s, tc.user, pid, tc.today)
+            if a.stage == "before"
+            else ([], [])
+        )
     deals: list[dict] = []
     lines: list[str] = []
     for t in sch.trades:
@@ -620,7 +641,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
         elif a.stage == "before" and d.status == "scheduled" and d.start_date:
             if d.start_date > tc.today:
                 lines.append(f"{trade_ko(d.trade)} 공사가 {ko_day(d.start_date)}에 시작해요.")
-    card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], lines)
+    card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra)
     model = {
         "title": card.data["title"],
         "stage": a.stage,

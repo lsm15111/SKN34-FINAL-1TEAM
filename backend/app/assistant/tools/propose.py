@@ -290,6 +290,7 @@ class VisitReqIn(BaseModel):
     ),
 )
 async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
+    from app.assistant.tools import diy as diy_tools
     from app.calc import slots
     from app.project import service as project_service
     from app.visit import service as visit_service
@@ -300,6 +301,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     async with SessionLocal() as s:
         p = await project_service.get_for(s, tc.user, pid)
         lst = await visit_service.vendors_for(s, tc.user, pid, a.trade)
+        told, diy_keys = await diy_tools.offer_part(s, tc.user.id, pid)  # 반셀프: 업체에 알릴 것
     cards_by_id = {str(c.vendor_id): c for c in (*lst.local, *lst.nearby)}
     rows = []
     for vid in picked:
@@ -323,6 +325,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         rows=[
             SummaryRow(label="희망 기간", value=f"{start.isoformat()} ~ {end.isoformat()}"),
             SummaryRow(label="가견적", value="업체가 확인한 단가로 고정돼요"),
+            *([told] if told else []),
         ],
         note="업체마다 48시간 안에 갈 수 있는 기간을 답해요. 연락은 믿집 채팅으로 이어져요",
         approve_label=f"{len(rows)}곳에 요청 보내기",
@@ -338,6 +341,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
             "vendor_ids": [str(c.vendor_id) for c in rows],
             "wish_start": start.isoformat(),
             "wish_end": end.isoformat(),
+            **({"diy": diy_keys} if diy_keys else {}),
         },
         summary=summary,
         expires_at=tc.now + timedelta(days=3),

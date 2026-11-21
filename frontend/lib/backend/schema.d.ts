@@ -11427,6 +11427,12 @@ export interface components {
              * @description AI 문장 하나(없으면 비움)
              */
             sentence?: string | null;
+            /**
+             * Diy
+             * @description 고객이 직접 할 일(반셀프 칩 화면 말, 요청 때 고객이 승인해 고정한 사본 · 자료)
+             * @default []
+             */
+            diy: string[];
         };
         /**
          * VendorCardOut

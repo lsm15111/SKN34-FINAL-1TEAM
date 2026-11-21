@@ -134,6 +134,7 @@ def view_of(action: dict, payload: dict | None, extra: dict | None = None) -> di
         "code": p.get("code"),
         "start": p.get("start") or (days[0] if days else None),
         "end": p.get("end") or (days[-1] if days else None),
+        "diy": p.get("diy") or [],  # 실측 요청 카드의 '업체에 알릴 것'(반셀프 직접 할 일 키)
     }
     v.update(extra or {})
     return v
@@ -275,6 +276,8 @@ def _deal_extra(e: dict, r: dict) -> bool:
 
 
 def _visit_extra(e: dict, r: dict) -> bool:
+    if "diy" in e and sorted(r.get("diy") or []) != sorted(e["diy"]):
+        return False
     return e.get("decline_code") is None or r.get("decline_code") == e["decline_code"]
 
 
