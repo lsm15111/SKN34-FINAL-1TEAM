@@ -242,6 +242,15 @@ class ScheduleData(BaseModel):
     vendor_note: str | None = Field(
         default=None, description=VENDOR_NOTE_DESC + " (날짜를 바꾼 까닭)"
     )
+    proposal_ref: str | None = Field(
+        default=None,
+        description="수락 기다리는 공사 날짜 제안 이름표(p…, phase dates일 때). "
+        "[이 날짜로 수락]은 choice '<proposal_kind>:<proposal_ref>'",
+    )
+    proposal_kind: Literal["dates_accept", "delay_accept"] | None = Field(
+        default=None,
+        description="처음 올린 날짜면 dates_accept, 수락한 뒤 바뀐 날짜면 delay_accept",
+    )
 
 
 class CheckItem(BaseModel):

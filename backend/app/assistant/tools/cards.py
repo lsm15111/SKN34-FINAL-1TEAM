@@ -557,6 +557,8 @@ async def schedule(
                     plan_version=sch.final_version,
                     href=href(pid, "/schedule"),
                     vendor_note=policy.vendor_note(x.reason),
+                    proposal_ref=pref,
+                    proposal_kind="delay_accept" if kind == "delay" else "dates_accept",
                 )
                 card = CardOut(
                     card_id=f"dates-{x.id}",

@@ -2,6 +2,7 @@
 제안 이름표와 [이 날짜로 수락] · 기억을 어디서 보고 지우는지 정해 둔 안내 · 실측 반나절 후보마다 다른 사실 이유 ·
 업체 견적서 체크리스트 줄 이름(고객 화면과 같은 말) · 공사 단계에 맞는 칩. 유료 호출 0회(LLM 꺼짐 = 무료 모드)."""
 
+import re
 import uuid
 from datetime import datetime, time
 
@@ -12,8 +13,11 @@ from app.agent import llm
 from app.assistant import free
 from app.shared.clock import SEOUL, today_seoul
 from tests.conftest import query
+from tests.helpers import use
+from tests.test_dates import days, propose
+from tests.test_dates import ready as dates_ready
 from tests.test_deal import setup as deal_setup
-from tests.test_v4_assistant_actions import acts
+from tests.test_v4_assistant_actions import acts, approve
 from tests.test_v4_assistant_free import cards_of, said
 from tests.test_v4_assistant_turns import ask, home, ok
 
@@ -65,6 +69,36 @@ def test_vendor_name_is_not_read_as_a_trade(api):
     # 업체 이름이 아닌 다른 공사 말은 그대로 '아직 도배 업체만'
     ev = ok(ask(api, pid, "바닥 업체 추천해 줘"))
     assert said(ev).startswith(free.OTHER_TRADE)
+
+
+# ---- 공사 날짜 카드 제안 이름표 · 수락 단추 ----
+
+
+def test_schedule_card_has_proposal_ref_and_accept_choice(api):
+    customer_token, pid, did, _ = dates_ready(api)
+    start, end = days(10)
+    assert propose(api, did, start, end).status_code == 200
+    use(api, customer_token)
+    ev = ok(ask(api, pid, "공사 날짜 보여 줘"))
+    (card,) = cards_of(ev, "schedule")
+    d = card["data"]
+    assert d["phase"] == "dates" and d["proposal_kind"] == "dates_accept"
+    assert re.fullmatch(r"p\d+", d["proposal_ref"])
+    choice = f"{d['proposal_kind']}:{d['proposal_ref']}"
+    ev = ok(
+        ask(
+            api, pid, "이 날짜로 수락할래요", context={"card_id": card["card_id"], "choice": choice}
+        )
+    )
+    (a,) = proposed(ev)
+    assert a["kind"] == "dates_accept"
+    assert approve(api, a["action_id"]).json()["status"] == "executed"
+    assert query("select status from deals")[0]["status"] == "scheduled"
+    # 확정 공정표 카드는 수락할 날짜가 없어 이름표도 없다
+    ev = ok(ask(api, pid, "공사 날짜 보여 줘"))
+    (card,) = cards_of(ev, "schedule")
+    assert card["data"]["phase"] == "final"
+    assert card["data"]["proposal_ref"] is None and card["data"]["proposal_kind"] is None
 
 
 # ---- 기억은 어디서 보고 지워요 ----
