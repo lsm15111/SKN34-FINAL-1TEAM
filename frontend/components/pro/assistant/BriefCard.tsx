@@ -106,11 +106,16 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
       {!compact ? (
         <>
           <p className={p.secT}>내 빈 반나절</p>
-          <div className={p.slots} role="img" aria-label={`${rangeText(days[0].day, days[days.length - 1].day)} 내 반나절: 빈 칸 ${d.halves.open_count}개`}>
-            <span />
-            {days.map((x) => { const w = dayParts(x.day); return <span key={x.day} className={x.off ? `${p.h} ${p.off}` : p.h}><b className={k.num}>{w.d}</b>{w.w}</span>; })}
-            {(["am", "pm"] as const).map((h) => (
-              <Half key={h} h={h} days={days} taken={d.halves.taken} />
+          {/* 2주까지 와요: 7일씩 끊어 주마다 날짜 머리 · 오전 · 오후 줄을 따로 그려요(칸이 머리와 같은 열에 서요) */}
+          <div className={p.weeks} role="img" aria-label={`${rangeText(days[0].day, days[days.length - 1].day)} 내 반나절: 빈 칸 ${d.halves.open_count}개`}>
+            {weeksOf(days).map((wk) => (
+              <div key={wk[0].day} className={p.slots}>
+                <span className={p.lab} />
+                {wk.map((x) => { const w = dayParts(x.day); return <span key={x.day} className={x.off ? `${p.h} ${p.off}` : p.h}><b className={k.num}>{w.d}</b>{w.w}</span>; })}
+                {(["am", "pm"] as const).map((h) => (
+                  <Half key={h} h={h} days={wk} taken={d.halves.taken} />
+                ))}
+              </div>
             ))}
           </div>
           <p className={p.legend}><span><i />고객이 고를 칸</span><span><i className={p.t} />잡힌 일</span></p>
@@ -139,6 +144,13 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
       ) : null}
     </section>
   );
+}
+
+/** 반나절 칸 날짜를 7일씩(한 주 한 덩어리) */
+function weeksOf<T>(days: T[]): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < days.length; i += 7) out.push(days.slice(i, i + 7));
+  return out;
 }
 
 function Half({ h, days, taken }: { h: "am" | "pm"; days: VendorBriefData["halves"]["days"]; taken: Record<string, string> }) {

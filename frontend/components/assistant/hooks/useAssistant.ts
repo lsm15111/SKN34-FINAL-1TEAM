@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth, getLatestThread,
   getMemory, getToday, kindsForWrite, listActions, newClientKey, openNudge as openApi, rejectAction, replaceAction, resetMock, resetTurn,
-  seqFilter, streamTurn, subscribeTurns,
+  seqFilter, settledNudges, streamTurn, subscribeTurns,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -362,6 +362,12 @@ export function useAssistant(projectId: string) {
   const actionOf = useCallback((id: string): ActionOut | null =>
     actionsIn(items).find((x) => x.action_id === id) ?? open.find((x) => x.action_id === id) ?? null, [items, open]);
 
+  /** 숨길 먼저 말 건 줄: 닫은 것 + 그 줄의 승인 카드(같은 대상)를 실행 · 처리한 것. 서버가 정리하기 전에도 바로 닫아요 */
+  const shut = useMemo<Record<string, true>>(() => {
+    const ids = settledNudges(items, handled);
+    return ids.length ? { ...gone, ...Object.fromEntries(ids.map((x) => [x, true as const])) } : gone;
+  }, [items, handled, gone]);
+
   /** 보이는 대화: 기록 + 오늘 정할 일(그날 첫 비서 말 자리, 그날 카드가 기록에 없을 때) + (기록에 없는) 열린 대기 행동 */
   const view = useMemo<FeedItem[]>(() => {
     const out: FeedItem[] = [...items];
@@ -380,7 +386,7 @@ export function useAssistant(projectId: string) {
   }, [items, open, today, todayAt, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone, fresh,
+    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone: shut, fresh,
     hasOlder: !!before, olderBusy, loadOlder,
     send, approve, reject, openNudge, dismissNudge, forget, reset, reload: load, actionOf,
   };

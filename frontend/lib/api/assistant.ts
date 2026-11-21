@@ -427,6 +427,27 @@ export function actionsIn(items: FeedItem[]): ActionOut[] {
   return [...out.values()];
 }
 
+/**
+ * 할 일을 마친 먼저 말 건 줄(nudge_id): 그 줄에 달린 승인 카드가 실행됐거나, 화면 v3 단추로 처리됐거나(handled · handled_elsewhere),
+ * 같은 대상의 새 카드로 바뀐(replaced) 뒤 그 뒤 대화에서 같은 종류 행동이 실행됐으면요. 화면은 그 줄의 제안을 바로 닫아요.
+ * 서버 줄은 정리 전까지 그대로 와서 그릴 때마다 다시 봐요.
+ */
+export function settledNudges(items: FeedItem[], handled: Record<string, true>): string[] {
+  const out: string[] = [];
+  items.forEach((it, i) => {
+    if (it.role !== "assistant" || !it.nudge_id) return;
+    const later = (kind: ActionKind) =>
+      items.slice(i + 1).some((x) => x.role === "assistant" && x.parts.some((p) => p.t === "action" && p.action.kind === kind && p.action.status === "executed"));
+    const done = it.parts.some((p) => p.t === "action" && (
+      p.action.status === "executed"
+      || !!handled[p.action.action_id]
+      || (p.action.status === "expired" && (p.action.error_code === "handled_elsewhere" || (p.action.error_code === "replaced" && later(p.action.kind))))
+    ));
+    if (done) out.push(it.nudge_id);
+  });
+  return out;
+}
+
 /** 대화에서 가장 나중에 그려진 그 kind 카드(test를 주면 맞는 것만). 없으면 null */
 export function lastCardIn<K extends CardKind>(items: FeedItem[], kind: K, test?: (c: CardOut<K>) => boolean): CardOut<K> | null {
   for (let i = items.length - 1; i >= 0; i--) {
