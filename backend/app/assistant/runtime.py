@@ -113,7 +113,10 @@ class RefTable:
     - 턴 · 먼저 말 걸기 · 업체 브리핑(REST)이 한 대화의 표를 같이 쓴다. 번호는 머리글자마다 쓴 가장 큰 번호(top,
       REF_NUM_TTL) 다음부터라 표가 지워지거나 오래된 것을 버려도 같은 이름이 다른 대상을 가리키지 않는다.
     - 저장은 Redis 표와 합친다(WATCH). 두 곳이 같은 번호를 다른 대상에 썼으면 그 이름을 버리고(dead) 다시 살리지
-      않는다: 그 이름의 단추는 모르는 이름표가 되어 카드를 새로 불러온다(엉뚱한 대상으로 가지 않게)."""
+      않는다: 그 이름의 단추는 모르는 이름표가 되어 카드를 새로 불러온다(엉뚱한 대상으로 가지 않게).
+    - Redis는 지워져도 되는 값이라 번호는 DB(assistant_ref_tops)에도 늘기만 하게 둔다. 표 · 번호 기록이 모두 지워진
+      뒤 새로 만든 번호(fresh)가 DB 번호보다 크지 않으면 그 이름은 저장할 때 버린다(지난 카드의 같은 이름이 다른
+      대상일 수 있다). 다음 표는 DB 번호 다음부터 매긴다."""
 
     PREFIX: ClassVar[dict[str, str]] = {
         "vendor": "v", "visit": "m", "wish": "r", "slot": "s", "window": "w",
@@ -144,6 +147,7 @@ class RefTable:
         }
         self.top: dict[str, int] = dict(top or {})  # 머리글자마다 쓴 가장 큰 번호
         self.touched: set[str] = set()  # 이 표에서 넣거나 고친 이름(저장할 때 우리 값이 이긴다)
+        self.fresh: set[str] = set()  # 이 표가 새 번호로 만든 이름(저장할 때 DB 번호와 견준다)
 
     @classmethod
     def ident(cls, it: dict) -> tuple:
@@ -166,6 +170,7 @@ class RefTable:
             self.items.pop(next(iter(self.items)))
         self.items[ref] = {**value, "kind": kind}  # 값의 칸이 종류 이름을 덮지 않게
         self.touched.add(ref)
+        self.fresh.add(ref)
         return ref
 
     def get(self, ref: str | None, kind: str) -> dict:
@@ -198,8 +203,13 @@ class RefTable:
         meta = _json_dict(num)
         return cls(chat_id, _json_dict(raw), meta.get("top") or {}, set(meta.get("dead") or ()))
 
-    def merged(self, theirs: dict, meta: dict) -> tuple[dict, dict]:
-        """Redis에 있는 표(theirs) · 번호 기록(meta)과 이 표를 합친다. (새 표, 새 번호 기록)"""
+    def merged(
+        self, theirs: dict, meta: dict, durable: dict[str, int] | None = None
+    ) -> tuple[dict, dict]:
+        """Redis에 있는 표(theirs) · 번호 기록(meta)과 이 표를 합친다. (새 표, 새 번호 기록)
+        durable(DB에 남은 번호, 이 표가 올리기 전)보다 크지 않은 새 번호가 Redis에 없으면 버린다(표가 지워진 뒤 다시
+        쓴 번호)."""
+        durable = durable or {}
         dead = set(meta.get("dead") or ()) | self.dead
         out = {
             r: it
@@ -214,18 +224,59 @@ class RefTable:
                 out.pop(ref)  # 같은 번호를 다른 대상에 썼다(동시에 만든 표): 둘 다 모르는 이름표로
                 dead.add(ref)
                 continue
+            if old is None and ref in self.fresh and int(ref[1:]) <= durable.get(ref[0], 0):
+                dead.add(ref)  # 지난 카드의 같은 이름이 다른 대상일 수 있다: 모르는 이름표로
+                continue
             if old is None or ref in self.touched:
                 out[ref] = it
         while len(out) > self.MAX:
             out.pop(next(iter(out)))
         top = {str(p): int(n) for p, n in (meta.get("top") or {}).items()}
-        for p, n in self.top.items():
+        for p, n in [*self.top.items(), *durable.items()]:
             top[p] = max(top.get(p, 0), n)
         return out, {"top": top, "dead": sorted(dead)[-REF_DEAD_MAX:]}
 
+    async def _durable(self) -> dict[str, int]:
+        """DB에 남긴 번호(머리글자 → 가장 큰 번호)를 읽고 이 표의 번호로 올린다(늘기만). 돌려주는 값: 올리기 전 번호.
+        DB를 못 쓰면 {}(Redis만으로 합친다)."""
+        from sqlalchemy import func, select
+        from sqlalchemy.dialects.postgresql import insert
+
+        from app.assistant.models import AssistantRefTop
+        from app.db import SessionLocal
+
+        try:
+            async with SessionLocal() as s:
+                rows = await s.execute(
+                    select(AssistantRefTop.prefix, AssistantRefTop.top).where(
+                        AssistantRefTop.chat_id == self.chat_id
+                    )
+                )
+                before = {str(p): int(n) for p, n in rows.all()}
+                want = [
+                    {"chat_id": self.chat_id, "prefix": p, "top": n}
+                    for p, n in self.top.items()
+                    if n > before.get(p, 0)
+                ]
+                if want:
+                    stmt = insert(AssistantRefTop).values(want)
+                    await s.execute(
+                        stmt.on_conflict_do_update(
+                            index_elements=["chat_id", "prefix"],
+                            set_={"top": func.greatest(AssistantRefTop.top, stmt.excluded.top)},
+                        )
+                    )
+                    await s.commit()
+        except Exception as e:  # noqa: BLE001 - 번호 기록 실패는 Redis만으로 합친다(종류 이름만 로그)
+            log.warning("비서 이름표 번호 저장 실패 (%s)", type(e).__name__)
+            return {}
+        return before
+
     async def save(self) -> None:
+        """Redis 표와 합쳐 저장한다. 이 표가 새 번호를 썼으면 먼저 DB 번호를 올리고 그 앞 번호로 견준다(merged)."""
         from redis.exceptions import WatchError
 
+        durable = await self._durable() if self.fresh else {}
         key, num_key = self._key(self.chat_id), self._num_key(self.chat_id)
         try:
             async with queue.redis.pipeline(transaction=True) as pipe:
@@ -233,11 +284,12 @@ class RefTable:
                     try:
                         await pipe.watch(key, num_key)
                         raw, num = await pipe.mget(key, num_key)
-                        items, meta = self.merged(_json_dict(raw), _json_dict(num))
+                        items, meta = self.merged(_json_dict(raw), _json_dict(num), durable)
                         pipe.multi()
                         pipe.set(key, json.dumps(items, ensure_ascii=False), ex=REF_TTL)
                         pipe.set(num_key, json.dumps(meta), ex=REF_NUM_TTL)
                         await pipe.execute()
+                        self.fresh.clear()  # 저장했다: 다시 저장할 때는 Redis 값과 견준다
                         return
                     except WatchError:
                         continue  # 그사이 다른 곳이 저장했다: 다시 읽어 합친다
@@ -1016,4 +1068,6 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
         names = dict.fromkeys(CARD_NAME.get(c["kind"], "카드") for c in res.cards)
         res.text = f"{CARDS_ONLY}: " + " · ".join(names) + ")"
     res.chips = chips_for(res.cards)
+    # 이 턴 카드의 이름표를 저장 전에 남긴다(턴 저장이 409로 실패해도 기록에 남는 카드 단추가 같은 대상을 가리키게)
+    await ctx.refs.save()
     return res
