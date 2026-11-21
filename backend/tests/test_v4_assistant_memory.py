@@ -88,6 +88,45 @@ def test_validate_shrinks_a_risky_quote_to_the_value():
     assert got.evidence_quote == "빨리 끝나는 게 제일 중요"
 
 
+@pytest.mark.parametrize(
+    ("key", "value", "quote", "want"),
+    [
+        ("avail_days", "주말에만 시간 가능", "저는 주말에만 시간이 돼요", "주말에만"),
+        ("avail_days", "주말만 가능", "평일 저녁은 안 되고 주말만 돼요", "주말만"),
+        (
+            "avail_half",
+            "평일 오후 · 토요일 오전",
+            "평일 오후랑 토요일 오전만 돼요",
+            "평일 오후 · 토요일 오전",
+        ),
+        ("diy", "장판 직접 깔기", "장판은 제가 직접 깔려고요", "장판 직접 깔기"),
+        ("diy", "페인트 직접 칠함", "페인트는 제가 직접 칠할 거예요", "페인트 직접 칠함"),
+        ("diy", "콘센트 커버 바꿈", "콘센트 커버는 제가 바꾸려고 해요", "콘센트 커버 바꿈"),
+        (
+            "diy",
+            "콘센트 따로 전기 기사",
+            "콘센트 옮기는 건 제가 따로 전기 기사를 부르려고요",
+            "콘센트 따로 전기 기사",
+        ),
+    ],
+)
+def test_validate_keeps_reworded_value_made_of_user_words(key, value, quote, want):
+    """Haiku가 바꿔 쓴 값도 낱말이 모두 고객 말에 있으면 받고 붙인 말('가능')은 뺀다(LLM 흐름에서 0줄이던 것)."""
+    (got,) = memory.validate([it(key, value, quote)], quote)
+    assert (got.value, got.evidence_quote) == (want, quote)
+
+
+def test_validate_drops_reworded_value_with_words_user_did_not_say():
+    q = "강아지도 한 마리 있어요"
+    assert memory.validate([it("pet", "고양이 두 마리", q)], q) == []
+    long_q = "주말에만 시간이 돼요. " + "가" * 200  # 바꿔 쓴 값은 긴 인용을 값으로 줄이지 않는다
+    assert memory.validate([it("avail_days", "주말 가능", long_q)], long_q) == []
+
+
+def test_wants_words_for_work_done_outside():
+    assert memory.wants("콘센트 옮기는 건 제가 따로 전기 기사를 부르려고요")
+
+
 def test_wants_only_memory_words():
     assert (
         memory.wants(SAID) and memory.wants("반려견이 있어요") and memory.wants("셀프로 칠할래요")
