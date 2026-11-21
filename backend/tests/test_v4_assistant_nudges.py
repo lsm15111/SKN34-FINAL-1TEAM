@@ -328,11 +328,12 @@ def test_cap_mute_and_low_score_with_fixed_clock(api, monkeypatch):
     run(api, proactive.evaluate_due, at(9, 1))
     row = nudges(id=capped)[0]
     assert (row["status"], row["reason"]) == ("held", "mute")
-    # 점수 40 미만은 기록만(읽은 알림 −30 · 24시간 안 보낸 2번 −40)
+    # 점수 40 미만은 기록만(읽은 알림 −30 · 24시간 안 보낸 2번 −40). 무응답 다시 알림(':notify')이라
+    # 감점을 받는다. 업체가 한 일로 생긴 첫 알림은 24시간 감점이 없다(test_v4_assistant_nudge_events, QA r2)
     query("update assistant_nudges set status = 'expired' where status = 'dismissed'")
     query("update notifications set read_at = now()")
     low = add_nudge(
-        uid, channel="feed", ref=ref, project_id=pid, dedup_key=n["dedup_key"] + ":again"
+        uid, channel="feed", ref=ref, project_id=pid, dedup_key=n["dedup_key"] + ":notify"
     )
     run(api, proactive.evaluate_due, noon)
     row = nudges(id=low)[0]

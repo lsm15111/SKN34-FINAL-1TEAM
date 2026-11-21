@@ -217,6 +217,14 @@ def score(f: Facts) -> int:
     return max(0, min(100, s))
 
 
+def fresh_event(t: Trigger, n: AssistantNudge) -> bool:
+    """업체 · 고객이 한 일로 생긴 첫 알림인지(아웃박스 kind가 있는 트리거, 무응답 다시 알림 ':notify'가 아님).
+
+    새 소식이라 24시간 감점을 받지 않는다(QA r2 c1 · c2 · x1: 견적서 · 추가 금액 알림이 앞서 보낸 줄 감점으로
+    보류됨). 하루 상한 · 밤 미룸은 그대로 지킨다(고정 선 6)."""
+    return bool(t.kinds) and not n.dedup_key.endswith(":notify")
+
+
 class JudgeOut(BaseModel):
     send: bool
 
@@ -865,7 +873,7 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         action_ready=t.action,
         decision=t.decision,
         read=c.read,
-        sent_24h=sent_24h,
+        sent_24h=0 if fresh_event(t, n) else sent_24h,
         dismissed_same=any(d.trigger == t.name and now - d.at < SNOOZE_SEEN for d in dismissals),
         names=c.names,
     )

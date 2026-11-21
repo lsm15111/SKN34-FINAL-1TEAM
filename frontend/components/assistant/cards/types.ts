@@ -21,6 +21,8 @@ export type CardCtx = {
   /** 대화에서 가장 나중의 그 kind 카드 · 그 종류 행동(test를 주면 맞는 것만, 없으면 null) */
   lastCard: <K extends CardKind>(kind: K, test?: (c: CardOut<K>) => boolean) => CardOut<K> | null;
   lastAction: (kind: ActionKind, test?: (a: ActionOut) => boolean) => ActionOut | null;
+  /** 대화 기록을 다시 읽어요(조사 카드가 끝난 것을 보면 결과 줄이 보이게) */
+  reload?: () => void;
 };
 
 export type CardProps<K extends CardKind> = { card: CardOut<K>; ctx: CardCtx; old: boolean };

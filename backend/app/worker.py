@@ -20,9 +20,11 @@ from typing import ClassVar
 
 from arq import cron
 from arq.connections import RedisSettings
+from arq.worker import func
 
 from app import demo
 from app.assistant import jobs as assistant_jobs
+from app.assistant import research as assistant_research
 from app.assistant import service as assistant_service
 from app.config import settings
 from app.db import SessionLocal
@@ -42,6 +44,7 @@ log = logging.getLogger(__name__)
 # kind → 처리 함수 (jobs.models.KINDS). 기능마다 자기 jobs.py의 HANDLERS에 넣고 여기서 모은다
 JOB_HANDLERS: dict[str, JobHandler] = {
     **assistant_jobs.HANDLERS,
+    **assistant_research.HANDLERS,
     **quote_jobs.HANDLERS,
     **schedule_jobs.HANDLERS,
     **visit_jobs.HANDLERS,
@@ -139,7 +142,11 @@ def demo_on() -> bool:
 
 
 class WorkerSettings:
-    functions: ClassVar[list] = [ping]
+    functions: ClassVar[list] = [
+        ping,
+        # 조사 담당(09): 비서가 맡긴 웹 조사 하나(4분 상한 + 여유, 다시 하지 않음 · 멈춘 조사는 jobs 감시가 닫음)
+        func(assistant_research.run_job, name=assistant_research.JOB_FN, timeout=300, max_tries=1),
+    ]
     cron_jobs: ClassVar[list] = [
         cron(assistant_sweep, minute=set(range(0, 60, 2)), second=30, unique=True, timeout=60),
         cron(assistant_hourly, minute=5, second=15, unique=True, timeout=60),

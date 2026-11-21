@@ -344,6 +344,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/assistant/research/{research_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 조사 하나(진행 · 결과) */
+        get: operations["research_detail_assistant_research__research_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/assistant/research/{research_id}/stop": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 조사 멈추기(그때까지 찾은 것으로 끝냄) */
+        post: operations["research_stop_assistant_research__research_id__stop_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/vendor/assistant/turns": {
         parameters: {
             query?: never;
@@ -3819,7 +3853,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice";
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "research";
             /** Data */
             data: {
                 [key: string]: unknown;
@@ -7863,6 +7897,113 @@ export interface components {
              * @description 연락할 때 보낼 문구 (문자 · 카카오톡에 붙여 넣는다)
              */
             text: string;
+        };
+        /** ResearchCheck */
+        ResearchCheck: {
+            /** Label */
+            label: string;
+            /** Href */
+            href: string;
+        };
+        /**
+         * ResearchData
+         * @description 조사 카드(kind research) · GET /assistant/research/{id}.
+         *
+         *     phase progress는 진행 카드(화면이 started_at으로 경과 시간을 세고 몇 초마다 다시 읽음), result는 결과 카드.
+         */
+        ResearchData: {
+            /**
+             * Research Id
+             * Format: uuid
+             */
+            research_id: string;
+            /**
+             * Phase
+             * @default progress
+             * @enum {string}
+             */
+            phase: "progress" | "result";
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "outside_vendors" | "materials" | "general";
+            /** Title */
+            title: string;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "queued" | "running" | "done" | "failed" | "stopped";
+            /**
+             * Step
+             * @description search 찾는 중 · read 자료 읽는 중 · write 정리하는 중
+             */
+            step?: ("search" | "read" | "write") | null;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /** Started At */
+            started_at?: string | null;
+            /** Ended At */
+            ended_at?: string | null;
+            /**
+             * Summary
+             * @description 검사를 지난 요약. 없으면 null(요약을 만들지 못함)
+             */
+            summary?: string | null;
+            /**
+             * Links
+             * @default []
+             */
+            links: components["schemas"]["ResearchLink"][];
+            /**
+             * Checks
+             * @description 직접 확인하는 곳(믿집 밖 업체)
+             * @default []
+             */
+            checks: components["schemas"]["ResearchCheck"][];
+            /**
+             * Outside
+             * @description 믿집 밖 업체: 링크마다 '믿집이 확인하지 않은 곳이에요'
+             * @default false
+             */
+            outside: boolean;
+            /**
+             * Partial
+             * @description 상한 · 멈춤으로 그때까지 찾은 것만
+             * @default false
+             */
+            partial: boolean;
+            /** Note */
+            note?: string | null;
+        };
+        /** ResearchLink */
+        ResearchLink: {
+            /** Title */
+            title: string;
+            /**
+             * Href
+             * @description 서버 도구 결과 블록의 주소(새 탭으로 엶)
+             */
+            href: string;
+            /**
+             * Source
+             * @description 출처 도메인
+             */
+            source: string;
+            /**
+             * Memo
+             * @description 짧은 메모(검사를 지난 글)
+             */
+            memo?: string | null;
+            /**
+             * Day
+             * @description 글 날짜(검색 결과가 알려 줄 때만)
+             */
+            day?: string | null;
         };
         /**
          * ReselectIn
@@ -13371,6 +13512,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HealthOut"];
+                };
+            };
+        };
+    };
+    research_detail_assistant_research__research_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                research_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    research_stop_assistant_research__research_id__stop_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                research_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResearchData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

@@ -13,7 +13,7 @@ import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
   | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
-  | "extra" | "notice";
+  | "extra" | "notice" | "research";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -187,11 +187,15 @@ export type NoticeData = {
   blanks: string[]; note: string; style_exempt: boolean;
 };
 
+/** 09 조사 담당(진행 · 결과 카드, GET /assistant/research/{id}). 링크는 서버가 서버 도구 결과에서 뽑은 것만, 순위 · 금액 · 연락처는 없어요 */
+export type ResearchStatus = Schemas["ResearchData"]["status"];
+export type ResearchData = Schemas["ResearchData"];
+
 export type CardData = {
   home_info: HomeInfoData; standard_quote: StandardQuoteData; vendor_picks: VendorPicksData; visit_slots: VisitSlotsData;
   quote_compare: QuoteCompareData; schedule: ScheduleData; knowledge: KnowledgeData; answer: AnswerData;
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
-  extra: ExtraData; notice: NoticeData;
+  extra: ExtraData; notice: NoticeData; research: ResearchData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 
@@ -763,6 +767,17 @@ export async function getMemory(): Promise<MemoryOut[] | null> {
 export async function forgetMemory(memoryId: string): Promise<void> {
   if (ASSISTANT_MOCK) return (await mock()).forget(memoryId);
   await orGone(call("DELETE", `/assistant/memory/${enc(memoryId)}`));
+}
+
+/** 조사 하나(진행 · 결과). 목업에는 조사가 없어 null(카드가 다시 읽지 않아요). 남의 것 · 없는 것은 404 */
+export async function getResearch(researchId: string): Promise<ResearchData | null> {
+  if (ASSISTANT_MOCK) return null;
+  return orGone(call<ResearchData>("GET", `/assistant/research/${enc(researchId)}`));
+}
+/** 조사 멈추기: 시작 전이면 바로 멈추고, 도는 중이면 다음 단계 전에 그때까지 찾은 것으로 끝내요 */
+export async function stopResearch(researchId: string): Promise<ResearchData | null> {
+  if (ASSISTANT_MOCK) return null;
+  return call<ResearchData>("POST", `/assistant/research/${enc(researchId)}/stop`);
 }
 
 /** 머리 종: 알림 목록 · 모두 읽음 · 하나 읽음(지금 있는 /notifications) */

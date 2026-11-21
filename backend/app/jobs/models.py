@@ -23,6 +23,7 @@ KINDS = (
     "deal_auto_done",  # 공사 끝 알림 + 7일: 아직 checking이면 done(자동)
     "thread_redact",  # 닫힌 대화 + 보관 기간: 글 본문 지우기 (보관 기간이 정해질 때까지 안 씀)
     "assistant_memory",  # v4 비서 턴 저장 직후: 고객 메시지 한 줄에서 기억 뽑기 (ref_id = 메시지)
+    "assistant_research",  # v4 조사 시작 + 6분: 아직 대기 · 도는 중이면 멈춘 조사로 끝내기 (ref_id = 조사)
 )
 STATUSES = ("pending", "running", "done", "skipped", "failed", "cancelled")
 FINISHED = ("done", "skipped", "failed", "cancelled")

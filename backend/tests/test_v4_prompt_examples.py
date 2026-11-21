@@ -50,12 +50,9 @@ READ_CARD = {
 }
 # 요청함이면 기간 답하기 승인 카드도 만드는 읽기 도구(계약서 3장)
 MADE_BY_READ = {"request_brief": "window_answer"}
-# 코드가 아직 따라오지 않은 예시: (판, 예시) → 까닭
-CANCEL_WHY = (
-    "policy.KIND_WORDS에 visit_cancel 낱말('취소')이 없어 '실측 요청을 취소하는 카드를 만들었어요'를 "
-    "실측 요청 카드 말로 읽어요(propose_visit_cancel을 만드는 갈래 몫)"
-)
-PENDING = {("customer_v4", "9(이미 보냈을 때)"): CANCEL_WHY}
+# 코드가 아직 따라오지 않은 예시: (판, 예시) → 까닭. 고침 2차 E1(카드 말 맞추기는 확실히 틀릴 때만) 뒤로
+# customer_v4 예시 9(이미 보냈을 때)도 맞아서 비었어요
+PENDING: dict[tuple[str, str], str] = {}
 
 
 def _part(lines: list[tuple[str, str, str]], kind: str, tag: str) -> str:
@@ -162,8 +159,8 @@ def test_chat_examples_keep_fixed_lines():
     got = answers("customer_v4") + answers("vendor_v4")
     customer = {a["key"][1].split("(")[0] for a in got if a["key"][0] == "customer_v4"}
     vendor = {a["key"][1].split("(")[0] for a in got if a["key"][0] == "vendor_v4"}
-    # 좋은 예시 6~10개(지시서), 읽기가 비면 알아챈다
-    assert 6 <= len(customer) <= 10 and len(vendor) >= 4
+    # 좋은 예시 6~10개(지시서) + 조사 담당 예시 하나(09-research, 리드 지시), 읽기가 비면 알아챈다
+    assert 6 <= len(customer) <= 11 and len(vendor) >= 4
     bad = {f"{a['key'][0]} {a['key'][1]}": p for a in got if (p := problems(a))}
     assert not bad, bad
     missed = {a["key"]: m for a in got if (m := claim_misses(a))}
