@@ -12,7 +12,8 @@ import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 
 export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
-  | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist";
+  | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
+  | "extra" | "notice";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -156,10 +157,26 @@ export type QuoteChecklistData = {
   prev: { version: number; total_won: number } | null;
 };
 
+/** 추가 금액(07 자동화). 금액은 서버(계산 엔진) 값이에요. 한 일 · 업체가 적은 말은 업체 글이라 그 칸에만 보여요 */
+export type ExtraData = {
+  ref: string; extra_id: string; deal_id: string; vendor_name: string; trade: string;
+  title: string; vendor_note: string | null; version: number;
+  answer: "pending" | "asked" | "approved" | "rejected";
+  supply_won: number; vat_won: number; total_won: number; vat_label: string;
+  deal_total_won: number | null; grand_total_won: number | null; after_total_won: number | null;
+  photo_count: number; href: string;
+};
+/** 이웃 안내문 초안(07 자동화, 코드 틀). 이웃에게 붙이는 글이라 '-합니다'체예요(style_exempt: 화면 문체 검사에서 빼요) */
+export type NoticeData = {
+  title: string; text: string; start: string | null; end: string | null;
+  blanks: string[]; note: string; style_exempt: boolean;
+};
+
 export type CardData = {
   home_info: HomeInfoData; standard_quote: StandardQuoteData; vendor_picks: VendorPicksData; visit_slots: VisitSlotsData;
   quote_compare: QuoteCompareData; schedule: ScheduleData; knowledge: KnowledgeData; answer: AnswerData;
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
+  extra: ExtraData; notice: NoticeData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 
@@ -176,7 +193,9 @@ export type TaskOut = {
 };
 
 /** 제안 도구와 1:1(propose_*) */
-export type ActionKind = "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates";
+export type ActionKind =
+  | "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates"
+  | "extra_answer" | "work_check" | "visit_again";
 export type ActionStatus = "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
 /** 무엇 · 얼마 · 어느 버전(assistant_actions.summary). 금액 · 차액은 서버 값 */
 export type ActionSummary = {
@@ -275,6 +294,9 @@ export const CHOICE = {
   visitRequest: (vendors: string[], wish?: string | null) => `visit_request:${[...vendors.slice(0, 3), ...(wish ? [wish] : [])].join(",")}`,
   visitSlot: (slot: string) => `visit_slot:${slot}`,
   vendorConfirm: (visit: string) => `vendor_confirm:${visit}`,
+  /** 추가 금액(x…)에 답하는 승인 카드: 승인(기본) · 거절 · 채팅으로 묻기 */
+  extraAnswer: (extra: string, answer: "approve" | "reject" | "ask" = "approve") =>
+    answer === "approve" ? `extra_answer:${extra}` : `extra_answer:${extra},${answer}`,
 };
 
 // ───── 대화 · 보드 · 오늘 · 상태 · 기억 · 알림
