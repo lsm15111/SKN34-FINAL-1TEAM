@@ -148,6 +148,8 @@ class ScreenLineFact(BaseModel):
     unit_price: int | None = None  # 다른 줄에 포함이면 비어요
     amount: int = 0  # 포함 · 빼기 줄은 0
     in_standard: bool = True  # 표준견적서에 같은 일이 있는 줄. 아니면 표준 대비 %에서 빼요
+    # 표준견적서에서 '선택'인 일(퍼티 · 운송비, 판 2026.11b, ADR 0006): 금액은 보이고 합계 밖이에요
+    optional: bool = False
     included_in: str | None = None
     # 수량 1의 뜻(시장 기준값 표 unit_ko에서 '당'을 뗀 것): '공급면적 1평(3.3058㎡)'
     basis: str = ""

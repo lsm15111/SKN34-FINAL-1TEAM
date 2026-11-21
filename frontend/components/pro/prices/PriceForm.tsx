@@ -2,6 +2,7 @@
 // 도배 단가(D02 d_price 웹 표 · 폰은 같은 줄을 카드로, research F01). 줄마다 받는 법(단가 · 다른 줄에 포함 · 빼기)을 골라요.
 // L01: 줄마다 무엇 1단위당인지 분명히 쓰고(PRICE_UNIT), 기준 단가와 10배쯤 다르면 경고해요(저장은 한 번 더 물어요). 빈 단가는 저장을 막아요.
 // '공급 69.4㎡ 집이면' 금액 · 아래 가견적 합계는 계산 엔진 값이에요: 저장한 값 그대로일 때만 보이고, 바꾼 줄은 '수량 × 단가' 식만 보여요(화면은 곱하지 않아요).
+// 예시 가견적에서 '선택'인 줄(퍼티 · 운송비)은 괄호 금액 · '선택 · 합계 밖'으로 보여요(아래 합계에 안 들어가요, ADR 0006).
 // 저장 → POST /vendor/prices/dobae/confirm {base_version, lines}(멱등 키). 본 판이 아니면 409(다른 곳에서 먼저 저장).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -15,6 +16,7 @@ import { useToast } from "@/components/ui/Toast";
 import type { PriceRowV3, PricesV3 } from "@/lib/api/vendor";
 import { ApiError, errorText } from "@/lib/backend/client";
 import { decText, numText, won } from "@/lib/format";
+import { LINE_STATES } from "@/lib/labels";
 import { newKey, send } from "../send";
 import { PRICE_UNIT } from "../text";
 import { Notice } from "@/components/ui/Notice";
@@ -27,6 +29,7 @@ type Line = { mode: Mode; price: string; included_in: string | null };
 const MODES: { value: Mode; label: string }[] = [{ value: "price", label: "단가" }, { value: "included", label: "다른 줄에 포함" }, { value: "excluded", label: "빼기" }];
 const digits = (v: string) => v.replace(/\D/g, "").slice(0, 9);
 const PAPER = new Set(["paper_hapji", "paper_silk"]);
+const OPTIONAL_WORD = `${LINE_STATES.optional} · 합계 밖`; // 표준견적서 · 고객 가견적의 선택 줄과 같은 말(QuoteLines)
 
 function warnOf(r: PriceRowV3, l: Line): "high" | "low" | null {
   if (l.mode !== "price" || !l.price) return null;
@@ -60,6 +63,8 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
   const priceRows = prices.lines.filter((r) => lines[r.key].mode === "price");
   const nameOf = (key: string | null) => { const r = prices.lines.find((x) => x.key === key); return r ? `${r.code} ${r.name}` : "다른 줄"; };
   const warns = prices.lines.filter((r) => warnOf(r, lines[r.key]));
+  // 예시 가견적의 '선택' 줄 키(API optional, 판 2026.11b)
+  const optional = new Set((prices.example?.lines ?? []).filter((x) => x.optional).map((x) => x.key));
 
   function check(): boolean {
     const e: Record<string, string> = {};
@@ -158,7 +163,8 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
                     <span className={s.amtLabel}>{homeLabel}이면</span>
                     {l.mode === "excluded" ? <span className={s.mute}>{PAPER.has(r.key) ? "고객에게 '이 벽지는 안 해요'로 보여요" : "가견적에 넣지 않아요"}</span>
                       : l.mode === "included" ? <span className={s.mute}>{l.included_in ? `${nameOf(l.included_in).replace(/^\d+ /, "")}에 포함` : "—"}</span>
-                      : changed(r) || !l.price ? <span className={s.mute}>{l.price ? `${qty} × ${numText(Number(l.price))}원` : "—"}</span>
+                      : changed(r) || !l.price ? <span className={s.mute}>{l.price ? `${qty} × ${numText(Number(l.price))}원${optional.has(r.key) ? ` · ${OPTIONAL_WORD}` : ""}` : "—"}</span>
+                      : optional.has(r.key) ? <span className={s.mute}>{OPTIONAL_WORD} ({numText(r.example_amount)})</span>
                       : <b>{numText(r.example_amount)}</b>}
                   </div>
                 </li>

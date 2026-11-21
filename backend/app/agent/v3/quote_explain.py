@@ -93,7 +93,9 @@ def _screen_line(
         lines.append(templates.SCREEN_MAN_DAY)
         if f.living == "living":
             lines.append(templates.SCREEN_MAN_DAY_LIVING)
-    if not ln.in_standard:
+    if ln.optional:  # '선택' 줄(퍼티 · 운송비, ADR 0006): 표준견적서 선택 줄과 같은 말
+        lines.append(templates.LINE_STATE["optional"].format(eun=eun))
+    elif not ln.in_standard:
         lines.append(templates.SCREEN_EXTRA.format(eun=eun))
     m = ln.market
     if m is not None:
@@ -121,7 +123,8 @@ def _screen_compare(
     """보던 업체 가견적을 견줄 때 볼 것: 같은 수량 · 표준에 없는 줄 · 실측 뒤 정하는 줄.
     표준견적서와 견준 %는 글 · 계산 상자에 넣지 않아요(사용자 결정 2026-11-21)."""
     lines.append(templates.SCREEN_COMPARE_SAME)
-    extra = [x.name for x in v.lines if not x.in_standard and x.amount > 0]
+    # 표준견적서에 없는 줄. '선택' 줄(퍼티 · 운송비)은 표준견적서에도 선택 줄로 있고 가견적 합계 밖이라 빼요
+    extra = [x.name for x in v.lines if not x.in_standard and not x.optional and x.amount > 0]
     if extra:
         lines.append(templates.SCREEN_COMPARE_EXTRA.format(lines=" · ".join(extra)))
     after = [x.name for x in st.lines if x.state == "after_visit"]
