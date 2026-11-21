@@ -18,9 +18,9 @@ export type CardCtx = {
   /** 화면에서 고른 이름표(card_id마다). 업체 추천 카드 ↔ 희망 기간 카드가 같이 봐요. 서버에는 choice로만 가요 */
   marks: Record<string, string[]>;
   mark: (cardId: string, refs: string[] | null) => void;
-  /** 대화에서 가장 나중의 그 kind 카드 · 그 종류 행동(없으면 null) */
+  /** 대화에서 가장 나중의 그 kind 카드 · 그 종류 행동(test를 주면 맞는 것만, 없으면 null) */
   lastCard: <K extends CardKind>(kind: K, test?: (c: CardOut<K>) => boolean) => CardOut<K> | null;
-  lastAction: (kind: ActionKind) => ActionOut | null;
+  lastAction: (kind: ActionKind, test?: (a: ActionOut) => boolean) => ActionOut | null;
 };
 
 export type CardProps<K extends CardKind> = { card: CardOut<K>; ctx: CardCtx; old: boolean };

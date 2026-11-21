@@ -25,7 +25,7 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
   /** 단계 띠 높이(말 머리를 그 아래에 맞춰요) */
   headroom: () => number;
   onRetry: () => void;
-  /** 이 공사의 비서 대화가 아직 없어요 */
+  /** 이 공사의 비서 대화가 아직 없어요(첫 인사를 보여요. 화면이 만든 말 · 오늘 정할 일이 있어도) */
   fresh: boolean;
   hasOlder: boolean;
   olderBusy: boolean;
@@ -99,7 +99,7 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
         </div>
       ) : null}
       <div className={s.msgs} role="log" aria-label="비서 대화" aria-live="polite" aria-relevant="additions">
-        {fresh && !items.length ? (
+        {fresh ? (
           <div className={s.msg}>
             <div className={s.av} aria-hidden="true">AI</div>
             <div className={s.msgBody}>
@@ -131,10 +131,17 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
 }
 
 /** 대화가 바뀐 정도(말 수 · 마지막 말의 조각 수 · 상태)만 봐요. 다음에 물을 말은 세지 않아요
- *  (먼저 말 건 줄이 '완료'가 되며 제안만 빠질 때 보던 자리에서 그 말 머리로 끌어올리지 않게) */
+ *  (먼저 말 건 줄이 '완료'가 되며 제안만 빠질 때 보던 자리에서 그 말 머리로 끌어올리지 않게).
+ *  화면이 만든 말(local: 오늘 정할 일 · 기록 밖 승인 카드)은 맨 끝에 있을 때만 세요(가운데에서 바뀌어도 끌어내리지 않고,
+ *  흐르는 답은 기록의 마지막 말로 따라가요) */
 function signature(items: FeedItem[]) {
-  const last = items[items.length - 1];
-  if (!last) return "0";
+  let end = items.length;
+  const tailLocal: string[] = [];
+  while (end > 0 && isLocal(items[end - 1])) tailLocal.unshift(items[--end].id);
+  const real = items.slice(0, end).filter((x) => !isLocal(x));
+  const last = real[real.length - 1];
+  if (!last) return `0|${tailLocal.join(",")}`;
   const parts = last.role === "assistant" ? last.parts.filter((p) => p.t !== "suggest").length : 0;
-  return `${items.length}:${last.id}:${last.role === "assistant" ? `${parts}:${last.done ? 1 : 0}:${last.status ?? ""}` : ""}`;
+  return `${real.length}:${last.id}:${last.role === "assistant" ? `${parts}:${last.done ? 1 : 0}:${last.status ?? ""}` : ""}|${tailLocal.join(",")}`;
 }
+const isLocal = (x: FeedItem) => x.role === "assistant" && !!x.local;

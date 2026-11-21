@@ -3,6 +3,7 @@
 // [맞아요, 저장]은 비서가 만든 '집 정보 저장' 제안의 승인이에요(되돌릴 수 있어요). 실측을 요청한 뒤에는 잠겨요(C50).
 // 주소 찾기는 범위 밖이라 첫 대화(/start)에서 글로만 받아요. 동 · 호는 받지 않아요.
 // 철거 범위(demolition: full · partial · none)는 백엔드 담당이 같은 키로 더해요. 고르면 그 말로 턴을 보내요(비서가 저장 제안을 만들어요).
+// 할 일이 끝난 줄의 카드(old)는 보낸 때 집 요약만 남겨요(저장 · 철거 칩 · 고치기 단추 없음).
 import Link from "next/link";
 import { DEMOLITION, type Demolition } from "@/lib/api/assistant";
 import { decText } from "@/lib/format";
@@ -16,21 +17,21 @@ const BASIS = { supply: "공급", exclusive: "전용" } as const;
 const SAY: Record<Demolition, string> = { full: "철거는 전체 철거로 할게요", partial: "철거는 일부만 할게요", none: "철거는 안 할게요" };
 const CLOSED = new Set(["rejected", "expired", "failed"]);
 
-export function HomeInfoCard({ card, ctx }: CardProps<"home_info">) {
+export function HomeInfoCard({ card, ctx, old }: CardProps<"home_info">) {
   const d = card.data;
   const act = d.action_id ? ctx.actionOf(d.action_id) : null;
   const handled = !!d.action_id && ctx.handledOf(d.action_id) && act?.status !== "executed";
   const saved = d.saved || act?.status === "executed";
   const closed = !!act && CLOSED.has(act.status);
   const pending = d.action_id ? ctx.pendingOf(d.action_id) : false;
-  const asking = !!d.action_id && !saved && !closed && !handled;
+  const asking = !old && !!d.action_id && !saved && !closed && !handled;
   const editHref = `/start?edit=${encodeURIComponent(ctx.projectId)}`;
   // 면적은 아래 큰 상자로 보여요(요약 줄의 ㎡ · 평은 겹치지 않게 빼요)
   const facts = d.area ? d.facts.filter((f) => !/㎡|^\d+(\.\d+)?평$/.test(f)) : d.facts;
   const demo = d.demolition ?? null;
   const demoLabel = DEMOLITION.find((x) => x.key === demo)?.label;
   // 철거 범위를 아직 안 물었으면(저장한 집이어도) 묻기 칩을 보여요. 다 정한 집 카드는 끝난 모양(흐림)으로 남아요
-  const ask = !d.locked && (!demo || asking);
+  const ask = !old && !d.locked && (!demo || asking);
   const finished = (saved || handled) && !ask;
 
   return (
@@ -81,7 +82,7 @@ export function HomeInfoCard({ card, ctx }: CardProps<"home_info">) {
           </button>
           <Link className={`${k.text} ${k.gray}`} href={editHref}>직접 고칠게요</Link>
         </div>
-      ) : d.locked ? null : (
+      ) : d.locked || old ? null : (
         <div className={k.row}>
           {closed ? <span className={k.muted}>저장하지 않았어요</span> : null}
           <Link className={`${k.btn} ${k.sm}`} href={editHref}>기본 정보 고치기</Link>

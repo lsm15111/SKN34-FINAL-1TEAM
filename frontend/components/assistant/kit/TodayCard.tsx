@@ -1,6 +1,7 @@
 "use client";
 // 오늘 정할 일(C8): 날짜 · '오늘 정할 일 n' · 줄(아이콘 · 할 일 · 기한 · 단추) · 묶음(정할 일 · 기다리는 일 · 밤사이 소식 · 알아 두기).
 // 줄은 모두 코드 사실이에요(비서 말 한 문장은 카드 위 말로 따로). [오늘은 그만]은 먼저 말 건 카드를 닫아요(같은 일 3일 쉬기).
+// 할 일이 끝난 줄의 카드(old)는 보낸 때 줄만 남겨요(줄 단추 · [오늘은 그만] 없음).
 import Link from "next/link";
 import type { TodayData, TodayIcon, TodayRow } from "@/lib/api/assistant";
 import { dateLong } from "@/lib/format";
@@ -10,7 +11,7 @@ import k from "./kit.module.css";
 
 const ICON: Record<TodayIcon, IconName> = { doc: "doc", calendar: "calendar", file: "file", chat: "chat", bulb: "bulb", inbox: "inbox" };
 
-export function TodayCard({ card, ctx }: CardProps<"today">) {
+export function TodayCard({ card, ctx, old }: CardProps<"today">) {
   const d: TodayData = card.data;
   const n = d.todo.length;
   if (d.dismissed) {
@@ -20,17 +21,18 @@ export function TodayCard({ card, ctx }: CardProps<"today">) {
       </section>
     );
   }
+  // 끝난 줄의 카드에는 data-today를 두지 않아요(단계 띠 '오늘 정할 일 n ›'이 살아 있는 카드로 가요)
   return (
-    <section className={`${k.card} ${k.today}`} aria-labelledby={`${card.card_id}-t`} data-today="">
+    <section className={`${k.card} ${k.today}`} aria-labelledby={`${card.card_id}-t`} data-today={old ? undefined : ""}>
       <div className={k.todayHead}>
         <span className={k.muted}>{dateLong(d.date)}</span>
         <h3 id={`${card.card_id}-t`}>{n ? <>오늘 정할 일 <span className={k.cnt}>{n}</span></> : "오늘은 정할 일이 없어요"}</h3>
       </div>
-      <Group title="정할 일" rows={d.todo} ctx={ctx} />
-      <Group title="기다리는 일" rows={d.waiting} ctx={ctx} wait />
-      <Group title="밤사이 소식" rows={d.news} ctx={ctx} news />
-      <Group title="알아 두기" rows={d.know ?? []} ctx={ctx} know />
-      {d.nudge_id ? (
+      <Group title="정할 일" rows={d.todo} ctx={ctx} old={old} />
+      <Group title="기다리는 일" rows={d.waiting} ctx={ctx} old={old} wait />
+      <Group title="밤사이 소식" rows={d.news} ctx={ctx} old={old} news />
+      <Group title="알아 두기" rows={d.know ?? []} ctx={ctx} old={old} know />
+      {d.nudge_id && !old ? (
         <div className={k.todayFoot}>
           <button type="button" className={`${k.text} ${k.gray}`} onClick={() => ctx.dismissNudge(card.card_id, d.nudge_id!)}>오늘은 그만</button>
         </div>
@@ -39,7 +41,7 @@ export function TodayCard({ card, ctx }: CardProps<"today">) {
   );
 }
 
-function Group({ title, rows, ctx, wait, news, know }: { title: string; rows: TodayRow[]; ctx: CardProps<"today">["ctx"]; wait?: boolean; news?: boolean; know?: boolean }) {
+function Group({ title, rows, ctx, old, wait, news, know }: { title: string; rows: TodayRow[]; ctx: CardProps<"today">["ctx"]; old: boolean; wait?: boolean; news?: boolean; know?: boolean }) {
   if (!rows.length) return null;
   const tic = know ? `${k.tic} ${k.ticKnow}` : news ? `${k.tic} ${k.ticNews}` : wait ? `${k.tic} ${k.ticWait}` : k.tic;
   return (
@@ -53,7 +55,7 @@ function Group({ title, rows, ctx, wait, news, know }: { title: string; rows: To
               <b>{r.title}</b>
               {r.sub ? <span className={r.due ? `${k.dueText} ${k.num}` : k.num}>{r.sub}</span> : null}
             </div>
-            {r.action ? <RowAction a={r.action} ctx={ctx} /> : null}
+            {r.action && !old ? <RowAction a={r.action} ctx={ctx} /> : null}
           </li>
         ))}
       </ul>

@@ -63,7 +63,10 @@
 .feedItem { display: grid; gap: 8px; justify-items: start; }
 .feedItem > section { justify-self: stretch; }
 
-/* 오늘 브리핑: 웹은 줄 셋을 한 줄로(목록이 먼저 보이게) */
+/* 오늘 브리핑: 웹은 줄 셋을 한 줄로(목록이 먼저 보이게).
+   세 칸으로 나눈 좁은 칸에서는 단추를 글 아래로 내려요(단추가 글 칸을 눌러 제목이 한 글자씩 줄을 바꾸지 않게) */
 @media (min-width: 768px) {
   .row3 { grid-template-columns: repeat(3, minmax(0, 1fr)); column-gap: 16px; }
+  ul.row3 > li { grid-template-columns: 40px minmax(0, 1fr); }
+  ul.row3 > li > button:last-child { grid-column: 2; justify-self: start; max-width: 100%; white-space: normal; text-align: left; line-height: 1.3; padding-block: 6px; }
 }

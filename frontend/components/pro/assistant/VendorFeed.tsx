@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  approveVendorAction, getVendorFeed, listVendorActions, newClientKey, rejectVendorAction, VENDOR_ASSISTANT_EVENT, vendorKindsForWrite,
+  approveVendorAction, getVendorFeed, handledByWrite, listVendorActions, newClientKey, rejectVendorAction, VENDOR_ASSISTANT_EVENT, vendorKindsForWrite,
   type ActionOut, type AssistantItem, type FeedPart,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -44,13 +44,14 @@ export function VendorFeed({ now }: { now: string }) {
     return () => window.removeEventListener(VENDOR_ASSISTANT_EVENT, on);
   }, [load]);
 
-  // 요청 화면의 v3 단추(기간 답하기 · 못 받아요 · 공사 날짜)를 누른 뒤: 같은 일을 하던 열린 카드는 '처리됨', 그리고 다시 읽어요
+  // 요청 화면의 v3 단추(기간 답하기 · 못 받아요 · 공사 날짜)를 누른 뒤: 같은 일을 하던 열린 카드는 '처리됨'(요청 · 공사마다 따로라
+  // 그 종류 열린 카드가 하나뿐일 때만, handledByWrite), 그리고 다시 읽어요
   useEffect(() => {
     const on = (e: Event) => {
       const { method, path } = (e as CustomEvent<ApiWrite>).detail ?? { method: "", path: "" };
       const kinds = vendorKindsForWrite(method, path);
       if (!kinds.length) return;
-      const ids = openRef.current.filter((a) => kinds.includes(a.kind)).map((a) => a.action_id);
+      const ids = handledByWrite(kinds, openRef.current);
       if (ids.length) setHandled((h) => ({ ...h, ...Object.fromEntries(ids.map((x) => [x, true as const])) }));
       void load();
     };

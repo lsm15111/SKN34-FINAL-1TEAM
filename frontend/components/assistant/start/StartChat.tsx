@@ -4,6 +4,7 @@
 //   공사 희망 시기) + 표준견적서 바로 뒤 직접 할 일(반셀프 칩). 그 밖의 조건(편한 요일 · 목공 세부 · 우선순위)은 필요한 단계에서 비서가 물어요.
 // - AI 글은 쓰지 않아요(로그인 전 · 공사 전). 말은 정해 둔 글('믿집 안내')이고, 금액 · 일수 · 시기 칩 날짜는 계산 엔진 값
 //   (POST /guest/standard · GET /guest/start-options)이에요. 방 개수는 면적 기본값(GET /guest/room-rule)을 미리 골라 두고 보이는 값을 보내요.
+//   방 개수 표를 못 읽었으면 미리 고르지 않고, 고객이 안 골랐으면 비워 보내요(서버가 면적 기본값으로 세요).
 // - 주소 찾기 API는 범위 밖이라 적은 글에서 시 · 군 · 구 · 평형 · 방 개수 · 공사할 때 집 · 시기만 찾아 채워요(lib/guest/guess, 못 찾으면 골라요).
 //   적은 글 · 단지 이름 · 동 · 호는 저장하지 않아요.
 // - 손님: 답은 이 기기에만(mj_guest_v3) → 표준견적서 요약 · 직접 할 일 → 가입 카드. 가입하면 같은 답으로 내 공사가 만들어져요(auth/after).
@@ -69,8 +70,11 @@ function summaryOf(g: GuestStandard, d: InfoDraft, href: string): StandardQuoteD
   return { total_won: g.total, label, lines, days: g.days, partial: g.scope === "partial", href };
 }
 
-/** 보이는 방 개수를 답에 넣어요(면적 기본값으로 미리 골라 둔 칩도 고객이 보고 넘긴 값이에요) */
-const withRooms = (d: InfoDraft, rule: RoomRule): InfoDraft => ({ ...d, rooms: roomsOf(d, rule) });
+/** 보이는 방 개수: 고른 값, 없으면 면적 기본값. 방 개수 표를 못 읽었으면(기본값 표 없음) 미리 고르지 않아요(null) */
+const shownRooms = (d: InfoDraft, rule: RoomRule): number | null => d.rooms ?? (rule.bands.length ? roomsOf(d, rule) : null);
+/** 보이는 방 개수를 답에 넣어요(면적 기본값으로 미리 골라 둔 칩도 고객이 보고 넘긴 값이에요). 비었으면 서버가 면적 기본값으로 세요
+ *  (표를 못 읽은 fallback 3을 고른 값으로 보내 서버 기본값을 덮지 않게) */
+const withRooms = (d: InfoDraft, rule: RoomRule): InfoDraft => ({ ...d, rooms: shownRooms(d, rule) });
 
 type Errors = Partial<Record<"region" | "area" | "occupied" | "grade" | "demolition" | "when", string>>;
 function errorsOf(d: InfoDraft, today: string): Errors {
@@ -121,14 +125,23 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
     const g = readGuest();
     if (!g?.info.sido) return;
     const saved = draftOf(g);
-    const wish = wishes.find((w) => w.key === saved.when);
     const rooms = saved.rooms != null && saved.rooms === roomsOf({ ...saved, rooms: null }, roomRule) ? null : saved.rooms;
     // v3 기본 정보 화면에서 넣던 답은 고른 시기가 없어요: 날짜가 있으면 '날짜 고르기'로 봐요
-    const when = saved.when ?? (saved.start ? "date" : null);
-    setD({ ...saved, rooms, when, ...(wish ? { start: wish.start_date } : {}) });
+    let when = saved.when ?? (saved.start ? "date" : null);
+    let start = saved.start;
+    if (when === "date") {
+      // 지난 날짜는 비워 다시 고르게 해요
+      if (start && start < today) start = null;
+    } else if (when && when !== "unknown") {
+      // 칩을 못 찾으면(시기 칩을 못 읽음) 칩이 안 보여 고른 게 없어 보이는데 지난 날짜가 가요: 비워 다시 고르게 해요
+      const wish = wishes.find((w) => w.key === when);
+      if (wish) start = wish.start_date;
+      else { when = null; start = null; }
+    }
+    setD({ ...saved, rooms, when, start });
     setManual(!!saved.area && !PYEONG.some((p) => pyeongToM2(p) === saved.area && saved.basis === "supply"));
     setPhase("confirm");
-  }, [wishes, roomRule]);
+  }, [wishes, roomRule, today]);
   // 고칠 때마다 이 기기에 저장해요(손님 답 옮기기와 같은 저장소). 방 개수는 보이는 값으로 둬요
   useEffect(() => { if (dirty) writeGuest(withRooms(d, roomRule)); }, [d, dirty, roomRule]);
   // 새 말이 붙으면 아래로
@@ -138,7 +151,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
   const errors = tried ? errorsOf(d, today) : {};
   const sido = regions.find((r) => r.id === d.sido);
   const place = sido ? [sido.groups.find((g) => g.items.includes(d.sgg))?.prefix || sido.name, d.sgg].filter(Boolean).join(" ") : "";
-  const rooms = roomsOf(d, roomRule);
+  const rooms = shownRooms(d, roomRule);
 
   function sendAddress(raw: string) {
     const v = raw.trim().slice(0, 80);

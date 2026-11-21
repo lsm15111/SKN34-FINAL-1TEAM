@@ -68,10 +68,11 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
     return () => { alive = false; };
   }, [projectId, a.loaded]);
 
-  const last = a.items[a.items.length - 1];
-  const liveId = last && last.role === "assistant" && !last.done ? last.id : null;
-  const waitingReply = a.running && last?.role === "user";
-  const tick = a.items.length + (last?.role === "assistant" && last.done ? 1000 : 0);
+  // 도는 턴 · 답 기다림은 기록의 마지막 말로 봐요(화면이 만든 말 · 오늘 정할 일이 끝에 와도 입력 중 표시가 꺼지지 않게)
+  const tail = a.tail;
+  const liveId = tail && tail.role === "assistant" && !tail.done ? tail.id : null;
+  const waitingReply = a.running && tail?.role === "user";
+  const tick = a.items.length + (tail?.role === "assistant" && tail.done ? 1000 : 0);
 
   const { approve: approveFn, actionOf, send, pending, handled, dismissNudge, items } = a;
   const ctx: CardCtx = useMemo(() => ({
@@ -87,7 +88,7 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
     marks,
     mark,
     lastCard: (kind, test) => lastCardIn(items, kind, test),
-    lastAction: (kind) => lastActionIn(items, kind),
+    lastAction: (kind, test) => lastActionIn(items, kind, test),
   }), [projectId, a.now, a.running, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items]);
 
   const act: ActionHandlers = {
@@ -150,7 +151,8 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
               olderBusy={a.olderBusy}
               onOlder={() => { void a.loadOlder(); }}
             />
-            <Composer projectId={projectId} chips={a.chips} busy={a.running} onSend={(t) => { void a.send(t); }} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
+            {/* 대화를 못 읽었으면(읽는 중 · 실패) 보내지 않아요: 보낸 말 · 답이 보이지 않은 채 턴만 돌지 않게 */}
+            <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => { void a.send(t); }} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
           </div>
         </div>
         <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />

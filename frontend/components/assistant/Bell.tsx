@@ -3,7 +3,7 @@
 // 알림을 누르면 읽음을 보내고 그 경로(= 그 카드)로 가요. 같은 공사 안 경로면 대화는 그대로 두고 카드만 열려요.
 import Link from "next/link";
 import { useEffect, useId, useRef, useState } from "react";
-import { getNotifications, readAllNotifications, readNotification, type NotifyPage } from "@/lib/api/assistant";
+import { getNotifications, insideHref, readAllNotifications, readNotification, type NotifyPage } from "@/lib/api/assistant";
 import { listStamp } from "@/lib/format";
 import { useLive, useLiveUnread } from "@/components/site/LiveProvider";
 import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
@@ -13,7 +13,6 @@ import s from "./assistant.module.css";
 const SHOW = 6;
 const KIND_ICON: [RegExp, IconName][] = [[/quote/, "file"], [/visit|date|plan|schedule/, "calendar"], [/chat|thread|msg/, "chat"], [/assistant|today/, "bell"]];
 const iconOf = (kind: string): IconName => KIND_ICON.find(([re]) => re.test(kind))?.[1] ?? "bell";
-const inside = (h: string) => h.startsWith("/") && !h.startsWith("//") && !h.includes("\\");
 
 export function Bell({ projectId, start, tick }: { projectId: string; start: number; tick: number }) {
   const [open, setOpen] = useState(false);
@@ -76,7 +75,8 @@ export function Bell({ projectId, start, tick }: { projectId: string; start: num
                   <ul className={s.nlist}>
                     {items.map((n) => (
                       <li key={n.id}>
-                        <Link href={inside(n.link) ? n.link : "/notifications"} scroll={false} onClick={() => { setOpen(false); if (!n.read) void readNotification(projectId, n.id).then(() => { if (ASSISTANT_MOCK) setMockUnread((x) => Math.max(0, x - 1)); }); }}>
+                        {/* 읽음 표시가 실패해도 이동은 그대로예요(안 읽은 수는 서버 값이라 그대로 남고, 알림 화면에서 다시 읽을 수 있어요) */}
+                        <Link href={insideHref(n.link) ? n.link : "/notifications"} scroll={false} onClick={() => { setOpen(false); if (!n.read) void readNotification(projectId, n.id).then(() => { if (ASSISTANT_MOCK) setMockUnread((x) => Math.max(0, x - 1)); }).catch(() => undefined); }}>
                           <span className={s.nic}><I n={iconOf(n.kind)} /></span>
                           <div><p>{n.body}</p><time className={s.num} dateTime={n.created_at}>{listStamp(n.created_at)}</time></div>
                           {n.read ? <span /> : <i className={s.unread} aria-label="안 읽음" />}
