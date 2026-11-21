@@ -358,6 +358,9 @@
 - 할 일이 끝난 줄 닫기(2026-11-21 고침): 서버가 보이는 줄(sent · opened)을 닫아 대화 기록 · 턴 끝 제안(suggest) · 오늘에서 빠져요.
   - 비서 승인(`actions.execute`)으로 행동을 실행하면 같은 트랜잭션에서 그 사람의 줄 중 같은 대상의 승인 카드를 단 줄(새 카드로 바뀐 옛 카드 포함)과 같은 대상을 가리키는 줄(`repository.SETTLES`: visit_slot → visit_offered · vendor_confirm → quote_sent · dates_accept · delay_accept → dates_proposed · visit_request → no_pick · window_answer · decline → visit_requested · visit_picked · dates → deal_confirmed)을 expired(acted)로 닫아요.
   - 정리(2분, `proactive.close_settled`)는 보이는 줄(새것부터 200) 중 달린 행동이 실행된 줄은 acted, 대상 상태가 바뀐 줄(`context` 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도)은 handled로 닫아요.
+  - 기록(2026-11-21 고침): 닫힌 줄(acted · handled)도 대화 기록에 남아요(`AssistantItem.settled`). 화면은 단추 · 제안 없이 보낸 때 카드와 '완료'로 보여요. 고객이 닫은 줄(dismissed)은 기록에서 빠져요.
+    - 먼저 말 건 줄은 보낸 때가 속한 쪽에 끼워요(한 쪽 30줄까지, `service.NUDGE_FEED`).
+    - 정리가 줄을 닫으면 화면 신호(state)를 보내고, 화면은 그 공사의 `state` · `resync`를 받으면 기록을 다시 읽어요(턴이 도는 중이면 끝난 뒤).
 
 ## 7. 안전
 - 가림
