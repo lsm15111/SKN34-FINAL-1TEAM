@@ -220,9 +220,20 @@ def score(f: Facts) -> int:
 def fresh_event(t: Trigger, n: AssistantNudge) -> bool:
     """업체 · 고객이 한 일로 생긴 첫 알림인지(아웃박스 kind가 있는 트리거, 무응답 다시 알림 ':notify'가 아님).
 
-    새 소식이라 24시간 감점을 받지 않는다(QA r2 c1 · c2 · x1: 견적서 · 추가 금액 알림이 앞서 보낸 줄 감점으로
-    보류됨). 하루 상한 · 밤 미룸은 그대로 지킨다(고정 선 6)."""
+    새 소식이라 24시간 감점을 받지 않고, 고객이 [괜찮아요]로 닫은 다른 대상의 같은 종류 줄의 쉬기(−30 · 3일)에도
+    걸리지 않는다(같은 대상을 닫았으면 쉰다). QA r2 c1 · c2 · x1: 견적서 · 추가 금액 알림이 앞서 보낸 줄 감점으로
+    보류됨, t1: 한 줄을 닫자 같은 종류의 새 알림이 3일 쉬기에 막힘. 하루 상한 · 밤 미룸 · 두 번 닫아 멈춘 종 알림은
+    그대로 지킨다(고정 선 6)."""
     return bool(t.kinds) and not n.dedup_key.endswith(":notify")
+
+
+# 놓치면 안 되는 시간 알림: 24시간 감점을 받지 않는다(QA r2 t1: 공사 전날 알림이 그날 보낸 줄 감점으로 판정 문턱까지)
+MUST_SEND = frozenset({"work_eve"})
+
+
+def no_24h_penalty(t: Trigger, n: AssistantNudge) -> bool:
+    """24시간 감점을 빼는 줄: 새 소식(fresh_event) 또는 놓치면 안 되는 시간 알림(MUST_SEND)."""
+    return fresh_event(t, n) or t.name in MUST_SEND
 
 
 class JudgeOut(BaseModel):
@@ -845,7 +856,10 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         gone = await repo.dismissals(s, n.user_id, now - DISMISS_SEEN)
         sent_today = await repo.sent_count(s, n.user_id, _day_start(now), "notify")
         sent_24h = await repo.sent_count(s, n.user_id, now - timedelta(hours=24))
-    dismissals = [policy.Dismissal(trigger, at) for trigger, at in gone]
+    dismissals = [policy.Dismissal(trigger, at, ref) for trigger, at, ref in gone]
+    # 새 소식은 다른 대상의 같은 종류 줄을 닫은 쉬기(−30 · 3일)에 걸리지 않는다(같은 대상을 닫았으면 쉰다).
+    # 두 번 닫아 멈춘 종 알림은 그대로 지킨다
+    fresh = fresh_event(t, n)
     rule = RULES.check(
         trigger=t.name,
         channel=n.channel,
@@ -854,6 +868,7 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         sent_today=sent_today,
         dismissals=dismissals,
         due=c.due,
+        snooze_ref=n.ref_id if fresh else None,
     )
     if rule.verdict == "hold":
         await _close(n, "held", rule.reason or "rule")
@@ -873,8 +888,11 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         action_ready=t.action,
         decision=t.decision,
         read=c.read,
-        sent_24h=0 if fresh_event(t, n) else sent_24h,
-        dismissed_same=any(d.trigger == t.name and now - d.at < SNOOZE_SEEN for d in dismissals),
+        sent_24h=0 if no_24h_penalty(t, n) else sent_24h,
+        dismissed_same=any(
+            d.trigger == t.name and (not fresh or d.ref == n.ref_id) and now - d.at < SNOOZE_SEEN
+            for d in dismissals
+        ),
         names=c.names,
     )
     points = score(f)
