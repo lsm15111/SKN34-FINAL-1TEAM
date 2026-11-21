@@ -38,7 +38,7 @@ def test_paper_only_project_gets_market_profile(api):
     st = api.get(f"/projects/{pid}/standard").json()
     t = _dobae(st)
     assert (st["price_ver"], t["profile"], t["profile_name"]) == (
-        "2026.11-market",
+        "2026.11b-market",
         "paper_only",
         "도배만 하는 공사 기준",
     )
@@ -80,8 +80,8 @@ def test_condition_switches_profile_and_keeps_the_old_version(api):
         pid,
     )
     assert [(r["version"], r["price_ver"], r["unit_price"]) for r in rows] == [
-        (1, "2026.11-market", 6_900),
-        (2, "2026.11-remodel", 16_000),
+        (1, "2026.11b-market", 6_900),
+        (2, "2026.11b-remodel", 16_000),
     ]
     # 같은 조건이면 저장본을 다시 써요
     assert _dobae(api.get(f"/projects/{pid}/standard").json())["version"] == 2
@@ -112,8 +112,8 @@ def test_v2_project_profile_follows_carpentry_items(api):
     assert dobae["notes"][0].startswith("리모델링 기준으로 셌어요(근거: 문틀 교체)")
     prices = query("select trade, price_ver from standard_quotes order by trade, price_ver")
     assert [(x["trade"], x["price_ver"]) for x in prices] == [
-        ("dobae", "2026.11-market"),
-        ("dobae", "2026.11-remodel"),
+        ("dobae", "2026.11b-market"),
+        ("dobae", "2026.11b-remodel"),
         ("mokgong", "2026H2"),
         ("mokgong", "2026H2"),
     ]

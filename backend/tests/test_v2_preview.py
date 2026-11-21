@@ -60,7 +60,7 @@ def test_preview_without_plan_matches_standard_dobae(api):
     assert [t["trade"] for t in pv["trades"]] == ["mokgong", "dobae"]
     # 도면이 없으면 도배는 옛 판(2026H2, 면적 × 2.5)으로 센 v3 표준견적서와 같은 금액. v3 표준견적서는
     # 도배지 줄만 벽지 평 × 시장 평균(리드 결정)이라 그 줄을 뺀 공급가가 같다.
-    # 지금 표준견적서는 도배만 하는 공사 기준(판 2026.11-market, ADR 0004. 목공은 몰딩 · 걸레받이뿐)이고
+    # 지금 표준견적서는 도배만 하는 공사 기준(판 2026.11b-market, ADR 0004. 목공은 몰딩 · 걸레받이뿐)이고
     # 공급 × 1.55 + 방 × 20.4㎡로 세서 v2 미리보기보다 작다
     pv_d = pv["trades"][1]
     p = ProjectOut.model_validate(api.get(f"/projects/{pid}").json())
@@ -75,7 +75,7 @@ def test_preview_without_plan_matches_standard_dobae(api):
     vers = {
         r["trade"]: r["price_ver"] for r in query("select trade, price_ver from standard_quotes")
     }
-    assert pv_d["version"] == "2026H2" and vers == {"mokgong": "2026H2", "dobae": "2026.11-market"}
+    assert pv_d["version"] == "2026H2" and vers == {"mokgong": "2026H2", "dobae": "2026.11b-market"}
     assert st["trades"][1]["supply"] < old.subtotal
     mok = pv["trades"][0]
     assert {ln["key"] for ln in mok["lines"]} >= {"molding", "molding_mat", "base", "base_mat"}

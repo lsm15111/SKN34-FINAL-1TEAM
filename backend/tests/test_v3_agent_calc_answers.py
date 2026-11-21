@@ -62,9 +62,10 @@ def test_period_of_trade_not_in_project_says_so_and_counts_this_house():
 
 def test_period_without_project_uses_examples_or_asked_size():
     ex = calc_lines.period("dobae", None, general_facts("도배 공사 며칠 걸려요?"))
-    assert ex.lines[0] == "믿집 계산으로 빈집 도배(벽 + 천장)는 평수에 따라 약 2~3일이에요."
+    # 품은 시장 품 계수를 곱한 계산 엔진 값(판 2026.11b, ADR 0006)
+    assert ex.lines[0] == "믿집 계산으로 빈집 도배(벽 + 천장)는 평수에 따라 약 2~2.5일이에요."
     assert [r[0] for r in ex.table] == ["24평", "34평", "44평"]  # 평수별 2열 표
-    assert ex.table[1][1] == "빈집 약 2.5일 · 살면서 약 3일"
+    assert ex.table[1][1] == "빈집 약 2일 · 살면서 약 3일"
     assert ex.cards and ex.cards[0].choices[0].action == "start"
     _ok(ex)
     one = calc_lines.period("dobae", None, general_facts("34평 도배하면 며칠 걸려요?"))

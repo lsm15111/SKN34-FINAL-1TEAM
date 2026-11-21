@@ -102,7 +102,7 @@ def period_stub(stub) -> None:
     stub(Composed(
         new=["도장과 일정을 겹치지 않게 잡아요"],
         verdict="answer",
-        lead=CItem(text="34평 도배는 빈집이면 약 2.5일이에요.", cites=[]),
+        lead=CItem(text="34평 도배는 빈집이면 약 2일이에요.", cites=[]),
         blocks=[CBlock(kind="body", rows=[], items=[CItem(text=PAINT, cites=["K182"])])],
         follow=[],
     ))  # fmt: skip

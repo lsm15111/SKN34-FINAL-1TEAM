@@ -11,6 +11,8 @@
 - v4 조건별 두 기준(ADR docs/v4/adr/0004): pick_profile()이 공사 조건으로 '도배만 하는 공사'(시장 가운데) ·
   '리모델링'(서울 업체 실견적 보정)을 고른다. 단가 판에 profile이 있으면 초배지 줄 대신 부자재 줄을 두고
   퍼티 · 식대 · 운송비 줄을 더한다. profile이 없는 옛 판은 옛 줄 그대로다.
+- 가견적과 같은 규칙(ADR 0006): 판에 품 배수(md_mult)가 있으면 품 = 0.5 올림(표준품셈 품 × 도배 유형별 배수).
+  same_rules 판은 '선택' 줄 키를 StandardV3.optional_keys로 넘겨 가견적도 그 줄을 합계 밖에 둔다.
 """
 
 from collections.abc import Mapping, Sequence
@@ -123,6 +125,11 @@ class DobaePrices:
     room_fallback: int = 3  # 면적을 모를 때 화면에 먼저 보이는 방 개수
     # v4 조건별 두 기준(ADR 0004). 비우면 옛 v3 줄(초배지 · 퍼티 · 식대 · 운송비 없음)
     profile: ProfilePrices | None = None
+    # 도배 유형별 품 배수(ADR 0006). 비우면 표준품셈 품 그대로(옛 판). 공정표는 모은 조건 없이 세므로
+    # 두 기준 판이 같은 값이어야 해요(품 · 기간은 기준과 상관없음)
+    md_mult: Mapping[str, Decimal] | None = None
+    # 가견적도 이 판 표준견적서와 같은 줄 규칙: 표준에서 '선택'인 줄은 가견적에서도 합계 밖(ADR 0006)
+    same_rules: bool = False
 
 
 def num(x: Decimal) -> str:
@@ -486,8 +493,11 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
     paper_area = wall_used + ceil_used
     src = p.sources
 
-    # 품 · 기간 (두 기준 판의 식대 줄이 품을 쓴다). 품은 도배 유형 · 기준과 상관없이 표준품셈 그대로
+    # 품 · 기간 (두 기준 판의 식대 줄 · 가견적 인건비가 품을 쓴다). 기준과 상관없고, 품 배수가 있는 판은
+    # 도배 유형별로 곱한다(ADR 0006: 시장 실견적 품 ÷ 표준품셈 품, 합지는 실크의 0.55배)
     md = wall_used * p.md_wall + ceil_used * p.md_ceiling
+    if p.md_mult is not None:
+        md *= p.md_mult[inp.grade]
     if inp.occupied:
         md = md / p.occupied_output
     man_days = m2(half_up(md))  # 0.5 단위 값을 소수 한 자리 꼴로 (5 → 5.0, 값은 그대로)
@@ -702,6 +712,8 @@ class StandardV3:
     market_ver: str  # 벽지 시장 평균 가격 판
     qty: QtyV3
     rooms: int | None = None  # 계산에 쓴 방 개수 (회귀식 판만)
+    # 가견적도 합계 밖에 둘 표준 '선택' 줄 키 (same_rules 판만, ADR 0006). estimate_v3(optional_keys=)
+    optional_keys: frozenset[str] = frozenset()
 
 
 def standard_v3(
@@ -748,7 +760,8 @@ def standard_v3(
     paper_line = next(ln for ln in q.lines if ln.key == "paper")
     qty = QtyV3(floor_py=floor, paper_py=paper_line.qty or Decimal(0), man_day=q.man_days)
     share_ver = shares.version if share is not None else None
-    return StandardV3(q, py, share, share_ver, paper.version, qty, rooms)
+    optional = frozenset(ln.key for ln in q.lines if p.same_rules and ln.state == "optional")
+    return StandardV3(q, py, share, share_ver, paper.version, qty, rooms, optional)
 
 
 # ---- v4 조건별 두 기준 고르기 (ADR docs/v4/adr/0004-금액-조건별-두-기준.md) ----

@@ -852,6 +852,7 @@ def _estimate_v3_out(
                 mode=x.mode,
                 included_in=x.included_in,
                 in_standard=x.in_standard,
+                optional=x.optional,
                 label=x.row.label or x.row.name,
                 note=x.row.note,
             )
@@ -911,6 +912,7 @@ def _v3_out(v: Vendor, ps: VendorPriceSet | None, lines: list) -> PricesV3Out:
             exempt=v.tax_kind in NO_VAT,
             standard_total=ex.quote.total,
             standard_keys=_std_keys(ex),
+            optional_keys=ex.optional_keys,
         )
         example = _estimate_v3_out(e, ps, v.tax_kind)
     return PricesV3Out(
@@ -1266,6 +1268,7 @@ async def estimates_v3_for(
             exempt=tax in NO_VAT,
             standard_total=std.quote.total,
             standard_keys=keys,
+            optional_keys=std.optional_keys,
         )
         out[x.vendor_id] = _estimate_v3_out(e, x, tax)
     return out

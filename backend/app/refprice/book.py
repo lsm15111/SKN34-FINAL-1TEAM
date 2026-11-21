@@ -146,17 +146,47 @@ DOBAE_REMODEL_2026_11 = replace(
     ),
 )
 
+# ---- 가견적과 표준견적서가 같은 수량 · 같은 줄 규칙 (2026-11-21, ADR docs/v4/adr/0006-가견적-표준-같은-규칙.md) ----
+# 금액 줄 값은 앞 판(2026.11-*)과 같고 두 규칙만 더한 판이에요. 이미 만든 견적은 앞 판 그대로 둬요.
+# - 품 = 0.5 올림(표준품셈 품 × 품 배수): 실크 0.91 · 합지 0.91 × 0.55. 두 기준이 같은 값(공정표와 맞춤)
+# - 가견적도 표준견적서 '선택' 줄(퍼티 · 운송 · 경비)을 합계 밖에 둬요(same_rules)
+# 근거: d10-/data/price-sources/cases.csv 본표 실크 315건 시장 품 ÷ 표준품셈 품 가운데 0.914(dev · held-out 같음),
+# 합지 88건 0.492(실크의 0.54배). 서울12호 235건은 1.0이지만 두 기준 품이 같아야 해서 같이 써요
+_MD_MULT = {"basic": Decimal("0.91"), "economy": Decimal("0.91") * Decimal("0.55")}
+_MD_SRC = "시장 실견적 품 ÷ 표준품셈 품 가운데(실크 315건 0.91, 2026-11) · 합지는 × 0.55"
+
+
+def _same_rules(p: DobaePrices, version: str) -> DobaePrices:
+    return replace(
+        p,
+        version=version,
+        sources={**p.sources, "md_mult": _MD_SRC},
+        md_mult=_MD_MULT,
+        same_rules=True,
+    )
+
+
+DOBAE_MARKET_2026_11B = _same_rules(DOBAE_MARKET_2026_11, "2026.11b-market")
+DOBAE_REMODEL_2026_11B = _same_rules(DOBAE_REMODEL_2026_11, "2026.11b-remodel")
+
 # 기준마다 지금 쓰는 판
 DOBAE_PROFILES: dict[str, DobaePrices] = {
-    "paper_only": DOBAE_MARKET_2026_11,
-    "remodel": DOBAE_REMODEL_2026_11,
+    "paper_only": DOBAE_MARKET_2026_11B,
+    "remodel": DOBAE_REMODEL_2026_11B,
 }
 # 공사 조건이 없는 계산(손님 · 평수만 물은 질문 · 업체 단가표 예시)의 판: 조건 없이 계산 엔진이 고른 기준
 DOBAE_DEFAULT = DOBAE_PROFILES[pick_profile(WorkFacts()).profile]
 # 저장한 표준견적서의 판(price_ver) → 그 판. 가견적 비교를 저장본과 같은 판으로 셀 때 쓴다
 DOBAE_BY_VER: dict[str, DobaePrices] = {
     p.version: p
-    for p in (DOBAE_2026H2, DOBAE_V3_2026_11, DOBAE_MARKET_2026_11, DOBAE_REMODEL_2026_11)
+    for p in (
+        DOBAE_2026H2,
+        DOBAE_V3_2026_11,
+        DOBAE_MARKET_2026_11,
+        DOBAE_REMODEL_2026_11,
+        DOBAE_MARKET_2026_11B,
+        DOBAE_REMODEL_2026_11B,
+    )
 }
 
 

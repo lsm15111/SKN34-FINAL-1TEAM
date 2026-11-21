@@ -17,11 +17,11 @@ def test_standard_is_saved_once_and_counts_only_included(api):
     assert [t["trade"] for t in st["trades"]] == ["mokgong", "dobae"]
     dobae = st["trades"][1]
     # 도배 면적 = 공급 105.8 × 1.55 + 방 3개(32평 기본값) × 20.4 = 225.2㎡. 목공은 몰딩 · 걸레받이뿐이라
-    # 도배만 하는 공사 기준(판 2026.11-market, ADR 0004): 도배지 85.0 벽지 평, 부자재 32평 × 6,900원
+    # 도배만 하는 공사 기준(판 2026.11b-market, ADR 0004 · 0006): 도배지 85.0 벽지 평, 부자재 32평 × 6,900원
     # (옛 판 2026H2-rooms 2,485,576 · 2,734,134)
     assert dobae["supply"] == 2_684_083 and dobae["total"] == 2_952_491
     assert dobae["profile"] == "paper_only" and st["trades"][0]["profile"] is None
-    assert dobae["man_day"] == "6.5"
+    assert dobae["man_day"] == "6.0"  # 표준품셈 6.28품 × 0.91 → 6.0 (앞 판 6.5)
     counted = sum(ln["amount"] for ln in dobae["lines"] if ln["state"] in ("included", "separate"))
     assert counted == dobae["supply"]
     assert st["total"] == sum(t["total"] for t in st["trades"]) == st["supply"] + st["vat"]
