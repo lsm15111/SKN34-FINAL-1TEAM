@@ -637,6 +637,11 @@ async def propose_delay_accept(tc: ToolCtx, a: ProposalIn) -> ToolOut:
 CHANGE_WISH_MAX = 3  # 시작해도 되는 날 후보 수(schedule 다른 날짜 요청 WISH_MAX와 같다)
 CHANGE_AHEAD = timedelta(days=365)  # 요청 날짜는 1년 안(schedule service와 같다)
 ChangeReason = Literal["move", "family", "other_work", "other"]
+# 바꾸는 쪽: 앞당기기 earlier(지금 시작일 전 후보만) · 미루기 later(지금 시작일 뒤 후보만)
+ChangeDirection = Literal["earlier", "later"]
+NO_EARLIER = (
+    "지금 시작일 전에는 다른 공정과 겹치지 않게 앞당길 수 있는 날이 없어요. 다른 때를 말해 주세요."
+)
 
 
 def date_change_offer(
@@ -648,10 +653,13 @@ def date_change_offer(
     *,
     delay_days: int | None = None,
     wish_from: date | None = None,
+    direction: str | None = None,
 ) -> dict:
     """공사 날짜 바꾸기 요청(schedule_for 결과 sch의 확정 하나) → 대기 행동 인자. 도구 · 무료 모드가 같이 쓴다.
     시작해도 되는 날은 계산 엔진이 고른다: 지금 날짜에서 delay_days 뒤(또는 wish_from)부터 지금과 같은 일하는 날
-    수로, 다른 공정과 겹치지 않는 자리 안에서 1~3개. 요청할 수 없으면 ToolError."""
+    수로, 다른 공정과 겹치지 않는 자리 안에서 1~3개. 요청할 수 없으면 ToolError.
+    direction(earlier 앞당기기 · later 미루기)과 반대인 후보는 내지 않는다(QA r2 f1x: 앞당기기에 늦은 후보). 없으면
+    delay_days는 미루기, wish_from은 지금 시작일과 견줘 정한다(같은 날이면 정하지 않음). earlier + delay_days는 며칠 앞으로."""
     from app.calc.schedule import WEEKEND, Dated, count_workdays, free_range, start_choices
     from app.refprice.holidays import days_off
     from app.schedule import service as schedule_service
@@ -674,8 +682,18 @@ def date_change_offer(
     weekend = () if sch.weekend_work else WEEKEND
     off = days_off(min(today, base[0]), today + CHANGE_AHEAD + timedelta(days=120))
     n = max(count_workdays(base[0], base[1], off, weekend), 1)
-    first = base[0] + timedelta(days=delay_days) if delay_days else wish_from
+    if direction is None and delay_days:
+        direction = "later"
+    elif direction is None and wish_from is not None and wish_from != base[0]:
+        direction = "earlier" if wish_from < base[0] else "later"
+    if delay_days:
+        step = timedelta(days=delay_days)
+        first = base[0] - step if direction == "earlier" else base[0] + step
+    else:
+        first = wish_from
     first = max(first or today, today + timedelta(days=1))
+    if direction == "later":  # 미루기: 지금 시작일 뒤부터
+        first = max(first, base[0] + timedelta(days=1))
     others = [
         Dated(x.deal.trade, x.deal.start_date, x.deal.end_date)
         for x in sch.trades
@@ -689,6 +707,11 @@ def date_change_offer(
     )
     first = max(first, start_from) if start_from else first
     got = start_choices(first, n, CHANGE_WISH_MAX, {base[0]}, off, weekend, end_by)
+    # 앞당기기: 지금 시작일 전 후보만(뒤로 갈수록 늦어지니 앞 후보는 그대로 남아요)
+    if direction == "earlier":
+        got = [(a, b) for a, b in got if a < base[0]]
+        if not got:
+            raise ToolError("no_earlier", NO_EARLIER)
     picked = [(a, b) for a, b in got if a <= today + CHANGE_AHEAD]
     if not picked:
         raise ToolError(
@@ -737,6 +760,7 @@ class DateChangeIn(BaseModel):
     reason: ChangeReason
     delay_days: int | None = Field(default=None, ge=1, le=180)
     wish_from: date | None = None
+    direction: ChangeDirection | None = None
 
     @model_validator(mode="after")
     def _one(self) -> "DateChangeIn":
@@ -752,7 +776,9 @@ class DateChangeIn(BaseModel):
     status="날짜 바꾸기 요청을 준비하고 있어요",
     description="확정한 공사(d1…)의 공사 날짜를 바꿔 달라는 요청을 승인 카드로 만들어요. 고객이 수락한 날짜를 "
     "미루거나 당기고 싶을 때, 업체가 낸 날짜 대신 다른 날을 원할 때 써요. 바라는 때는 하나만 넣어요: delay_days(지금 "
-    "날짜에서 며칠 뒤로, 일주일 7 · 2주 14) 또는 wish_from(고객이 말한 시작해도 되는 첫날). 믿집이 지금과 같은 일하는 "
+    "날짜에서 며칠 뒤로, 일주일 7 · 2주 14) 또는 wish_from(고객이 말한 시작해도 되는 첫날). direction: 앞당기기 "
+    "earlier · 미루기 later(고객 말에 쪽이 있으면 넣어요, earlier + delay_days는 며칠 앞으로). 안 넣으면 delay_days는 "
+    "미루기, wish_from은 지금 시작일과 견줘 정하고, 그 쪽과 반대인 후보는 내지 않아요. 믿집이 지금과 같은 일하는 "
     "날 수로 시작해도 되는 날 1~3개를 골라요. reason: move 이사 · 입주 · family 집안 일정 · other_work 다른 공사 · "
     "other 그 밖. 요청은 확정마다 2번까지이고, 승인하면 업체가 새 날짜를 올려요(수락 전까지 지금 날짜는 그대로).",
     model=DateChangeIn,
@@ -765,6 +791,11 @@ class DateChangeIn(BaseModel):
                 "type": "string",
                 "format": "date",
                 "description": "고객이 말한 시작해도 되는 첫날",
+            },
+            "direction": {
+                "type": "string",
+                "enum": ["earlier", "later"],
+                "description": "앞당기기 earlier · 미루기 later",
             },
         },
         required=["deal_ref", "reason"],
@@ -785,6 +816,7 @@ async def propose_date_change(tc: ToolCtx, a: DateChangeIn) -> ToolOut:
         tc.now,
         delay_days=a.delay_days,
         wish_from=a.wish_from,
+        direction=a.direction,
     )
     out, _ = await _offer(tc, project_id=pid, **got)
     return out

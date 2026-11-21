@@ -1,4 +1,5 @@
 // C5 실측 견적서 비교(업체 = 열): 낼 금액(앞 판과 차액) · 가견적과 차이 · 공사 기간 · 유효기간 · 철거 · 폐기물 · 업체가 적은 말 · 하자 보수 · 파일.
+// 받은 견적서가 한 곳뿐이면(서버 single) 비교가 아니라 그 견적서 카드예요(열 하나). 받은 견적서가 없으면 서버가 카드를 보내지 않아요.
 // 금액 · 차이는 계산 엔진 값(서버)이에요. 표준견적서와 견준 %는 넣지 않아요(리드 결정). 업체 견적서는 줄로 바꾸지 않아요(파일 + 칸).
 // 업체가 적은 말(벽지 사양 칸, vendor_note)은 업체 글 그대로라 그 줄에만 보여요(다른 글에 섞지 않아요).
 // '확정할 업체' [○○로 할래요]는 그 업체 확정 승인 카드를 받아요(choice vendor_confirm:m…, 무료 모드도). 유효기간이 지났거나 이미 확정했으면(서버 decided) 없어요.
@@ -27,12 +28,12 @@ export function QuoteCompareCard({ card, ctx, old }: CardProps<"quote_compare">)
   return (
     <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
-        <h3 id={`${card.card_id}-t`}>실측 견적서 비교</h3>
+        <h3 id={`${card.card_id}-t`}>{d.single ? "실측 견적서" : "실측 견적서 비교"}</h3>
         <SourceTag src="calc" />
       </div>
       <div className={c.cmpWrap}>
         <table className={c.cmp}>
-          <caption className="mj-sr">업체별 실측 견적서. 금액은 부가세 포함이에요</caption>
+          <caption className="mj-sr">{d.single ? "받은 실측 견적서" : "업체별 실측 견적서"}. 금액은 부가세 포함이에요</caption>
           <thead>
             <tr>
               <th scope="col"><span className="mj-sr">항목</span></th>
@@ -76,7 +77,7 @@ export function QuoteCompareCard({ card, ctx, old }: CardProps<"quote_compare">)
       ) : null}
       {old ? null : (
         <div className={k.row}>
-          <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>비교표 크게 보기</Link>
+          <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>{d.single ? "견적서 크게 보기" : "비교표 크게 보기"}</Link>
           {chats.map((x) => <Link key={x.visit_id} className={`${k.btn} ${k.sm}`} href={x.chat_href!} scroll={false}><I n="chat" />{x.vendor_name} 채팅</Link>)}
         </div>
       )}

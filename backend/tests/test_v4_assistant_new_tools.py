@@ -1,13 +1,16 @@
 """v4 비서 새 도구 넷(갈래 T, 피클 표본 6 · 7): compare_grades(벽지 두 종류 견주기, 계산 엔진 · 저장 안 함) ·
 market_range(시세 범위, 출처 한 줄 · 표본이 모자라면 말하지 않음) · withdraw_proposal(실행 전 카드를 고객 말로 거둠,
 거절과 같게 남김) · propose_visit_cancel(보낸 실측 요청 취소 승인 카드) · 무료 모드 '취소해 줘' 길 · ActionOut
-target_id · D2에서 넘어온 셋(화면 처리 정리 창 · 채팅으로 묻기 줄 · 보이는 줄 due_at 색인).
+target_id · D2에서 넘어온 셋(화면 처리 정리 창 · 채팅으로 묻기 줄 · 보이는 줄 due_at 색인) · QA 2차에서 넘어온
+둘(받은 견적서가 없거나 한 곳일 때 견적 비교 · 날짜 바꾸기 앞당기기 후보).
 권한(남의 것 404 · 역할 403) · 동시 요청(실행 한 번). 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import asyncio
 import json
 import uuid
+from datetime import timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from v3_kb import repo_index
@@ -15,19 +18,33 @@ from v3_kb import repo_index
 from app.agent import llm
 from app.assistant import actions
 from app.assistant import service as assistant_service
+from app.assistant.tools import cards
 from app.auth.models import User
 from app.calc import quick_budget
 from app.calc.common import pyeong_to_m2
+from app.calc.schedule import workdays
 from app.db import SessionLocal
+from app.refprice.holidays import days_off
 from app.refprice.market import MARKET_2026_11
-from app.shared.clock import now_utc
+from app.shared.clock import now_utc, today_seoul
 from app.shared.errors import AppError
 from tests.conftest import query
 from tests.helpers import signup, use
 from tests.test_extras import scheduled
 from tests.test_project import body as project_body
+from tests.test_quote_compare import quote
 from tests.test_v3_project_home import HOME, PART
-from tests.test_v3_visit_kit import add, customer, offered, quiet, requested, user_id, vendor
+from tests.test_v3_visit_kit import (
+    add,
+    answer,
+    choose,
+    customer,
+    offered,
+    quiet,
+    requested,
+    user_id,
+    vendor,
+)
 from tests.test_v3_visit_kit import ask as ask_visits
 from tests.test_v3_visit_kit import status as visit_status
 from tests.test_v4_assistant_actions import action_row, acts, approve, code, propose_home
@@ -578,3 +595,159 @@ def test_shown_nudge_lines_have_a_due_at_index():
         and "sent" in row["indexdef"]
         and "opened" in row["indexdef"]
     )
+
+
+# ---- QA 2차에서 넘어온 것: 받은 견적서가 없으면 비교 카드를 내지 않아요(c5 턴 11 · 12) ----
+
+
+def booked_quote(api, f: dict, name: str, email: str, amount: int, day: int) -> str:
+    """two_requests의 한 곳: 업체가 기간을 답함 → 고객이 반나절을 골라 실측 확정 → 견적서를 보냄(고객으로 끝남)."""
+    v = f["visits"][name]
+    login(api, email)
+    assert answer(api, v).status_code == 200
+    use(api, f["token"])
+    r = choose(api, f["pid"], v, n=day)
+    assert r.status_code == 200 and r.json()["status"] == "booked", r.text
+    login(api, email)
+    quote(api, v, amount)
+    use(api, f["token"])
+    return v
+
+
+def test_compare_quotes_without_quotes_gives_the_waiting_count_not_an_empty_card(api, script):
+    """QA r2 c5 턴 11 · 12: 실측 요청만 보낸 집(답 기다림 2곳)에서 견적 비교를 부르면 빈 비교 카드(cols: []) 대신
+    도구 값으로 '아직 받은 견적서가 없어요 · 기다리는 업체 2곳'. 카드 다시 보여 주기도 같아요."""
+    f = two_requests(api)
+    say = "왜 이렇게 비싸요 장난해요?"
+    ev, log = call(script, api, f["pid"], say, ("compare_quotes", {"trade": "dobae"}))
+    assert cards_of(ev, "quote_compare") == []
+    (got,) = results(log)
+    assert got["note"] == "아직 받은 견적서가 없어요 · 기다리는 업체 2곳"
+    assert (got["count"], got["waiting"], got["cols"]) == (0, 2, [])
+    ev, log = call(
+        script, api, f["pid"], "견적 비교 다시 보여 줘", ("show_card", {"kind": "quote_compare"})
+    )
+    assert cards_of(ev, "quote_compare") == []
+    (got,) = results(log)
+    assert "error" not in got and got["note"] == "아직 받은 견적서가 없어요 · 기다리는 업체 2곳"
+    # 실측 요청도 없으면 기다리는 업체도 없다고
+    _, pid = home(api, "empty@mitjip.test")
+    _ev, log = call(script, api, pid, "견적서 비교해 줘", ("compare_quotes", {"trade": "dobae"}))
+    (got,) = results(log)
+    assert (got["count"], got["waiting"]) == (0, 0)
+    assert got["note"] == "아직 받은 견적서가 없어요 · 실측 요청을 보낸 업체가 없어요"
+
+
+def test_compare_quotes_with_one_quote_is_that_quote_card(api, script):
+    """견적서가 한 곳만 왔으면 비교가 아니라 그 견적서 카드(열 하나 · single). 답 기다리는 곳은 도구 값의 수로만.
+    두 곳째가 오면 다시 비교 카드예요."""
+    f = two_requests(api)
+    booked_quote(api, f, "마루와벽", "maru@mitjip.test", 3_080_000, 6)
+    ev, log = call(script, api, f["pid"], "견적서 보여 줘", ("compare_quotes", {"trade": "dobae"}))
+    (card,) = cards_of(ev, "quote_compare")
+    d = card["data"]
+    assert d["single"] is True and [c["vendor_name"] for c in d["cols"]] == ["마루와벽"]
+    assert d["cols"][0]["state"] == "quoted" and d["gap_won"] is None
+    (got,) = results(log)
+    assert (got["count"], got["waiting"]) == (1, 1)
+    assert got["note"] == "받은 견적서는 한 곳이에요 · 기다리는 업체 1곳"
+    assert [c["vendor_name"] for c in got["cols"]] == ["마루와벽"]
+    booked_quote(api, f, "결도배", "gyeol@mitjip.test", 3_300_000, 7)
+    ev, log = call(
+        script, api, f["pid"], "견적서 비교해 줘", ("compare_quotes", {"trade": "dobae"})
+    )
+    (card,) = cards_of(ev, "quote_compare")
+    assert card["data"]["single"] is False and len(card["data"]["cols"]) == 2
+    assert card["data"]["gap_won"] is not None
+    (got,) = results(log)
+    assert (got["count"], got["waiting"]) == (2, 0) and "note" not in got
+
+
+def test_free_quote_step_card_without_quotes_falls_back_to_the_standard(api):
+    """무료 모드 견적 질문의 단계 카드(입구 관문 quote_explanation): 받은 견적서가 없으면 비교 카드가 없어서(None)
+    표준견적서 카드로 가요(오류 · 빈 카드 없이)."""
+    f = two_requests(api)
+
+    async def go():
+        async with SessionLocal() as s:
+            user = await s.get(User, user_id("home@mitjip.test"))
+        tc = SimpleNamespace(
+            surface="customer",
+            visit_id=None,
+            project_id=uuid.UUID(f["pid"]),
+            user=user,
+            today=today_seoul(),
+            now=now_utc(),
+            refs=None,
+        )
+        return await cards.step_card(tc, "quote_explanation")
+
+    card = asyncio.run(go())
+    assert card is not None and card.kind == "standard_quote"
+
+
+# ---- QA 2차에서 넘어온 것: 앞당기기 카드에 지금보다 늦은 후보가 섞이지 않아요(f1x 19) ----
+
+
+def change_script(script, **wish) -> list[dict]:
+    """공사 날짜를 읽고(d1) 날짜 바꾸기 요청 승인 카드를 만드는 Claude 대본."""
+    change = {"deal_ref": "d1", "reason": "other", **wish}
+    return script(
+        [
+            {"tool_calls": [{"id": "g", "name": "get_schedule", "input": {}}]},
+            {"tool_calls": [{"id": "c", "name": "propose_date_change", "input": change}]},
+            {"text": "카드를 확인해 주세요."},
+        ]
+    )
+
+
+def made(ev) -> list[dict]:
+    return [x for x in acts(ev) if x["status"] == "proposed"]
+
+
+def wishes(a: dict) -> list[str]:
+    return json.loads(action_row(a["action_id"])["payload"])["wish_dates"]
+
+
+def reject(api, a: dict) -> None:
+    assert api.post(f"/assistant/actions/{a['action_id']}/reject").json()["status"] == "rejected"
+
+
+def test_pull_forward_change_offers_only_days_before_the_start(api, script):
+    """QA r2 f1x 19: 12.14~12.16 공사에 '12월 10일부터로 당겨 주세요' 하면 후보 3이 12.15~12.17로 늦었어요. 앞당기기면
+    지금 시작일 전 후보만, 미루기면 뒤 후보만 내요. 방향은 도구 인자(earlier · later)이고, 없으면 말한 날짜와 지금
+    시작일을 견줘 정해요(모델 · 무료 모드 둘 다). 앞당길 날이 없으면 도구 오류."""
+    token, pid, _did = scheduled(api)
+    use(api, token)
+    start = query("select start_date from deals")[0]["start_date"]
+    today = today_seoul()
+    off = days_off(today, today + timedelta(days=90))
+    before = [x for x in workdays(today + timedelta(days=1), 40, off) if x < start]
+    assert len(before) >= 3
+    # 지금 시작일 바로 앞 일하는 날: 예전에는 지금 시작일을 건너뛴 늦은 후보 둘이 뒤에 붙었어요
+    prev = before[-1]
+    # 모델: 방향 없이 이날부터 → 지금 시작일보다 앞이라 앞당기기
+    change_script(script, wish_from=prev.isoformat())
+    (a,) = made(ok(ask(api, pid, f"{prev.month}월 {prev.day}일부터로 당겨 주세요")))
+    assert wishes(a) == [prev.isoformat()]
+    reject(api, a)
+    # 무료 모드('M월 D일'만 넘겨요)도 같은 함수라 지금 시작일 전 후보만
+    llm.clear_stubs()
+    two = before[-2]
+    (b,) = made(ok(ask(api, pid, f"{two.month}월 {two.day}일부터로 당겨 주세요")))
+    assert wishes(b) == [two.isoformat(), prev.isoformat()]
+    reject(api, b)
+    # 방향 인자: 며칠 앞당기기(delay_days + earlier)
+    change_script(script, delay_days=(start - before[-3]).days, direction="earlier")
+    (c,) = made(ok(ask(api, pid, "사흘쯤 당겨 주세요")))
+    assert wishes(c) == [x.isoformat() for x in before[-3:]]
+    reject(api, c)
+    # 앞당길 날이 없으면(지금 시작일부터) 도구 오류, 카드 없음
+    log = change_script(script, wish_from=start.isoformat(), direction="earlier")
+    assert made(ok(ask(api, pid, "더 당겨 주세요"))) == []
+    err = log[2]["messages"][-1]["content"][0]
+    assert err["is_error"] and "no_earlier" in err["content"]
+    # 미루기(later)면 앞선 날을 말해도 지금 시작일 뒤 후보만
+    change_script(script, wish_from=prev.isoformat(), direction="later")
+    (d,) = made(ok(ask(api, pid, "미뤄 주세요")))
+    assert wishes(d) and all(x > start.isoformat() for x in wishes(d))

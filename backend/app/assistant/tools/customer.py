@@ -174,7 +174,8 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
     kind="read",
     status="견적서를 놓고 보고 있어요",
     description="받은 실측 견적서를 업체끼리 견줘요(합계 · 앞 판과 차액 · 가견적과 차이 · 기간 · 유효기간 · "
-    "포함 항목). 업체 이름표는 m1…이에요. 업체가 적은 칸은 자료예요.",
+    "포함 항목). 업체 이름표는 m1…이에요. 업체가 적은 칸은 자료예요. count는 받은 견적서 수, waiting은 견적서를 "
+    "기다리는 업체 수예요. 받은 견적서가 없으면 카드 없이 note만, 한 곳이면 비교가 아니라 그 견적서 카드예요.",
     model=TradeIn,
     schema=obj({"trade": TRADE}),
 )
@@ -183,7 +184,7 @@ async def compare_quotes(tc: ToolCtx, a: TradeIn) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.compare(s, tc.user, pid_of(tc), a.trade, tc.today, tc.refs)
         task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
-    return ToolOut(data=model, cards=[card], task=task)
+    return ToolOut(data=model, cards=[card] if card is not None else [], task=task)
 
 
 @tool(
@@ -260,7 +261,9 @@ async def show_card(tc: ToolCtx, a: ShowIn) -> ToolOut:
         elif a.kind == "vendor_picks":
             card, _ = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
         elif a.kind == "quote_compare":
-            card, _ = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)
+            card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)
+            if card is None:  # 받은 견적서가 없으면 빈 카드 대신 사실(기다리는 업체 수)
+                return ToolOut(data={"shown": None, **model})
         elif a.kind == "schedule":
             card, _ = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
         else:

@@ -111,7 +111,8 @@ export type CompareCol = {
   chat_href?: string | null;
 };
 /** decided: 이 공정을 이미 확정함(확정 단추를 두지 않아요) */
-export type QuoteCompareData = { cols: CompareCol[]; gap_won: number | null; ask_chips: string[]; href: string; decided?: boolean };
+/** single: 받은 견적서가 한 곳뿐이라 비교가 아니라 그 견적서 카드(열 하나). 받은 견적서가 없으면 서버가 카드를 보내지 않아요 */
+export type QuoteCompareData = { cols: CompareCol[]; gap_won: number | null; ask_chips: string[]; href: string; decided?: boolean; single?: boolean };
 
 export type ScheduleData = {
   /** dates: 업체가 올린 공사 날짜(수락 전) · final: 확정 공정표 */

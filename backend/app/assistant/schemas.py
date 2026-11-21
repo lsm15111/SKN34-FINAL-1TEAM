@@ -250,6 +250,10 @@ class QuoteCompareData(BaseModel):
     decided: bool = Field(
         default=False, description="이 공정을 이미 확정함(확정 단추를 두지 않아요)"
     )
+    single: bool = Field(
+        default=False,
+        description="받은 견적서가 한 곳뿐: 비교가 아니라 그 견적서 카드(열 하나, 기다리는 곳은 빼요)",
+    )
 
 
 class LinkOut(BaseModel):

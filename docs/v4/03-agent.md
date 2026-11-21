@@ -271,7 +271,7 @@
 | `get_standard_quote`(trade) | `quote.service.standard_for` |
 | `recommend_vendors`(trade) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3 |
 | `vendor_free_slots`(ref, prefer, days) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3 |
-| `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요 |
+| `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요. 받은 견적서가 없으면 카드 없이 `note`('아직 받은 견적서가 없어요 · 기다리는 업체 n곳') · `count` 0 · `waiting`, 한 곳이면 비교가 아니라 그 견적서 카드(`quote_compare.single`, 열 하나)예요(`show_card(quote_compare)`도 같아요) |
 | `get_schedule`() | `schedule.service.schedule_for` |
 | `today_tasks`() | `service.feed_for`(`schedule.service.overview_for` + 열린 행동) |
 | `search_knowledge`(query, trade) | `knowledge.service.search` |
@@ -293,7 +293,7 @@
 | `propose_visit_slot`(slot_ref) | `visit.flow.pick` · `pick_proposal` |
 | `propose_vendor_confirm`(visit_ref) | `schedule.service.confirm`(seen_ver) |
 | `propose_dates_accept` · `propose_delay_accept`(proposal_ref) | `schedule.service.accept_dates`(seen_version) |
-| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수) |
+| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from, direction?) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수). direction(earlier 앞당기기 · later 미루기)과 반대인 후보는 내지 않아요. 없으면 delay_days는 미루기, wish_from은 지금 시작일과 견줘 정해요. 앞당길 날이 없으면 도구 오류 `no_earlier` |
 | 업체 `propose_window_answer`(visit_ref, window_ref) | `visit.flow.answer_window` |
 | 업체 `propose_decline`(visit_ref, code) | `visit.service.decline` |
 | 업체 `propose_dates`(deal_ref, days_ref) | `schedule.service.propose_dates` |

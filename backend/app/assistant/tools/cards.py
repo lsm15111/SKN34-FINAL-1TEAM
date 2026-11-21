@@ -413,9 +413,11 @@ SENT_STATE = {
 }
 
 
-async def sent_visits(s: AsyncSession, user: User, pid: uuid.UUID) -> list:
-    """이 공사에서 보낸 실측 요청 중 지금 취소할 수 있는 것(visit.service.CANCELLABLE, 오래된 것부터). 읽기 조인.
-    남의 공사면 project.service가 404."""
+async def sent_visits(
+    s: AsyncSession, user: User, pid: uuid.UUID, trade: str | None = None
+) -> list:
+    """이 공사에서 보낸 실측 요청 중 지금 취소할 수 있는 것(visit.service.CANCELLABLE = 견적서를 아직 안 보낸 곳,
+    오래된 것부터). trade를 주면 그 공정만. 읽기 조인. 남의 공사면 project.service가 404."""
     from sqlalchemy import select
 
     from app.project import service as project_service
@@ -423,11 +425,10 @@ async def sent_visits(s: AsyncSession, user: User, pid: uuid.UUID) -> list:
     from app.visit.service import CANCELLABLE
 
     await project_service.get_for(s, user, pid)
-    rows = await s.scalars(
-        select(Visit)
-        .where(Visit.project_id == pid, Visit.status.in_(CANCELLABLE))
-        .order_by(Visit.created_at, Visit.id)
-    )
+    q = select(Visit).where(Visit.project_id == pid, Visit.status.in_(CANCELLABLE))
+    if trade is not None:
+        q = q.where(Visit.trade == trade)
+    rows = await s.scalars(q.order_by(Visit.created_at, Visit.id))
     return list(rows.all())
 
 
@@ -704,6 +705,12 @@ async def visit_slots(
 
 # ---- 견적서 비교 ----
 
+# 받은 견적서가 없을 때 카드 대신 돌려주는 사실(QA r2 c5: 빈 비교 카드를 보내지 않아요) · 한 곳뿐일 때 사실.
+# 모델 값 count = 받은 견적서 수, waiting = 견적서를 기다리는 업체 수(policy.ALLOWED 안의 칸)
+NO_QUOTES_NOTE = "아직 받은 견적서가 없어요 · 기다리는 업체 {n}곳"
+NO_SENT_NOTE = "아직 받은 견적서가 없어요 · 실측 요청을 보낸 업체가 없어요"
+ONE_QUOTE_NOTE = "받은 견적서는 한 곳이에요"
+
 
 def _file(pid: uuid.UUID, q) -> CompareFileOut | None:
     f = q.files[0] if q.files else None
@@ -723,18 +730,28 @@ async def compare(
     trade: str,
     today: date,
     refs: "RefTable",
-) -> tuple[CardOut, dict]:
-    """visit.service.compare 값 그대로(표준 대비 %는 옮기지 않는다). 업체가 적은 칸은 자료 상자로."""
+) -> tuple[CardOut | None, dict]:
+    """visit.service.compare 값 그대로(표준 대비 %는 옮기지 않는다). 업체가 적은 칸은 자료 상자로.
+    받은 견적서가 없으면 카드 없이(None) '아직 받은 견적서가 없어요 · 기다리는 업체 n곳'을, 한 곳이면 비교가 아니라
+    그 견적서 카드(열 하나 · single)를 돌려준다. 기다리는 업체 = 견적서를 아직 안 보낸 실측 요청(취소할 수 있는 상태)."""
     from app.calc import visit_view
     from app.visit import service as visit_service
 
     out = await visit_service.compare(s, user, pid, trade, today)
-    decided = any(r.status == "chosen" for r in out.vendors)
+    got = [r for r in out.vendors if r.latest is not None]
+    waiting = len(await sent_visits(s, user, pid, trade))
+    if not got:
+        note = NO_QUOTES_NOTE.format(n=waiting) if waiting else NO_SENT_NOTE
+        model = {"trade": trade, "cols": [], "count": 0, "waiting": waiting, "note": note}
+        return None, model
+    single = len(got) == 1
+    rows = got if single else out.vendors
+    decided = any(r.status == "chosen" for r in rows)
     # 실측이 확정된(채팅이 열린) 업체에는 '채팅 열기'를 단다: 다른 업체를 확정해 닫힌 요청은 빼요
-    chats = await chat_links(s, pid, [r.vendor_id for r in out.vendors if r.status in CHAT_STATES])
+    chats = await chat_links(s, pid, [r.vendor_id for r in rows if r.status in CHAT_STATES])
     cols: list[CompareCol] = []
     model_cols: list[dict] = []
-    for r in out.vendors:
+    for r in rows:
         ref = refs.put(
             "visit",
             {"id": str(r.visit_id), "vendor_name": r.vendor_name, "seen_ver": r.seen_ver},
@@ -802,16 +819,25 @@ async def compare(
         else []
     )
     data = QuoteCompareData(
-        cols=cols, gap_won=out.gap_total, ask_chips=asks, href=href(pid, "/quotes"), decided=decided
+        cols=cols,
+        gap_won=out.gap_total,
+        ask_chips=asks,
+        href=href(pid, "/quotes"),
+        decided=decided,
+        single=single,
     )
-    quoted = sum(1 for c in cols if c.state == "quoted")
     card = CardOut(
         card_id=f"compare-{trade}",
         kind="quote_compare",
         data=data.model_dump(mode="json"),
-        say=f"실측 견적서가 {quoted}곳 왔어요." if quoted else None,
+        say=f"실측 견적서가 {len(got)}곳 왔어요.",
     )
-    model = {"trade": trade, "cols": model_cols, "gap_won": out.gap_total}
+    model = {
+        "trade": trade, "cols": model_cols, "gap_won": out.gap_total, "count": len(got),
+        "waiting": waiting,
+    }  # fmt: skip
+    if single:
+        model["note"] = ONE_QUOTE_NOTE + (f" · 기다리는 업체 {waiting}곳" if waiting else "")
     if decided:  # 확정했으면 지금 공사 금액(승인한 추가 금액 포함)
         from app.schedule import service as schedule_service
 
@@ -1483,7 +1509,7 @@ async def step_card(tc, route: str) -> CardOut | None:
                 return None
             if route == "quote_explanation":
                 card, _model = await compare(s, tc.user, tc.project_id, "dobae", tc.today, tc.refs)
-                if any(c["state"] == "quoted" for c in card.data["cols"]):
+                if card is not None:  # 받은 견적서가 있을 때만 카드가 와요
                     return card
                 return (await standard(s, tc.user, tc.project_id))[0]
             if route == "schedule":
