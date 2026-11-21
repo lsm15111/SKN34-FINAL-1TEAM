@@ -185,6 +185,7 @@ export const MOCK_QUOTE: VendorQuoteBoard = {
     incl_removal: true, incl_waste: true, paper_spec: "LX 베스띠 · 폭 106cm", warranty_months: 12,
   },
   sent: [],
+  quote_due_at: "2026-12-18T18:00:00+09:00", // 실측 12.15 + 3일 18:00(장부 값)
 };
 
 // ───── 공사 (V11 · V23) ─────

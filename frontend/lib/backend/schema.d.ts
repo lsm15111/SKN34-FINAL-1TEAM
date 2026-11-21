@@ -7230,6 +7230,11 @@ export interface components {
              * @description 보낸 버전 (최신 먼저)
              */
             sent: components["schemas"]["VendorQuoteOut"][];
+            /**
+             * Quote Due At
+             * @description 견적서 낼 기한: 장부 visits.quote_due_at(실측일 + 3일 18:00) 그대로. 처음 보내기 전(실측 확정 · 실측 받음)만, 그 밖은 비어 있다
+             */
+            quote_due_at?: string | null;
         };
         /**
          * QuoteBriefOut

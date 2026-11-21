@@ -1,16 +1,17 @@
 """v4 업체 쪽: 같은 업체의 다른 공사와 공사 날짜 겹침(공사 화면 · 미리보기 · 비서 my_jobs · 먼저 말 걸기 후보) ·
-오늘 할 일 공사 날짜 보내기 단추.
+오늘 할 일 공사 날짜 보내기 단추 · 견적서 올리기 화면 기한.
 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import json
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant import proactive
+from app.calc import deadline
 from app.calc.schedule import workdays
 from tests.conftest import query
 from tests.helpers import use
@@ -18,7 +19,7 @@ from tests.test_dates import OFF, TODAY
 from tests.test_dates import ready as dates_ready
 from tests.test_deal import confirm
 from tests.test_quote_compare import quote
-from tests.test_v3_visit_kit import quiet
+from tests.test_v3_visit_kit import booked, day, quiet
 from tests.test_v3_work_deal import post_days
 from tests.test_v4_assistant_actions import acts, approve
 from tests.test_v4_assistant_nudges import at, run
@@ -248,3 +249,19 @@ def test_vendor_today_candidate_avoids_other_job_and_free_turn_card_has_button(a
     card = next(d for e, d, _ in ok(r) if e == "card" and d["kind"] == "today")
     (got,) = [x for x in card["data"]["todo"] if x["id"] == "dates"]
     assert got["action"]["choice"].startswith("dates:") and got["sub"] == row["sub"]
+
+
+# ---- 견적서 올리기 화면 기한 ----
+
+
+def test_quote_board_due_is_the_ledger_value(api):
+    """견적서 올리기 화면 기한은 장부 quote_due_at(실측일 + 3일 18:00) 그대로예요. 실측 확정 줄의 '다음 일'
+    기한(실측 반나절이 끝나는 때)을 쓰던 일(F2 L13: '11.22(일) 13:00까지')."""
+    f = booked(api)  # 오늘 + 6일 오전 실측 확정
+    login(api, f["email"])
+    board = api.get(f"/vendor/visits/{f['visit']}/quote").json()
+    (v,) = query("select quote_due_at from visits where id = $1", uuid.UUID(f["visit"]))
+    due = datetime.fromisoformat(board["quote_due_at"])
+    assert due == v["quote_due_at"] == deadline.quote_due(day(6))
+    nxt = api.get(f"/vendor/visits/{f['visit']}").json()["next"]
+    assert datetime.fromisoformat(nxt["due_at"]) == deadline.half_end(day(6), "am") != due

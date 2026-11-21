@@ -1132,6 +1132,8 @@ async def quote_board(s: AsyncSession, vendor: User, visit_id: uuid.UUID) -> Quo
         days_max=JOB_MAX_DAYS,
         draft=draft,
         sent=sent,
+        # 견적서 기한은 장부 값 그대로(실측 반나절이 끝나는 때 같은 다른 기한과 섞지 않게), 처음 보내기 전만
+        quote_due_at=v.quote_due_at if v.status in _first_quote_from(v) else None,
     )
 
 
