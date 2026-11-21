@@ -75,7 +75,7 @@ SRC_NOTE = {
 }
 WHY_NOTE = {
     "short": "앞 공사와 뒤 공사 사이가 모자라 날이 빠듯해요. 업체와 날짜를 맞춰 보세요.",
-    "no_free_day": "그 사이에 주말 · 공휴일이 없어요.",
+    "no_free_day": "그 사이에 주말 · 공휴일이 없어요. 업체와 날짜를 맞추거나 하루를 비워 보세요.",
     "late": "마감이 지났어요.",
 }
 ELECTRIC = ("outlet", "light")
@@ -91,7 +91,7 @@ FREE_NOT_ASKED = (
 FREE_LIST = "고르신 직접 할 일이에요. 날짜는 {phase} 공정표 기준이에요."
 FREE_FIRST = " 가장 먼저 할 일은 {name}, {when}."
 FREE_PREP = "직접 하실 일의 준비물이에요. 공사 날 준비할 것도 같이 적었어요."
-FREE_TIGHT = " 날이 빠듯한 일이 있어요. 카드를 확인해 주세요."
+FREE_TIGHT = " 날이 빠듯한 일({names})은 카드를 확인해 주세요."
 
 
 def ko_day(d: date) -> str:
@@ -374,11 +374,12 @@ def _list_text(g: Got) -> str:
     if g.phase not in PHASE_KO:
         return "고르신 직접 할 일이에요. 공사 날짜가 정해지면 날짜를 알려 드려요."
     said = FREE_LIST.format(phase=PHASE_KO[g.phase])
-    first = next((t for t in g.tasks if t.day is not None and not t.late), None)
+    first = next((t for t in g.tasks if t.day is not None and t.fit), None)
     if first is not None:
         said += FREE_FIRST.format(name=first.name, when=when_text(first))
-    if any(not t.fit and not t.late for t in g.tasks):
-        said += FREE_TIGHT
+    tight = [t.name for t in g.tasks if not t.fit and not t.late]
+    if tight:
+        said += FREE_TIGHT.format(names=", ".join(tight))
     return said
 
 
