@@ -140,7 +140,8 @@ class MarketFact(BaseModel):
 class ScreenLineFact(BaseModel):
     """보는 화면의 가견적 줄 한 개. 값은 화면과 같은 계산 엔진 결과(vendor_detail) 그대로."""
 
-    key: str  # 업체 단가 키: putty · paper_hapji · paper_silk · material · labor · meal · truck
+    # 업체 단가 키: putty · paper_hapji · paper_silk · material(실크) · material_hapji · labor · meal · truck
+    key: str
     name: str  # 고객 화면 이름: 퍼티작업 · 합지벽지 · 실크벽지 · 부자재 · 인건비 · 식대 · 운송비
     note: str = ""  # 화면 줄 아래 짧은 뜻(풀 · 부직포 · 네바리 · 실리콘 등)
     qty: float

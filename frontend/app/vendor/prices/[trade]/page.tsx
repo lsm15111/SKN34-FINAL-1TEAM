@@ -8,7 +8,7 @@ import { approvedVendorGate, getMyPricesV3, getMyProfile } from "@/lib/api/vendo
 
 export const metadata = { title: "도배 단가" };
 
-// 도배 단가(D02 d_price, 1201~1208). 목공 v3 단가표는 아직 없어요(9판 '목공 준비 중'). 승인된 업체만.
+// 도배 단가(D02 d_price, 1201~1209). 목공 v3 단가표는 아직 없어요(9판 '목공 준비 중'). 승인된 업체만.
 export default async function VendorPricesPage({ params }: { params: Promise<{ trade: string }> }) {
   const { trade } = await params;
   if (trade !== "dobae" && trade !== "mokgong") notFound();

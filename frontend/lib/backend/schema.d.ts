@@ -6605,7 +6605,7 @@ export interface components {
         PriceLineV3In: {
             /**
              * Key
-             * @description putty · paper_hapji · paper_silk · material · labor · meal · truck
+             * @description putty · paper_hapji · paper_silk · material · material_hapji · labor · meal · truck
              */
             key: string;
             /**
@@ -6650,8 +6650,13 @@ export interface components {
              */
             unit: string;
             /**
+             * Grade
+             * @description 그 벽지(합지 · 실크)를 고른 집에만 쓰는 줄(도배지 · 부자재). 비면 모든 집. '다른 줄에 포함' 대상은 같은 벽지 줄이나 모든 집 줄만 돼요
+             */
+            grade?: ("economy" | "basic") | null;
+            /**
              * Mode
-             * @description 아직 안 넣었으면 비어 있다
+             * @description 아직 안 넣었으면 비어 있다(확인한 묶음에 없던 새 줄도 비어 있다)
              */
             mode: ("price" | "included" | "excluded") | null;
             /** Unit Price */

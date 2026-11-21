@@ -677,7 +677,8 @@ class V3Vendor:
 
 
 # 9판 업체: 마루와벽(C11 단가 · 바로 확정) · 결도배(D02 단가, 합지 '빼기') · 한결인테리어(단가 준비 중) ·
-# 바른벽(A01 보완 요청) + 심사 기다림 · 거절 업체. 단가는 원 · 부가세 빼고(1201~1208)
+# 바른벽(A01 보완 요청) + 심사 기다림 · 거절 업체. 단가는 원 · 부가세 빼고(1201~1209).
+# 합지 부자재(1209)는 9판에 없던 줄이라 시장 비(합지 ÷ 실크 약 0.5)로 넣었어요
 V3_VENDORS = (
     V3Vendor(
         "maru", _mail("maru"), "마루와벽", "이마루", "9990003001", "01000003001", ("dobae",),
@@ -685,6 +686,7 @@ V3_VENDORS = (
         prices=(
             ("putty", "price", 20_000, None), ("paper_hapji", "price", 5_000, None),
             ("paper_silk", "price", 9_500, None), ("material", "price", 13_000, None),
+            ("material_hapji", "price", 6_500, None),
             ("labor", "price", 300_000, None), ("meal", "price", 11_000, None),
             ("truck", "price", 50_000, None),
         ),
@@ -703,6 +705,7 @@ V3_VENDORS = (
         prices=(
             ("putty", "price", 15_000, None), ("paper_hapji", "excluded", None, None),
             ("paper_silk", "price", 9_000, None), ("material", "price", 12_000, None),
+            ("material_hapji", "excluded", None, None),
             ("labor", "price", 270_000, None), ("meal", "included", None, "labor"),
             ("truck", "price", 38_000, None),
         ),

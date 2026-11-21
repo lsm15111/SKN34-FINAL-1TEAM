@@ -6,12 +6,15 @@
 - 업체 단가가 없는 줄은 빼고 missing에 남긴다. 단가를 받는 표준 행이 아닌 줄(짐 있는 집 할증처럼
   수량이 없는 줄)은 left_out에 남긴다.
 - 부가세는 공급가에 한 번만 붙인다(common.with_vat). 면세 업체는 0원.
-- v3(dobae_v3, 1201~1208, dev-06): 업체 단가 × 계산 엔진 수량(QtyV3: 공급 평 · 벽지 평 · 품).
+- v3(dobae_v3, 1201~1209, dev-06): 업체 단가 × 계산 엔진 수량(QtyV3: 공급 평 · 벽지 평 · 품).
   받는 법은 단가 · 다른 줄에 포함(0원) · 빼기. 간이 · 면세 업체는 부가세 0(L02).
   표준견적서 합계에 같은 일이 없는 줄은 비교 %에서 뺀다. 표준견적서 줄 키를 주면 그 집 기준대로
   (ADR 0004: 리모델링 기준은 퍼티 · 식대 · 운송비도 합계에 있음), 안 주면 옛 고정값(퍼티 · 식대 · 운송비 뺌).
   표준견적서에서 '선택'인 줄 키(optional_keys, ADR 0006 판부터)를 주면 그 일의 가견적 줄도 '선택'이다:
   금액은 보이고 합계 · 비교 %에는 안 넣는다(표준견적서와 같은 줄 규칙).
+- 벽지별 줄: 도배지(1203 합지 · 1204 실크)와 부자재(1205 실크 · 1209 합지)는 고른 벽지의 줄만 쓴다.
+  표준견적서 부자재 줄도 벽지마다 값이 달라요(도배만 하는 공사 기준 실크 6,900 · 합지 3,300원/공급 평).
+  1209 줄이 없는 옛 확인 묶음(줄을 더하기 전)은 합지 집에도 1205 단가를 쓴다(그때 업체가 한 줄로 확인한 뜻 그대로).
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -43,13 +46,18 @@ class PriceRowV3(PriceRow):
 
     code: str = ""
     qty: QtyKind = "one"  # 이 줄 수량 = QtyV3의 어느 값인지
-    grade: str | None = None  # 도배지 줄: 이 벽지(economy 합지 · basic 실크)를 고른 집에만 쓴다
+    # 벽지별 줄(도배지 · 부자재): 이 벽지(economy 합지 · basic 실크)를 고른 집에만 쓴다
+    grade: str | None = None
     in_standard: bool = True  # 표준견적서에 같은 일이 있는 줄. 아니면 비교 %에서 뺀다
     label: str = ""  # 고객 화면 이름(비면 name). 화면 · AI가 같은 말을 써요
     note: str = ""  # 고객 화면 줄 아래 짧은 뜻
+    # 이 줄이 없는 옛 확인 묶음(줄을 더하기 전에 확인)이면 대신 쓰는 줄. 그때 업체가 한 줄로 확인한 값이에요
+    fallback: str | None = None
 
 
-# 단위는 refprice.vendor_baseline과 같다(테스트가 본다). 공급 평 = 내 집 평(공급 기준)
+_MATERIAL_NOTE = "풀 · 부직포 · 네바리 · 실리콘 등"
+# 단위는 refprice.vendor_baseline과 같다(테스트가 본다). 공급 평 = 내 집 평(공급 기준).
+# 부자재는 벽지마다 따로 받아요(1205 실크 · 1209 합지). 고객 화면 이름은 둘 다 '부자재'예요
 V3_ROWS: tuple[PriceRowV3, ...] = (
     PriceRowV3(
         "putty", "퍼티작업", "공급 평", "1201", "floor_py", None, False, note="사전퍼티 또는 밀작업"
@@ -57,12 +65,17 @@ V3_ROWS: tuple[PriceRowV3, ...] = (
     PriceRowV3("paper_hapji", "합지", "벽지 평", "1203", "paper_py", "economy", label="합지벽지"),
     PriceRowV3("paper_silk", "실크", "벽지 평", "1204", "paper_py", "basic", label="실크벽지"),
     PriceRowV3(
-        "material", "부자재", "공급 평", "1205", "floor_py", note="풀 · 부직포 · 네바리 · 실리콘 등"
+        "material", "실크 부자재", "공급 평", "1205", "floor_py", "basic",
+        label="부자재", note=_MATERIAL_NOTE,
+    ),
+    PriceRowV3(
+        "material_hapji", "합지 부자재", "공급 평", "1209", "floor_py", "economy",
+        label="부자재", note=_MATERIAL_NOTE, fallback="material",
     ),
     PriceRowV3("labor", "인건비", "품", "1206", "man_day", note="품 = 1명이 하루 하는 일"),
     PriceRowV3("meal", "식대", "품", "1207", "man_day", None, False),
     PriceRowV3("truck", "운송비", "대", "1208", "one", None, False),
-)
+)  # fmt: skip
 V3_BY_KEY: dict[str, PriceRowV3] = {r.key: r for r in V3_ROWS}
 # v3 단가 줄 → 같은 일을 하는 표준견적서 줄 키. 부자재는 옛 판의 초배지와도 견준다(옛 판과 견주면 지금과 같은 값)
 V3_STD_KEYS: dict[str, tuple[str, ...]] = {
@@ -70,10 +83,17 @@ V3_STD_KEYS: dict[str, tuple[str, ...]] = {
     "paper_hapji": ("paper",),
     "paper_silk": ("paper",),
     "material": ("material", "primer"),
+    "material_hapji": ("material", "primer"),
     "labor": ("wall", "ceiling"),
     "meal": ("meal",),
     "truck": ("truck",),
 }
+
+
+def same_home(a: PriceRowV3, b: PriceRowV3) -> bool:
+    """두 줄이 한 집 가견적에 같이 나오나. 벽지별 줄끼리는 같은 벽지일 때만이에요('다른 줄에 포함' 대상 검사)."""
+    return a.grade is None or b.grade is None or a.grade == b.grade
+
 
 # 공정별로 업체 단가를 받는 표준 행. 키는 계산 엔진 줄 키와 같고, 도배지만 등급마다 따로 받는다
 PRICE_ROWS: dict[str, tuple[PriceRow, ...]] = {
@@ -198,7 +218,7 @@ def estimate(
     )
 
 
-# ---- 가견적 v3 (dobae_v3, 1201~1208) ----
+# ---- 가견적 v3 (dobae_v3, 1201~1209) ----
 
 
 @dataclass(frozen=True)
@@ -242,6 +262,14 @@ class EstimateV3:
     paper_ok: bool  # 고객이 고른 벽지 줄이 '빼기'가 아님 (빼기면 '이 벽지는 안 해요')
 
 
+def price_of(row: PriceRowV3, prices: Mapping[str, PriceV3]) -> PriceV3 | None:
+    """그 줄의 업체 단가. 없으면 대신 쓰는 줄(fallback, 옛 확인 묶음) 값, 그것도 없으면 None(아직 안 넣음)."""
+    vp = prices.get(row.key)
+    if vp is None and row.fallback is not None:
+        vp = prices.get(row.fallback)
+    return vp
+
+
 def qty_of(row: PriceRowV3, q: QtyV3) -> Decimal:
     return {"floor_py": q.floor_py, "paper_py": q.paper_py, "man_day": q.man_day}.get(
         row.qty, Decimal(1)
@@ -265,7 +293,8 @@ def estimate_v3(
     standard_keys: Collection[str] | None = None,
     optional_keys: Collection[str] = (),
 ) -> EstimateV3:
-    """업체 v3 단가 × 계산 엔진 수량. 도배지는 고른 벽지 줄만, 단가가 없는 줄은 '빼기'로 본다.
+    """업체 v3 단가 × 계산 엔진 수량. 벽지별 줄(도배지 · 부자재)은 고른 벽지 줄만, 단가가 없는 줄은 '빼기'로 본다.
+    1209 합지 부자재 줄이 없는 옛 묶음은 합지 집에도 1205 단가를 쓴다(price_of).
     exempt면(간이 · 면세, L02) 부가세 0. 비교 %는 표준견적서 합계에 같은 일이 없는 줄을 빼고 센다.
     standard_keys(표준견적서에서 합계에 드는 줄 키)를 주면 그 집 기준대로, 안 주면 줄의 옛 고정값으로 가른다.
     optional_keys(표준견적서 '선택' 줄 키)에 든 일의 줄은 '선택'이라 합계에서도 뺀다(ADR 0006)."""
@@ -275,7 +304,7 @@ def estimate_v3(
     for row in V3_ROWS:
         if row.grade is not None and row.grade != grade:
             continue
-        vp = prices.get(row.key) or PriceV3("excluded")
+        vp = price_of(row, prices) or PriceV3("excluded")
         n, amount = row_amount(row, vp, qty)
         alike = set(V3_STD_KEYS[row.key])
         inside = row.in_standard if keys is None else bool(keys & alike)
@@ -288,7 +317,8 @@ def estimate_v3(
     same = sum(x.amount for x in out if x.in_standard)
     compare = same if exempt else with_vat(same).total
     pct = percent_vs(compare, standard_total) if standard_total else None
-    paper_ok = all(x.mode != "excluded" for x in out if x.row.grade is not None)
+    # '이 벽지는 안 해요'는 도배지 줄만 본다(부자재 줄 '빼기'는 따로 안 받는다는 뜻)
+    paper_ok = all(x.mode != "excluded" for x in out if x.row.qty == "paper_py")
     return EstimateV3(
         grade, tuple(out), money.supply, money.vat, money.total, compare, pct, paper_ok
     )
