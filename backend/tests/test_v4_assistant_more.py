@@ -1,7 +1,8 @@
 """v4 비서 남은 칸: 철거 범위(demolition → 리모델링 기준) · done.suggest · status.task · 보드 금액 범위 ·
-업체 브리핑 AI 한 문장(Haiku, 실패하면 틀) · 답 엔진 고르기(ASSISTANT_ANSWER_ROUTE, v2.ask.answer_only).
-유료 호출 0회(Claude 대본)."""
+업체 브리핑 AI 한 문장(Haiku, 실패하면 틀) · 답 엔진 고르기(ASSISTANT_ANSWER_ROUTE, v2.ask.answer_only ·
+v2+v3 넘기기). 유료 호출 0회(Claude 대본)."""
 
+import asyncio
 import json
 import uuid
 
@@ -10,6 +11,7 @@ import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
+from app.assistant import policy
 from app.assistant.tools import answer
 from app.config import settings
 from tests.conftest import query
@@ -191,6 +193,9 @@ def test_engine_for_route_setting():
     assert answer.engine_for("process", "*=v2,price=v3") == "v2"
     assert answer.engine_for("price", "price=v9") == "v3"
     assert answer.engine_for("price", "") == "v3"
+    assert answer.engine_for("general", "v2+v3") == "v2+v3"
+    assert answer.engine_for("price", "price=v2+v3") == "v2+v3"
+    assert answer.engine_for("material", "price=v2+v3") == "v3"
 
 
 def test_answer_question_goes_to_v2_when_routed(api, script, monkeypatch):
@@ -219,3 +224,82 @@ def test_answer_question_goes_to_v2_when_routed(api, script, monkeypatch):
     log = script([{"tool_calls": [call]}, {"text": "확인했어요."}])
     ok(ask(api, pid, "도배 기간은요?"))
     assert len(log) == 2
+
+
+def _intent(label: str):
+    from app.agent.schemas import Intent
+
+    return Intent(label=label, confidence=0.9, source="model")
+
+
+def test_hybrid_picks_engine(monkeypatch):
+    """v2+v3 길 고르기(LLM · DB 없음): 범위 안이면 v2, 범위 밖이고 v3가 답하면 v3, v3도 못 하면 v2 안내."""
+    from app.agent import gate as agent_gate
+    from app.assistant.tools import ToolOut
+    from app.v2 import ask as v2_ask
+
+    calls: list[str] = []
+    got = {"label": "trade", "answered": True}
+
+    async def classify(message, waiting=None):
+        return None if got["label"] is None else _intent(got["label"])
+
+    async def v2(tc, q):
+        calls.append("v2")
+        return ToolOut(data={"route": "v2", "answer": policy.data("v2 답"), "found": True})
+
+    async def v3(tc, q):
+        calls.append("v3")
+        out = ToolOut(data={"route": "trade", "answer": policy.data("v3 답"), "found": True})
+        return out, got["answered"]
+
+    monkeypatch.setattr(agent_gate, "classify", classify)
+    monkeypatch.setattr(answer, "_v2_answer", v2)
+    monkeypatch.setattr(answer, "_v3_answer", v3)
+
+    def run() -> tuple:
+        calls.clear()
+        d = asyncio.run(answer._hybrid(None, "질문")).data
+        return (*calls, d["engine"], d["v2_out"], d["route"])
+
+    assert run() == ("v2", "v2", False, "v2")
+    got["label"] = None  # 관문이 못 정하면 범위 밖이 아니에요(v2)
+    assert run() == ("v2", "v2", False, "v2")
+    got["label"] = "out_of_scope"  # v2 LLM은 부르지 않아요
+    assert run() == ("v3", "v3", True, "trade")
+    got["answered"] = False
+    assert run() == ("v3", "v2", True, "out_of_scope")
+    d = asyncio.run(answer._hybrid(None, "질문")).data
+    assert d["answer"] == policy.data(v2_ask.OUT_TEXT) and d["found"] is True
+
+
+def test_answer_question_hybrid_route(api, script, monkeypatch):
+    """v2+v3 길(실제 v3 무료 답 · Claude 대본): 기록 칸(engine · v2_out)은 모델에 가지 않아요."""
+    from app.agent import gate as agent_gate
+    from app.v2 import ask as v2_ask
+
+    _, pid = home(api)
+    monkeypatch.setattr(settings, "assistant_answer_route", "v2+v3")
+    got = {"label": "out_of_scope"}
+
+    async def classify(message, waiting=None):
+        return _intent(got["label"])
+
+    monkeypatch.setattr(agent_gate, "classify", classify)
+
+    def turn(q: str) -> tuple[int, str]:
+        call = {"id": "q", "name": "answer_question", "input": {"question": q, "kind": "general"}}
+        log = script([{"tool_calls": [call]}, {"text": "확인했어요."}, {"text": "확인했어요."}])
+        ok(ask(api, pid, q))
+        last = log[-1]["messages"][-1]["content"][0]
+        assert last["type"] == "tool_result"
+        return len(log), last["content"]
+
+    n, res = turn("베란다 탄성코트 꼭 해야 해요?")  # 범위 밖 · v3 알아 두기 → v3 근거(LLM 2번)
+    assert n == 2 and "탄성코트" in res and '"route": "trade"' in res
+    assert "engine" not in res and "v2_out" not in res
+    n, res = turn("오늘 점심 뭐 먹지?")  # 범위 밖 · v3도 범위 밖 안내 → v2 안내 그대로
+    assert n == 2 and v2_ask.OUT_TEXT in res and '"route": "out_of_scope"' in res
+    got["label"] = "trade"
+    n, res = turn("도배 기간은요?")  # 범위 안 → v2 답(LLM 3번)
+    assert n == 3 and '"route": "v2"' in res

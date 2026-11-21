@@ -4,6 +4,9 @@
 - answer_question: 질문 종류(kind)별 설정(ASSISTANT_ANSWER_ROUTE, 기본 v3)으로 답 파이프라인 하나를 부른다.
   - v3: chat.service.answer_only를 무료 모드로(겹친 LLM 호출 없이 근거 문장만).
   - v2: v2.ask.answer_only(저장 없이 v2 답 · 서버 도구만). 턴이 LLM이면 v2도 LLM으로 답한다(평가로 고를 자리).
+  - v2+v3: v2 먼저. v2 입구 관문(v2.ask.start와 같은 분류)이 범위 밖으로 보면 v2 LLM은 부르지 않고 v3를 부른다.
+    v3가 실제로 답하면(범위 밖 · 되묻기가 아니고 모름 줄 말고 문장이 있음) v3 근거, 아니면 v2 범위 밖 안내 그대로.
+    data의 engine(근거를 낸 엔진) · v2_out(관문이 범위 밖으로 봤는지)은 기록용이라 모델에 가지 않는다(to_model).
   비서 모델이 돌려준 글 범위 안에서 답한다. 숫자는 이 결과가 허용 숫자가 된다.
 """
 
@@ -17,12 +20,14 @@ from app.assistant.tools import ToolCtx, ToolOut, cards, obj, tool
 from app.config import settings
 from app.db import SessionLocal
 
-ENGINES = ("v2", "v3")
+HYBRID = "v2+v3"
+ENGINES = ("v2", "v3", HYBRID)
+V3_NO_ANSWER = ("out_of_scope", "ask_back")  # v3가 답하지 않은 길(범위 밖 안내 · 되묻기)
 
 
 def engine_for(kind: str, route: str | None = None) -> str:
-    """ASSISTANT_ANSWER_ROUTE → 그 질문 종류의 답 엔진. 'v3' · 'v2'면 모두, 'price=v2,material=v2'면 적은 종류만
-    (나머지 v3). 모르는 값은 v3."""
+    """ASSISTANT_ANSWER_ROUTE → 그 질문 종류의 답 엔진. 'v3' · 'v2' · 'v2+v3'면 모두,
+    'price=v2,material=v2+v3'면 적은 종류만(나머지 v3). 모르는 값은 v3."""
     raw = (route if route is not None else settings.assistant_answer_route).strip()
     if raw in ENGINES:
         return raw
@@ -103,16 +108,26 @@ class AskIn(BaseModel):
 )
 async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     question = policy.mask_in(a.question)
-    if engine_for(a.kind) == "v2":
+    engine = engine_for(a.kind)
+    if engine == HYBRID:
+        return await _hybrid(tc, question)
+    if engine == "v2":
         return await _v2_answer(tc, question)
+    out, _ = await _v3_answer(tc, question)
+    return out
+
+
+async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
+    """v3 근거(무료 모드). 둘째 값: 실제로 답했는지(범위 밖 · 되묻기가 아니고, 모름 줄 말고 문장이 있음)."""
     from app.chat import service as chat_service
 
     ans = await chat_service.answer_only(
         tc.user, question, tc.today, project_id=tc.project_id, mode="free"
     )
-    lines = [x for sec in ans.answer.sections for x in sec.sentences] + list(ans.answer.unknown)
+    said = [x for sec in ans.answer.sections for x in sec.sentences]
+    lines = said + list(ans.answer.unknown)
     sources = list(dict.fromkeys(r.title for r in ans.answer.refs if r.title))[:4]
-    return ToolOut(
+    out = ToolOut(
         data={
             "route": ans.route,
             "answer": policy.data("\n".join(lines), limit=1200),
@@ -120,6 +135,35 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
             "found": bool(lines),
         }
     )
+    return out, bool(said) and ans.route not in V3_NO_ANSWER
+
+
+async def _hybrid(tc: ToolCtx, question: str) -> ToolOut:
+    """v2+v3: v2 입구 관문이 범위 밖으로 보고 v3가 실제로 답하면 v3 근거, 아니면 v2 그대로.
+    v2 범위 밖 질문(다른 공정)은 v3 알아 두기가 나았고, 잡담은 v2 거절이 나았다(평가 2026-11-21)."""
+    from app.agent import gate as agent_gate
+    from app.v2 import ask
+
+    # v2.ask.start와 같은 관문(학습 모델 · 규칙, Jev는 켜졌을 때 신뢰도가 낮으면만)
+    intent = await agent_gate.classify(question)
+    v2_out = intent is not None and intent.label == "out_of_scope"
+    if not v2_out:
+        out, engine = await _v2_answer(tc, question), "v2"
+    else:
+        out, answered = await _v3_answer(tc, question)
+        engine = "v3"
+        if not answered:  # v2가 범위 밖에서 내는 안내 그대로(ask.start와 같은 글)
+            out = ToolOut(
+                data={
+                    "route": "out_of_scope",
+                    "answer": policy.data(ask.OUT_TEXT),
+                    "sources": [],
+                    "found": True,
+                }
+            )
+            engine = "v2"
+    out.data.update(engine=engine, v2_out=v2_out)
+    return out
 
 
 async def _v2_answer(tc: ToolCtx, question: str) -> ToolOut:
