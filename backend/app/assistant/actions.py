@@ -1,8 +1,13 @@
 """대기 행동 (계약서 5장 actions.execute · 7장 함정 다섯). 비서는 행만 만들고, 실행은 사람이 누른 승인으로만 한다.
 
-- propose: 대상마다 열린 제안은 하나다. 같은 (사람, 대상)에 같은 제안(종류 · 대상 판 · payload)이 열려 있으면
-  새로 만들지 않고 그 행을 쓴다(턴이 달라도). 다르면 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을
-  넣는다(멱등 키가 같으면 그 행). commit은 부르는 쪽(도구)이 한다. action 이벤트는 commit 뒤에 보낸다.
+- propose(offer): 대상마다 열린 제안은 하나다. 같은 (사람, 대상)의 제안 만들기는 트랜잭션 잠금으로 줄 선다.
+  - 같은 제안(종류 · 대상 판 · payload)이 열려 있으면 새로 만들지 않고 그 행을 쓴다(턴 · 먼저 말 걸기가 달라도).
+  - 먼저 말 걸기는 같은 종류 · 같은 대상 판의 열린 제안이 있으면 내용이 달라도 그 행을 쓴다(대화에서 고른 것을
+    덮지 않는다).
+  - 고객이 거절한 제안과 새 사실(대상 판 · 금액 · 날짜)이 같으면 다시 만들지 않고 거절한 행을 돌려준다(피클 규칙:
+    사용자가 취소한 일은 다시 시작하지 않는다). 사람이 카드 단추를 누른 고르기(pressed)는 새로 정한 것이라 만든다.
+  - 그 밖이면 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을 넣는다(멱등 키가 같으면 그 행).
+  commit은 부르는 쪽(도구)이 한다. action 이벤트는 commit 뒤에 보낸다.
 - execute(승인): tx1 proposed → approved(조건부 UPDATE, 만료 전) commit → tx2 기능 함수 바로 앞에서
   approved → executed(mark)를 쓰고 기능 함수의 commit으로 같이 확정한다. AppError면 rollback하고 새 트랜잭션에서
   failed(기능 오류 코드)로 바꾼 뒤 409. 견적서가 새 판(quote_changed)이면 새 판 + 차액으로 새 제안을 만든다.
@@ -85,6 +90,110 @@ def idem_key(turn_id: uuid.UUID | None, kind: str, target_id: uuid.UUID, payload
     return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
 
+OfferState = str  # new(새 행) · same(열린 같은 행을 씀) · rejected(거절한 같은 제안) · 그 밖은 멱등 행의 상태
+
+
+@dataclass
+class Offered:
+    """제안 만들기 결과: 행 · 이 제안 때문에 닫힌 옛 제안 · 어떻게 됐는지(state)."""
+
+    row: AssistantAction
+    closed: list[AssistantAction]
+    state: OfferState
+
+    @property
+    def live(self) -> bool:
+        """승인 카드로 보일 열린 행인지(새 행 · 열린 같은 행)."""
+        return self.row.status == "proposed"
+
+
+def _money(summary: dict) -> tuple:
+    """새 사실을 견줄 금액: 합계 · 업체별 금액(계산 엔진 값)."""
+    amounts = sorted((str(x.get("label")), x.get("won")) for x in summary.get("amounts") or [])
+    return summary.get("amount_won"), amounts
+
+
+def same_facts(a: AssistantAction, target_ver: str | None, body: dict, summary: dict) -> bool:
+    """거절한 제안 a와 새 사실이 같은지: 대상 판 · payload(날짜 · 대상 · 값) · 금액이 모두 같으면 같은 제안이다."""
+    if (a.target_ver, a.payload) != (target_ver, body):
+        return False
+    return _money(a.summary or {}) == _money(summary)
+
+
+async def offer(
+    s: AsyncSession,
+    user: User,
+    *,
+    surface: str,
+    kind: str,
+    target_kind: str,
+    target_id: uuid.UUID,
+    target_ver: str | None,
+    payload: dict,
+    summary: ActionSummary,
+    now: datetime,
+    expires_at: datetime | None = None,
+    project_id: uuid.UUID | None = None,
+    turn_id: uuid.UUID | None = None,
+    origin: str = "turn",
+    pressed: bool = False,
+) -> Offered:
+    """제안 하나(모듈 머리 규칙). commit은 부르는 쪽이 한다. pressed = 사람이 카드 단추로 고른 제안."""
+    key = idem_key(turn_id, kind, target_id, payload)
+    got = await repo.action_by_idem(s, user.id, key)
+    if got is not None:
+        return Offered(got, [], "same" if got.status == "proposed" else got.status)
+    exp = expires_at or now + DEFAULT_TTL
+    if exp <= now:
+        raise AppError(409, "expired", "기한이 지나 제안할 수 없어요.")
+    body = json.loads(json.dumps(payload, default=str))
+    facts = summary.model_dump(mode="json", exclude_none=True)
+    await repo.lock_target(s, user.id, target_id)
+    for a in await repo.open_on(s, user.id, target_kind, target_id):
+        if a.expires_at <= now:
+            continue
+        if (a.kind, a.target_ver, a.payload) == (kind, target_ver, body):
+            return Offered(a, [], "same")  # 같은 대상의 같은 제안이 열려 있다: 새로 만들지 않는다
+        if origin == "nudge" and (a.kind, a.target_ver) == (kind, target_ver):
+            return Offered(a, [], "same")  # 먼저 말 걸기는 대화에서 고른 열린 카드를 덮지 않는다
+    if not pressed:  # 고객이 거절한 제안: 새 사실 없이 다시 만들지 않는다
+        for r in await repo.rejected_on(s, user.id, kind, target_kind, target_id):
+            if same_facts(r, target_ver, body, facts):
+                return Offered(r, [], "rejected")
+    new_id = uuid7()
+    closed = await repo.replace_open(s, user.id, target_kind, target_id, new_id)
+    row = AssistantAction(
+        id=new_id,
+        user_id=user.id,
+        surface=surface,
+        origin=origin,
+        kind=kind,
+        project_id=project_id,
+        target_kind=target_kind,
+        target_id=target_id,
+        target_ver=target_ver,
+        payload=body,
+        summary=facts,
+        idem_key=key,
+        status="proposed",
+        expires_at=exp,
+        created_at=now,  # 만료 CHECK(expires_at > created_at)를 같은 시계로 본다
+    )
+    try:
+        async with s.begin_nested():  # 넣기만 되돌린다(부르는 쪽 트랜잭션의 다른 쓰기는 그대로)
+            s.add(row)
+            await s.flush()
+    except IntegrityError:  # 잠금 밖에서 거의 같이 제안했다: 먼저 들어간 같은 행을 쓴다
+        got = await repo.action_by_idem(s, user.id, key)
+        if got is not None:
+            return Offered(got, [], "same" if got.status == "proposed" else got.status)
+        for a in await repo.open_on(s, user.id, target_kind, target_id):
+            if (a.kind, a.target_ver, a.payload) == (kind, target_ver, body):
+                return Offered(a, [], "same")
+        raise AppError(409, "stale", "다른 제안이 먼저 만들어졌어요. 다시 해 주세요.") from None
+    return Offered(row, closed, "new")
+
+
 async def propose(
     s: AsyncSession,
     user: User,
@@ -102,47 +211,25 @@ async def propose(
     turn_id: uuid.UUID | None = None,
     origin: str = "turn",
 ) -> tuple[AssistantAction, list[AssistantAction]]:
-    """새 제안 행과 그 때문에 닫힌 옛 제안들. commit은 부르는 쪽이 한다."""
-    key = idem_key(turn_id, kind, target_id, payload)
-    got = await repo.action_by_idem(s, user.id, key)
-    if got is not None:
-        return got, []
-    exp = expires_at or now + DEFAULT_TTL
-    if exp <= now:
-        raise AppError(409, "expired", "기한이 지나 제안할 수 없어요.")
-    body = json.loads(json.dumps(payload, default=str))
-    for a in await repo.open_on(s, user.id, target_kind, target_id):
-        if (a.kind, a.target_ver, a.payload) == (kind, target_ver, body) and a.expires_at > now:
-            return a, []  # 같은 대상의 같은 제안이 열려 있다: 새로 만들지 않는다
-    new_id = uuid7()
-    closed = await repo.replace_open(s, user.id, target_kind, target_id, new_id)
-    row = AssistantAction(
-        id=new_id,
-        user_id=user.id,
+    """(제안 행, 그 때문에 닫힌 옛 제안들). 행이 proposed가 아니면 새로 만들지 않은 것이다(거절한 같은 제안 등).
+    commit은 부르는 쪽이 한다."""
+    got = await offer(
+        s,
+        user,
         surface=surface,
-        origin=origin,
         kind=kind,
-        project_id=project_id,
         target_kind=target_kind,
         target_id=target_id,
         target_ver=target_ver,
-        payload=body,
-        summary=summary.model_dump(mode="json", exclude_none=True),
-        idem_key=key,
-        status="proposed",
-        expires_at=exp,
-        created_at=now,  # 만료 CHECK(expires_at > created_at)를 같은 시계로 본다
+        payload=payload,
+        summary=summary,
+        now=now,
+        expires_at=expires_at,
+        project_id=project_id,
+        turn_id=turn_id,
+        origin=origin,
     )
-    s.add(row)
-    try:
-        await s.flush()
-    except IntegrityError:  # 같은 대상을 거의 같이 제안했다: 먼저 들어간 행을 쓴다
-        await s.rollback()
-        got = await repo.action_by_idem(s, user.id, key)
-        if got is None:
-            raise AppError(409, "stale", "다른 제안이 먼저 만들어졌어요. 다시 해 주세요.") from None
-        return got, []
-    return row, closed
+    return got.row, got.closed
 
 
 def _closed(a: AssistantAction) -> AppError:

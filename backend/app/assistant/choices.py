@@ -36,6 +36,7 @@ LABEL = {
 }  # fmt: skip
 DECLINE_CODES = ("full", "out_of_area", "other")
 MADE = "고른 것으로 승인 카드를 만들었어요. 카드를 확인하고 눌러 주세요."
+SAME = "고른 것과 같은 승인 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
 RELOADED = "카드를 새로 불러왔어요. 다시 골라 주세요."
 GONE = "지금은 고를 수 있는 것이 없어요. 진행 상황을 확인해 주세요."
 MAX_ACTIONS = 2  # 한 턴에 단추로 만드는 제안 수
@@ -257,6 +258,7 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
         today=ctx.today,
         now=ctx.now,
         refs=ctx.refs,
+        pressed=True,  # 사람이 누른 고르기: 거절했던 제안도 다시 만든다
     )
     outs: list[ToolOut] = []
     errors: list[str] = []
@@ -272,7 +274,8 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
             errors.append(e.message)
     for out in outs:
         await _send(out, emit, res, send_card)
-    lines = ([MADE] if outs else []) + errors
+    states = {out.data.get("state") for out in outs}
+    lines = ([MADE] if "new" in states else [SAME] if "same" in states else []) + errors
     if ctx.stale:
         kinds = [a[0] for a in (action(c) for c in ctx.stale) if a is not None]
         fresh = await reload(tc, kinds, ctx.card_id)

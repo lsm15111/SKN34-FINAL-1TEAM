@@ -2,7 +2,8 @@
 
 - 대상은 ref로만 받고 코드가 id로 푼다(모르는 ref는 unknown_ref). 금액 · 날짜 · 판은 기능 service 값이다.
 - 제안할 수 없는 상태(잠김 · 견적서 없음 · 겹침 …)는 도구 오류로 돌려준다(행을 만들지 않음).
-- 같은 대상의 열린 제안은 하나: 새로 만들면 옛 것은 만료(replaced)되고 그 action 이벤트도 보낸다.
+- 같은 대상의 열린 제안은 하나: 새로 만들면 옛 것은 만료(replaced)되고 그 action 이벤트도 보낸다. 같은 제안이
+  열려 있으면 그 행을 쓰고(state same), 고객이 거절한 같은 제안이면 오류 대신 모델 값으로 알린다(state rejected).
 """
 
 import uuid
@@ -30,6 +31,20 @@ FIELD_LABEL = {
     "start_date": "공사 시작 희망",
     "demolition": "철거 범위",
 }
+# 제안 결과(state) → 모델에 줄 한 줄(고객에게 할 말의 근거). 거절은 오류가 아니라 값으로 알린다
+OFFER_NOTE = {
+    "new": "승인 카드를 만들었어요. 사람이 카드 버튼을 눌러야 실행돼요.",
+    "same": "같은 승인 카드가 이미 열려 있어요(새로 만들지 않았어요). 그 카드를 확인하고 눌러 달라고 안내해요.",
+}
+CLOSED_NOTE = "이미 닫힌 제안이에요(새로 만들지 않았어요)."
+
+
+def rejected_note(surface: str) -> str:
+    who = "고객이" if surface == "customer" else "업체가"
+    return (
+        f"{who} 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. "
+        "다시 원하면 카드 단추로 직접 고르게 안내해요."
+    )
 
 
 def _show(key: str, v) -> str:
@@ -49,21 +64,37 @@ def _show(key: str, v) -> str:
 
 
 async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
-    """행동 행을 만들고 commit한다. (도구 결과, 모델용 요약)"""
+    """행동 행을 만들고 commit한다. (도구 결과, 모델용 요약). 새 행 · 열린 같은 행만 승인 카드(action)로 보내고,
+    거절한 같은 제안 · 닫힌 행은 보내지 않는다(모델 값 state · note로만 알림)."""
     async with SessionLocal() as s:
-        row, closed = await actions.propose(
-            s, tc.user, surface=tc.surface, now=tc.now, turn_id=tc.turn_id, **kw
+        got = await actions.offer(
+            s,
+            tc.user,
+            surface=tc.surface,
+            now=tc.now,
+            turn_id=tc.turn_id,
+            pressed=tc.pressed,
+            **kw,
         )
         await s.commit()
-    a = actions.out(row)
-    model = {
-        "proposed": a.status == "proposed",
+    a = actions.out(got.row)
+    state = got.state if got.live or got.state == "rejected" else "closed"
+    note = rejected_note(tc.surface) if state == "rejected" else OFFER_NOTE.get(state, CLOSED_NOTE)
+    model: dict = {
+        "proposed": got.live,
+        "state": state,
         "kind": a.kind,
         "summary": {"title": a.summary.title, "approve_label": a.summary.approve_label},
-        "expires_at": a.expires_at,
-        "note": "승인 카드를 만들었어요. 고객이 버튼을 눌러야 실행돼요.",
+        "note": note,
     }
-    return ToolOut(data=model, actions=[a], closed=[actions.out(c) for c in closed]), model
+    if got.live:
+        model["expires_at"] = a.expires_at
+    out = ToolOut(
+        data=model,
+        actions=[a] if got.live else [],
+        closed=[actions.out(c) for c in got.closed],
+    )
+    return out, model
 
 
 # ---- 고객 ----
@@ -162,6 +193,8 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         expires_at=tc.now + timedelta(days=7),
         project_id=pid,
     )
+    if not out.actions:  # 거절한 같은 제안: 카드에 바뀜 · 단추를 달지 않는다
+        return out
     card.data = {
         **card.data,
         "changes": [
@@ -433,6 +466,11 @@ async def _dates(tc: ToolCtx, a: ProposalIn, kind: Literal["dates_accept", "dela
     async with SessionLocal() as s:
         sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
     out, _ = await _offer(tc, project_id=pid, **dates_offer(sch, pr["id"], kind, tc.now))
+    if out.actions:  # 같은 card_id로 바꿔 끼운다: 수락 단추는 승인 카드 하나만(카드 단추를 비움)
+        async with SessionLocal() as s:
+            card, _ = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
+        if card is not None:
+            out.cards.append(card)
     return out
 
 

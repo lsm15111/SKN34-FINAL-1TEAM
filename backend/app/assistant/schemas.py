@@ -253,6 +253,11 @@ class ScheduleData(BaseModel):
         default=None,
         description="처음 올린 날짜면 dates_accept, 수락한 뒤 바뀐 날짜면 delay_accept",
     )
+    action_id: uuid.UUID | None = Field(
+        default=None,
+        description="이 날짜의 수락 승인 카드가 열려 있으면 그 행동 id. 그때는 카드 단추(proposal_ref · "
+        "proposal_kind)를 비워 수락 단추가 승인 카드 하나만 남아요",
+    )
 
 
 class CheckItem(BaseModel):

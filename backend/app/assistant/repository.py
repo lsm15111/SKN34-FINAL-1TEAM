@@ -187,6 +187,13 @@ async def actions_of(
     return list(rows.all())
 
 
+async def lock_target(s: AsyncSession, user_id: uuid.UUID, target_id: uuid.UUID) -> None:
+    """같은 (사람, 대상)의 제안 만들기를 줄 세운다(트랜잭션 잠금, commit · rollback에 풀림). 대화 턴 · 먼저 말
+    걸기가 거의 같이 제안해도 뒤의 것이 앞의 행을 보고 다시 쓴다(행 하나)."""
+    key = f"assistant-offer:{user_id}:{target_id}"
+    await s.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0))))
+
+
 async def open_on(
     s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID
 ) -> list[AssistantAction]:
@@ -200,6 +207,24 @@ async def open_on(
             AssistantAction.status == "proposed",
         )
         .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def rejected_on(
+    s: AsyncSession, user_id: uuid.UUID, kind: str, target_kind: str, target_id: uuid.UUID
+) -> list[AssistantAction]:
+    """그 사람이 거절한 같은 종류 · 같은 대상의 제안(새것부터). 새 사실 없이 다시 만들지 않으려고 읽는다."""
+    rows = await s.scalars(
+        select(AssistantAction)
+        .where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.kind == kind,
+            AssistantAction.target_kind == target_kind,
+            AssistantAction.target_id == target_id,
+            AssistantAction.status == "rejected",
+        )
+        .order_by(AssistantAction.created_at.desc())
     )
     return list(rows.all())
 

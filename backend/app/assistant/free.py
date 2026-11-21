@@ -85,6 +85,7 @@ QUOTES = "실측 견적서가 {n}곳 왔어요. 합계 · 포함 항목 · 기�
 NO_QUOTES = "아직 받은 실측 견적서가 없어요. 업체가 실측하고 견적서를 보내면 여기서 견줄 수 있어요."
 NO_DATES = "아직 확정한 업체의 공사 날짜가 없어요. 업체를 확정하면 업체가 공사 날짜를 올려요."
 DATES = "카드에서 수락을 누르면 승인 카드를 만들어요."
+DATES_OPEN = "수락 승인 카드가 열려 있어요. 그 카드를 확인하고 눌러 주세요."
 PLAN = "확정 공정표예요. 날짜별 작업은 카드에서 볼 수 있어요."
 STANDARD = "이 집 표준견적서는 부가세 포함 {won}원이에요. 공공 기준 단가로 믿집이 계산한 참고 금액이고 업체 견적은 아니에요."
 STANDARD_NO_TOTAL = (
@@ -101,7 +102,11 @@ MEMORY_GUIDE = (
 # 업체
 NO_VISIT = "어느 요청인지 몰라요. 요청을 열고 다시 말해 주세요."
 DECLINED = "못 받아요 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 알려져요."
+DECLINE_REJECTED = (
+    "앞에서 거절한 못 받아요 카드와 같아요. 다시 하려면 요청 카드의 단추로 직접 골라 주세요."
+)
 WINDOW = "답하기 좋은 기간으로 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 보내져요."
+WINDOW_REJECTED = "앞에서 거절한 기간 답하기 카드와 같아요. 다른 기간은 요청 카드에서 골라 주세요."
 NO_WINDOW = "지금은 이 요청에 바로 답할 빈 기간을 찾지 못했어요. 요청 화면에서 기간을 골라 주세요."
 ANSWERED = "이미 답했거나 닫힌 요청이에요. 진행은 요청 화면에서 볼 수 있어요."
 CHECKLIST = "견적서를 낼 때 확인할 것이에요. 낼 금액 · 부가세 방식 · 공사 기간 · 유효기간은 칸에 적어 주세요."
@@ -298,8 +303,11 @@ async def _schedule(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, To
         card, _ = await cards.schedule(s, tc.user, tc.project_id, tc.today, tc.refs)  # type: ignore[arg-type]
     if card is None:
         return NO_DATES, ToolOut(data={})
-    text = f"{card.say} {DATES}" if card.data["phase"] == "dates" else PLAN
-    return text, ToolOut(data={}, cards=[card])
+    if card.data["phase"] != "dates":
+        return PLAN, ToolOut(data={}, cards=[card])
+    # 수락 승인 카드가 열려 있으면 카드 단추가 비어 있다(수락 단추는 승인 카드 하나)
+    tail = DATES_OPEN if card.data.get("action_id") else DATES
+    return f"{card.say} {tail}", ToolOut(data={}, cards=[card])
 
 
 async def _standard(tc: ToolCtx, _text: str, found: list[str]) -> tuple[str, ToolOut] | None:
@@ -450,7 +458,9 @@ async def _brief(tc: ToolCtx, *, propose_window: bool) -> tuple[CardOut, dict, T
             propose_window=propose_window,
         )
     live = [a for a in made if a.status == "proposed"]
-    return card, model, ToolOut(data={}, cards=[card], actions=live, closed=closed)
+    # 업체가 거절한 같은 기간 제안이면 다시 만들지 않았다(actions.offer): 모델 값에 표시만 남긴다
+    data = {"rejected": True} if any(a.status == "rejected" for a in made) else {}
+    return card, model, ToolOut(data=data, cards=[card], actions=live, closed=closed)
 
 
 async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, ToolOut] | None:
@@ -476,6 +486,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         _card, model, out = await _brief(tc, propose_window=True)
         if model["status"] != "requested":
             return ANSWERED, out
+        if not out.actions and out.data.pop("rejected", False):
+            return WINDOW_REJECTED, out
         return (WINDOW if out.actions else NO_WINDOW), out
     # decline: 브리핑(새 기간 제안 없이) + 못 받아요 제안 하나(같은 대상의 열린 제안은 이것으로 바뀐다)
     _card, model, out = await _brief(tc, propose_window=False)
@@ -489,6 +501,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         return e.message, out
     out.actions += got.actions
     out.closed += got.closed
+    if not got.actions:  # 거절한 같은 못 받아요 제안: 다시 만들지 않았다
+        return DECLINE_REJECTED, out
     return DECLINED, out
 
 
