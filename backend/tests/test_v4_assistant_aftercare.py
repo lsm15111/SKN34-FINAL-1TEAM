@@ -310,18 +310,13 @@ def test_prep_week_time_trigger_two_cards_night_cap_and_moved_start(api, monkeyp
     assert run(api, proactive.scan_time, at(14)) == 1
     assert run(api, proactive.scan_time, at(14)) == 0  # 같은 확정 · 같은 시작일은 한 번
     (n,) = nudges(trigger="prep_week")
-    assert (n["channel"], n["dedup_key"]) == ("notify", f"prep_week:{did}:{start}")
-    # 밤에는 9시로, 하루 알림 상한이면 내일 9시로
-    assert run(api, proactive.evaluate_due, at(22)) == {"deferred": 1}
-    query("update assistant_nudges set due_at = $1 where id = $2", at(14), n["id"])
-    sent(n["user_id"], 2, at(13))
-    assert run(api, proactive.evaluate_due, at(14)) == {"deferred": 1}
-    query("delete from assistant_nudges where id <> $1", n["id"])
-    # 점수 50(기한 7일 · 승인 카드 없음): Haiku 판정 → 보냄
+    assert (n["channel"], n["dedup_key"]) == ("feed", f"prep_week:{did}:{start}")
+    # 대화 줄(feed)이라 밤 · 하루 알림 상한에 걸리지 않아요
+    # 점수 65(기한 7일 · 날짜 결정 +15 · 승인 카드 없음): Haiku 판정 → 보냄
     script([{"json": {"send": True}}, {"json": {"text": "도배 공사가 일주일 남았어요."}}])
-    assert run(api, proactive.evaluate_due, at(9, 1)) == {"sent": 1}
+    assert run(api, proactive.evaluate_due, at(22)) == {"sent": 1}
     (n,) = nudges(trigger="prep_week")
-    assert (n["status"], n["score"], n["src"]) == ("sent", 50, "ai")
+    assert (n["status"], n["score"], n["src"]) == ("sent", 65, "ai")
     before, notice = card_of(n)  # 카드 둘: 공사 전 할 일 + 이웃 안내문 초안
     assert before["kind"] == "knowledge" and before["data"]["title"] == "공사 전 할 일"
     assert any("관리사무소" in x["label"] for x in before["data"]["checklist"])
@@ -336,11 +331,11 @@ def test_prep_week_time_trigger_two_cards_night_cap_and_moved_start(api, monkeyp
     # 판정을 못 부르면 알림은 기록만, 시작일이 바뀌면 그 줄은 닫힌다
     llm.clear_stubs()
     moved = add_nudge(
-        n["user_id"], trigger="prep_week", ref=uuid.UUID(did), project_id=n["project_id"],
-        dedup_key=f"prep_week:{did}:{start}:x",
+        n["user_id"], trigger="prep_week", channel="feed", ref=uuid.UUID(did),
+        project_id=n["project_id"], dedup_key=f"prep_week:{did}:{start}:x",
     )  # fmt: skip
     run(api, proactive.evaluate_due, at(10, 2))
-    assert line(moved) == ("held", "judge")
+    assert line(moved)[0] == "sent"  # 판정을 못 불러도 대화 줄(feed)은 보내요
     query("update assistant_nudges set status = 'pending' where id = $1", moved)
     start_in(10)
     run(api, proactive.evaluate_due, at(10, 2))

@@ -66,8 +66,10 @@ TRIGGERS: tuple[dict, ...] = (
         "notify": "{vendor} 공사가 곧 자동으로 끝나요. 점검표로 확인해 주세요.",
     },
     {
-        "name": "prep_week", "surface": "customer", "channel": "notify", "state": "deal",
+        # 대화 줄(feed)로 보내요: 알림(notify)은 점수 50이라 판정에 기대고 무료 모드에서는 늘 기록만 됐어요
+        "name": "prep_week", "surface": "customer", "decision": True, "state": "deal",
         "say": "공사 전에 할 일 알려 줘", "why": "공사가 일주일 남았어요",
+        "feed": "{trade} 공사가 일주일 남았어요. 미리 할 일과 이웃 안내문 초안을 준비했어요.",
         "notify": "{trade} 공사가 일주일 남았어요. 미리 할 일을 챙겨 볼까요?",
     },
     {
@@ -410,7 +412,7 @@ async def scan_time(s: AsyncSession, now: datetime) -> int:
             trigger="prep_week",
             ref_id=did,
             dedup_key=f"prep_week:{did}:{start.isoformat()}",
-            channel="notify",
+            channel="feed",
             due_at=max(now, at),
         )
     sent = exists().where(VendorQuote.visit_id == Visit.id, VendorQuote.sent_at.is_not(None))
