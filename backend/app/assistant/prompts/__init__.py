@@ -12,7 +12,7 @@ VERSION = {
     "vendor": "vendor_v2",
     "nudge_judge": "nudge_judge_v1",
     "nudge_write": "nudge_write_v1",
-    "memory": "memory_v1",
+    "memory": "memory_v2",
     "brief": "brief_v1",
 }
 _DIR = Path(__file__).resolve().parent
