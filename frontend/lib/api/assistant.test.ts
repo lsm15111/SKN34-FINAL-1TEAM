@@ -1,8 +1,8 @@
 // 먼저 말 건 줄 닫기(settledNudges): 서버 '완료' 줄 · 그 줄의 승인 카드(같은 대상)를 실행 · 처리하면 닫아요.
-// 첫 쪽 다시 읽기(keepOlder) · 마지막 카드 찾기(lastCardIn)
+// 첫 쪽 다시 읽기(keepOlder) · 마지막 카드 찾기(lastCardIn) · v3 단추 쓰기 → 행동 종류(kindsForWrite)
 import { expect, test } from "@playwright/test";
 import {
-  keepOlder, lastCardIn, settledNudges,
+  keepOlder, kindsForWrite, lastCardIn, settledNudges,
   type ActionKind, type ActionOut, type ActionStatus, type AssistantItem, type CardOut, type FeedItem, type FeedPart,
 } from "./assistant";
 
@@ -87,4 +87,11 @@ test("마지막 카드는 '완료' 줄의 카드(보낸 때 모습)를 빼고 �
   const done: AssistantItem = { ...nudge("x", null), settled: true, parts: [{ t: "card", card: card("compare-dobae@x") }] };
   expect(lastCardIn([live, done], "quote_compare")?.card_id).toBe("compare-dobae");
   expect(lastCardIn([done], "quote_compare")).toBeNull();
+});
+
+test("v3 단추로 공사 날짜 바꾸기를 요청하면 같은 일을 하는 승인 카드(date_change)는 처리됨이에요", () => {
+  expect(kindsForWrite("POST", "/projects/p1/deals/d1/date-requests", "p1")).toEqual(["date_change"]);
+  expect(kindsForWrite("POST", "/projects/p1/deals/d1/dates/x1/accept", "p1")).toEqual(["dates_accept", "delay_accept"]);
+  expect(kindsForWrite("GET", "/projects/p1/deals/d1/date-requests", "p1")).toEqual([]);
+  expect(kindsForWrite("POST", "/projects/p2/deals/d1/date-requests", "p1")).toEqual([]);
 });

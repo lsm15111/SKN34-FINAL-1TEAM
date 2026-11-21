@@ -175,8 +175,8 @@ export type TaskOut = {
   error?: string | null;
 };
 
-/** 제안 도구와 1:1(propose_*) */
-export type ActionKind = "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates";
+/** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change) */
+export type ActionKind = "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates";
 export type ActionStatus = "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
 /** 무엇 · 얼마 · 어느 버전(assistant_actions.summary). 금액 · 차액은 서버 값 */
 export type ActionSummary = {
@@ -504,6 +504,7 @@ export function kindsForWrite(method: string, path: string, projectId: string): 
   if (/^\/visits\/[^/]+\/(pick|proposal\/pick|repick)$/.test(tail)) return ["visit_slot"];
   if (/^\/quotes\/[^/]+\/confirm$/.test(tail)) return ["vendor_confirm"];
   if (/^\/deals\/[^/]+\/dates\/[^/]+\/accept$/.test(tail)) return ["dates_accept", "delay_accept"];
+  if (/^\/deals\/[^/]+\/date-requests$/.test(tail)) return ["date_change"];
   return [];
 }
 /** 업체 쪽 v3 쓰기 → 같은 일을 하는 제안 행동 종류 */
