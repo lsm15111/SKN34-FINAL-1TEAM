@@ -18,10 +18,11 @@ from tests.helpers import use
 from tests.test_dates import days, propose
 from tests.test_dates import ready as dates_ready
 from tests.test_deal import setup as deal_setup
-from tests.test_v3_visit_kit import offered
+from tests.test_v3_visit_kit import offered, requested
 from tests.test_v4_assistant_actions import acts, approve
 from tests.test_v4_assistant_free import cards_of, said
 from tests.test_v4_assistant_turns import ask, home, ok
+from tests.test_visit_inbox import login
 
 
 @pytest.fixture(autouse=True)
@@ -149,3 +150,18 @@ def test_slot_card_reasons_are_words_and_differ(api):
     assert all(re.search("[가-힣]", w) for w in flat), flat  # 코드가 아니라 화면 말
     assert flat.count("가장 빠른 날이에요") <= 1
     assert len({tuple(w) for w in whys}) > 1
+
+
+# ---- 업체 견적서 체크리스트 줄 이름 ----
+
+
+def test_vendor_checklist_line_names_match_the_customer_screen(api):
+    """표준견적서 줄 이름 '실크벽지 시장 평균 가격' · '… (풀 포함)'은 업체에게도 고객 화면과 같은 말('실크벽지')로
+    보인다. 계산 엔진 줄 이름은 그대로다(표준견적서 API)."""
+    f = requested(api)
+    login(api, f["email"])
+    r = api.get(f"/vendor/assistant/checklists/{f['visit']}")
+    assert r.status_code == 200, r.text
+    labels = [x["label"] for x in r.json()["items"]]
+    assert "실크벽지" in labels, labels
+    assert not any(x.endswith("시장 평균 가격") or "(풀 포함)" in x for x in labels), labels

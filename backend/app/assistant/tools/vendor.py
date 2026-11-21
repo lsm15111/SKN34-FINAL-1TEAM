@@ -5,6 +5,7 @@
 - REST(GET /vendor/assistant/briefs · checklists · today)도 같은 함수(brief · checklist · vendor_today)를 쓴다.
 """
 
+import re
 import uuid
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -330,6 +331,28 @@ async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID) -> str:
     return text
 
 
+# 표준견적서 줄 이름 → 업체가 읽는 이름(고객 화면 frontend/lib/guest/standard.ts nameOf와 같은 규칙).
+# 계산 엔진 줄 이름은 그대로 둔다: '실크벽지 시장 평균 가격' → '실크벽지', '벽 도배 시공 (풀 포함)' → '벽 도배 시공'
+LINE_NOTE_KEYS = frozenset({"wall", "ceiling", "material", "putty", "meal", "truck"})
+LINE_PAPER = re.compile(r"도배지 \((합지|실크)\)")
+LINE_MARKET = re.compile(r"(\S+벽지) 시장 평균 가격")
+
+
+def line_name(key: str, name: str) -> str:
+    text = name.strip()
+    if text.endswith("(풀 포함)"):
+        return text.removesuffix("(풀 포함)").rstrip()
+    if m := LINE_PAPER.fullmatch(text):
+        return f"{m.group(1)}벽지"
+    if m := LINE_MARKET.fullmatch(text):
+        return m.group(1)
+    # 두 기준 줄은 이름 끝 괄호가 짧은 뜻이다('부자재 (풀 · 부직포 · 네바리 · 실리콘 등)' → '부자재')
+    cut = text.rfind("(")
+    if key in LINE_NOTE_KEYS and text.endswith(")") and cut > 0:
+        return text[:cut].rstrip() or text
+    return text
+
+
 async def checklist(
     s: AsyncSession, vendor: User, visit_id: uuid.UUID, today: date, refs: "RefTable"
 ) -> tuple[CardOut, dict, QuoteChecklistData]:
@@ -352,7 +375,7 @@ async def checklist(
     items = [
         ChecklistRow(
             key=ln.key,
-            label=ln.name,
+            label=line_name(ln.key, ln.name),
             state="check",
             hint="표준견적서에 있는 줄이에요. 견적서에 넣었는지 확인해요",
         )
