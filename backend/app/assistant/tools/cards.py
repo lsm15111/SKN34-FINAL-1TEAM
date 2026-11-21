@@ -513,7 +513,10 @@ async def compare(
 async def schedule(
     s: AsyncSession, user: User, pid: uuid.UUID, today: date, refs: "RefTable"
 ) -> tuple[CardOut | None, dict]:
-    """수락 기다리는 공사 날짜가 있으면 그 날짜(dates), 없고 확정 공정표가 있으면 공정표(final)."""
+    """수락 기다리는 공사 날짜가 있으면 그 날짜(dates), 없고 확정 공정표가 있으면 공정표(final).
+    그 날짜의 수락 승인 카드가 열려 있으면 카드 단추(proposal_ref · proposal_kind)를 비우고 action_id를 단다
+    (같은 수락 단추가 카드와 승인 카드에 두 번 보이지 않게)."""
+    from app.assistant import repository as repo
     from app.schedule import service as schedule_service
 
     sch = await schedule_service.schedule_for(s, user, pid, today)
@@ -560,6 +563,14 @@ async def schedule(
             if card is None:
                 name = TRADE.get(d.trade, d.trade)
                 picked = x.days or []
+                accept = next(
+                    (
+                        a.id
+                        for a in await repo.open_on(s, user.id, "proposal", x.id)
+                        if a.kind in ("dates_accept", "delay_accept")
+                    ),
+                    None,
+                )
                 data = ScheduleData(
                     phase="dates",
                     vendor_name=d.vendor_name,
@@ -573,8 +584,13 @@ async def schedule(
                     plan_version=sch.final_version,
                     href=href(pid, "/schedule"),
                     vendor_note=policy.vendor_note(x.reason),
-                    proposal_ref=pref,
-                    proposal_kind="delay_accept" if kind == "delay" else "dates_accept",
+                    proposal_ref=None if accept else pref,
+                    proposal_kind=None
+                    if accept
+                    else "delay_accept"
+                    if kind == "delay"
+                    else "dates_accept",
+                    action_id=accept,
                 )
                 card = CardOut(
                     card_id=f"dates-{x.id}",

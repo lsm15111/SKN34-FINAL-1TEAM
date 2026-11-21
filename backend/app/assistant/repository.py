@@ -196,6 +196,13 @@ async def actions_of(
     return list(rows.all())
 
 
+async def lock_target(s: AsyncSession, user_id: uuid.UUID, target_id: uuid.UUID) -> None:
+    """같은 (사람, 대상)의 제안 만들기를 줄 세운다(트랜잭션 잠금, commit · rollback에 풀림). 대화 턴 · 먼저 말
+    걸기가 거의 같이 제안해도 뒤의 것이 앞의 행을 보고 다시 쓴다(행 하나)."""
+    key = f"assistant-offer:{user_id}:{target_id}"
+    await s.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0))))
+
+
 async def open_on(
     s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID
 ) -> list[AssistantAction]:
@@ -209,6 +216,24 @@ async def open_on(
             AssistantAction.status == "proposed",
         )
         .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+async def rejected_on(
+    s: AsyncSession, user_id: uuid.UUID, kind: str, target_kind: str, target_id: uuid.UUID
+) -> list[AssistantAction]:
+    """그 사람이 거절한 같은 종류 · 같은 대상의 제안(새것부터). 새 사실 없이 다시 만들지 않으려고 읽는다."""
+    rows = await s.scalars(
+        select(AssistantAction)
+        .where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.kind == kind,
+            AssistantAction.target_kind == target_kind,
+            AssistantAction.target_id == target_id,
+            AssistantAction.status == "rejected",
+        )
+        .order_by(AssistantAction.created_at.desc())
     )
     return list(rows.all())
 
@@ -435,13 +460,16 @@ async def dismissals(
     return [(t, at) for t, at in rows]
 
 
-# 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상일 때)
+# 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상, 또는
+# 행동 payload의 공사 날짜 제안 proposal_id일 때). 날짜 바꾸기 요청(date_change, 대상 = 확정)은 그 확정의 '공사
+# 전날'(ref = 확정)과 요청할 때 수락 기다리던 날짜의 '공사 날짜 왔어요'(ref = 제안)를 닫는다
 SETTLES: dict[str, tuple[str, ...]] = {
     "visit_request": ("no_pick",),
     "visit_slot": ("visit_offered",),
     "vendor_confirm": ("quote_sent",),
     "dates_accept": ("dates_proposed",),
     "delay_accept": ("dates_proposed",),
+    "date_change": ("work_eve", "dates_proposed"),
     "window_answer": ("visit_requested", "visit_picked"),
     "decline": ("visit_requested", "visit_picked"),
     "dates": ("deal_confirmed",),
@@ -458,9 +486,13 @@ async def close_lines_of(s: AsyncSession, a: AssistantAction, reason: str = "act
     )
     hit = AssistantNudge.action_id.in_(same)
     if a.kind in SETTLES:
+        refs = {a.target_id}
+        pid = (a.payload or {}).get("proposal_id")
+        if pid:
+            refs.add(uuid.UUID(str(pid)))
         hit = or_(
             hit,
-            (AssistantNudge.ref_id == a.target_id) & AssistantNudge.trigger.in_(SETTLES[a.kind]),
+            AssistantNudge.ref_id.in_(list(refs)) & AssistantNudge.trigger.in_(SETTLES[a.kind]),
         )
     res = await s.execute(
         update(AssistantNudge)

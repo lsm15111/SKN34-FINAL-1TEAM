@@ -43,6 +43,7 @@ class ToolCtx:
     now: datetime
     refs: "RefTable"
     mode: Literal["llm", "free"] = "llm"
+    pressed: bool = False  # 사람이 카드 단추로 고른 제안(거절한 제안도 다시 만든다, choices.apply)
 
 
 @dataclass

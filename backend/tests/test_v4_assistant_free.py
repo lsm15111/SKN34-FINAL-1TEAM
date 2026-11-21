@@ -13,6 +13,7 @@ from app.agent import llm
 from app.assistant import free, policy
 from tests.conftest import query
 from tests.helpers import use
+from tests.test_deal import confirm
 from tests.test_deal import setup as deal_setup
 from tests.test_quote_compare import quote
 from tests.test_v3_visit_kit import customer, offered, requested, vendor
@@ -252,3 +253,16 @@ def test_llm_recommend_mokgong_is_a_tool_error(api):
         not cards_of(ev, "vendor_picks")
         and free.intent_of("목공 업체 추천", "customer") == "vendors"
     )
+
+
+# ---- 확정한 뒤 견적 비교 글 ----
+
+
+def test_compare_after_confirm_names_the_vendor_and_version(api):
+    """업체를 확정한 뒤 '견적서 보여 주세요'에는 확정 단추 안내 대신 확정한 업체 · 견적서 판을 말한다."""
+    _token, pid, va, _vb, _ = deal_setup(api)
+    assert confirm(api, pid, va).status_code == 200
+    ev = ok(ask(api, pid, "견적서 보여 주세요"))
+    assert ev[-1][1]["mode"] == "free"
+    assert "마루와벽" in said(ev) and "1판" in said(ev)
+    assert "확정할 업체를 카드에서 고르면" not in said(ev)

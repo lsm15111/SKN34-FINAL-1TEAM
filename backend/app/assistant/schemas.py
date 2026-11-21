@@ -24,7 +24,7 @@ CardKind = Literal[
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
-    "window_answer", "decline", "dates",
+    "date_change", "window_answer", "decline", "dates",
 ]  # fmt: skip
 ActionStatus = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 TurnStatus = Literal["running", "done", "stopped", "failed"]
@@ -252,6 +252,11 @@ class ScheduleData(BaseModel):
     proposal_kind: Literal["dates_accept", "delay_accept"] | None = Field(
         default=None,
         description="처음 올린 날짜면 dates_accept, 수락한 뒤 바뀐 날짜면 delay_accept",
+    )
+    action_id: uuid.UUID | None = Field(
+        default=None,
+        description="이 날짜의 수락 승인 카드가 열려 있으면 그 행동 id. 그때는 카드 단추(proposal_ref · "
+        "proposal_kind)를 비워 수락 단추가 승인 카드 하나만 남아요",
     )
 
 

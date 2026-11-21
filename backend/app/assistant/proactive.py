@@ -846,6 +846,8 @@ async def _build(
         offer = None
     action_id = None
     if offer is not None:
+        # 같은 대상 · 같은 종류의 열린 카드(대화에서 만든 것 포함)가 있으면 그 행을 쓰고, 거절한 같은 제안은 다시
+        # 만들지 않는다(actions.offer). 카드는 단 승인 카드와 맞춘다
         row, _ = await actions.propose(
             s,
             user,
@@ -857,7 +859,32 @@ async def _build(
             **offer,
         )
         action_id = row.id if row.status == "proposed" else None
+        if action_id is not None and card is not None:
+            _pin(card, row)
     return (card.model_dump(mode="json") if card is not None else None), action_id
+
+
+def _pin(card, row) -> None:
+    """보낼 카드를 단 승인 카드와 맞춘다: 반나절 후보는 승인 카드의 반나절을 고른 것(chosen)으로, 공사 날짜 카드는
+    수락 단추를 승인 카드 하나로(카드 단추 proposal_ref · proposal_kind를 비우고 action_id)."""
+    pl = row.payload or {}
+    if card.kind == "visit_slots":
+        hit = next(
+            (
+                c["ref"]
+                for c in card.data.get("candidates") or []
+                if (c.get("day"), c.get("half")) == (pl.get("day"), pl.get("half"))
+            ),
+            None,
+        )
+        card.data = {**card.data, "chosen": hit}
+    elif card.kind == "schedule" and card.data.get("phase") == "dates":
+        card.data = {
+            **card.data,
+            "proposal_ref": None,
+            "proposal_kind": None,
+            "action_id": str(row.id),
+        }
 
 
 # ---- 대화 기록 · 다음에 물을 말 ----

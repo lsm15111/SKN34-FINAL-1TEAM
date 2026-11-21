@@ -40,7 +40,7 @@ TURN_STATUSES = ("running", "done", "stopped", "failed")
 MODES = ("llm", "free")
 TOOL_MAX = 6  # 턴 하나의 도구 호출 상한(계약서 4장)
 
-# 제안 도구와 1:1 (propose_<kind>)
+# 제안 도구와 1:1 (propose_<kind>). date_change는 0044에서 더함(고객 공사 날짜 바꾸기 요청)
 ACTION_KINDS = (
     "home_info",
     "visit_request",
@@ -48,6 +48,7 @@ ACTION_KINDS = (
     "vendor_confirm",
     "dates_accept",
     "delay_accept",
+    "date_change",
     "window_answer",
     "decline",
     "dates",

@@ -11,11 +11,16 @@
   뺀 뒤 찾는다('마루와벽'의 '마루'는 바닥이 아니다).
 - 비서가 기억한 것을 어디서 보고 지우는지 물으면 정해 둔 안내(내 정보 → 비서가 기억한 것)로 답한다.
 - 고객 제안(승인 카드)은 사람이 카드 단추를 누른 턴(choice 'visit_request:v1,v2' …)에 choices.apply가 만든다.
+  예외 하나: '공사 미루고 싶어요'처럼 공사 날짜를 바꾸고 싶다는 말은 날짜 바꾸기 요청 승인 카드
+  (propose_date_change, 며칠 뒤 · 이날부터는 말에서 코드가 읽고 없으면 일주일 뒤)로 안내한다. 바라는 말이 없으면
+  ('미루면 어떻게 돼요?') 안내 글만. 업체가 낸 날짜에 답하는 말 · 업체가 미루자는 말 · 실측 날짜는 여기로 오지 않는다.
 - 글이 카드를 말하면 같은 턴에 그 카드가 있어야 한다(fit_cards): 없으면 만들고, 못 만들면 그 문장을 뺀다.
+- 업체를 확정한 뒤 견적 비교를 물으면 확정한 업체 · 견적서 판을 말한다(확정 단추 안내를 하지 않는다).
 """
 
 import re
 from collections.abc import Awaitable, Callable
+from datetime import date
 
 from app.assistant import policy
 from app.assistant.schemas import CardOut, TodayData
@@ -82,10 +87,21 @@ HALVES = (
 )
 VISITS = "실측 진행은 작업 카드에서 볼 수 있어요. 업체가 기간을 답하면 반나절 후보를 보여 드릴게요."
 QUOTES = "실측 견적서가 {n}곳 왔어요. 합계 · 포함 항목 · 기간 · 유효기간을 카드에서 견줘 보세요. 확정할 업체를 카드에서 고르면 승인 카드를 만들어요."
+CONFIRMED = "{vendor} 견적서 {version}판으로 확정했어요. 받은 견적서는 카드에서 다시 볼 수 있어요."
 NO_QUOTES = "아직 받은 실측 견적서가 없어요. 업체가 실측하고 견적서를 보내면 여기서 견줄 수 있어요."
 NO_DATES = "아직 확정한 업체의 공사 날짜가 없어요. 업체를 확정하면 업체가 공사 날짜를 올려요."
 DATES = "카드에서 수락을 누르면 승인 카드를 만들어요."
+DATES_OPEN = "수락 승인 카드가 열려 있어요. 그 카드를 확인하고 눌러 주세요."
 PLAN = "확정 공정표예요. 날짜별 작업은 카드에서 볼 수 있어요."
+# 공사 날짜 바꾸기(날짜 바꾸기 요청 승인 카드)
+CHANGE_NONE = "아직 날짜를 바꿀 공사가 없어요. 업체가 공사 날짜를 올리면 바꾸기를 요청할 수 있어요."
+CHANGE_HOW = (
+    "공사 날짜는 날짜 바꾸기 요청으로 바꿔요. '2주 미뤄 주세요'처럼 말해 주시면 요청 승인 카드를 만들어 드릴게요. "
+    "업체가 새 날짜를 올리고 수락하기 전까지 지금 날짜는 그대로예요."
+)
+CHANGE_MADE = "날짜 바꾸기 요청 승인 카드를 만들었어요. 카드를 확인하고 눌러야 업체에 요청이 가요."
+CHANGE_SAME = "같은 날짜 바꾸기 요청 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
+CHANGE_REJECTED = "앞에서 거절한 날짜 바꾸기 요청과 같아요. 다른 날짜를 말해 주시면 새로 만들어요."
 STANDARD = "이 집 표준견적서는 부가세 포함 {won}원이에요. 공공 기준 단가로 믿집이 계산한 참고 금액이고 업체 견적은 아니에요."
 STANDARD_NO_TOTAL = (
     "공공 기준 단가로 믿집이 계산한 표준견적서예요. 업체 견적이 아니라 참고 금액이에요."
@@ -101,7 +117,11 @@ MEMORY_GUIDE = (
 # 업체
 NO_VISIT = "어느 요청인지 몰라요. 요청을 열고 다시 말해 주세요."
 DECLINED = "못 받아요 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 알려져요."
+DECLINE_REJECTED = (
+    "앞에서 거절한 못 받아요 카드와 같아요. 다시 하려면 요청 카드의 단추로 직접 골라 주세요."
+)
 WINDOW = "답하기 좋은 기간으로 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 보내져요."
+WINDOW_REJECTED = "앞에서 거절한 기간 답하기 카드와 같아요. 다른 기간은 요청 카드에서 골라 주세요."
 NO_WINDOW = "지금은 이 요청에 바로 답할 빈 기간을 찾지 못했어요. 요청 화면에서 기간을 골라 주세요."
 ANSWERED = "이미 답했거나 닫힌 요청이에요. 진행은 요청 화면에서 볼 수 있어요."
 CHECKLIST = "견적서를 낼 때 확인할 것이에요. 낼 금액 · 부가세 방식 · 공사 기간 · 유효기간은 칸에 적어 주세요."
@@ -282,12 +302,25 @@ async def _slots(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolO
     return WISHES, ToolOut(data={}, cards=[picks, wish])
 
 
+async def _confirmed(s, tc: ToolCtx, trade: str) -> dict | None:
+    """그 공정에서 확정한 업체 · 견적서 판(확정 때 고정한 판, schedule service 값). 없으면 None."""
+    from app.schedule import service as schedule_service
+
+    sch = await schedule_service.schedule_for(s, tc.user, tc.project_id, tc.today)  # type: ignore[arg-type]
+    d = next((t.deal for t in sch.trades if t.deal.trade == trade), None)
+    return {"vendor": d.vendor_name, "version": d.quote.version} if d is not None else None
+
+
 async def _compare(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut]:
     pid = tc.project_id
     async with SessionLocal() as s:
         card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)  # type: ignore[arg-type]
         task = await cards.visit_task_for(s, tc.user, pid, tc.today, tc.now)  # type: ignore[arg-type]
+        chosen = any(c.get("status") == "chosen" for c in model["cols"])
+        done = await _confirmed(s, tc, "dobae") if chosen else None
     n = sum(1 for c in model["cols"] if c.get("version"))
+    if done is not None:  # 확정한 뒤: 확정 단추 대신 확정한 업체 · 견적서 판을 말한다
+        return CONFIRMED.format(**done), ToolOut(data={}, cards=[card] if n else [], task=task)
     if not n:
         return NO_QUOTES, ToolOut(data={}, task=task)
     return QUOTES.format(n=n), ToolOut(data={}, cards=[card], task=task)
@@ -298,8 +331,11 @@ async def _schedule(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, To
         card, _ = await cards.schedule(s, tc.user, tc.project_id, tc.today, tc.refs)  # type: ignore[arg-type]
     if card is None:
         return NO_DATES, ToolOut(data={})
-    text = f"{card.say} {DATES}" if card.data["phase"] == "dates" else PLAN
-    return text, ToolOut(data={}, cards=[card])
+    if card.data["phase"] != "dates":
+        return PLAN, ToolOut(data={}, cards=[card])
+    # 수락 승인 카드가 열려 있으면 카드 단추가 비어 있다(수락 단추는 승인 카드 하나)
+    tail = DATES_OPEN if card.data.get("action_id") else DATES
+    return f"{card.say} {tail}", ToolOut(data={}, cards=[card])
 
 
 async def _standard(tc: ToolCtx, _text: str, found: list[str]) -> tuple[str, ToolOut] | None:
@@ -329,6 +365,98 @@ async def _home(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOu
     if model["locked"]:
         return None
     return HOME, ToolOut(data={}, cards=[card])
+
+
+# 공사 날짜를 바꾸고 싶다는 말(미루기 · 연기 · 늦추기 · 날짜 바꾸기 · 옮기기 · 당기기)
+CHANGE = re.compile(
+    r"미루|미뤄|미룰|늦추|늦춰|연기\s*(?:하|해|할|요청|돼|되)|"
+    r"(?:날짜|일정)\S{0,2}\s{0,2}(?:바꾸|바꿔|바꿀|옮기|옮겨|옮길|당기|당겨|당길)"
+)
+# 바라는 말이 있어야 카드를 만든다. 없으면('미루면 어떻게 돼요?') 안내만 한다
+CHANGE_WANT = re.compile(
+    r"싶|원해|주세요|주실|줄\s*수|줄래|줘요|해\s*줘|려고|(?:룰|출|꿀|길|할)\s*(?:게|래)|"
+    r"(?:미뤄|늦춰|바꿔|옮겨|당겨)\s*(?:야|주|줘)"
+)
+# 고객의 날짜 바꾸기 요청이 아닌 말: 실측 날짜 · 업체가 낸 날짜에 답하기(수락 · 승인) · 업체가 미루자는 말
+NOT_CHANGE = re.compile(r"실측|방문|수락|승인|받아들|업체\s*(?:가|에서|쪽)|자는|자고|대요")
+MONTH_DAY = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
+N_WEEKS = re.compile(r"(\d{1,2})\s*주")
+N_DAYS = re.compile(r"(\d{1,3})\s*일\s*(?:정도|쯤|만|가량)?\s*(?:미루|미뤄|늦|뒤)")
+WORD_DELAY = (
+    (re.compile(r"한\s*달"), 30), (re.compile(r"보름"), 15), (re.compile(r"(?:두|이)\s*주"), 14),
+    (re.compile(r"일주일|한\s*주"), 7), (re.compile(r"사흘"), 3), (re.compile(r"이틀"), 2),
+    (re.compile(r"하루"), 1),
+)  # fmt: skip
+CHANGE_REASON_WORDS = (
+    ("move", re.compile(r"이사|이삿|입주")),
+    ("other_work", re.compile(r"다른\s*공사|목공|바닥|욕실|전기|타일|샷시|창호")),
+    ("family", re.compile(r"집안|가족|사정|출장|여행|아이|병원|일이\s*생")),
+)
+DEFAULT_DELAY = 7  # 바라는 때를 말하지 않으면 일주일 뒤부터(카드에서 고객이 확인한다)
+
+
+def change_wish(text: str, today: date) -> tuple[int | None, date | None]:
+    """말 → (미룰 날 수, 시작해도 되는 첫날) 중 하나. 'M월 D일'은 오늘 뒤 가장 가까운 그날, 'n주' · 'n일' · 일주일 ·
+    한 달 …은 날 수, 없으면 일주일."""
+    m = MONTH_DAY.search(text)
+    if m:
+        try:
+            got = date(today.year, int(m[1]), int(m[2]))
+            return None, got if got > today else date(today.year + 1, got.month, got.day)
+        except ValueError:
+            pass
+    m = N_WEEKS.search(text)
+    if m and 1 <= int(m[1]) <= 25:
+        return int(m[1]) * 7, None
+    m = N_DAYS.search(text)
+    if m and 1 <= int(m[1]) <= 180:
+        return int(m[1]), None
+    return next((n for rx, n in WORD_DELAY if rx.search(text)), DEFAULT_DELAY), None
+
+
+def change_reason(text: str) -> str:
+    return next((code for code, rx in CHANGE_REASON_WORDS if rx.search(text)), "other")
+
+
+async def _change(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOut]:
+    """공사 날짜를 바꾸고 싶다는 말 → 날짜 바꾸기 요청 승인 카드(propose_date_change) + 공사 날짜 카드. 바라는 말이
+    없으면 안내 글과 카드만. 바꿀 수 있는 확정(수락한 날짜 · 업체가 낸 날짜)이 없으면 그렇게 말한다."""
+    from app.assistant.tools import propose
+
+    async with SessionLocal() as s:
+        card, model = await cards.schedule(s, tc.user, tc.project_id, tc.today, tc.refs)  # type: ignore[arg-type]
+    out = ToolOut(data={}, cards=[card] if card is not None else [])
+    deals = [
+        d
+        for d in model["deals"]
+        if (d["status"] == "scheduled" and d.get("start_date"))
+        or (d["status"] == "confirmed" and d.get("proposal"))
+    ]
+    if not deals:
+        return CHANGE_NONE, out
+    d = next(
+        (x for x in deals if x["trade"] in found),
+        next((x for x in deals if x["trade"] == "dobae"), deals[0]),
+    )
+    if not CHANGE_WANT.search(text):
+        return CHANGE_HOW, out
+    delay, wish = change_wish(text, tc.today)
+    try:
+        got = await propose.propose_date_change(
+            tc,
+            propose.DateChangeIn(
+                deal_ref=d["ref"],
+                reason=change_reason(text),  # type: ignore[arg-type]
+                delay_days=delay,
+                wish_from=wish,
+            ),
+        )
+    except ToolError as e:
+        return e.message, out
+    out.actions += got.actions
+    out.closed += got.closed
+    said = {"new": CHANGE_MADE, "same": CHANGE_SAME, "rejected": CHANGE_REJECTED}
+    return said.get(str(got.data.get("state")), CHANGE_NONE), out
 
 
 CUSTOMER_DO: dict[str, Handler] = {
@@ -450,7 +578,9 @@ async def _brief(tc: ToolCtx, *, propose_window: bool) -> tuple[CardOut, dict, T
             propose_window=propose_window,
         )
     live = [a for a in made if a.status == "proposed"]
-    return card, model, ToolOut(data={}, cards=[card], actions=live, closed=closed)
+    # 업체가 거절한 같은 기간 제안이면 다시 만들지 않았다(actions.offer): 모델 값에 표시만 남긴다
+    data = {"rejected": True} if any(a.status == "rejected" for a in made) else {}
+    return card, model, ToolOut(data=data, cards=[card], actions=live, closed=closed)
 
 
 async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, ToolOut] | None:
@@ -476,6 +606,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         _card, model, out = await _brief(tc, propose_window=True)
         if model["status"] != "requested":
             return ANSWERED, out
+        if not out.actions and out.data.pop("rejected", False):
+            return WINDOW_REJECTED, out
         return (WINDOW if out.actions else NO_WINDOW), out
     # decline: 브리핑(새 기간 제안 없이) + 못 받아요 제안 하나(같은 대상의 열린 제안은 이것으로 바뀐다)
     _card, model, out = await _brief(tc, propose_window=False)
@@ -489,6 +621,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         return e.message, out
     out.actions += got.actions
     out.closed += got.closed
+    if not got.actions:  # 거절한 같은 못 받아요 제안: 다시 만들지 않았다
+        return DECLINE_REJECTED, out
     return DECLINED, out
 
 
@@ -512,6 +646,8 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
     found = trades_in(without_names(text, await vendor_names(tc)))
     if tc.project_id is None:
         return await _knowledge(tc, text, found, card_id)
+    if CHANGE.search(text) and not NOT_CHANGE.search(text):  # 공사 날짜 바꾸기 요청 승인 카드로
+        return await _change(tc, text, found)
     intent, step = customer_intent(text)
     if intent in LINKED and found and "dobae" not in found:  # 업체 연결은 아직 도배만
         said = policy.DOBAE_ONLY if "mokgong" in found else OTHER_TRADE

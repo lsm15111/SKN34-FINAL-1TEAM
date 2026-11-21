@@ -2,21 +2,23 @@
 
 - 대상은 ref로만 받고 코드가 id로 푼다(모르는 ref는 unknown_ref). 금액 · 날짜 · 판은 기능 service 값이다.
 - 제안할 수 없는 상태(잠김 · 견적서 없음 · 겹침 …)는 도구 오류로 돌려준다(행을 만들지 않음).
-- 같은 대상의 열린 제안은 하나: 새로 만들면 옛 것은 만료(replaced)되고 그 action 이벤트도 보낸다.
+- 같은 대상의 열린 제안은 하나: 새로 만들면 옛 것은 만료(replaced)되고 그 action 이벤트도 보낸다. 같은 제안이
+  열려 있으면 그 행을 쓰고(state same), 고객이 거절한 같은 제안이면 오류 대신 모델 값으로 알린다(state rejected).
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.assistant import actions
 from app.assistant.schemas import ActionSummary, AmountRow, LinkOut, SummaryRow
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import TRADE, dobae_only, pid_of
 from app.db import SessionLocal
+from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
@@ -30,6 +32,20 @@ FIELD_LABEL = {
     "start_date": "공사 시작 희망",
     "demolition": "철거 범위",
 }
+# 제안 결과(state) → 모델에 줄 한 줄(고객에게 할 말의 근거). 거절은 오류가 아니라 값으로 알린다
+OFFER_NOTE = {
+    "new": "승인 카드를 만들었어요. 사람이 카드 버튼을 눌러야 실행돼요.",
+    "same": "같은 승인 카드가 이미 열려 있어요(새로 만들지 않았어요). 그 카드를 확인하고 눌러 달라고 안내해요.",
+}
+CLOSED_NOTE = "이미 닫힌 제안이에요(새로 만들지 않았어요)."
+
+
+def rejected_note(surface: str) -> str:
+    who = "고객이" if surface == "customer" else "업체가"
+    return (
+        f"{who} 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. "
+        "다시 원하면 카드 단추로 직접 고르게 안내해요."
+    )
 
 
 def _show(key: str, v) -> str:
@@ -49,21 +65,37 @@ def _show(key: str, v) -> str:
 
 
 async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
-    """행동 행을 만들고 commit한다. (도구 결과, 모델용 요약)"""
+    """행동 행을 만들고 commit한다. (도구 결과, 모델용 요약). 새 행 · 열린 같은 행만 승인 카드(action)로 보내고,
+    거절한 같은 제안 · 닫힌 행은 보내지 않는다(모델 값 state · note로만 알림)."""
     async with SessionLocal() as s:
-        row, closed = await actions.propose(
-            s, tc.user, surface=tc.surface, now=tc.now, turn_id=tc.turn_id, **kw
+        got = await actions.offer(
+            s,
+            tc.user,
+            surface=tc.surface,
+            now=tc.now,
+            turn_id=tc.turn_id,
+            pressed=tc.pressed,
+            **kw,
         )
         await s.commit()
-    a = actions.out(row)
-    model = {
-        "proposed": a.status == "proposed",
+    a = actions.out(got.row)
+    state = got.state if got.live or got.state == "rejected" else "closed"
+    note = rejected_note(tc.surface) if state == "rejected" else OFFER_NOTE.get(state, CLOSED_NOTE)
+    model: dict = {
+        "proposed": got.live,
+        "state": state,
         "kind": a.kind,
         "summary": {"title": a.summary.title, "approve_label": a.summary.approve_label},
-        "expires_at": a.expires_at,
-        "note": "승인 카드를 만들었어요. 고객이 버튼을 눌러야 실행돼요.",
+        "note": note,
     }
-    return ToolOut(data=model, actions=[a], closed=[actions.out(c) for c in closed]), model
+    if got.live:
+        model["expires_at"] = a.expires_at
+    out = ToolOut(
+        data=model,
+        actions=[a] if got.live else [],
+        closed=[actions.out(c) for c in got.closed],
+    )
+    return out, model
 
 
 # ---- 고객 ----
@@ -72,6 +104,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
 class HomeFields(BaseModel):
     area_m2: Decimal | None = Field(default=None, gt=10, lt=400, decimal_places=1)
     area_basis: Literal["supply", "exclusive"] | None = None
+    pyeong: Decimal | None = Field(default=None, gt=3, lt=121, decimal_places=1)  # 공급 기준 평형
     occupied: bool | None = None
     grade: Literal["economy", "basic"] | None = None
     rooms: int | None = Field(default=None, ge=1, le=5)
@@ -83,13 +116,23 @@ class HomeIn(BaseModel):
     fields: HomeFields
 
 
+NEED_BASIS = (
+    "면적(㎡)을 바꿀 때는 기준(area_basis: supply 공급 · exclusive 전용)을 같이 넣어요. "
+    "계약서 · 등기 · 'nn 타입'의 ㎡는 전용, 평형은 pyeong에 넣어요."
+)
+
+
 @tool(
     "propose_home_info",
     surface="customer",
     kind="propose",
     status="집 정보 저장을 준비하고 있어요",
-    description="고객이 말한 집 정보(면적 · 면적 기준 · 사는 중 · 벽지 · 방 개수 · 공사 시작 희망 · 철거 범위) "
-    "바뀜을 승인 카드로 만들어요. 고객이 말한 칸만 넣어요. 실측을 요청한 뒤에는 고칠 수 없어요. "
+    description="고객이 말한 집 정보(면적 · 평형 · 면적 기준 · 사는 중 · 벽지 · 방 개수 · 공사 시작 희망 · 철거 범위) "
+    "바뀜을 승인 카드로 만들어요. 고객이 말한 값을 넣으면 카드에서 고객이 확인하고 눌러야 저장돼요(실측을 요청한 "
+    "뒤에는 고칠 수 없어요). 기준을 되묻기만 하지 말고 고객이 말한 값으로 카드를 만들어요. "
+    "평형('34평')은 pyeong에 넣으면 믿집이 공급 ㎡로 바꿔요. ㎡를 area_m2에 넣을 때는 area_basis를 같이 넣어요: "
+    "계약서 · 등기 · 'nn 타입'('84 타입' = 전용 84㎡)의 ㎡는 exclusive, 분양 면적이라고 한 ㎡는 supply예요. "
+    "평형과 타입을 같이 말하면 타입(전용 ㎡)을 넣어요. "
     "철거 범위는 전체 철거(full) · 부분 철거(partial) · 철거 안 함(none)이고, 전체 철거면 표준견적서가 "
     "리모델링 기준으로 바뀌어요.",
     model=HomeIn,
@@ -97,8 +140,16 @@ class HomeIn(BaseModel):
         {
             "fields": obj(
                 {
-                    "area_m2": {"type": "number", "description": "㎡, 소수 한 자리"},
-                    "area_basis": {"type": "string", "enum": ["supply", "exclusive"]},
+                    "area_m2": {"type": "number", "description": "㎡, 소수 한 자리(기준과 같이)"},
+                    "area_basis": {
+                        "type": "string",
+                        "enum": ["supply", "exclusive"],
+                        "description": "면적 기준: supply 공급 · exclusive 전용(계약서 · 타입의 ㎡)",
+                    },
+                    "pyeong": {
+                        "type": "number",
+                        "description": "고객이 말한 평형(공급 기준 평, 예 34). 믿집이 공급 ㎡로 바꿔요",
+                    },
                     "occupied": {"type": "boolean"},
                     "grade": {"type": "string", "enum": ["economy", "basic"]},
                     "rooms": {"type": "integer"},
@@ -115,11 +166,21 @@ class HomeIn(BaseModel):
     ),
 )
 async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
+    from app.calc.common import pyeong_to_m2
     from app.calc.dobae import DEMOLITION_KEY
     from app.project import service as project_service
     from app.project.schemas import HomeInfoIn, check_home
 
     pid = pid_of(tc)
+    asked = a.fields.model_dump(exclude_none=True, mode="json")
+    py = asked.pop("pyeong", None)
+    if "area_m2" in asked and "area_basis" not in asked:
+        raise ToolError("need_basis", NEED_BASIS)
+    if py is not None and "area_m2" not in asked:  # 평형 → 공급 ㎡(계산 엔진)
+        asked["area_m2"] = str(pyeong_to_m2(Decimal(str(py))))
+        asked["area_basis"] = "supply"
+    else:
+        py = None  # ㎡(타입)를 같이 말했으면 그것을 쓴다
     async with SessionLocal() as s:
         p = await project_service.get_for(s, tc.user, pid)
         card, _ = await cards.home(s, tc.user, pid)
@@ -129,7 +190,6 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         raise ToolError("no_home", "이 공사는 집 정보 화면에서 고쳐 주세요.")
     now_home = p.home.model_dump(mode="json")  # 철거 범위(모은 조건)도 들어 있다
     home_now = {k: v for k, v in now_home.items() if k != DEMOLITION_KEY}
-    asked = a.fields.model_dump(exclude_none=True, mode="json")
     changes = {k: v for k, v in asked.items() if str(now_home.get(k)) != str(v)}
     if not changes:
         raise ToolError("no_change", "바뀐 칸이 없어요.")
@@ -140,8 +200,13 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
             check_home(merged, tc.today)
         except (ValidationError, AppError) as e:
             raise ToolError("bad_input", "집 정보 칸을 다시 확인해 주세요.") from e
+
+    def after(k: str, v) -> str:  # 평형으로 받은 면적은 고객이 말한 평을 같이 보인다
+        got = _show(k, v)
+        return f"{got} ({Decimal(str(py)).normalize():f}평)" if k == "area_m2" and py else got
+
     rows = [
-        SummaryRow(label=FIELD_LABEL[k], value=_show(k, v), sub=f"지금 {_show(k, now_home.get(k))}")
+        SummaryRow(label=FIELD_LABEL[k], value=after(k, v), sub=f"지금 {_show(k, now_home.get(k))}")
         for k, v in changes.items()
     ]
     out, _ = await _offer(
@@ -162,10 +227,12 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         expires_at=tc.now + timedelta(days=7),
         project_id=pid,
     )
+    if not out.actions:  # 거절한 같은 제안: 카드에 바뀜 · 단추를 달지 않는다
+        return out
     card.data = {
         **card.data,
         "changes": [
-            {"label": FIELD_LABEL[k], "before": _show(k, now_home.get(k)), "after": _show(k, v)}
+            {"label": FIELD_LABEL[k], "before": _show(k, now_home.get(k)), "after": after(k, v)}
             for k, v in changes.items()
         ],
         "action_id": str(out.actions[0].action_id),
@@ -433,6 +500,11 @@ async def _dates(tc: ToolCtx, a: ProposalIn, kind: Literal["dates_accept", "dela
     async with SessionLocal() as s:
         sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
     out, _ = await _offer(tc, project_id=pid, **dates_offer(sch, pr["id"], kind, tc.now))
+    if out.actions:  # 같은 card_id로 바꿔 끼운다: 수락 단추는 승인 카드 하나만(카드 단추를 비움)
+        async with SessionLocal() as s:
+            card, _ = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
+        if card is not None:
+            out.cards.append(card)
     return out
 
 
@@ -460,6 +532,162 @@ async def propose_dates_accept(tc: ToolCtx, a: ProposalIn) -> ToolOut:
 )
 async def propose_delay_accept(tc: ToolCtx, a: ProposalIn) -> ToolOut:
     return await _dates(tc, a, "delay_accept")
+
+
+CHANGE_WISH_MAX = 3  # 시작해도 되는 날 후보 수(schedule 다른 날짜 요청 WISH_MAX와 같다)
+CHANGE_AHEAD = timedelta(days=365)  # 요청 날짜는 1년 안(schedule service와 같다)
+ChangeReason = Literal["move", "family", "other_work", "other"]
+
+
+def date_change_offer(
+    sch,
+    deal_id: str,
+    reason: str,
+    today: date,
+    now: datetime,
+    *,
+    delay_days: int | None = None,
+    wish_from: date | None = None,
+) -> dict:
+    """공사 날짜 바꾸기 요청(schedule_for 결과 sch의 확정 하나) → 대기 행동 인자. 도구 · 무료 모드가 같이 쓴다.
+    시작해도 되는 날은 계산 엔진이 고른다: 지금 날짜에서 delay_days 뒤(또는 wish_from)부터 지금과 같은 일하는 날
+    수로, 다른 공정과 겹치지 않는 자리 안에서 1~3개. 요청할 수 없으면 ToolError."""
+    from app.calc.schedule import WEEKEND, Dated, count_workdays, free_range, start_choices
+    from app.refprice.holidays import days_off
+    from app.schedule import service as schedule_service
+
+    t = next((x for x in sch.trades if str(x.deal.id) == str(deal_id)), None)
+    if t is None:
+        raise ToolError("stale", "공사를 찾을 수 없어요. 공사 날짜를 다시 봐 주세요.")
+    if t.request is not None:
+        raise ToolError(
+            "already_requested",
+            "이미 날짜 바꾸기를 요청했어요. 업체가 새 날짜를 올리면 수락할 수 있어요.",
+        )
+    if t.requests_left <= 0:
+        raise ToolError(
+            "requests_used", "날짜 바꾸기 요청은 2번까지예요. 업체와 믿집 채팅으로 이야기해 주세요."
+        )
+    base = actions.change_base(t)
+    if base is None:
+        raise ToolError("no_dates", "업체가 공사 날짜를 낸 뒤에 바꾸기를 요청할 수 있어요.")
+    weekend = () if sch.weekend_work else WEEKEND
+    off = days_off(min(today, base[0]), today + CHANGE_AHEAD + timedelta(days=120))
+    n = max(count_workdays(base[0], base[1], off, weekend), 1)
+    first = base[0] + timedelta(days=delay_days) if delay_days else wish_from
+    first = max(first or today, today + timedelta(days=1))
+    others = [
+        Dated(x.deal.trade, x.deal.start_date, x.deal.end_date)
+        for x in sch.trades
+        if x.deal.id != t.deal.id
+        and x.deal.status in schedule_service.AFTER_DATES_ACCEPTED
+        and x.deal.start_date
+        and x.deal.end_date
+    ]
+    start_from, end_by = free_range(
+        t.deal.trade, [Dated(t.deal.trade, *base), *others], schedule_service.ORDER, off, weekend
+    )
+    first = max(first, start_from) if start_from else first
+    got = start_choices(first, n, CHANGE_WISH_MAX, {base[0]}, off, weekend, end_by)
+    picked = [(a, b) for a, b in got if a <= today + CHANGE_AHEAD]
+    if not picked:
+        raise ToolError(
+            "no_room", "그때로는 다른 공정과 겹치지 않는 날이 없어요. 다른 때를 말해 주세요."
+        )
+    change = t.deal.status == "scheduled"
+    name = cards.TRADE.get(t.deal.trade, t.deal.trade)
+    rows = [
+        SummaryRow(
+            label="지금 날짜" if change else "업체가 낸 날짜",
+            value=f"{base[0].isoformat()} ~ {base[1].isoformat()}",
+        ),
+        *[
+            SummaryRow(label=f"후보 {i}", value=f"{a.isoformat()} ~ {b.isoformat()}")
+            for i, (a, b) in enumerate(picked, 1)
+        ],
+        SummaryRow(label="까닭", value=actions.CHANGE_REASONS[reason]),
+    ]
+    summary = ActionSummary(
+        title=f"{name} 공사 날짜 바꾸기 요청" if change else f"{name} 다른 공사 날짜 요청",
+        rows=rows,
+        note="업체가 새 날짜를 올리면 수락할 수 있어요. 수락하기 전까지 지금 날짜는 그대로예요. "
+        f"날짜 바꾸기 요청은 {t.requests_left}번 남았어요",
+        approve_label="날짜 바꾸기 요청 보내기",
+    )
+    pending = t.proposal if t.proposal is not None and t.proposal.status == "pending" else None
+    return {
+        "kind": "date_change",
+        "target_kind": "deal",
+        "target_id": t.deal.id,
+        "target_ver": actions.change_ver(t),
+        "payload": {
+            "deal_id": str(t.deal.id),
+            "wish_dates": [a.isoformat() for a, _ in picked],
+            "reason": reason,
+            "proposal_id": str(pending.id) if pending else None,
+        },
+        "summary": summary,
+        # 첫 후보 날이 오면 요청할 수 없어서 그 전(그날 0시, 서울)까지, 길어도 2일
+        "expires_at": min(now + timedelta(days=2), datetime.combine(picked[0][0], time(0), SEOUL)),
+    }
+
+
+class DateChangeIn(BaseModel):
+    deal_ref: str
+    reason: ChangeReason
+    delay_days: int | None = Field(default=None, ge=1, le=180)
+    wish_from: date | None = None
+
+    @model_validator(mode="after")
+    def _one(self) -> "DateChangeIn":
+        if (self.delay_days is None) == (self.wish_from is None):
+            raise ValueError("delay_days와 wish_from 중 하나만")
+        return self
+
+
+@tool(
+    "propose_date_change",
+    surface="customer",
+    kind="propose",
+    status="날짜 바꾸기 요청을 준비하고 있어요",
+    description="확정한 공사(d1…)의 공사 날짜를 바꿔 달라는 요청을 승인 카드로 만들어요. 고객이 수락한 날짜를 "
+    "미루거나 당기고 싶을 때, 업체가 낸 날짜 대신 다른 날을 원할 때 써요. 바라는 때는 하나만 넣어요: delay_days(지금 "
+    "날짜에서 며칠 뒤로, 일주일 7 · 2주 14) 또는 wish_from(고객이 말한 시작해도 되는 첫날). 믿집이 지금과 같은 일하는 "
+    "날 수로 시작해도 되는 날 1~3개를 골라요. reason: move 이사 · 입주 · family 집안 일정 · other_work 다른 공사 · "
+    "other 그 밖. 요청은 확정마다 2번까지이고, 승인하면 업체가 새 날짜를 올려요(수락 전까지 지금 날짜는 그대로).",
+    model=DateChangeIn,
+    schema=obj(
+        {
+            "deal_ref": REF,
+            "reason": {"type": "string", "enum": list(actions.CHANGE_REASONS)},
+            "delay_days": {"type": "integer", "description": "지금 날짜에서 며칠 뒤로(1~180)"},
+            "wish_from": {
+                "type": "string",
+                "format": "date",
+                "description": "고객이 말한 시작해도 되는 첫날",
+            },
+        },
+        required=["deal_ref", "reason"],
+    ),
+)
+async def propose_date_change(tc: ToolCtx, a: DateChangeIn) -> ToolOut:
+    from app.schedule import service as schedule_service
+
+    pid = pid_of(tc)
+    deal = tc.refs.get(a.deal_ref, "deal")
+    async with SessionLocal() as s:
+        sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
+    got = date_change_offer(
+        sch,
+        deal["id"],
+        a.reason,
+        tc.today,
+        tc.now,
+        delay_days=a.delay_days,
+        wish_from=a.wish_from,
+    )
+    out, _ = await _offer(tc, project_id=pid, **got)
+    return out
 
 
 # ---- 업체 ----

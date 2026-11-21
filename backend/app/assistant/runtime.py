@@ -223,9 +223,14 @@ class RefTable:
 
 
 class SentenceGate:
-    """모델 글 조각을 문장으로 모아 검사를 지난 문장만 token으로 보낸다(숫자 · AI가 한 일처럼 · 주소 · 누출)."""
+    """모델 글 조각을 문장으로 모아 검사를 지난 문장만 token으로 보낸다(숫자 · AI가 한 일처럼 · 주소 · 누출).
 
-    def __init__(self, emit: Emit, prompt: str, allowed: str) -> None:
+    말과 행동 맞추기(policy.card_claim): 승인 카드를 만들었다 · 만들어 드린다 · 눌러 달라는 문장은 그 말이 맞을 때만
+    보낸다(이 턴에 제안 도구가 카드를 만듦 · 그 카드가 열려 있음 · 눌러 달라는 말은 이 턴에 보인 화면 카드 단추도).
+    아직 모르면 그 문장과 뒤 문장을 순서대로 붙잡아 두고, 카드가 오면 놓아준다(made · opened · buttons). 턴
+    끝(settle)에도 맞지 않으면 첫 문장을 정직한 한 줄로 바꾸고 나머지 그런 문장은 뺀다."""
+
+    def __init__(self, emit: Emit, prompt: str, allowed: str, made: Collection[str] = ()) -> None:
         self._emit = emit
         self._prompt = prompt
         self._allowed = [allowed]
@@ -235,6 +240,12 @@ class SentenceGate:
         self.sent: list[str] = []
         self.dropped: list[str] = []
         self._out: list[str] = []
+        self.made: set[str] = set(made)  # 이 턴에 새로 만든 승인 카드 종류
+        self.opened: set[str] = set()  # 열려 있는 승인 카드 종류(턴 앞 · 이 턴에 다시 쓴 카드)
+        self.buttons: set[str] = set()  # 이 턴에 보인 화면 카드 단추가 만드는 행동 종류
+        # 붙잡아 둔 문장: (앞 띄움, 글, 카드 말)
+        self._held: list[tuple[str, str, tuple[str, set[str]] | None]] = []
+        self._fixed = False  # 정직한 한 줄을 이미 썼다
 
     @property
     def text(self) -> str:
@@ -268,7 +279,7 @@ class SentenceGate:
             await self._one(tail)
         elif tail.strip():
             self.dropped.append("끊긴 문장")
-        self._sep = " " if self._out else ""
+        self._sep = " " if self._out or self._held else ""
 
     def discard(self) -> None:
         self._buf = ""
@@ -287,10 +298,52 @@ class SentenceGate:
             if why:
                 self.dropped.append(why)
             return
-        piece = (self._sep if self._out else "") + ok.text
+        claim = policy.card_claim(ok.text)
+        if self._held or (claim is not None and not self._true(claim)):
+            self._held.append((self._sep, ok.text, claim))  # 순서를 지키려고 뒤 문장도 기다린다
+            return
+        await self._send(self._sep, ok.text)
+
+    def _true(self, claim: tuple[str, set[str]]) -> bool:
+        return policy.claim_ok(claim, self.made, self.opened, self.buttons)
+
+    async def _send(self, sep: str, text: str) -> None:
+        piece = (sep if self._out else "") + text
         self._out.append(piece)
-        self.sent.append(ok.text)
+        self.sent.append(text)
         await self._emit("token", {"text": piece})
+
+    async def cards(self, kinds: Collection[str], *, fresh: bool) -> None:
+        """제안 도구가 승인 카드를 만들었다(fresh) · 열린 같은 카드를 다시 썼다. 맞게 된 문장부터 놓아준다."""
+        (self.made if fresh else self.opened).update(kinds)
+        await self._release()
+
+    async def shown(self, card: CardOut) -> None:
+        """화면 카드를 보냈다: 그 카드 단추를 누르라는 말이 맞게 된다."""
+        got = policy.buttons_of(card.kind, card.data)
+        if got:
+            self.buttons |= got
+            await self._release()
+
+    async def _release(self) -> None:
+        while self._held:
+            sep, text, claim = self._held[0]
+            if claim is not None and not self._true(claim):
+                return
+            self._held.pop(0)
+            await self._send(sep, text)
+
+    async def settle(self) -> None:
+        """턴 끝: 붙잡아 둔 문장을 보낸다. 끝까지 맞지 않은 카드 말은 첫 것만 정직한 한 줄로 바꾸고 나머지는 뺀다."""
+        held, self._held = self._held, []
+        for sep, text, claim in held:
+            if claim is None or self._true(claim):
+                await self._send(sep, text)
+                continue
+            self.dropped.append("카드 없이 카드를 말함")
+            if not self._fixed:
+                self._fixed = True
+                await self._send(sep, policy.honest(claim, self.opened | self.made))
 
 
 # ---- 턴 ----
@@ -334,6 +387,8 @@ class TurnResult:
     stop: str | None = None
     reason: str = "ok"
     chips: list[str] = field(default_factory=list)
+    # 이 턴에 카드 단추 고르기로 새로 만든 승인 카드 종류(SentenceGate가 '만들었어요'를 맞다고 본다)
+    made: set[str] = field(default_factory=set)
 
     def trace(self, rev: int, ms: int) -> dict:
         return {
@@ -411,7 +466,7 @@ class _Turn:
         )
         self.system = prompts.system(ctx.surface)
         self.defs = tools_mod.defs(ctx.surface)  # type: ignore[arg-type]
-        self.gate = SentenceGate(emit, self.system, f"{ctx.text}\n{ctx.facts}")
+        self.gate = SentenceGate(emit, self.system, f"{ctx.text}\n{ctx.facts}", made=res.made)
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -455,8 +510,30 @@ class _Turn:
 
     async def card(self, card: CardOut) -> None:
         await send_card(self.res, self.emit, card)
+        await self.gate.shown(card)
+
+    async def _open_kinds(self) -> set[str]:
+        """턴 앞에 열려 있는 승인 카드 종류(카드를 눌러 달라는 말이 맞는지 본다). 못 읽으면 빈 집합."""
+        from app.assistant import repository as repo
+        from app.db import SessionLocal
+
+        try:
+            async with SessionLocal() as s:
+                rows = await repo.actions_of(
+                    s,
+                    self.ctx.user.id,
+                    self.ctx.surface,
+                    project_id=self.ctx.project_id,
+                    status="proposed",
+                    limit=20,
+                )
+        except Exception as e:  # noqa: BLE001 - 못 읽으면 열린 카드가 없는 것으로 본다(말이 더 정직해진다)
+            log.warning("비서 열린 카드 읽기 실패 (%s)", type(e).__name__)
+            return set()
+        return {a.kind for a in rows if a.expires_at > self.ctx.now}
 
     async def run(self) -> None:
+        self.gate.opened |= await self._open_kinds()
         with llm.call_ctx(self.ctx.user.id, self.ctx.turn_id, "assistant") as cc:
             try:
                 await self._loop(cc)
@@ -608,6 +685,9 @@ class _Turn:
             if str(a.action_id) not in self.res.actions:
                 self.res.actions.append(str(a.action_id))
             await self.emit("action", a.model_dump(mode="json"))
+        if t.kind == "propose" and out.actions:  # 카드 말(만들었어요 · 눌러 주세요)을 놓아준다
+            fresh = out.data.get("state") == "new"
+            await self.gate.cards({a.kind for a in out.actions}, fresh=fresh)
         if out.task is not None:
             await self.emit(
                 "status", {"text": out.task.title, "task": out.task.model_dump(mode="json")}
@@ -688,11 +768,13 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
         turn = _Turn(ctx, emit, res, note)
         try:
             await turn.run()
+            await turn.gate.settle()  # 붙잡아 둔 카드 말을 정리한다(맞지 않으면 정직한 한 줄)
             res.text = turn.gate.text
             if not res.text and not res.cards:
                 res.text = FAIL_TEXT
                 await emit("token", {"text": FAIL_TEXT})
         except _Fallback as f:
+            await turn.gate.settle()
             kept = turn.gate.text
             await free_turn(ctx, emit, res, f.reason, note)
             res.text = f"{kept}\n{res.text}".strip() if kept else res.text
