@@ -362,7 +362,7 @@ def test_dates_requested_vendor_line_uses_customer_start_and_closes(api, monkeyp
     tick(api)
     (n,) = nudges(trigger="dates_requested")
     assert (n["surface"], n["status"], str(n["ref_id"])) == ("vendor", "sent", did)  # 요청 → 확정
-    assert "요청에서 고객이 공사 날짜를 바꾸고 싶어 해요." in n["body"]
+    assert "고객이 공사 날짜를 바꾸고 싶어 해요. 고른 날로 후보를 골라 뒀어요." in n["body"]
     a = action(n["action_id"])
     assert (a["kind"], a["target_ver"], a["payload"]["kind"]) == ("dates", "requested", "initial")
     assert a["payload"]["days"][0] == w1  # 고객이 고른 시작일

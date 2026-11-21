@@ -24,7 +24,7 @@ from datetime import date, datetime, time, timedelta
 from typing import Literal
 
 from pydantic import BaseModel
-from sqlalchemy import String, and_, cast, exists, func, literal, select
+from sqlalchemy import String, and_, cast, exists, func, literal, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assistant import aftercare, policy, prompts
@@ -72,6 +72,7 @@ class Trigger:
     why: str = ""  # 제안 까닭(틀)
     feed: str = ""  # 문장 틀(대화 기록)
     notify: str = ""  # 문장 틀(알림)
+    ask: str = ""  # 제안 카드 한 줄(먼저 말 건 문장을 되풀이하지 않게 할 일을 묻는 말)
 
 
 TRIGGERS: dict[str, Trigger] = {
@@ -80,47 +81,50 @@ TRIGGERS: dict[str, Trigger] = {
         Trigger(
             "visit_offered", "customer", ("visit_offered",), follow=timedelta(hours=48),
             decision=True, action=True, state="visit", say="실측 날짜 고를래요",
-            why="업체가 갈 수 있는 기간을 보냈어요",
+            why="업체가 갈 수 있는 기간을 보냈어요", ask="실측 반나절을 골라 볼까요?",
             feed="{vendor_i_ga} 실측 기간을 보냈어요. 반나절 후보를 골라 뒀어요.",
             notify="{vendor_i_ga} 보낸 실측 기간에서 아직 날짜를 고르지 않았어요. 후보를 확인해 주세요.",
         ),
         Trigger(
             "quote_sent", "customer", ("quote_sent", "quote_resent"), follow=timedelta(days=3),
             decision=True, state="quote", say="견적서 비교해 줘", why="실측 견적서가 왔어요",
+            ask="받은 견적서를 견줘 볼까요?",
             feed="{vendor_i_ga} 실측 견적서를 보냈어요. 받은 견적서를 견줘 볼까요?",
             notify="받은 실측 견적서를 아직 확인하지 않았어요. 견줘 볼까요?",
         ),
         Trigger(
             "dates_proposed", "customer", ("dates_proposed",), follow=timedelta(days=2),
             decision=True, action=True, state="deal", say="공사 날짜 보여 줘",
-            why="업체가 공사 날짜를 올렸어요",
+            why="업체가 공사 날짜를 올렸어요", ask="공사 날짜를 볼까요?",
             feed="{vendor_i_ga} 공사 날짜를 올렸어요. 날짜를 확인해 주세요.",
             notify="{vendor_i_ga} 올린 공사 날짜가 아직 수락 전이에요.",
         ),
         Trigger(
             "work_eve", "customer", channel="notify", state="deal", say="공사 전날 준비물 알려 줘",
-            why="내일 공사가 시작돼요",
+            why="내일 공사가 시작돼요", ask="공사 전날 준비물을 볼까요?",
             notify="내일 {trade} 공사가 시작돼요. 준비물을 챙겨 주세요.",
         ),
         Trigger(
             "no_pick", "customer", channel="notify", state="visit", say="업체 추천해 줘",
-            why="표준견적서를 본 뒤 업체를 아직 담지 않았어요",
+            why="표준견적서를 본 뒤 업체를 아직 담지 않았어요", ask="맞는 업체를 볼까요?",
             notify="{area}에서 이 집에 맞는 업체를 골라 봤어요. 살펴볼까요?",
         ),
+        # 업체 쪽 문장은 틀로만 써요(write): 누가 무엇을 했는지 틀리지 않게(QA r1 c6: '고객이 날짜를 확정')
         Trigger(
             "visit_requested", "vendor", ("visit_requested",), action=True, state="visit",
-            say="새 요청 브리핑해 줘", why="새 실측 요청이 왔어요",
-            feed="{area} 실측 요청이 새로 왔어요. 답할 기간을 골라 뒀어요.",
+            say="새 요청 브리핑해 줘", why="새 실측 요청이 왔어요", ask="새 요청을 정리해 볼까요?",
+            feed="{area} {size} 실측 요청이 왔어요. 답할 기간을 확인해 주세요.",
         ),
         Trigger(
             "visit_picked", "vendor", ("visit_picked",), decision=True, state="visit",
-            say="요청 브리핑해 줘", why="고객이 실측 날짜를 골랐어요",
-            feed="{area} 요청에서 고객이 실측 날짜를 골랐어요. 수락해 주세요.",
+            say="요청 브리핑해 줘", why="고객이 실측 날짜를 골랐어요", ask="고른 날을 볼까요?",
+            feed="{area} 고객이 {picked} 실측을 골랐어요. 요청 화면에서 수락해 주세요.",
         ),
         Trigger(
             "deal_confirmed", "vendor", ("deal_confirmed",), follow=timedelta(days=1),
             decision=True, action=True, state="deal", say="공사 할 일 보여 줘", why="고객이 확정했어요",
-            feed="{area} 요청에서 고객이 보내신 견적서로 확정했어요. 공사 날짜 후보를 골라 뒀어요.",
+            ask="공사 날짜를 정해 볼까요?",
+            feed="{area} 고객이 보내신 견적서로 확정했어요. 이제 공사 날짜를 낼 차례예요.",
             notify="{area} 요청의 공사 날짜를 아직 내지 않았어요. 후보를 확인해 주세요.",
         ),
         *(Trigger(**x) for x in aftercare.TRIGGERS),  # 07 자동화(업체 빠짐 · 추가 금액 · 공사 끝 …)
@@ -229,10 +233,13 @@ def template(f: Facts) -> str:
 
 
 async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
-    """문장 하나(60자 안): Haiku가 쓰고 검사(vendor.sentence_ok)에 걸리거나 못 부르면 틀. (글, 출처 ai · guide)"""
+    """문장 하나(60자 안): Haiku가 쓰고 검사(vendor.sentence_ok)에 걸리거나 못 부르면 틀. (글, 출처 ai · guide)
+    업체 쪽은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린 적이 있다(QA r1 c6)."""
     from app.agent import llm
     from app.assistant.tools.vendor import sentence_ok
 
+    if f.surface == "vendor":
+        return template(f), "guide"
     facts = json.dumps(f.public(), ensure_ascii=False)
     try:
         with llm.call_ctx(user_id=user_id, purpose="nudge"):
@@ -305,11 +312,42 @@ async def _visit_ctx(s: AsyncSession, t: Trigger, ref: uuid.UUID, user_id: uuid.
         c.due = _end_of(until) if until else None
     elif t.name == "visit_requested":
         c.due = v.reply_due_at
+        c.names["size"] = await _size(s, v.project_id, v.trade)  # '32평'(업체 틀: 어느 요청인지)
     else:
-        c.due = await s.scalar(
-            select(VisitHold.until).where(VisitHold.visit_id == v.id, VisitHold.status == "active")
-        )
+        hold = (
+            await s.execute(
+                select(VisitHold.day, VisitHold.half, VisitHold.until).where(
+                    VisitHold.visit_id == v.id, VisitHold.status == "active"
+                )
+            )
+        ).first()
+        c.due = hold.until if hold else None
+        if hold is not None:  # 업체 틀: 고객이 고른 반나절
+            c.names["picked"] = f"{_md_week(hold.day)} {HALF_KO.get(hold.half, '')}".strip()
     return c
+
+
+HALF_KO = {"am": "오전", "pm": "오후"}
+# 업체 틀: 카드 · 승인 카드를 못 만들었을 때 다음 걸음
+NO_CARD_NEXT = "공사 화면에서 확인해 주세요."
+
+
+def _md_week(d: date) -> str:
+    return f"{d.month:02d}.{d.day:02d}({'월화수목금토일'[d.weekday()]})"
+
+
+def _ko_day(d: date) -> str:
+    return f"{d.month}월 {d.day}일({'월화수목금토일'[d.weekday()]})"
+
+
+async def _size(s: AsyncSession, project_id: uuid.UUID, trade: str) -> str:
+    """표준견적서 평형 '32평'(없으면 빈 글)."""
+    from decimal import Decimal
+
+    from app.quote import service as quote_service
+
+    std = (await quote_service.latest_of(s, [project_id])).get((project_id, trade))
+    return f"{Decimal(std.pyeong).normalize():f}평" if std is not None and std.pyeong else ""
 
 
 async def _deal_ctx(
@@ -342,7 +380,8 @@ async def _deal_ctx(
         },
     )
     if proposal is not None:
-        c.names["start"] = proposal.start_date.isoformat()
+        # '12월 14일(월)'(코드 꼴 날짜를 옮기지 않게)
+        c.names["start"] = _ko_day(proposal.start_date)
         c.due = _start_of(proposal.start_date)
         c.follow = timedelta(days=1) if proposal.kind == "change" else None
         return c
@@ -730,6 +769,11 @@ async def _send(
                 log.warning("먼저 말 걸기 카드 실패 (%s, %s)", n.trigger, type(e).__name__)
             await s.rollback()
             card, action_id, refs = None, None, None
+        if n.surface == "vendor":
+            # 업체 쪽 틀은 카드를 만든 뒤 사실(고객이 바란 날이 겹침 · 후보 없음)로 채운다
+            if card is None and action_id is None:
+                c.names.setdefault("next", NO_CARD_NEXT)
+            text = template(Facts(t.name, n.channel, n.surface, names=c.names))
         got = await repo.set_nudge(
             s,
             n.id,
@@ -747,6 +791,19 @@ async def _send(
             await s.rollback()
             return "raced"
         await repo.replace_shown(s, n.user_id, n.ref_id, n.id)
+        if t.name == "quote_sent" and n.project_id is not None:
+            # 같은 공사의 견적서 줄은 새 줄 하나로(새 줄의 비교 카드가 받은 견적서를 모두 견줘요)
+            await s.execute(
+                update(AssistantNudge)
+                .where(
+                    AssistantNudge.user_id == n.user_id,
+                    AssistantNudge.project_id == n.project_id,
+                    AssistantNudge.trigger == "quote_sent",
+                    AssistantNudge.id != n.id,
+                    AssistantNudge.status.in_(repo.SHOWN),
+                )
+                .values(status="expired", reason="replaced")
+            )
         if n.channel == "notify":
             await notify_service.add(
                 s,
@@ -824,7 +881,10 @@ async def _build(
             card, _ = await cards.visit_slots(
                 s, user, pid, n.ref_id, now, refs, prefer=prefer, days=days
             )
-            first = next(iter(card.data.get("candidates") or []), None)
+            # 같은 공사의 다른 업체 실측과 같은 반나절은 미리 고르지 않아요(두 업체가 같은 때 오지 않게)
+            taken = await _taken_halves(s, user.id, pid, n.ref_id)
+            cands = card.data.get("candidates") or []
+            first = next((x for x in cands if (x["day"], x["half"]) not in taken), None)
             if first is not None:
                 v = await visit_service.pick_view(s, user, pid, n.ref_id, now)
                 offer = propose.slot_offer(v, refs.get(first["ref"], "slot"))
@@ -882,6 +942,34 @@ async def _build(
     return (card.model_dump(mode="json") if card is not None else None), action_id
 
 
+async def _taken_halves(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None, visit_id: uuid.UUID
+) -> set[tuple[str, str]]:
+    """같은 공사의 다른 실측이 잡은 반나절(확정 · 업체 수락 기다림)과 열린 실측 시간 승인 카드가 고른 반나절
+    ('YYYY-MM-DD', am · pm). 먼저 말 걸기가 같은 반나절을 미리 고르지 않게 본다. 읽기 조인."""
+    from app.assistant.models import AssistantAction
+    from app.visit.models import Visit, VisitHold
+
+    if project_id is None:
+        return set()
+    held = await s.execute(
+        select(VisitHold.day, VisitHold.half)
+        .join(Visit, Visit.id == VisitHold.visit_id)
+        .where(Visit.project_id == project_id, Visit.id != visit_id, VisitHold.status == "active")
+    )
+    out = {(d.isoformat(), h) for d, h in held}
+    opened = await s.scalars(
+        select(AssistantAction.payload).where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.project_id == project_id,
+            AssistantAction.kind == "visit_slot",
+            AssistantAction.status == "proposed",
+            AssistantAction.target_id != visit_id,
+        )
+    )
+    return out | {(p.get("day"), p.get("half")) for p in opened.all() if p}
+
+
 def _pin(card, row) -> None:
     """보낼 카드를 단 승인 카드와 맞춘다: 반나절 후보는 승인 카드의 반나절을 고른 것(chosen)으로, 공사 날짜 카드는
     수락 단추를 승인 카드 하나로(카드 단추 proposal_ref · proposal_kind를 비우고 action_id)."""
@@ -909,11 +997,12 @@ def _pin(card, row) -> None:
 
 
 def suggest_of(n: AssistantNudge) -> dict:
-    """보낸 제안 → 다음에 물을 말 하나(SuggestOut 꼴)."""
+    """보낸 제안 → 다음에 물을 말 하나(SuggestOut 꼴). 한 줄은 할 일을 묻는 말(ask)이라 바로 위 먼저 말 건 문장을
+    되풀이하지 않는다."""
     t = TRIGGERS[n.trigger]
     return {
         "id": f"n-{n.id}",
-        "text": n.body or t.why,
+        "text": t.ask or n.body or t.why,
         "why": t.why,
         "say": t.say,
         "nudge_id": n.id,
