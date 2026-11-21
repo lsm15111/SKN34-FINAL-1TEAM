@@ -1088,8 +1088,9 @@ async def confirm_prices(s: AsyncSession, vendor: User, trade: str) -> PricesOut
 
 
 def _v3_line_errors(data: ConfirmPricesIn) -> list[dict]:
-    """빈 칸(줄 빠짐) · 모르는 줄 · 포함 대상이 단가 줄이 아님 · 포함 대상이 다른 벽지 줄(합지 부자재 → 실크 부자재처럼
-    한 집 가견적에 같이 나오지 않는 줄). 칸 이름은 ["lines", 줄 키]."""
+    """빈 칸(줄 빠짐) · 모르는 줄 · 포함 대상이 단가 줄이 아님 · 포함 대상이 그 줄이 나오는 집에 늘 나오지 않는 줄
+    (합지 부자재 → 실크 부자재, 모든 집 줄인 인건비 → 실크 도배지처럼 다른 벽지 집 가견적에 없는 줄, calc same_home).
+    칸 이름은 ["lines", 줄 키]."""
     given = {ln.key: ln for ln in data.lines}
     rows = estimate.V3_BY_KEY
     fields = [{"loc": ["lines", k], "msg": "모르는 줄이에요."} for k in given if k not in rows]
@@ -1108,7 +1109,11 @@ def _v3_line_errors(data: ConfirmPricesIn) -> list[dict]:
             and ln.included_in in rows
             and not estimate.same_home(rows[k], rows[ln.included_in])
         ):
-            msg = "포함할 줄은 같은 벽지 집에 쓰는 줄로 골라 주세요."
+            msg = (
+                "모든 집에 쓰는 줄은 벽지별 줄(도배지 · 부자재)에 포함할 수 없어요."
+                if rows[k].grade is None
+                else "포함할 줄은 같은 벽지 집에 쓰는 줄로 골라 주세요."
+            )
             fields.append({"loc": ["lines", k], "msg": msg})
     if not fields and not any(ln.mode == "price" for ln in data.lines):
         fields.append({"loc": ["lines"], "msg": "단가를 하나 이상 넣어 주세요."})
@@ -1249,6 +1254,8 @@ async def estimates_v3_for(
 ) -> dict[uuid.UUID, EstimateV3Out]:
     """고객 가견적 v3 여러 업체 (C10 · D06 목록): 승인된 업체가 확인한 v3 단가 × 이 집 계산 엔진 수량.
     확인한 v3 묶음이 없는 업체는 빠진다('가견적 준비 중', D06 A). 고른 벽지 줄이 '빼기'면 paper_ok False.
+    포함 대상이 이 집 가견적에 없는 줄이 있는 옛 묶음(계산 엔진 missing)도 빠진다: 그 줄 금액을 몰라 0원으로
+    빼면 합계가 틀려요(QA r1 D1, 업체가 다시 확인하면 돌아와요).
     grade를 주면 그 벽지로 센다(비교 %의 표준견적서도 그 벽지). price_ver는 이 집 저장한 표준견적서의
     도배 판(기준, ADR 0004)이고 수량 · 비교 %를 그 판으로 센다(안 주면 도배만 하는 공사 기준)."""
     if trade != "dobae" or not vendor_ids:
@@ -1276,6 +1283,8 @@ async def estimates_v3_for(
             standard_keys=keys,
             optional_keys=std.optional_keys,
         )
+        if e.missing:
+            continue
         out[x.vendor_id] = _estimate_v3_out(e, x, tax)
     return out
 

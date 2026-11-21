@@ -1,6 +1,8 @@
 """파일 올리기 · 읽기 권한. 형식은 이름표(Content-Type)가 아니라 파일 앞부분 바이트로 확인한다.
 
 사진은 저장하기 전에 위치 정보(GPS) · EXIF를 지운다 (images.py). 원본은 남기지 않는다.
+업체 종류 파일은 승인된 업체만 올린다(가입 · 보완 서류인 사업자등록증은 예외). 한 사람이 가진 파일은 개수 · 용량
+몫이 있고, 올린 뒤 하루가 지나도록 어디에도 붙이지 않은 파일은 정리 작업(worker clean_files)이 지운다(sec M5).
 """
 
 import hashlib
@@ -11,17 +13,20 @@ import uuid
 import zipfile
 import zlib
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from urllib.parse import quote
 
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import select
+from sqlalchemy import and_, column, delete, exists, func, select, table, text, true
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
+from app.auth import service as auth_service
 from app.auth.models import User
 from app.config import settings
+from app.db import SessionLocal
 from app.files import images, storage
 from app.files.models import KINDS, File, FileView
 from app.shared import ratelimit
@@ -60,6 +65,14 @@ UPLOADERS: dict[str, set[str]] = {
 }
 # 볼 때마다 열람 기록(file_views)을 남기는 종류 (안전성 확보조치 기준 제8조 접속기록, security.md LG-02)
 VIEW_LOGGED = frozenset({"license"})
+# 승인 전 업체도 올리는 종류: 가입 · 보완 · 다시 신청 서류(사업자등록증)
+BEFORE_APPROVAL = frozenset({"license"})
+# 한 사람이 가진 파일 몫(붙인 파일까지 모두, sec M5). 붙이지 않은 파일은 하루 뒤 지워져 몫이 돌아와요
+USER_FILES_MAX = 5_000
+USER_BYTES_MAX = 10 * 1024 * MB
+QUOTA = "올릴 수 있는 파일 수나 용량을 넘었어요. 어디에도 붙이지 않은 파일은 하루 뒤에 지워져요."
+UNATTACHED_HOURS = 24  # 올린 뒤 이만큼 지나도록 어디에도 붙지 않은 파일은 정리 작업이 지운다
+SWEEP_BATCH = 500  # 정리 작업 한 번에 지우는 파일 수
 
 _XLSX_MAIN = b"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"
 _MACRO = ("vbaproject.bin", "xl/macrosheets/")
@@ -115,9 +128,14 @@ def sniff(data: bytes) -> str | None:
     return None
 
 
+# 글 방향을 바꾸는 보이지 않는 글자(LRM · RLM · LRE~RLO · LRI~PDI). 'photo(U+202E)gpj.exe'가 'photoexe.jpg'처럼
+# 보이게 만들 수 있어 이름에서 지운다(sec L2)
+_BIDI = "\u200e\u200f\u202a-\u202e\u2066-\u2069"
+
+
 def clean_filename(name: str | None) -> str:
     base = re.split(r"[\\/]", name or "")[-1]
-    base = re.sub(r"[\x00-\x1f\x7f]", "", base).strip()
+    base = re.sub(rf"[\x00-\x1f\x7f{_BIDI}]", "", base).strip()
     return base[:200] or "file"
 
 
@@ -205,12 +223,36 @@ async def remove_stored(key: str) -> None:
 UPLOADS_PER_HOUR = 120
 
 
+async def _approved_vendor(s: AsyncSession, user: User) -> bool:
+    """업체 승인 상태(관리자 승인). files는 업체 기능보다 아래 층이라 /me와 같은 auth 길로 읽는다."""
+    return (await auth_service.me(s, user)).vendor_status == "approved"
+
+
+async def _check_quota(s: AsyncSession, owner_id: uuid.UUID, size: int) -> None:
+    """한 사람 파일 몫(개수 · 바이트). 넘으면 409 file_quota"""
+    n, used = (
+        await s.execute(
+            select(func.count(), func.coalesce(func.sum(File.size), 0)).where(
+                File.owner_id == owner_id
+            )
+        )
+    ).one()
+    if n + 1 > USER_FILES_MAX or used + size > USER_BYTES_MAX:
+        raise AppError(409, "file_quota", QUOTA)
+
+
 async def upload_by(s: AsyncSession, user: User, kind: str, upload: UploadFile) -> File:
     # DB가 받는 종류(models.KINDS)에도 있어야 한다: 새 종류는 migration이 들어온 뒤에 열린다(그 전에는 422)
     if kind not in RULES or kind not in KINDS:
         raise AppError(422, "file_kind", "파일 종류가 맞지 않아요.")
     if user.role not in UPLOADERS[kind]:
         raise AppError(403, "forbidden", "이 종류의 파일을 올릴 권한이 없어요.")
+    if (
+        user.role == "vendor"
+        and kind not in BEFORE_APPROVAL
+        and not await _approved_vendor(s, user)
+    ):
+        raise AppError(403, "vendor_not_approved", "승인된 업체만 쓸 수 있어요.")
     await ratelimit.hit(
         ratelimit.key("upload", str(user.id)),
         UPLOADS_PER_HOUR,
@@ -219,6 +261,7 @@ async def upload_by(s: AsyncSession, user: User, kind: str, upload: UploadFile) 
     )
     await s.commit()  # 로그인 확인에 쓴 DB 연결을 돌려준다 (사진 처리 동안 붙잡지 않게)
     prepared = await prepare(kind, upload)
+    await _check_quota(s, user.id, len(prepared.data))
     row = await persist(s, user.id, prepared)
     try:
         await s.commit()
@@ -293,3 +336,53 @@ async def storage_keys_of(s: AsyncSession, owner_id: uuid.UUID) -> list[str]:
     return list(
         (await s.execute(select(File.storage_key).where(File.owner_id == owner_id))).scalars()
     )
+
+
+# ---- 붙이지 않은 파일 정리 (sec M5) ----
+
+# 파일을 가리키는 외래 키(표 · 칸). 기능마다 붙이는 표가 달라 DB 목록에서 읽는다(새 표도 저절로 지켜요)
+_REFS = text(
+    "select cl.relname, att.attname from pg_constraint con"
+    " join pg_class cl on cl.oid = con.conrelid"
+    " join pg_attribute att on att.attrelid = con.conrelid and att.attnum = any(con.conkey)"
+    " where con.contype = 'f' and con.confrelid = 'files'::regclass"
+)
+
+
+def _unattached(refs: list[tuple[str, str]]):
+    """어느 표에서도 가리키지 않는 파일 조건"""
+    conds = [~exists().where(table(t, column(c)).c[c] == File.id) for t, c in refs]
+    return and_(*conds) if conds else true()
+
+
+async def sweep_unattached(now: datetime, limit: int = SWEEP_BATCH) -> int:
+    """올린 지 UNATTACHED_HOURS가 넘도록 어디에도 붙지 않은 파일(외래 키로 가리키는 행이 없는 파일)을 지우고, commit
+    뒤 저장소 내용도 지운다. 지울 파일 행을 먼저 잠가(FOR UPDATE SKIP LOCKED) 그사이 붙이는 요청은 기다리게 하고,
+    지울 때 붙은 데가 없는지 한 번 더 본다. 열람 기록(file_views)은 FK가 없어 남는다. 돌려주는 값: 지운 수."""
+    cut = now - timedelta(hours=UNATTACHED_HOURS)
+    async with SessionLocal() as s:
+        refs = [(t, c) for t, c in (await s.execute(_REFS)).all()]
+        free = _unattached(refs)
+        ids = list(
+            (
+                await s.execute(
+                    select(File.id)
+                    .where(File.created_at < cut, free)
+                    .order_by(File.created_at)
+                    .limit(limit)
+                    .with_for_update(skip_locked=True)
+                )
+            ).scalars()
+        )
+        keys: list[str] = []
+        if ids:
+            res = await s.execute(
+                delete(File).where(File.id.in_(ids), free).returning(File.storage_key)
+            )
+            keys = list(res.scalars())
+        await s.commit()
+    for key in keys:
+        await remove_stored(key)
+    if keys:
+        log.info("붙이지 않은 파일 %d개를 지웠어요", len(keys))
+    return len(keys)

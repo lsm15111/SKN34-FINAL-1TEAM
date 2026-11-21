@@ -145,7 +145,10 @@ def test_blurry_needs_a_new_license_and_old_one_is_removed(api):
     assert api.post(resubmit, json={"biz_name": "x"}).json()["error"]["code"] == "not_open"
     assert api.post(resubmit, json={"license_file_id": str(old)}).status_code == 422  # 지금 파일
     assert api.post(resubmit, json={"license_file_id": stranger_file}).status_code == 422
-    photo = upload(api, kind="portfolio").json()["id"]
+    # 승인 전 업체는 업체 종류 파일을 못 올려요(sec M5). 다른 종류 파일은 등록증 행의 종류를 바꿔 만들어요
+    assert upload(api, kind="portfolio").status_code == 403
+    photo = upload(api, kind="license", content=JPEG, name="시공 사진.jpg").json()["id"]
+    query("update files set kind = 'portfolio' where id = $1", uuid.UUID(photo))
     assert api.post(resubmit, json={"license_file_id": photo}).status_code == 422  # 종류가 다름
     new = upload(api, kind="license", content=JPEG, name="새 등록증.jpg").json()["id"]
     r = api.post(resubmit, json={"license_file_id": new})

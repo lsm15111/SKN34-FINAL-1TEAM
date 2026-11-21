@@ -7,6 +7,7 @@
   AI는 이 값을 설명만 한다.
 - 업체 공사 날(v4 비서 빈 반나절, ADR 0001): 그날은 실측 칸을 모두 막는다.
 - v4 비서 후보: 요청 전 희망 기간(wish_candidates) · 업체 기간 안 반나절(candidates) · 업체가 답할 기간(best_windows).
+- 같은 집 다른 업체 실측이 잡은 반나절(확정 · 수락 기다림)은 후보 · 고르기에서 뺀다(free_at_home, 두 업체가 같은 때 오지 않게).
 """
 
 from collections import Counter
@@ -101,6 +102,12 @@ def free_seat(used: Collection[int], capacity: int) -> int | None:
 def overlaps(a_start: date, a_end: date, b_start: date, b_end: date) -> bool:
     """두 기간이 하루라도 겹치는지 (C22 '겹치는 날 없음' 판정)"""
     return a_start <= b_end and b_start <= a_end
+
+
+def free_at_home(day: date, half: str, taken: Collection[tuple[date, str]]) -> bool:
+    """같은 집 다른 실측이 그 반나절을 잡지 않았는지. taken = 같은 공사의 다른 요청이 잡은 (날, 반나절)
+    (확정 · 업체 수락 기다림). 두 업체가 같은 때 오지 않게 후보 · 고르기에서 뺀다(QA edge P8)."""
+    return (day, half) not in taken
 
 
 def draft_wish(work_start: date | None, today: date) -> tuple[date, date] | None:
@@ -276,10 +283,12 @@ def candidates(
     days_off: Collection[date] = (),
     weekend: Collection[int] = (),
     n: int = SLOT_MAX,
+    taken: Collection[tuple[date, str]] = (),
 ) -> list[SlotPick]:
     """업체가 답한 기간의 열린 반나절에서 후보 s1~s3. 순서: 선호(반나절 · 요일)에 맞는 수가 많음 →
     희망일 − 20일(없으면 오늘)에 가까움 → 이른 날 · 오전. 날이 겹치지 않게 먼저 고르고, 모자라면 같은 날
-    다른 반나절로 채운다. 까닭(why)은 후보마다 그 후보에 맞는 사실만 단다(SlotPick)."""
+    다른 반나절로 채운다. 까닭(why)은 후보마다 그 후보에 맞는 사실만 단다(SlotPick).
+    taken(같은 집 다른 실측이 잡은 반나절)은 후보에서 뺀다(free_at_home)."""
     target = work_start - timedelta(days=RECOMMEND_BEFORE_DAYS) if work_start else None
     # (어긋남 수, 기준과 거리, 날, 반나절 순서, 반나절, 편한 반나절 맞음, 편한 요일 맞음)
     pool: list[tuple[int, int, date, int, Half, bool, bool]] = []
@@ -287,7 +296,7 @@ def candidates(
         if x.day <= today or _off(x.day, days_off, weekend):
             continue
         for h in HALVES:
-            if x.left(h) <= 0:
+            if x.left(h) <= 0 or not free_at_home(x.day, h, taken):
                 continue
             fit_half = prefer != "any" and h == prefer
             fit_day = day_prefer != "any" and _day_ok(x.day, day_prefer)

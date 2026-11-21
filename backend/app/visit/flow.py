@@ -4,7 +4,8 @@
 바꾸기는 모두 '프로젝트 잠금 → 요청 잠금 → 허용 전이 확인 → 조건부 UPDATE(1행이 아니면 409) → 같은
 트랜잭션에 이력 · 알림 · 기한 일 → commit → 실시간 신호 남기기(router가 응답 전에 보냄)' 순서다.
 금액 · 날짜 · 기한은 계산 엔진(calc)만 만든다. 같은 반나절을 거의 같이 고르면 visit_holds 부분 UNIQUE(업체 · 날 · 반나절 · 칸 번호)가 늦은 쪽을
-막는다(409 slot_taken). 업체에 가는 글에는 고객 이름 · 연락처 · 동 · 호를 넣지 않는다.
+막는다(409 slot_taken). 같은 집 다른 업체 실측이 잡은 반나절은 고를 수 없다(409 slot_clash, 프로젝트 잠금 안에서 본다).
+업체에 가는 글에는 고객 이름 · 연락처 · 동 · 호를 넣지 않는다.
 """
 
 import uuid
@@ -171,6 +172,23 @@ def _in_window(w: VisitWindow, day: date, half: str, today: date) -> None:
 
 # ---- 반나절 칸 잡기 · 확정 ----
 
+# 같은 집 다른 업체 실측과 같은 반나절(QA edge P8). 업체에는 다른 업체 이름 · 일정을 알리지 않는다
+CLASH = "같은 반나절에 다른 업체 실측이 잡혀 있어요. 다른 반나절을 골라 주세요."
+CLASH_VENDOR = "고객의 다른 일정과 겹치는 반나절이에요. 다른 날을 내 주세요."
+
+
+async def _home_taken(s: AsyncSession, v: Visit) -> set[tuple[date, str]]:
+    """같은 집 다른 실측 요청이 잡은 반나절(살아 있는 잡기: 확정 · 업체 수락 기다림). 부르는 쪽이 프로젝트를
+    먼저 잠가서, 같은 집의 두 고르기가 줄 서고 늦은 쪽이 앞 잡기를 본다."""
+    others = [o.id for o in await repo.of_project(s, v.project_id, None) if o.id != v.id]
+    return {(h.day, h.half) for h in (await repo.holds_of_visits(s, others)).values()}
+
+
+async def _check_home(s: AsyncSession, v: Visit, day: date, half: str, *, by_vendor: bool) -> None:
+    """같은 집 다른 실측과 같은 반나절이면 409 slot_clash (겹침 판정은 계산 엔진 slots.free_at_home)"""
+    if not slots.free_at_home(day, half, await _home_taken(s, v)):
+        raise AppError(409, "slot_clash", CLASH_VENDOR if by_vendor else CLASH)
+
 
 async def take_seat(
     s: AsyncSession,
@@ -182,10 +200,13 @@ async def take_seat(
     until: datetime | None,
     now: datetime,
     capacity: int,
+    by_vendor: bool = False,
 ) -> VisitHold:
     """반나절 칸 잡기 (L03): 빈 가장 작은 칸 번호(calc.slots.free_seat)로 넣는다. 거의 같이 누른 다른
     고객과 칸 번호가 부딪히면(부분 UNIQUE) 그 사이 들어온 칸을 다시 세어 다음 칸으로 해 본다.
-    칸이 다 차면 409 slot_taken('방금 다른 고객이 골랐어요')."""
+    칸이 다 차면 409 slot_taken('방금 다른 고객이 골랐어요'). 같은 집 다른 업체 실측이 잡은 반나절이면
+    409 slot_clash(by_vendor면 업체에 보이는 문구)."""
+    await _check_home(s, v, day, half, by_vendor=by_vendor)
     for _ in range(slots.CAPACITY_MAX + 1):
         seat = slots.free_seat(await repo.used_seats(s, v.vendor_id, day, half), capacity)
         if seat is None:
@@ -489,7 +510,8 @@ async def again(
     s: AsyncSession, user: User, project_id: uuid.UUID, visit_id: uuid.UUID, now: datetime
 ) -> BoardRowOut:
     """한 번 더 요청 (C18): 답 없음 · 고르기 기한 지남 · 취소 뒤 같은 업체에 시도 2. 앞 기간에서 지난 날을
-    빼고 다시 보낸다(계산 엔진). 두 번째 뒤에는 409 blocked_retry."""
+    빼고 다시 보낸다(계산 엔진). 사진 · 벽지 · 공사 희망일 · 업체에 알릴 직접 할 일(diy)은 앞 요청 사본 그대로.
+    두 번째 뒤에는 409 blocked_retry."""
     p = await project_service.get_for(s, user, project_id)
     first = await svc.in_project(s, p.id, visit_id)
     p, std, lines = await svc._standard(s, user, project_id, first.trade)
@@ -543,6 +565,7 @@ async def again(
         wish_end=end,
         work_wish_on=prev.work_wish_on,
         grade=prev.grade,
+        diy=list(prev.diy or []),  # 고객이 승인한 '업체에 알릴 것'(직접 할 일) 사본도 그대로 옮겨요
         reply_due_at=deadline.reply_due(now),
         created_at=now,
     )
@@ -938,6 +961,7 @@ async def request_change(
         raise app_error("already", "이미 바꾸기 요청을 보냈어요.")
     if (data.day, data.half) == (v.booked_day, v.booked_half):
         raise _invalid("지금 날짜와 다른 반나절을 골라 주세요.", ["day"])
+    await _check_home(s, v, data.day, data.half, by_vendor=False)
     today = svc.today_of(now)
     w = (await repo.windows(s, [v.id])).get(v.id)
     if w is not None:
@@ -1051,6 +1075,7 @@ async def _move_booking(
         until=None,
         now=now,
         capacity=await svc.capacity_of(s, v.vendor_id),
+        by_vendor=by.role == "vendor",
     )
     values = {"status": "accepted", "closed_at": now, "to_day": day, "to_half": half}
     if not await repo.set_change(s, c.id, allowed_from=(frm_change,), values=values):

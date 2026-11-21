@@ -462,7 +462,8 @@ class ExtraIn(BaseModel):
         Field(description="한 일")
     )
     reason: Reason = Field(description="이유 (고객에게 보여요)")
-    entered_amount: int = Field(ge=0, le=EXTRA_AMOUNT_MAX, description="업체가 적은 금액 (원)")
+    # 0원은 받지 않아요(0원 추가 금액 승인 카드가 생기던 것, QA P11)
+    entered_amount: int = Field(ge=1, le=EXTRA_AMOUNT_MAX, description="업체가 적은 금액 (원)")
     vat_mode: Literal["included", "excluded", "exempt"] = Field(
         default="excluded", description="부가세 빼고 적은 금액이 기본 (면세 업체는 면세만)"
     )

@@ -91,8 +91,9 @@ class QuoteDraftIn(BaseModel):
 
     file_ids: list[uuid.UUID] = Field(default_factory=list, max_length=QUOTE_FILES_MAX)
     measured_on: date | None = Field(default=None, description="실측한 날")
+    # 0원은 받지 않아요(0원 견적서가 보내지던 것, QA P7). 보낼 때도 한 번 더 본다(quote.service.seal_draft)
     entered_amount: int | None = Field(
-        default=None, ge=0, le=AMOUNT_MAX, description="견적서에 적은 낼 금액 그대로 (원)"
+        default=None, ge=1, le=AMOUNT_MAX, description="견적서에 적은 낼 금액 그대로 (원)"
     )
     vat_mode: VatMode | None = None
     days: int | None = Field(default=None, ge=1, le=JOB_MAX_DAYS, description="공사 기간 (일)")

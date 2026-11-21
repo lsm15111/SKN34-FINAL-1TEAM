@@ -15,6 +15,8 @@
 - 벽지별 줄: 도배지(1203 합지 · 1204 실크)와 부자재(1205 실크 · 1209 합지)는 고른 벽지의 줄만 쓴다.
   표준견적서 부자재 줄도 벽지마다 값이 달라요(도배만 하는 공사 기준 실크 6,900 · 합지 3,300원/공급 평).
   1209 줄이 없는 옛 확인 묶음(줄을 더하기 전)은 합지 집에도 1205 단가를 쓴다(그때 업체가 한 줄로 확인한 뜻 그대로).
+- '다른 줄에 포함'은 대상이 그 줄이 나오는 모든 집에 같이 나오는 줄일 때만 받는다(same_home: 모든 집 줄 또는 같은
+  벽지 줄). 대상이 이 집 가견적에서 단가로 센 줄이 아니면 그 줄 금액을 알 수 없어 missing에 남긴다(가견적 없음).
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -91,8 +93,10 @@ V3_STD_KEYS: dict[str, tuple[str, ...]] = {
 
 
 def same_home(a: PriceRowV3, b: PriceRowV3) -> bool:
-    """두 줄이 한 집 가견적에 같이 나오나. 벽지별 줄끼리는 같은 벽지일 때만이에요('다른 줄에 포함' 대상 검사)."""
-    return a.grade is None or b.grade is None or a.grade == b.grade
+    """a를 b에 '다른 줄에 포함'할 수 있나: a가 나오는 집 가견적에 b도 늘 나와야 해요('다른 줄에 포함' 대상 검사).
+    b가 모든 집 줄이거나 둘이 같은 벽지 줄일 때만이에요. 모든 집 줄(인건비)을 벽지별 줄(실크 도배지)에 넣으면
+    다른 벽지 집 가견적에서 그 줄 금액이 통째로 빠져요(QA r1 D1)."""
+    return b.grade is None or a.grade == b.grade
 
 
 # 공정별로 업체 단가를 받는 표준 행. 키는 계산 엔진 줄 키와 같고, 도배지만 등급마다 따로 받는다
@@ -260,6 +264,9 @@ class EstimateV3:
     compare_total: int  # 표준견적서에 있는 줄만 더한 금액(같은 부가세 방식). 비교 %에 쓴다
     vs_standard_pct: Decimal | None  # 표준견적서 대비 % (표준이 없으면 비움)
     paper_ok: bool  # 고객이 고른 벽지 줄이 '빼기'가 아님 (빼기면 '이 벽지는 안 해요')
+    # 포함 대상이 이 집 가견적에서 단가로 센 줄이 아니라 금액을 알 수 없는 줄 키(다른 벽지 줄 · 빼기 줄에 포함한
+    # 옛 묶음). 비어 있지 않으면 이 집 가견적은 쓰지 않는다(부르는 쪽이 '가견적 없음'으로 본다, v2 missing과 같은 뜻)
+    missing: tuple[str, ...] = ()
 
 
 def price_of(row: PriceRowV3, prices: Mapping[str, PriceV3]) -> PriceV3 | None:
@@ -297,14 +304,21 @@ def estimate_v3(
     1209 합지 부자재 줄이 없는 옛 묶음은 합지 집에도 1205 단가를 쓴다(price_of).
     exempt면(간이 · 면세, L02) 부가세 0. 비교 %는 표준견적서 합계에 같은 일이 없는 줄을 빼고 센다.
     standard_keys(표준견적서에서 합계에 드는 줄 키)를 주면 그 집 기준대로, 안 주면 줄의 옛 고정값으로 가른다.
-    optional_keys(표준견적서 '선택' 줄 키)에 든 일의 줄은 '선택'이라 합계에서도 뺀다(ADR 0006)."""
+    optional_keys(표준견적서 '선택' 줄 키)에 든 일의 줄은 '선택'이라 합계에서도 뺀다(ADR 0006).
+    '다른 줄에 포함' 줄의 대상이 이 집 가견적에서 단가로 센 줄이 아니면(다른 벽지 줄 · 빼기 줄) 그 줄은 missing에 남긴다.
+    옛 묶음이 대신 쓴 줄(fallback, 1205)은 이 집에서 단가로 센 줄로 본다."""
     keys = frozenset(standard_keys) if standard_keys is not None else None
     optional = frozenset(optional_keys)
     out: list[EstimateV3Line] = []
+    priced: set[str] = set()  # 이 집 가견적에서 단가로 센 줄 키(포함 대상이 될 수 있는 줄)
     for row in V3_ROWS:
         if row.grade is not None and row.grade != grade:
             continue
         vp = price_of(row, prices) or PriceV3("excluded")
+        if vp.mode == "price":
+            priced.add(row.key)
+            if row.key not in prices and row.fallback is not None:
+                priced.add(row.fallback)  # 옛 묶음: 대신 쓴 줄(1205)의 단가가 이 집에 들어가요
         n, amount = row_amount(row, vp, qty)
         alike = set(V3_STD_KEYS[row.key])
         inside = row.in_standard if keys is None else bool(keys & alike)
@@ -312,6 +326,7 @@ def estimate_v3(
         out.append(
             EstimateV3Line(row, n, vp.mode, vp.unit_price, vp.included_in, amount, inside, opt)
         )
+    missing = tuple(x.row.key for x in out if x.mode == "included" and x.included_in not in priced)
     supply = sum(x.amount for x in out if not x.optional)
     money = Money(supply, 0, supply) if exempt else with_vat(supply)
     same = sum(x.amount for x in out if x.in_standard)
@@ -320,5 +335,5 @@ def estimate_v3(
     # '이 벽지는 안 해요'는 도배지 줄만 본다(부자재 줄 '빼기'는 따로 안 받는다는 뜻)
     paper_ok = all(x.mode != "excluded" for x in out if x.row.qty == "paper_py")
     return EstimateV3(
-        grade, tuple(out), money.supply, money.vat, money.total, compare, pct, paper_ok
+        grade, tuple(out), money.supply, money.vat, money.total, compare, pct, paper_ok, missing
     )
