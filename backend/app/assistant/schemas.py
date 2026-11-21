@@ -24,7 +24,7 @@ CardKind = Literal[
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
-    "window_answer", "decline", "dates",
+    "date_change", "window_answer", "decline", "dates",
 ]  # fmt: skip
 ActionStatus = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 TurnStatus = Literal["running", "done", "stopped", "failed"]

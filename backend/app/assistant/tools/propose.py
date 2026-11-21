@@ -7,17 +7,18 @@
 """
 
 import uuid
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.assistant import actions
 from app.assistant.schemas import ActionSummary, AmountRow, LinkOut, SummaryRow
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import TRADE, dobae_only, pid_of
 from app.db import SessionLocal
+from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
@@ -531,6 +532,162 @@ async def propose_dates_accept(tc: ToolCtx, a: ProposalIn) -> ToolOut:
 )
 async def propose_delay_accept(tc: ToolCtx, a: ProposalIn) -> ToolOut:
     return await _dates(tc, a, "delay_accept")
+
+
+CHANGE_WISH_MAX = 3  # 시작해도 되는 날 후보 수(schedule 다른 날짜 요청 WISH_MAX와 같다)
+CHANGE_AHEAD = timedelta(days=365)  # 요청 날짜는 1년 안(schedule service와 같다)
+ChangeReason = Literal["move", "family", "other_work", "other"]
+
+
+def date_change_offer(
+    sch,
+    deal_id: str,
+    reason: str,
+    today: date,
+    now: datetime,
+    *,
+    delay_days: int | None = None,
+    wish_from: date | None = None,
+) -> dict:
+    """공사 날짜 바꾸기 요청(schedule_for 결과 sch의 확정 하나) → 대기 행동 인자. 도구 · 무료 모드가 같이 쓴다.
+    시작해도 되는 날은 계산 엔진이 고른다: 지금 날짜에서 delay_days 뒤(또는 wish_from)부터 지금과 같은 일하는 날
+    수로, 다른 공정과 겹치지 않는 자리 안에서 1~3개. 요청할 수 없으면 ToolError."""
+    from app.calc.schedule import WEEKEND, Dated, count_workdays, free_range, start_choices
+    from app.refprice.holidays import days_off
+    from app.schedule import service as schedule_service
+
+    t = next((x for x in sch.trades if str(x.deal.id) == str(deal_id)), None)
+    if t is None:
+        raise ToolError("stale", "공사를 찾을 수 없어요. 공사 날짜를 다시 봐 주세요.")
+    if t.request is not None:
+        raise ToolError(
+            "already_requested",
+            "이미 날짜 바꾸기를 요청했어요. 업체가 새 날짜를 올리면 수락할 수 있어요.",
+        )
+    if t.requests_left <= 0:
+        raise ToolError(
+            "requests_used", "날짜 바꾸기 요청은 2번까지예요. 업체와 믿집 채팅으로 이야기해 주세요."
+        )
+    base = actions.change_base(t)
+    if base is None:
+        raise ToolError("no_dates", "업체가 공사 날짜를 낸 뒤에 바꾸기를 요청할 수 있어요.")
+    weekend = () if sch.weekend_work else WEEKEND
+    off = days_off(min(today, base[0]), today + CHANGE_AHEAD + timedelta(days=120))
+    n = max(count_workdays(base[0], base[1], off, weekend), 1)
+    first = base[0] + timedelta(days=delay_days) if delay_days else wish_from
+    first = max(first or today, today + timedelta(days=1))
+    others = [
+        Dated(x.deal.trade, x.deal.start_date, x.deal.end_date)
+        for x in sch.trades
+        if x.deal.id != t.deal.id
+        and x.deal.status in schedule_service.AFTER_DATES_ACCEPTED
+        and x.deal.start_date
+        and x.deal.end_date
+    ]
+    start_from, end_by = free_range(
+        t.deal.trade, [Dated(t.deal.trade, *base), *others], schedule_service.ORDER, off, weekend
+    )
+    first = max(first, start_from) if start_from else first
+    got = start_choices(first, n, CHANGE_WISH_MAX, {base[0]}, off, weekend, end_by)
+    picked = [(a, b) for a, b in got if a <= today + CHANGE_AHEAD]
+    if not picked:
+        raise ToolError(
+            "no_room", "그때로는 다른 공정과 겹치지 않는 날이 없어요. 다른 때를 말해 주세요."
+        )
+    change = t.deal.status == "scheduled"
+    name = cards.TRADE.get(t.deal.trade, t.deal.trade)
+    rows = [
+        SummaryRow(
+            label="지금 날짜" if change else "업체가 낸 날짜",
+            value=f"{base[0].isoformat()} ~ {base[1].isoformat()}",
+        ),
+        *[
+            SummaryRow(label=f"후보 {i}", value=f"{a.isoformat()} ~ {b.isoformat()}")
+            for i, (a, b) in enumerate(picked, 1)
+        ],
+        SummaryRow(label="까닭", value=actions.CHANGE_REASONS[reason]),
+    ]
+    summary = ActionSummary(
+        title=f"{name} 공사 날짜 바꾸기 요청" if change else f"{name} 다른 공사 날짜 요청",
+        rows=rows,
+        note="업체가 새 날짜를 올리면 수락할 수 있어요. 수락하기 전까지 지금 날짜는 그대로예요. "
+        f"날짜 바꾸기 요청은 {t.requests_left}번 남았어요",
+        approve_label="날짜 바꾸기 요청 보내기",
+    )
+    pending = t.proposal if t.proposal is not None and t.proposal.status == "pending" else None
+    return {
+        "kind": "date_change",
+        "target_kind": "deal",
+        "target_id": t.deal.id,
+        "target_ver": actions.change_ver(t),
+        "payload": {
+            "deal_id": str(t.deal.id),
+            "wish_dates": [a.isoformat() for a, _ in picked],
+            "reason": reason,
+            "proposal_id": str(pending.id) if pending else None,
+        },
+        "summary": summary,
+        # 첫 후보 날이 오면 요청할 수 없어서 그 전(그날 0시, 서울)까지, 길어도 2일
+        "expires_at": min(now + timedelta(days=2), datetime.combine(picked[0][0], time(0), SEOUL)),
+    }
+
+
+class DateChangeIn(BaseModel):
+    deal_ref: str
+    reason: ChangeReason
+    delay_days: int | None = Field(default=None, ge=1, le=180)
+    wish_from: date | None = None
+
+    @model_validator(mode="after")
+    def _one(self) -> "DateChangeIn":
+        if (self.delay_days is None) == (self.wish_from is None):
+            raise ValueError("delay_days와 wish_from 중 하나만")
+        return self
+
+
+@tool(
+    "propose_date_change",
+    surface="customer",
+    kind="propose",
+    status="날짜 바꾸기 요청을 준비하고 있어요",
+    description="확정한 공사(d1…)의 공사 날짜를 바꿔 달라는 요청을 승인 카드로 만들어요. 고객이 수락한 날짜를 "
+    "미루거나 당기고 싶을 때, 업체가 낸 날짜 대신 다른 날을 원할 때 써요. 바라는 때는 하나만 넣어요: delay_days(지금 "
+    "날짜에서 며칠 뒤로, 일주일 7 · 2주 14) 또는 wish_from(고객이 말한 시작해도 되는 첫날). 믿집이 지금과 같은 일하는 "
+    "날 수로 시작해도 되는 날 1~3개를 골라요. reason: move 이사 · 입주 · family 집안 일정 · other_work 다른 공사 · "
+    "other 그 밖. 요청은 확정마다 2번까지이고, 승인하면 업체가 새 날짜를 올려요(수락 전까지 지금 날짜는 그대로).",
+    model=DateChangeIn,
+    schema=obj(
+        {
+            "deal_ref": REF,
+            "reason": {"type": "string", "enum": list(actions.CHANGE_REASONS)},
+            "delay_days": {"type": "integer", "description": "지금 날짜에서 며칠 뒤로(1~180)"},
+            "wish_from": {
+                "type": "string",
+                "format": "date",
+                "description": "고객이 말한 시작해도 되는 첫날",
+            },
+        },
+        required=["deal_ref", "reason"],
+    ),
+)
+async def propose_date_change(tc: ToolCtx, a: DateChangeIn) -> ToolOut:
+    from app.schedule import service as schedule_service
+
+    pid = pid_of(tc)
+    deal = tc.refs.get(a.deal_ref, "deal")
+    async with SessionLocal() as s:
+        sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
+    got = date_change_offer(
+        sch,
+        deal["id"],
+        a.reason,
+        tc.today,
+        tc.now,
+        delay_days=a.delay_days,
+        wish_from=a.wish_from,
+    )
+    out, _ = await _offer(tc, project_id=pid, **got)
+    return out
 
 
 # ---- 업체 ----

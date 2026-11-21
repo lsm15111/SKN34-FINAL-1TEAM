@@ -451,13 +451,16 @@ async def dismissals(
     return [(t, at) for t, at in rows]
 
 
-# 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상일 때)
+# 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상, 또는
+# 행동 payload의 공사 날짜 제안 proposal_id일 때). 날짜 바꾸기 요청(date_change, 대상 = 확정)은 그 확정의 '공사
+# 전날'(ref = 확정)과 요청할 때 수락 기다리던 날짜의 '공사 날짜 왔어요'(ref = 제안)를 닫는다
 SETTLES: dict[str, tuple[str, ...]] = {
     "visit_request": ("no_pick",),
     "visit_slot": ("visit_offered",),
     "vendor_confirm": ("quote_sent",),
     "dates_accept": ("dates_proposed",),
     "delay_accept": ("dates_proposed",),
+    "date_change": ("work_eve", "dates_proposed"),
     "window_answer": ("visit_requested", "visit_picked"),
     "decline": ("visit_requested", "visit_picked"),
     "dates": ("deal_confirmed",),
@@ -474,9 +477,13 @@ async def close_lines_of(s: AsyncSession, a: AssistantAction, reason: str = "act
     )
     hit = AssistantNudge.action_id.in_(same)
     if a.kind in SETTLES:
+        refs = {a.target_id}
+        pid = (a.payload or {}).get("proposal_id")
+        if pid:
+            refs.add(uuid.UUID(str(pid)))
         hit = or_(
             hit,
-            (AssistantNudge.ref_id == a.target_id) & AssistantNudge.trigger.in_(SETTLES[a.kind]),
+            AssistantNudge.ref_id.in_(list(refs)) & AssistantNudge.trigger.in_(SETTLES[a.kind]),
         )
     res = await s.execute(
         update(AssistantNudge)

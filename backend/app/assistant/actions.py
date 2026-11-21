@@ -470,6 +470,8 @@ def moved(a: AssistantAction, t: Targets) -> bool:
             return t.proposals.get(a.target_id) != "pending"
         case "dates":
             return t.dates.get(a.target_id) != a.target_ver
+        case "date_change":  # target_ver = '공사 날짜 상태:기준 시작일'
+            return t.dates.get(a.target_id) != (a.target_ver or "").split(":")[0]
     return False
 
 
@@ -639,6 +641,54 @@ async def _dates_accept(s: AsyncSession, user: User, a: AssistantAction, now: da
     )
 
 
+# 공사 날짜 바꾸기 요청 까닭 코드 → 업체에게 보일 글(정해 둔 글, LLM 글은 업체에 가지 않는다)
+CHANGE_REASONS: dict[str, str] = {
+    "move": "이사 · 입주 날짜가 바뀌었어요",
+    "family": "집안 일정이 생겼어요",
+    "other_work": "다른 공사 일정과 맞춰야 해요",
+    "other": "공사 날짜를 바꿔야 해요",
+}
+
+
+def change_base(t) -> tuple[date, date] | None:
+    """날짜 바꾸기 요청의 기준 날짜(schedule_for의 공정 한 줄 t): 수락한 뒤면 지금 공사 날짜, 수락 전이면 업체가
+    낸 날짜. 없으면 None(요청할 수 없음). schedule service의 기준과 같다."""
+    d = t.deal
+    if d.status == "scheduled" and d.start_date and d.end_date:
+        return d.start_date, d.end_date
+    if d.status == "confirmed" and t.proposal is not None and t.proposal.status == "pending":
+        return t.proposal.start, t.proposal.end
+    return None
+
+
+def change_ver(t) -> str | None:
+    """날짜 바꾸기 제안의 target_ver: '공사 날짜 상태:기준 시작일'(상태나 날짜가 바뀌면 새 사실 · 지난 카드)."""
+    base = change_base(t)
+    return f"{t.dates_state}:{base[0].isoformat()}" if base else None
+
+
+async def _date_change(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
+    """고객 공사 날짜 바꾸기 요청: POST …/date-requests와 같은 schedule_service.request_dates. 기준 날짜 · 상태가
+    제안 때와 다르면 stale. schedule_for(예상 공정표를 새로 쓸 수 있음)를 mark 앞에서 불러 요청과 같이 확정한다."""
+    from app.schedule import service as schedule_service
+    from app.schedule.schemas import DateRequestIn
+
+    pl = a.payload
+    deal_id = uuid.UUID(pl["deal_id"])
+    sch = await schedule_service.schedule_for(s, user, a.project_id, _day(now))  # type: ignore[arg-type]
+    t = next((x for x in sch.trades if x.deal.id == deal_id), None)
+    if t is None or change_ver(t) != a.target_ver:
+        raise _stale("공사 날짜가 그사이 바뀌었어요. 비서에게 다시 물어봐 주세요.")
+    data = DateRequestIn(
+        wish_dates=[date.fromisoformat(x) for x in pl["wish_dates"]],
+        reason=CHANGE_REASONS.get(pl.get("reason") or "other", CHANGE_REASONS["other"]),
+    )
+    text = "날짜 바꾸기를 요청했어요. 업체가 새 날짜를 올리면 수락할 수 있어요"
+    href = f"/projects/{a.project_id}/schedule"
+    await mark({"text": text, "href": href, "label": "공사 날짜 보기"})
+    await schedule_service.request_dates(s, user, a.project_id, deal_id, data, _day(now))  # type: ignore[arg-type]
+
+
 async def _window_answer(
     s: AsyncSession, vendor: User, a: AssistantAction, now: datetime, mark: Mark
 ):
@@ -686,6 +736,7 @@ EXECUTORS: dict[str, Executor] = {
     "vendor_confirm": _vendor_confirm,
     "dates_accept": _dates_accept,
     "delay_accept": _dates_accept,
+    "date_change": _date_change,
     "window_answer": _window_answer,
     "decline": _decline,
     "dates": _dates,
