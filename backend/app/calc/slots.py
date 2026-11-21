@@ -157,6 +157,7 @@ SLOT_MAX = 3  # s1 ~ s3
 WINDOW_SPAN = 7  # 업체가 답할 기간 후보 길이(일)
 WINDOW_MAX = 3  # w1 ~ w3
 WISH_FALLBACK_DAYS = 28  # 공사 시작 희망일이 없으면 내일부터 이 날 수 안에서 찾는다
+NEAR_TARGET_DAYS = 3  # 희망일 − 20일에서 이만큼 안이어야 '공사 시작 20일 전쯤'이라고 한다
 
 
 @dataclass(frozen=True)
@@ -171,11 +172,13 @@ class WishRange:
 
 @dataclass(frozen=True)
 class SlotPick:
-    """업체가 답한 기간 안의 반나절 후보. why는 화면 · AI가 글로 바꾸는 코드다."""
+    """업체가 답한 기간 안의 반나절 후보. why는 그 후보의 사실 코드다(화면 · AI가 글로 바꾼다)."""
 
     day: date
     half: Half
-    why: tuple[str, ...]  # prefer_half · prefer_day · start_minus_20 · earliest
+    # prefer_half · prefer_day(고객이 말한 편한 때) · earliest(열린 반나절 중 가장 이름, 하나) ·
+    # start_minus_20(희망일 − 20일에 가장 가까움, 하나, NEAR_TARGET_DAYS 안) · weekday · weekend(요일을 말하지 않았을 때)
+    why: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -276,9 +279,10 @@ def candidates(
 ) -> list[SlotPick]:
     """업체가 답한 기간의 열린 반나절에서 후보 s1~s3. 순서: 선호(반나절 · 요일)에 맞는 수가 많음 →
     희망일 − 20일(없으면 오늘)에 가까움 → 이른 날 · 오전. 날이 겹치지 않게 먼저 고르고, 모자라면 같은 날
-    다른 반나절로 채운다."""
+    다른 반나절로 채운다. 까닭(why)은 후보마다 그 후보에 맞는 사실만 단다(SlotPick)."""
     target = work_start - timedelta(days=RECOMMEND_BEFORE_DAYS) if work_start else None
-    pool: list[tuple[int, int, date, int, SlotPick]] = []
+    # (어긋남 수, 기준과 거리, 날, 반나절 순서, 반나절, 편한 반나절 맞음, 편한 요일 맞음)
+    pool: list[tuple[int, int, date, int, Half, bool, bool]] = []
     for x in days:
         if x.day <= today or _off(x.day, days_off, weekend):
             continue
@@ -288,21 +292,35 @@ def candidates(
             fit_half = prefer != "any" and h == prefer
             fit_day = day_prefer != "any" and _day_ok(x.day, day_prefer)
             miss = int(prefer != "any" and not fit_half) + int(day_prefer != "any" and not fit_day)
-            why = (
-                *(("prefer_half",) if fit_half else ()),
-                *(("prefer_day",) if fit_day else ()),
-                "start_minus_20" if target else "earliest",
-            )
             dist = abs((x.day - target).days) if target else (x.day - today).days
-            pool.append((miss, dist, x.day, HALVES.index(h), SlotPick(x.day, h, why)))
+            pool.append((miss, dist, x.day, HALVES.index(h), h, fit_half, fit_day))
     pool.sort(key=lambda p: p[:4])
+    picked: list[tuple[int, int, date, int, Half, bool, bool]] = []
+    for p in pool:
+        if len(picked) < n and all(p[2] != o[2] for o in picked):
+            picked.append(p)
+    for p in pool:
+        if len(picked) < n and p not in picked:
+            picked.append(p)
+    earliest = min(((p[2], p[3]) for p in pool), default=None)
+    near = (
+        min(picked, key=lambda p: (abs((p[2] - target).days), p[2], p[3]))
+        if target is not None and picked
+        else None
+    )
     out: list[SlotPick] = []
-    for *_, p in pool:
-        if len(out) < n and all(p.day != o.day for o in out):
-            out.append(p)
-    for *_, p in pool:
-        if len(out) < n and p not in out:
-            out.append(p)
+    for p in picked:
+        _miss, _dist, d, hi, h, fit_half, fit_day = p
+        why = [
+            *(["prefer_half"] if fit_half else []),
+            *(["prefer_day"] if fit_day else []),
+            *(["earliest"] if (d, hi) == earliest else []),
+        ]
+        if p is near and target is not None and abs((d - target).days) <= NEAR_TARGET_DAYS:
+            why.append("start_minus_20")
+        if not fit_day:
+            why.append("weekend" if d.weekday() >= 5 else "weekday")
+        out.append(SlotPick(d, h, tuple(why)))
     return out
 
 

@@ -158,7 +158,9 @@ class SlotCandidate(BaseModel):
     vendor_name: str
     day: date
     half: Half
-    why: list[str]
+    why: list[str] = Field(
+        description="이 후보의 까닭(코드 사실을 화면 말로: 가장 빠른 날이에요 · 평일이에요 · 말한 시간대예요 …)"
+    )
 
 
 # 업체가 쓴 자유 글(벽지 사양 · 다른 날 제안 메모 · 날짜 바꾼 까닭)은 카드의 '업체가 적은 말' 칸에만 짧게 둔다.

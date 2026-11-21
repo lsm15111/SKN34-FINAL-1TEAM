@@ -260,6 +260,21 @@ async def vendor_picks(
 
 # ---- 실측 시간 후보 ----
 
+# 반나절 후보 까닭 코드(calc.slots.SlotPick.why) → 화면 말. 카드 · 모델 값에 같이 쓴다(화면은 글을 그대로 보여요)
+WHY = {
+    "prefer_half": "말한 시간대예요",
+    "prefer_day": "말한 요일이에요",
+    "earliest": "가장 빠른 날이에요",
+    "start_minus_20": "공사 시작 20일 전쯤이에요",
+    "weekday": "평일이에요",
+    "weekend": "주말이에요",
+    "vendor_proposal": "업체가 낸 날이에요",
+}
+
+
+def why_words(codes) -> list[str]:
+    return [WHY[c] for c in codes if c in WHY]
+
 
 async def wishes(
     s: AsyncSession,
@@ -338,7 +353,8 @@ async def visit_slots(
     picks: list[tuple[date, str, list[str], str]] = []
     if v.status == "proposed" and v.proposal is not None:
         for x in v.proposal.slots[:3]:
-            picks.append((x.day, x.half, ["vendor_proposal"], "proposal"))
+            day_kind = "weekend" if x.day.weekday() >= 5 else "weekday"
+            picks.append((x.day, x.half, ["vendor_proposal", day_kind], "proposal"))
     elif v.status == "offered" and v.days:
         opened = [slots.DayOpen(d.day, d.am_left, d.pm_left) for d in v.days]
         found = slots.candidates(
@@ -359,7 +375,7 @@ async def visit_slots(
             vendor_name=v.vendor_name,
             day=d,
             half=h,  # type: ignore[arg-type]
-            why=why,
+            why=why_words(why),
         )
         for d, h, why, via in picks
     ]

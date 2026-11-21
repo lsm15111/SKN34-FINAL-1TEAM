@@ -4,19 +4,21 @@
 
 import re
 import uuid
-from datetime import datetime, time
+from datetime import date, datetime, time, timedelta
 
 import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant import free
+from app.calc import slots
 from app.shared.clock import SEOUL, today_seoul
 from tests.conftest import query
 from tests.helpers import use
 from tests.test_dates import days, propose
 from tests.test_dates import ready as dates_ready
 from tests.test_deal import setup as deal_setup
+from tests.test_v3_visit_kit import offered
 from tests.test_v4_assistant_actions import acts, approve
 from tests.test_v4_assistant_free import cards_of, said
 from tests.test_v4_assistant_turns import ask, home, ok
@@ -112,3 +114,38 @@ def test_where_to_see_and_forget_memory_is_a_fixed_guide(api):
         assert "확인하지 못했어요" not in got
     # 기억해 달라는 말은 안내가 아니다
     assert "내 정보" not in said(ok(ask(api, pid, "평일 오전이 편한 거 기억해 줘")))
+
+
+# ---- 실측 반나절 후보 이유 ----
+
+
+def test_slot_reasons_are_facts_of_each_candidate():
+    today = date(2026, 12, 1)  # 화
+    open_days = [slots.DayOpen(today + timedelta(days=n), 1, 1) for n in range(1, 8)]  # 12.2 ~ 12.8
+    got = slots.candidates(open_days, None, today)
+    assert [c.day for c in got] == [date(2026, 12, 2), date(2026, 12, 3), date(2026, 12, 4)]
+    assert "earliest" in got[0].why and all("earliest" not in c.why for c in got[1:])
+    for c in got:
+        weekend = c.day.weekday() >= 5
+        assert ("weekend" in c.why) == weekend and ("weekday" in c.why) == (not weekend)
+    # 공사 시작 − 20일(12.5 토)에 가장 가까운 한 곳만 그 이유를 단다
+    got = slots.candidates(open_days, date(2026, 12, 25), today)
+    assert got[0].day == date(2026, 12, 5) and "start_minus_20" in got[0].why
+    assert sum("start_minus_20" in c.why for c in got) == 1
+    assert sum("earliest" in c.why for c in got) <= 1
+    # 기억한 편한 반나절 · 요일이 맞으면 그 이유(요일이 말한 것과 맞으면 평일 · 주말을 따로 달지 않는다)
+    got = slots.candidates(open_days, None, today, prefer="pm", day_prefer="weekend")
+    assert got[0].day.weekday() >= 5 and {"prefer_half", "prefer_day"} <= set(got[0].why)
+    assert "weekend" not in got[0].why
+
+
+def test_slot_card_reasons_are_words_and_differ(api):
+    f = offered(api)
+    ev = ok(ask(api, f["pid"], "실측은 언제 할 수 있어요?"))
+    (card,) = cards_of(ev, "visit_slots")
+    whys = [c["why"] for c in card["data"]["candidates"]]
+    assert len(whys) == 3 and all(whys)
+    flat = [w for ws in whys for w in ws]
+    assert all(re.search("[가-힣]", w) for w in flat), flat  # 코드가 아니라 화면 말
+    assert flat.count("가장 빠른 날이에요") <= 1
+    assert len({tuple(w) for w in whys}) > 1
