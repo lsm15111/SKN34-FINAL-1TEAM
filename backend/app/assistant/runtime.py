@@ -484,6 +484,8 @@ class TurnCtx:
     card_id: str | None = None
     # 지난 카드 단추(모르는 이름표 · 다른 대상): 카드를 새로 불러온다
     stale: list[str] = field(default_factory=list)
+    # 카드 단추가 보낸 턴(context.choice가 있음): 글은 화면이 만든 말이라 기억을 뽑지 않는다
+    pressed: bool = False
 
 
 @dataclass

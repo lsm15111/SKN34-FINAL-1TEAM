@@ -138,7 +138,7 @@
     "date": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}$"},
     "half": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}:(am|pm)$", "description": "반나절(오전 · 오후)"},
     "trade": {"enum": ["dobae", "mokgong"]},
-    "memory_key": {"enum": ["avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"]},
+    "memory_key": {"enum": ["avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy", "move_in"]},
     "action_kind": {"enum": ["propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "propose_extra_answer", "propose_work_check", "propose_visit_again"]},
     "tool": {"enum": ["get_home", "get_standard_quote", "recommend_vendors", "vendor_free_slots", "compare_quotes", "get_schedule", "today_tasks", "search_knowledge", "answer_question", "find_floorplan_docs", "show_card", "request_brief", "my_free_slots", "quote_checklist", "my_jobs", "propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "draft_notice", "check_list", "get_extras", "propose_extra_answer", "propose_work_check", "propose_visit_again", "diy_plan"]},
     "visit_status": {"enum": ["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen", "declined", "expired", "cancelled", "no_show", "closed"]},

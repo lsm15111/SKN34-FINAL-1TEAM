@@ -252,6 +252,7 @@ async def start_turn(
         client_key=client_key,
         card_id=card_id,
         stale=stale,
+        pressed=bool(picked),
     )
 
 
@@ -260,7 +261,8 @@ async def start_turn(
 
 async def finish_turn(ctx: TurnCtx, res: TurnResult) -> int:
     """대화 저장과 턴 끝을 한 트랜잭션으로. 새 rev를 돌려준다.
-    고객 말에 기억할 낱말이 있으면 기억 뽑기 일(jobs kind=assistant_memory, ref = 고객 메시지)도 같이 넣는다."""
+    고객 말에 기억할 낱말이 있으면 기억 뽑기 일(jobs kind=assistant_memory, ref = 고객 메시지)도 같이 넣는다.
+    카드 단추가 보낸 글('11.28(토) 오전로 할래요')은 화면이 만든 말이라 기억을 뽑지 않는다."""
     from app.assistant import memory
     from app.jobs import service as jobs_service
 
@@ -271,7 +273,7 @@ async def finish_turn(ctx: TurnCtx, res: TurnResult) -> int:
             await s.rollback()
             raise AppError(409, "conflict", "다른 질문이 먼저 저장됐어요. 다시 물어봐 주세요.")
         chat_repo.add_turn(s, ctx.chat_id, ctx.rev, ctx.text, res.text, None)
-        if ctx.surface == "customer" and memory.wants(ctx.text):
+        if ctx.surface == "customer" and not ctx.pressed and memory.wants(ctx.text):
             await s.flush()
             said = await s.scalar(
                 select(ChatMessage.id).where(

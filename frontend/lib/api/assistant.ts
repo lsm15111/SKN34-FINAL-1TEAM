@@ -310,12 +310,12 @@ export const CHOICE = {
 export type ThreadOut = { chat_id: string; rev: number; updated_at: string };
 export type HealthOut = { mode: "llm" | "free"; reason: "ok" | "off" | "budget" | "breaker" };
 
-export type MemoryKey = "avail_days" | "avail_half" | "living" | "style" | "material" | "priority" | "pet" | "diy";
+export type MemoryKey = "avail_days" | "avail_half" | "living" | "style" | "material" | "priority" | "pet" | "diy" | "move_in";
 /** label은 키의 화면 이름(서버 값). 옛 목업 기록처럼 비어 오면 MEMORY_LABEL(서버 memory.LABEL과 같은 말)을 써요 */
 export type MemoryOut = { id: string; key: MemoryKey | string; label: string; value: string; evidence_message_id: string; evidence_quote: string; updated_at: string };
 export const MEMORY_LABEL: Record<MemoryKey, string> = {
   avail_days: "편한 요일", avail_half: "편한 때", living: "사는 방식", style: "좋아하는 느낌",
-  material: "자재 바람", priority: "중요한 것", pet: "반려동물", diy: "직접 할 일",
+  material: "자재 바람", priority: "중요한 것", pet: "반려동물", diy: "직접 할 일", move_in: "이사 · 입주",
 };
 
 export type BoardOut = {

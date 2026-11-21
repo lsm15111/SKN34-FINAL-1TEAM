@@ -71,8 +71,11 @@ NUDGE_TRIGGERS = (
 NUDGE_CHANNELS = ("feed", "notify")
 NUDGE_STATUSES = ("pending", "held", "sent", "opened", "dismissed", "expired")
 NUDGE_SOURCES = ("ai", "guide")  # 문장을 쓴 쪽: Haiku · 정해 둔 틀
-# 기억 키(계약서 2장). 사람마다 키 하나에 한 줄(새 말로 덮어씀), 모두 MEMORY_MAX개까지
-MEMORY_KEYS = ("avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy")
+# 기억 키(계약서 2장). 사람마다 키 하나에 한 줄(새 말로 덮어씀, 목록 칸은 더함), 모두 MEMORY_MAX개까지.
+# move_in(이사 · 입주 때)은 0048에서 더함
+MEMORY_KEYS = (
+    "avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy", "move_in",
+)  # fmt: skip
 MEMORY_MAX = 12
 
 

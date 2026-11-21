@@ -94,9 +94,9 @@
 - CHECK: 보낸 줄(sent · opened · dismissed)은 sent_at · body · src가 있고, opened · dismissed면 acted_at이 있어요(연 뒤 새 제안에 밀려 expired가 돼도 남아요)
 
 ### assistant_memory
-- 열: user_id FK CASCADE, key(CHECK 8종: avail_days · avail_half · living · style · material · priority · pet · diy), value 1~60자, evidence_message_id(FK chat_messages CASCADE, NOT NULL), evidence_quote
-- UNIQUE(user_id, key): 새 말로 덮어써요. 사용자마다 12개까지예요.
-- 구현: evidence_quote 1~200자, created_at · updated_at, 색인 (evidence_message_id). 12줄 상한은 코드(새것부터 남김)예요. 키가 8종이라 지금은 8줄을 넘지 않아요.
+- 열: user_id FK CASCADE, key(CHECK 9종: avail_days · avail_half · living · style · material · priority · pet · diy · move_in(0048)), value 1~60자, evidence_message_id(FK chat_messages CASCADE, NOT NULL), evidence_quote
+- UNIQUE(user_id, key): 새 말로 덮어써요. 목록 칸(diy · pet)은 앞 값에 더해요. 사용자마다 12개까지예요.
+- 구현: evidence_quote 1~200자, created_at · updated_at, 색인 (evidence_message_id). 12줄 상한은 코드(새것부터 남김)예요. 키가 9종이라 지금은 9줄을 넘지 않아요.
 
 ### project_conditions.demolition (0043, 2026-11-21 리드 결정 보강)
 - 모은 조건에 철거 범위 칸을 더해요: 키 `demolition`, 값 `full`(전체 철거) · `partial`(부분 철거) · `none`(철거 안 함).
