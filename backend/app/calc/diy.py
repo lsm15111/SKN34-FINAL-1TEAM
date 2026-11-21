@@ -1,10 +1,14 @@
 """반셀프 직접 할 일 날짜: 업체 공사 날짜(공정표 블록) + 고객이 고른 칩 → 할 일마다 '언제부터 · 언제까지'.
 
 - 순수 함수예요(DB · HTTP · 시계 없음). 오늘 날짜 · 공휴일 · 입주일은 인자로 받아요.
-- 규칙은 판 이름을 붙인 상수(RULES_V1)예요. 결과에 판(rule_ver)을 적고, 바꿀 때는 새 판을 더해 RULES를 옮겨요.
+- 규칙은 판 이름을 붙인 상수(RULES_V2)예요. 결과에 판(rule_ver)을 적고, 바꿀 때는 새 판을 더해 RULES를 옮겨요.
+  · diy_v2(2026-11-22, QA r1 D5 · D10): 페인트 마감은 도배 시작 − (PAINT_DRY_DAYS + 1)일이라 칠을 끝내고 사흘을
+    통째로 비워요(v1은 − 3일이라 빈 날이 이틀). 빠듯한 일(short)의 공정표 날은 할 수 있는 첫날이에요(v1은 전에 할 일이면
+    마감 날이라 목공 바로 뒤 도배인 공정표에서 페인트가 목공 시작 전에 놓였어요).
 - 기준 블록: 목공 · 도배 공사(공정 이름), 업체 공사 전체(all: 첫날 ~ 마지막 날), 도배 뒤 자연 건조(dry),
   입주 청소(clean), 입주일(move_in). 없는 기준은 다음 후보로 넘어가고, 후보가 모두 없으면 그쪽 끝은 비워요.
-  · 전에 할 일(before): 그 공사 시작 전까지 끝내요. 페인트는 칠이 마를 날을 비워요(도배 시작 − PAINT_DRY_DAYS).
+  · 전에 할 일(before): 그 공사 시작 전까지 끝내요. 페인트는 칠을 끝내고 PAINT_DRY_DAYS일을 비워요
+    (도배 시작 − (PAINT_DRY_DAYS + 1)일까지 칠해요).
   · 뒤에 할 일(after): 그 공사가 끝난 다음 날부터 해요. 실리콘은 굳을 날을 두고 입주 청소 전날까지,
     조명 · 새 커버 · 손잡이는 입주 청소 날(청소 전)까지예요.
   · 꼭 있어야 하는 기준(needs)이 없으면 그 걸음은 빼요(도배가 없으면 콘센트 덮개 떼기는 없어요).
@@ -12,12 +16,13 @@
   날짜는 창 그대로 두고 fit=False(why no_free_day)예요.
 - 오늘보다 앞선 시작은 오늘로 당겨요. 시작이 마감보다 늦으면 fit=False(why short), 마감이 오늘보다 앞이면
   late=True(why late)예요.
-- 공정표에 둘 날(day): 전에 할 일은 마감 날, 뒤에 할 일은 시작 날이에요.
+- 공정표에 둘 날(day): 전에 할 일은 마감 날, 뒤에 할 일은 시작 날이에요. 빠듯하면(short) 규칙의 tight 끝
+  (diy_v2는 모두 start: 앞 공사가 끝난 다음 날)이에요. 마감(end)은 그대로 알려요.
 - 업체 공사 날짜가 하나도 없으면 날짜 없이(start · end · day 모두 None) 순서만 돌려줘요.
 """
 
 from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date, timedelta
 from typing import Literal
 
@@ -30,7 +35,8 @@ Why = Literal["", "short", "no_free_day", "late"]
 Bound = tuple[tuple[str, Edge, int], ...]  # (기준 블록, 끝, 더할 날) 후보를 앞에서부터
 
 KEYS: tuple[str, ...] = ("paint", "outlet", "light", "silicone", "handle", "clean")
-# 칠을 끝내고 도배 전까지 비울 날(제조사 완전 건조 72시간: KCC 숲으로 홈앤멀티멜 데이터시트, 2026-11-21 확인)
+# 칠을 끝내고 도배 전까지 통째로 비울 날(제조사 완전 건조 72시간: KCC 숲으로 홈앤멀티멜 데이터시트, 2026-11-21 확인).
+# 마감 날 저녁에 칠을 끝내도 72시간이 지나게 마감은 도배 시작 − (PAINT_DRY_DAYS + 1)일이에요(diy_v2)
 PAINT_DRY_DAYS = 3
 COVER_OFF_DAYS = 3  # 콘센트 덮개는 도배 사흘 전부터 떼요(일찍 떼면 드러난 채로 오래 지내요)
 FREE_SEARCH_DAYS = 62  # 마감이 없는 일에서 할 수 있는 날을 찾는 범위
@@ -55,13 +61,15 @@ class Rule:
     start: Bound  # 언제부터
     end: Bound  # 언제까지
     needs: str | None = None  # 이 기준 블록이 없으면 이 걸음은 빼요
+    tight: Edge = "start"  # 빠듯할 때(short) 공정표에 둘 날: start 할 수 있는 첫날 · end 마감 날
+    ver: str = "diy_v2"  # 이 규칙의 판(할 일 rule_ver에 적어요)
 
 
-RULE_VER = "diy_v1"
-RULES_V1: tuple[Rule, ...] = (
-    # 페인트(문틀 · 몰딩): 목공이 끝난 뒤, 도배 전에 칠하고 말린다
+RULE_VER = "diy_v2"
+RULES_V2: tuple[Rule, ...] = (
+    # 페인트(문틀 · 몰딩): 목공이 끝난 뒤, 도배 전에 칠하고 사흘을 비워 말린다
     Rule("paint", "", "before", (("mokgong", "end", 1),),
-         (("dobae", "start", -PAINT_DRY_DAYS), ("clean", "start", -1), ("move_in", "start", -1))),
+         (("dobae", "start", -(PAINT_DRY_DAYS + 1)), ("clean", "start", -1), ("move_in", "start", -1))),
     # 콘센트 · 스위치 커버: 도배 전 덮개 떼기 → 도배 뒤 새 커버
     Rule("outlet", "off", "before", (("dobae", "start", -COVER_OFF_DAYS),), (("dobae", "start", -1),),
          needs="dobae"),
@@ -76,7 +84,17 @@ RULES_V1: tuple[Rule, ...] = (
     Rule("clean", "", "after", (("clean", "start", 0), ("dry", "end", 1), ("all", "end", 1)),
          (("move_in", "start", -1),)),
 )  # fmt: skip
-RULES = RULES_V1
+# 판 diy_v1(2026-11-21, 기록): 페인트 마감 = 도배 − PAINT_DRY_DAYS일(빈 날 이틀), 빠듯한 전에 할 일은 마감 날에 둬요
+RULES_V1: tuple[Rule, ...] = tuple(
+    replace(
+        r,
+        ver="diy_v1",
+        tight="end" if r.kind == "before" else "start",
+        end=(("dobae", "start", -PAINT_DRY_DAYS), *r.end[1:]) if r.key == "paint" else r.end,
+    )
+    for r in RULES_V2
+)
+RULES = RULES_V2
 
 
 @dataclass(frozen=True)
@@ -146,24 +164,24 @@ def _task(
     ok: Callable[[date], bool],
 ) -> DiyTask | None:
     if "all" not in table:  # 업체 공사 날짜가 없으면 순서만
-        return DiyTask(r.key, r.step, r.kind, None, None, None, True, False, "")
+        return DiyTask(r.key, r.step, r.kind, None, None, None, True, False, "", r.ver)
     if r.needs is not None and r.needs not in table:
         return None
     raw_start, end = _bound(table, r.start), _bound(table, r.end)
     start = max(raw_start, today) if raw_start is not None else today
     if end is not None and end < today:
-        return DiyTask(r.key, r.step, r.kind, raw_start, end, end, False, True, "late")
+        return DiyTask(r.key, r.step, r.kind, raw_start, end, end, False, True, "late", r.ver)
     if end is not None and start > end:  # 앞 공사 끝과 뒤 공사 시작 사이가 모자라요
-        day = end if r.kind == "before" else start
-        return DiyTask(r.key, r.step, r.kind, start, end, day, False, False, "short")
+        day = start if r.tight == "start" else end
+        return DiyTask(r.key, r.step, r.kind, start, end, day, False, False, "short", r.ver)
     hi = end if end is not None else start + timedelta(days=FREE_SEARCH_DAYS)
     first = _scan(start, hi, ok)
     if first is None:
         day = end if r.kind == "before" else start
-        return DiyTask(r.key, r.step, r.kind, start, end, day, False, False, "no_free_day")
+        return DiyTask(r.key, r.step, r.kind, start, end, day, False, False, "no_free_day", r.ver)
     last = _scan(first, end, ok, back=True) if end is not None else None
     day = last if r.kind == "before" and last is not None else first
-    return DiyTask(r.key, r.step, r.kind, first, last, day, True, False, "")
+    return DiyTask(r.key, r.step, r.kind, first, last, day, True, False, "", r.ver)
 
 
 def plan(

@@ -443,10 +443,21 @@ def diy_day_name(t: calc_diy.DiyTask) -> str:
     return f"{t.name} · {calc_diy.SELF}"
 
 
+# '고객이 직접' 줄 이름에 붙이는 표시(계산 엔진 why). 영어 값 대신 화면 말이에요(비서 diy WHY_NOTE와 같은 뜻)
+DIY_NOTE = {"short": "날이 빠듯해요", "no_free_day": "날이 빠듯해요", "late": "마감이 지났어요"}
+
+
+def diy_label(t: calc_diy.DiyTask) -> str:
+    """'고객이 직접' 줄 이름: 빠듯하거나 마감이 지난 일은 표시를 붙여요('페인트(문틀 · 몰딩) 칠하기 · 날이 빠듯해요')."""
+    note = DIY_NOTE.get(t.why)
+    return f"{t.name} · {note}" if note else t.name
+
+
 async def _with_diy(s: AsyncSession, p: ProjectOut, out: PlanOut, today: date) -> PlanOut:
     """고른 직접 할 일(project.diy 칩)을 '고객이 직접' 블록(kind diy, 할 수 있는 기간)과 날 칸 이름으로 얹는다.
     입주 청소는 공정표에 이미 '고객이 직접' 줄이 있어 더하지 않는다. 날 칸이 공정표 밖(도배 전 페인트 마감 등)이면
-    그날을 kind diy로 더한다. 칩이 없으면 그대로."""
+    그날을 kind diy로 더한다. 빠듯한 일 · 마감이 지난 일은 줄 이름에 표시를 붙이고(계산 엔진 day 하루) 날 칸에는
+    두지 않는다(그날 할 일이 아니에요, QA r1 D5). 칩이 없으면 그대로."""
     from app.project.diy import diy_for
 
     keys = await diy_for(s, p.id)
@@ -458,13 +469,14 @@ async def _with_diy(s: AsyncSession, p: ProjectOut, out: PlanOut, today: date) -
     for t in tasks:
         if t.day is None:
             continue
+        ok = t.fit and not t.late
         name = diy_day_name(t)
-        a, b = (t.start, t.end) if t.start and t.end and t.start <= t.end else (t.day, t.day)
+        a, b = (t.start, t.end) if ok and t.start and t.end and t.start <= t.end else (t.day, t.day)
         blocks.append(
             PlanBlockOut(
                 trade=None,
                 kind="diy",
-                label=t.name,
+                label=diy_label(t),
                 start=a,
                 end=b,
                 days=(b - a).days + 1,
@@ -472,6 +484,8 @@ async def _with_diy(s: AsyncSession, p: ProjectOut, out: PlanOut, today: date) -
                 man_day=None,
             )
         )
+        if not ok:
+            continue
         d = days.get(t.day)
         if d is None:
             days[t.day] = PlanDayOut(
@@ -1243,24 +1257,36 @@ async def _set(s: AsyncSession, model, row_id: uuid.UUID, frm: str, values: dict
         raise AppError(409, "stale", STALE)
 
 
-def _base(d: Deal, x: DateProposal | None) -> tuple[date, date] | None:
-    """다른 날짜 요청의 기준 날짜: 수락 전이면 낸 날짜, 수락 뒤면 지금 날짜 (그와 같은 기간으로 고른다)"""
+# 다른 날짜 요청의 기준 날짜: 처음 · 끝 · 하나씩 고른 공사 날(v3, 없으면 범위로 낸 날짜)
+Base = tuple[date, date, list[date] | None]
+
+
+def _base(d: Deal, x: DateProposal | None) -> Base | None:
+    """다른 날짜 요청의 기준 날짜: 수락 전이면 낸 날짜, 수락 뒤면 지금 날짜 (그와 같은 일하는 날 수로 고른다)"""
     if d.status == "scheduled" and d.start_date and d.end_date:
-        return d.start_date, d.end_date
+        return d.start_date, d.end_date, d.work_days
     if d.status == "confirmed" and x is not None:
-        return x.start_date, x.end_date
+        return x.start_date, x.end_date, x.days
     return None
 
 
+def _job_workdays(start: date, end: date, days: list[date] | None, weekend: tuple[int, ...]) -> int:
+    """공사 일하는 날 수: 날을 하나씩 고른 공사(v3)는 고른 날 수(사이 빈 날은 세지 않아요, QA r1 D8), 범위로 낸
+    날짜(옛 길)는 처음 ~ 끝의 일하는 날 수(계산 엔진). 날 목록이 처음 · 마지막 날과 어긋나면(옛 행) 범위로 본다(_gaps와 같음)."""
+    if days and min(days) == start and max(days) == end:
+        return len(set(days))
+    return count_workdays(start, end, _off(start), weekend)
+
+
 def _start_options(
-    trade: str, base: tuple[date, date], others: list[Deal], weekend: tuple[int, ...], today: date
+    trade: str, base: Base, others: list[Deal], weekend: tuple[int, ...], today: date
 ) -> list[StartOptionOut]:
     """요청 후보: 기준과 같은 일하는 날 수, 다른 공정과 겹치지 않는 자리(앞 공정 다음 날부터 뒤 공정
     전날까지) 안에서 내일부터. 기준 시작일은 뺀다."""
     tomorrow = today + timedelta(days=1)
-    room = _fit(trade, *base, others, weekend, today)
+    room = _fit(trade, base[0], base[1], others, weekend, today)
     first = max(tomorrow, room.start_from or tomorrow)
-    n = count_workdays(*base, _off(base[0]), weekend)
+    n = _job_workdays(*base, weekend)
     return [
         StartOptionOut(start=a, end=b)
         for a, b in start_choices(
@@ -1651,7 +1677,7 @@ async def request_dates(
     # 고른 날에 같은 기간으로 하면 수락한 다른 공정과 겹치는지 (겹치면 수락할 수 없다)
     if base is not None:
         others = await _others(s, p.id, d.trade)
-        n = max(count_workdays(*base, _off(base[0]), weekend), 1)
+        n = max(_job_workdays(*base, weekend), 1)
         for w in data.wish_dates:
             end = workdays(w, n, _off(w), weekend)[-1]
             if _fit(d.trade, w, end, others, weekend, today).conflicts:
@@ -1722,7 +1748,7 @@ def _request_options(
     """수락한 날짜 바꾸기 요청: 고객이 고른 시작일마다 지금과 같은 일하는 날 수로 끝나는 날"""
     if r is None or d.status != "scheduled" or d.start_date is None:
         return []
-    n = count_workdays(d.start_date, d.end_date, _off(d.start_date), weekend)
+    n = _job_workdays(d.start_date, d.end_date, d.work_days, weekend)
     off = _off(min(r.wish_dates))
     return [
         StartOptionOut(start=w, end=workdays(w, max(n, 1), off, weekend)[-1])

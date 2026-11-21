@@ -167,7 +167,8 @@ def test_expected_plan_gets_self_rows_without_duplicate_clean(api):
         "페인트(문틀 · 몰딩) 칠하기", "콘센트 · 스위치 덮개 떼기", "콘센트 · 스위치 새 커버 달기",
     ]  # fmt: skip
     paint, off, on = diy
-    assert D(paint["end"]) == start - timedelta(days=calc_diy.PAINT_DRY_DAYS)  # 도배 사흘 전까지
+    # 칠하고 사흘을 비우게 도배 나흘 전까지(calc.diy diy_v2)
+    assert D(paint["end"]) == start - timedelta(days=calc_diy.PAINT_DRY_DAYS + 1)
     assert (D(off["start"]), D(off["end"])) == (
         start - timedelta(days=3),
         start - timedelta(days=1),
@@ -197,7 +198,7 @@ def test_final_plan_card_today_rows_and_prep_lists(api):
     p = plan(api, pid)
     assert p["kind"] == "final"
     start = D(block(p, "work", "dobae")["start"])
-    paint_end, off_end = start - timedelta(days=3), start - timedelta(days=1)
+    paint_end, off_end = start - timedelta(days=4), start - timedelta(days=1)  # diy_v2: 사흘 비움
     # 비서 공정표 카드(확정)에 같은 꼴 줄이 보여요
     ev = ok(ask(api, pid, "공정표 보여 줘"))
     (card,) = cards_of(ev, "schedule")
