@@ -17,28 +17,49 @@ import re
 from app.agent import intent as intent_model
 from app.agent.v3.schemas import AgentAnswer, CalcBox, Section, Sentence
 from app.agent.v3.trades import trades_in
+from app.shared.regions import EMD, SGG
 from app.v2 import guard
 
 # 동 · 호: '105동 1203호' · '1503호'. 법 · 고시 번호('대통령령 제36437호' · '제2026-360호')와 '3호선'은 빼요
 DONGHO = re.compile(r"(?<![제\d-])(?:\d{1,4}\s?동\s?)?\d{3,4}\s?호(?!선)")
 # '3층 2호'처럼 층 뒤 1~2자리 호(보안 QA M1)
 FLOOR_HO = re.compile(r"(?<![\d-])\d{1,3}\s?층\s?\d{1,4}\s?호(?!선)")
-# 숫자 뒤 단위 · 세는 말: 이 말이 붙은 숫자는 주소 번호로 보지 않는다(금액 · 면적 · 날짜 · 개수)
+# 숫자 뒤 단위 · 세는 말 · 범위(~): 이 말이 붙은 숫자는 주소 번호로 보지 않는다(금액 · 면적 · 날짜 · 개수)
 _UNIT_AFTER = (
     r"(?!\s?(?:만|천|억|원|평|㎡|m|일|개|시|분|초|층|년|월|주|달|롤|%|번|장|명|곳|군데|가지|차|회|박|배"
-    r"|살|세|등|위|점|퍼센트|kg|cm|mm))"
+    r"|살|세|등|위|점|퍼센트|문장|kg|cm|mm|[~∼〜]))"
 )
-# 주소 낱말 가까이(앞 ADDR_NEAR 글자)의 '101-1203'(동-호 줄임). 날짜 · 금액 · 범위('100-200만 원')는 뺀다
-DASH_UNIT = re.compile(r"(?<![\d.,\-/])\d{2,4}\s?-\s?\d{3,4}(?![\d\-/]|[.,]\d)" + _UNIT_AFTER)
+# 주소 낱말 가까이(앞 ADDR_NEAR · 뒤 ADDR_AFTER 글자)의 '101-1203'(동-호 줄임). 날짜 · 금액 · 범위('100-200만 원')
+# · 법 · 고시 번호('제2018-775호') · 대표번호('1661-2642')는 뺀다
+DASH_UNIT = re.compile(
+    r"(?<![\d.,\-/제])(?!1[5-9]\d{2}\s?-\s?\d{4}(?!\d))\d{2,4}\s?-\s?\d{3,4}(?:\s?호(?!선))?"
+    r"(?![\d\-/]|[.,]\d)" + _UNIT_AFTER
+)
 # 도로명 주소의 건물 번호('동일로 1234' · '월계로45길 11'). 주소 낱말이 가까이 있을 때만이고, '…으로'(기준으로 3곳)
-# · 단위가 붙은 숫자(실크로 34평) · 소수 · 천 단위 쉼표(3,300,000)는 둔다
+# · 단위가 붙은 숫자(실크로 34평) · 소수 · 천 단위 쉼표(3,300,000) · 흔한 낱말(도로 · 통로 …, ROAD_WORDS)은 둔다
 ROAD_NO = re.compile(
-    r"(?<![가-힣\d])[가-힣\d]{1,10}(?:대로|(?<!으)로|길)\s?\d{1,4}(?:-\d{1,4})?"
-    r"(?:\s?번길\s?\d{1,4}(?:-\d{1,4})?)?(?!\d|[.,]\d|\s?(?:번?길))" + _UNIT_AFTER
+    r"(?<![가-힣\d])([가-힣\d]{1,10}(?:대로|(?<!으)로|길))(?:\s?\d{1,4}\s?번?길)?\s?\d{1,4}(?:-\d{1,4})?"
+    r"(?!\d|[.,]\d|\s?(?:번?길))" + _UNIT_AFTER
 )
+ROAD_WORDS = frozenset(
+    {
+        "도로", "통로", "경로", "차로", "진로", "선로", "철로", "수로", "활로", "항로", "대로", "산책로",
+        "진입로", "출입로", "보행로", "고속도로", "골목길", "오솔길", "산길", "지름길", "갈림길", "비탈길",
+        "오르막길", "내리막길", "둘레길", "큰길", "뒷길", "옆길",
+    }
+)  # fmt: skip
 LOT_NO = re.compile(r"(?<![\d-])\d{1,5}(?:-\d{1,5})?\s?번지")  # 지번 '123-45번지'
+# 주소 낱말: 주소 · 아파트 같은 말과 실제 시 · 군 · 구 · 법정동 이름(shared.regions). '고시' · '가구'처럼 시 · 구로
+# 끝나는 낱말은 주소 낱말로 보지 않는다
+_PLACES = sorted(
+    {n for v in SGG.values() for n in v} | {n for v in EMD.values() for _, n in v},
+    key=len,
+    reverse=True,
+)
 ADDR_CUE = re.compile(
-    r"주소|도로명|번지|아파트|단지|주공|빌라|맨션|오피스텔|동호수|[가-힣]{1,5}[시구군동](?![가-힣])"
+    r"주소|도로명|번지|아파트|단지|주공|빌라|맨션|오피스텔|동호수|(?<![가-힣])(?:"
+    + "|".join(map(re.escape, _PLACES))
+    + ")"
 )
 ADDR_NEAR, ADDR_AFTER = 40, 20
 # 앞 글자가 같은 묶음이면 시작하지 않고 길이에 상한을 둬서 긴 입력에도 한 번만 훑어요(CodeQL ReDoS)
@@ -96,9 +117,12 @@ MONEY_UNITS = frozenset({"만원", "천원", "억원", "억", "만", "원"})
 
 
 def _near_addr(sub: str):
-    """주소 낱말이 앞 ADDR_NEAR 글자 · 뒤 ADDR_AFTER 글자 안에 있을 때만 가리는 바꾸기 함수."""
+    """주소 낱말이 앞 ADDR_NEAR 글자 · 뒤 ADDR_AFTER 글자 안에 있을 때만 가리는 바꾸기 함수. 도로명 꼴인데 길 이름이
+    흔한 낱말(ROAD_WORDS: '주택단지 안의 도로 6.')이면 둔다."""
 
     def fn(m: re.Match) -> str:
+        if m.re is ROAD_NO and m.group(1) in ROAD_WORDS:
+            return m.group(0)
         s, a, b = m.string, m.start(), m.end()
         near = s[max(0, a - ADDR_NEAR) : a] + " " + s[b : b + ADDR_AFTER]
         return sub if ADDR_CUE.search(near) else m.group(0)

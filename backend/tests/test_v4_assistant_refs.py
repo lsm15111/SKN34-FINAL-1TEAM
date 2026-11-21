@@ -93,7 +93,8 @@ def test_long_card_ids_from_cards_are_accepted(api):
     login(api, f["email"])
     r = vendor_turn(api, f["visit"], "이 요청 어때요?", context={"card_id": f"brief-{f['visit']}"})
     assert r.status_code == 200, r.text
-    too_long = {"card_id": "x" * 65}
+    # 상한은 100자(끝난 먼저 말 건 줄 카드는 '@줄 id'가 붙어 79자, QA P4)
+    too_long = {"card_id": "x" * 101}
     assert vendor_turn(api, f["visit"], "이 요청 어때요?", context=too_long).status_code == 422
 
 
