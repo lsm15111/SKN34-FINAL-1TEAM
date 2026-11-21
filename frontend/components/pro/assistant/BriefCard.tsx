@@ -89,13 +89,17 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
       <ul className={k.facts}>{d.facts.map((f) => <li key={f}>{f}</li>)}</ul>
       {d.sentence ? <p className={p.say}><I n="sparkle" />{d.sentence}</p> : null}
       <ul className={p.fit} aria-label="우리 업체와 맞는지">
-        {d.fit.map((f) => (
-          <li key={f.key} data-ok={f.ok}>
-            <I n={f.ok ? "check" : "alert"} />
-            <b>{f.label}</b>
-            <span>{f.ok ? "" : "확인 필요 · "}{f.text}</span>
-          </li>
-        ))}
+        {d.fit.map((f) => {
+          // 맞음 · 확인 필요(고객이 아직 안 정함) · 맞지 않음. state가 없는 옛 값은 ok로만 나눠요
+          const st = f.state ?? (f.ok ? "ok" : "check");
+          return (
+            <li key={f.key} data-ok={f.ok} data-s={st}>
+              <I n={st === "ok" ? "check" : "alert"} />
+              <b>{f.label}</b>
+              <span>{st === "no" ? "맞지 않아요 · " : st === "check" ? "확인 필요 · " : ""}{f.text}</span>
+            </li>
+          );
+        })}
       </ul>
       {d.estimate ? (
         <div className={p.est}>

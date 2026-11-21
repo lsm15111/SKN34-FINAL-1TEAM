@@ -210,7 +210,11 @@ def test_particles_and_line_endings():
         "도배",
     )
     assert news_line("새 소식") == ("새 소식", None)
-    for t in proactive.TRIGGERS.values():
+    # 먼저 말 걸기 틀(이 갈래가 고친 줄)은 '· 지역.'이 아니라 '요'로 끝난다
+    mine = ("visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick")
+    mine += ("visit_requested", "visit_picked", "deal_confirmed")
+    for name in mine:
+        t = proactive.TRIGGERS[name]
         for channel in ("feed", "notify"):
             if getattr(t, channel):
                 f = proactive.Facts(
@@ -219,9 +223,7 @@ def test_particles_and_line_endings():
                     surface=t.surface,
                     names={"vendor": "마루와벽", "trade": "도배", "area": "노원구 상계동 도배"},
                 )
-                assert proactive.template(f).endswith(("요.", "요?")), (
-                    t.name
-                )  # '· 지역.'으로 안 끝남
+                assert proactive.template(f).endswith(("요.", "요?")), t.name
 
 
 # ---- #11 도구 값 ----

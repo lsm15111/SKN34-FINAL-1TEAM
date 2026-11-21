@@ -27,7 +27,7 @@ from pydantic import BaseModel
 from sqlalchemy import String, and_, cast, exists, func, literal, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.assistant import policy, prompts
+from app.assistant import aftercare, policy, prompts
 from app.assistant import repository as repo
 from app.assistant.models import AssistantNudge
 from app.db import SessionLocal
@@ -63,6 +63,7 @@ class Trigger:
     surface: Literal["customer", "vendor"]
     kinds: tuple[str, ...] = ()  # 아웃박스로 읽는 알림 kind(시간 트리거는 비움)
     channel: Channel = "feed"  # 처음 보낼 채널
+    notify_kinds: tuple[str, ...] = ()  # 처음부터 알림(notify)으로 보낼 kind(예: 자동 끝 3일 전)
     follow: timedelta | None = None  # 보낸 feed 뒤 이만큼 상태가 그대로면 notify
     decision: bool = False  # 돈 · 날짜를 정하는 일(+15)
     action: bool = False  # 보낼 때 승인 카드를 만든다(+20)
@@ -117,10 +118,12 @@ TRIGGERS: dict[str, Trigger] = {
             feed="{area} 요청에서 고객이 실측 날짜를 골랐어요. 수락해 주세요.",
         ),
         Trigger(
-            "deal_confirmed", "vendor", ("deal_confirmed",), decision=True, action=True,
-            state="deal", say="공사 할 일 보여 줘", why="고객이 확정했어요",
+            "deal_confirmed", "vendor", ("deal_confirmed",), follow=timedelta(days=1),
+            decision=True, action=True, state="deal", say="공사 할 일 보여 줘", why="고객이 확정했어요",
             feed="{area} 요청에서 고객이 보낸 견적서로 확정했어요. 공사 날짜 후보를 골라 뒀어요.",
+            notify="{area} 요청에서 고객이 확정했는데 공사 날짜를 아직 내지 않았어요. 후보를 확인해 주세요.",
         ),
+        *(Trigger(**x) for x in aftercare.TRIGGERS),  # 07 자동화(업체 빠짐 · 추가 금액 · 공사 끝 …)
     )
 }  # fmt: skip
 EVENT_KINDS: dict[str, str] = {k: t.name for t in TRIGGERS.values() for k in t.kinds}
@@ -386,6 +389,8 @@ async def context(s: AsyncSession, n: AssistantNudge, now: datetime) -> Ctx | No
         c = await _visit_ctx(s, t, n.ref_id, n.user_id)
     elif t.name in ("dates_proposed", "work_eve", "deal_confirmed"):
         c = await _deal_ctx(s, t, n.ref_id, n.user_id, today)
+    elif t.name in aftercare.NAMES:
+        c = await aftercare.context(s, t, n, now)
     else:
         c = await _project_ctx(s, n.ref_id, n.user_id)
     if c is None:
@@ -414,6 +419,8 @@ async def _resolve(s: AsyncSession, kind: str, dedup_key: str) -> uuid.UUID | No
     ref = uuid.UUID(m.group(0))
     if kind in ("quote_sent", "quote_resent"):
         return await s.scalar(select(VendorQuote.visit_id).where(VendorQuote.id == ref))
+    if kind in aftercare.RESOLVE:  # 공사 끝(이력) · 날짜 요청(요청) → 그 확정
+        return await aftercare.resolve(s, kind, ref)
     return ref
 
 
@@ -456,7 +463,7 @@ async def scan_events(now: datetime, limit: int = BATCH) -> int:
                 trigger=t.name,
                 ref_id=ref or nid,
                 dedup_key=f"ev:{nid}",
-                channel=t.channel,
+                channel="notify" if kind in t.notify_kinds else t.channel,
                 status="pending" if ref else "expired",
                 reason=None if ref else "gone",
                 due_at=now,
@@ -562,6 +569,7 @@ async def scan_time(now: datetime) -> int:
                 channel="notify",
                 due_at=now,
             )
+        made += await aftercare.scan_time(s, now)  # 07: 공사 1주 전 · 견적서 기한 하루 전
         await s.commit()
     return made
 
@@ -769,6 +777,8 @@ async def _chat_refs(s: AsyncSession, n: AssistantNudge):
 def _link(t: Trigger, n: AssistantNudge) -> str:
     if n.surface == "customer":
         return f"/projects/{n.project_id}"
+    if got := aftercare.link(t.name, n.ref_id):
+        return got
     if t.name == "deal_confirmed":
         return f"/vendor/jobs/{n.ref_id}"
     return f"/vendor/requests/{n.ref_id}"
@@ -806,6 +816,9 @@ async def _build(
     card = None
     offer: dict | None = None
     try:
+        # 07 자동화: 카드(둘이면 목록) · 승인 카드를 aftercare가 만든다
+        if t.name in aftercare.NAMES:
+            return await aftercare.build(s, t, n, user, c, now, refs)
         if t.name == "visit_offered":
             prefer, days = memory.prefs(await repo.memories(s, user.id))
             card, _ = await cards.visit_slots(

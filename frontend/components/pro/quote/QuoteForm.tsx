@@ -141,7 +141,7 @@ export function QuoteForm({ v, board, now }: { v: VendorVisitV3; board: VendorQu
     }
   }
 
-  const due = v.next?.due_at;
+  const due = board.quote_due_at; // 장부 기한 그대로(실측 확정 때 '다음 일' 기한은 실측 반나절이 끝나는 때라 달라요)
   return (
     <>
       <Main narrow>

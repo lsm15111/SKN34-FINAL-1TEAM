@@ -57,10 +57,11 @@ sl = _lint()
 # 지금 걸리는 (길, 규칙)만 OFF에 두고 보고서 '고칠 목록' 번호를 적는다. 고치면 OFF에서 지운다
 ALL = frozenset({"R2", "R3", "R4", "R11", "R13", "R14"})
 OFF: dict[str, dict[str, str]] = {
-    # 'my_jobs로'(업체 갈래 tools/vendor.py:65)
-    "틀 · 도구 오류 문장": {"R4": "#4"},
     # 4문장 넘음 · '[도배]' 묶음 이름표 · 따옴표 인용
     "무료 · 답 글(지식 답 answer_only)": {"R2": "#5", "R3": "#5", "R11": "#5"},
+    # 자동화 갈래 aftercare.py: dates_requested 틀 끝이 '· 노원구 상계동 도배.'(#10) · 도구 오류 글의 'note'(#4)
+    "틀 · 먼저 말 걸기 문장": {"R3": "#10"},
+    "틀 · 도구 오류 문장": {"R11": "#4"},
 }  # fmt: skip
 
 
@@ -350,14 +351,21 @@ def static_bag() -> Bag:
         bag.add(
             "틀 · 다음에 물을 말(고객 · 업체 목소리)", "user", say, f"service.STEP_IDEAS[{key}]"
         )
-    # 업체 브리핑 한 줄 틀(vendor.brief_template): 맞지 않는 칸마다 · 답하기 좋은 기간 · 다 맞음
-    for label in ("공정", "지역", "일정", "벽지"):
-        fit = [SimpleNamespace(label=label, ok=False)]
-        got = vendor_tools.brief_template(SimpleNamespace(fit=fit, suggest=None))
-        bag.add("틀 · 업체 브리핑 한 줄", "line", got, "tools/vendor.py:brief_template")
+    # 업체 브리핑 한 줄 틀(vendor.brief_template): 맞지 않는 칸 · 확인 필요 칸마다 · 답하기 좋은 기간 · 다 맞음
+    for key, label in (
+        ("trade", "공정"),
+        ("area", "지역"),
+        ("schedule", "일정"),
+        ("paper", "벽지"),
+    ):
+        for state in ("no", "check"):
+            fit = [SimpleNamespace(key=key, label=label, ok=False, state=state)]
+            got = vendor_tools.brief_template(SimpleNamespace(fit=fit, suggest=None))
+            bag.add("틀 · 업체 브리핑 한 줄", "line", got, "tools/vendor.py:brief_template")
     good = SimpleNamespace(start=date(2026, 11, 24), end=date(2026, 11, 30), open_count=14)
     for suggest in (good, None):
-        s = SimpleNamespace(fit=[SimpleNamespace(label="공정", ok=True)], suggest=suggest)
+        fit = [SimpleNamespace(key="trade", label="공정", ok=True, state="ok")]
+        s = SimpleNamespace(fit=fit, suggest=suggest)
         bag.add("틀 · 업체 브리핑 한 줄", "line", vendor_tools.brief_template(s), "tools/vendor.py:brief_template")  # fmt: skip
     # 확정 승인 카드 요약(actions.confirm_summary)과 업체 추천 사유(calc.vendor_pick.reasons)
     cs = actions.confirm_summary("마루와벽", 2, 3_388_000, 3, date(2026, 12, 5))

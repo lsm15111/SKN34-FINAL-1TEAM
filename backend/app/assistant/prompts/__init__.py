@@ -8,12 +8,12 @@ from functools import cache
 from pathlib import Path
 
 VERSION = {
-    "customer": "customer_v2",
-    "vendor": "vendor_v2",
+    "customer": "customer_v3",
+    "vendor": "vendor_v3",
     "nudge_judge": "nudge_judge_v1",
-    "nudge_write": "nudge_write_v1",
+    "nudge_write": "nudge_write_v2",
     "memory": "memory_v2",
-    "brief": "brief_v1",
+    "brief": "brief_v2",
 }
 _DIR = Path(__file__).resolve().parent
 

@@ -12,7 +12,8 @@ import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 
 export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
-  | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist";
+  | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
+  | "extra" | "notice";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -130,10 +131,12 @@ export type AnswerData = { text: string; src: Source; links?: { label: string; h
 export type FloorplanLinksData = { complex: string; links: { label: string; href: string; source: string }[]; note: string };
 
 export type TodayIcon = "doc" | "calendar" | "file" | "chat" | "bulb" | "inbox";
-export type TodayRow = { id: string; icon: TodayIcon; title: string; sub?: string | null; due?: boolean; action?: { label: string; href?: string | null; say?: string | null; primary?: boolean } | null };
+/** action.choice: 누르면 say와 함께 보낼 카드 고르기(업체 공사 날짜 'dates:d#,n#', 이름표는 서버 대화 표에 있어요) */
+export type TodayRow = { id: string; icon: TodayIcon; title: string; sub?: string | null; due?: boolean; action?: { label: string; href?: string | null; say?: string | null; primary?: boolean; choice?: string | null } | null };
 export type TodayData = { date: string; nudge_id: string | null; dismissed?: boolean; todo: TodayRow[]; waiting: TodayRow[]; news: TodayRow[]; know?: TodayRow[] };
 
-export type FitRow = { key: "trade" | "area" | "schedule" | "paper"; label: string; ok: boolean; text: string };
+/** state: 맞음(ok) · 확인 필요(check: 고객이 아직 안 정함) · 맞지 않음(no). 없으면 ok로만 나눠요(목업) */
+export type FitRow = { key: "trade" | "area" | "schedule" | "paper"; label: string; ok: boolean; text: string; state?: "ok" | "check" | "no" };
 export type VendorBriefData = {
   visit_id: string;
   title: string;
@@ -156,10 +159,26 @@ export type QuoteChecklistData = {
   prev: { version: number; total_won: number } | null;
 };
 
+/** 추가 금액(07 자동화). 금액은 서버(계산 엔진) 값이에요. 한 일 · 업체가 적은 말은 업체 글이라 그 칸에만 보여요 */
+export type ExtraData = {
+  ref: string; extra_id: string; deal_id: string; vendor_name: string; trade: string;
+  title: string; vendor_note: string | null; version: number;
+  answer: "pending" | "asked" | "approved" | "rejected";
+  supply_won: number; vat_won: number; total_won: number; vat_label: string;
+  deal_total_won: number | null; grand_total_won: number | null; after_total_won: number | null;
+  photo_count: number; href: string;
+};
+/** 이웃 안내문 초안(07 자동화, 코드 틀). 이웃에게 붙이는 글이라 '-합니다'체예요(style_exempt: 화면 문체 검사에서 빼요) */
+export type NoticeData = {
+  title: string; text: string; start: string | null; end: string | null;
+  blanks: string[]; note: string; style_exempt: boolean;
+};
+
 export type CardData = {
   home_info: HomeInfoData; standard_quote: StandardQuoteData; vendor_picks: VendorPicksData; visit_slots: VisitSlotsData;
   quote_compare: QuoteCompareData; schedule: ScheduleData; knowledge: KnowledgeData; answer: AnswerData;
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
+  extra: ExtraData; notice: NoticeData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 
@@ -176,7 +195,9 @@ export type TaskOut = {
 };
 
 /** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change) */
-export type ActionKind = "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates";
+export type ActionKind =
+  | "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates"
+  | "extra_answer" | "work_check" | "visit_again";
 export type ActionStatus = "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
 /** 무엇 · 얼마 · 어느 버전(assistant_actions.summary). 금액 · 차액은 서버 값 */
 export type ActionSummary = {
@@ -277,6 +298,9 @@ export const CHOICE = {
   visitRequest: (vendors: string[], wish?: string | null) => `visit_request:${[...vendors.slice(0, 3), ...(wish ? [wish] : [])].join(",")}`,
   visitSlot: (slot: string) => `visit_slot:${slot}`,
   vendorConfirm: (visit: string) => `vendor_confirm:${visit}`,
+  /** 추가 금액(x…)에 답하는 승인 카드: 승인(기본) · 거절 · 채팅으로 묻기 */
+  extraAnswer: (extra: string, answer: "approve" | "reject" | "ask" = "approve") =>
+    answer === "approve" ? `extra_answer:${extra}` : `extra_answer:${extra},${answer}`,
 };
 
 // ───── 대화 · 보드 · 오늘 · 상태 · 기억 · 알림
@@ -562,9 +586,24 @@ export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signa
   let ended = false;
   const emit = seqFilter((e) => { if (e.type === "done" || e.type === "error") ended = true; on(e); });
   if (ASSISTANT_MOCK) { await (await mock()).turn(body, emit, signal); return true; }
+  await postSse("/api/assistant/turns", body, emit, signal);
+  return ended;
+}
+
+export type VendorTurnIn = { visit_id?: string | null; client_key: string; text: string; context?: TurnIn["context"] };
+/** 업체 비서 한 턴(SSE, 작업함 대화). 오늘 할 일 단추의 고르기(choice)로 승인 카드를 받아요. 목업에는 업체 턴이 없어 바로 끝나요 */
+export async function streamVendorTurn(body: VendorTurnIn, on: (e: TurnEvent) => void, signal?: AbortSignal): Promise<boolean> {
+  let ended = false;
+  const emit = seqFilter((e) => { if (e.type === "done" || e.type === "error") ended = true; on(e); });
+  if (ASSISTANT_MOCK) return true;
+  await postSse("/api/vendor/assistant/turns", body, emit, signal);
+  return ended;
+}
+
+async function postSse(url: string, body: TurnIn | VendorTurnIn, emit: (e: TurnEvent) => void, signal?: AbortSignal): Promise<void> {
   let res: Response;
   try {
-    res = await fetch("/api/assistant/turns", {
+    res = await fetch(url, {
       method: "POST", credentials: "same-origin", signal,
       headers: { "content-type": "application/json", accept: "text/event-stream" },
       body: JSON.stringify(body),
@@ -583,7 +622,6 @@ export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signa
     if (signal?.aborted) throw e;
     // 읽다 끊겼어요: 서버는 끝까지 돌려 저장해요(부르는 쪽이 같은 client_key로 다시 이어요)
   }
-  return ended;
 }
 
 const TYPES = new Set(["ack", "status", "card", "action", "token", "done", "error"]);
@@ -723,6 +761,8 @@ export async function listVendorActions(status?: ActionStatus): Promise<ActionOu
 }
 
 export type VendorTodayData = { date: string; rows: TodayRow[] };
+/** 업체 작업함에서 비서 턴을 보낸 뒤(오늘 할 일 단추) '비서 소식'이 다시 읽게 알리는 이벤트 */
+export const VENDOR_ASSISTANT_EVENT = "mj-vendor-assistant";
 /** 업체 작업함 맨 위 '오늘 브리핑'(줄은 코드가 골라요) */
 export async function getVendorToday(): Promise<VendorTodayData> {
   if (ASSISTANT_MOCK) return (await mock()).vendorToday();

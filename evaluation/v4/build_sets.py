@@ -217,7 +217,8 @@ RT_CHECKS = {
 }  # fmt: skip
 ACTION_KINDS = {
     "customer": {"propose_home_info", "propose_visit_request", "propose_visit_slot",
-                 "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept"},
+                 "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept",
+                 "propose_extra_answer", "propose_work_check", "propose_visit_again"},
     "vendor": {"propose_window_answer", "propose_decline", "propose_dates"},
 }  # fmt: skip
 MEMORY_KEYS = {"avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"}
@@ -288,9 +289,11 @@ def check_scenario(path: Path, s: dict) -> list[str]:
     kinds = ACTION_KINDS.get(surface, set())
     vendors = {v["ref"] for v in s.get("world", {}).get("vendors", [])}
     end = s.get("expected_end", {})
-    if set(end) - {"visits", "deals", "actions", "memory"}:
-        errs.append(f"{sid}: expected_end에는 visits · deals · actions · memory만 둬요")
-    for v in end.get("visits", []) + end.get("deals", []):
+    if set(end) - {"visits", "deals", "actions", "memory", "extras", "nudges"}:
+        errs.append(
+            f"{sid}: expected_end에는 visits · deals · actions · memory · extras · nudges만 둬요"
+        )
+    for v in end.get("visits", []) + end.get("deals", []) + end.get("extras", []):
         if v.get("vendor") and v["vendor"] not in vendors:
             errs.append(f"{sid}: 끝 상태의 업체 {v['vendor']}가 world.vendors에 없어요")
     acts = end.get("actions", {})
@@ -418,7 +421,7 @@ def check_all() -> int:
     print(
         f"scenarios {len(scen)}개 · {dict(Counter(f'{s.get("surface")}/{s.get("split")}' for s in scen))}"
     )
-    sizes = {"compare": (len(comp), 107), "redteam": (len(rt), 50), "scenarios": (len(scen), 13)}
+    sizes = {"compare": (len(comp), 107), "redteam": (len(rt), 50), "scenarios": (len(scen), 18)}
     for name, (n, want) in sizes.items():
         if n != want:
             errs.append(f"{name}: {n}개(정한 수 {want})")

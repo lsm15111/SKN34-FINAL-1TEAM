@@ -1,0 +1,16 @@
+/* 07 추가 금액 카드 전용(금액 줄 · 승인하면 공사 금액 · 단추). 공통 바탕 · 단추는 ../kit/kit.module.css */
+.who { margin: -8px 0 0; display: flex; flex-wrap: wrap; gap: 2px 10px; align-items: baseline; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+.who span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+.rows { margin: 0; display: grid; font-size: var(--mj-type-label); }
+.rows > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-top: 1px solid var(--mj-line-soft); min-width: 0; }
+.rows > div:first-child { border-top: 0; padding-top: 0; }
+.rows dt { color: var(--mj-text-mute); flex: none; }
+.rows dt small { display: block; font-size: var(--mj-type-caption); }
+.rows dd { margin: 0; text-align: right; min-width: 0; overflow-wrap: anywhere; }
+.total { border-top: 2px solid var(--mj-line-ink) !important; }
+.total b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-heavy); }
+.after { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; padding: 10px 12px; border-radius: var(--mj-radius-field); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-size: var(--mj-type-label); }
+.after b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-heavy); }
+.after small { font-size: var(--mj-type-caption); }
+.btns { display: flex; flex-wrap: wrap; gap: 8px; }
+.btns > button { flex: 1 1 auto; }

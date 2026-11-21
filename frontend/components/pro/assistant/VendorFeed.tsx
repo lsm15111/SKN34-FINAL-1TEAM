@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  approveVendorAction, getVendorFeed, listVendorActions, newClientKey, rejectVendorAction, vendorKindsForWrite,
+  approveVendorAction, getVendorFeed, listVendorActions, newClientKey, rejectVendorAction, VENDOR_ASSISTANT_EVENT, vendorKindsForWrite,
   type ActionOut, type AssistantItem, type FeedPart,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -37,6 +37,12 @@ export function VendorFeed({ now }: { now: string }) {
     setOpen(a);
   }, []);
   useEffect(() => { void load(); }, [load]);
+  // 오늘 할 일 단추로 비서에게 고르기를 보낸 뒤(공사 날짜 승인 카드): 다시 읽어요
+  useEffect(() => {
+    const on = () => { void load(); };
+    window.addEventListener(VENDOR_ASSISTANT_EVENT, on);
+    return () => window.removeEventListener(VENDOR_ASSISTANT_EVENT, on);
+  }, [load]);
 
   // 요청 화면의 v3 단추(기간 답하기 · 못 받아요 · 공사 날짜)를 누른 뒤: 같은 일을 하던 열린 카드는 '처리됨', 그리고 다시 읽어요
   useEffect(() => {

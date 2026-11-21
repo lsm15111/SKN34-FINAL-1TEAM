@@ -26,6 +26,7 @@ from decimal import Decimal
 from app.assistant import policy
 from app.assistant.schemas import CardOut, TodayData
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards
+from app.assistant.tools import aftercare as aftercare_tools
 from app.db import SessionLocal
 from app.shared.errors import AppError
 
@@ -146,6 +147,8 @@ DECLINE_REJECTED = (
 WINDOW = "답하기 좋은 기간으로 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 보내져요."
 WINDOW_REJECTED = "앞에서 거절한 기간 답하기 카드와 같아요. 다른 기간은 요청 카드에서 골라 주세요."
 NO_WINDOW = "지금은 이 요청에 바로 답할 빈 기간을 찾지 못했어요. 요청 화면에서 기간을 골라 주세요."
+# 공정 · 지역이 맞지 않는 요청: 기간 답하기 카드를 만들지 않는다({what}은 '지역이' 꼴)
+NO_FIT = "{what} 우리 업체와 맞지 않아 기간 답하기 카드는 만들지 않았어요. 받기 어려우면 못 받아요로 답해 주세요."
 ANSWERED = "이미 답했거나 닫힌 요청이에요. 진행은 요청 화면에서 볼 수 있어요."
 CHECKLIST = "견적서를 낼 때 확인할 것이에요. 낼 금액 · 부가세 방식 · 공사 기간 · 유효기간은 칸에 적어 주세요."
 VENDOR_TODAY = "오늘 할 일이에요."
@@ -674,8 +677,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
     from app.assistant.tools import vendor as vendor_tools
 
     if intent == "today":
-        async with SessionLocal() as s:
-            rows = (await vendor_tools.vendor_today(s, tc.user, tc.today)).rows
+        async with SessionLocal() as s:  # 공사 날짜 줄 단추(dates:d#,n#)의 이름표는 이 턴의 표에
+            rows = (await vendor_tools.vendor_today(s, tc.user, tc.today, tc.refs)).rows
         data = TodayData(date=tc.today, todo=rows, waiting=[], news=[])
         card = CardOut(card_id="today", kind="today", data=data.model_dump(mode="json"))
         return VENDOR_TODAY, ToolOut(data={}, cards=[card])
@@ -700,6 +703,10 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         _card, model, out = await _brief(tc, propose_window=True)
         if model["status"] != "requested":
             return ANSWERED, out
+        if model["misfit"]:  # 공정 · 지역이 맞지 않음: 까닭만(못 받아요는 업체가 고른다)
+            from app.shared.korean import i_ga
+
+            return NO_FIT.format(what=i_ga(model["misfit"])), out
         if not out.actions and out.data.pop("rejected", False):
             return WINDOW_REJECTED, out
         return (WINDOW if out.actions else NO_WINDOW), out
@@ -738,6 +745,8 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         return said, out
     if MEMORY_WHERE.search(text):
         return MEMORY_GUIDE, ToolOut(data={})
+    if (more := await aftercare_tools.free_answer(tc, text)) is not None:  # 07 자동화 카드
+        return more
     if MEMORY_SAY_RX.search(text) and not_kept(text):  # '기억해: 내 예산은 …' → 기억하지 않는 것
         return MEMORY_SAY, ToolOut(data={})
     if LEGAL_RX.search(text):  # 내용증명 · 소송: 법률 판단은 하지 않는다

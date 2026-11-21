@@ -55,7 +55,7 @@
 | `vendor_out` | 고객 | 알림 `visit_declined` · `visit_reply_expired` · `visit_vendor_stopped` · `quote_late` | feed, 2일 뒤 notify | 다른 업체 추천(이미 요청 · 확정한 업체 빼고, 코드 점수) | 첫 추천 업체에 실측 요청(`visit_request`, 원래 요청의 희망 기간). 무응답이면 같은 업체 '한 번 더 요청'(`visit_again`)도 고를 수 있어요 | 그 실측 요청이 아직 닫힘 · 무응답 · 늦음이고, 같은 공정에 확정이 없고, 진행 중 요청이 상한보다 적을 때 |
 | `extra_added` | 고객 | 알림 `extra_added` | feed, 1일 뒤 notify | 추가 금액 카드 | `extra_answer`(승인) | 그 추가 금액이 아직 답 기다림 |
 | `work_done` | 고객 | 알림 `work_done` · `done_remind` | feed(`done_remind`는 notify) | 공사 끝 점검표 + 자동 끝 날짜 | `work_check`(끝났어요) | 확정이 아직 확인 기다림(`checking`) |
-| `prep_week` | 고객 | 시간: 공사 시작 7일 전 10시(지났으면 지금, 시작 3일 안이면 만들지 않음) | notify | 공사 전 할 일 체크 카드 + 이웃 안내문 초안 카드 | 없음 | 확정이 그대로이고 시작일이 같음 |
+| `prep_week` | 고객 | 시간: 공사 시작 7일 전 10시(지났으면 지금, 시작 3일 안이면 만들지 않음) | feed(2026-11-21 바꿈: notify는 점수 50이라 판정에 기대고 무료 모드에서 늘 기록만 됐어요) | 공사 전 할 일 체크 카드 + 이웃 안내문 초안 카드 | 없음 | 확정이 그대로이고 시작일이 같음 |
 | `dates_requested` | 업체 | 알림 `dates_requested` | feed, 1일 뒤 notify | 공사 날 후보(같은 업체 다른 공사와 겹치는 날 뺌) | `dates`(첫 후보) | 날짜 바꾸기 요청이 아직 열려 있음 |
 | `quote_due` | 업체 | 시간: 견적서 기한(`quote_due_at`) 24시간 전, 실측 뒤 견적서 없음 | notify | 견적서 체크리스트 | 없음 | 견적서가 아직 없음 |
 | `deal_confirmed`(바꿈) | 업체 | 그대로 | feed, 1일 뒤 notify 더하기 | 그대로 | 그대로 | 공사 날짜를 아직 안 냄 |

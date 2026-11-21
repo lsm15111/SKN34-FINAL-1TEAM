@@ -218,7 +218,11 @@ async def run_turn(
             ),
         )  # fmt: skip
         texts = [RULES[r]() if r in RULES else llm_mode.prompt(r) for r in routes]
-        ans = check.final(ans, prompt="\n".join(texts) or None)
+        # 알아 두기 숫자 검사의 계산 값: 먼저 보인 계산 묶음까지(p.sections는 고정 몫을 포함해요)
+        calc = "\n".join(x.text for s in p.sections if s.source == "calc" for x in s.sentences)
+        ans = check.final(
+            ans, prompt="\n".join(texts) or None, question=masked, calc=calc, trades=list(g.trades)
+        )
         if shown is not None:
             ans.sections = [*shown, *ans.sections]
             ans.failed = not (ans.sections or ans.cards or ans.calc or ans.unknown)

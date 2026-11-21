@@ -7,6 +7,7 @@
 .fit li { display: grid; grid-template-columns: 20px 44px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
 .fit svg { width: 18px; height: 18px; color: var(--mj-st-ok); margin-top: 2px; }
 .fit li[data-ok="false"] svg { color: var(--mj-st-wait); }
+.fit li[data-s="no"] svg { color: var(--mj-st-late); }
 .fit span { color: var(--mj-text-sub); }
 .est { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; flex-wrap: wrap; padding: 14px 16px; border-radius: var(--mj-radius-field); background: var(--mj-surface-sub); }
 .est > div { display: grid; }

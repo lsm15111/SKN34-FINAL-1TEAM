@@ -154,6 +154,15 @@ def test_triggers_match_the_table():
         "visit_requested": "visit_requested",
         "visit_picked": "visit_picked",
         "deal_confirmed": "deal_confirmed",
+        # 07 자동화(aftercare.TRIGGERS)
+        "visit_declined": "vendor_out",
+        "visit_reply_expired": "vendor_out",
+        "visit_vendor_stopped": "vendor_out",
+        "quote_late": "vendor_out",
+        "extra_added": "extra_added",
+        "work_done": "work_done",
+        "done_remind": "work_done",
+        "dates_requested": "dates_requested",
     }
     names = {"vendor": "결도배", "trade": "도배", "area": "노원구 상계동 도배"}
     for t in proactive.TRIGGERS.values():

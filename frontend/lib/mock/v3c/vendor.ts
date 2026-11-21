@@ -185,6 +185,7 @@ export const MOCK_QUOTE: VendorQuoteBoard = {
     incl_removal: true, incl_waste: true, paper_spec: "LX 베스띠 · 폭 106cm", warranty_months: 12,
   },
   sent: [],
+  quote_due_at: "2026-12-18T18:00:00+09:00", // 실측 12.15 + 3일 18:00(장부 값)
 };
 
 // ───── 공사 (V11 · V23) ─────
@@ -195,7 +196,7 @@ const jobBase = {
   quote: quoteBrief, plan_version: 1, plan_start: null, plan_end: null,
   need: { man_day: "4.0", crew: 2, days: 2, steps: [{ name: "도배", half_days: 4 }] }, others: [], weekend_work: false,
   holidays: [{ day: "2027-01-01", name: "신정" }], requests_left: 2, request_options: [], accepted_crew: null,
-  work_done_on: null, contact_until: null, fixing_note: null, done_photos: [],
+  work_done_on: null, contact_until: null, fixing_note: null, done_photos: [], busy_days: [] as string[],
 };
 export const MOCK_JOBS: Record<string, JobV3> = {
   [DID.dates]: {

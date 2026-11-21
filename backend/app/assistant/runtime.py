@@ -103,11 +103,13 @@ class RefTable:
     PREFIX: ClassVar[dict[str, str]] = {
         "vendor": "v", "visit": "m", "wish": "r", "slot": "s", "window": "w",
         "deal": "d", "proposal": "p", "days": "n",
+        "extra": "x",  # 07 추가 금액
     }  # fmt: skip
     IDENT: ClassVar[dict[str, tuple[str, ...]]] = {
         "vendor": ("id",), "visit": ("id",), "wish": ("start", "end"),
         "slot": ("visit_id", "day", "half"), "window": ("visit_id", "start", "end"),
         "deal": ("id",), "proposal": ("id",), "days": ("deal_id", "start"),
+        "extra": ("id",),
     }  # fmt: skip
     MAX = 80
 
@@ -490,6 +492,7 @@ class _Turn:
             today=ctx.today,
             now=ctx.now,
             refs=ctx.refs,
+            text=ctx.text,
         )
 
     def _messages(self) -> list[dict]:
@@ -730,6 +733,7 @@ async def free_turn(
             now=ctx.now,
             refs=ctx.refs,
             mode="free",
+            text=ctx.text,
         )
         try:
             text, out = await free.answer(tc, ctx.text, ctx.card_id)

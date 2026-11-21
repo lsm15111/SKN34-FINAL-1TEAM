@@ -119,3 +119,107 @@ def test_turn_attaches_brief_from_final_answer():
     assert {x.text for x in a.brief.lines} <= every
     full = sum(len(x.text) for s in a.sections for x in s.sentences)
     assert sum(len(x.text) for x in a.brief.lines) < full
+
+
+# ---- 비서에게 넘기는 평문(answer_only text, 말투 점검 docs/v4/06-answer-audit.md 5절 #5) ----
+QUOTE = "“마루 찍힘은 가구를 설치하는 작업자 때문인 경우가 많다” (제조사 · [고급] 공사 중 손상된 마감재 복구하기)"
+QUOTE_NOUN = "“벽지 이음매 처리 방법과 주의 사항” (시방서 · 도배 공사)"
+
+
+def _short_ok(text: str) -> None:
+    sents = brief.sentences(text)
+    assert text and len(sents) <= brief.SHORT_SENTS and len(text) <= brief.SHORT_CHARS, text
+    assert "[" not in text and "“" not in text and text.count("물어보시면 정확해요") <= 1, text
+
+
+def test_short_text_drops_labels_quotes_and_repeated_notes():
+    a = _ans(
+        _sec(templates.EXTRACT_SUMMARY_LEAD, "도배는 가구를 들어낸 뒤 해요.", QUOTE_NOUN, title="[도배]", source="extract"),
+        _sec("콘센트 위치는 도배 전에 정해요.", "전기 공사 업체에 물어보시면 정확해요.", title="[전기 · 알아 두기]", trade="electric"),
+        _sec("욕실 공사 업체에 물어보시면 정확해요.", "욕실은 방수를 먼저 봐요.", title="[욕실 · 알아 두기]", trade="bath"),
+    )  # fmt: skip
+    got = brief.short_text(a)
+    _short_ok(got)
+    assert (
+        got
+        == "도배는 가구를 들어낸 뒤 해요. 콘센트 위치는 도배 전에 정해요. 전기 공사 업체에 물어보시면 정확해요."
+    )
+    a.brief = brief.make(a, "콘센트 위치는 언제 정해요?")  # 짧은 답이 있으면 그 문장(핵심)이 먼저
+    assert brief.short_text(a).startswith("콘센트 위치는 도배 전에 정해요.")
+
+
+def test_short_text_keeps_budget_quotes_as_hearsay_and_unknown_lines():
+    s1 = "도배 전에는 가구를 방 가운데로 모으고 콘센트 덮개를 떼어 두면 작업이 훨씬 빨라지고 깔끔해요."
+    s2 = "초배지는 벽 바탕의 작은 틈과 얼룩을 가려 주어서 실크 벽지가 들뜨거나 우는 일을 줄여 준다고 해요."
+    s3 = "몰딩을 새로 달 계획이면 도배보다 먼저 끝내야 벽지 끝선을 몰딩에 맞춰 깔끔하게 마감할 수 있어요."
+    s4 = "장판은 짧게 깔아요."
+    got = brief.short_text(_ans(_sec(s1, s2, s3, s4)))
+    _short_ok(got)
+    assert brief.sentences(got) == [s1, s2, s4]  # 150자를 넘기는 문장은 건너뛰어요
+    # 앞 문장을 되풀이하는 문장은 빼요
+    echo = _ans(_sec(
+        "마루는 도배 전에, 장판은 도배 뒤에 까는 경우가 많아요.",
+        "마루는 도배 전에, 장판은 도배 뒤에 시공한다는 안내가 많아요.",
+        "장판은 도배가 마른 뒤에 깔아요.",
+    ))  # fmt: skip
+    assert brief.short_text(echo) == (
+        "마루는 도배 전에, 장판은 도배 뒤에 까는 경우가 많아요. 장판은 도배가 마른 뒤에 깔아요."
+    )
+    # 인용: 한 문장 '-다' 끝은 '…다고 해요'로, 못 바꾸면 빼고, 인용만 남으면 따옴표 · 출처만 떼요
+    quoted = brief.short_text(
+        _ans(_sec(templates.EXTRACT_LEAD, QUOTE, "사진을 남겨요.", source="extract"))
+    )
+    assert quoted == "마루 찍힘은 가구를 설치하는 작업자 때문인 경우가 많다고 해요. 사진을 남겨요."
+    assert brief.hearsay("원인이다") == "원인이라고 해요." and brief.hearsay("시공합니다") is None
+    assert brief.hearsay("하자가 아니다") == "하자가 아니라고 해요."
+    assert brief.hearsay("기준입니다") is None
+    assert brief.hearsay("먼저 붙인다. 그다음 말린다") is None
+    assert (
+        brief.short_text(_ans(_sec(QUOTE_NOUN, source="extract")))
+        == "벽지 이음매 처리 방법과 주의 사항"
+    )
+    unknown = AgentAnswer(unknown=[templates.UNKNOWN, "실측 때 업체에 물어보시면 정확해요."])
+    assert brief.short_text(unknown) == f"{templates.UNKNOWN} 실측 때 업체에 물어보시면 정확해요."
+    # 근거 자료용(unquote): 따옴표 · 출처 괄호만 떼고, 같은 안내는 한 번
+    lines = [
+        templates.EXTRACT_SUMMARY_LEAD,
+        QUOTE,
+        "가 업체에 물어보시면 정확해요.",
+        "나 업체에 물어보시면 정확해요.",
+    ]
+    assert brief.clean_lines(lines, unquote=True) == [
+        "마루 찍힘은 가구를 설치하는 작업자 때문인 경우가 많다",
+        "가 업체에 물어보시면 정확해요.",
+    ]
+
+
+def test_short_text_of_start_steps():
+    """시작 순서: 지금 단계 줄이 있으면 그것만, 없으면 목록 표시 없이 앞 단계부터(한 줄로 이어도 '1.'이 문장이 되지 않게)."""
+    steps = _sec(
+        *templates.START_STEPS,
+        source="template",
+        title=brief.START_TITLE,
+        route="guide",
+        trade=None,
+    )
+    got = brief.short_text(_ans(steps, route="guide"))
+    _short_ok(got)
+    assert got.startswith("기본 정보에 집 면적과") and not any(c.isdigit() for c in got[:3])
+    here = templates.START_HERE["vendors"]
+    steps.sentences.append(Sentence(text=here))
+    assert brief.short_text(_ans(steps, route="guide")) == here
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "도배랑 장판 같이 하면 어떤 걸 먼저 해요?",
+        "욕실 타일이랑 도배 같이 하면 순서가 어떻게 돼요?",
+        "합지랑 실크 중에 뭐로 해야 해요?",
+        "마루 찍힘은 왜 생겨요?",
+        "처음인데 뭐부터 해요?",
+    ],
+)
+def test_short_text_of_free_turns(text):
+    """무료 모드 턴의 평문: 세 문장 · 150자 안쪽, 이름표 · 인용 없음, 같은 안내 한 번."""
+    _short_ok(brief.short_text(turn(text)))
