@@ -30,7 +30,8 @@ export function StandardSummary({ id, data: d, more }: { id: string; data: Stand
         </ul>
       ) : null}
       <div className={k.row}>
-        <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>견적서 열기</Link>
+        {/* 주소가 비면(로그인한 고객의 첫 대화: 공사를 만들기 전) 열기 단추를 빼요 */}
+        {d.href ? <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>견적서 열기</Link> : null}
         {more}
       </div>
     </section>

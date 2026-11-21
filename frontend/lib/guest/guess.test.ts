@@ -1,6 +1,6 @@
-// 첫 대화 첫 말 → 평형 · 공사할 때 집 미리 고르기(lib/guest/guess)
+// 첫 대화 첫 말 → 평형 · 공사할 때 집 · 방 개수 · 공사 희망 시기 미리 고르기(lib/guest/guess)
 import { expect, test } from "@playwright/test";
-import { guessArea, guessOccupied } from "./guess";
+import { guessArea, guessOccupied, guessRooms, guessWhen } from "./guess";
 
 // StartChat 평형 칩과 같은 목록
 const CHIPS = ["24", "32", "34", "40"];
@@ -65,6 +65,73 @@ test.describe("공사할 때 집", () => {
       "공사 끝나고 거주 예정",
     ]) {
       expect(guessOccupied(said), said).toBeNull();
+    }
+  });
+});
+
+test.describe("방 개수", () => {
+  test("방 n개 · 방이 세 개 · 쓰리룸", () => {
+    const cases: [string, number][] = [
+      ["노원구 상계주공 32평 방 3개예요", 3],
+      ["방3개 화장실2개", 3],
+      ["방이 2개고 욕실 1개", 2],
+      ["방 4 욕실 2", 4],
+      ["방이 세 개예요", 3],
+      ["방 두개짜리", 2],
+      ["쓰리룸 아파트", 3],
+      ["24평 투룸", 2],
+      ["방 3개, 방은 3칸이에요", 3],
+    ];
+    for (const [said, n] of cases) expect(guessRooms(said), said).toBe(n);
+  });
+
+  test("못 찾거나 헷갈리면 비워요", () => {
+    for (const said of [
+      "노원구 상계동 푸른숲아파트 32평",
+      "작은방 2개 도배",
+      "안방 1개만 해요",
+      "방 6개",
+      "방 30평",
+      "101동 1203호 방",
+      "방 2개에서 방 3개로 늘렸어요",
+      "화장실 2개",
+    ]) {
+      expect(guessRooms(said), said).toBeNull();
+    }
+  });
+});
+
+test.describe("공사 희망 시기", () => {
+  test("이번 달 · 다음 달 · 2~3달 뒤", () => {
+    const cases: [string, string][] = [
+      ["이번 달 안에 하고 싶어요", "this_month"],
+      ["이번달 말", "this_month"],
+      ["다음 달에 이사해요", "next_month"],
+      ["담달 초", "next_month"],
+      ["한 달 뒤쯤", "next_month"],
+      ["2~3달 뒤", "in_2_3_months"],
+      ["2-3개월 후에요", "in_2_3_months"],
+      ["두세 달 뒤", "in_2_3_months"],
+      ["두 달 후", "in_2_3_months"],
+      ["석 달 뒤 입주", "in_2_3_months"],
+      ["3개월 후", "in_2_3_months"],
+      ["다다음 달", "in_2_3_months"],
+    ];
+    for (const [said, key] of cases) expect(guessWhen(said), said).toBe(key);
+  });
+
+  test("못 찾거나 둘 이상이면 비워요", () => {
+    for (const said of [
+      "노원구 상계동 푸른숲아파트",
+      "이번 달 말이나 다음 달 초",
+      "1~2달 뒤",
+      "12달 뒤",
+      "3~4달 뒤",
+      "내년 봄",
+      "다음 주",
+      "몇 달 뒤",
+    ]) {
+      expect(guessWhen(said), said).toBeNull();
     }
   });
 });

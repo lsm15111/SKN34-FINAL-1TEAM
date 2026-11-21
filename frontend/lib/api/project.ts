@@ -45,6 +45,15 @@ export async function getRoomRule(): Promise<Schemas["RoomRuleOut"]> {
   }
 }
 
+/** 공사 희망 시기 칩(이번 달 · 다음 달 · 2~3달 뒤 → 계산 엔진 날짜, GET /guest/start-options). 못 읽으면 빈 목록(아직 몰라요 · 날짜 고르기만) */
+export async function getStartWishes(): Promise<Schemas["StartWishOut"][]> {
+  try {
+    return (await serverGet<Schemas["StartWishOut"][]>("/guest/start-options")) ?? [];
+  } catch {
+    return [];
+  }
+}
+
 // ───── v3 공사 한 건 머리
 
 export type HomeSaved = Schemas["HomeInfoOut"];

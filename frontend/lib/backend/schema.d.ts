@@ -671,6 +671,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/guest/start-options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 공사 희망 시기 칩: 이번 달 · 다음 달 · 2~3달 뒤 → 공사 시작 희망일 (첫 대화 집 확인 카드)
+         * @description 오늘(서울) 기준 계산 엔진 값. 화면 서버가 페이지마다 읽어서 IP 한도를 세지 않는다.
+         */
+        get: operations["guest_start_options_guest_start_options_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -825,6 +845,26 @@ export interface paths {
         get?: never;
         /** 공사 전에 할 일 체크 켜기 · 끄기 (만든 고객만) */
         put: operations["set_check_projects__project_id__checks__key__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/projects/{project_id}/diy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * 직접 할 일(반셀프 칩) 고치기 (만든 고객만, 빈 목록이면 '없어요')
+         * @description 덮어써요. 모은 조건 칩(GET /projects/{id}/conditions)에 '직접 할 일: …'로 보여요.
+         */
+        put: operations["put_diy_projects__project_id__diy_put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -3049,7 +3089,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again";
+            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again";
             /**
              * Status
              * @enum {string}
@@ -4323,6 +4363,25 @@ export interface components {
             /** Diff Won */
             diff_won: number;
         };
+        /**
+         * DiyIn
+         * @description 직접 할 일 칩 고치기(PUT /projects/{id}/diy). 고객이 직접 누르는 입력이라 승인 카드 없이 저장해요
+         */
+        DiyIn: {
+            /**
+             * Diy
+             * @description 고른 칩 키. 빈 목록이면 '없어요'
+             */
+            diy: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean")[];
+        };
+        /** DiyOut */
+        DiyOut: {
+            /**
+             * Diy
+             * @description 고른 칩 키(칩 순서). null이면 아직 묻지 않음, 빈 목록이면 '없어요'
+             */
+            diy: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean")[] | null;
+        };
         /** DobaeIn */
         DobaeIn: {
             /** Spaces */
@@ -5148,6 +5207,11 @@ export interface components {
              * @description 철거 범위(모은 조건 demolition): full 전체 철거 · partial 부분 · none 안 함. 전체 철거면 표준견적서가 리모델링 기준이에요. 고치기에서 안 보내면 그대로, null이면 지워요
              */
             demolition?: ("full" | "partial" | "none") | null;
+            /**
+             * Diy
+             * @description 직접 할 일(반셀프 칩, project/diy.py 키). 안 보내거나 null이면 묻지 않은 것(고치기에서는 그대로), 빈 목록이면 '없어요'. 공사를 만들 때 같은 트랜잭션에서 모은 조건(diy.<키>)으로 저장해요. 손님 계산(표준견적서)에는 쓰지 않아요
+             */
+            diy?: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean")[] | null;
         };
         /**
          * HomeInfoOut
@@ -8520,6 +8584,24 @@ export interface components {
              * @description 같은 일하는 날 수로 끝나는 날 (믿집 계산)
              */
             end: string;
+        };
+        /**
+         * StartWishOut
+         * @description 공사 희망 시기 칩 하나(v4 첫 대화 집 확인 카드). 화면은 고른 칩의 날짜를 start_date로 보내기만 한다.
+         */
+        StartWishOut: {
+            /**
+             * Key
+             * @description this_month 이번 달 · next_month 다음 달 · in_2_3_months 2~3달 뒤
+             * @enum {string}
+             */
+            key: "this_month" | "next_month" | "in_2_3_months";
+            /**
+             * Start Date
+             * Format: date
+             * @description 공사 시작 희망일 (계산 엔진, 오늘 서울 기준)
+             */
+            start_date: string;
         };
         /**
          * StateTagOut
@@ -13776,6 +13858,26 @@ export interface operations {
             };
         };
     };
+    guest_start_options_guest_start_options_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StartWishOut"][];
+                };
+            };
+        };
+    };
     list_notifications_notifications_get: {
         parameters: {
             query?: {
@@ -14082,6 +14184,41 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProjectCheckOut"][];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_diy_projects__project_id__diy_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                project_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DiyIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DiyOut"];
                 };
             };
             /** @description Validation Error */

@@ -1,8 +1,8 @@
 // 로그인 전에 넣은 답을 이 기기에만 둬요(dev-03 A · security-02). 브라우저에서만 불러요.
 // - 키 mj_guest_v3 = { v: 3, key: UUID(가입 뒤 POST /projects의 Idempotency-Key), saved_at, info }
-// - 두는 것: 공종 · 범위 · 주거 · 지역 코드 · 면적 · 집 상태 · 벽지 · 예산 · 희망일. 이름 · 연락처 · 동 · 호 · 사진 · 금액은 두지 않아요.
+// - 두는 것: 공종 · 범위 · 주거 · 지역 코드 · 면적 · 집 상태 · 벽지 · 예산 · 희망일(+ 고른 시기 칩) · 직접 할 일. 이름 · 연락처 · 동 · 호 · 사진 · 금액은 두지 않아요.
 // - 읽을 때 믿지 않고 모양을 검사해요. 틀리거나 30일이 지나면 지워요. 옛 키(mj_start_draft_v4)는 읽어 옮기고 지워요.
-import { EMPTY_DRAFT, SPACES, type InfoDraft } from "./info";
+import { DIY, EMPTY_DRAFT, SPACES, START_PICKS, type InfoDraft } from "./info";
 
 const KEY = "mj_guest_v3";
 const LEGACY = "mj_start_draft_v4";
@@ -30,10 +30,16 @@ type StoredInfo = {
   start_date: string | null;
   /** 철거 범위(v4 첫 대화). 옛 저장본에는 없음 */
   demolition?: "full" | "partial" | "none" | null;
+  /** 공사 희망 시기 고른 것(v4 첫 대화). 옛 저장본에는 없음 */
+  start_pick?: InfoDraft["when"];
+  /** 직접 할 일 칩(v4 첫 대화). 안 물었으면 null · 없어요면 빈 목록. 옛 저장본에는 없음 */
+  diy?: InfoDraft["diy"];
 };
 export type GuestSaved = { v: 3; key: string; saved_at: string; info: StoredInfo };
 
 const SPACE_KEYS = new Set<string>(SPACES.map((s) => s.key));
+const DIY_KEYS = new Set<string>(DIY.map((x) => x.key));
+const PICKS = new Set<unknown>(START_PICKS);
 const str = (v: unknown, max: number) => typeof v === "string" && v.length <= max;
 const day = (v: unknown) => v === null || (typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test(v));
 
@@ -54,7 +60,9 @@ function valid(x: unknown): x is GuestSaved {
     (i.grade === null || i.grade === "economy" || i.grade === "basic") &&
     (i.budget_won === null || (Number.isInteger(i.budget_won) && (i.budget_won as number) >= 0 && (i.budget_won as number) <= 10_000_000_000)) &&
     day(i.start_date) &&
-    (i.demolition === undefined || i.demolition === null || i.demolition === "full" || i.demolition === "partial" || i.demolition === "none")
+    (i.demolition === undefined || i.demolition === null || i.demolition === "full" || i.demolition === "partial" || i.demolition === "none") &&
+    (i.start_pick === undefined || i.start_pick === null || PICKS.has(i.start_pick)) &&
+    (i.diy === undefined || i.diy === null || (Array.isArray(i.diy) && i.diy.length <= DIY_KEYS.size && i.diy.every((k) => typeof k === "string" && DIY_KEYS.has(k))))
   );
 }
 
@@ -78,6 +86,8 @@ function toStored(d: InfoDraft): StoredInfo {
     budget_won: /^\d{1,6}$/.test(b) ? Number(b) * 10000 : null,
     start_date: d.start,
     demolition: d.demolition ?? null,
+    start_pick: d.when ?? null,
+    diy: d.diy ?? null,
   };
 }
 
@@ -95,6 +105,8 @@ export function draftOf(s: GuestSaved): InfoDraft {
     budget: i.budget_won ? String(Math.round(i.budget_won / 10000)) : "",
     start: i.start_date,
     demolition: i.demolition ?? null,
+    when: i.start_pick ?? null,
+    diy: i.diy ?? null,
   };
 }
 
