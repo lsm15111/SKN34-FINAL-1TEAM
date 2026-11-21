@@ -3,7 +3,8 @@
     cd backend && uv run python ../evaluation/v4/run_v4_answers.py --dry-run --tag v4ans-dry --limit 2
     bash eval-live.sh mitjip_eval_v4ans 9 -- uv run python ../evaluation/v4/run_v4_answers.py --live --max-usd 2 --tag v4ans1
 
-- 시스템(이 프로세스의 settings.assistant_answer_route만 바꿔요): v4_v3 = v3(지금 길) · v4_hybrid = v2+v3(새 길)
+- 시스템(이 프로세스의 settings.assistant_answer_route만 바꿔요): v4_v3 = v3 · v4_hybrid = v2+v3 ·
+  v4_hybrid_g = v2g+v3(v2 근거만 받아 비서가 한 번에 써요, v2 안의 LLM 답 없음). --systems로 골라 돌려요
 - 세트(pick): sets/compare.jsonl dev에서 묶음마다 씨앗 고정 순서(kit.stable_int(seed, id) 오름차순)로 앞에서 고른 40문항
   (다른 공정 6 · 여러 공정 14 · 지식 16 · 금액 · 기간 4 = PICK). held-out은 쓰지 않아요. --only는 고른 것 안에서만 걸러요
 - 앱: apienv.App(평가 DB mitjip_eval_v4ans · Redis 9). 질문 × 시스템마다 표 · Redis를 비우고 다시 심어요(app.reset)
@@ -16,7 +17,8 @@
 - 받은 계산 값(facts_given): 턴 사실(집) + 도구 결과(모델에 간 값, policy.to_model) 요약. 판정기의 숫자 일치용
 - 비용 · 지연: 장부(llm_usage) 합. reset 전에 읽어요. 턴 시간 = assistant_turns.trace.ms, 호출 지연 = latency_ms.
   --max-usd: 누적 + 다음 어림(같은 시스템 지난 최댓값 × 1.25, 처음은 $0.06)이 넘으면 새 답을 시작하지 않아요
-- 기록: answer_question 결과의 engine · v2_out(v4_hybrid가 어느 길로 갔는지)을 도구마다 남겨요(모델에는 안 가는 칸)
+- 기록: answer_question 결과의 engine · v2_out(새 길이 어느 길로 갔는지: v2 · v2g · v3 · know)을 도구마다 남겨요
+  (모델에는 안 가는 칸)
 - 저장(runs/<tag>/): answers.jsonl(judge.py --answers --a v4_v3 --b v4_hybrid) · errors.jsonl · cost.csv(장부 호출마다) ·
   summary.json · meta.json. 같은 --tag면 이미 받은 (질문, 시스템)은 건너뛰어요
 """
@@ -41,7 +43,11 @@ from kit import ROOT, RUNS, SETS, Budget, CostLog, append_jsonl, jsonl, stable_i
 from run_compare import clean
 from sim import drive
 
-SYSTEMS = {"v4_v3": "v3", "v4_hybrid": "v2+v3"}  # 시스템 이름 → ASSISTANT_ANSWER_ROUTE
+SYSTEMS = {
+    "v4_v3": "v3",
+    "v4_hybrid": "v2+v3",
+    "v4_hybrid_g": "v2g+v3",
+}  # 이름 → ASSISTANT_ANSWER_ROUTE
 PICK = {"other_trade": 6, "multi_trade": 14, "knowledge": 16, "price_time": 4}
 SEED = 20261121
 TURN_USD = 0.06  # 처음 어림(비서 턴 상한 llm_cap_turn_usd와 같음)

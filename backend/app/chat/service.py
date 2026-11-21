@@ -232,7 +232,7 @@ async def answer_only(
 
     from app.agent import llm
     from app.agent.llm import embed_query
-    from app.agent.v3 import check
+    from app.agent.v3 import brief, check
     from app.agent.v3.answer import KB
     from app.agent.v3.schemas import TurnContext
     from app.agent.v3.turn import run_turn
@@ -272,8 +272,9 @@ async def answer_only(
     with scope:
         res = await run_turn(text, ctx, kb=kb, facts=facts, general=general, button=button)
     ans = res.answer
+    # 비서에게 넘기는 평문은 짧게(핵심 문장 먼저 세 문장 · 150자, 이름표 · 인용 없이). 대화 표 글(ai_turn)은 그대로
     return AiAnswerOnlyOut(
-        mode=ctx.mode, route=ans.trace.route, answer=_public(ans), text=ans.plain()
+        mode=ctx.mode, route=ans.trace.route, answer=_public(ans), text=brief.short_text(ans)
     )
 
 
