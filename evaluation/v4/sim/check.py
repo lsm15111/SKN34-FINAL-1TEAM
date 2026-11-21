@@ -15,7 +15,8 @@ from collections.abc import Callable
 from datetime import date, timedelta
 
 ISO = re.compile(r"(?<!\d)(\d{4})-(\d{2})-(\d{2})(?!\d)")
-KO_DATE = re.compile(r"(\d{1,2})월\s*(\d{1,2})일")
+# 'M월 D일'과 그 뒤 범위 끝('12월 17일부터 19일' · '12월 17일~19일'의 19일)
+KO_DATE = re.compile(r"(\d{1,2})월\s*(\d{1,2})일(?:(\s*(?:부터|~|-|에서)\s*)(\d{1,2})일)?")
 WEEKDAY = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
 DOS = ("approve", "reject", "leave")
 SCREENS = ("vendor_brief", "vendor_checklist", "vendor_today", "customer_today", "customer_board")
@@ -60,7 +61,8 @@ def shift_obj(obj, days: int):
 
 
 def shift_ko(text: str, days: int, base: date) -> str:
-    """'M월 D일'을 옮겨요. 해는 base(시나리오 오늘)에 가장 가까운 해로 봐요."""
+    """'M월 D일'을 옮겨요. 해는 base(시나리오 오늘)에 가장 가까운 해로 봐요.
+    '12월 17일부터 19일'처럼 범위 끝에 월이 없으면 끝도 같이 옮기고, 옮긴 끝의 달이 바뀌면 달을 붙여요."""
     if not days:
         return text
 
@@ -76,9 +78,29 @@ def shift_ko(text: str, days: int, base: date) -> str:
         if best is None:
             return m[0]
         x = best + timedelta(days=days)
-        return f"{x.month}월 {x.day}일"
+        out = f"{x.month}월 {x.day}일"
+        if m[4] is None:
+            return out
+        end = _range_end(best, int(m[4]))
+        if end is None:
+            return f"{out}{m[3]}{m[4]}일"
+        y = end + timedelta(days=days)
+        return out + m[3] + (f"{y.day}일" if y.month == x.month else f"{y.month}월 {y.day}일")
 
     return KO_DATE.sub(one, text)
+
+
+def _range_end(start: date, day: int) -> date | None:
+    """범위 끝 'D일'(월 없음): 시작 날 이후의 그날(같은 달, 지났으면 다음 달)."""
+    for k in (0, 1):
+        y, mo = start.year + (start.month + k - 1) // 12, (start.month + k - 1) % 12 + 1
+        try:
+            d = date(y, mo, day)
+        except ValueError:
+            continue
+        if d >= start:
+            return d
+    return None
 
 
 # ---- 승인 규칙 ----
@@ -290,11 +312,12 @@ def check_end(expected: dict, state: dict) -> list[dict]:
             a["kind"] for a in rows if a["status"] == "executed" and not a.get("approved_by_runner")
         ]
         out.append(_item("end", "승인 없이 실행 0건", not bad, bad))
-    out += _check_memory(expected.get("memory") or {}, state.get("memory"))
+    out += _check_memory(expected.get("memory") or {}, state.get("memory"), state.get("memory_why"))
     return out
 
 
-def _check_memory(m: dict, memory: list[dict] | None) -> list[dict]:
+def _check_memory(m: dict, memory: list[dict] | None, why: str | None = None) -> list[dict]:
+    """why: 기억이 비었을 때 까닭(예: 무료 모드라 기억 뽑기 LLM이 꺼짐). 있어야 하는 기억이 없을 때 붙여요."""
     out = []
     if memory is None:
         for h in m.get("has") or []:
@@ -307,7 +330,9 @@ def _check_memory(m: dict, memory: list[dict] | None) -> list[dict]:
     for h in m.get("has") or []:
         vals = [x.get("value") or "" for x in memory if x.get("key") == h["key"]]
         ok = any(any(c in v for c in h.get("contains") or [""]) for v in vals)
-        out.append(_item("end", f"기억 {h['key']}", ok, vals))
+        out.append(
+            _item("end", f"기억 {h['key']}", ok, vals, why="" if ok or memory else why or "")
+        )
     for k in m.get("absent_keys") or []:
         got = [x for x in memory if x.get("key") == k]
         out.append(_item("end", f"기억 없음 {k}", not got, len(got)))

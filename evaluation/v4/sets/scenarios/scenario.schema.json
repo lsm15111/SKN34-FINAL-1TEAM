@@ -238,7 +238,7 @@
             "after_action": {
               "type": "object",
               "required": ["kind", "status"],
-              "properties": {"kind": {"$ref": "#/$defs/action_kind"}, "status": {"enum": ["proposed", "approved", "executed", "rejected", "expired", "failed"]}}
+              "properties": {"kind": {"$ref": "#/$defs/action_kind"}, "status": {"enum": ["proposed", "approved", "executed", "rejected", "expired", "failed"]}, "vendor": {"type": "string", "description": "요청(visit)이 대상인 행동이면 이 업체 것만(world.vendors ref). 먼저 말 걸기가 업체마다 카드를 만들어요"}}
             }
           }
         },
@@ -318,15 +318,36 @@
     },
     "step": {
       "type": "object",
-      "description": "say = 비서 턴 한 번, screen = 화면 열기(LLM 없음, 업체 요청 브리핑은 코드가 기간 답하기 제안을 만들어요)",
+      "description": "say = 비서 턴 한 번, screen = 화면 열기(LLM 없음, 업체 요청 브리핑은 코드가 기간 답하기 제안을 만들어요), press = 카드 단추 누르기(사람이 화면에서 하듯 context.choice 계약 꼴을 보내요)",
       "additionalProperties": false,
       "properties": {
         "say": {"type": "string", "minLength": 1},
         "screen": {"enum": ["vendor_brief", "vendor_checklist", "vendor_today", "customer_today", "customer_board"]},
+        "press": {"$ref": "#/$defs/press"},
         "visit": {"type": "string", "description": "업체가 보던 요청(world.visits ref)"},
         "context": {"type": "object", "description": "카드에서 고른 것(TurnContextIn)"}
       },
-      "oneOf": [{"required": ["say"]}, {"required": ["screen"]}]
+      "oneOf": [{"required": ["say"]}, {"required": ["screen"]}, {"required": ["press"]}]
+    },
+    "press": {
+      "type": "object",
+      "description": "카드 단추 하나(backend/app/assistant/choices.py 계약). 앞서 받은 카드의 이름표(ref)로 고르고, 같은 종류 승인 카드가 이미 열려 있거나 실행됐으면 누르지 않아요(sim/press.py)",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {"enum": ["visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept", "window_answer", "decline", "dates"]},
+        "vendors": {"type": "array", "minItems": 1, "items": {"type": "string"}, "description": "visit_request: 고를 업체(world.vendors ref). 비우면 카드 위에서부터 top곳"},
+        "top": {"type": "integer", "minimum": 1, "maximum": 3},
+        "vendor": {"type": "string", "description": "visit_slot · vendor_confirm: 이 업체 것만(world.vendors ref)"},
+        "wish": {"type": "object", "additionalProperties": false, "properties": {"weekday_in": {"type": "array", "items": {"$ref": "#/$defs/weekday"}}}, "description": "visit_request: 희망 기간 카드(r#)에서 이 요일이 든 기간"},
+        "slot": {"type": "object", "additionalProperties": false, "properties": {"weekday_in": {"type": "array", "items": {"$ref": "#/$defs/weekday"}}, "half_in": {"type": "array", "items": {"enum": ["am", "pm"]}}}, "description": "visit_slot: 반나절 후보(s#) 고르기 규칙"},
+        "code": {"enum": ["full", "out_of_area", "other"], "description": "decline: 못 받는 까닭"},
+        "window": {"type": "object", "additionalProperties": false, "properties": {"start_to": {"type": "string", "format": "date"}, "end_from": {"type": "string", "format": "date"}}, "description": "window_answer: 빈 기간(w#) 고르기 규칙"},
+        "days": {"type": "object", "additionalProperties": false, "properties": {"start": {"type": "string", "format": "date"}}, "description": "dates: 공사 날 후보(n#)의 시작일"},
+        "again": {"type": "boolean", "description": "같은 종류가 이미 실행됐어도 다시 눌러요(열린 카드가 있을 때만 건너뜀). 예: 업체 공사 날짜를 낸 뒤 연기 날짜"},
+        "ask": {"type": "string", "minLength": 1, "description": "고를 카드가 아직 없으면 먼저 보낼 말(예: '공사 일정 보여 주세요.')"},
+        "say": {"type": "string", "minLength": 1, "description": "단추와 같이 보낼 말(비우면 화면 문구처럼 러너가 만들어요)"}
+      }
     },
     "view_key": {"enum": ["amount", "version", "day", "half", "wish_start", "wish_end", "vendors", "code", "start", "end"]},
     "card_kind": {"enum": ["home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule", "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist"], "description": "비서 카드 종류(계약서 3장 CardKind)"},

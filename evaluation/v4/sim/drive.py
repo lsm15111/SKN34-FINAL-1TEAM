@@ -4,6 +4,8 @@
 - 보인 글(shown): token 글 + card data + action 요약 + status 글 + error 문장. 누출 · 금지 말 확인은 이 글로 해요.
 - 턴 흔적: assistant_turns(status · mode · tool_calls · trace.tools 이름 · trace.llm)과 ToolTap의 도구 입력.
 - 비용: llm_usage(장부) 합. 판마다 DB를 비우니 합이 곧 그 판 비용이에요.
+- worker 한 차례(tick): 기억 뽑기 일(jobs kind=assistant_memory)과 비서 정리(만료 · 먼저 말 걸기)를 앱과 같은
+  이벤트 루프에서 돌려요. 운영 worker는 1분 · 2분마다 도는데, 시뮬레이터는 걸음마다 한 번 돌려요.
 """
 
 import json
@@ -91,7 +93,8 @@ def turn(
     err = next((d for n, d in ev if n == "error"), None)
     row = (
         app.query(
-            "select status, mode, tool_calls, trace, error_code from assistant_turns where id = $1",
+            "select status, mode, tool_calls, trace, error_code, chat_id::text as chat_id"
+            " from assistant_turns where id = $1",
             uuid.UUID(tid),
         )
         if tid
@@ -111,6 +114,7 @@ def turn(
     )
     rec.update(
         turn_id=tid,
+        chat_id=t.get("chat_id"),
         events=names,
         mode=done.get("mode") or t.get("mode"),
         turn_status=t.get("status"),
@@ -122,7 +126,10 @@ def turn(
         tools_ok=[x.get("name") for x in trace.get("tools") or [] if x.get("ok")],
         llm=trace.get("llm") or 0,
         cards=[c.get("kind") for c in cards],
-        card_data=[{"kind": c.get("kind"), "data": c.get("data")} for c in cards],
+        card_data=[
+            {"card_id": c.get("card_id"), "kind": c.get("kind"), "data": c.get("data")}
+            for c in cards
+        ],
         actions=[
             {"id": d.get("action_id"), "kind": d.get("kind"), "status": d.get("status")}
             for n, d in ev
@@ -204,6 +211,45 @@ def proposal_dates(app, proposal_id: str | None) -> dict:
     if not rows:
         return {}
     return {"start": rows[0]["start_date"].isoformat(), "end": rows[0]["end_date"].isoformat()}
+
+
+MEMORY_KIND = "assistant_memory"
+
+
+def llm_off() -> bool:
+    """지금 앱이 LLM을 못 부르는지(무료 모드). 기억이 비었을 때 까닭을 적는 데 써요."""
+    from app.agent import llm
+
+    return not llm.available()
+
+
+async def _memory_jobs(now) -> dict[str, int]:
+    """기한이 된 기억 뽑기 일만 거둬 worker와 같은 함수(_run_one)로 처리해요. 결과 이름 → 수."""
+    from app import worker
+    from app.db import SessionLocal
+    from app.jobs import service as jobs
+
+    async with SessionLocal() as s:
+        claimed = await jobs.claim(s, now, limit=50, kinds=[MEMORY_KIND])
+        await s.commit()
+    out: dict[str, int] = {}
+    for job in claimed:
+        got = await worker._run_one(job, now)
+        out[got] = out.get(got, 0) + 1
+    return out
+
+
+def tick(app, nudges: bool = True) -> dict:
+    """worker 한 차례: 기억 뽑기 일 → 비서 정리(만료 · 먼저 말 걸기 아웃박스 · 기한이 된 제안 평가).
+    무료 모드라 기억 뽑기(Haiku) · 먼저 말 걸기 판정 · 문장(Haiku)은 꺼짐으로 끝나요(문장은 틀). 돌려주는 것: 0이 아닌 수."""
+    from app.assistant import service as assistant_service
+    from app.shared.clock import now_utc
+
+    now = now_utc()
+    out = {f"memory_{k}": v for k, v in app.call(_memory_jobs, now).items()}
+    if nudges:
+        out.update({k: v for k, v in app.call(assistant_service.sweep, now).items() if v})
+    return out
 
 
 def usage(app) -> dict:

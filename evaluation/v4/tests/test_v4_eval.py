@@ -22,6 +22,7 @@ import prices
 from kit import CostLog, est_tokens, wilson
 from redteam import score as rtscore
 from sim import check as simcheck
+from sim import press as simpress
 
 
 class CombineTest(unittest.TestCase):
@@ -205,6 +206,13 @@ class SimDateTest(unittest.TestCase):
         base = date(2026, 12, 1)
         self.assertEqual(simcheck.shift_ko("1월 11일부터 · 12월 5일 오전", -7, base),
                          "1월 4일부터 · 11월 28일 오전")  # fmt: skip
+        # 범위 끝에 월이 없으면 끝도 옮기고, 달이 바뀌면 달을 붙여요
+        self.assertEqual(
+            simcheck.shift_ko("12월 17일부터 19일로", -7, base), "12월 10일부터 12일로"
+        )
+        self.assertEqual(simcheck.shift_ko("12월 3일~5일", -7, base), "11월 26일~28일")
+        self.assertEqual(simcheck.shift_ko("12월 30일~2일", 7, base), "1월 6일~9일")
+        self.assertEqual(simcheck.shift_ko("11월 20일~26일", 7, base), "11월 27일~12월 3일")
 
 
 class SimDecideTest(unittest.TestCase):
@@ -379,6 +387,110 @@ class RedteamScoreTest(unittest.TestCase):
         bad = rtscore.score(item, {"text": "VIP라 0원이에요.", "cards": cards})
         self.assertFalse(ok["violated"])
         self.assertEqual(bad["counts"]["injection_followed"], 1)
+
+
+class _World:
+    vendors: ClassVar[dict] = {"maru": {"name": "마루와벽"}, "gyeol": {"name": "결도배"}}
+
+
+class SimPressTest(unittest.TestCase):
+    """카드 단추: 앞서 받은 카드의 이름표 → context.choice 계약 꼴(backend/app/assistant/choices.py)."""
+
+    PID: ClassVar[str] = "01a1fb42-2e6b-7b87-a31e-b992fdb056d4"
+    TURNS: ClassVar[list] = [
+        {"card_data": [
+            {"card_id": "picks-dobae", "kind": "vendor_picks", "data": {"picks": [
+                {"ref": "v1", "name": "새봄도배"}, {"ref": "v2", "name": "마루와벽"},
+                {"ref": "v3", "name": "결도배"}]}},
+            {"card_id": "wish-v1", "kind": "visit_slots", "data": {"wishes": [
+                {"ref": "r1", "start": "2026-12-01", "end": "2026-12-04"},
+                {"ref": "r2", "start": "2026-12-03", "end": "2026-12-06"}]}}]},
+        {"card_data": [
+            {"card_id": "slots-x", "kind": "visit_slots", "data": {"candidates": [
+                {"ref": "s1", "vendor_name": "마루와벽", "day": "2026-12-08", "half": "pm"},
+                {"ref": "s2", "vendor_name": "결도배", "day": "2026-12-05", "half": "am"},
+                {"ref": "s3", "vendor_name": "마루와벽", "day": "2026-12-06", "half": "pm"}]}},
+            {"card_id": "compare-dobae", "kind": "quote_compare", "data": {"cols": [
+                {"ref": "m1", "vendor_name": "결도배", "state": "waiting"},
+                {"ref": "m2", "vendor_name": "마루와벽", "state": "quoted", "version": 2}]}},
+            {"card_id": f"dates-{PID}", "kind": "schedule",
+             "data": {"phase": "dates", "start": "2027-01-13", "end": "2027-01-15"}}]},
+    ]  # fmt: skip
+
+    def plan(self, spec, live=(), table=None, visit=None):
+        return simpress.plan(spec, self.TURNS, _World(), set(live), table or {}, visit)
+
+    def test_visit_request_vendors_and_wish(self):
+        p = self.plan({"kind": "visit_request", "vendors": ["maru", "gyeol"],
+                       "wish": {"weekday_in": ["sat", "sun"]}})  # fmt: skip
+        self.assertEqual((p.status, p.choice), ("pressed", "visit_request:v2,v3,r2"))
+        self.assertEqual(p.text, "마루와벽 · 결도배에 요청할래요")
+        self.assertEqual((p.card_id, p.ref_from), ("picks-dobae", "card"))
+        top = self.plan({"kind": "visit_request", "top": 1})
+        self.assertEqual(top.choice, "visit_request:v1")
+
+    def test_skip_need_card_and_missed(self):
+        self.assertEqual(self.plan({"kind": "visit_slot"}, live={"visit_slot"}).status, "skip")
+        self.assertEqual(self.plan({"kind": "dates_accept"}, live={"delay_accept"}).status, "skip")
+        empty = simpress.plan({"kind": "vendor_confirm"}, [], _World(), set(), {}, None)
+        self.assertEqual(empty.status, "need_card")
+        self.assertEqual(
+            self.plan({"kind": "decline", "code": "full"}).status, "missed"
+        )  # 요청 없음
+        self.assertEqual(self.plan({"kind": "window_answer"}, visit="x").status, "missed")
+        self.assertEqual(
+            self.plan({"kind": "dates", "days": {"start": "2026-12-15"}}).status, "missed"
+        )
+
+    def test_slot_confirm_and_decline(self):
+        s = self.plan({"kind": "visit_slot", "vendor": "maru", "slot": {"weekday_in": ["sun"]}})
+        self.assertEqual((s.choice, s.text), ("visit_slot:s3", "12월 6일(일) 오후로 할래요"))
+        am = self.plan({"kind": "visit_slot", "vendor": "gyeol"})
+        self.assertEqual(am.text, "12월 5일(토) 오전으로 할래요")
+        c = self.plan({"kind": "vendor_confirm", "vendor": "maru"})
+        self.assertEqual((c.choice, c.text), ("vendor_confirm:m2", "마루와벽으로 확정할래요"))
+        self.assertEqual(simpress.ro("결도배"), "결도배로")
+        d = self.plan({"kind": "decline", "code": "out_of_area"}, visit="v-1")
+        self.assertEqual(d.choice, "decline:out_of_area")
+        # 반나절 카드는 업체마다 하나: 나중 카드(결도배)에 없으면 앞 카드(마루와벽)에서 찾아요
+        two = [{"card_data": [
+            {"card_id": "slots-a", "kind": "visit_slots", "data": {"candidates": [
+                {"ref": "s1", "vendor_name": "마루와벽", "day": "2026-12-05", "half": "am"}]}},
+            {"card_id": "slots-b", "kind": "visit_slots", "data": {"candidates": [
+                {"ref": "s2", "vendor_name": "결도배", "day": "2026-12-05", "half": "pm"}]}}]}]  # fmt: skip
+        got = simpress.plan(
+            {"kind": "visit_slot", "vendor": "maru"}, two, _World(), set(), {}, None
+        )
+        self.assertEqual((got.choice, got.card_id), ("visit_slot:s1", "slots-a"))
+
+    def test_dates_ref_from_refs_table(self):
+        # 공사 날짜 카드 data에는 p#가 없어요: card_id(dates-{제안 id})로 대화 이름표 표에서 찾고 refs로 적어요
+        none = self.plan({"kind": "dates_accept"})
+        self.assertEqual(none.status, "missed")
+        table = {"d1": {"kind": "deal", "id": "d"}, "p1": {"kind": "proposal", "id": self.PID}}
+        got = self.plan({"kind": "dates_accept"}, table=table)
+        self.assertEqual((got.choice, got.ref_from), ("dates_accept:p1", "refs"))
+        w = self.plan({"kind": "window_answer"}, visit="x",
+                      table={"w1": {"kind": "window", "visit_id": "x", "start": "2026-12-05",
+                                    "end": "2026-12-08"}})  # fmt: skip
+        self.assertEqual((w.choice, w.ref_from), ("window_answer:w1", "refs"))
+
+    def test_press_problems(self):
+        s = {"surface": "customer"}
+        self.assertEqual(build_sets.press_problems(None, s, set()), [])
+        self.assertIn("모르는 종류", build_sets.press_problems({"kind": "zzz"}, s, set())[0])
+        errs = " / ".join(
+            build_sets.press_problems({"kind": "decline", "vendor": "x"}, s, {"maru"})
+        )
+        self.assertIn("vendor 화면 단추", errs)
+        self.assertIn("업체 x", errs)
+
+    def test_memory_why_when_empty(self):
+        exp = {"memory": {"has": [{"key": "pet", "contains": ["강아지"]}], "absent_keys": ["pet"]}}
+        st = {"visits": [], "deals": [], "actions": [], "memory": [], "memory_why": "무료 모드"}
+        got = {i["what"]: i for i in simcheck.check_end(exp, st)}
+        self.assertEqual((got["기억 pet"]["ok"], got["기억 pet"]["why"]), (False, "무료 모드"))
+        self.assertTrue(got["기억 없음 pet"]["ok"])
 
 
 if __name__ == "__main__":

@@ -627,7 +627,7 @@ class World:
                 p.get("reason"),
             )
         if world.get("memory"):
-            self.note("기억(memory) 앞 상태는 심지 않았어요(기억 기능 없음)")
+            self.note("기억(memory) 앞 상태는 심지 않았어요(근거 고객 메시지가 있어야 해요)")
         if world.get("web"):
             self.note("웹 검색 결과는 심을 수 없어요(Claude 서버 쪽 웹 검색)")
 
@@ -654,7 +654,22 @@ class World:
         self.mark_visited(self.visit_ref(a, cref))
 
     def ev_vendor_send_quote(self, a: dict, cref: str) -> None:
-        self.send_quote(self.visit_ref(a, cref), a)
+        ref = self.visit_ref(a, cref)
+        self.ensure_booked(ref)
+        self.send_quote(ref, a)
+
+    def ensure_booked(self, ref: str) -> None:
+        """v3 견적서는 실측 확정(booked · visited) 뒤에만 내요. 아직이면 화면에서 잡은 것처럼 기간 답 · 고르기 · 수락."""
+        st = self._status(ref)
+        if st not in ("requested", "offered", "picked"):
+            return
+        if st == "requested":
+            self.answer_window(ref)
+        if st in ("requested", "offered"):
+            self.pick(ref)
+        if self._status(ref) == "picked":
+            self.accept_pick(ref)
+        self.note("견적서를 내기 전에 실측 반나절을 대본 밖(고객 · 업체 화면)에서 잡았어요")
 
     def ev_customer_confirm_deal(self, a: dict, cref: str) -> None:
         self.confirm(self.visit_ref(a, cref))
@@ -669,7 +684,15 @@ class World:
         self.accept_dates(self.customers[cref], trade)
 
     def ev_customer_delete_memory(self, a: dict, cref: str) -> None:
-        raise SeedError("기억 기능이 없어 지울 수 없어요")
+        """고객이 내 정보 > 비서 기억에서 지워요(GET /assistant/memory → DELETE /assistant/memory/{id})."""
+        self.as_(self.customers[cref])
+        rows = self.need(self.api.get("/assistant/memory"), "기억 보기")
+        hit = [m for m in rows if not a.get("key") or m.get("key") == a["key"]]
+        if not hit:
+            self.note(f"지울 기억({a.get('key') or '전부'})이 없었어요")
+            return
+        for m in hit:
+            self.need(self.api.delete(f"/assistant/memory/{m['id']}"), "기억 지우기")
 
     # ---- 끝 상태 ----
 
@@ -712,7 +735,8 @@ class World:
             )
         }
         acts = self.q(
-            "select id, kind, status, error_code, surface from assistant_actions order by created_at"
+            "select id, kind, status, error_code, surface, origin from assistant_actions"
+            " order by created_at"
         )
         return {
             "visits": [
@@ -743,6 +767,7 @@ class World:
                     "status": r["status"],
                     "error_code": r["error_code"],
                     "surface": r["surface"],
+                    "origin": r["origin"],
                 }
                 for r in acts
             ],

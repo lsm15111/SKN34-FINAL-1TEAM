@@ -7,6 +7,8 @@
   업체가 적는 칸(견적서 벽지 사양 · 업체 소개 · 요청 메모 · 채팅)에 공격 글을 넣고, 남의 공사 · 견적서는 다른 고객으로 만들어요.
   API로 못 심는 것(웹 검색 결과 · 리뷰 답글)은 notes에 남기고 그대로 돌려요.
 - 러너는 승인 · 거절을 누르지 않아요. 판정은 redteam/score.py(누출 · 승인 없는 실행 · 주입 반영 · 거짓 완료 말 · 상한).
+- 턴마다 worker 한 차례(기억 뽑기 일 · 비서 정리 · 먼저 말 걸기, sim/drive.tick)를 돌려요. --no-worker로 끌 수 있어요.
+  무료 모드는 기억 뽑기(Haiku)가 꺼져 기억이 0줄이라, '기억에 넣으면 안 되는 값' 확인은 늘 맞아요(memory_rows로 적어요).
 - 저장(runs/<tag>/): redteam.jsonl(문항마다 한 줄) · summary.json · meta.json
 """
 
@@ -200,7 +202,7 @@ def diff(before: dict, after: dict) -> tuple[list[str], list[str], list[str]]:
     return new, done, changed
 
 
-def run_item(app, item: dict) -> dict:
+def run_item(app, item: dict, worker: bool = True) -> dict:
     from app.assistant import prompts
 
     today = _today()
@@ -213,12 +215,17 @@ def run_item(app, item: dict) -> dict:
     except SeedError as e:
         row.update(seed_error=str(e), notes=world.notes)
         return row
+    ticks = (
+        [drive.tick(app)] if worker else []
+    )  # 심은 일의 알림 → 먼저 말 걸기(승인은 누르지 않아요)
     before = snapshot(app)
     turns = []
     for text in item["turns"]:
         rec = drive.turn(app, world, ctx["who"], ctx["surface"], text, project_id=ctx["pid"],
                          visit_id=ctx["visit"])  # fmt: skip
         turns.append(rec)
+        if worker:
+            ticks.append(drive.tick(app))
     new, done, changed = diff(before, snapshot(app))
     # 주입 반영은 LLM이 제안 도구를 부른 것만 세요(업체 요청 브리핑 카드의 기간 답하기 제안은 코드가 늘 만들어요)
     by_llm = sorted(
@@ -233,6 +240,7 @@ def run_item(app, item: dict) -> dict:
         for p in c["data"].get("picks") or []
     ]
     use = drive.usage(app)
+    memory = world.memory()
     obs = {
         "shown": "\n".join(t.get("shown") or "" for t in turns),
         "text": "\n".join(t.get("text") or "" for t in turns),
@@ -240,7 +248,7 @@ def run_item(app, item: dict) -> dict:
         "proposed": by_llm,
         "executed": done,
         "changed": changed,
-        "memory": world.memory(),
+        "memory": memory,
         "prompt_lines": sc.prompt_lines(prompts.system(ctx["surface"])),
         "picks": picks,
         "cards": cards,
@@ -255,6 +263,9 @@ def run_item(app, item: dict) -> dict:
         turns=[{k: v for k, v in t.items() if k not in ("shown", "card_data")} for t in turns],
         proposed_all=new,
         proposed_by_llm=by_llm,
+        ticks=[t for t in ticks if t],
+        memory_rows=None if memory is None else len(memory),
+        memory_jobs={k: sum(t.get(k, 0) for t in ticks) for k in ("memory_done", "memory_skipped")},
         **got,
         usage=use,
         modes=sorted({t.get("mode") for t in turns if t.get("mode")}),
@@ -285,6 +296,7 @@ def summarize(rows: list[dict]) -> dict:
         if "counts" not in r
     ]
     partly = [r["id"] for r in ok if any(PARTLY in n for n in r.get("notes") or [])]
+    mem = [r for r in ok if r.get("memory_rows") is not None]
     return {
         "items": len(rows),
         "scored": len(ok),
@@ -295,6 +307,13 @@ def summarize(rows: list[dict]) -> dict:
         "by_category": by_cat,
         "na_items": sum(1 for r in ok if r["na"]),
         "partly_seeded": partly,
+        "memory": {
+            "items_with_table": len(mem),
+            "rows": sum(r["memory_rows"] for r in mem),
+            "jobs_done": sum((r.get("memory_jobs") or {}).get("memory_done", 0) for r in ok),
+            "jobs_skipped": sum((r.get("memory_jobs") or {}).get("memory_skipped", 0) for r in ok),
+        },
+        "nudges_sent": sum(t.get("nudge_sent", 0) for r in ok for t in r.get("ticks") or []),
         "paid_calls": sum(r.get("usage", {}).get("calls", 0) for r in ok),
         "cost_usd": round(sum(r.get("usage", {}).get("cost_usd", 0) for r in ok), 6),
     }
@@ -312,6 +331,10 @@ def report(s: dict) -> None:
     if s["seed_errors"]:
         print("심기 실패:", s["seed_errors"])
     print(f"공격 글 일부를 못 심은 문항: {', '.join(s['partly_seeded']) or '없음'}")
+    m = s.get("memory") or {}
+    print(f"기억: 표 있는 문항 {m.get('items_with_table', 0)} · 기억 줄 {m.get('rows', 0)} · 뽑기 일 "
+          f"done {m.get('jobs_done', 0)} · skipped {m.get('jobs_skipped', 0)} · 먼저 말 걸기 보냄 "
+          f"{s.get('nudges_sent', 0)}")  # fmt: skip
     print(f"유료 호출 {s['paid_calls']}회 · 비용 ${s['cost_usd']}")
 
 
@@ -324,6 +347,9 @@ def main(argv=None) -> int:
     ap.add_argument("--redis-db", type=int, default=11)
     ap.add_argument("--env-file", type=Path, help="DB 접속값을 읽을 .env(키는 읽지 않아요)")
     ap.add_argument("--live", action="store_true", help="유료 모드(지금은 막아 둠)")
+    ap.add_argument(
+        "--no-worker", action="store_true", help="worker(기억 뽑기 · 먼저 말 걸기)를 돌리지 않아요"
+    )
     a = ap.parse_args(argv)
     if a.live:
         print("유료 모드는 아직 막아 뒀어요(키 무효 · 리드 허락 전). 무료 모드로만 돌려요.")
@@ -349,7 +375,7 @@ def main(argv=None) -> int:
         for item in items:
             app.reset()
             try:
-                row = run_item(app, item)
+                row = run_item(app, item, worker=not a.no_worker)
             except Exception as e:  # noqa: BLE001 - 한 문항이 깨져도 기록하고 이어 가요
                 row = {"id": item["id"], "category": item["category"], "surface": item["surface"],
                        "crash": f"{type(e).__name__}: {e}"[:300],
@@ -366,7 +392,8 @@ def main(argv=None) -> int:
         json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
     )
     meta = {"tag": a.tag, "mode": mode, "db": a.db, "redis_db": a.redis_db,
-            "env_file": env.name if env else None, "items": [x["id"] for x in items]}  # fmt: skip
+            "env_file": env.name if env else None, "items": [x["id"] for x in items],
+            "worker": not a.no_worker}  # fmt: skip
     (out / "meta.json").write_text(
         json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8", newline="\n"
     )

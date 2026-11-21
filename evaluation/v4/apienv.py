@@ -145,6 +145,27 @@ class App:
     def query(self, sql: str, *args):
         return self.cf.query(sql, *args)
 
+    def call(self, fn, *args, **kw):
+        """앱과 같은 이벤트 루프에서 async 함수를 돌려요(worker 일 · 정리). 백엔드 시험의 api.portal.call과 같아요."""
+        from functools import partial
+
+        return self._tc.portal.call(partial(fn, *args, **kw))
+
+    def refs(self, chat_id: str | None) -> dict:
+        """대화 이름표 표(Redis assistant:refs:{chat_id}, runtime.RefTable). 없으면 {}."""
+        import json
+
+        import redis
+
+        if not chat_id:
+            return {}
+        raw = redis.Redis.from_url(os.environ["TEST_REDIS_URL"]).get(f"assistant:refs:{chat_id}")
+        try:
+            got = json.loads(raw) if raw else {}
+        except ValueError:
+            return {}
+        return got if isinstance(got, dict) else {}
+
     def close(self) -> None:
         if self.api is not None:
             try:
