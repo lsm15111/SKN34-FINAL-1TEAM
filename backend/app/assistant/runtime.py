@@ -6,7 +6,8 @@
 - stop_reason: tool_use → 도구, pause_turn → 다시 보냄(2회), refusal → 무료 모드, max_tokens → 끊긴 문장 버림.
 - 상한: 도구 6 · LLM 8 · 45초 · 턴 $0.06. 넘으면 '지금까지로 답해요'로 한 번 더(tool_choice none), 그래도 넘으면
   카드만으로 끝낸다(stopped). 같은 (도구, 오류 코드)가 두 번이면 멈추고 실패 카드. Claude가 두 번 실패하면
-  무료 모드 + 5분 차단기.
+  무료 모드 + 5분 차단기. 요청 자체가 틀린 거절(400 · 413 · 422, llm.LLMRejected)은 다시 보내지 않고 이 턴만
+  무료 모드다(차단기에 세지 않는다). 빈 말은 LLM에 보내지 않는다(빈 글 블록은 400).
 - 모델 글은 문장마다 check.sentence_ok(허용 숫자 = 이번 턴 도구 결과 · 사실 · 고객 글)를 지난 것만 token으로 보낸다.
   앞 세 문장까지만 바로 보내고 넘친 문장은 '다음 할 일' 문장 하나만 턴 끝에 보낸다. 끝 문장이 지난 두 비서 턴의
   끝 문장과 같으면 뺀다(policy.TALK_* · REPEAT_TURNS).
@@ -45,6 +46,7 @@ Emit = Callable[[str, dict], Awaitable[None]]
 WRAP = "도구는 더 부르지 말고, 지금까지 얻은 결과로만 짧게 답해 주세요."
 FAIL_TEXT = "설명을 만들지 못했어요. 카드와 버튼으로 이어서 진행해 주세요."
 TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
+EMPTY_TEXT = "말씀이 비어 있어요. 궁금한 것을 적어 주세요."
 # 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글)
 CARD_NAME = {
     "home_info": "집 정보", "standard_quote": "표준견적서", "vendor_picks": "업체 추천",
@@ -567,6 +569,16 @@ def chips_for(cards: list[dict], facts: Collection[str] = ()) -> list[str]:
     return []
 
 
+def said(ctx: TurnCtx, note: str | None = None) -> str:
+    """모델에 보낼 이번 고객 글: 가린 글 + 카드에서 고른 것 + 코드가 처리한 한 줄. 비면 ''(빈 글 블록은 보내지 않는다)."""
+    text = ctx.text
+    if ctx.choice:
+        text += f"\n(카드에서 고름: {', '.join(choices.text_of(c) for c in ctx.choice)})"
+    if note:
+        text += f"\n({note})"
+    return text.strip()
+
+
 async def send_card(res: TurnResult, emit: Emit, card: CardOut) -> None:
     """카드 하나를 보내고 턴 결과에 남긴다(같은 card_id면 바꿔 끼운다)."""
     data = card.model_dump(mode="json")
@@ -608,14 +620,9 @@ class _Turn:
         )
 
     def _messages(self) -> list[dict]:
-        text = self.ctx.text
-        if self.ctx.choice:
-            text += f"\n(카드에서 고름: {', '.join(choices.text_of(c) for c in self.ctx.choice)})"
-        if self.note:
-            text += f"\n({self.note})"
         return [
             *self.ctx.history,
-            {"role": "user", "content": [{"type": "text", "text": text}]},
+            {"role": "user", "content": [{"type": "text", "text": said(self.ctx, self.note)}]},
             {"role": "system", "content": self.ctx.facts},
         ]
 
@@ -702,6 +709,11 @@ class _Turn:
                 self.gate.discard()
                 self.res.status, self.res.stop = "stopped", "time"
                 break
+            except llm.LLMRejected:
+                # 요청 자체가 틀렸다: 다시 보내도 같다(이 턴만 무료 모드, 차단기에 세지 않는다)
+                b.llm += 1
+                self.gate.discard()
+                raise _Fallback("rejected") from None
             except llm.LLMError:
                 b.llm += 1
                 fails += 1
@@ -892,6 +904,8 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
     if mode == "free" or ctx.stale:
         # 지난 카드 단추는 카드를 새로 불러와 정해 둔 한 줄로 답한다(LLM 모드도 부르지 않는다)
         await free_turn(ctx, emit, res, reason if mode == "free" else "reload", note)
+    elif not said(ctx, note):  # 가린 뒤 빈 말 · 고른 것 없음: 빈 글 블록을 보내지 않는다(400)
+        await free_turn(ctx, emit, res, "empty", EMPTY_TEXT)
     else:
         turn = _Turn(ctx, emit, res, note)
         try:
