@@ -20,6 +20,7 @@ from app.assistant.tools.customer import TRADE, dobae_only, pid_of
 from app.db import SessionLocal
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
+from app.shared.korean import euro
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 HALF = {"am": "오전", "pm": "오후"}
@@ -415,6 +416,14 @@ async def propose_vendor_confirm(tc: ToolCtx, a: VisitRefIn) -> ToolOut:
     async with SessionLocal() as s:
         cmp = await visit_service.compare(s, tc.user, pid, trade, tc.today)
     row = next((r for r in cmp.vendors if r.visit_id == visit_id), None)
+    done = next((r for r in cmp.vendors if r.status == "chosen"), None)
+    if done is not None:  # 이미 확정했다('확정할 견적서가 없어요'라고 하지 않는다)
+        raise ToolError(
+            "already_chosen",
+            f"이미 {euro(done.vendor_name)} 확정했어요. 업체가 공사 날짜를 올리면 수락할 수 있어요."
+            if done is row
+            else f"이미 {euro(done.vendor_name)} 확정했어요. 바꾸려면 견적서 화면에서 다시 골라 주세요.",
+        )
     if row is None or row.latest is None or row.status != "quoted" or row.seen_ver is None:
         raise ToolError("not_quoted", "아직 확정할 수 있는 견적서가 없어요.")
     if row.expired:
@@ -616,7 +625,7 @@ def date_change_offer(
     summary = ActionSummary(
         title=f"{name} 공사 날짜 바꾸기 요청" if change else f"{name} 다른 공사 날짜 요청",
         rows=rows,
-        note="업체가 새 날짜를 올리면 수락할 수 있어요. 수락하기 전까지 지금 날짜는 그대로예요. "
+        note="업체가 새 날짜를 올려 수락하기 전까지 지금 날짜는 그대로예요. "
         f"날짜 바꾸기 요청은 {t.requests_left}번 남았어요",
         approve_label="날짜 바꾸기 요청 보내기",
     )

@@ -43,6 +43,13 @@ Emit = Callable[[str, dict], Awaitable[None]]
 WRAP = "도구는 더 부르지 말고, 지금까지 얻은 결과로만 짧게 답해 주세요."
 FAIL_TEXT = "설명을 만들지 못했어요. 카드와 버튼으로 이어서 진행해 주세요."
 TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
+# 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글)
+CARD_NAME = {
+    "home_info": "집 정보", "standard_quote": "표준견적서", "vendor_picks": "업체 추천",
+    "visit_slots": "실측 시간", "quote_compare": "견적서 비교", "schedule": "공사 날짜",
+    "knowledge": "자료", "answer": "답", "floorplan_links": "평면도 찾기", "today": "오늘 할 일",
+    "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트",
+}  # fmt: skip
 BREAKER_KEY = "assistant:breaker"
 BREAKER_TTL = 300  # Claude가 한 턴에 두 번 실패하면 5분 동안 무료 모드
 PAUSE_MAX = 2
@@ -783,7 +790,9 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
             kept = turn.gate.text
             await free_turn(ctx, emit, res, f.reason, note)
             res.text = f"{kept}\n{res.text}".strip() if kept else res.text
+    # 카드만 보낸 턴의 기록 글(화면은 숨기고 다음 턴 LLM이 읽는다): 카드 화면 이름으로
     if not res.text:
-        res.text = "(카드를 보여 줬어요: " + " · ".join(c["kind"] for c in res.cards) + ")"
+        names = dict.fromkeys(CARD_NAME.get(c["kind"], "카드") for c in res.cards)
+        res.text = "(카드를 보여 줬어요: " + " · ".join(names) + ")"
     res.chips = chips_for(res.cards)
     return res
