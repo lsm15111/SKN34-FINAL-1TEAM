@@ -1,5 +1,5 @@
-"""v4 비용 장부 · 상한(usage): 가격 셈, 사용자 하루 · 서비스 하루 · 전체 상한(80% 경고 · 90% 막음),
-Redis 정수 카운터와 Redis가 안 될 때의 장부 합계, llm_usage 제약. 유료 호출 0회."""
+"""v4 비용 장부 · 상한(usage): 가격 셈, 사용자 하루 · 새 계정(한 계정 · 합) · 서비스 하루 · 전체 상한
+(80% 경고 · 90% 막음), Redis 정수 카운터와 Redis가 안 될 때의 장부 합계, llm_usage 제약. 유료 호출 0회."""
 
 import asyncio
 import logging
@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import uuid
+from datetime import datetime, timedelta
 
 import asyncpg
 import pytest
@@ -14,7 +15,8 @@ from redis.exceptions import ConnectionError as RedisConnectionError
 
 from app import queue
 from app.agent import llm
-from app.config import settings
+from app.config import Settings, settings
+from app.shared import clock
 from app.usage import prices, service
 from tests.conftest import BACKEND, query
 from tests.test_v4_llm_claude import Plan, _user, rows, run
@@ -130,6 +132,177 @@ def test_counts_from_llm_usage_when_redis_is_down(monkeypatch):
     asyncio.run(go())
     (row,) = rows()
     assert row["cost_micros"] == 9000
+
+
+# ---- 새 계정 몫(보안 QA M4): 가입 7일 안은 한 계정 하루 $0.20 · 새 계정 모두 합쳐 하루 $1 ----
+
+CAPS = (
+    "llm_cap_user_day_usd",
+    "llm_cap_new_user_day_usd",
+    "llm_cap_new_pool_day_usd",
+    "llm_cap_service_day_usd",
+    "llm_cap_total_usd",
+    "llm_new_user_days",
+)
+
+
+@pytest.fixture
+def caps(monkeypatch):
+    """상한을 설정 기본값으로 둔다(로컬 환경변수와 상관없이)."""
+    for name in CAPS:
+        monkeypatch.setattr(settings, name, Settings.model_fields[name].default)
+
+
+def _joined(uid: uuid.UUID, at: datetime) -> uuid.UUID:
+    query("update users set created_at = $2 where id = $1", uid, at)
+    return uid
+
+
+def _go(monkeypatch, redis: str, make):
+    """redis가 up이면 이 루프의 Redis로, down이면 연결이 안 되는 Redis(장부 합계로 셈)로 돌린다."""
+    if redis == "down":
+        monkeypatch.setattr(queue, "redis", _Down())
+        return asyncio.run(make())
+    return run(monkeypatch, make)
+
+
+def test_cap_defaults():
+    got = {n: Settings.model_fields[n].default for n in (*CAPS, "llm_cap_turn_usd")}
+    assert got == {
+        "llm_cap_user_day_usd": 1.0,
+        "llm_cap_new_user_day_usd": 0.2,
+        "llm_cap_new_pool_day_usd": 1.0,
+        "llm_cap_service_day_usd": 5.0,
+        "llm_cap_total_usd": 45.0,
+        "llm_new_user_days": 7,
+        "llm_cap_turn_usd": 0.06,
+    }
+
+
+def test_new_account_buckets_follow_join_time(monkeypatch, caps):
+    uid, now = uuid.uuid4(), datetime(2026, 11, 22, 12, 0, tzinfo=clock.SEOUL)
+
+    def scopes(joined):
+        return {b.scope: b.cap for b in service.buckets(uid, now, joined)}
+
+    old = {"user_day": 1_000_000, "service_day": 5_000_000, "total": 45_000_000}
+    new = old | {"new_user_day": 200_000, "new_pool_day": 1_000_000}
+    assert scopes(now - timedelta(days=7) + timedelta(seconds=1)) == new  # 7일이 안 됨
+    assert [b.scope for b in service.buckets(uid, now, now)] == [
+        "user_day", "new_user_day", "new_pool_day", "service_day", "total",
+    ]  # fmt: skip
+    assert scopes(now - timedelta(days=7)) == old  # 꼭 7일이면 새 계정이 아니다
+    assert scopes(now - timedelta(days=8)) == old
+    assert scopes(None) == old  # 가입 시각을 모름(사용자 줄 없음)
+    # 사용자 없는 일(worker 등)은 서비스 하루 · 전체만 본다
+    assert [b.scope for b in service.buckets(None, now, now)] == ["service_day", "total"]
+    monkeypatch.setattr(settings, "llm_new_user_days", 0)  # 0이면 새 계정 몫을 보지 않는다
+    assert scopes(now) == old
+
+
+@pytest.mark.parametrize("redis", ["up", "down"])
+def test_new_account_blocked_at_90_percent_of_20_cents(monkeypatch, caplog, caps, redis):
+    a = _user("new-a@mitjip.test")  # 방금 가입
+
+    async def go():
+        await spend(a, "assistant", output_tokens=17_000)  # Sonnet 출력 × $10 = $0.17(85%)
+        await service.allow(a, "assistant")  # 경고만
+        await spend(a, "assistant", output_tokens=1_000)  # $0.18 = $0.20의 90%
+        with pytest.raises(service.OverCap) as e:
+            await service.allow(a, "assistant")
+        return e.value
+
+    with caplog.at_level(logging.WARNING, logger="app.usage.service"):
+        e = _go(monkeypatch, redis, go)
+    assert (e.scope, e.spent, e.cap) == ("new_user_day", 180_000, 200_000)
+    assert any("80%" in r.getMessage() and "new_user_day" in r.getMessage() for r in caplog.records)
+
+
+@pytest.mark.parametrize("redis", ["up", "down"])
+def test_account_older_than_7_days_keeps_one_dollar(monkeypatch, caps, redis):
+    old = _joined(_user("old@mitjip.test"), clock.now_utc() - timedelta(days=8))
+    new = _user("new@mitjip.test")
+
+    async def go():
+        await spend(old, "assistant", output_tokens=18_000)  # $0.18: 새 계정이면 막힐 돈
+        await service.allow(old, "assistant")
+        await spend(old, "assistant", output_tokens=71_000)  # $0.89
+        await service.allow(old, "assistant")
+        await service.allow(new, "assistant")  # 오래된 계정의 돈은 새 계정 합에 들어가지 않는다
+        await spend(old, "assistant", output_tokens=1_000)  # $0.90 = $1.00의 90%
+        with pytest.raises(service.OverCap) as e:
+            await service.allow(old, "assistant")
+        return e.value
+
+    e = _go(monkeypatch, redis, go)
+    assert (e.scope, e.spent, e.cap) == ("user_day", 900_000, 1_000_000)
+
+
+@pytest.mark.parametrize("redis", ["up", "down"])
+def test_new_accounts_share_one_dollar_a_day(monkeypatch, caps, redis):
+    news = [_user(f"pool-{i}@mitjip.test") for i in range(7)]
+    old = _joined(_user("pool-old@mitjip.test"), clock.now_utc() - timedelta(days=30))
+
+    async def go():
+        await spend(old, "assistant", output_tokens=50_000)  # 오래된 계정 $0.50: 새 계정 합 밖
+        for uid in news[:6]:
+            await service.allow(uid, "assistant")
+            await spend(uid, "assistant", output_tokens=15_000)  # 한 계정 $0.15(75%)씩, 합 $0.90
+        with pytest.raises(service.OverCap) as e:
+            await service.allow(news[6], "assistant")  # 아직 안 쓴 새 계정도 막힌다
+        await service.allow(old, "assistant")  # 오래된 계정 · 사용자 없는 일은 그대로
+        await service.allow(None, "nudge")
+        (pool,) = [b for b in service.buckets(news[6], joined=clock.now_utc()) if b.new_days]
+        return e.value, await service.spent(pool), await service.db_spent(pool)
+
+    e, counted, summed = _go(monkeypatch, redis, go)
+    assert (e.scope, e.spent, e.cap) == ("new_pool_day", 900_000, 1_000_000)
+    assert counted == summed == 900_000  # Redis 카운터와 장부 합계가 같다
+
+
+def test_new_pool_counts_only_calls_made_while_new(caps):
+    """새 계정 합의 장부 합계는 오늘, 부른 때 가입 7일 안이던 계정의 호출만 센다."""
+    now = datetime(2026, 11, 22, 12, 0, tzinfo=clock.SEOUL)
+    x = _joined(_user("x@mitjip.test"), now - timedelta(days=7, hours=2))  # 오늘 10시에 7일이 됨
+    y = _joined(_user("y@mitjip.test"), now - timedelta(hours=4))  # 오늘 8시 가입
+    z = _joined(_user("z@mitjip.test"), now - timedelta(days=30))
+    sql = (
+        "insert into llm_usage (id, user_id, purpose, model, price_ver, ok, cost_micros, created_at)"
+        " values ($1, $2, 'assistant', 'claude-haiku-5-5', 'v', true, $3, $4)"
+    )
+    for uid, hours_ago, cost in [
+        (x, 3, 1),  # 9시: 새 계정이던 때라 센다
+        (x, 1, 10),  # 11시: 7일이 지난 뒤라 안 센다
+        (x, 13, 100),  # 어제 23시: 오늘이 아니다
+        (y, 2, 1000),  # 10시: 센다
+        (z, 1, 10_000),  # 오래된 계정
+        (None, 1, 100_000),  # 사용자 없는 일
+    ]:
+        query(sql, uuid.uuid4(), uid, cost, now - timedelta(hours=hours_ago))
+    (pool,) = [b for b in service.buckets(y, now, now - timedelta(hours=4)) if b.new_days]
+    assert asyncio.run(service.db_spent(pool)) == 1001
+
+
+def test_join_time_is_cached_and_unknown_join_time_blocks(monkeypatch, caps):
+    """가입 시각은 Redis에 둔다: DB가 잠깐 안 돼도 Redis 카운터로 센다(전과 같음).
+    가입 시각을 Redis · DB 어디서도 못 읽으면 막는다(닫힘 쪽). 새 계정 몫을 끄면 가입 시각을 읽지 않는다."""
+    a = _user("cached@mitjip.test")
+
+    def no_db():
+        raise OSError("DB 연결 안 됨")
+
+    async def go():
+        assert await llm.budget_ok(a, "t")  # 가입 시각 · 카운터를 Redis에 채운다
+        key = f"llm:joined:{service._tag()}:{a}"
+        assert await queue.redis.get(key) is not None
+        monkeypatch.setattr(service, "SessionLocal", no_db)
+        cached = await llm.budget_ok(a, "t")
+        await queue.redis.set(key, "모름")  # 읽을 수 없는 값이면 DB로 가는데 DB도 안 된다
+        unknown = await llm.budget_ok(a, "t")
+        monkeypatch.setattr(settings, "llm_new_user_days", 0)
+        return cached, unknown, await llm.budget_ok(a, "t")
+
+    assert run(monkeypatch, go) == (True, False, True)
 
 
 def test_over_cap_stops_paid_call_before_request(monkeypatch, script):

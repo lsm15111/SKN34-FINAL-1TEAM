@@ -11,7 +11,7 @@ case "$QA_PROFILE" in
 esac
 QA_CLAUDE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$QA_CLAUDE/env.sh"  # 메인 .env(DB 접속값) + LLM 키 비움 + LLM_LIVE=false
-unset LLM_CAP_USER_DAY_USD LLM_CAP_SERVICE_DAY_USD LLM_CAP_TOTAL_USD LLM_CAP_TURN_USD
+unset LLM_CAP_USER_DAY_USD LLM_CAP_SERVICE_DAY_USD LLM_CAP_TOTAL_USD LLM_CAP_TURN_USD LLM_CAP_NEW_USER_DAY_USD LLM_CAP_NEW_POOL_DAY_USD LLM_NEW_USER_DAYS
 if [ "$QA_PROFILE" = qa ]; then
   # run-api.sh live 갈래와 같은 방법: Anthropic 키만 살려요(OpenAI · 다른 키는 비운 그대로). 상한은 올리지 않아요
   ANTHROPIC_API_KEY="$(sed -n 's/^ANTHROPIC_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"

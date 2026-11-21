@@ -1,10 +1,15 @@
 """LLM 비용 장부와 상한 (계약서 2장 llm_usage · 7장 비용 상한). agent/llm.py의 _guard · _sink가 부른다.
 
-- allow(): 유료 호출 전에 사용자 하루 · 서비스 하루 · 전체 쓴 돈을 상한과 비교한다. 90% 이상이면 OverCap
-  (llm이 OverBudget으로 바꿔 부르는 쪽이 무료 모드로 간다), 80% 이상이면 경고 로그를 범위마다 하루 한 번 남긴다.
+- allow(): 유료 호출 전에 사용자 하루 · 새 계정(한 계정 하루 · 새 계정 합 하루) · 서비스 하루 · 전체 쓴 돈을
+  상한과 비교한다. 90% 이상이면 OverCap(llm이 OverBudget으로 바꿔 부르는 쪽이 무료 모드로 간다),
+  80% 이상이면 경고 로그를 범위마다 하루 한 번 남긴다.
+- 새 계정: 가입(users.created_at)한 지 llm_new_user_days일 안인 계정. 계정 여러 개로 서비스 하루 상한을 다 쓰지
+  못하게(보안 QA M4) 사용자 하루에 더해 한 계정 하루 · 새 계정 합 하루를 본다. 새 계정 합은 부른 때 새 계정이던
+  호출만 센다. 사용자를 모르는 일(worker 등)은 서비스 하루 · 전체만 본다.
 - record(): 호출 뒤 짧은 세션으로 한 줄을 넣고 commit한다(글 없음). 그다음 Redis 정수 카운터를 올린다.
 - 셈: Redis 정수 카운터(마이크로달러)가 먼저다. 키가 없으면 llm_usage 합계로 채우고(SYNC_S마다 다시 맞춤),
-  Redis가 안 되면 합계로 바로 센다. 상한을 확인하지 못하면 llm이 유료 호출을 막는다(닫힘 쪽).
+  Redis가 안 되면 합계로 바로 센다. 가입 시각도 Redis에 하루 두고, 없으면 users에서 읽는다.
+  상한을 확인하지 못하면 llm이 유료 호출을 막는다(닫힘 쪽).
 - 하루는 서울 날짜다. 상한을 0으로 두면 그 범위의 유료 호출을 모두 막는다.
 - 로그에는 범위 · 목적만 남긴다(사용자 id · 글 없음).
 """
@@ -14,7 +19,7 @@ import hashlib
 import logging
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, time
+from datetime import datetime, time, timedelta
 from typing import Any, Literal
 
 from redis.exceptions import RedisError
@@ -23,6 +28,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app import queue
+from app.auth.models import User
 from app.config import settings
 from app.db import SessionLocal
 from app.shared import clock
@@ -34,14 +40,14 @@ log = logging.getLogger(__name__)
 WARN, STOP = 0.8, 0.9
 # 카운터를 llm_usage 합계로 다시 맞추는 주기(초). Redis가 잠깐 안 됐을 때 생긴 어긋남도 이 안에서 풀린다
 SYNC_S = 600
-FLAG_S = 86_400  # 경고 · 막음 로그는 범위마다 하루 한 번
+FLAG_S = 86_400  # 경고 · 막음 로그는 범위마다 하루 한 번. 가입 시각도 이만큼 Redis에 둔다
 # 키가 있을 때만 올린다. 없으면 다음 allow가 DB 합계로 채운다(이번 호출은 이미 DB에 있다)
 _INCR = (
     "if redis.call('exists', KEYS[1]) == 1 then"
     " return redis.call('incrby', KEYS[1], ARGV[1]) end return nil"
 )
 
-Scope = Literal["user_day", "service_day", "total"]
+Scope = Literal["user_day", "new_user_day", "new_pool_day", "service_day", "total"]
 # Redis가 안 될 때 나는 것: 연결 · 시간 초과(RedisError · OSError), 다른 이벤트 루프의 연결(RuntimeError)
 REDIS_ERRORS = (RedisError, OSError, RuntimeError)
 DB_ERRORS = (SQLAlchemyError, OSError)
@@ -62,6 +68,8 @@ class Bucket:
     cap: int  # 마이크로달러
     since: datetime | None  # 이때부터 센다(None이면 처음부터)
     user_id: uuid.UUID | None = None
+    # 있으면 부른 때 가입한 지 이 일수 안이던 계정의 호출만 센다(새 계정 합)
+    new_days: int | None = None
 
 
 def micros(usd: float) -> int:
@@ -74,8 +82,19 @@ def _tag() -> str:
     return hashlib.sha256(f"{u.host}:{u.port}/{u.database}".encode()).hexdigest()[:8]
 
 
-def buckets(user_id: uuid.UUID | None, now: datetime | None = None) -> list[Bucket]:
-    """셀 범위: 사용자 하루(사용자를 알 때만) · 서비스 하루 · 전체."""
+def is_new(joined: datetime | None, now: datetime) -> bool:
+    """가입한 지 llm_new_user_days일 안인 계정인지. 가입 시각을 모르면(사용자 없음 · 지워짐) 아니다."""
+    days = settings.llm_new_user_days
+    return joined is not None and days > 0 and joined > now - timedelta(days=days)
+
+
+def buckets(
+    user_id: uuid.UUID | None, now: datetime | None = None, joined: datetime | None = None
+) -> list[Bucket]:
+    """셀 범위: 사용자 하루(사용자를 알 때만) · 새 계정이면 한 계정 하루와 새 계정 합 하루 · 서비스 하루 · 전체.
+
+    joined는 그 사용자의 가입 시각(joined_at)이다.
+    """
     now = now or clock.now_utc()
     day = now.astimezone(clock.SEOUL).date()
     start = datetime.combine(day, time(0), tzinfo=clock.SEOUL)
@@ -84,10 +103,40 @@ def buckets(user_id: uuid.UUID | None, now: datetime | None = None) -> list[Buck
     if user_id is not None:
         cap = micros(settings.llm_cap_user_day_usd)
         out.append(Bucket("user_day", f"llm:cost:{tag}:u:{user_id}:{ymd}", cap, start, user_id))
+        if is_new(joined, now):
+            cap = micros(settings.llm_cap_new_user_day_usd)
+            key = f"llm:cost:{tag}:nu:{user_id}:{ymd}"
+            out.append(Bucket("new_user_day", key, cap, start, user_id))
+            cap, days = micros(settings.llm_cap_new_pool_day_usd), settings.llm_new_user_days
+            out.append(Bucket("new_pool_day", f"llm:cost:{tag}:n:{ymd}", cap, start, new_days=days))
     day_cap = micros(settings.llm_cap_service_day_usd)
     out.append(Bucket("service_day", f"llm:cost:{tag}:d:{ymd}", day_cap, start))
     out.append(Bucket("total", f"llm:cost:{tag}:all", micros(settings.llm_cap_total_usd), None))
     return out
+
+
+async def joined_at(user_id: uuid.UUID | None) -> datetime | None:
+    """가입 시각(users.created_at). Redis에 하루 두고, 없거나 Redis가 안 되면 users에서 읽는다.
+
+    사용자 줄이 없으면(그사이 탈퇴) None이다. DB 오류는 그대로 낸다(allow를 부른 쪽이 닫힘 쪽으로 막는다).
+    새 계정 몫을 끈 때(일수 0)는 읽지 않는다.
+    """
+    if user_id is None or settings.llm_new_user_days <= 0:
+        return None
+    key = f"llm:joined:{_tag()}:{user_id}"
+    try:
+        got = await queue.redis.get(key)
+    except REDIS_ERRORS:
+        got = None
+    if got is not None:
+        with contextlib.suppress(ValueError):  # 모르는 값이면 users에서 다시 읽는다
+            return datetime.fromisoformat(got.decode() if isinstance(got, bytes) else got)
+    async with SessionLocal() as s:
+        joined = await s.scalar(select(User.created_at).where(User.id == user_id))
+    if joined is not None:
+        with contextlib.suppress(*REDIS_ERRORS):
+            await queue.redis.set(key, joined.isoformat(), ex=FLAG_S)
+    return joined
 
 
 async def db_spent(b: Bucket) -> int:
@@ -95,6 +144,10 @@ async def db_spent(b: Bucket) -> int:
     q = select(func.coalesce(func.sum(LlmUsage.cost_micros), 0))
     if b.user_id is not None:
         q = q.where(LlmUsage.user_id == b.user_id)
+    if b.new_days is not None:  # 새 계정 합: 부른 때 가입한 지 new_days일 안이던 계정의 호출만
+        q = q.join_from(LlmUsage, User, User.id == LlmUsage.user_id).where(
+            User.created_at > LlmUsage.created_at - timedelta(days=b.new_days)
+        )
     if b.since is not None:
         q = q.where(LlmUsage.created_at >= b.since)
     async with SessionLocal() as s:
@@ -125,7 +178,7 @@ async def _once(key: str) -> bool:
 
 async def allow(user_id: uuid.UUID | None, purpose: str) -> None:
     """유료 호출 전에 부른다. 90% 이상이면 OverCap, 80% 이상이면 경고 로그."""
-    for b in buckets(user_id):
+    for b in buckets(user_id, joined=await joined_at(user_id)):
         n = await spent(b)
         if n >= b.cap * STOP:
             if await _once(f"{b.key}:stop"):
@@ -191,7 +244,11 @@ async def record(
     except DB_ERRORS:
         log.warning("LLM 사용 기록을 남기지 못했어요 (%s)", purpose)
     if cost:
-        for b in buckets(user_id):
+        joined = None
+        # 가입 시각을 못 읽으면 새 계정 카운터만 이번 비용이 빠진다(다음 맞춤에서 장부 합계로 풀린다)
+        with contextlib.suppress(*DB_ERRORS):
+            joined = await joined_at(user_id)
+        for b in buckets(user_id, joined=joined):
             with contextlib.suppress(*REDIS_ERRORS):
                 await queue.redis.eval(_INCR, 1, b.key, cost)
     return cost

@@ -34,9 +34,14 @@ class Settings(BaseSettings):
     # 가벼운 모델을 쓸 v2 · v3 역할(쉼표로)
     llm_claude_light_roles: str = "trade,composer,general,planner"
     # 유료 LLM 비용 상한(달러, usage.service). 80%면 경고 로그, 90%면 유료 호출을 막고 무료 모드로 답한다
-    llm_cap_user_day_usd: float = 0.40
+    llm_cap_user_day_usd: float = 1.0
     llm_cap_service_day_usd: float = 5.0
     llm_cap_total_usd: float = 45.0
+    # 새 계정(가입한 지 llm_new_user_days일 안) 몫: 한 계정 하루 · 새 계정 모두 합쳐 하루. 사용자 하루 상한과 함께 본다.
+    # 일수를 0으로 두면 새 계정 몫을 보지 않는다
+    llm_cap_new_user_day_usd: float = 0.20
+    llm_cap_new_pool_day_usd: float = 1.0
+    llm_new_user_days: int = 7
     # 비서 한 턴 상한(달러). 비서 runtime이 CALL_CTX.spent_micros와 비교한다
     llm_cap_turn_usd: float = 0.06
     # 비서 answer_question이 질문 종류별로 부를 답 파이프라인: v3(chat.service.answer_only) · v2(v2.ask.answer_only)
