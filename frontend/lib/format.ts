@@ -43,11 +43,12 @@ export function eulReul(word: string): string {
   return `${word}${(c - 0xac00) % 28 === 0 ? "를" : "을"}`;
 }
 
-/** 받침에 맞춰 로/으로를 붙인다: "결도배" → "결도배로", "마루와벽" → "마루와벽으로" (ㄹ 받침은 "로") */
+/** 받침에 맞춰 로/으로를 붙인다: "결도배" → "결도배로", "마루와벽" → "마루와벽으로" (ㄹ 받침은 "로").
+ * 괄호로 끝나면 괄호 안 마지막 한글로 본다: "11.30(일)" → "11.30(일)로" */
 export function euro(word: string): string {
-  const c = word.charCodeAt(word.length - 1);
-  if (c < 0xac00 || c > 0xd7a3) return `${word}(으)로`;
-  const j = (c - 0xac00) % 28;
+  const last = /([가-힣])[)\]\s]*$/.exec(word);
+  if (!last) return `${word}(으)로`;
+  const j = (last[1].charCodeAt(0) - 0xac00) % 28;
   return `${word}${j === 0 || j === 8 ? "로" : "으로"}`;
 }
 

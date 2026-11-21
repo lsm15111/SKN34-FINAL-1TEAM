@@ -727,6 +727,15 @@ def knowledge_card(card_id: str, title: str, hits: list, source: str = "") -> Ca
 
 # ---- 오늘 정할 일 ----
 
+
+def news_line(body: str) -> tuple[str, str | None]:
+    """알림 글 '문장 · 덧말(공정 · 지역 · 업체)' → (문장, 덧말). 새 소식 줄이 문장으로 끝나게 덧말은 sub로 뗀다."""
+    head, sep, tail = body.partition(" · ")
+    if sep and head.rstrip(". ").endswith("요"):
+        return head, tail or None
+    return body, None
+
+
 ACTION_ICON = {
     "home_info": "doc", "visit_request": "inbox", "visit_slot": "calendar",
     "vendor_confirm": "doc", "dates_accept": "calendar", "delay_accept": "calendar",
@@ -809,7 +818,11 @@ async def today(
     page = await notify_service.page(s, user.id, pid)
     news = [
         TodayRow(
-            id=f"n-{x.id}", icon="file", title=x.body, action=RowAction(label="보기", href=x.link)
+            id=f"n-{x.id}",
+            icon="file",
+            title=news_line(x.body)[0],
+            sub=news_line(x.body)[1],
+            action=RowAction(label="보기", href=x.link),
         )
         for x in page.items
         if not x.read and now - x.created_at <= timedelta(days=2)
@@ -820,7 +833,7 @@ async def today(
         "date": today_,
         "todo": model_todo,
         "waiting": model_wait,
-        "news": [{"title": x.title} for x in news],
+        "news": [{"title": x.title, "sub": x.sub} for x in news],
         "count": len(todo),
     }
     return card, model

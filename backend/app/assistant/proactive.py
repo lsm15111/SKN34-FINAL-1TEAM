@@ -81,7 +81,7 @@ TRIGGERS: dict[str, Trigger] = {
             decision=True, action=True, state="visit", say="실측 날짜 고를래요",
             why="업체가 갈 수 있는 기간을 보냈어요",
             feed="{vendor_i_ga} 실측 기간을 보냈어요. 반나절 후보를 골라 뒀어요.",
-            notify="{vendor} 실측 날짜를 아직 고르지 않았어요. 후보를 확인해 주세요.",
+            notify="{vendor_i_ga} 보낸 실측 기간에서 아직 날짜를 고르지 않았어요. 후보를 확인해 주세요.",
         ),
         Trigger(
             "quote_sent", "customer", ("quote_sent", "quote_resent"), follow=timedelta(days=3),
@@ -109,17 +109,17 @@ TRIGGERS: dict[str, Trigger] = {
         Trigger(
             "visit_requested", "vendor", ("visit_requested",), action=True, state="visit",
             say="새 요청 브리핑해 줘", why="새 실측 요청이 왔어요",
-            feed="새 실측 요청이 왔어요 · {area}. 답할 기간을 골라 뒀어요.",
+            feed="{area} 실측 요청이 새로 왔어요. 답할 기간을 골라 뒀어요.",
         ),
         Trigger(
             "visit_picked", "vendor", ("visit_picked",), decision=True, state="visit",
             say="요청 브리핑해 줘", why="고객이 실측 날짜를 골랐어요",
-            feed="고객이 실측 날짜를 골랐어요 · {area}. 수락해 주세요.",
+            feed="{area} 요청에서 고객이 실측 날짜를 골랐어요. 수락해 주세요.",
         ),
         Trigger(
             "deal_confirmed", "vendor", ("deal_confirmed",), decision=True, action=True,
             state="deal", say="공사 할 일 보여 줘", why="고객이 확정했어요",
-            feed="고객이 확정했어요 · {area}. 공사 날짜 후보를 골라 뒀어요.",
+            feed="{area} 요청에서 고객이 보낸 견적서로 확정했어요. 공사 날짜 후보를 골라 뒀어요.",
         ),
     )
 }  # fmt: skip

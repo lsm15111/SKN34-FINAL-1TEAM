@@ -281,7 +281,9 @@ def test_follow_up_notify_after_48h_then_state_change_closes(api, monkeypatch):
     tally = run(api, proactive.evaluate_due, at(9, 1))
     assert tally == {"sent": 1}
     late = nudges(id=late["id"])[0]
-    assert late["status"] == "sent" and late["body"].startswith("마루와벽 실측 날짜를 아직")
+    assert late["status"] == "sent" and late["body"].startswith(
+        "마루와벽이 보낸 실측 기간에서 아직"
+    )
     (note,) = query("select kind, link, body from notifications where kind = 'assistant_nudge'")
     assert note["link"] == f"/projects/{f['pid']}" and note["body"] == late["body"]
     first = nudges(id=n["id"])[0]
