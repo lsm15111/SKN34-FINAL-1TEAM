@@ -189,6 +189,8 @@ NULLS = (("empty", ""), ("dunno", "잘 모르겠어요."))
 def load_controls(a) -> list[Item]:
     """판정기 점검용 대조군: A = 참고 답(ChatGPT), B = 빈 답 · '모르겠어요' · 다른 질문의 답. A가 이겨야 해요."""
     pool = [r for r in jsonl(a.set) if (r.get("ref") or {}).get("gpt")]
+    if a.group:  # 금액 · 기간 질문의 ChatGPT 답은 근거 없는 시세라 루브릭대로 '둘 다 나쁨'이 나와요(j-ctl1 C05)
+        pool = [r for r in pool if r.get("group") in a.group.split(",")]
     rnd = random.Random(a.seed)
     rnd.shuffle(pool)
     picked = pool[: a.controls]
