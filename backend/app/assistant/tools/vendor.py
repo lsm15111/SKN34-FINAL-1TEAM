@@ -90,14 +90,21 @@ async def brief(
     commit: bool = True,
     origin: str = "turn",
     propose_window: bool = True,
+    keep_open: bool | None = None,
+    show_open: bool = False,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
     """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지: 맞음 · 확인 필요 · 맞지 않음) · 가견적(요청
     때 고정한 값) · 빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 →
-    window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀). 공정 · 지역이 맞지 않으면 기간 후보 · 제안을 만들지
-    않고 맞지 않는 까닭만 보인다(못 받아요는 업체가 고른다). 칸 수는 카드에 보이는 하나(제안 기간의 칸)만 쓴다.
+    window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀). 공정이 맞지 않으면 기간 후보 · 제안을 만들지 않고 맞지
+    않는 까닭만 보인다(못 받아요는 업체가 고른다). 지역은 고객이 이미 보낸 요청이라 막지 않고 서비스 지역 밖이면
+    '확인 필요'로 보인다(가까운 구 업체로 간 요청, 리드 결정 D11). 칸 수는 카드에 보이는 하나(제안 기간의 칸)만 쓴다.
     AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
     (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
-    말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
+    말하지 않은 턴 · REST 읽기).
+    keep_open: 이 요청에 열린 제안(종류 상관없이, 대화에서 고른 못 받아요 · 다른 기간 포함)이 있으면 새로 만들지 않고
+    덮지 않는다(그 행이 기간 답하기면 그것을 보인다). 바꿔치기는 사람이 고른 턴(대화 · 단추)에서만 한다(리뷰 B3).
+    None이면 먼저 말 걸기(origin nudge)만 켠다. show_open: 제안을 만들지 않을 때도 열린 기간 답하기 제안을 보인다
+    (REST 읽기). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안 · 다시 쓴 열린 제안, 닫힌 제안)."""
     from app.calc import slots
     from app.refprice.holidays import days_off
     from app.vendor import service as vendor_service
@@ -115,11 +122,19 @@ async def brief(
     trade = TRADE.get(d.trade, d.trade)
     grade = GRADE.get(d.grade or "")
     in_area = any(a.sgg == d.area_name or a.label == d.region for a in prof.areas)
-    wish = f"고객 희망 {start.isoformat()} ~ {end.isoformat()}"
+    wish = f"고객 희망 {md_week(start)} ~ {md_week(end)}"
     has_open = (d.open_count or 0) > 0
     fit = [
         _fit("trade", "공정", d.trade in prof.trades, f"{trade} 요청"),
-        _fit("area", "지역", in_area, d.region),
+        _fit("area", "지역", True, d.region)
+        if in_area
+        else FitRow(
+            key="area",
+            label="지역",
+            ok=False,
+            text=f"{d.region} · {OUT_AREA}{NEAR if _near(d.region, prof.areas) else ''}",
+            state="check",
+        ),
         # 칸 수는 쓰지 않는다(카드 · 한 문장의 칸 수는 제안 기간 하나)
         _fit("schedule", "일정", has_open, wish if has_open else f"{wish} · 빈 반나절 없음"),
     ]
@@ -133,7 +148,7 @@ async def brief(
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게). 공정 · 지역이 맞지 않으면 두지 않는다
+    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게). 공정이 맞지 않으면 두지 않는다
     live = d.status == "requested" and misfit is None
     free = await open_halves(s, vendor.id, start, end) if live else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
@@ -156,13 +171,28 @@ async def brief(
         )
         for w in wins
     ]
-    if wins and propose_window:
+    keep = origin == "nudge" if keep_open is None else keep_open
+    held: list = []
+    if wins and propose_window and keep:
+        from app.assistant import repository as repo
+
+        await repo.lock_target(s, vendor.id, visit_id)  # 대화의 제안 만들기와 줄 선다(덮지 않게)
+        held = await _open_on(s, vendor.id, visit_id, now)
+    elif wins and show_open:
+        held = await _open_on(s, vendor.id, visit_id, now)
+    # 열린 제안을 덮지 않는다: 기간 답하기면 그 행을 보이고, 다른 종류(못 받아요 …)면 제안 없이
+    if held:
+        same = next((a for a in held if a.kind == "window_answer"), None)
+        suggest = _suggest_of(same, wins) if same is not None else None
+        if same is not None and propose_window:
+            made = [actions.out(same)]
+    elif wins and propose_window:
         w = wins[0]
         instant = bool(d.instant_default)
         summary = ActionSummary(
             title="이 기간으로 답하기",
             rows=[
-                SummaryRow(label="기간", value=f"{w.start.isoformat()} ~ {w.end.isoformat()}"),
+                SummaryRow(label="기간", value=f"{md_week(w.start)} ~ {md_week(w.end)}"),
                 SummaryRow(label="빈 반나절", value=f"{w.open_count}칸"),
                 SummaryRow(label="바로 확정", value=INSTANT[instant]),
             ],
@@ -205,7 +235,7 @@ async def brief(
             )
     facts = [x for x in (d.home_text, f"도배 {grade}" if grade else None, d.when_text) if x]
     if d.work_wish_on:
-        facts.append(f"공사 시작 희망 {d.work_wish_on.isoformat()}")
+        facts.append(f"공사 시작 희망 {md_week(d.work_wish_on)}")
     if d.photos:
         facts.append(f"사진 {len(d.photos)}장")
     # 고객이 반나절을 골랐으면(업체 수락 차례) 그 날과 수락 기한 · 누를 곳(요청 화면)
@@ -262,6 +292,10 @@ async def brief(
         "title": data.title,
         "facts": facts,
         "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in fit],
+        # 날짜 값(ISO): 화면 글은 '12.15(화)' 꼴이라 모델이 '12월 15일'로 말해도 문장 숫자 검사가 이 값으로 본다
+        "wish_start": start,
+        "wish_end": end,
+        "work_wish_on": d.work_wish_on,
         "estimate_won": d.estimate_total,
         "due_at": seoul_text(data.due_at),  # 서울 시각 글(UTC를 그대로 읽지 않게)
         "picked": {
@@ -275,7 +309,7 @@ async def brief(
         "memo": policy.data(d.message),
         "diy": policy.data("고객이 직접 할 일: " + " · ".join(told)) if told else None,
         "proposed": bool(made),
-        # 공정 · 지역이 맞지 않음(무료 모드 답이 쓴다, 허용 칸이 아니라 모델 값에는 안 감)
+        # 공정이 맞지 않음(무료 모드 답이 쓴다, 허용 칸이 아니라 모델 값에는 안 감)
         "misfit": misfit.label if misfit else None,
         "windows": [
             {"ref": w.ref, "start": w.start, "end": w.end, "open_count": w.open_count}
@@ -285,11 +319,59 @@ async def brief(
     return card, model, data, made, closed
 
 
-MISFIT_KEYS = ("trade", "area")  # 맞지 않으면 기간 답하기를 권하지 않는 칸
+# 맞지 않으면 기간 답하기를 권하지 않는 칸. 지역은 넣지 않는다: 고객이 이미 보낸 요청이라 서비스 지역 밖이어도
+# 막지 않고 '확인 필요'로 보인다(이 집 구에 업체가 없으면 가까운 구 업체로 가요, 리드 결정 D11)
+MISFIT_KEYS = ("trade",)
+OUT_AREA = "서비스 지역 밖"
+NEAR = "(가까운 구)"
+CHECK_SAY = {  # 확인 필요 칸 → 브리핑 한 문장 틀
+    "paper": "벽지 확인이 필요해요. 고객이 아직 정하지 않았어요.",
+    "area": "서비스 지역 밖 요청이에요. 요청을 열어 확인해 주세요.",
+}
 
 
 def _fit(key, label: str, ok: bool, text: str) -> FitRow:
     return FitRow(key=key, label=label, ok=ok, text=text, state="ok" if ok else "no")
+
+
+def _near(region: str, areas) -> bool:
+    """업체 출장 지역에 이 집 구의 이웃 구(shared.regions.NEIGHBORS)가 있는지(가까운 구 업체로 간 요청)."""
+    from app.shared.regions import NEIGHBORS, region_label
+
+    for (sido, sgg), near in NEIGHBORS.items():
+        if region_label(sido, sgg) == region:
+            return any((a.sido, a.sgg) in near for a in areas)
+    return False
+
+
+async def _open_on(s: AsyncSession, vendor_id: uuid.UUID, visit_id: uuid.UUID, now: datetime):
+    """이 요청에 열린 업체 제안(종류 상관없이, 기한 안). 대상마다 열린 제안은 하나다."""
+    from app.assistant import repository as repo
+
+    return [a for a in await repo.open_on(s, vendor_id, "visit", visit_id) if a.expires_at > now]
+
+
+def _suggest_of(a, wins) -> BriefSuggest | None:
+    """열린 기간 답하기 제안 → 추천 응답(지금 후보 기간과 같을 때만, 칸 수는 지금 값)."""
+    p = a.payload or {}
+    w = next(
+        (
+            x
+            for x in wins
+            if (x.start.isoformat(), x.end.isoformat()) == (p.get("start"), p.get("end"))
+        ),
+        None,
+    )
+    if w is None:
+        return None
+    return BriefSuggest(
+        action_id=a.id,
+        start=w.start,
+        end=w.end,
+        excluded=list(w.excluded),
+        instant=bool(p.get("instant")),
+        open_count=w.open_count,
+    )
 
 
 SENTENCE_MAX = 60
@@ -305,8 +387,8 @@ def _md(d: date) -> str:
 
 
 def brief_template(data: VendorBriefData) -> str:
-    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터(공정 · 지역이면 못 받아요로 답하는 길), 다 맞으면 답하기 좋은
-    기간(카드의 제안 칸 수), 그다음 확인 필요(고객이 아직 정하지 않은 것)."""
+    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터(공정이면 못 받아요로 답하는 길), 다 맞으면 답하기 좋은
+    기간(카드의 제안 칸 수), 그다음 확인 필요(고객이 아직 정하지 않은 것 · 서비스 지역 밖)."""
     if data.picked is not None:  # 고객이 반나절을 골랐어요: 수락 차례
         p = data.picked
         half = f"{HALF[p.half]}{'을' if p.half == 'am' else '를'}"  # 오전을 · 오후를
@@ -321,7 +403,9 @@ def brief_template(data: VendorBriefData) -> str:
         return f"{_md(g.start)}~{_md(g.end)}에 빈 반나절 {g.open_count}칸이 있어 답하기 좋아요."
     check = next((f for f in data.fit if f.state == "check"), None)
     if check is not None:
-        return f"{check.label} 확인이 필요해요. 고객이 아직 정하지 않았어요."
+        return CHECK_SAY.get(
+            check.key, f"{check.label} 확인이 필요해요. 요청을 열어 확인해 주세요."
+        )
     return "공정 · 지역 · 일정이 맞아요. 요청을 열어 확인해 주세요."
 
 
@@ -360,8 +444,9 @@ def sentence_ok(text: str, facts: str) -> bool:
     )
 
 
-async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID) -> str:
-    """브리핑 AI 한 문장(Haiku, 같은 사실이면 하루 캐시). 못 부르거나 검사에 걸리면 틀(brief_template)."""
+async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID, *, call: bool = True) -> str:
+    """브리핑 AI 한 문장(Haiku, 같은 사실이면 하루 캐시). 못 부르거나 검사에 걸리면 틀(brief_template).
+    call=False면 Haiku를 부르지 않고 캐시만 본다(REST 읽기 GET: 다른 사이트가 열어도 비용이 들지 않게)."""
     import hashlib
     import json
 
@@ -378,6 +463,8 @@ async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID) -> str:
         hit = None
     if hit:
         return hit.decode() if isinstance(hit, bytes) else str(hit)
+    if not call:
+        return brief_template(data)
     try:
         with llm.call_ctx(user_id=user_id, purpose="nudge"):
             got = await llm.claude_json(
@@ -455,7 +542,7 @@ async def checklist(
         FieldValue(label="공사 기간", value=f"{cur.days}일" if cur and cur.days else None),
         FieldValue(
             label="유효기간",
-            value=cur.valid_until.isoformat() if cur and cur.valid_until else None,
+            value=md_week(cur.valid_until) if cur and cur.valid_until else None,  # 화면 날짜 꼴
         ),
         # 고객 견적 비교 카드에 보이는 칸(철거 · 폐기물 · 하자 보증)도 같이 본다
         FieldValue(label="철거", value=INCL.get(cur.incl_removal) if cur else None),
@@ -486,6 +573,8 @@ async def checklist(
     model = {
         "missing": missing,  # 비어 있는 칸(먼저 말할 것)
         "fields": [{"label": f.label, "value": f.value} for f in fields],
+        # 유효기간 날짜 값(ISO): 칸 글은 '12.15(화)' 꼴이라 문장 숫자 검사가 이 값으로 본다
+        "valid_until": cur.valid_until if cur else None,
         "items": [{"label": x.label} for x in items],
         "easy_miss": easy,
         "prev": data.prev.model_dump() if data.prev else None,
@@ -659,8 +748,9 @@ class BriefIn(BaseModel):
 async def request_brief(tc: ToolCtx, a: BriefIn) -> ToolOut:
     vid = _visit_id(tc, a.visit_ref)
     async with SessionLocal() as s:
+        # 읽기 도구: 이 요청에 열린 제안(대화에서 고른 못 받아요 등)이 있으면 덮지 않는다(리뷰 B3)
         card, model, _, made, closed = await brief(
-            s, tc.user, vid, tc.today, tc.now, tc.refs, tc.turn_id
+            s, tc.user, vid, tc.today, tc.now, tc.refs, tc.turn_id, keep_open=True
         )
     return ToolOut(data=model, cards=[card], actions=made, closed=closed)
 

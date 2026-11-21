@@ -209,7 +209,7 @@ def test_vendor_brief_card_has_window_refs_for_buttons(api, monkeypatch):
     f = requested(api)
     quiet(monkeypatch)
     login(api, f["email"])
-    brief = api.get(f"/vendor/assistant/briefs/{f['visit']}").json()
+    brief = api.post(f"/vendor/assistant/briefs/{f['visit']}").json()  # 화면 카드(제안은 POST)
     wins = brief["windows"]
     assert wins and all(w["ref"].startswith("w") for w in wins)
     assert (wins[0]["start"], wins[0]["end"]) == (

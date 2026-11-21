@@ -27,6 +27,7 @@ from typing import Any, Literal
 from app.agent.v3.check import mask
 from app.agent.v3.schemas import TEXT_MAX
 from app.shared.clock import SEOUL
+from app.shared.text import strip_controls
 
 TOOL_MAX = 6
 LLM_MAX = 8
@@ -72,8 +73,8 @@ VS_STANDARD = re.compile(
 
 
 def mask_in(text: str) -> str:
-    """사용자 글 → 가린 글(저장 · LLM 전). 길이도 자른다."""
-    return mask(text or "").strip()[:TEXT_MAX]
+    """사용자 글 → 가린 글(저장 · LLM 전). 제어 문자(NUL 등)를 지우고 길이도 자른다. 비면 ""(부르는 쪽이 422)."""
+    return mask(strip_controls(text or "")).strip()[:TEXT_MAX]
 
 
 def _clean(text: str) -> str:

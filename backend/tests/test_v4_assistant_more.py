@@ -171,18 +171,21 @@ def test_vendor_brief_sentence_ai_then_cache_and_template(api, script):
     _, visits = two_requested(api)
     login(api, "maru@mitjip.test")
     url = f"/vendor/assistant/briefs/{visits[0]}"
-    plain = api.get(url).json()["sentence"]  # 꺼짐: 틀(코드 값만)
+    # 화면 브리핑 카드는 POST(Haiku 한 문장). GET은 읽기만이라 Haiku를 부르지 않고 캐시 문장 또는 틀(리뷰 B3 · 보안 L4)
+    plain = api.post(url).json()["sentence"]  # 꺼짐: 틀(코드 값만)
     assert plain.endswith("요.") and ("빈 반나절" in plain or "맞지 않아요" in plain)
     log = script([{"json": {"text": "노원구 도배 요청이에요. 답하기 좋은 기간이 있어요."}}])
-    got = api.get(url).json()["sentence"]
+    assert api.get(url).json()["sentence"] == plain and log == []  # GET은 부르지 않는다
+    got = api.post(url).json()["sentence"]
     assert got == "노원구 도배 요청이에요. 답하기 좋은 기간이 있어요."
     sent = json.dumps(log, ensure_ascii=False)
     assert log[0]["model"] == "claude-haiku-5-5" and "김믿집" not in sent  # 고객 이름 없음
     log = script([])  # 같은 사실이면 하루 캐시(부르지 않음)
-    assert api.get(url).json()["sentence"] == got and log == []
+    assert api.post(url).json()["sentence"] == got and log == []
+    assert api.get(url).json()["sentence"] == got  # GET도 캐시 문장은 보인다
     api.portal.call(queue.redis.flushdb)
     script([{"json": {"text": "이 요청은 99칸이 비어 있어 바로 수락돼요."}}])  # 사실에 없는 숫자
-    assert api.get(url).json()["sentence"] == plain  # 검사에 걸리면 틀
+    assert api.post(url).json()["sentence"] == plain  # 검사에 걸리면 틀
 
 
 # ---- 답 엔진 고르기 ----

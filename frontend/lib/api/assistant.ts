@@ -745,9 +745,10 @@ export async function mockScriptOf(projectId: string): Promise<"f1" | "today" | 
 /** 업체가 보는 요청 사실(서버 화면이 넘겨요). 목업 브리핑이 이 값으로 요약 줄을 채워요 */
 export type BriefSeed = { region?: string | null; area?: string | null; grade?: string | null; occupied?: boolean | null; wish?: { start: string; end: string } | null; work_wish_on?: string | null; estimate_won?: number | null; photos?: number; due_at?: string | null; memo?: string | null };
 
+/** 브리핑 카드: POST가 추천 기간 답하기 제안을 만들어요(열린 제안은 덮지 않아요). GET은 읽기만이라 제안을 만들지 않아요 */
 export async function getVendorBrief(visitId: string, seed?: BriefSeed): Promise<VendorBriefData> {
   if (ASSISTANT_MOCK) return (await mock()).vendorBrief(visitId, seed);
-  return call<VendorBriefData>("GET", `/vendor/assistant/briefs/${enc(visitId)}`);
+  return call<VendorBriefData>("POST", `/vendor/assistant/briefs/${enc(visitId)}`);
 }
 export async function getQuoteChecklist(visitId: string): Promise<QuoteChecklistData> {
   if (ASSISTANT_MOCK) return (await mock()).quoteChecklist(visitId);

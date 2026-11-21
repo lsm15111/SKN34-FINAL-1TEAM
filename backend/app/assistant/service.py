@@ -18,7 +18,7 @@ import uuid
 from collections.abc import AsyncIterator
 from datetime import datetime, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
 from app.assistant import actions, choices, policy, runtime
@@ -162,6 +162,13 @@ def _vendor_facts(today, visit_ref: str | None, opened: list, decided: list) -> 
     return "\n".join(lines)
 
 
+def card_of(card_id: str | None) -> str | None:
+    """화면이 보낸 카드 id → 대상 카드 id. 할 일이 끝난 먼저 말 건 줄 카드는 '@줄 id'가 붙어 오니 뗀다(QA P4)."""
+    if not card_id:
+        return None
+    return card_id.split("@", 1)[0] or None
+
+
 def _choices(ctx: TurnContextIn | None) -> list[str]:
     if ctx is None or ctx.choice is None:
         return []
@@ -169,8 +176,9 @@ def _choices(ctx: TurnContextIn | None) -> list[str]:
 
 
 async def ensure_chat(s, user_id: uuid.UUID, project_id: uuid.UUID | None) -> Chat:
-    """그 사람 · 그 공사의 비서 대화(없으면 만든다, commit은 부르는 쪽). 고객 공사는 공사 행을 먼저 잠가 같은 대화를
-    둘 만들지 않는다. 턴 · 먼저 말 걸기 · 업체 브리핑(REST)이 같은 대화의 이름표 표를 쓰게 한다."""
+    """그 사람 · 그 공사의 비서 대화(없으면 만든다, commit은 부르는 쪽). 고객 공사는 공사 행을, 업체(공사 없음)는
+    사람 단위 트랜잭션 잠금을 먼저 잡고 다시 읽어 같은 대화를 둘 만들지 않는다(작업함이 오늘 · 요청 브리핑을 한꺼번에
+    열어도 하나, 리뷰 R8). 턴 · 먼저 말 걸기 · 업체 브리핑(REST)이 같은 대화의 이름표 표를 쓰게 한다."""
     from app.project import service as project_service
 
     chat = await repo.assistant_chat(s, user_id, project_id)
@@ -178,9 +186,12 @@ async def ensure_chat(s, user_id: uuid.UUID, project_id: uuid.UUID | None) -> Ch
         return chat
     if project_id is not None:
         await project_service.lock(s, project_id)
-        chat = await repo.assistant_chat(s, user_id, project_id)
-        if chat is not None:
-            return chat
+    else:
+        key = f"assistant-chat:{user_id}"
+        await s.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(key, 0))))
+    chat = await repo.assistant_chat(s, user_id, project_id)
+    if chat is not None:
+        return chat
     return await chat_repo.insert_chat(s, user_id, project_id=project_id, kind="assistant")
 
 
@@ -201,6 +212,9 @@ async def start_turn(
 
     now, today = now_utc(), today_seoul()
     masked = policy.mask_in(text)
+    # 공백 · 제어 문자만: LLM에 빈 글 블록을 보내지 않는다(리뷰 R1 · QA P1, 차단기를 걸지 않게)
+    if not masked:
+        raise AppError(422, "invalid", "보낼 말을 적어 주세요.")
     async with SessionLocal() as s:
         old = await repo.turn_by_key(s, user.id, client_key)
         if old is not None:
@@ -263,7 +277,7 @@ async def start_turn(
         await s.commit()
     # 이번 대화에서 도구 · 카드가 준 이름표와 카드의 집 정보 칸 고르기(칸:값)만 넘긴다. 이 화면의 행동 꼴인데
     # 이름표를 모르거나 보던 카드의 대상과 다르면(지난 카드 단추) 버리지 않고 카드를 새로 불러온다. 그 밖은 버린다
-    card_id = context.card_id if context else None
+    card_id = card_of(context.card_id) if context else None
     picked = _choices(context)
     choice = [r for r in picked if choices.valid(r, refs) and choices.fits_card(r, refs, card_id)]
     stale = [r for r in picked if r not in choice and choices.stale(r, surface)]
@@ -554,7 +568,8 @@ async def feed_for(
 ) -> FeedPage:
     """대화 기록 한 쪽(오래된 것부터). 카드는 턴에 남긴 것, 승인 카드는 지금 상태(새 판이면 새 행동)로 그린다.
     먼저 말 건 줄은 보낸 때 자리에 끼운다(대화가 없어도): 그 쪽 말 사이에 보낸 줄만(첫 쪽은 맨 뒤까지, 앞 쪽은
-    다음 쪽 첫 말 앞까지). 고객은 할 일이 끝나 닫힌 줄(acted · handled)도 '완료'로 남긴다(settled)."""
+    다음 쪽 첫 말 앞까지, 더 앞 쪽이 없으면 처음부터). 창 안 줄은 NUDGE_FEED까지 모두 넣는다. 고객은 할 일이 끝나
+    닫힌 줄(acted · handled)도 '완료'로 남긴다(settled)."""
     from app.assistant import proactive
     from app.assistant.tools import cards
     from app.project import service as project_service
@@ -724,7 +739,9 @@ async def chip_facts(
     return out
 
 
-NUDGE_FEED = 30  # 한 쪽에 끼우는 먼저 말 건 줄 수(보이는 줄 + 완료 줄)
+# 한 쪽 창에 끼우는 먼저 말 건 줄 상한(보이는 줄 + 완료 줄). 줄에는 따로 커서가 없어 창 안 줄은 모두 보이게 넉넉히
+# 둔다(30이면 대화 말이 적은 공사에서 그 밖 옛 줄을 다시 볼 길이 없었어요, 리뷰 R13). 하루 알림 상한이 있어 보통 수십 줄
+NUDGE_FEED = 200
 TASK_TRIGGERS = ("visit_offered", "quote_sent")  # 실측 진행 작업 카드를 붙이는 제안
 
 
@@ -863,7 +880,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         vendors=BoardVendors(title="업체", rows=rows) if rows else None,
         period=BoardPeriod(
             label="공사" if final else "예상 공사",
-            value=f"{o.period.start.isoformat()} ~ {o.period.end.isoformat()}",
+            value=f"{cards.md_week(o.period.start)} ~ {cards.md_week(o.period.end)}",  # 화면 날짜 꼴
             sub=f"일하는 날 {o.period.work_days}일",
         )
         if o.period.start
@@ -1031,7 +1048,8 @@ async def suggest_for(
 ) -> list[SuggestOut]:
     """다음에 물을 말 0~3개(코드가 고름): 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일).
     이번 말 · 칩과 같은 말, 고객이 최근에 이미 물은 말, 바로 앞 턴에 보인 카드로 이어지는 단계 제안은 뺀다(같은
-    제안을 여러 턴 되풀이하지 않게). 담은 업체가 없으면 '실측 시간' 대신 업체 고르기를 권한다. 못 읽으면 비운다."""
+    제안을 여러 턴 되풀이하지 않게). 담은 업체가 없으면 '실측 시간' 대신 업체 고르기를 권한다. 못 읽으면(어떤 오류든)
+    비운다: 턴 저장 commit 뒤라 error 이벤트로 끝내면 화면은 실패, 다시 열면 답이 있다."""
     from app.assistant import proactive
     from app.schedule import service as schedule_service
     from app.visit import service as visit_service
@@ -1063,7 +1081,9 @@ async def suggest_for(
                     if r.id in VENDOR_IDEAS:
                         text, why, say = VENDOR_IDEAS[r.id]
                         out.append(SuggestOut(id=f"today-{r.id}", text=text, why=why, say=say))
-    except AppError:
+    except Exception as e:  # noqa: BLE001 - 저장까지 끝난 턴을 오류로 끝내지 않는다(비우기, 리뷰 R10)
+        if not isinstance(e, AppError):
+            log.warning("다음에 물을 말 만들기 실패 (%s)", type(e).__name__)
         return []
     skip = {said.strip(), *chips}
     seen: set[str] = set()
@@ -1091,21 +1111,33 @@ async def _recent(s, user_id: uuid.UUID, project_id: uuid.UUID) -> tuple[set[str
 # ---- 업체 ----
 
 
-async def brief_for(vendor: User, visit_id: uuid.UUID) -> VendorBriefData:
-    """업체 요청 브리핑(REST). 요청함이면 추천 기간 답하기 제안 행을 만든다(실행은 승인 뒤).
-    기간 후보 이름표(w…)는 업체 비서 대화의 표에 넣어 카드 단추(window_answer:w…)로 고를 수 있게 한다.
-    한 문장은 세션을 닫은 뒤 Haiku가 쓴다(같은 사실이면 하루 캐시, 실패하면 틀)."""
+async def brief_for(vendor: User, visit_id: uuid.UUID, *, propose: bool = False) -> VendorBriefData:
+    """업체 요청 브리핑(REST). 기간 후보 이름표(w…)는 업체 비서 대화의 표에 넣어 카드 단추(window_answer:w…)로
+    고를 수 있게 한다.
+    - GET(propose=False): 읽기만. 제안 행을 만들거나 닫지 않고 Haiku도 부르지 않는다(캐시 문장 또는 틀). 이 요청에
+      열린 기간 답하기 제안이 있으면 추천 응답으로 보인다(다른 사이트가 연 GET이 상태를 바꾸지 않게, 보안 L4).
+    - POST(propose=True, 화면 브리핑 카드): 요청함이면 추천 기간 답하기 제안 행을 만든다(실행은 승인 뒤). 이 요청에
+      열린 제안(대화에서 고른 못 받아요 · 다른 기간)이 있으면 새로 만들지 않고 덮지 않는다(리뷰 B3). 한 문장은 세션을
+      닫은 뒤 Haiku가 쓴다(같은 사실이면 하루 캐시, 실패하면 틀)."""
     from app.assistant.tools import vendor as vendor_tools
 
     async with SessionLocal() as s:
         chat = await ensure_chat(s, vendor.id, None)
         refs = await RefTable.load(chat.id)
         _, _, data, _, _ = await vendor_tools.brief(
-            s, vendor, visit_id, today_seoul(), now_utc(), refs
+            s,
+            vendor,
+            visit_id,
+            today_seoul(),
+            now_utc(),
+            refs,
+            propose_window=propose,
+            keep_open=True,
+            show_open=not propose,
         )
         await s.commit()  # 처음이면 만든 업체 대화를 남긴다(제안 행은 brief가 commit했다)
     await refs.save()
-    data.sentence = await vendor_tools.brief_sentence(data, vendor.id)
+    data.sentence = await vendor_tools.brief_sentence(data, vendor.id, call=propose)
     return data
 
 
@@ -1138,12 +1170,20 @@ async def vendor_today(vendor: User) -> VendorTodayData:
 
 
 async def health(user: User) -> HealthOut:
+    """화면에 필요한 값만(보안 I3): 모드와, 고객 본인 하루 상한이면 budget. 서비스 전체 상한 · 차단기는 알리지 않고
+    off로 묶는다(상한을 다 쓰게 하는 공격이 먹혔는지 보는 데 쓰이지 않게). 턴 모드는 runtime이 따로 정한다."""
     from app.agent import llm
+    from app.usage import service as usage
 
-    breaker = await runtime.breaker_open()
-    ok = True if breaker else await llm.budget_ok(user.id, "health")
-    mode, reason = policy.mode_for(available=llm.available(), budget_ok=ok, breaker=breaker)
-    return HealthOut(mode=mode, reason=reason)
+    if not llm.available() or await runtime.breaker_open():
+        return HealthOut(mode="free", reason="off")
+    try:
+        await usage.allow(user.id, "health")
+    except usage.OverCap as e:
+        return HealthOut(mode="free", reason="budget" if e.scope == "user_day" else "off")
+    except usage.DB_ERRORS:  # 셀 수 없으면 닫힘 쪽(턴도 무료 모드로 간다)
+        return HealthOut(mode="free", reason="off")
+    return HealthOut(mode="llm", reason="ok")
 
 
 async def sweep(now: datetime) -> dict[str, int]:

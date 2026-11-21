@@ -402,10 +402,11 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** 요청 브리핑 */
+        /** 요청 브리핑(읽기만) */
         get: operations["vendor_brief_vendor_assistant_briefs__visit_id__get"];
         put?: never;
-        post?: never;
+        /** 요청 브리핑 + 기간 답하기 제안(열린 제안은 덮지 않음) */
+        post: operations["vendor_brief_offer_vendor_assistant_briefs__visit_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5134,6 +5135,7 @@ export interface components {
             mode: "llm" | "free";
             /**
              * Reason
+             * @description ok · off · budget(내 하루 상한). 서비스 전체 상한 · 차단기는 off로 묶어 알려요(breaker는 보내지 않아요)
              * @enum {string}
              */
             reason: "ok" | "off" | "budget" | "breaker";
@@ -9225,7 +9227,7 @@ export interface components {
         TurnContextIn: {
             /**
              * Card Id
-             * @description 보던 카드 id(slots- · brief- · dates- + id는 42자)
+             * @description 보던 카드 id(slots- · brief- · dates- + id는 42자, 할 일이 끝난 먼저 말 건 줄 카드는 '@줄 id'가 붙어 79자)
              */
             card_id?: string | null;
             /**
@@ -13403,6 +13405,37 @@ export interface operations {
         };
     };
     vendor_brief_vendor_assistant_briefs__visit_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VendorBriefData"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vendor_brief_offer_vendor_assistant_briefs__visit_id__post: {
         parameters: {
             query?: never;
             header?: never;

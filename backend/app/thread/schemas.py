@@ -4,11 +4,24 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    BaseModel,
+    BeforeValidator,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
 
+from app.shared.text import clean_input
 from app.thread.models import BODY_MAX
 
-Body = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=BODY_MAX)]
+# 제어 문자 · ANSI 색 코드 · 방향 바꾸기 글자는 길이 · 빈 글 검사 전에 지운다(NUL은 저장에서 500, 보안 L1 · L2)
+Body = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, max_length=BODY_MAX),
+    BeforeValidator(clean_input),
+]
 RoReason = Literal["other_chosen", "cancelled", "declined", "withdrawn", "blocked", "admin"]
 
 

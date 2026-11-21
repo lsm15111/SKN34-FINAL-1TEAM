@@ -12,9 +12,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AfterValidator, BaseModel, BeforeValidator, Field
 
 from app.agent.v3.schemas import TEXT_MAX
+from app.shared.text import clean_input
 
 Surface = Literal["customer", "vendor"]
 Mode = Literal["llm", "free"]
@@ -34,6 +35,7 @@ Source = Literal["calc", "ai", "guide"]  # 출처 이름표: 믿집 계산 · AI
 Half = Literal["am", "pm"]
 ClientKey = Annotated[str, Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")]
 Choice = Annotated[str, Field(min_length=1, max_length=40)]
+CARD_ID_MAX = 100  # 카드 id(대상 id 42자 + 먼저 말 건 줄 '@줄 id' 37자)
 
 
 # ---- 들어오는 몸통 ----
@@ -44,25 +46,41 @@ class TurnContextIn(BaseModel):
 
     card_id: str | None = Field(
         default=None,
-        max_length=64,
-        description="보던 카드 id(slots- · brief- · dates- + id는 42자)",
+        max_length=CARD_ID_MAX,
+        description="보던 카드 id(slots- · brief- · dates- + id는 42자, 할 일이 끝난 먼저 말 건 줄 카드는 "
+        "'@줄 id'가 붙어 79자)",
     )
     choice: Choice | Annotated[list[Choice], Field(max_length=5)] | None = Field(
         default=None, description="고른 ref 하나 또는 여러 개(5개까지)"
     )
 
 
+def _said(v: str) -> str:
+    """턴 글: 제어 문자를 뺀 뒤 공백만 남으면 422(LLM에 빈 글을 보내지 않게, 리뷰 R1 · 보안 L1)."""
+    if not v.strip():
+        raise ValueError("보낼 말을 적어 주세요.")
+    return v
+
+
+TurnText = Annotated[
+    str,
+    Field(min_length=1, max_length=TEXT_MAX),
+    AfterValidator(_said),
+    BeforeValidator(clean_input),
+]
+
+
 class TurnIn(BaseModel):
     project_id: uuid.UUID
     client_key: ClientKey
-    text: str = Field(min_length=1, max_length=TEXT_MAX)
+    text: TurnText
     context: TurnContextIn | None = None
 
 
 class VendorTurnIn(BaseModel):
     visit_id: uuid.UUID | None = Field(default=None, description="보던 요청(비우면 작업함 대화)")
     client_key: ClientKey
-    text: str = Field(min_length=1, max_length=TEXT_MAX)
+    text: TurnText
     context: TurnContextIn | None = None
 
 
@@ -836,4 +854,7 @@ class HealthOut(BaseModel):
     """비서가 지금 LLM으로 답하는지(글 · 키 없음)."""
 
     mode: Mode
-    reason: Literal["ok", "off", "budget", "breaker"]
+    reason: Literal["ok", "off", "budget", "breaker"] = Field(
+        description="ok · off · budget(내 하루 상한). 서비스 전체 상한 · 차단기는 off로 묶어 알려요"
+        "(breaker는 보내지 않아요)"
+    )

@@ -198,9 +198,20 @@ async def vendor_feed(
     return await service.feed_for(vendor, "vendor", None, before, limit)
 
 
-@vendor_router.get("/briefs/{visit_id}", response_model=VendorBriefData, summary="요청 브리핑")
+@vendor_router.get(
+    "/briefs/{visit_id}", response_model=VendorBriefData, summary="요청 브리핑(읽기만)"
+)
 async def vendor_brief(visit_id: uuid.UUID, vendor: User = Vendor) -> VendorBriefData:
     return await service.brief_for(vendor, visit_id)
+
+
+@vendor_router.post(
+    "/briefs/{visit_id}",
+    response_model=VendorBriefData,
+    summary="요청 브리핑 + 기간 답하기 제안(열린 제안은 덮지 않음)",
+)
+async def vendor_brief_offer(visit_id: uuid.UUID, vendor: User = Vendor) -> VendorBriefData:
+    return await service.brief_for(vendor, visit_id, propose=True)
 
 
 @vendor_router.get(

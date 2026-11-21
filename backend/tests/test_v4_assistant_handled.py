@@ -203,7 +203,8 @@ def test_vendor_window_on_screen_closes_brief_proposal(api, monkeypatch):
     quiet(monkeypatch)
     f = requested(api)
     login(api, f["email"])
-    aid = api.get(f"/vendor/assistant/briefs/{f['visit']}").json()["suggest"]["action_id"]
+    # 화면 브리핑 카드(제안은 POST, GET은 읽기만)
+    aid = api.post(f"/vendor/assistant/briefs/{f['visit']}").json()["suggest"]["action_id"]
     assert answer(api, f["visit"]).status_code == 200  # v3 화면에서 직접 기간 답하기
     sweep(api)
     assert handled(aid)

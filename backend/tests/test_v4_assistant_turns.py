@@ -317,7 +317,8 @@ def test_two_claude_failures_trip_the_breaker(api, script):
     log = script([])  # 차단기가 켜져 있으면 Claude를 부르지 않는다
     ev = ok(ask(api, pid))
     assert ev[-1][1]["mode"] == "free" and log == []
-    assert api.get("/assistant/health").json()["reason"] == "breaker"
+    # health는 차단기를 따로 알리지 않고 off로 묶어요(보안 I3, 화면에 필요한 값만)
+    assert api.get("/assistant/health").json() == {"mode": "free", "reason": "off"}
 
 
 def test_over_budget_answers_free_without_calling(api, script, monkeypatch):
