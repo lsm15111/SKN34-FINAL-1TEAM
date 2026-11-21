@@ -138,8 +138,11 @@ class App:
         return self
 
     def _patch_knowledge(self) -> None:
+        """시험 DB에는 지식이 없어 저장소 색인을 넘겨요. index뿐 아니라 _index(search · 인용 확인 · 이어 묻기)도
+        바꿔요(전에는 index만 바꿔 LLM 모드 search_knowledge가 늘 0건이었어요). 임베딩은 부르지 않아요."""
         from v3_kb import repo_index
 
+        from app.agent import llm
         from app.knowledge import service as knowledge
 
         ix = repo_index()
@@ -147,7 +150,15 @@ class App:
         async def index(_s):
             return ix
 
+        async def _index(_s):
+            return ix, []
+
+        async def no_embed(_texts):
+            return None
+
         knowledge.index = index
+        knowledge._index = _index
+        llm.embed_texts = no_embed
 
     def reset(self) -> None:
         import redis
