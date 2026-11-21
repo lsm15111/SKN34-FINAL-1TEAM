@@ -4,6 +4,7 @@
   오류는 스트림을 열기 전에 같은 오류 모양으로. 답은 저장(commit)까지 끝난 뒤 보낸다(완료 신호는 commit 뒤).
   LLM 모드는 답 작성기를 기다리는 동안(수 초) 고정 몫(계산 결과 · 정해 둔 글)을 `part`로 먼저 보낸다(비어 있어도).
   done의 앞 묶음은 part와 같아서, 화면은 이미 보인 글을 바꾸지 않고 그 아래에 이어 붙인다.
+  로그인 확인은 짧은 세션으로 끝내 턴 동안 DB 연결을 쥐지 않고, 동시 턴 자리가 다 차면 503 busy(Retry-After).
 - 사용자 · 프로젝트는 세션 · 요청 경로로만 정하고(남의 것 404) 답 · 도구 인자로 받지 않는다.
 """
 
@@ -16,16 +17,20 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth.deps import require_role
+from app.auth.deps import require_role, require_role_short
 from app.auth.models import User
 from app.chat import service
 from app.chat.schemas import AiAnswer, AiFaqOut, AiThreadDetailOut, AiThreadOut, AiTurnIn, AiTurnOut
 from app.db import get_session
 from app.shared.clock import today_seoul
 from app.shared.ratelimit import client_ip
+from app.shared.request_guards import turn_slot
 
 router = APIRouter(prefix="/ai", tags=["ai"])
 SSE_HEADERS = {"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"}
+# 턴: 로그인 확인은 짧은 세션으로(턴 동안 DB 연결을 쥐지 않음) + 동시 턴 자리(로그인 확인 뒤에 잡는다)
+TurnCustomer = Depends(require_role_short("customer"))
+TurnSlot = Depends(turn_slot)
 
 
 def _event(name: str, data: dict) -> str:
@@ -49,7 +54,9 @@ async def _stream(out: AiTurnOut) -> AsyncIterator[str]:
     response_class=StreamingResponse,
     responses={200: {"content": {"text/event-stream": {}}, "description": "done 몸통 = AiTurnOut"}},
 )
-async def turn(body: AiTurnIn, user: User = Depends(require_role("customer"))) -> StreamingResponse:
+async def turn(
+    body: AiTurnIn, user: User = TurnCustomer, _slot: None = TurnSlot
+) -> StreamingResponse:
     q: asyncio.Queue[AiAnswer] = asyncio.Queue()
     job = asyncio.create_task(service.ai_turn(user, body, today_seoul(), on_part=q.put))
     got = asyncio.create_task(q.get())
