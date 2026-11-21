@@ -7,7 +7,9 @@
 - 업체: 못 받아요 → decline 제안 하나 · 기간 답하기 → window_answer 제안 하나(같은 대상에 열린 제안이 있으면 그것,
   actions.propose) · 견적서 체크리스트 · 오늘 할 일. 그 밖은 요청 브리핑(새 제안 없음) + answer_only.
 - 업체 연결(추천 · 실측 · 견적 비교 · 확정)은 아직 도배만이다. 목공 · 다른 공사로 물으면 policy.DOBAE_ONLY를 말하고
-  도배 쪽 오늘 할 일을 보여 준다. 목공 지식 · 표준견적서는 그대로 답한다.
+  도배 쪽 오늘 할 일을 보여 준다. 목공 지식 · 표준견적서는 그대로 답한다. 공종은 이 대화 · 공사에 나온 업체 이름을
+  뺀 뒤 찾는다('마루와벽'의 '마루'는 바닥이 아니다).
+- 비서가 기억한 것을 어디서 보고 지우는지 물으면 정해 둔 안내(내 정보 → 비서가 기억한 것)로 답한다.
 - 고객 제안(승인 카드)은 사람이 카드 단추를 누른 턴(choice 'visit_request:v1,v2' …)에 choices.apply가 만든다.
 - 글이 카드를 말하면 같은 턴에 그 카드가 있어야 한다(fit_cards): 없으면 만들고, 못 만들면 그 문장을 뺀다.
 """
@@ -92,6 +94,10 @@ TODAY = "오늘 정할 일이에요."
 TODAY_NONE = "오늘 정할 일은 없어요. 기다리는 일은 카드에서 볼 수 있어요."
 HOME = "집 정보예요. 고칠 칸이 있으면 말해 주세요."
 OTHER_TRADE = "아직 도배 업체만 연결돼요. 다른 공사는 궁금한 점까지 도와드려요."
+MEMORY_GUIDE = (
+    "비서가 기억한 것은 내 정보 → 비서가 기억한 것에서 보고 지울 수 있어요. "
+    "지우면 다음 대화부터 쓰지 않아요."
+)
 # 업체
 NO_VISIT = "어느 요청인지 몰라요. 요청을 열고 다시 말해 주세요."
 DECLINED = "못 받아요 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 알려져요."
@@ -113,6 +119,12 @@ WHEN_WORK = re.compile(
     r"언제\s*(?:해|하|바꿔|바꾸|교체|시공|들어가|진행|붙)|(?:먼저|나중에?)\s*(?:해|하)"
 )
 SENT = re.compile(r"(?<=[.!?。])\s+|\n+")
+# 비서가 기억한 것을 어디서 보고 지우는지 묻는 말(기억해 달라는 말은 아님): 정해 둔 안내로 답한다
+MEMORY_WHERE = re.compile(
+    r"기억(?:한|하는|해\s{0,2}둔|하고\s{0,2}있는|된)\s{0,2}(?:거|것|건|걸|내용|정보|목록)?.{0,15}?"
+    r"(?:어디|지우|지울|지워|삭제|없애|보여|볼\s{0,2}수|보고|봐|확인)"
+    r"|(?:어디|어떻게).{0,15}?기억(?:한|하는|된)"
+)
 
 
 def intent_of(text: str, surface: str) -> str | None:
@@ -172,6 +184,42 @@ def trades_in(text: str) -> list[str]:
     from app.agent.v3 import trades
 
     return list(trades.trades_in(text or ""))
+
+
+async def vendor_names(tc: ToolCtx) -> list[str]:
+    """이 대화 · 공사에 나온 업체 이름(긴 것부터): 대화 이름표 표의 업체 · 이 공사의 실측 요청 · 확정 · 담은 업체.
+    공종 낱말을 찾기 전에 뺀다('마루와벽으로 확정할게요'의 '마루'는 바닥 공사가 아니에요). 읽기 조인만 한다."""
+    from sqlalchemy import select
+
+    from app.schedule.models import Deal
+    from app.vendor.models import Vendor
+    from app.visit.models import Shortlist, Visit
+
+    names = {
+        str(it[k]) for it in tc.refs.items.values() for k in ("name", "vendor_name") if it.get(k)
+    }
+    pid = tc.project_id
+    if pid is not None:
+        async with SessionLocal() as s:
+            names.update(await s.scalars(select(Visit.vendor_name).where(Visit.project_id == pid)))
+            names.update(await s.scalars(select(Deal.vendor_name).where(Deal.project_id == pid)))
+            names.update(
+                await s.scalars(
+                    select(Vendor.biz_name)
+                    .join(Shortlist, Shortlist.vendor_id == Vendor.user_id)
+                    .where(Shortlist.project_id == pid, Vendor.biz_name.is_not(None))
+                )
+            )
+    return sorted((n for n in names if n and len(n.strip()) >= 2), key=len, reverse=True)
+
+
+def without_names(text: str, names: list[str]) -> str:
+    """업체 이름(붙여 쓴 꼴도)을 빈칸으로 바꾼다."""
+    for n in names:
+        for w in dict.fromkeys((n.strip(), n.replace(" ", ""))):
+            if len(w) >= 2:
+                text = text.replace(w, " ")
+    return text
 
 
 # ---- 고객 ----
@@ -449,16 +497,19 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
 
 async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, ToolOut]:
     """무료 모드 답 한 번(글, 카드 · 행동 · 작업 카드). 글이 비면 부르는 쪽이 실패 문구를 쓴다."""
-    found = trades_in(text)
     if tc.surface == "vendor":
         got = await _vendor(tc, text, intent_of(text, "vendor"))
         if got is not None:
             return got
-        said, out = await _knowledge(tc, text, found, card_id)
+        said, out = await _knowledge(tc, text, trades_in(text), card_id)
         if tc.visit_id is not None:
             _card, _model, brief_out = await _brief(tc, propose_window=False)
             out.cards = [*brief_out.cards, *out.cards]
         return said, out
+    if MEMORY_WHERE.search(text):
+        return MEMORY_GUIDE, ToolOut(data={})
+    # 업체 이름을 뺀 뒤 공종을 찾는다(업체 이름 속 '마루' · '목공'은 공종 말이 아니에요)
+    found = trades_in(without_names(text, await vendor_names(tc)))
     if tc.project_id is None:
         return await _knowledge(tc, text, found, card_id)
     intent, step = customer_intent(text)

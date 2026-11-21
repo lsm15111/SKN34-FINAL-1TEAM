@@ -3078,6 +3078,11 @@ export interface components {
              * @description 판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤)
              */
             supersedes?: string | null;
+            /**
+             * Replaced By
+             * @description 같은 대상의 새 제안으로 바뀌어 닫힌 행동(expired · replaced)이면 그 새 행동 id
+             */
+            replaced_by?: string | null;
         };
         /** ActionPart */
         ActionPart: {
@@ -3658,6 +3663,28 @@ export interface components {
             excluded: string[];
             /** Instant */
             instant: boolean;
+            /** Open Count */
+            open_count: number;
+        };
+        /**
+         * BriefWindow
+         * @description 답할 기간 후보 하나(계산 엔진 calc.slots.best_windows). 단추는 choice 'window_answer:<ref>'.
+         */
+        BriefWindow: {
+            /** Ref */
+            ref: string;
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /**
+             * End
+             * Format: date
+             */
+            end: string;
+            /** Excluded */
+            excluded: string[];
             /** Open Count */
             open_count: number;
         };
@@ -9041,7 +9068,10 @@ export interface components {
          * @description 카드에서 고른 것. LLM에는 이 대화에서 도구가 준 ref(v1 · s2 …)만 가고 모르는 값은 버린다.
          */
         TurnContextIn: {
-            /** Card Id */
+            /**
+             * Card Id
+             * @description 보던 카드 id(slots- · brief- · dates- + id는 42자)
+             */
             card_id?: string | null;
             /**
              * Choice
@@ -11255,6 +11285,12 @@ export interface components {
             estimate: components["schemas"]["BriefEstimate"] | null;
             halves: components["schemas"]["BriefHalves"];
             suggest: components["schemas"]["BriefSuggest"] | null;
+            /**
+             * Windows
+             * @description 답할 기간 후보 w…(요청함일 때, 첫 것이 suggest와 같은 기간)
+             * @default []
+             */
+            windows: components["schemas"]["BriefWindow"][];
             /** Due At */
             due_at: string | null;
             /**

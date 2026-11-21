@@ -7,10 +7,16 @@
   - 업체: `window_answer:m1,w1`(w1만 줘도 됨) · `decline:m1,<full · out_of_area · other>`(보던 요청이면 코드만) ·
     `dates:d1,n1`(n1만 줘도 됨)
 - 그 밖(v1 · m1 같은 이름표)은 지금처럼 LLM에 '(카드에서 고름: …)'으로만 간다.
+- 지난 카드 단추(stale): 이 화면의 행동 꼴인데 이름표를 이 대화가 모르거나(표가 지워짐 · 다른 곳에서 만든 카드),
+  카드 id의 대상(slots- · dates- · brief- + id)과 이름표가 가리키는 대상이 다르면 버리지 않는다. 그 종류의 카드를 이
+  대화 이름표로 새로 만들어 보내고 '카드를 새로 불러왔어요. 다시 골라 주세요.'로 답한다(무료 · LLM 모드 같음,
+  LLM은 부르지 않는다). 행동은 만들지 않는다(사람이 새 카드에서 다시 고른다).
 """
 
+import uuid
 from typing import TYPE_CHECKING
 
+from app.assistant.schemas import CardOut
 from app.assistant.tools import ToolCtx, ToolError, ToolOut
 from app.shared.errors import AppError
 
@@ -30,7 +36,15 @@ LABEL = {
 }  # fmt: skip
 DECLINE_CODES = ("full", "out_of_area", "other")
 MADE = "고른 것으로 승인 카드를 만들었어요. 카드를 확인하고 눌러 주세요."
+RELOADED = "카드를 새로 불러왔어요. 다시 골라 주세요."
+GONE = "지금은 고를 수 있는 것이 없어요. 진행 상황을 확인해 주세요."
 MAX_ACTIONS = 2  # 한 턴에 단추로 만드는 제안 수
+# 카드 id 머리(slots- · dates- · brief- + 대상 id) → 이름표 종류마다 그 id가 든 칸(지난 카드 단추 가려내기)
+CARD_TARGET: dict[str, dict[str, str]] = {
+    "slots": {"slot": "visit_id", "visit": "id"},
+    "dates": {"proposal": "id"},
+    "brief": {"window": "visit_id", "visit": "id"},
+}
 
 
 def field(choice: str) -> tuple[str, str] | None:
@@ -54,6 +68,36 @@ def action(choice: str, refs: "RefTable | None" = None) -> tuple[str, list[str]]
 
 def valid(choice: str, refs: "RefTable") -> bool:
     return refs.known(choice) or field(choice) is not None or action(choice, refs) is not None
+
+
+def card_target(card_id: str | None) -> tuple[str, uuid.UUID | None]:
+    """'slots-<실측 id>' → ("slots", id). 대상 id가 없는 카드(compare-dobae · today …)면 (머리, None)."""
+    head, _, tail = (card_id or "").partition("-")
+    try:
+        return head, uuid.UUID(tail)
+    except ValueError:
+        return head, None
+
+
+def fits_card(choice: str, refs: "RefTable", card_id: str | None) -> bool:
+    """카드 id에 대상 id가 든 카드면 고른 이름표가 그 대상을 가리키는지(아니면 지난 카드 단추)."""
+    a = action(choice)
+    head, target = card_target(card_id)
+    want = CARD_TARGET.get(head)
+    if a is None or target is None or want is None:
+        return True
+    for x in a[1]:
+        it = refs.items.get(x)
+        key = want.get(it["kind"]) if it else None
+        if key is not None and str(it.get(key)) != str(target):
+            return False
+    return True
+
+
+def stale(choice: str, surface: str) -> bool:
+    """이 화면의 행동 꼴(valid · fits_card를 못 지난 것): 지난 카드 단추라 카드를 새로 불러온다."""
+    a = action(choice)
+    return a is not None and ACTIONS[a[0]] == surface
 
 
 def text_of(choice: str) -> str:
@@ -129,9 +173,67 @@ async def _run(tc: ToolCtx, kind: str, args: list[str]) -> ToolOut:
     return await propose.propose_dates(tc, propose.DatesPropose(deal_ref=d, days_ref=n))
 
 
+async def reload(tc: ToolCtx, kinds: list[str], card_id: str | None) -> list[CardOut]:
+    """지난 카드 단추: 그 행동을 고르는 카드를 이 대화 이름표로 새로 만든다(카드마다 따로, 못 만들면 뺀다).
+    고객 업체 추천(visit_request) · 반나절(visit_slot) · 견적 비교(vendor_confirm) · 공사 날짜(dates_accept ·
+    delay_accept), 업체 브리핑(window_answer · decline). 업체 공사 날 후보(dates)는 카드가 없어 빈 목록."""
+    from app.assistant import memory
+    from app.assistant import repository as repo
+    from app.assistant.tools import cards
+    from app.assistant.tools import vendor as vendor_tools
+    from app.db import SessionLocal
+    from app.schedule import service as schedule_service
+
+    head, target = card_target(card_id)
+    pid = tc.project_id
+    out: list[CardOut] = []
+
+    async def one(s, kind: str) -> list[CardOut]:
+        if kind == "visit_request" and pid:
+            card, model = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
+            return [card] if model["picks"] else []
+        if kind == "visit_slot" and pid:
+            prefer, days = memory.prefs(await repo.memories(s, tc.user.id))
+            if head == "slots" and target is not None:
+                ids = [target]
+            else:
+                o = await schedule_service.overview_for(s, tc.user, pid, tc.today)
+                ids = [v.visit_id for v in o.vendors if v.status in ("offered", "proposed")][:2]
+            got = []
+            for vid in ids:
+                card, model = await cards.visit_slots(
+                    s, tc.user, pid, vid, tc.now, tc.refs, prefer=prefer, days=days
+                )
+                if model["candidates"]:
+                    got.append(card)
+            return got
+        if kind == "vendor_confirm" and pid:
+            card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)
+            return [card] if any(c.get("version") for c in model["cols"]) else []
+        if kind in ("dates_accept", "delay_accept") and pid:
+            card, _ = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
+            return [card] if card is not None else []
+        visit = target if head == "brief" and target is not None else tc.visit_id
+        if kind in ("window_answer", "decline") and visit is not None:
+            card, *_ = await vendor_tools.brief(
+                s, tc.user, visit, tc.today, tc.now, tc.refs, tc.turn_id, propose_window=False
+            )
+            return [card]
+        return []
+
+    async with SessionLocal() as s:
+        for kind in dict.fromkeys(kinds):
+            try:
+                out += [c for c in await one(s, kind) if c.card_id not in {x.card_id for x in out}]
+            except AppError:
+                await s.rollback()  # 이 카드는 못 만든다(남의 것 · 바뀐 상태): 다른 카드는 그대로
+    return out
+
+
 async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
     """카드 고르기 → 승인 카드(모드와 상관없이). 만든 카드 · 행동 · 밀려 닫힌 행동은 이 턴 이벤트로 보낸다.
-    돌려주는 값: 모델 · 무료 답에 붙일 한 줄(고른 행동 · 칸이 없으면 None)."""
+    지난 카드 단추(ctx.stale)는 그 카드를 새로 불러온다. 돌려주는 값: 모델 · 무료 답에 붙일 한 줄(고른 행동 ·
+    칸 · 지난 단추가 없으면 None)."""
     from app.assistant.runtime import send_card
     from app.assistant.tools import propose
 
@@ -143,7 +245,7 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
     ][:MAX_ACTIONS]
     if ctx.surface != "customer":
         fields = {}
-    if not fields and not acts:
+    if not fields and not acts and not ctx.stale:
         return None
     tc = ToolCtx(
         user=ctx.user,
@@ -171,6 +273,12 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
     for out in outs:
         await _send(out, emit, res, send_card)
     lines = ([MADE] if outs else []) + errors
+    if ctx.stale:
+        kinds = [a[0] for a in (action(c) for c in ctx.stale) if a is not None]
+        fresh = await reload(tc, kinds, ctx.card_id)
+        for c in fresh:
+            await send_card(res, emit, c)
+        lines.append(RELOADED if fresh else GONE)
     return " ".join(dict.fromkeys(lines)) or None
 
 

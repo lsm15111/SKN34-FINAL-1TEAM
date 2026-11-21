@@ -5,6 +5,7 @@
 - REST(GET /vendor/assistant/briefs · checklists · today)도 같은 함수(brief · checklist · vendor_today)를 쓴다.
 """
 
+import re
 import uuid
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
@@ -20,6 +21,7 @@ from app.assistant.schemas import (
     BriefEstimate,
     BriefHalves,
     BriefSuggest,
+    BriefWindow,
     CardOut,
     ChecklistRow,
     FieldValue,
@@ -81,7 +83,8 @@ async def brief(
     propose_window: bool = True,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
     """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지) · 가견적(요청 때 고정한 값) ·
-    빈 반나절 · 추천 응답(기간 초안 → window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀).
+    빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 → window_answer 제안 행,
+    요청함 상태일 때만) · 한 문장(틀).
     AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
     (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
     말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
@@ -119,10 +122,30 @@ async def brief(
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    ask = d.status == "requested" and propose_window
-    free = await open_halves(s, vendor.id, start, end) if ask else None
+    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게)
+    live = d.status == "requested"
+    free = await open_halves(s, vendor.id, start, end) if live else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
-    if wins:
+    windows = [
+        BriefWindow(
+            ref=refs.put(
+                "window",
+                {
+                    "visit_id": str(visit_id),
+                    "start": w.start.isoformat(),
+                    "end": w.end.isoformat(),
+                    "excluded": [x.isoformat() for x in w.excluded],
+                    "open_count": w.open_count,
+                },
+            ),
+            start=w.start,
+            end=w.end,
+            excluded=list(w.excluded),
+            open_count=w.open_count,
+        )
+        for w in wins
+    ]
+    if wins and propose_window:
         w = wins[0]
         instant = bool(d.instant_default)
         summary = ActionSummary(
@@ -191,6 +214,7 @@ async def brief(
             open_count=d.open_count or 0,
         ),
         suggest=suggest,
+        windows=windows,
         due_at=d.reply_due_at,
         memo=policy.mask_in(d.message or "") or None,
     )
@@ -209,6 +233,10 @@ async def brief(
         "due_at": d.reply_due_at,
         "memo": policy.data(d.message),
         "proposed": bool(made),
+        "windows": [
+            {"ref": w.ref, "start": w.start, "end": w.end, "open_count": w.open_count}
+            for w in windows
+        ],
     }
     return card, model, data, made, closed
 
@@ -303,6 +331,28 @@ async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID) -> str:
     return text
 
 
+# 표준견적서 줄 이름 → 업체가 읽는 이름(고객 화면 frontend/lib/guest/standard.ts nameOf와 같은 규칙).
+# 계산 엔진 줄 이름은 그대로 둔다: '실크벽지 시장 평균 가격' → '실크벽지', '벽 도배 시공 (풀 포함)' → '벽 도배 시공'
+LINE_NOTE_KEYS = frozenset({"wall", "ceiling", "material", "putty", "meal", "truck"})
+LINE_PAPER = re.compile(r"도배지 \((합지|실크)\)")
+LINE_MARKET = re.compile(r"(\S+벽지) 시장 평균 가격")
+
+
+def line_name(key: str, name: str) -> str:
+    text = name.strip()
+    if text.endswith("(풀 포함)"):
+        return text.removesuffix("(풀 포함)").rstrip()
+    if m := LINE_PAPER.fullmatch(text):
+        return f"{m.group(1)}벽지"
+    if m := LINE_MARKET.fullmatch(text):
+        return m.group(1)
+    # 두 기준 줄은 이름 끝 괄호가 짧은 뜻이다('부자재 (풀 · 부직포 · 네바리 · 실리콘 등)' → '부자재')
+    cut = text.rfind("(")
+    if key in LINE_NOTE_KEYS and text.endswith(")") and cut > 0:
+        return text[:cut].rstrip() or text
+    return text
+
+
 async def checklist(
     s: AsyncSession, vendor: User, visit_id: uuid.UUID, today: date, refs: "RefTable"
 ) -> tuple[CardOut, dict, QuoteChecklistData]:
@@ -325,7 +375,7 @@ async def checklist(
     items = [
         ChecklistRow(
             key=ln.key,
-            label=ln.name,
+            label=line_name(ln.key, ln.name),
             state="check",
             hint="표준견적서에 있는 줄이에요. 견적서에 넣었는지 확인해요",
         )

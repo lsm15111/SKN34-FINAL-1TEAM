@@ -17,7 +17,7 @@ import re
 import time
 import uuid
 from collections import Counter
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Collection
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import ClassVar
@@ -46,7 +46,12 @@ TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 �
 BREAKER_KEY = "assistant:breaker"
 BREAKER_TTL = 300  # Claude가 한 턴에 두 번 실패하면 5분 동안 무료 모드
 PAUSE_MAX = 2
-REF_TTL = 1800  # 이름표는 대화마다 30분
+# 이름표는 대화마다 7일(저장할 때마다 늘림). 지난 카드 · 먼저 말 걸기 카드(며칠 뒤 알림)의 단추도 같은 대상을 가리킨다.
+# 지워져도 되는 값이다: 모르는 이름표 단추는 choices가 카드를 새로 불러온다
+REF_TTL = 7 * 86400
+REF_NUM_TTL = 30 * 86400  # 쓴 번호 · 버린 이름표 기록(표가 지워져도 번호를 다시 쓰지 않게)
+REF_DEAD_MAX = 200
+REF_SAVE_TRIES = 5
 BEAT_EVERY = 10.0  # heartbeat를 이보다 자주 쓰지 않는다(초)
 # 문장 끝: 마침표 · 물음표 · 느낌표 뒤 빈칸, 또는 줄 바꿈('필요 없어요'의 '요 '는 끝으로 보지 않는다)
 SENT_END = re.compile(r"(?<=[.!?。])[ \t]+|\n+")
@@ -71,10 +76,22 @@ def claims_done(text: str) -> bool:
 # ---- 짧은 이름표 ----
 
 
-class RefTable:
-    """도구가 만든 짧은 이름(v1 · m1 · r1 · s1 · w1 · d1 · p1 · n1) → 실제 값(id · 날짜). 대화마다 Redis 30분.
+def _json_dict(raw) -> dict:
+    try:
+        got = json.loads(raw) if raw else {}
+    except ValueError:
+        return {}
+    return got if isinstance(got, dict) else {}
 
-    같은 대상은 같은 이름을 받는다(IDENT 칸이 같으면 값만 새로 쓴다). 모르는 이름 · 종류가 다른 이름은 unknown_ref."""
+
+class RefTable:
+    """도구 · 카드가 만든 짧은 이름(v1 · m1 · r1 · s1 · w1 · d1 · p1 · n1) → 실제 값(id · 날짜). 대화마다 Redis(REF_TTL).
+
+    - 같은 대상은 같은 이름을 받는다(IDENT 칸이 같으면 값만 새로 쓴다). 모르는 이름 · 종류가 다른 이름은 unknown_ref.
+    - 턴 · 먼저 말 걸기 · 업체 브리핑(REST)이 한 대화의 표를 같이 쓴다. 번호는 머리글자마다 쓴 가장 큰 번호(top,
+      REF_NUM_TTL) 다음부터라 표가 지워지거나 오래된 것을 버려도 같은 이름이 다른 대상을 가리키지 않는다.
+    - 저장은 Redis 표와 합친다(WATCH). 두 곳이 같은 번호를 다른 대상에 썼으면 그 이름을 버리고(dead) 다시 살리지
+      않는다: 그 이름의 단추는 모르는 이름표가 되어 카드를 새로 불러온다(엉뚱한 대상으로 가지 않게)."""
 
     PREFIX: ClassVar[dict[str, str]] = {
         "vendor": "v", "visit": "m", "wish": "r", "slot": "s", "window": "w",
@@ -87,22 +104,44 @@ class RefTable:
     }  # fmt: skip
     MAX = 80
 
-    def __init__(self, chat_id: uuid.UUID, items: dict[str, dict] | None = None) -> None:
+    def __init__(
+        self,
+        chat_id: uuid.UUID,
+        items: dict[str, dict] | None = None,
+        top: dict[str, int] | None = None,
+        dead: set[str] | None = None,
+    ) -> None:
         self.chat_id = chat_id
-        self.items: dict[str, dict] = dict(items or {})
+        self.dead: set[str] = set(dead or ())
+        self.items: dict[str, dict] = {
+            r: it
+            for r, it in (items or {}).items()
+            if r not in self.dead and isinstance(it, dict) and it.get("kind") in self.IDENT
+        }
+        self.top: dict[str, int] = dict(top or {})  # 머리글자마다 쓴 가장 큰 번호
+        self.touched: set[str] = set()  # 이 표에서 넣거나 고친 이름(저장할 때 우리 값이 이긴다)
+
+    @classmethod
+    def ident(cls, it: dict) -> tuple:
+        kind = it.get("kind")
+        return (kind, *(str(it.get(k)) for k in cls.IDENT.get(str(kind), ())))
 
     def put(self, kind: str, value: dict) -> str:
-        ident = tuple(str(value.get(k)) for k in self.IDENT[kind])
+        want = self.ident({**value, "kind": kind})
         for ref, it in self.items.items():
-            if it["kind"] == kind and tuple(str(it.get(k)) for k in self.IDENT[kind]) == ident:
+            if self.ident(it) == want:
                 it.update({k: v for k, v in value.items() if k != "kind"})
+                self.touched.add(ref)
                 return ref
         prefix = self.PREFIX[kind]
         used = [int(r[1:]) for r in self.items if r[0] == prefix and r[1:].isdigit()]
-        ref = f"{prefix}{(max(used) + 1) if used else 1}"
-        if len(self.items) >= self.MAX:  # 가장 오래된 것부터 버린다
+        n = max([*used, self.top.get(prefix, 0)]) + 1
+        self.top[prefix] = n
+        ref = f"{prefix}{n}"
+        if len(self.items) >= self.MAX:  # 가장 오래된 것부터 버린다(번호는 top이 기억한다)
             self.items.pop(next(iter(self.items)))
         self.items[ref] = {**value, "kind": kind}  # 값의 칸이 종류 이름을 덮지 않게
+        self.touched.add(ref)
         return ref
 
     def get(self, ref: str | None, kind: str) -> dict:
@@ -120,25 +159,64 @@ class RefTable:
     def _key(chat_id: uuid.UUID) -> str:
         return f"assistant:refs:{chat_id}"
 
+    @staticmethod
+    def _num_key(chat_id: uuid.UUID) -> str:
+        return f"assistant:refs:{chat_id}:num"
+
     @classmethod
     async def load(cls, chat_id: uuid.UUID) -> "RefTable":
         try:
-            raw = await queue.redis.get(cls._key(chat_id))
+            raw, num = await queue.redis.mget(cls._key(chat_id), cls._num_key(chat_id))
         except REDIS_ERRORS:
-            raw = None
-        try:
-            items = json.loads(raw) if raw else {}
-        except ValueError:
-            items = {}
-        return cls(chat_id, items if isinstance(items, dict) else {})
+            raw = num = None
+        meta = _json_dict(num)
+        return cls(chat_id, _json_dict(raw), meta.get("top") or {}, set(meta.get("dead") or ()))
+
+    def merged(self, theirs: dict, meta: dict) -> tuple[dict, dict]:
+        """Redis에 있는 표(theirs) · 번호 기록(meta)과 이 표를 합친다. (새 표, 새 번호 기록)"""
+        dead = set(meta.get("dead") or ()) | self.dead
+        out = {
+            r: it
+            for r, it in theirs.items()
+            if r not in dead and isinstance(it, dict) and it.get("kind") in self.IDENT
+        }
+        for ref, it in self.items.items():
+            if ref in dead:
+                continue
+            old = out.get(ref)
+            if old is not None and self.ident(old) != self.ident(it):
+                out.pop(ref)  # 같은 번호를 다른 대상에 썼다(동시에 만든 표): 둘 다 모르는 이름표로
+                dead.add(ref)
+                continue
+            if old is None or ref in self.touched:
+                out[ref] = it
+        while len(out) > self.MAX:
+            out.pop(next(iter(out)))
+        top = {str(p): int(n) for p, n in (meta.get("top") or {}).items()}
+        for p, n in self.top.items():
+            top[p] = max(top.get(p, 0), n)
+        return out, {"top": top, "dead": sorted(dead)[-REF_DEAD_MAX:]}
 
     async def save(self) -> None:
+        from redis.exceptions import WatchError
+
+        key, num_key = self._key(self.chat_id), self._num_key(self.chat_id)
         try:
-            await queue.redis.set(
-                self._key(self.chat_id), json.dumps(self.items, ensure_ascii=False), ex=REF_TTL
-            )
+            async with queue.redis.pipeline(transaction=True) as pipe:
+                for _ in range(REF_SAVE_TRIES):
+                    try:
+                        await pipe.watch(key, num_key)
+                        raw, num = await pipe.mget(key, num_key)
+                        items, meta = self.merged(_json_dict(raw), _json_dict(num))
+                        pipe.multi()
+                        pipe.set(key, json.dumps(items, ensure_ascii=False), ex=REF_TTL)
+                        pipe.set(num_key, json.dumps(meta), ex=REF_NUM_TTL)
+                        await pipe.execute()
+                        return
+                    except WatchError:
+                        continue  # 그사이 다른 곳이 저장했다: 다시 읽어 합친다
         except REDIS_ERRORS:
-            return  # 지워져도 되는 값: 다음 턴에 도구를 다시 부르면 된다
+            return  # 지워져도 되는 값: 모르는 이름표 단추는 카드를 새로 불러온다
 
 
 # ---- 문장 검사 ----
@@ -238,6 +316,8 @@ class TurnCtx:
     refs: RefTable
     client_key: str
     card_id: str | None = None
+    # 지난 카드 단추(모르는 이름표 · 다른 대상): 카드를 새로 불러온다
+    stale: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -287,22 +367,31 @@ async def _trip() -> None:
         return
 
 
-CHIPS = {
-    "standard_quote": ["업체 추천해 줘", "가견적은 어떻게 계산해요?"],
-    "vendor_picks": ["가견적은 어떻게 계산해요?", "실측은 무엇을 봐요?"],
-    "visit_slots": ["다른 시간도 볼래요", "실측은 무엇을 봐요?"],
-    "quote_compare": ["폐기물 처리도 포함인가요?", "표준견적서 다시 보기"],
-    "schedule": ["공사 전날 준비물", "공정표 보기"],
-    "today": ["견적서 비교 보기", "오늘 할 일 다시 보기"],
-    "vendor_brief": ["빈 시간 보여 줘", "견적서 체크리스트"],
+# 카드 종류 → 빠른 답 칩(정해 둔 글, 그 칩이 맞는 단계 사실). 사실(service.chip_facts, 코드 값):
+# visits 실측을 요청함 · quote 받은 실측 견적서가 있음 · dates 수락한 공사 날짜가 있음(고객),
+# requested 답할 요청 · visited 견적서를 낼 요청(업체 브리핑의 요청). '!사실'은 그 사실이 없을 때만
+CHIPS: dict[str, tuple[tuple[str, str | None], ...]] = {
+    "standard_quote": (("업체 추천해 줘", "!visits"), ("가견적은 어떻게 계산해요?", None)),
+    "vendor_picks": (("가견적은 어떻게 계산해요?", None), ("실측은 무엇을 봐요?", None)),
+    "visit_slots": (("다른 시간도 볼래요", None), ("실측은 무엇을 봐요?", None)),
+    "quote_compare": (("폐기물 처리도 포함인가요?", "quote"), ("표준견적서 다시 보기", None)),
+    "schedule": (("공사 전날 준비물", "dates"), ("공정표 보기", None)),
+    "today": (("견적서 비교 보기", "quote"), ("오늘 할 일 다시 보기", None)),
+    "vendor_brief": (("빈 시간 보여 줘", "requested"), ("견적서 체크리스트", "visited")),
 }
 
 
-def chips_for(cards: list[dict]) -> list[str]:
-    """마지막 카드 종류로 고른 빠른 답 칩(정해 둔 글)."""
+def _chip_ok(need: str | None, facts: Collection[str]) -> bool:
+    if need is None:
+        return True
+    return need[1:] not in facts if need.startswith("!") else need in facts
+
+
+def chips_for(cards: list[dict], facts: Collection[str] = ()) -> list[str]:
+    """마지막 카드 종류로 고른 빠른 답 칩(정해 둔 글) 중 지금 공사 단계 사실(facts)에 맞는 것만."""
     for c in reversed(cards):
         if c["kind"] in CHIPS:
-            return CHIPS[c["kind"]]
+            return [text for text, need in CHIPS[c["kind"]] if _chip_ok(need, facts)]
     return []
 
 
@@ -592,8 +681,9 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
     mode, reason = policy.mode_for(available=True, budget_ok=ok, breaker=breaker)
     # 카드 단추로 고른 것(철거 범위 · 'visit_request:v1,v2' …)은 모드와 상관없이 코드가 승인 카드로 만든다
     note = await choices.apply(ctx, emit, res)
-    if mode == "free":
-        await free_turn(ctx, emit, res, reason, note)
+    if mode == "free" or ctx.stale:
+        # 지난 카드 단추는 카드를 새로 불러와 정해 둔 한 줄로 답한다(LLM 모드도 부르지 않는다)
+        await free_turn(ctx, emit, res, reason if mode == "free" else "reload", note)
     else:
         turn = _Turn(ctx, emit, res, note)
         try:

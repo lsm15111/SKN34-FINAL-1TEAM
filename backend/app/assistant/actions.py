@@ -58,6 +58,11 @@ def out(a: AssistantAction) -> ActionOut:
         else None
     )
     sup = (a.payload or {}).get("supersedes")
+    by = (
+        res.get("replaced_by")
+        if a.status == "expired" and res.get("reason") == "replaced"
+        else None
+    )
     return ActionOut(
         action_id=a.id,
         kind=a.kind,  # type: ignore[arg-type]
@@ -70,6 +75,7 @@ def out(a: AssistantAction) -> ActionOut:
         error_code=err,
         result=shown,
         supersedes=uuid.UUID(sup) if sup else None,
+        replaced_by=uuid.UUID(by) if by else None,
     )
 
 
@@ -207,6 +213,8 @@ async def execute(
             )
             if row is None:
                 raise AppError(409, "stale", "그사이 상태가 바뀌었어요. 새로 불러올게요.")
+            # 이 대상의 먼저 말 건 줄은 할 일이 끝났다: 정리(2분)를 기다리지 않고 같은 트랜잭션에서 닫는다
+            await repo.close_lines_of(s, a)
             marked = True
 
         try:
