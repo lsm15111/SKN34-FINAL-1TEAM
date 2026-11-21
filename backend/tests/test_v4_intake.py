@@ -187,7 +187,9 @@ def test_get_home_knows_start_rooms_and_diy(api, script):
     other = create(api, {**HOME, "start_date": None}).json()["id"]
     facts, model, _ = _get_home(api, script, other)
     assert "공사 시작 희망 아직 몰라요" in facts
-    assert not any(f.startswith("직접 할 일") for f in facts) and "diy" not in model  # 아직 안 물음
+    assert not any(f.startswith("직접 할 일") for f in facts)  # 아직 안 물음
+    # 모델 값엔 늘 적는다(저장했는지 비서가 짐작하지 않게, QA r1)
+    assert model["diy"] == "아직 고르지 않았어요"
     assert api.put(f"/projects/{other}/diy", json={"diy": []}).status_code == 200
     facts, model, _ = _get_home(api, script, other)
-    assert "직접 할 일 없어요" in facts and model["diy"] == []
+    assert "직접 할 일 없어요" in facts and model["diy"] == "없어요"
