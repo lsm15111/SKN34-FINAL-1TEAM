@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.files import service as files_service
+from app.project import diy
 from app.project import repository as repo
 from app.project.models import (
     CHECK_KEYS,
@@ -31,6 +32,7 @@ from app.project.models import (
 )
 from app.project.schemas import (
     ConditionOut,
+    DiyOut,
     DobaeOut,
     EmdOut,
     HomeInfoIn,
@@ -225,7 +227,8 @@ async def _validate(
 
 async def _write(s: AsyncSession, p: Project, data: Body) -> None:
     """칸 · 공간 · 공정 · 파일을 쓴다 (고치기면 부르는 쪽이 먼저 지운다).
-    v4 철거 범위는 모은 조건(demolition)에 둔다: 보낸 때만 쓰고(null이면 지움), 안 보내면 그대로."""
+    v4 철거 범위는 모은 조건(demolition)에 둔다: 보낸 때만 쓰고(null이면 지움), 안 보내면 그대로.
+    직접 할 일(diy 칩)도 모은 조건(diy.<키>)이다: 목록을 보낸 때만 덮어쓰고(빈 목록 = 없어요), null · 안 보냄은 그대로."""
     if isinstance(data, HomeInfoIn):
         _fill_home(p, data)
     else:
@@ -236,6 +239,8 @@ async def _write(s: AsyncSession, p: Project, data: Body) -> None:
         await _write_home_parts(s, p, data)
         if "demolition" in data.model_fields_set:
             await set_demolition(s, p.id, data.demolition)
+        if data.diy is not None:
+            await diy.set_diy(s, p.id, list(data.diy))
     else:
         await _write_parts(s, p, data)
 
@@ -540,26 +545,46 @@ async def conditions(s: AsyncSession, project_id: uuid.UUID) -> dict[str, str]:
     return {k: v for k, v in rows}
 
 
-async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[ConditionOut]:
-    """화면 칩 목록(만든 고객만, 먼저 모은 것부터). 코드 값 칸(철거 범위)은 화면 말로 바꿔 보여 준다."""
+DIY_LABEL = "직접 할 일"  # 모은 조건 칩 '직접 할 일: 페인트(문틀 · 몰딩)'
+DIY_NONE = "없어요"
+
+
+def _chip(key: str, value: str) -> tuple[str, str]:
+    """모은 조건 한 칸 → 칩 (이름, 값). 코드 값 칸(철거 범위 · 직접 할 일)은 화면 말로 바꾼다."""
     from app.agent.v3.trades import slot_label
     from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
 
+    if key == DEMOLITION_KEY:
+        return slot_label(key), DEMOLITION.get(value, value)
+    if key.startswith(diy.PREFIX):
+        return DIY_LABEL, diy.DIY.get(key.removeprefix(diy.PREFIX), DIY_NONE)
+    return slot_label(key), value
+
+
+async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[ConditionOut]:
+    """화면 칩 목록(만든 고객만, 먼저 모은 것부터). 코드 값 칸(철거 범위 · 직접 할 일)은 화면 말로 바꿔 보여 준다."""
     await _own(s, user, project_id)
     rows = await s.scalars(
         select(ProjectCondition)
         .where(ProjectCondition.project_id == project_id)
         .order_by(ProjectCondition.updated_at, ProjectCondition.key)
     )
-    return [
-        ConditionOut(
-            trade=r.trade,
-            key=r.key,
-            label=slot_label(r.key),
-            value=DEMOLITION.get(r.value, r.value) if r.key == DEMOLITION_KEY else r.value,
-        )
-        for r in rows
-    ]
+    out = []
+    for r in rows:
+        label, value = _chip(r.key, r.value)
+        out.append(ConditionOut(trade=r.trade, key=r.key, label=label, value=value))
+    return out
+
+
+async def put_diy(s: AsyncSession, user: User, project_id: uuid.UUID, keys: list[str]) -> DiyOut:
+    """직접 할 일 칩 덮어쓰기(만든 고객만, 남의 것 · 없는 것은 같은 404). 고객이 직접 누른 입력이라 승인 카드 없이
+    저장하고, 표준견적서에 쓰지 않아 집 정보 rev는 그대로다. 같은 공사 요청은 프로젝트 행 잠금으로 줄 선다."""
+    p = await repo.get_for_update(s, project_id)
+    if p is None or p.owner_id != user.id:
+        raise AppError(404, "not_found", "프로젝트를 찾을 수 없어요.")
+    picked = await diy.set_diy(s, project_id, keys)
+    await s.commit()
+    return DiyOut(diy=picked)
 
 
 async def save_condition(
