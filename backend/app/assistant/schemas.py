@@ -21,10 +21,12 @@ Mode = Literal["llm", "free"]
 CardKind = Literal[
     "home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule",
     "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist",
+    "extra", "notice",  # 07 자동화: 추가 금액 · 이웃 안내문 초안
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
     "window_answer", "decline", "dates",
+    "extra_answer", "work_check", "visit_again",  # 07 자동화
 ]  # fmt: skip
 ActionStatus = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 TurnStatus = Literal["running", "done", "stopped", "failed"]
@@ -409,6 +411,50 @@ class VendorTodayData(BaseModel):
     rows: list[TodayRow]
 
 
+class ExtraData(BaseModel):
+    """추가 금액 카드(07 4.3). 금액은 schedule service가 계산 엔진으로 만든 값 그대로예요.
+    단추는 choice 'extra_answer:<ref>'(승인) · '<ref>,reject'(거절) · '<ref>,ask'(채팅으로 묻기)로 승인 카드를 만들어요."""
+
+    ref: str = Field(description="추가 금액 이름표(x…)")
+    extra_id: uuid.UUID
+    deal_id: uuid.UUID
+    vendor_name: str
+    trade: str = Field(description="공정 화면 말(도배 · 목공)")
+    title: str = Field(description="한 일(업체가 적은 칸, 가림 · 한 줄 · 40자)")
+    vendor_note: str | None = Field(
+        default=None, description=VENDOR_NOTE_DESC + " (추가 금액 이유)"
+    )
+    version: int = Field(description="판 번호(업체가 고치면 새 판)")
+    answer: Literal["pending", "asked", "approved", "rejected"]
+    supply_won: int
+    vat_won: int
+    total_won: int = Field(description="부가세 포함")
+    vat_label: str = Field(description="업체가 적은 방식: 부가세 포함 · 별도 · 면세")
+    deal_total_won: int | None = Field(default=None, description="확정 금액(부가세 포함)")
+    grand_total_won: int | None = Field(
+        default=None, description="지금 공사 금액(확정 금액 + 승인한 추가 금액)"
+    )
+    after_total_won: int | None = Field(default=None, description="승인하면 공사 금액")
+    photo_count: int = 0
+    href: str
+
+
+class NoticeData(BaseModel):
+    """이웃 안내문 초안(07 4.4): 코드 틀이고 LLM을 쓰지 않아요. 공사 날짜는 공정표 값, 동 · 호수 · 이름 ·
+    연락처는 빈칸(○○)이에요. 믿집은 보내지 않아요."""
+
+    title: str
+    text: str = Field(description="안내문 글('-합니다'체)")
+    start: date | None = None
+    end: date | None = None
+    blanks: list[str] = Field(default=[], description="고객이 채울 칸")
+    note: str
+    style_exempt: bool = Field(
+        default=True,
+        description="이웃에게 붙이는 글이라 '-합니다'체예요. 화면 문체('-해요') 검사에서 이 카드 본문은 빼요",
+    )
+
+
 class CardOut(BaseModel):
     """카드 하나. 같은 card_id면 화면이 바꿔 끼운다. data는 kind의 *Data 모양(JSON)."""
 
@@ -671,6 +717,7 @@ class MemoryOut(BaseModel):
 NudgeTrigger = Literal[
     "visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick",
     "visit_requested", "visit_picked", "deal_confirmed",
+    "vendor_out", "extra_added", "work_done", "prep_week", "dates_requested", "quote_due",
 ]  # fmt: skip
 NudgeStatus = Literal["pending", "held", "sent", "opened", "dismissed", "expired"]
 

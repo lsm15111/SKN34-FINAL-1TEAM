@@ -51,15 +51,21 @@ ACTION_KINDS = (
     "window_answer",
     "decline",
     "dates",
+    # 07 자동화: 추가 금액 답 · 공사 끝 확인 · 한 번 더 요청(0044)
+    "extra_answer",
+    "work_check",
+    "visit_again",
 )
 ACTION_STATUSES = ("proposed", "approved", "executed", "rejected", "expired", "failed")
 ORIGINS = ("turn", "nudge")
-TARGET_KINDS = ("project", "visit", "deal", "proposal")
+TARGET_KINDS = ("project", "visit", "deal", "proposal", "extra")  # extra: 추가 금액(0044)
 
 # 먼저 말 걸기 트리거(계약서 6장 표, proactive.TRIGGERS와 같다)
 NUDGE_TRIGGERS = (
     "visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick",
     "visit_requested", "visit_picked", "deal_confirmed",
+    # 07 자동화(0044, aftercare.TRIGGERS)
+    "vendor_out", "extra_added", "work_done", "prep_week", "dates_requested", "quote_due",
 )  # fmt: skip
 NUDGE_CHANNELS = ("feed", "notify")
 NUDGE_STATUSES = ("pending", "held", "sent", "opened", "dismissed", "expired")
