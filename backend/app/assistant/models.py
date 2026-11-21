@@ -57,7 +57,7 @@ ACTION_KINDS = (
     "extra_answer",
     "work_check",
     "visit_again",
-    # 보낸 실측 요청 취소(0050, visit.service.cancel)
+    # 보낸 실측 요청 취소(0051, visit.service.cancel)
     "visit_cancel",
 )
 ACTION_STATUSES = ("proposed", "approved", "executed", "rejected", "expired", "failed")
@@ -201,7 +201,7 @@ class AssistantNudge(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "dedup_key", name="uq_assistant_nudges_user_dedup"),
         Index("ix_assistant_nudges_due", "due_at", postgresql_where=text("status = 'pending'")),
-        # 보이는 줄의 due_at = 정리가 마지막으로 본 때(proactive._settle_rows가 오래 안 본 줄부터 읽는다, 0050)
+        # 보이는 줄의 due_at = 정리가 마지막으로 본 때(proactive._settle_rows가 오래 안 본 줄부터 읽는다, 0051)
         Index(
             "ix_assistant_nudges_shown_due",
             "due_at",
@@ -300,3 +300,68 @@ class AssistantRefTop(Base):
     )
     prefix: Mapped[str] = mapped_column(String(1), primary_key=True)
     top: Mapped[int] = mapped_column(Integer)
+
+
+# 조사 담당(리서처, docs/v4/09-research.md). 종류 · 상태 · 진행 단계
+RESEARCH_KINDS = ("outside_vendors", "materials", "general")
+RESEARCH_STATUSES = ("queued", "running", "done", "failed", "stopped")
+RESEARCH_LIVE = ("queued", "running")  # 도는 조사(공사마다 하나)
+RESEARCH_STEPS = ("search", "read", "write")
+
+
+class AssistantResearch(Base):
+    """조사 하나(09-research). 비서 도구(start_research)가 대기 줄을 넣고, worker가 Claude 웹 검색 · 가져오기로 돌린다.
+
+    - 상태는 assistant/research.py 한 곳에서 조건부 UPDATE로 바꾼다: queued → running → done · stopped · failed,
+      queued → stopped(시작 전 멈춤) · failed(멈춘 조사). 공사마다 도는 조사(queued · running)는 하나다(부분 UNIQUE).
+    - goal은 가린 글(구 · 동 · 평형 · 도배 조건), steps는 진행 단계 · 상태 기록, notes는 바꾸기 메모(가린 글),
+      notes_used는 worker가 다음 왕복에 넣은 메모 수, stop_at은 멈춤 요청 때다.
+    - result는 그 고객 것만(요약 · 링크 · 확인하는 곳). 다른 고객에게 다시 쓰지 않고, 30일 지나면 지워도 된다.
+    """
+
+    __tablename__ = "assistant_research"
+    __table_args__ = (
+        Index(
+            "uq_assistant_research_live",
+            "project_id",
+            unique=True,
+            postgresql_where=text("status in ('queued', 'running')"),
+        ),
+        Index("ix_assistant_research_project_created", "project_id", "created_at"),
+        Index("ix_assistant_research_user_created", "user_id", "created_at"),
+        CheckConstraint(f"kind in {_in(RESEARCH_KINDS)}", name="kind"),
+        CheckConstraint(f"status in {_in(RESEARCH_STATUSES)}", name="status"),
+        CheckConstraint(f"step is null or step in {_in(RESEARCH_STEPS)}", name="step"),
+        CheckConstraint("char_length(btrim(title)) between 1 and 40", name="title"),
+        CheckConstraint("char_length(btrim(goal)) between 1 and 200", name="goal"),
+        CheckConstraint("calls between 0 and 20", name="calls"),
+        CheckConstraint("notes_used >= 0", name="notes_used"),
+        CheckConstraint("cost_micros >= 0", name="cost"),
+        CheckConstraint("(status in ('queued', 'running')) = (ended_at is null)", name="ended"),
+        CheckConstraint("status <> 'running' or started_at is not null", name="started"),
+        CheckConstraint("(status = 'failed') = (error_code is not null)", name="failed"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    turn_id: Mapped[uuid.UUID | None] = mapped_column()  # 시작한 비서 턴(FK 없음, 흔적)
+    kind: Mapped[str] = mapped_column(String(20))
+    title: Mapped[str] = mapped_column(String(40))
+    goal: Mapped[str] = mapped_column(String(200))
+    status: Mapped[str] = mapped_column(String(10), default="queued", server_default="queued")
+    step: Mapped[str | None] = mapped_column(String(10))
+    # [{step | event, at}] 진행 단계 · 상태 기록(글 없음)
+    steps: Mapped[list] = mapped_column(JSONB(), default=list, server_default=text("'[]'::jsonb"))
+    # [{text, at}] 바꾸기 메모(가린 글)
+    notes: Mapped[list] = mapped_column(JSONB(), default=list, server_default=text("'[]'::jsonb"))
+    notes_used: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    stop_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # {summary, links, checks, note, partial, outside} (research.ResearchData 결과 칸)
+    result: Mapped[dict | None] = mapped_column(JSONB())
+    calls: Mapped[int] = mapped_column(SmallInteger, default=0, server_default="0")
+    cost_micros: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    error_code: Mapped[str | None] = mapped_column(String(40))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

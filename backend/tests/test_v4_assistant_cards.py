@@ -72,9 +72,9 @@ def test_vendor_name_is_not_read_as_a_trade(api):
     assert (
         cmp["say"] == "실측 견적서가 2곳 왔어요." and said(ev) == free.QUOTES
     )  # 카드 위 한 줄은 되풀이 안 함
-    # 업체 이름이 아닌 다른 공사 말은 그대로 '아직 도배 업체만'
+    # 업체 이름이 아닌 다른 공사 말은 그대로 '아직 도배 업체만'(FM: 범위 밖 답 틀 되받기 · 솔직 · 지금 할 일)
     ev = ok(ask(api, pid, "바닥 업체 추천해 줘"))
-    assert said(ev).startswith(free.OTHER_TRADE)
+    assert free.OTHER_TRADE in said(ev) and "바닥" in said(ev)
 
 
 # ---- 공사 날짜 카드 제안 이름표 · 수락 단추 ----

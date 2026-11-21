@@ -24,10 +24,11 @@ OWN = {"dobae": ("도배", 7.0), "mokgong": ("목공", 4.0)}
 MIDDOOR = "중문"
 WATERPROOF = re.compile(r"방수도")  # '방수도 다시'의 '수도'를 설비로 읽지 않게
 # 자리 공종: 자리 낱말로만 걸렸고 함께 걸린 일이 이 공종의 공사가 아니면 뺀다(욕실 리모델링의 철거 · 배관 · 타일은 둔다)
+# '주방 가구'는 자리가 아니라 주방 공종의 일 낱말이라 자리 낱말로 지우지 않는다(QA r1 D7)
 PLACE = {
     "bath": (re.compile(r"욕실|화장실"), frozenset({"electric", "film", "paint", "mokgong"})),
     "kitchen": (
-        re.compile(r"주방|부엌"),
+        re.compile(r"(?:주방|부엌)(?!\s*가구)"),
         frozenset({"electric", "film", "paint", "tile", "demolition"}),
     ),
 }

@@ -649,9 +649,10 @@ async def visit_slots(
 
     v = await visit_service.pick_view(s, user, pid, visit_id, now)
     today = visit_service.today_of(now)
+    taken = {(m.day, m.half) for m in v.mine}  # 같은 집 다른 업체 실측이 잡은 반나절은 빼요(P8)
     picks: list[tuple[date, str, list[str], str]] = []
     if v.status == "proposed" and v.proposal is not None:
-        for x in v.proposal.slots[:3]:
+        for x in [x for x in v.proposal.slots if slots.free_at_home(x.day, x.half, taken)][:3]:
             day_kind = "weekend" if x.day.weekday() >= 5 else "weekday"
             picks.append((x.day, x.half, ["vendor_proposal", day_kind], "proposal"))
     elif v.status == "offered" and v.days:
@@ -663,6 +664,7 @@ async def visit_slots(
             prefer=prefer,
             day_prefer=days,
             days_off=days_off(opened[0].day, opened[-1].day),
+            taken=taken,
         )
         picks = [(c.day, c.half, list(c.why), "pick") for c in found]
     cands = [

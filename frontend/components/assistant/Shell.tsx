@@ -74,7 +74,7 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
   const waitingReply = a.running && tail?.role === "user";
   const tick = a.items.length + (tail?.role === "assistant" && tail.done ? 1000 : 0);
 
-  const { approve: approveFn, actionOf, send, pending, handled, dismissNudge, items } = a;
+  const { approve: approveFn, actionOf, send, pending, handled, dismissNudge, items, reload } = a;
   const ctx: CardCtx = useMemo(() => ({
     projectId,
     now: a.now,
@@ -89,7 +89,8 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
     mark,
     lastCard: (kind, test) => lastCardIn(items, kind, test),
     lastAction: (kind, test) => lastActionIn(items, kind, test),
-  }), [projectId, a.now, a.running, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items]);
+    reload: () => { void reload(); },
+  }), [projectId, a.now, a.running, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items, reload]);
 
   const act: ActionHandlers = {
     approve: (x) => { void a.approve(x); },

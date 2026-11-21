@@ -35,13 +35,13 @@ Role = Literal[
 ]
 # 장부(llm_usage.purpose)에 남기는 목적. usage/models.py의 PURPOSES와 같다(시험이 맞춰 본다)
 Purpose = Literal[
-    "assistant", "floorplan", "nudge", "memory", "v2_chat",
+    "assistant", "floorplan", "nudge", "memory", "v2_chat", "research",
     "orchestrator", "trade", "quote_explanation", "schedule", "composer", "general", "planner",
     "judge", "check",
 ]  # fmt: skip
 PURPOSES: frozenset[str] = frozenset(get_args(Purpose))
 # 기본 모델(Sonnet)을 쓰는 목적. 판정은 Opus, 그 밖(짧은 문장 · 분류 · 기억 · 가벼운 역할)은 Haiku
-MAIN_PURPOSES = frozenset({"assistant", "floorplan", "v2_chat"})
+MAIN_PURPOSES = frozenset({"assistant", "floorplan", "v2_chat", "research"})
 # 거절 · 잘림이면 장부에 실패로 적는다(stop_reason 그대로)
 BAD_STOPS = frozenset({"refusal", "max_tokens", "model_context_window_exceeded"})
 
@@ -128,6 +128,8 @@ class ClaudeReply:
     usage: dict[str, int]
     cost_micros: int
     model: str
+    # 코드 실행 컨테이너(웹 도구 동적 거르기). pause_turn을 이을 때 다시 보낸다
+    container: str | None = None
 
 
 def _usage(role: str, name: str, raw: Any) -> dict:
@@ -497,6 +499,7 @@ def _fake_message(step: dict, req: dict) -> Any:
     content.extend(step.get("blocks") or [])
     u = step.get("usage") or {}
     w5, w1 = u.get("cache_write", 0), u.get("cache_write_1h", 0)
+    box = step.get("container")  # 코드 실행 컨테이너 id(웹 도구 동적 거르기 대본)
     return Message.model_validate(
         {
             "id": "msg_script",
@@ -506,6 +509,7 @@ def _fake_message(step: dict, req: dict) -> Any:
             "content": content,
             "stop_reason": step.get("stop") or ("tool_use" if calls else "end_turn"),
             "stop_sequence": None,
+            "container": {"id": box, "expires_at": "2099-01-01T00:00:00Z"} if box else None,
             "usage": {
                 "input_tokens": u.get("input", 0),
                 "output_tokens": u.get("output", 0),
@@ -517,7 +521,7 @@ def _fake_message(step: dict, req: dict) -> Any:
                 },
                 "server_tool_use": {
                     "web_search_requests": u.get("web_searches", 0),
-                    "web_fetch_requests": 0,
+                    "web_fetch_requests": u.get("web_fetches", 0),
                 },
             },
         }
@@ -525,7 +529,7 @@ def _fake_message(step: dict, req: dict) -> Any:
 
 
 class _ScriptStream:
-    """messages.stream 자리: message_start → 글 조각(text) → get_final_message."""
+    """messages.stream 자리: message_start → 블록마다 content_block_start(글이면 글 조각 text) → get_final_message."""
 
     def __init__(self, req: dict) -> None:
         self._req = req
@@ -544,6 +548,7 @@ class _ScriptStream:
     async def __aiter__(self):
         yield SimpleNamespace(type="message_start", message=self._msg)
         for b in self._msg.content:
+            yield SimpleNamespace(type="content_block_start", content_block=b)
             if b.type == "text":
                 for i in range(0, len(b.text), 6):
                     yield SimpleNamespace(type="text", text=b.text[i : i + 6])
@@ -722,6 +727,8 @@ async def claude_stream(
     thinking: dict | None = None,
     tool_choice: dict | None = None,
     max_tokens: int = 8000,
+    container: str | None = None,
+    on_block: Callable[[str, str | None], Awaitable[None]] | None = None,
 ) -> ClaudeReply:
     """Claude 한 번을 스트림으로 부른다(비서 턴의 LLM 1회). 글 조각은 받는 대로 on_text로 넘긴다.
 
@@ -732,6 +739,8 @@ async def claude_stream(
     꺼져 있으면 LLMOff, 상한이면 OverBudget, 공급자 오류 · 끊김이면 LLMError(요청 자체가 틀렸으면 LLMRejected).
     on_text 오류는 그대로 낸다. 거절 · 잘림이어도 오류를 내지 않고 stop으로 알린다(부르는 쪽이 무료 모드 · 끊긴 문장
     버리기를 정한다).
+    container: pause_turn을 이을 때 앞 응답의 코드 실행 컨테이너(웹 도구 동적 거르기). on_block: 블록이 시작될
+    때마다 (블록 종류, 서버 도구 이름)을 넘긴다(조사 진행 단계). on_block 오류도 그대로 낸다.
     """
     client = _claude()
     call = await _guard(purpose, "assistant")
@@ -753,6 +762,8 @@ async def claude_stream(
         req["tool_choice"] = tool_choice or {"type": "auto"}
     if thinking is not None:
         req["thinking"] = thinking
+    if container:
+        req["container"] = container
     seen: dict[str, int] = {}  # 끊겼을 때 장부에 남길 만큼(시작 때 입력 · 지금까지 출력)
     try:
         async with client.messages.stream(**req) as stream:
@@ -764,6 +775,12 @@ async def claude_stream(
                 elif ev.type == "text" and on_text is not None:
                     try:
                         await on_text(ev.text)
+                    except Exception as e:
+                        raise _CallbackError(e) from e
+                elif ev.type == "content_block_start" and on_block is not None:
+                    b = ev.content_block
+                    try:
+                        await on_block(b.type, getattr(b, "name", None))
                     except Exception as e:
                         raise _CallbackError(e) from e
             msg = await stream.get_final_message()
@@ -789,6 +806,7 @@ async def claude_stream(
             if b.type == "tool_use"
         ]
     )
+    box = getattr(msg, "container", None)
     return ClaudeReply(
         text="".join(b.text for b in msg.content if b.type == "text"),
         content=_blocks_out(msg.content),
@@ -797,6 +815,7 @@ async def claude_stream(
         usage=u,
         cost_micros=cost,
         model=msg.model or name,
+        container=box.id if box is not None else None,
     )
 
 

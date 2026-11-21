@@ -1,7 +1,7 @@
 """v4 비서 행동 종류에 보낸 실측 요청 취소(visit_cancel)를 더하고, 보이는 먼저 말 건 줄의 due_at 색인을 만든다
 
-Revision ID: 0050_v4_visit_cancel
-Revises: 0049_v4_ref_tops
+Revision ID: 0051_v4_visit_cancel
+Revises: 0050_v4_research
 Create Date: 2026-11-22
 
 - assistant_actions.kind: visit_cancel(고객이 승인하면 visit.service.cancel이 이유 코드로 취소).
@@ -14,8 +14,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0050_v4_visit_cancel"
-down_revision: str | Sequence[str] | None = "0049_v4_ref_tops"
+revision: str = "0051_v4_visit_cancel"
+down_revision: str | Sequence[str] | None = "0050_v4_research"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

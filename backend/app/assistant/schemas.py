@@ -24,6 +24,7 @@ CardKind = Literal[
     "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist",
     "extra", "notice",  # 07 자동화: 추가 금액 · 이웃 안내문 초안
     "grade_compare", "market_range", "options",  # 벽지 두 종류 견주기 · 시세 범위 · 고르기 칩
+    "research",  # 09 조사 담당: 진행 · 결과(data는 assistant/research.py ResearchData)
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",

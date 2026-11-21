@@ -57,7 +57,7 @@
 
 | CSV | 만드는 법 | 보관 규칙 |
 | --- | --- | --- |
-| `data/consult/consult_knowledge_rag.csv` | `data/consult/rag5.json` → `python -m app.knowledge.json_csv` | Git에서 관리 |
+| `data/consult/consult_knowledge_rag.csv` | `data/consult/rag5.json` → `python -m app.knowledge.json_csv`. 단 v4 벽지 자재 줄 K1435~K1444(2026-11-22, 제조사 공개 자료)는 CSV에만 있어요. rag5.json에서 다시 만들면 이 10줄을 끝에 다시 붙여요 | Git에서 관리 |
 | `data/processed/13_interior_guide_book_rag.csv` | 안내서 전처리 결과 59행 | 공유 허용, Git에서 관리 |
 | `data/local/sigong_ilji_rag.csv` | 시공일지 쪽별 JSON → 쪽 경계 합치기 → CSV 변환, 검토본 1,156행 | 로컬 전용, Git에 올리지 않음 |
 

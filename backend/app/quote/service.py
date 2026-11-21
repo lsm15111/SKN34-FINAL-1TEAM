@@ -601,6 +601,10 @@ async def seal_draft(
             MISSING[missing[0]],
             fields=[{"loc": [k], "msg": MISSING[k]} for k in missing],
         )
+    # 0원 견적서는 보내지 않는다(칸 검사를 1원 이상으로 바꾸기 전에 임시 저장한 것 포함, QA P7)
+    if draft.entered_amount < 1:
+        msg = "낼 금액은 1원 이상으로 넣어 주세요."
+        raise AppError(422, "entered_amount", msg, fields=[{"loc": ["entered_amount"], "msg": msg}])
     if draft.valid_until is not None and draft.valid_until < today:
         msg = "견적 유효기간이 지났어요. 날짜를 다시 골라 주세요."
         raise AppError(422, "valid_until", msg, fields=[{"loc": ["valid_until"], "msg": msg}])

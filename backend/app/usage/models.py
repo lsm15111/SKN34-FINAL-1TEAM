@@ -26,6 +26,7 @@ PURPOSES = (
     "nudge",  # v4 먼저 말 걸기: 부를지 판단 · 문장
     "memory",  # v4 기억 추출
     "v2_chat",  # v2 /v2/ask 도구 루프(chat_tools)
+    "research",  # v4 조사 담당(worker, 웹 검색 · 가져오기)
     "orchestrator",  # 여기부터 planner까지 v2 · v3 structured 역할
     "trade",
     "quote_explanation",

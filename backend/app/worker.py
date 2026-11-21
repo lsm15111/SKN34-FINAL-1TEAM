@@ -2,7 +2,7 @@
 
 LLM 호출(추천 이유·가견적 설명·공정표 해석), 기준 단가 수집, 알림 발송처럼
 응답을 기다리게 하면 안 되는 일을 여기서 돌린다. 연결 확인용 작업 · 기한 일 수거 ·
-시연 업체 자동 응답(DEMO_AUTO=true일 때만)이 있다.
+붙이지 않은 파일 정리(매시간) · 시연 업체 자동 응답(DEMO_AUTO=true일 때만)이 있다.
 실행: arq app.worker.WorkerSettings
 
 v3 기한 일(dev-04): sweep_jobs가 1분마다(cron, unique) jobs를 거둬 kind별 처리 함수(JOB_HANDLERS)를 부른다.
@@ -20,12 +20,15 @@ from typing import ClassVar
 
 from arq import cron
 from arq.connections import RedisSettings
+from arq.worker import func
 
 from app import demo
 from app.assistant import jobs as assistant_jobs
+from app.assistant import research as assistant_research
 from app.assistant import service as assistant_service
 from app.config import settings
 from app.db import SessionLocal
+from app.files import service as files_service
 from app.jobs import service as jobs
 from app.jobs.models import Job
 from app.jobs.service import JobHandler
@@ -41,6 +44,7 @@ log = logging.getLogger(__name__)
 # kind → 처리 함수 (jobs.models.KINDS). 기능마다 자기 jobs.py의 HANDLERS에 넣고 여기서 모은다
 JOB_HANDLERS: dict[str, JobHandler] = {
     **assistant_jobs.HANDLERS,
+    **assistant_research.HANDLERS,
     **quote_jobs.HANDLERS,
     **schedule_jobs.HANDLERS,
     **visit_jobs.HANDLERS,
@@ -127,15 +131,26 @@ async def assistant_hourly(ctx: dict | None = None, now: datetime | None = None)
     return sum(got.values())
 
 
+async def clean_files(ctx: dict | None = None, now: datetime | None = None) -> int:
+    """붙이지 않은 파일 정리(매시간 35분, unique): 올린 지 하루가 넘도록 어디에도 붙지 않은 파일 행과 저장소 내용을
+    지운다(sec M5, files.service.sweep_unattached). 돌려주는 값: 지운 수."""
+    return await files_service.sweep_unattached(now or now_utc())
+
+
 def demo_on() -> bool:
     return settings.demo_auto and settings.app_env != "production"
 
 
 class WorkerSettings:
-    functions: ClassVar[list] = [ping]
+    functions: ClassVar[list] = [
+        ping,
+        # 조사 담당(09): 비서가 맡긴 웹 조사 하나(4분 상한 + 여유, 다시 하지 않음 · 멈춘 조사는 jobs 감시가 닫음)
+        func(assistant_research.run_job, name=assistant_research.JOB_FN, timeout=300, max_tries=1),
+    ]
     cron_jobs: ClassVar[list] = [
         cron(assistant_sweep, minute=set(range(0, 60, 2)), second=30, unique=True, timeout=60),
         cron(assistant_hourly, minute=5, second=15, unique=True, timeout=60),
+        cron(clean_files, minute=35, second=45, unique=True, timeout=300),
         cron(sweep_jobs, second=0, unique=True, timeout=SWEEP_TIMEOUT),
         *([cron(demo_reply, second=set(range(0, 60, 5)), timeout=50)] if demo_on() else []),
     ]
