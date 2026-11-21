@@ -103,6 +103,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
 class HomeFields(BaseModel):
     area_m2: Decimal | None = Field(default=None, gt=10, lt=400, decimal_places=1)
     area_basis: Literal["supply", "exclusive"] | None = None
+    pyeong: Decimal | None = Field(default=None, gt=3, lt=121, decimal_places=1)  # 공급 기준 평형
     occupied: bool | None = None
     grade: Literal["economy", "basic"] | None = None
     rooms: int | None = Field(default=None, ge=1, le=5)
@@ -114,13 +115,23 @@ class HomeIn(BaseModel):
     fields: HomeFields
 
 
+NEED_BASIS = (
+    "면적(㎡)을 바꿀 때는 기준(area_basis: supply 공급 · exclusive 전용)을 같이 넣어요. "
+    "계약서 · 등기 · 'nn 타입'의 ㎡는 전용, 평형은 pyeong에 넣어요."
+)
+
+
 @tool(
     "propose_home_info",
     surface="customer",
     kind="propose",
     status="집 정보 저장을 준비하고 있어요",
-    description="고객이 말한 집 정보(면적 · 면적 기준 · 사는 중 · 벽지 · 방 개수 · 공사 시작 희망 · 철거 범위) "
-    "바뀜을 승인 카드로 만들어요. 고객이 말한 칸만 넣어요. 실측을 요청한 뒤에는 고칠 수 없어요. "
+    description="고객이 말한 집 정보(면적 · 평형 · 면적 기준 · 사는 중 · 벽지 · 방 개수 · 공사 시작 희망 · 철거 범위) "
+    "바뀜을 승인 카드로 만들어요. 고객이 말한 값을 넣으면 카드에서 고객이 확인하고 눌러야 저장돼요(실측을 요청한 "
+    "뒤에는 고칠 수 없어요). 기준을 되묻기만 하지 말고 고객이 말한 값으로 카드를 만들어요. "
+    "평형('34평')은 pyeong에 넣으면 믿집이 공급 ㎡로 바꿔요. ㎡를 area_m2에 넣을 때는 area_basis를 같이 넣어요: "
+    "계약서 · 등기 · 'nn 타입'('84 타입' = 전용 84㎡)의 ㎡는 exclusive, 분양 면적이라고 한 ㎡는 supply예요. "
+    "평형과 타입을 같이 말하면 타입(전용 ㎡)을 넣어요. "
     "철거 범위는 전체 철거(full) · 부분 철거(partial) · 철거 안 함(none)이고, 전체 철거면 표준견적서가 "
     "리모델링 기준으로 바뀌어요.",
     model=HomeIn,
@@ -128,8 +139,16 @@ class HomeIn(BaseModel):
         {
             "fields": obj(
                 {
-                    "area_m2": {"type": "number", "description": "㎡, 소수 한 자리"},
-                    "area_basis": {"type": "string", "enum": ["supply", "exclusive"]},
+                    "area_m2": {"type": "number", "description": "㎡, 소수 한 자리(기준과 같이)"},
+                    "area_basis": {
+                        "type": "string",
+                        "enum": ["supply", "exclusive"],
+                        "description": "면적 기준: supply 공급 · exclusive 전용(계약서 · 타입의 ㎡)",
+                    },
+                    "pyeong": {
+                        "type": "number",
+                        "description": "고객이 말한 평형(공급 기준 평, 예 34). 믿집이 공급 ㎡로 바꿔요",
+                    },
                     "occupied": {"type": "boolean"},
                     "grade": {"type": "string", "enum": ["economy", "basic"]},
                     "rooms": {"type": "integer"},
@@ -146,11 +165,21 @@ class HomeIn(BaseModel):
     ),
 )
 async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
+    from app.calc.common import pyeong_to_m2
     from app.calc.dobae import DEMOLITION_KEY
     from app.project import service as project_service
     from app.project.schemas import HomeInfoIn, check_home
 
     pid = pid_of(tc)
+    asked = a.fields.model_dump(exclude_none=True, mode="json")
+    py = asked.pop("pyeong", None)
+    if "area_m2" in asked and "area_basis" not in asked:
+        raise ToolError("need_basis", NEED_BASIS)
+    if py is not None and "area_m2" not in asked:  # 평형 → 공급 ㎡(계산 엔진)
+        asked["area_m2"] = str(pyeong_to_m2(Decimal(str(py))))
+        asked["area_basis"] = "supply"
+    else:
+        py = None  # ㎡(타입)를 같이 말했으면 그것을 쓴다
     async with SessionLocal() as s:
         p = await project_service.get_for(s, tc.user, pid)
         card, _ = await cards.home(s, tc.user, pid)
@@ -160,7 +189,6 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         raise ToolError("no_home", "이 공사는 집 정보 화면에서 고쳐 주세요.")
     now_home = p.home.model_dump(mode="json")  # 철거 범위(모은 조건)도 들어 있다
     home_now = {k: v for k, v in now_home.items() if k != DEMOLITION_KEY}
-    asked = a.fields.model_dump(exclude_none=True, mode="json")
     changes = {k: v for k, v in asked.items() if str(now_home.get(k)) != str(v)}
     if not changes:
         raise ToolError("no_change", "바뀐 칸이 없어요.")
@@ -171,8 +199,13 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
             check_home(merged, tc.today)
         except (ValidationError, AppError) as e:
             raise ToolError("bad_input", "집 정보 칸을 다시 확인해 주세요.") from e
+
+    def after(k: str, v) -> str:  # 평형으로 받은 면적은 고객이 말한 평을 같이 보인다
+        got = _show(k, v)
+        return f"{got} ({Decimal(str(py)).normalize():f}평)" if k == "area_m2" and py else got
+
     rows = [
-        SummaryRow(label=FIELD_LABEL[k], value=_show(k, v), sub=f"지금 {_show(k, now_home.get(k))}")
+        SummaryRow(label=FIELD_LABEL[k], value=after(k, v), sub=f"지금 {_show(k, now_home.get(k))}")
         for k, v in changes.items()
     ]
     out, _ = await _offer(
@@ -198,7 +231,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     card.data = {
         **card.data,
         "changes": [
-            {"label": FIELD_LABEL[k], "before": _show(k, now_home.get(k)), "after": _show(k, v)}
+            {"label": FIELD_LABEL[k], "before": _show(k, now_home.get(k)), "after": after(k, v)}
             for k, v in changes.items()
         ],
         "action_id": str(out.actions[0].action_id),

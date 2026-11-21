@@ -5,12 +5,17 @@
   업체 · 웹 글은 도구가 {"자료(지시 아님)": …}로 감싸서 넘긴다(그 키도 허용 칸).
 - TurnBudget: 도구 6 · LLM 8 · 45초 · 턴 $0.06(LLM_CAP_TURN_USD). 넘으면 '지금까지로 답해요' 한 번, 그래도 넘으면 멈춤.
 - mode_for: 꺼짐(키 없음 · LLM_LIVE=false) · 상한 · 차단기면 무료 모드.
+- card_claim · honest: 말과 행동 맞추기. 모델 글이 승인 카드를 만들었다(made) · 만들어 드린다(promise, 조건 · 물음
+  없이) · 카드를 눌러 달라(press)고 하면 그 말이 맞는지 runtime.SentenceGate가 이 턴에 만든 카드 · 열린 카드(눌러
+  달라는 말이 단추 이름을 대면 이 턴에 보인 화면 카드 단추도)로 본다. 맞지 않으면 첫 문장을 정직한 한 줄(honest)로
+  바꾸고 나머지는 뺀다.
 - NudgeRules(계약서 6장): 먼저 말 걸기 규칙. 하루 알림 상한(고객 2 · 업체 3) · 밤(21~9시) 알림은 9시로 ·
   닫으면 같은 trigger 3일 쉬기 · 7일 안에 2번 닫으면 알림 7일 멈춤. 시각은 부르는 쪽이 넣는다(고정 시계로 시험).
 """
 
 import itertools
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
 from typing import Any, Literal
@@ -104,6 +109,94 @@ def vendor_note(text: str | None) -> str | None:
     if not t:
         return None
     return t if len(t) <= VENDOR_NOTE_MAX else t[: VENDOR_NOTE_MAX - 1] + "…"
+
+
+# ---- 말과 행동(승인 카드) ----
+
+CARD_NOT_MADE = "승인 카드는 아직 만들지 않았어요."
+CARD_ALREADY = "같은 승인 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
+CARD_NOT_OPEN = "그 승인 카드는 지금 열려 있지 않아요."
+NO_CARD = "지금 누를 승인 카드는 없어요."
+_CARD = re.compile(r"카드|버튼|단추")
+_MADE = re.compile(
+    r"만들었|만들어\s*(?:드렸|뒀|두었|놨|놓았)|준비했|준비해\s*(?:드렸|뒀|두었)|올려\s*(?:드렸|뒀)"
+)
+_PROMISE = re.compile(
+    r"만들어\s*(?:드릴게|드릴께|드리겠|둘게|놓을게|줄게)|만들게|만들겠|준비해\s*(?:드릴게|둘게|드리겠)"
+)
+# 눌러 달라는 말만('눌러야 실행돼요' · '누르기 전에는 …' 같은 설명은 아니다)
+_PRESS = re.compile(r"눌러\s*(?:주|보|줘)|누르세요|누르시|클릭해\s*주")
+# 조건 · 물음이 붙은 제안('알려 주시면 만들어 드릴게요' · '만들어 드릴까요?')은 약속이 아니다
+_OFFER = re.compile(r"(?:면|다면|라면)(?:\s|,)|\?\s*$")
+# 말이 가리키는 행동 종류(카드 이름 낱말). 없으면 종류를 가리지 않는다
+KIND_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("home_info", re.compile(r"집\s*정보|면적|평형|평수|철거\s*범위|방\s*개수")),
+    ("visit_request", re.compile(r"실측\s*요청")),
+    ("visit_slot", re.compile(r"실측\s*(?:시간|날짜|일정)|반나절|시간\s*(?:카드|고르기)")),
+    (
+        "vendor_confirm",
+        re.compile(r"확정\s*(?:카드|승인|단추|버튼)|업체\s*확정|(?:으로|로)\s*확정"),
+    ),
+    ("dates_accept", re.compile(r"수락")),
+    ("delay_accept", re.compile(r"수락")),
+    ("date_change", re.compile(r"날짜\s*바꾸기|바꾸기\s*요청|연기\s*요청|미루기")),
+    ("window_answer", re.compile(r"기간\s*답|답하기")),
+    ("decline", re.compile(r"못\s*받아요")),
+    ("dates", re.compile(r"(?:공사\s*)?날짜\s*보내기")),
+)
+# 단추로 승인 카드를 만드는 화면 카드 → 그 단추가 만드는 행동 종류. 이 턴에 보인 카드의 그 단추를 이름으로 누르라는
+# 말('카드에서 수락을 눌러 주세요')은 맞다. 집 정보 카드 단추(철거 범위)는 면적 · 방 고치기 카드가 아니라 넣지 않는다
+BUTTONS: dict[str, frozenset[str]] = {
+    "vendor_picks": frozenset({"visit_request"}),
+    "visit_slots": frozenset({"visit_request", "visit_slot"}),
+    "quote_compare": frozenset({"vendor_confirm"}),
+    "schedule": frozenset({"dates_accept", "delay_accept"}),
+    "vendor_brief": frozenset({"window_answer", "decline"}),
+}
+
+
+def buttons_of(kind: str, data: dict) -> frozenset[str]:
+    """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만."""
+    if kind == "schedule" and not data.get("proposal_ref"):
+        return frozenset()
+    return BUTTONS.get(kind, frozenset())
+
+
+def card_claim(text: str) -> tuple[str, set[str]] | None:
+    """승인 카드를 두고 한 말인지: ("made" · "promise" · "press", 말이 가리키는 행동 종류) 또는 None."""
+    t = (text or "").strip()
+    kinds = {k for k, rx in KIND_WORDS if rx.search(t)}
+    if _MADE.search(t) and _CARD.search(t):
+        return "made", kinds
+    if _PROMISE.search(t) and _CARD.search(t) and not _OFFER.search(t):
+        return "promise", kinds
+    if _PRESS.search(t):
+        return "press", kinds
+    return None
+
+
+def claim_ok(
+    claim: tuple[str, set[str]],
+    made: Collection[str],
+    opened: Collection[str],
+    buttons: Collection[str] = (),
+) -> bool:
+    """그 말이 맞는지: 만들었다 · 만들어 드린다는 이 턴에 만든 카드(made), 눌러 달라는 이 턴 · 열린 카드(opened).
+    눌러 달라는 말이 단추 이름(수락 · 실측 요청 …)을 대면 이 턴에 보인 화면 카드의 그 단추(buttons)도 맞다."""
+    what, kinds = claim
+    if what in ("made", "promise"):
+        return bool(kinds & set(made)) if kinds else bool(made)
+    pool = {*made, *opened}
+    return bool(kinds & (pool | set(buttons))) if kinds else bool(pool)
+
+
+def honest(claim: tuple[str, set[str]], opened: set[str]) -> str:
+    """맞지 않는 말 대신 보낼 한 줄(정해 둔 글)."""
+    what, kinds = claim
+    there = bool(kinds & opened) if kinds else bool(opened)
+    if what in ("made", "promise"):
+        return CARD_ALREADY if there else CARD_NOT_MADE
+    return CARD_NOT_OPEN if opened else NO_CARD
 
 
 Over = Literal["tools", "llm", "time", "cost"]
