@@ -10,6 +10,8 @@ from app.db import get_session
 from app.project import service
 from app.project.schemas import (
     ConditionOut,
+    DiyIn,
+    DiyOut,
     EmdOut,
     ProjectBody,
     ProjectCheckIn,
@@ -128,6 +130,21 @@ async def set_check(
     s: AsyncSession = Depends(get_session),
 ) -> list[ProjectCheckOut]:
     return await service.set_check(s, user, project_id, key, data.done)
+
+
+@router.put(
+    "/projects/{project_id}/diy",
+    response_model=DiyOut,
+    summary="직접 할 일(반셀프 칩) 고치기 (만든 고객만, 빈 목록이면 '없어요')",
+)
+async def put_diy(
+    project_id: uuid.UUID,
+    data: DiyIn,
+    user: User = Depends(require_role("customer")),
+    s: AsyncSession = Depends(get_session),
+) -> DiyOut:
+    """덮어써요. 모은 조건 칩(GET /projects/{id}/conditions)에 '직접 할 일: …'로 보여요."""
+    return await service.put_diy(s, user, project_id, list(data.diy))
 
 
 @router.get(

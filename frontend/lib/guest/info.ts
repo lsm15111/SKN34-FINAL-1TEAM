@@ -18,6 +18,27 @@ export type Demolition = "full" | "partial" | "none";
 export type HomeBody = HomeInfo & { demolition?: Demolition };
 const demolitionOf = (v: unknown): Demolition | null => (v === "full" || v === "partial" || v === "none" ? v : null);
 
+/** 공사 희망 시기 칩(GET /guest/start-options, 날짜는 계산 엔진) */
+export type StartWish = Schemas["StartWishOut"];
+export type WishKey = StartWish["key"];
+/** 공사 희망 시기 고른 것: 칩 · 아직 몰라요 · 날짜 고르기(v4 첫 대화) */
+export type StartPick = WishKey | "unknown" | "date";
+export const WISH_LABEL: Record<WishKey, string> = { this_month: "이번 달", next_month: "다음 달", in_2_3_months: "2~3달 뒤" };
+export const START_PICKS: readonly StartPick[] = ["this_month", "next_month", "in_2_3_months", "unknown", "date"];
+
+/** 직접 할 일(반셀프 칩). 키 · 이름은 backend project/diy.py DIY와 같아요 */
+export type DiyKey = NonNullable<HomeInfo["diy"]>[number];
+export const DIY: { key: DiyKey; label: string }[] = [
+  { key: "paint", label: "페인트(문틀 · 몰딩)" },
+  { key: "outlet", label: "콘센트 · 스위치 커버" },
+  { key: "light", label: "조명 교체" },
+  { key: "silicone", label: "실리콘 · 줄눈" },
+  { key: "handle", label: "손잡이 · 문고리" },
+  { key: "clean", label: "입주 청소" },
+];
+/** 고른 직접 할 일 글(내 말 줄): '페인트(문틀 · 몰딩), 입주 청소' · 빈 목록이면 '없어요' */
+export const diyText = (keys: readonly string[]): string => DIY.filter((x) => keys.includes(x.key)).map((x) => x.label).join(", ") || "없어요";
+
 /** 넣는 중인 답(기기에 저장하는 모양). 다 차면 toHomeInfo로 API 몸통이 돼요 */
 export type InfoDraft = {
   scope: "full" | "partial";
@@ -39,6 +60,10 @@ export type InfoDraft = {
   start: string | null;
   /** 철거 범위(v4 첫 대화에서만 물어요. 없으면 보내지 않아요) */
   demolition?: Demolition | null;
+  /** 공사 희망 시기 고른 것(v4 첫 대화). 칩이면 start는 그 칩의 계산 엔진 날짜, 아직 몰라요면 start 비움 */
+  when?: StartPick | null;
+  /** 직접 할 일(v4 첫 대화, 표준견적서 뒤). 안 물었으면 null · 없어요면 빈 목록 */
+  diy?: DiyKey[] | null;
 };
 
 export const EMPTY_DRAFT: InfoDraft = {
@@ -164,11 +189,12 @@ export function checkDraft(d: InfoDraft): InfoErrors {
   return e;
 }
 
-/** 검사를 지난 답 → API 몸통(POST /guest/standard · POST /projects와 같은 칸). 철거 범위는 고른 때만 붙여요 */
+/** 검사를 지난 답 → API 몸통(POST /guest/standard · POST /projects와 같은 칸). 철거 범위 · 직접 할 일은 고른 때만 붙여요 */
 export function toHomeInfo(d: InfoDraft): HomeBody {
   const partial = d.scope === "partial";
   return {
     ...(d.demolition ? { demolition: d.demolition } : {}),
+    ...(d.diy ? { diy: d.diy } : {}),
     trade: "dobae",
     scope: d.scope,
     spaces: partial ? d.spaces : [],

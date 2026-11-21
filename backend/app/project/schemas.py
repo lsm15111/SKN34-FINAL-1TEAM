@@ -14,6 +14,7 @@ from pydantic import (
 )
 
 from app.calc.space_share import rooms_needed
+from app.project.diy import DIY, DiyKey
 from app.shared.errors import app_error
 from app.shared.regions import is_region
 
@@ -231,6 +232,13 @@ class HomeInfoIn(BaseModel):
         description="철거 범위(모은 조건 demolition): full 전체 철거 · partial 부분 · none 안 함. "
         "전체 철거면 표준견적서가 리모델링 기준이에요. 고치기에서 안 보내면 그대로, null이면 지워요",
     )
+    diy: list[DiyKey] | None = Field(
+        default=None,
+        max_length=len(DIY),
+        description="직접 할 일(반셀프 칩, project/diy.py 키). 안 보내거나 null이면 묻지 않은 것(고치기에서는 "
+        "그대로), 빈 목록이면 '없어요'. 공사를 만들 때 같은 트랜잭션에서 모은 조건(diy.<키>)으로 저장해요. "
+        "손님 계산(표준견적서)에는 쓰지 않아요",
+    )
 
     @field_validator("emd")
     @classmethod
@@ -390,3 +398,17 @@ class ProjectCheckOut(BaseModel):
 
 class ProjectCheckIn(BaseModel):
     done: bool
+
+
+class DiyIn(BaseModel):
+    """직접 할 일 칩 고치기(PUT /projects/{id}/diy). 고객이 직접 누르는 입력이라 승인 카드 없이 저장해요"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    diy: list[DiyKey] = Field(max_length=len(DIY), description="고른 칩 키. 빈 목록이면 '없어요'")
+
+
+class DiyOut(BaseModel):
+    diy: list[DiyKey] | None = Field(
+        description="고른 칩 키(칩 순서). null이면 아직 묻지 않음, 빈 목록이면 '없어요'"
+    )

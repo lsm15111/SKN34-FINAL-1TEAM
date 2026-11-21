@@ -56,7 +56,7 @@ ALLOWED = frozenset(
         "summary", "approve_label", "expires_at", "proposed", "replaced", "deals", "jobs",
         "requests", "checklist", "fields", "value", "easy_miss", "prev", "cautions", "prep",
         "survey", "dates_state", "proposal", "proposals", "change", "conflicts", "fits",
-        "money", "period", "decided", "days_off", "vendor_note",
+        "money", "period", "decided", "days_off", "vendor_note", "diy",
         "missing", "days_for", "basis", "vat_way",
     }
 )  # fmt: skip

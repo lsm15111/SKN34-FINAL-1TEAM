@@ -71,8 +71,10 @@ def _m2(x: Decimal | float | None) -> str | None:
 
 
 async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, dict]:
-    """집 정보 카드. 철거 범위(모은 조건 demolition, 코드 값)도 같이 보여 준다(전체 철거면 리모델링 기준)."""
+    """집 정보 카드. 철거 범위(모은 조건 demolition, 코드 값)도 같이 보여 준다(전체 철거면 리모델링 기준).
+    직접 할 일(diy 칩)은 화면 이름으로 보인다: 아직 안 물었으면 빼고(모델 값 None), '없어요'면 빈 목록."""
     from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
+    from app.project import diy as project_diy
     from app.project import service as project_service
     from app.quote import service as quote_service
 
@@ -81,6 +83,8 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
     std = next(iter((await quote_service.latest_of(s, [p.id])).values()), None)
     demo = (await project_service.conditions(s, p.id)).get(DEMOLITION_KEY)
     demo = demo if demo in DEMOLITION else None
+    picked = await project_diy.diy_for(s, p.id)
+    diy = None if picked is None else [project_diy.DIY[k] for k in picked]
     m2 = h.area_m2 if h else p.size.m2
     basis = h.area_basis if h else p.size.basis
     facts = [p.region]
@@ -95,10 +99,12 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         )
         if h.rooms:
             facts.append(f"방 {h.rooms}개")
-        if h.start_date:
-            facts.append(f"공사 시작 희망 {h.start_date.isoformat()}")
+        start = h.start_date.isoformat() if h.start_date else "아직 몰라요"
+        facts.append(f"공사 시작 희망 {start}")
     if demo is not None:
         facts.append(DEMOLITION[demo])
+    if diy is not None:
+        facts.append(f"직접 할 일 {', '.join(diy) or '없어요'}")
     area = (
         HomeArea(m2=m2, basis=basis, pyeong=std.pyeong if std else None)
         if m2 is not None and basis in ("supply", "exclusive")
@@ -117,6 +123,7 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         "rooms": h.rooms if h else None,
         "start_date": h.start_date if h else (p.when.start if p.when else None),
         "demolition": demo,
+        "diy": diy,
         "locked": p.locked,
         "facts": facts,
     }
