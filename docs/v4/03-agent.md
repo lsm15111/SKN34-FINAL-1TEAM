@@ -49,7 +49,7 @@
 | `policy.py` | `mask_in` · `to_model` · `TurnBudget` · `mode_for` · `NudgeRules` |
 | `proactive.py` | `TRIGGERS` · `scan_events` · `scan_time` · `evaluate_due` · `score` · `judge` · `write` |
 | `memory.py` | `KEYS` · `wants` · `extract` · `validate` · `save` |
-| `prompts/` | `customer_v2.md` · `vendor_v2.md`(업체 연결은 도배만, 2026-11-21) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v1` · `memory_v1` · `brief_v1` |
+| `prompts/` | `customer_v3.md` · `vendor_v3.md`(2026-11-21, 말투 · 지난 말 · 범위 밖 · 도구 앞 말) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v2` · `memory_v2` · `brief_v2` |
 | `schemas.py` | `TurnIn` · SSE 이벤트 · `CardOut`(kind로 구분) · `ActionOut` · `NudgeOut` · `SuggestOut` · `MemoryOut` · 도구 입력(strict) |
 | `models.py` · `repository.py` · `jobs.py` | 표 4개 · 조건부 UPDATE(commit 안 함) · `HANDLERS`(assistant_memory) |
 
@@ -313,6 +313,7 @@
 - `vendor_free_slots`는 `prefer`(any · am · pm)와 `days`(any · weekday · weekend)를 받아요. `find_floorplan_docs`는 고객이 말한 단지 이름(`complex`, 동 · 호수 뗌)을 받을 수 있어요.
 - `vendor_free_slots`(요청 전) · `request_brief` · `my_free_slots`의 업체 빈 반나절은 도메인 갈래의 `visit.service.open_halves_for`(실제 함수, 공사 날 · 잡기 반영)를 불러요. 가견적은 요청 때 고정한 값(`vendor_visit.estimate_total`)이에요.
 - `propose_dates`의 날 후보(n1~)는 `my_jobs`가 견적서 공사 기간 · 예상 공정표 시작일로 `calc.schedule.workdays`에서 만들어요.
+  - 고객의 날짜 요청이 열려 있으면(dates_state requested · change_requested) 후보는 고객이 고른 시작일(`aftercare.request_candidates`)이고, 카드는 먼저 말 걸기 `dates_requested`와 같은 `request_dates_offer`(payload kind · request_id)예요.
 - `assistant_actions`에는 turn_id 칸을 두지 않았어요. 턴의 행동 id는 `assistant_turns.trace.actions`에 있어요.
 
 ### 구현 메모(2026-11-21, 카드 갈래)
