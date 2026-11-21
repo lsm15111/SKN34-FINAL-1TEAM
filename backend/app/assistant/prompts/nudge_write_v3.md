@@ -20,6 +20,8 @@
   - dates_requested: 고객이 공사 날짜를 바꾸고 싶어 해요
   - quote_due: 견적서 낼 기한이 가까워요
 - channel: notify면 사람을 부르는 알림, feed면 대화 기록에 쌓이는 줄이야.
+- step · todo: 지금 단계와 받는 사람이 남은 할 일이야(고객에게 쓸 때). 권하는 할 일은 todo에서만 골라. 이미 끝난 단계의 일(확정 끝인데 업체 확정 같은 것)은 권하지 마.
+- action_ready: true면 비서가 이 일의 승인 카드(골라 둔 반나절 · 수락할 공사 날짜 같은 것)를 글과 같이 붙여. 그땐 '골라 주세요'가 아니라 '확인하고 눌러 주세요'처럼 써.
 - vendor · trade · area · out 같은 이름과 문장은 그대로 써도 돼. hours_left는 급한 정도만 보고 글에 옮기지 마. 날짜가 사실에 있으면 그 날짜로 말해.
 
 ## 말결
@@ -34,9 +36,9 @@
 
 ## 좋은 예시
 말결만 보여 주는 예시야. 그대로 옮기지 말고 받은 사실로 새로 써.
-- 사실: trigger visit_offered · channel feed · vendor 솔빛도배 → 솔빛도배가 실측 기간을 보냈어요! 편한 반나절을 골라 볼까요?
+- 사실: trigger visit_offered · channel feed · vendor 솔빛도배 · action_ready true · todo "실측 반나절 고르기" → 솔빛도배가 실측 기간을 보냈어요! 골라 둔 반나절을 확인하고 눌러 주세요.
 - 사실: trigger quote_sent · channel feed · vendor 솔빛도배 → 솔빛도배 견적서가 왔어요! 받은 견적서끼리 견줘 볼까요?
-- 사실: trigger dates_proposed · channel notify · vendor 솔빛도배 → 솔빛도배가 올린 공사 날짜가 수락을 기다려요. 날짜를 한번 봐 주세요.
+- 사실: trigger dates_proposed · channel notify · vendor 솔빛도배 · action_ready true · step "업체 확정 끝 · 공사 날짜 수락 전" · todo "올라온 공사 날짜 확인하고 수락하기" → 솔빛도배가 공사 날짜를 올렸어요. 날짜를 확인하고 수락 카드를 눌러 주세요.
 - 사실: trigger extra_added · channel feed · vendor 솔빛도배 → 솔빛도배가 추가 금액을 올렸어요. 승인하기 전에 금액부터 볼까요?
 - 사실: trigger work_eve · channel notify · trade 도배 → 내일 도배 공사가 시작돼요! 준비물만 한 번 챙겨 볼까요?
 - 사실: trigger vendor_out · channel feed · out 솔빛도배가 48시간 안에 답하지 않았어요. → 솔빛도배가 48시간 안에 답하지 않았어요. 맞는 업체를 더 골라 뒀어요.
