@@ -76,8 +76,8 @@
 .warn { color: var(--mj-badge-wait-fg); font-weight: var(--mj-weight-semibold); }
 .miss { font-style: normal; color: var(--mj-badge-wait-fg); font-weight: var(--mj-weight-semibold); }
 .waitCol { color: var(--mj-text-mute); }
-.file { display: inline-flex; align-items: center; gap: 4px; min-height: var(--mj-hit-min); color: var(--mj-link); font-weight: var(--mj-weight-semibold); text-decoration: none; white-space: nowrap; margin: -9px 0; }
-.file svg { width: 16px; height: 16px; color: var(--mj-ext-pdf); }
+.file { display: inline-flex; align-items: center; gap: 4px; min-height: var(--mj-hit-min); max-width: 100%; color: var(--mj-link); font-weight: var(--mj-weight-semibold); text-decoration: none; overflow-wrap: anywhere; margin: -9px 0; }
+.file svg { width: 16px; height: 16px; color: var(--mj-ext-pdf); flex: none; }
 .fileImg svg { color: var(--mj-ext-img); }
 .gap { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: var(--mj-type-label); margin: 0; }
 .askTo { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -105,9 +105,20 @@
 .checks { list-style: none; margin: 0; padding: 0; display: grid; }
 .checks label { display: flex; align-items: center; gap: 10px; min-height: var(--mj-hit-min); font-size: var(--mj-type-body); cursor: pointer; }
 .checks input { width: var(--mj-check); height: var(--mj-check); margin: 0; accent-color: var(--mj-primary); flex: none; }
+/* 출처: 여러 자료 이름이 이어져 길어도 카드 안에서 줄을 바꿔요(알약 대신 작은 모서리) */
+.knowFoot { display: flex; align-items: center; justify-content: space-between; gap: 4px 8px; flex-wrap: wrap; min-width: 0; }
+.srcText { flex: 0 1 auto; min-width: 0; max-width: 100%; padding: 2px 9px; border-radius: var(--mj-radius-badge); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); line-height: 1.45; overflow-wrap: anywhere; }
 .answer { display: grid; gap: 10px; }
-.answer p { margin: 0; white-space: pre-wrap; }
-.links { display: flex; flex-wrap: wrap; gap: 4px 12px; }
+.links { display: flex; flex-wrap: wrap; gap: 4px 12px; min-width: 0; }
+/* 바깥 · 안쪽 링크 목록(평면도 받는 곳 등): 긴 제목은 줄을 바꾸고, 출처는 그 아래 작은 글 */
+.flist { list-style: none; margin: 0; padding: 0; display: grid; min-width: 0; }
+.flist li { display: grid; gap: 0; min-width: 0; padding: 2px 0 8px; border-top: 1px solid var(--mj-line-soft); }
+.flist li:first-child { border-top: 0; }
+.flist small { font-size: var(--mj-type-caption); color: var(--mj-text-mute); overflow-wrap: anywhere; }
+.lnk { display: inline-flex; align-items: center; gap: 4px; justify-self: start; min-height: var(--mj-hit-min); max-width: 100%; padding: 6px 0; color: var(--mj-link); font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-label); line-height: 1.45; text-decoration: none; overflow-wrap: anywhere; }
+.lnk > span:first-child { min-width: 0; }
+.lnk:hover > span:first-child { text-decoration: underline; text-underline-offset: 3px; }
+.lnk svg { width: 16px; height: 16px; flex: none; }
 
 @media (max-width: 767px) {
   .reco { grid-template-columns: minmax(0, 1fr); gap: 10px; }

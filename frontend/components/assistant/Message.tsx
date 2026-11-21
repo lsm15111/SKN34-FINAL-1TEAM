@@ -1,9 +1,11 @@
 "use client";
 // 말 하나: 비서는 28px 'AI' 원 + 말풍선 없는 글 · 카드, 고객은 회색 말풍선(18 18 4 18).
 // 비서 말 안 순서는 서버가 보낸 순서 그대로예요: 정해 둔 글 · 계산 카드가 먼저, AI 글은 뒤에 붙어요('AI 답변' 이름표).
+// 비서 글은 굵게 · 줄바꿈 · '- ' 목록만 화면 꼴로 그려요(RichText, HTML 주입 없음). 고객 말은 쓴 그대로예요.
 // 무료 모드(LLM 없이)에서 카드만 남았으면 '설명을 만들지 못했어요', 한도에 닿아 멈췄으면(stopped) 그렇게 알려요.
 import type { ActionOut, FeedItem, FeedPart, SuggestOut } from "@/lib/api/assistant";
 import { ApprovalCard } from "./kit/ApprovalCard";
+import { RichText } from "./kit/RichText";
 import { SourceTag } from "./kit/StatusTag";
 import { SuggestCard } from "./kit/SuggestCard";
 import { TaskCard } from "./kit/TaskCard";
@@ -73,8 +75,8 @@ function Part({ part: p, ctx, act }: { part: FeedPart; ctx: CardCtx; act: Action
   switch (p.t) {
     case "text":
       return p.src === "ai"
-        ? <div className={s.ai}><span className={s.aiTag}><SourceTag src="ai" /></span><p className={s.bubble}>{p.text}</p></div>
-        : <p className={`${s.bubble} ${s.say}`}>{p.text}</p>;
+        ? <div className={s.ai}><span className={s.aiTag}><SourceTag src="ai" /></span><div className={s.bubble}><RichText text={p.text} /></div></div>
+        : <div className={`${s.bubble} ${s.say}`}><RichText text={p.text} /></div>;
     case "card":
       return (
         <>

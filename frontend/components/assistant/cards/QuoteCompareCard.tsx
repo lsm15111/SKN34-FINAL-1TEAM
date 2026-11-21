@@ -68,7 +68,7 @@ export function QuoteCompareCard({ card, ctx }: CardProps<"quote_compare">) {
       {d.ask_chips.length ? (
         <div className={c.askTo}>
           <span>업체에 물을 말</span>
-          {d.ask_chips.map((q) => <button key={q} type="button" className={`${k.chip} ${k.chipSm}`} disabled={ctx.busy} onClick={() => ctx.send(q)}><I n="chat" />{q}</button>)}
+          {d.ask_chips.map((q) => <button key={q} type="button" className={`${k.chip} ${k.chipSm} ${k.chipWrap}`} disabled={ctx.busy} onClick={() => ctx.send(q)}><I n="chat" />{q}</button>)}
         </div>
       ) : null}
       <div className={k.row}>
