@@ -359,6 +359,12 @@ class JobOut(BaseModel):
         default=None,
         description="오늘이 공사 몇째 날인지 (1부터, 공사 날 목록 기준). 오늘이 공사 날이 아니면 비어 있다",
     )
+    # ---- v4 업체 공사 겹침 ----
+    busy_days: list[date] = Field(
+        default=[],
+        description="내일부터 1년 안에 우리 업체의 다른 공사(수락한 날 · 수락 기다리는 낸 날)로 찬 날"
+        " (계산 엔진, 팀 수 칸이 없어 한 팀으로 본다). 고르면 막지 않고 겹친다고 알린다",
+    )
 
 
 class AcceptIn(BaseModel):
@@ -410,6 +416,10 @@ class PreviewOut(BaseModel):
     need: NeedOut
     short: bool = Field(description="일하는 날이 필요한 기간보다 적음 (막지 않고 알린다)")
     fit: FitOut
+    overlaps: list[date] = Field(
+        default=[],
+        description="일하는 날 중 우리 업체의 다른 공사와 겹치는 날 (막지 않고 알린다, 계산 엔진)",
+    )
 
 
 class DateRequestIn(BaseModel):

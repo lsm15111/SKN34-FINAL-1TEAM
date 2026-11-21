@@ -787,6 +787,11 @@ class QuoteBoardOut(BaseModel):
     days_max: int
     draft: VendorQuoteOut | None = Field(description="임시 저장본 (없으면 비어 있다)")
     sent: list[VendorQuoteOut] = Field(description="보낸 버전 (최신 먼저)")
+    quote_due_at: datetime | None = Field(
+        default=None,
+        description="견적서 낼 기한: 장부 visits.quote_due_at(실측일 + 3일 18:00) 그대로. "
+        "처음 보내기 전(실측 확정 · 실측 받음)만, 그 밖은 비어 있다",
+    )
 
 
 class QuoteVersionBrief(BaseModel):

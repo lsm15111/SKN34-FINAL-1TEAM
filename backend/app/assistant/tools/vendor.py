@@ -62,7 +62,7 @@ def _visit_id(tc: ToolCtx, ref: str | None) -> uuid.UUID:
     if ref:
         return uuid.UUID(tc.refs.get(ref, "visit")["id"])
     if tc.visit_id is None:
-        raise ToolError("no_visit", "어느 요청인지 몰라요. my_jobs로 요청을 먼저 찾아 주세요.")
+        raise ToolError("no_visit", "어느 요청인지 몰라요. 할 일 목록에서 요청을 먼저 골라 주세요.")
     return tc.visit_id
 
 
@@ -82,9 +82,10 @@ async def brief(
     origin: str = "turn",
     propose_window: bool = True,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
-    """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지) · 가견적(요청 때 고정한 값) ·
-    빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 → window_answer 제안 행,
-    요청함 상태일 때만) · 한 문장(틀).
+    """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지: 맞음 · 확인 필요 · 맞지 않음) · 가견적(요청
+    때 고정한 값) · 빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 →
+    window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀). 공정 · 지역이 맞지 않으면 기간 후보 · 제안을 만들지
+    않고 맞지 않는 까닭만 보인다(못 받아요는 업체가 고른다). 칸 수는 카드에 보이는 하나(제안 기간의 칸)만 쓴다.
     AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
     (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
     말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
@@ -105,25 +106,26 @@ async def brief(
     trade = TRADE.get(d.trade, d.trade)
     grade = GRADE.get(d.grade or "")
     in_area = any(a.sgg == d.area_name or a.label == d.region for a in prof.areas)
+    wish = f"고객 희망 {start.isoformat()} ~ {end.isoformat()}"
+    has_open = (d.open_count or 0) > 0
     fit = [
-        FitRow(key="trade", label="공정", ok=d.trade in prof.trades, text=f"{trade} 요청"),
-        FitRow(key="area", label="지역", ok=in_area, text=d.region),
-        FitRow(
-            key="schedule",
-            label="일정",
-            ok=(d.open_count or 0) > 0,
-            text=f"고객 희망 {start.isoformat()} ~ {end.isoformat()} · 빈 반나절 {d.open_count or 0}칸",
-        ),
+        _fit("trade", "공정", d.trade in prof.trades, f"{trade} 요청"),
+        _fit("area", "지역", in_area, d.region),
+        # 칸 수는 쓰지 않는다(카드 · 한 문장의 칸 수는 제안 기간 하나)
+        _fit("schedule", "일정", has_open, wish if has_open else f"{wish} · 빈 반나절 없음"),
     ]
-    if d.trade == "dobae":
+    if d.trade == "dobae":  # 고객이 벽지를 아직 안 정했으면 맞지 않음이 아니라 확인 필요
         fit.append(
-            FitRow(key="paper", label="벽지", ok=grade is not None, text=grade or "벽지 미정")
+            FitRow(key="paper", label="벽지", ok=True, text=grade, state="ok")
+            if grade
+            else FitRow(key="paper", label="벽지", ok=False, text="벽지 미정", state="check")
         )
+    misfit = next((f for f in fit if f.key in MISFIT_KEYS and f.state == "no"), None)
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게)
-    live = d.status == "requested"
+    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게). 공정 · 지역이 맞지 않으면 두지 않는다
+    live = d.status == "requested" and misfit is None
     free = await open_halves(s, vendor.id, start, end) if live else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
     windows = [
@@ -227,18 +229,26 @@ async def brief(
         "status": d.status,
         "title": data.title,
         "facts": facts,
-        "fit": [{"label": f.label, "ok": f.ok, "text": f.text} for f in fit],
+        "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in fit],
         "estimate_won": d.estimate_total,
-        "open_count": d.open_count,
         "due_at": d.reply_due_at,
         "memo": policy.data(d.message),
         "proposed": bool(made),
+        # 공정 · 지역이 맞지 않음(무료 모드 답이 쓴다, 허용 칸이 아니라 모델 값에는 안 감)
+        "misfit": misfit.label if misfit else None,
         "windows": [
             {"ref": w.ref, "start": w.start, "end": w.end, "open_count": w.open_count}
             for w in windows
         ],
     }
     return card, model, data, made, closed
+
+
+MISFIT_KEYS = ("trade", "area")  # 맞지 않으면 기간 답하기를 권하지 않는 칸
+
+
+def _fit(key, label: str, ok: bool, text: str) -> FitRow:
+    return FitRow(key=key, label=label, ok=ok, text=text, state="ok" if ok else "no")
 
 
 SENTENCE_MAX = 60
@@ -254,22 +264,28 @@ def _md(d: date) -> str:
 
 
 def brief_template(data: VendorBriefData) -> str:
-    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터, 다 맞으면 답하기 좋은 기간."""
-    bad = next((f for f in data.fit if not f.ok), None)
+    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터(공정 · 지역이면 못 받아요로 답하는 길), 다 맞으면 답하기 좋은
+    기간(카드의 제안 칸 수), 그다음 확인 필요(고객이 아직 정하지 않은 것)."""
+    bad = next((f for f in data.fit if f.state == "no"), None)
+    if bad is not None and bad.key in MISFIT_KEYS:
+        return f"{i_ga(bad.label)} 우리 업체와 맞지 않아요. 받기 어려우면 못 받아요로 답해 주세요."
     if bad is not None:
         return f"{i_ga(bad.label)} 맞지 않아요. 요청을 열어 확인해 주세요."
     g = data.suggest
     if g is not None:
         return f"{_md(g.start)}~{_md(g.end)}에 빈 반나절 {g.open_count}칸이 있어 답하기 좋아요."
+    check = next((f for f in data.fit if f.state == "check"), None)
+    if check is not None:
+        return f"{check.label} 확인이 필요해요. 고객이 아직 정하지 않았어요."
     return "공정 · 지역 · 일정이 맞아요. 요청을 열어 확인해 주세요."
 
 
 def _brief_facts(data: VendorBriefData) -> dict:
+    """AI 한 문장에 넘길 사실: 카드에 보이는 값만(칸 수는 제안 기간 하나, 맞음은 세 갈래)."""
     g = data.suggest
     return {
         "title": data.title,
-        "fit": [{"label": f.label, "ok": f.ok, "text": f.text} for f in data.fit],
-        "open_count": data.halves.open_count,
+        "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in data.fit],
         "suggest": {"start": _md(g.start), "end": _md(g.end), "open_count": g.open_count}
         if g
         else None,
@@ -277,11 +293,12 @@ def _brief_facts(data: VendorBriefData) -> dict:
     }
 
 
-def sentence_ok(text: str, facts: str) -> bool:
-    """짧은 AI 문장 검사(먼저 말 걸기 · 브리핑): 길이 · '요' 끝 · 숫자는 사실에 있는 것만 · 한 일처럼 말하지 않음 ·
-    표준 대비 % · 링크 · 연락처 없음."""
-    import re
+HANJA = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")  # 한자(확장 A · 통합): AI 문장에 섞이면 틀로
 
+
+def sentence_ok(text: str, facts: str) -> bool:
+    """짧은 AI 문장 검사(먼저 말 걸기 · 브리핑): 길이 · '요' 끝 · 한자 없음 · 숫자는 사실에 있는 것만 · 한 일처럼
+    말하지 않음 · 표준 대비 % · 링크 · 연락처 없음."""
     from app.agent.v3 import check
     from app.agent.v3.schemas import Sentence as Sent
     from app.assistant.runtime import claims_done
@@ -289,6 +306,8 @@ def sentence_ok(text: str, facts: str) -> bool:
 
     t = (text or "").strip()
     if not t or len(t) > SENTENCE_MAX or "\n" in t or not re.search(r"요[.!?]?$", t):
+        return False
+    if HANJA.search(t):
         return False
     ok, _ = check.sentence_ok(Sent(text=t), guard.numbers(facts), None, None, None)
     return (
@@ -418,8 +437,15 @@ async def checklist(
     return card, model, data
 
 
-async def vendor_today(s: AsyncSession, vendor: User, today: date) -> VendorTodayData:
-    """업체 작업함 맨 위 '오늘 브리핑': 새 요청 · 오늘 실측 · 보낼 견적서(줄은 코드가 고른다)."""
+DATES_TODO = ("waiting", "requested")  # 공사 날짜를 낼 공사(아직 안 냄 · 고객이 다른 날짜를 요청함)
+
+
+async def vendor_today(
+    s: AsyncSession, vendor: User, today: date, refs: "RefTable | None" = None
+) -> VendorTodayData:
+    """업체 작업함 맨 위 '오늘 브리핑': 새 요청 · 오늘 실측 · 보낼 견적서 · 공사 날짜 낼 공사(줄은 코드가 고른다).
+    refs를 주면 공사 날짜 줄에 기한이 가까운 공사의 날 후보 첫 것(date_candidates) 이름표를 넣어 단추
+    (choice 'dates:d#,n#')로 승인 카드를 받게 한다. REST는 업체 비서 대화의 표, 턴은 그 턴의 표를 준다."""
     from app.schedule import service as schedule_service
     from app.visit import flow
 
@@ -453,6 +479,40 @@ async def vendor_today(s: AsyncSession, vendor: User, today: date) -> VendorToda
                 icon="file",
                 title=f"보낼 견적서 {len(quote)}",
                 sub=" · ".join(dict.fromkeys(r.area_name for r in quote[:3])),
+            )
+        )
+    jobs = (await schedule_service.vendor_inbox(s, vendor, "jobs", today, None, 50)).items
+    need = [r for r in jobs if r.deal_id is not None and r.dates_state in DATES_TODO]
+    if need:
+        far = datetime.max.replace(tzinfo=SEOUL)
+        need.sort(key=lambda r: r.next.due_at if r.next and r.next.due_at else far)
+        first = need[0]
+        due = first.next.due_at if first.next else None
+        sub = list(dict.fromkeys(r.area_name for r in need[:3]))
+        action = RowAction(label="보기", href=f"/vendor/jobs/{first.deal_id}")
+        if refs is not None:
+            job = await schedule_service.job_for(s, vendor, first.deal_id, today)
+            cands = date_candidates(job, first.deal_id, today)
+            if cands:
+                c = cands[0]
+                d = refs.put("deal", {"id": str(first.deal_id), "trade": first.trade})
+                n = refs.put("days", c)
+                days = [date.fromisoformat(x) for x in c["days"]]
+                sub.append(f"후보 {_md(days[0])}~{_md(days[-1])}")
+                action = RowAction(
+                    label="공사 날짜 보내기",
+                    say="공사 날짜 보낼래요",
+                    choice=f"dates:{d},{n}",
+                    primary=True,
+                )
+        rows.append(
+            TodayRow(
+                id="dates",
+                icon="calendar",
+                title=f"공사 날짜 낼 공사 {len(need)}",
+                sub=" · ".join(sub),
+                due=due is not None and due.astimezone(SEOUL).date() <= today + timedelta(days=1),
+                action=action,
             )
         )
     return VendorTodayData(date=today, rows=rows)
@@ -517,7 +577,9 @@ async def my_free_slots(tc: ToolCtx, a: FreeIn) -> ToolOut:
         lo = a.start or d.wish_start or tc.today + timedelta(days=1)
         hi = a.end or d.wish_end or lo + timedelta(days=13)
         if hi < lo or (hi - lo).days > slots.SPAN_MAX:
-            raise ToolError("bad_range", "기간을 62일 안으로 다시 골라 주세요.")
+            raise ToolError(
+                "bad_range", "기간은 시작일부터 끝나는 날까지 62일 안으로 다시 골라 주세요."
+            )
         free = await open_halves(s, tc.user.id, lo, hi)
     wins = slots.best_windows(free, lo, hi, tc.today, days_off=days_off(lo, hi))
     out = []
@@ -569,27 +631,28 @@ class NoArgs(BaseModel):
 
 
 def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
-    """공사 날 후보 둘(job_for 결과): 견적서 공사 기간 · 예상 공정표 시작일로 계산 엔진(calc.schedule.workdays)이
-    고른 일하는 날. 값은 이름표(days) 값 꼴 {deal_id, start, days, crew}. my_jobs · 먼저 말 걸기가 같이 쓴다."""
-    from app.calc.schedule import WEEKEND, workdays
+    """공사 날 후보 둘(job_for 결과): 견적서 공사 기간 · 예상 공정표 시작일로 계산 엔진(calc.schedule.free_blocks)이
+    고른 일하는 날. 같은 업체의 다른 공사로 찬 날(job.busy_days: 수락한 날 · 낸 날)이 끼지 않게 잇고, 둘째 후보는
+    첫 후보 일주일 뒤부터예요(1년 안). 값은 이름표(days) 값 꼴 {deal_id, start, days, crew}.
+    my_jobs · 먼저 말 걸기(deal_confirmed) · 오늘 할 일이 같이 쓴다."""
+    from app.calc.schedule import WEEKEND, free_blocks
     from app.refprice.holidays import days_off
+    from app.schedule.service import AHEAD_DAYS
 
     count = max(job.quote.days or job.need.days, 1)
     weekend = () if job.weekend_work else WEEKEND
     base = max(job.plan_start or today, today) + timedelta(days=1)
-    out = []
-    for start in (base, base + timedelta(days=7)):
-        off = days_off(start, start + timedelta(days=count * 3 + 14))
-        picked = workdays(start, count, off, weekend)
-        out.append(
-            {
-                "deal_id": str(deal_id),
-                "start": picked[0].isoformat(),
-                "days": [x.isoformat() for x in picked],
-                "crew": job.need.crew,
-            }
-        )
-    return out
+    last = today + timedelta(days=AHEAD_DAYS)
+    blocks = free_blocks(base, count, 2, job.busy_days, days_off(base, last), weekend, until=last)
+    return [
+        {
+            "deal_id": str(deal_id),
+            "start": picked[0].isoformat(),
+            "days": [x.isoformat() for x in picked],
+            "crew": job.need.crew,
+        }
+        for picked in blocks
+    ]
 
 
 @tool(

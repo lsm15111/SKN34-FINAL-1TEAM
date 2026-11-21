@@ -131,10 +131,12 @@ export type AnswerData = { text: string; src: Source; links?: { label: string; h
 export type FloorplanLinksData = { complex: string; links: { label: string; href: string; source: string }[]; note: string };
 
 export type TodayIcon = "doc" | "calendar" | "file" | "chat" | "bulb" | "inbox";
-export type TodayRow = { id: string; icon: TodayIcon; title: string; sub?: string | null; due?: boolean; action?: { label: string; href?: string | null; say?: string | null; primary?: boolean } | null };
+/** action.choice: 누르면 say와 함께 보낼 카드 고르기(업체 공사 날짜 'dates:d#,n#', 이름표는 서버 대화 표에 있어요) */
+export type TodayRow = { id: string; icon: TodayIcon; title: string; sub?: string | null; due?: boolean; action?: { label: string; href?: string | null; say?: string | null; primary?: boolean; choice?: string | null } | null };
 export type TodayData = { date: string; nudge_id: string | null; dismissed?: boolean; todo: TodayRow[]; waiting: TodayRow[]; news: TodayRow[]; know?: TodayRow[] };
 
-export type FitRow = { key: "trade" | "area" | "schedule" | "paper"; label: string; ok: boolean; text: string };
+/** state: 맞음(ok) · 확인 필요(check: 고객이 아직 안 정함) · 맞지 않음(no). 없으면 ok로만 나눠요(목업) */
+export type FitRow = { key: "trade" | "area" | "schedule" | "paper"; label: string; ok: boolean; text: string; state?: "ok" | "check" | "no" };
 export type VendorBriefData = {
   visit_id: string;
   title: string;
@@ -584,9 +586,24 @@ export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signa
   let ended = false;
   const emit = seqFilter((e) => { if (e.type === "done" || e.type === "error") ended = true; on(e); });
   if (ASSISTANT_MOCK) { await (await mock()).turn(body, emit, signal); return true; }
+  await postSse("/api/assistant/turns", body, emit, signal);
+  return ended;
+}
+
+export type VendorTurnIn = { visit_id?: string | null; client_key: string; text: string; context?: TurnIn["context"] };
+/** 업체 비서 한 턴(SSE, 작업함 대화). 오늘 할 일 단추의 고르기(choice)로 승인 카드를 받아요. 목업에는 업체 턴이 없어 바로 끝나요 */
+export async function streamVendorTurn(body: VendorTurnIn, on: (e: TurnEvent) => void, signal?: AbortSignal): Promise<boolean> {
+  let ended = false;
+  const emit = seqFilter((e) => { if (e.type === "done" || e.type === "error") ended = true; on(e); });
+  if (ASSISTANT_MOCK) return true;
+  await postSse("/api/vendor/assistant/turns", body, emit, signal);
+  return ended;
+}
+
+async function postSse(url: string, body: TurnIn | VendorTurnIn, emit: (e: TurnEvent) => void, signal?: AbortSignal): Promise<void> {
   let res: Response;
   try {
-    res = await fetch("/api/assistant/turns", {
+    res = await fetch(url, {
       method: "POST", credentials: "same-origin", signal,
       headers: { "content-type": "application/json", accept: "text/event-stream" },
       body: JSON.stringify(body),
@@ -605,7 +622,6 @@ export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signa
     if (signal?.aborted) throw e;
     // 읽다 끊겼어요: 서버는 끝까지 돌려 저장해요(부르는 쪽이 같은 client_key로 다시 이어요)
   }
-  return ended;
 }
 
 const TYPES = new Set(["ack", "status", "card", "action", "token", "done", "error"]);
@@ -745,6 +761,8 @@ export async function listVendorActions(status?: ActionStatus): Promise<ActionOu
 }
 
 export type VendorTodayData = { date: string; rows: TodayRow[] };
+/** 업체 작업함에서 비서 턴을 보낸 뒤(오늘 할 일 단추) '비서 소식'이 다시 읽게 알리는 이벤트 */
+export const VENDOR_ASSISTANT_EVENT = "mj-vendor-assistant";
 /** 업체 작업함 맨 위 '오늘 브리핑'(줄은 코드가 골라요) */
 export async function getVendorToday(): Promise<VendorTodayData> {
   if (ASSISTANT_MOCK) return (await mock()).vendorToday();

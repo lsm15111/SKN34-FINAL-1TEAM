@@ -47,13 +47,14 @@ type EstLine = { code: string; key: string; name: string; label?: string; note?:
 /** inside: 표준견적서 합계에 같은 일이 있는 줄 · outside: 없는 줄(퍼티 · 식대 · 운송비, API in_standard false) */
 export function estimateLines(lines: EstLine[], grade: "basic" | "economy"): { inside: QuoteLine[]; outside: QuoteLine[] } {
   const other = grade === "basic" ? "paper_hapji" : "paper_silk";
-  const byCode = new Map(lines.map((l) => [l.code, l]));
+  // '다른 줄에 포함' 대상: API는 줄 키('labor')를 보내요. 옛 값(줄 번호 '1206')도 찾아요
+  const byRef = new Map(lines.flatMap((l) => [[l.code, l], [l.key, l]] as [string, EstLine][]));
   const nameOf = (l: EstLine) => l.label || l.name;
   const shown = lines.filter((l) => l.key !== other);
   const toLine = (l: EstLine): QuoteLine => {
     const key = `${l.code}-${l.key}`;
     if (l.mode === "included") {
-      const host = l.included_in ? byCode.get(l.included_in) : undefined;
+      const host = l.included_in ? byRef.get(l.included_in) : undefined;
       return { key, name: nameOf(l), note: host ? `${nameOf(host)}에 포함` : "다른 줄에 포함", qty: l.qty, unit: unitText(l.unit), unitPrice: null, amount: null };
     }
     if (l.mode === "excluded") return { key, name: nameOf(l), amount: null, state: "excluded" };

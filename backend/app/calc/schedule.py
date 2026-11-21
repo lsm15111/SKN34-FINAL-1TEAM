@@ -7,9 +7,11 @@
 - 도배가 있으면 끝난 다음 날부터 자연 건조(달력 날짜), 그다음 입주 청소(고객이 직접)를 둔다.
 - 기한: 기준 시각의 서울 날짜 + N일의 18:00(달력 날짜).
 - 연락처 기한: 업체가 마지막으로 '공사 끝냈어요'를 올린 날의 1년 뒤 같은 날(2월 29일이면 2월 28일).
+- 업체 공사 겹침: 같은 업체의 다른 공사(수락한 날 · 낸 날)로 팀이 모두 나간 날을 피해 공사 날 후보를 잇는다.
+  팀 수만큼 하루에 공사를 받는다(팀 수 칸이 없으면 한 팀).
 """
 
-from collections.abc import Collection, Mapping, Sequence
+from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from typing import Literal
@@ -281,6 +283,85 @@ def start_choices(
         if start not in skip:
             out.append((start, end))
         d = start + timedelta(days=1)
+    return out
+
+
+# ---- 같은 업체의 다른 공사와 겹침 ----
+
+
+def job_days(start: date, end: date, days: Collection[date] | None = None) -> list[date]:
+    """공사 하나가 차지하는 날(날 순): 하나씩 고른 날 목록이 있으면 그 날, 없으면(옛 범위 길) 처음 ~ 끝 달력 날 모두."""
+    if days:
+        return sorted(set(days))
+    if end < start or (end - start).days > JOB_MAX_DAYS:
+        raise ValueError("공사 날짜 범위를 다시 확인해 주세요")
+    return [start + timedelta(days=i) for i in range((end - start).days + 1)]
+
+
+def busy_days(jobs: Iterable[Collection[date]], teams: int = 1) -> frozenset[date]:
+    """다른 공사(공사마다 차지하는 날)로 팀이 모두 나간 날: 그날 공사 수 ≥ 팀 수.
+    한 공사 안의 같은 날은 한 번만 센다. 팀 수 칸이 없으면 한 팀(1)으로 본다."""
+    if teams < 1:
+        raise ValueError("팀 수는 1 이상이어야 해요")
+    load: dict[date, int] = {}
+    for days in jobs:
+        for d in set(days):
+            load[d] = load.get(d, 0) + 1
+    return frozenset(d for d, n in load.items() if n >= teams)
+
+
+def overlap_days(days: Iterable[date], busy: Collection[date]) -> list[date]:
+    """고른 날 중 다른 공사로 찬 날(날 순). 막지 않고 알릴 때 쓴다."""
+    return sorted(set(days) & set(busy))
+
+
+def free_block(
+    start: date,
+    count: int,
+    busy: Collection[date] = (),
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = WEEKEND,
+    until: date | None = None,
+) -> list[date] | None:
+    """start부터 일하는 날 count개를 이은 묶음 중 다른 공사로 찬 날(busy)이 끼지 않는 가장 이른 것.
+    묶음 끝날이 until을 넘으면(있으면) None."""
+    if count < 1:
+        raise ValueError("일하는 날 수는 1 이상이어야 해요")
+    taken = set(busy)
+    d, last = start, start + timedelta(days=MAX_SPAN_DAYS)
+    while d <= last:
+        got = workdays(d, count, days_off, weekend)
+        if until is not None and got[-1] > until:
+            return None
+        hit = [x for x in got if x in taken]
+        if not hit:
+            return got
+        d = max(hit) + timedelta(days=1)  # 그날까지 시작하는 묶음은 모두 그날을 지난다
+    return None
+
+
+def free_blocks(
+    start: date,
+    count: int,
+    n: int,
+    busy: Collection[date] = (),
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = WEEKEND,
+    gap: int = 7,
+    until: date | None = None,
+) -> list[list[date]]:
+    """겹치지 않는 공사 날 후보 n개(free_block): 첫 후보는 start부터, 다음 후보는 앞 후보 시작일 + gap일부터.
+    모자라면 n개보다 적다."""
+    if n < 0 or gap < 1:
+        raise ValueError("후보 수와 간격을 다시 확인해 주세요")
+    out: list[list[date]] = []
+    d = start
+    while len(out) < n:
+        got = free_block(d, count, busy, days_off, weekend, until)
+        if got is None:
+            break
+        out.append(got)
+        d = got[0] + timedelta(days=gap)
     return out
 
 

@@ -307,6 +307,11 @@ class RowAction(BaseModel):
     href: str | None = None
     say: str | None = Field(default=None, description="누르면 비서에게 보낼 말")
     primary: bool = False
+    choice: Choice | None = Field(
+        default=None,
+        description="누르면 say와 함께 보낼 카드 고르기(context.choice, 업체 공사 날짜 'dates:d#,n#'). "
+        "이름표는 이 대화의 표에 있다",
+    )
 
 
 class TodayRow(BaseModel):
@@ -331,8 +336,11 @@ class TodayData(BaseModel):
 class FitRow(BaseModel):
     key: Literal["trade", "area", "schedule", "paper"]
     label: str
-    ok: bool
+    ok: bool = Field(description="맞음(state ok)일 때만 참")
     text: str
+    state: Literal["ok", "check", "no"] = Field(
+        description="맞음 · 확인 필요(고객이 아직 정하지 않음, 벽지 미정) · 맞지 않음"
+    )
 
 
 class BriefEstimate(BaseModel):

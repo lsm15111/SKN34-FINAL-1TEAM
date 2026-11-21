@@ -4896,10 +4896,19 @@ export interface components {
             key: "trade" | "area" | "schedule" | "paper";
             /** Label */
             label: string;
-            /** Ok */
+            /**
+             * Ok
+             * @description 맞음(state ok)일 때만 참
+             */
             ok: boolean;
             /** Text */
             text: string;
+            /**
+             * State
+             * @description 맞음 · 확인 필요(고객이 아직 정하지 않음, 벽지 미정) · 맞지 않음
+             * @enum {string}
+             */
+            state: "ok" | "check" | "no";
         };
         /**
          * GuestLineOut
@@ -5504,6 +5513,12 @@ export interface components {
              * @description 오늘이 공사 몇째 날인지 (1부터, 공사 날 목록 기준). 오늘이 공사 날이 아니면 비어 있다
              */
             day_no?: number | null;
+            /**
+             * Busy Days
+             * @description 내일부터 1년 안에 우리 업체의 다른 공사(수락한 날 · 수락 기다리는 낸 날)로 찬 날 (계산 엔진, 팀 수 칸이 없어 한 팀으로 본다). 고르면 막지 않고 겹친다고 알린다
+             * @default []
+             */
+            busy_days: string[];
         };
         /** LicenseOut */
         LicenseOut: {
@@ -6538,6 +6553,12 @@ export interface components {
              */
             short: boolean;
             fit: components["schemas"]["FitOut"];
+            /**
+             * Overlaps
+             * @description 일하는 날 중 우리 업체의 다른 공사와 겹치는 날 (막지 않고 알린다, 계산 엔진)
+             * @default []
+             */
+            overlaps: string[];
         };
         /**
          * PriceFileIn
@@ -7229,6 +7250,11 @@ export interface components {
              * @description 보낸 버전 (최신 먼저)
              */
             sent: components["schemas"]["VendorQuoteOut"][];
+            /**
+             * Quote Due At
+             * @description 견적서 낼 기한: 장부 visits.quote_due_at(실측일 + 3일 18:00) 그대로. 처음 보내기 전(실측 확정 · 실측 받음)만, 그 밖은 비어 있다
+             */
+            quote_due_at?: string | null;
         };
         /**
          * QuoteBriefOut
@@ -8090,6 +8116,11 @@ export interface components {
              * @default false
              */
             primary: boolean;
+            /**
+             * Choice
+             * @description 누르면 say와 함께 보낼 카드 고르기(context.choice, 업체 공사 날짜 'dates:d#,n#'). 이름표는 이 대화의 표에 있다
+             */
+            choice?: string | null;
         };
         /**
          * SameNameOut
