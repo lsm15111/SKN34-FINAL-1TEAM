@@ -76,6 +76,14 @@ async def verify_cites(s: AsyncSession, text: str) -> tuple[str, int]:
     return bm25.verify_cites(await index(s), text)
 
 
+def other_trade_notes(question: str):
+    """다른 공정 알아 두기(믿집이 계산 · 연결하지 않는 공정의 순서 · 주의점, 숫자 없음). 걸린 공정이 없으면 None.
+    DB를 쓰지 않는다(정적 자료 other_trades.json)."""
+    from app.knowledge import other_trades
+
+    return other_trades.notes_for(question)
+
+
 async def suggest_candidates(
     s: AsyncSession,
     question: str,

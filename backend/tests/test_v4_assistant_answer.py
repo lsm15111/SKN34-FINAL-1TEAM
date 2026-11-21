@@ -1,7 +1,13 @@
-"""비서 답 근거: v2 근거만 받기(v2g). 유료 호출 0회(대본 · 스텁)."""
+"""비서 답 근거: v2 근거만 받기(v2g) · 다른 공정 알아 두기. 유료 호출 0회(대본 · 스텁).
+
+회귀 문항(evaluation/v4/sets/compare.jsonl): held-out 4쌍(보일러 배관 + 장판 · 창호 + 발코니 타일 · 주방 후드 + 벽 타일 ·
+페인트 + 마루)은 두 길 모두 거절만 했고, dev 2쌍(욕실 덧방 · 방수 + 타일)은 v3가 다른 공정 금액 · 수치를 말했다(LLM 판정).
+알아 두기 글은 숫자 없이 순서 · 주의점만 줘요(작성기 숫자 검사는 test_v3_agent_know).
+"""
 
 import asyncio
 import json
+import re
 
 import pytest
 from v3_kb import repo_index
@@ -9,8 +15,21 @@ from v3_kb import repo_index
 from app.agent import llm
 from app.assistant.tools import answer
 from app.config import settings
+from app.knowledge import other_trades
 from app.v2 import ask as v2_ask
 from tests.test_v4_assistant_turns import ask, home, ok
+
+HELD_OUT = {
+    "multi45:mt-007": "보일러 배관 손보고 장판도 새로 해야 하는데 뭐부터 하죠?",
+    "multi45:mt-023": "창호 교체하고 발코니 바닥 타일도 하려면 순서는요?",
+    "multi45:mt-026": "주방 후드 바꾸고 주방 벽 타일도 새로 붙이려면요?",
+    "multi45:mt-027": "벽 페인트 칠하고 바닥 마루 까는 순서가 궁금해요",
+}
+DEV = {
+    "set30:xc004": "화장실은 덧방이 낫다는데 맞는 말이에요?",
+    "multi45:mt-009": "화장실 방수 다시 하고 타일까지 새로 하면 같이 맡기면 되나요?",
+}
+DIGIT = re.compile(r"\d")
 
 
 @pytest.fixture
@@ -37,6 +56,12 @@ def script():
     llm.clear_stubs()
     yield llm.set_claude_script
     llm.clear_stubs()
+
+
+def _first(lines: tuple[str, ...], a: str, b: str) -> bool:
+    """첫 줄(순서 글)에서 a가 b보다 먼저 나와요."""
+    t = lines[0]
+    return a in t and b in t and t.index(a) < t.index(b)
 
 
 # ---- 길 고르기 ----
@@ -125,3 +150,117 @@ def test_answer_question_ground_route(api, script, monkeypatch, repo_search):
     assert "engine" not in body and "v2_out" not in body  # 기록 칸은 모델에 가지 않아요
     n, res = _turn(api, pid, script, "도배 기간은 며칠이에요?")  # 금액 · 기간: v3(계산 엔진 값)
     assert n == 2 and json.loads(res)["route"] != "v2g"
+
+
+# ---- 다른 공정 알아 두기 ----
+
+
+def test_other_trades_book_is_sourced_and_has_no_numbers():
+    raw = json.loads(other_trades.PATH.read_text(encoding="utf-8"))
+    srcs = raw["sources"]
+    ix = repo_index()
+    for k, s in srcs.items():
+        assert s["title"] and s["publisher"] and s["kind"] and s["verify"], k
+        assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", s["checked"]), k  # 확인 날짜
+        assert all(r in ix.by_ref for r in s["refs"]), k  # 적은 조각 번호는 저장소 지식에 있어요
+    notes = [n for t in raw["trades"].values() for n in t["notes"]] + raw["pairs"]
+    for n in notes:
+        assert not DIGIT.search(n["text"]), n["text"]  # 금액 · 기간 · 치수 없음
+        assert n["text"].endswith("요.") and len(n["text"]) <= 160, n["text"]
+        assert n["src"] and all(k in srcs for k in n["src"]), n["text"]
+    codes = {"demolition", "plumbing", "window", "electric", "bath", "tile", "film", "paint", "floor", "kitchen", "middoor"}  # fmt: skip
+    assert set(raw["trades"]) == codes
+    for code, t in raw["trades"].items():  # 공정마다 공공 자료를 근거로 한 글이 하나 이상
+        assert any(srcs[k]["public"] for n in t["notes"] for k in n["src"]), code
+    order = {c: t["order"] for c, t in raw["trades"].items()}
+    for p in raw["pairs"]:  # 쌍 글은 공정 순서 값과 맞아요(도배 · 목공은 v3 순서)
+        before = order.get(p["before"], {"dobae": 7, "mokgong": 4}.get(p["before"]))
+        after = order.get(p["after"], {"dobae": 7, "mokgong": 4}.get(p["after"]))
+        assert before <= after, p
+
+
+@pytest.mark.parametrize(
+    ("qid", "first", "then"),
+    [
+        ("multi45:mt-007", "배관", "장판"),
+        ("multi45:mt-023", "창호", "타일"),
+        ("multi45:mt-026", "타일", "후드"),
+        ("multi45:mt-027", "칠", "바닥재"),
+    ],
+)
+def test_held_out_other_trade_pairs_get_order(qid, first, then):
+    k = other_trades.notes_for(HELD_OUT[qid])
+    assert k is not None and len(k.names) == 2
+    assert _first(k.lines, first, then), k.lines
+    assert not any(DIGIT.search(x) for x in k.lines)
+    assert k.sources and len(k.lines) <= other_trades.MAX_LINES
+    note = k.data()["note"]
+    assert "금액 · 기간을 계산하지 않고 업체도 연결하지 않아요" in note
+
+
+def test_dev_bath_pairs_get_know_lines():
+    k = other_trades.notes_for(DEV["set30:xc004"])
+    assert k is not None and k.names == ("욕실",)
+    assert any("덧방" in x for x in k.lines)
+    k = other_trades.notes_for(DEV["multi45:mt-009"])
+    assert k is not None and _first(k.lines, "방수", "타일")
+    for q in DEV.values():
+        assert not any(DIGIT.search(x) for x in other_trades.notes_for(q).lines)
+
+
+def test_other_trade_codes_and_scope():
+    assert other_trades.notes_for("몰딩 바꾸고 도배도 새로 하려는데 순서가 어떻게 돼요?") is None
+    door = other_trades.notes_for("중문 달고 현관 타일도 바꾸려는데 어떤 걸 먼저 해요?")
+    assert door.names == ("중문", "타일") and _first(door.lines, "타일", "중문")
+    # 자리 낱말(화장실)은 다른 일(전기)의 자리일 뿐이에요
+    assert other_trades.notes_for("화장실 스위치가 헐거운데 교체해야 해요?").names == ("전기",)
+    # '방수도'의 '수도'는 설비가 아니에요
+    assert "plumbing" not in other_trades.codes_of(
+        "욕실 덧방할지 고민이고, 방수도 다시 해야 하나요?"
+    )
+    both = other_trades.notes_for("도배하면서 콘센트 위치를 옮길 수 있나요?")
+    assert both.names == ("전기",) and _first(both.lines, "전기 공사", "도배")
+
+
+def test_answer_question_adds_know_notes(api, script, monkeypatch, repo_search):
+    """다른 공정 질문: 엔진과 상관없이 notes(알아 두기)를 더하고, v3도 답하지 못하면 범위 밖 안내 대신 알아 두기만."""
+    _, pid = home(api)
+    monkeypatch.setattr(settings, "assistant_answer_route", "v2g+v3")
+    _gate(monkeypatch, "out_of_scope")
+    q = HELD_OUT["multi45:mt-007"]
+    n, res = _turn(api, pid, script, q)
+    body = json.loads(res)
+    assert n == 2 and body["route"] in ("know", "multi", "trade")
+    notes = body["notes"]
+    assert notes["trades"] == ["설비", "바닥"] and _first(tuple(notes["lines"]), "배관", "장판")
+    assert not any(DIGIT.search(x) for x in notes["lines"])
+    assert v2_ask.OUT_TEXT not in res  # 다른 공정은 거절 안내를 넘기지 않아요
+    _gate(monkeypatch, "trade")
+    monkeypatch.setattr(settings, "assistant_answer_route", "v3")
+    _, res = _turn(api, pid, script, "도배랑 장판 같이 하면 어떤 걸 먼저 해요?")
+    assert json.loads(res)["notes"]["trades"] == ["바닥"]
+    _, res = _turn(api, pid, script, "초배지는 왜 발라요?")
+    assert "notes" not in json.loads(res)  # 도배 · 목공만이면 알아 두기 없음
+
+
+def test_hybrid_without_know_keeps_out_text(monkeypatch):
+    """다른 공정이 아닌 범위 밖(잡담)은 그대로 v2 범위 밖 안내예요."""
+    from app.assistant import policy
+    from app.assistant.tools import ToolOut
+
+    _gate(monkeypatch, "out_of_scope")
+
+    async def v3(tc, q):
+        return ToolOut(data={"route": "out_of_scope", "answer": None, "found": True}), False
+
+    monkeypatch.setattr(answer, "_v3_answer", v3)
+    d = asyncio.run(answer._hybrid(None, "오늘 점심 뭐 먹지?", ground=True)).data
+    assert (d["route"], d["engine"], d["answer"]) == (
+        "out_of_scope",
+        "v2",
+        policy.data(v2_ask.OUT_TEXT),
+    )
+    d = asyncio.run(
+        answer._hybrid(None, "샷시 교체할 때 방충망도 새로 해요?", ground=True, know=True)
+    ).data
+    assert (d["route"], d["engine"], d["v2_out"]) == ("know", "know", True)

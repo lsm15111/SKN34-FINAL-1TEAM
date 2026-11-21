@@ -7,7 +7,10 @@
   - v2g: v2.ask.grounds(v2 근거만, LLM 없이): 지식 조각 · 출처, 공정 순서, 공정 설정, 되물을 조건.
     비서가 이 근거로 글을 한 번에 쓴다. 금액 · 기간 질문은 이 공사 계산 엔진 값을 쓰는 v3로 넘긴다(engine v3).
   - v2+v3 · v2g+v3: v2(v2g) 먼저. v2 입구 관문(v2.ask.start와 같은 분류)이 범위 밖으로 보면 v2는 부르지 않고 v3를
-    부른다. v3가 실제로 답하면(범위 밖 · 되묻기가 아니고 모름 줄 말고 문장이 있음) v3 근거, 아니면 v2 범위 밖 안내 그대로.
+    부른다. v3가 실제로 답하면(범위 밖 · 되묻기가 아니고 모름 줄 말고 문장이 있음) v3 근거, 아니면 다른 공정 질문은
+    알아 두기만(route know), 그 밖은 v2 범위 밖 안내 그대로.
+  - 다른 공정(믿집이 계산 · 연결하지 않는 공정)이 걸린 질문은 엔진과 상관없이 notes에 알아 두기(순서 · 주의점 ·
+    출처, 숫자 없음)를 더한다(knowledge.service.other_trade_notes). 금액 · 기간 · 업체 연결은 넣지 않는다.
   data의 engine(근거를 낸 엔진) · v2_out(관문이 범위 밖으로 봤는지)은 기록용이라 모델에 가지 않는다(to_model).
   비서 모델이 돌려준 글 범위 안에서 답한다. 숫자는 이 결과가 허용 숫자가 된다.
 """
@@ -113,15 +116,21 @@ class AskIn(BaseModel):
     ),
 )
 async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
+    from app.knowledge import service as knowledge
+
     question = policy.mask_in(a.question)
     engine = engine_for(a.kind)
+    know = knowledge.other_trade_notes(question)
     if engine in (HYBRID, HYBRID_G):
-        return await _hybrid(tc, question, ground=engine == HYBRID_G)
-    if engine == "v2":
-        return await _v2_answer(tc, question)
-    if engine == GROUND:
-        return await _v2g_answer(tc, question)
-    out, _ = await _v3_answer(tc, question)
+        out = await _hybrid(tc, question, ground=engine == HYBRID_G, know=know is not None)
+    elif engine == "v2":
+        out = await _v2_answer(tc, question)
+    elif engine == GROUND:
+        out = await _v2g_answer(tc, question)
+    else:
+        out, _ = await _v3_answer(tc, question)
+    if know is not None:  # 다른 공정 알아 두기(숫자 없음 · 출처)
+        out.data["notes"] = know.data()
     return out
 
 
@@ -146,8 +155,11 @@ async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
     return out, bool(said) and ans.route not in V3_NO_ANSWER
 
 
-async def _hybrid(tc: ToolCtx, question: str, *, ground: bool = False) -> ToolOut:
+async def _hybrid(
+    tc: ToolCtx, question: str, *, ground: bool = False, know: bool = False
+) -> ToolOut:
     """v2+v3(ground면 v2g+v3): v2 입구 관문이 범위 밖으로 보고 v3가 실제로 답하면 v3 근거, 아니면 v2(v2g) 그대로.
+    v3도 답하지 못한 범위 밖 질문은 다른 공정이 걸렸으면(know) 범위 밖 안내 대신 알아 두기만 남긴다(route know).
     v2 범위 밖 질문(다른 공정)은 v3 알아 두기가 나았고, 잡담은 v2 거절이 나았다(평가 2026-11-21)."""
     from app.agent import gate as agent_gate
     from app.v2 import ask
@@ -163,7 +175,9 @@ async def _hybrid(tc: ToolCtx, question: str, *, ground: bool = False) -> ToolOu
     else:
         out, answered = await _v3_answer(tc, question)
         engine = "v3"
-        if not answered:  # v2가 범위 밖에서 내는 안내 그대로(ask.start와 같은 글)
+        if not answered and know:  # 다른 공정: 알아 두기(notes)는 answer_question이 붙여요
+            out, engine = ToolOut(data={"route": "know", "found": True}), "know"
+        elif not answered:  # v2가 범위 밖에서 내는 안내 그대로(ask.start와 같은 글)
             out = ToolOut(
                 data={
                     "route": "out_of_scope",
