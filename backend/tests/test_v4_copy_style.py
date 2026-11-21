@@ -198,6 +198,14 @@ FREE_NAMES = (
     "CHANGE_HOW", "CHANGE_HOW_EARLY", "CHANGE_MADE", "CHANGE_SAME", "CHANGE_REJECTED",
     "STANDARD_DAYS", "MEMORY_SAY", "SMALL_TALK_HI", "SMALL_TALK", "LEGAL", "PREFS",
     "DECLINE_REJECTED", "WINDOW_REJECTED", "BRIEF", "ACCEPT_RULE",
+    # QA 1차 무료 모드(거르는 말 · 지금 할 일 · 돈 질문 · 칩 · 다른 공정 · 업체 추천)
+    "SECRET_SAID", "CONTACT_SAID", "VENDOR_CONTACT", "OFF_SAID", "ENGLISH_SAID", "ANGRY_SAID",
+    "NOW_NONE", "VENDOR_NOW", "NOW", "NOW_VISIT", "SORRY_MONEY", "PRICEY_LINES", "PRICEY_CARD",
+    "QUOTES_WHY", "QUOTES_SEE", "EXTRA_HOW", "EXTRA_NEVER", "EXTRA_WORRY", "WASTE_BEFORE",
+    "INCL_ASK", "INCL_NO", "DEMO_DIFF", "DELEGATE_SAID", "ESTIMATE_SAID", "VISIT_WHAT_SAID",
+    "SLOTS_MORE", "SLOTS_DAY", "SLOTS_NO_DAY", "EVE_SAID", "ORDER_SAID", "PET_SAID", "ACCESS_SAID",
+    "ACCESS_CARD", "STANDARD_TRUST", "STANDARD_LINES", "PICKS_MORE", "PICKS_ASKED", "PICKS_CHOSEN",
+    "OTHER_LINK", "OTHER_MONEY", "FREE_ASK",
 )  # fmt: skip
 CONSTS = {
     "free.py": {n: ("틀 · 무료 모드 정해 둔 답", "answer") for n in FREE_NAMES},
@@ -240,7 +248,8 @@ CONSTS = {
 # 실행 결과 글(승인 뒤 카드에 남는 말): actions.py의 {"text": …} · text = … 꼴
 RESULT = ("틀 · 실행 결과", "note")
 # 정해 둔 답 글 자리 채우기(값은 보기)
-FILL = {"area": "마포구", "n": 2, "won": "3,241,268", "vendor": "마루와벽", "version": 2, "who": "도배 공사가", "days": "2.5"}  # fmt: skip
+FILL = {"area": "마포구", "n": 2, "won": "3,241,268", "vendor": "마루와벽", "version": 2, "who": "도배 공사가", "days": "2.5",
+        "names": "결도배 · 마루와벽", "home": "철거 안 함이라", "day": "주말", "order": "목공 → 도배 → 바닥재"}  # fmt: skip
 
 
 def _consts(tree: ast.Module, names: dict, rel: str, bag: Bag) -> None:
