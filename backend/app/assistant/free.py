@@ -17,6 +17,8 @@
 - 글이 카드를 말하면 같은 턴에 그 카드가 있어야 한다(fit_cards): 없으면 만들고, 못 만들면 그 문장을 뺀다.
   '믿집 공정표는 …'처럼 일반 규칙을 말한 문장은 카드 말이 아니다. 앞 문장을 빼서 '다만 …'으로 시작하면 이음말을 뗀다.
 - 업체를 확정한 뒤 견적 비교를 물으면 확정한 업체 · 견적서 판을 말한다(확정 단추 안내를 하지 않는다).
+- 다른 공정(믿집이 계산 · 연결하지 않는 공정)만 물으면 알아 두기 자료(knowledge.other_trades)로 순서 · 주의점을 답하고
+  '믿집은 … 업체를 잇지 않아요'를 붙인다. 도배 · 목공과 섞인 질문은 answer_only 답을 쓰고 모르면 자료로 바꾼다.
 """
 
 import re
@@ -159,6 +161,16 @@ ACCEPT_RULE = (
     "공사 날짜는 업체가 올리고 고객이 수락해야 확정돼요. 수락 전에는 비서도 대신 확정할 수 없어요."
 )
 
+# 다른 공정(믿집이 계산 · 연결하지 않는 공정) 알아 두기
+# 다른 공정(믿집이 계산 · 연결하지 않는 공정) 알아 두기
+OTHER_LINK = "믿집은 {names} 업체를 잇지 않아요."
+OTHER_MONEY = (
+    "믿집은 {names} 공사의 금액 · 기간을 계산하지 않고 업체도 잇지 않아요. "
+    "금액은 그 공사 업체에 견적을 받아 확인해 주세요."
+)
+# answer_only가 단추로 되물었는데(무료 모드는 단추가 없다) 고를 것이 없을 때
+FREE_ASK = "어떤 공사의 무엇이 궁금한지 조금만 더 알려 주세요. 예를 들어 '도배 전에 할 일'처럼 물어보시면 돼요."
+
 # 보던 카드 · 공사 단계 → v3 화면 이름(answer_only view)
 CARD_VIEW = {
     "home": "home", "standard": "standard", "picks": "vendors", "wish": "visit_request",
@@ -184,6 +196,11 @@ LEAD_JOIN = re.compile(
 )
 # 일반 규칙을 말한 문장('믿집 공정표는 도배 다음에 바닥을 놓아요.')은 카드 말이 아니다
 GENERIC = re.compile(r"믿집\s{0,2}공정표\S{0,3}\s")
+QUOTE_WORD = re.compile(r"견적|포함")
+# 시작 순서 답의 v3 단계 번호('지금은 2단계예요.')는 v4 화면과 맞지 않아 뗀다
+STEP_NO = re.compile(r"^지금은\s{0,2}\d\s{0,2}단계예요\.\s*")
+UNKNOWN = re.compile(r"확인하지\s{0,2}못했어요")
+WISH = re.compile(r"싶|하려고|할래|바꿀|옮길|달고|새로")
 
 
 def prefs_said(text: str) -> bool:
@@ -308,6 +325,14 @@ def without_names(text: str, names: list[str]) -> str:
             if len(w) >= 2:
                 text = text.replace(w, " ")
     return text
+
+
+def sents(text: str) -> list[str]:
+    return [x.strip() for x in SENT.split(text or "") if x.strip()]
+
+
+def join(*parts: str) -> str:
+    return " ".join(p.strip() for p in parts if p and p.strip())
 
 
 # ---- 고객 ----
@@ -623,34 +648,118 @@ async def view_for(tc: ToolCtx, card_id: str | None) -> str | None:
     return PHASE_VIEW.get(o.phase)
 
 
+def other_know(plain: str):
+    """다른 공정(믿집이 계산 · 연결하지 않는 공정) 알아 두기(knowledge.other_trades). 걸린 공정이 없으면 None.
+    plain은 업체 이름을 뺀 글이에요('마루와벽'의 '마루'는 바닥이 아니에요)."""
+    from app.knowledge import service as knowledge
+
+    return knowledge.other_trade_notes(plain)
+
+
+def other_only(plain: str) -> bool:
+    """도배 · 목공 없이 다른 공정만 물었는지. 견적서 말('견적서에 철거 포함')의 철거는 도배 견적 칸이라 빼요."""
+    from app.knowledge import other_trades
+
+    codes = other_trades.codes_of(plain)
+    if QUOTE_WORD.search(plain):
+        codes = [c for c in codes if c != "demolition"]
+    return bool(codes) and not set(codes) & set(other_trades.OWN) and other_know(plain) is not None
+
+
+def know_lines(plain: str, know) -> list[str]:
+    """알아 두기 줄 순서: 공정 쌍 순서 글 → (다른 공정 하나의 때 · 바람이면) 그 공정과 도배 순서 → 질문 낱말에 걸린
+    주의점 → 나머지(자료의 글 그대로, 숫자 없음)."""
+    from app.agent.v3.orchestrator import ORDER_ASK
+    from app.knowledge import other_trades
+
+    bk = other_trades.book()
+    notes = {n.text: n for t in bk.trades.values() for n in t.notes}
+    lines = list(know.lines)
+    # 공정 쌍 순서 글(자료 쌍 글 · v3 쌍 글 · 순서 값으로 만든 글)은 공정 글에 없다
+    pair = [x for x in lines if x not in notes]
+    hit = [x for x in lines if x in notes and notes[x].when and notes[x].when.search(plain)]
+    other = [c for c in other_trades.codes_of(plain) if c in bk.trades]
+    asks = ORDER_ASK.search(plain) or other_trades.ALONG.search(plain) or WISH.search(plain)
+    lead = []
+    # '콘센트 위치를 옮기고 싶어요'처럼 다른 공정 하나의 때 · 바람이면 그 공정과 도배 순서부터
+    if not pair and not hit and len(other) == 1 and asks:
+        lead = [other_trades.pair_line(other[0], "dobae").text]
+    return list(dict.fromkeys([*pair, *lead, *hit, *lines]))
+
+
+def know_said(plain: str, know) -> str:
+    """알아 두기 → 무료 모드 글: 순서 · 주의점 두 문장까지 + '믿집은 … 업체를 잇지 않아요'. 돈 · 기간을 물으면
+    계산하지 않는다는 말(숫자 없음)."""
+    names = " · ".join(know.names[:3])
+    if MONEY_DAYS.search(plain):
+        return OTHER_MONEY.format(names=names)
+    picked: list[str] = []
+    size = 0
+    for line in know_lines(plain, know):
+        parts = sents(line)
+        if len(picked) + len(parts) > 2 or (picked and size + len(line) > 110):
+            continue
+        picked += parts
+        size += len(line) + 1
+    return join(*picked, OTHER_LINK.format(names=names))
+
+
+def tidy(said: str, plain: str) -> str:
+    """answer_only 글 다듬기(무료 모드): v3 시작 순서의 단계 번호를 떼고, 단추로 되묻는 글(무료 모드는 단추가 없다)은
+    정해 둔 되묻기로 바꾼다. 다른 공정이 섞인 질문은 모르면 알아 두기로 바꾸고, 자리가 있으면 '잇지 않아요'를 붙인다."""
+    from app.agent.v3 import templates
+
+    said = STEP_NO.sub("", (said or "").strip())
+    if said.startswith(templates.ASK_BACK):
+        return FREE_ASK
+    know = other_know(plain)
+    if know is None:
+        return said
+    if not said or UNKNOWN.search(said):
+        return know_said(plain, know)
+    if len(sents(said)) < 3 and "잇지 않" not in said and "연결하지 않" not in said:
+        return join(said, OTHER_LINK.format(names=" · ".join(know.names[:3])))
+    return said
+
+
 async def _knowledge(
-    tc: ToolCtx, text: str, found: list[str], card_id: str | None, step: str | None = "gate"
+    tc: ToolCtx,
+    text: str,
+    found: list[str],
+    card_id: str | None,
+    step: str | None = "gate",
+    plain: str | None = None,
 ) -> tuple[str, ToolOut]:
     """지식 · 공통 질문: 단계 카드 + answer_only(공사 단계 화면, 목공만 물으면 목공 담당).
-    step: 'gate'면 입구 관문 길의 단계 카드, 길 이름(guide …)이면 그 길의 카드, None이면 카드 없음."""
+    step: 'gate'면 입구 관문 길의 단계 카드, 길 이름(guide …)이면 그 길의 카드, None이면 카드 없음.
+    고객이 다른 공정만 물으면 알아 두기 자료로 답한다(카드 · answer_only 없이, QA 1차 c5: 배관+장판 '확인하지 못했어요')."""
     from app.agent.v3 import gate as gate_mod
     from app.agent.v3.schemas import Button
     from app.chat import service as chat_service
 
     out = ToolOut(data={})
-    if tc.surface == "customer" and step is not None:
-        route = (
+    plain = text if plain is None else plain
+    customer = tc.surface == "customer"
+    if customer and other_only(plain):
+        return know_said(plain, other_know(plain)), out
+    if customer and step is not None:
+        path = (
             gate_mod.gate(text, has_project=tc.project_id is not None).route
             if step == "gate"
             else step
         )
-        card = await cards.step_card(tc, route)
+        card = await cards.step_card(tc, path)
         if card is not None:
             out.cards.append(card)
     button = Button(route="trade", trade="mokgong") if found == ["mokgong"] else None
-    view = await view_for(tc, card_id) if tc.surface == "customer" else None
+    view = await view_for(tc, card_id) if customer else None
     query = f"{text} 순서" if found and WHEN_WORK.search(text) else text
     try:
         ans = await chat_service.answer_only(
             tc.user,
             query,
             tc.today,
-            project_id=tc.project_id if tc.surface == "customer" else None,
+            project_id=tc.project_id if customer else None,
             mode="free",
             view=view,
             button=button,
@@ -658,7 +767,7 @@ async def _knowledge(
         said = ans.text
     except AppError:
         said = ""
-    return said, out
+    return (tidy(said, plain) if customer else said), out
 
 
 # ---- 업체 ----
@@ -767,9 +876,10 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
     if (more := await diy_tools.free_answer(tc, text)) is not None:  # 반셀프 직접 할 일 카드
         return more
     # 업체 이름을 뺀 뒤 공종을 찾는다(업체 이름 속 '마루' · '목공'은 공종 말이 아니에요)
-    found = trades_in(without_names(text, await vendor_names(tc)))
+    plain = without_names(text, await vendor_names(tc))
+    found = trades_in(plain)
     if tc.project_id is None:
-        return await _knowledge(tc, text, found, card_id)
+        return await _knowledge(tc, text, found, card_id, plain=plain)
     if CHANGE.search(text) and not NOT_CHANGE.search(text):  # 공사 날짜 바꾸기 요청 승인 카드로
         return await _change(tc, text, found)
     intent, step = customer_intent(text)
@@ -781,6 +891,9 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
     if intent is None and step == "guide" and prefs_said(text):
         _, out = await _today(tc, text, found)
         return PREFS, out
+    # 다른 공정만 물음('콘센트 위치를 옮기고 싶어요'): 알아 두기 자료(업체 연결 의도는 위에서 도배로 갈랐다)
+    if intent not in LINKED and other_only(plain):
+        return await _knowledge(tc, text, found, card_id, None, plain)
     handler = CUSTOMER_DO.get(intent or "")
     got = await handler(tc, text, found) if handler is not None else None
     if got is not None:
@@ -789,5 +902,5 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
     # 지금처럼 입구 관문 길의 단계 카드
     if handler is not None:
         step = None if intent == "home" else "gate"
-    said, out = await _knowledge(tc, text, found, card_id, step)
+    said, out = await _knowledge(tc, text, found, card_id, step, plain)
     return await fit_cards(tc, said, out), out
