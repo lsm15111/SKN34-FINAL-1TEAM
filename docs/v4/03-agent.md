@@ -117,14 +117,15 @@
 | 고객(`require_role("customer")`) | 업체(`approved_vendor`) |
 | --- | --- |
 | `POST /assistant/turns`(SSE) · `GET …/turns/{id}` · `GET …/threads/latest?project_id=` | `POST /vendor/assistant/turns`(SSE, visit_id) · `GET …/turns/{id}` |
-| `GET /assistant/feed?project_id=&before=&limit=` | `GET /vendor/assistant/feed` · `GET …/briefs/{visit_id}` |
+| `GET /assistant/feed?project_id=&before=&limit=` | `GET /vendor/assistant/feed` · `GET …/briefs/{visit_id}`(읽기만) · `POST …/briefs/{visit_id}`(브리핑 + 기간 답하기 제안) |
 | `GET /assistant/board?project_id=` · `GET /assistant/today?project_id=` (화면 제안) | `GET …/checklists/{visit_id}` · `GET …/today` (화면 제안) |
 | `GET /assistant/actions?project_id=&status=` · `POST …/{id}/approve` · `…/reject` | 같은 꼴 |
 | `POST /assistant/nudges/{id}/open` · `…/dismiss` | `POST /vendor/assistant/nudges/{id}/open` · `…/dismiss` |
 | `GET /assistant/memory` · `DELETE /assistant/memory/{id}`(204) · `GET /assistant/health` | – |
 
 - `approve` 몸통: `{client_key?, seen?}`. `seen`(화면이 본 target_ver)이 행과 다르면 409 stale, 기능 오류는 409(기능 오류 코드).
-- `health`: `{mode: llm | free, reason: ok | off | budget | breaker}`(글 · 키 없음).
+- `health`: `{mode: llm | free, reason: ok | off | budget}`(글 · 키 없음). budget은 고객 본인 하루 상한일 때만이고, 서비스 전체 상한 · 차단기는 off로 묶어요(2026-11-22 보안 I3, breaker는 보내지 않아요).
+- 턴 글(`TurnIn` · `VendorTurnIn`의 text): 제어 문자 · ANSI 색 코드 · 방향 바꾸기 글자는 지우고, 지운 뒤 공백만 남거나 가린 뒤 비면 LLM 전에 422예요(2026-11-22 리뷰 R1 · 보안 L1). 가입 이름 · 채팅 글도 같은 글자를 지워요(`shared/text.py`).
 - nudges `open` · `dismiss` 응답: `NudgeOut{nudge_id, trigger, channel, status, body, src, action_id, sent_at, acted_at}`.
   - sent → opened(열기), sent · opened → dismissed(닫기). 이미 그 상태 · 바꿀 수 없는 상태(닫힘 · 밀려 닫힘)면 지금 상태를 200으로 돌려줘요.
   - 기다림 · 기록만(pending · held)인 줄과 남의 줄 · 다른 화면 줄은 404, 역할이 다르면 403이에요.
@@ -184,13 +185,13 @@
 | `done.chips` · `feed.chips` | 넣음 | 마지막 카드 종류로 고른 정해 둔 칩 중 지금 공사 단계 사실(`service.chip_facts`: 실측 요청함 · 견적서 옴 · 공사 날짜 정함, 업체는 브리핑 요청 상태)에 맞는 것만이에요(예: 견적서가 오기 전에는 '견적서 비교 보기'를 빼요) |
 | `done.suggest` · feed `suggest` 조각 | 넣음(0042) | 위 SSE 참고. 대화 기록의 먼저 말 건 줄 끝에 `suggest` 조각(nudge_id 있음) 하나 |
 | `action.kind` · `status` · `supersedes` | 넣음 | 위 '행동' 참고 |
-| `feed.now` · `feed.before`(턴 번호 커서) | 넣음 | 처음 30줄, `before`로 앞 쪽. 첫 쪽(지금)에는 먼저 말 건 줄(보냄 · 엶, 10줄까지)을 보낸 때 자리에 끼워요(`AssistantItem{id: "n-…", turn_id: null, nudge_id, parts: text · card? · action? · task? · suggest}`). 비서 대화가 없어도 보여요 |
+| `feed.now` · `feed.before`(턴 번호 커서) | 넣음 | 처음 30줄, `before`로 앞 쪽. 쪽마다 그 쪽 말 사이에 보낸 먼저 말 건 줄(보냄 · 엶 · 완료)을 모두(200줄 상한, 줄에는 커서가 없어 2026-11-22 리뷰 R13로 30에서 늘림) 보낸 때 자리에 끼워요(`AssistantItem{id: "n-…", turn_id: null, nudge_id, parts: text · card? · action? · task? · suggest}`). 비서 대화가 없어도 보여요 |
 | `GET /assistant/board` | 넣음 | 단계(0~6) · 집 요약 · 낼 금액(won) · 업체 줄 · 기간 · 서류 · `money.range`(확정 전 업체 금액 두 곳 이상: 받은 실측 견적서, 없으면 요청 때 고정한 가견적, [작은 값, 큰 값]) · `memory`(MemoryOut 목록) |
 | `GET /assistant/today` | 넣음 | 오늘 정할 일 줄(코드가 골라요). `nudge_id` = 이 공사의 열린 먼저 말 건 줄 가장 새것('오늘은 그만'이 닫아요), `dismissed` = 오늘 닫았고 열린 줄이 없음, `know` = 시간 트리거 줄(공사 전날 · 담기 없음) |
 | 업체 `checklists` · `today` | 넣음 | 표준견적서 줄(이름은 고객 화면과 같은 말: '실크벽지 시장 평균 가격' → '실크벽지', 계산 엔진 이름은 그대로) · 내 견적서 칸 · 빠지기 쉬운 것 / 새 요청 · 오늘 실측 · 보낼 견적서 |
-| 업체 `briefs.suggest.action_id` · `sentence` | 넣음 | 요청함이면 기간 답하기 제안 행(window_answer)을 만들어요(같은 내용이면 같은 행). `sentence`: REST는 Haiku 한 문장(60자, 같은 사실이면 Redis 하루 캐시, 검사에 걸리거나 못 부르면 틀), 도구 · 먼저 말 걸기 카드는 틀(코드 값만) |
+| 업체 `briefs.suggest.action_id` · `sentence` | 넣음 | `POST`(화면 브리핑 카드)는 요청함이면 기간 답하기 제안 행(window_answer)을 만들어요(같은 내용이면 같은 행). 이 요청에 열린 제안(대화에서 고른 못 받아요 · 다른 기간)이 있으면 새로 만들지 않고 덮지 않아요(읽기 도구 request_brief · 먼저 말 걸기도 같음, 바꿔치기는 사람이 고른 턴에서만, 2026-11-22 리뷰 B3). `GET`은 읽기만이라 제안 행을 만들지 않고 열린 기간 답하기 제안만 보여요(보안 L4). `sentence`: POST는 Haiku 한 문장(60자, 같은 사실이면 Redis 하루 캐시, 검사에 걸리거나 못 부르면 틀), GET은 캐시 문장 또는 틀, 도구 · 먼저 말 걸기 카드는 틀(코드 값만). 지역은 막지 않아요: 서비스 지역 밖이면 맞음 칸 '확인 필요 · 서비스 지역 밖(가까운 구)'이고 기간 후보 · 제안은 그대로예요(리드 결정 D11) |
 | `home_info`의 주소 찾기(search · manual) · `GET /address/search` | 뺌 | 범위 밖. 집 정보 카드는 confirm 모양(요약 · 면적 · 바뀜 · action_id)만이에요 |
-| `TurnIn.context`{card_id, choice} | 넣음 | card_id는 64자까지예요(slots- · brief- · dates- · check- + id는 42자). choice는 1~40자 값 하나 또는 5개까지예요. LLM에는 이번 대화에서 도구 · 카드가 준 ref만 가고 모르는 값은 버려요(422 아님). 이 화면의 행동 꼴인데 이름표를 모르거나 카드 id의 대상과 다르면(지난 카드 단추) 그 카드를 새로 불러와 '카드를 새로 불러왔어요. 다시 골라 주세요.'로 답해요(4장 11). 집 정보 칸 고르기 `demolition:<full · partial · none>`은 코드가 바로 집 정보 승인 카드를 만들어요(무료 모드도, LLM에는 '철거 범위: 전체 철거' 화면 말과 '승인 카드를 만들었어요' 한 줄로 알려요) |
+| `TurnIn.context`{card_id, choice} | 넣음 | card_id는 100자까지예요(slots- · brief- · dates- · check- + id는 42자, 할 일이 끝난 먼저 말 건 줄 카드는 '@줄 id'가 붙어 79자이고 서버가 떼고 봐요, 2026-11-22 QA P4). choice는 1~40자 값 하나 또는 5개까지예요. LLM에는 이번 대화에서 도구 · 카드가 준 ref만 가고 모르는 값은 버려요(422 아님). 이 화면의 행동 꼴인데 이름표를 모르거나 카드 id의 대상과 다르면(지난 카드 단추) 그 카드를 새로 불러와 '카드를 새로 불러왔어요. 다시 골라 주세요.'로 답해요(4장 11). 집 정보 칸 고르기 `demolition:<full · partial · none>`은 코드가 바로 집 정보 승인 카드를 만들어요(무료 모드도, LLM에는 '철거 범위: 전체 철거' 화면 말과 '승인 카드를 만들었어요' 한 줄로 알려요) |
 
 ### 권한
 - 모든 조회에 `user_id = 세션 사용자`를 붙여요. 남의 것 · 없는 것은 404, 역할이 다르면 403이에요.

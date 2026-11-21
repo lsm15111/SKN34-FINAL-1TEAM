@@ -18,6 +18,7 @@ from app.agent import gate as agent_gate
 from app.agent import llm
 from app.agent.schemas import Intent
 from app.agent.trades import TRADES
+from app.agent.v3 import check
 from app.config import settings
 from app.db import SessionLocal
 from app.knowledge import bm25
@@ -25,6 +26,7 @@ from app.knowledge import service as knowledge
 from app.queue import redis
 from app.shared import ratelimit
 from app.shared.errors import AppError
+from app.shared.text import strip_controls
 from app.v2 import guard, preview_service, service
 from app.v2 import schemas as v2
 from app.v2.ask_tools import BY_KIND, CALC_TOOLS, RAG_TRADES, SERVER_TOOLS, tools_for
@@ -117,6 +119,13 @@ LIVING_ASK = "사는 채로 하는지"  # 집 사실(거주)을 알면 묻지 �
 def health() -> v2.V2AskHealthOut:
     # live: LLM_LIVE=true이고 고른 공급자(LLM_PROVIDER)의 키가 있을 때만
     return v2.V2AskHealthOut(ok=True, live=llm.available())
+
+
+def clean_message(text: str) -> str:
+    """사용자 글 → 입구에서 가린 글(보안 M2). 제어 문자(NUL 등)를 지우고 전화 · 동호수 · 주소 번호 · 이메일 · 아이디 ·
+    주민번호 · 계좌를 가린다(v4 비서 policy.mask_in과 같은 가림). 입구 관문 · 임베딩 · LLM · 저장 · 허용 숫자가 모두
+    이 글을 쓴다(연락처가 LLM · 임베딩 공급자로 가지 않게)."""
+    return check.mask(strip_controls(text or "")).strip()
 
 
 # ---- 지시문에 넣는 데이터 ----
@@ -469,6 +478,7 @@ async def start(
 ) -> v2.V2AskOut:
     if settings.app_env != "local":  # 로컬 개발 · 시연에서는 손으로 여러 번 물어봐도 막지 않는다
         await ratelimit.hit(ratelimit.key("v2-ask", user_id), ASK_PER_HOUR, 3600, TOO_MANY)
+    b = b.model_copy(update={"message": clean_message(b.message)})  # 입구에서 가린다(보안 M2)
     intent: Intent | None = None
     if b.kind == "chat" and not b.images:
         # "?" · "ㅠㅠ"처럼 낱말이 없으면 LLM을 부르지 않는다 (앞 답을 스스로 고치는 일을 막는다). 저장하지 않는다
@@ -553,7 +563,7 @@ async def answer_only(
     금액(price_reference)은 v2 계산 엔진 값이라 비서 표준견적서(v4 두 기준)와 다를 수 있다(평가로 고른다)."""
     b = v2.V2AskIn(
         kind="chat",
-        message=message[:1_000],
+        message=clean_message(message)[:1_000],  # 부르는 쪽이 가렸어도 한 번 더(보안 M2)
         profile=v2.V2AskProfile(pyeong=pyeong, region=region[:40], living=living[:40]),
         quote=v2.V2QuoteIn(pyeong=pyeong) if pyeong else None,
     )
@@ -602,7 +612,7 @@ async def grounds(message: str, *, living: str = "", mode: str = "llm") -> v2.V2
     from app.agent.v3.policy import policy_of
     from app.agent.v3.trades import trades_in
 
-    b = v2.V2AskIn(kind="chat", message=message[:1_000])
+    b = v2.V2AskIn(kind="chat", message=clean_message(message)[:1_000])  # 가린 글로 찾는다(보안 M2)
     trade = route(b)
     first = await _search(b.message, trade=trade, embed=mode != "free")
     many = len([t for t in trades_in(b.message) if t != "common"]) >= 2

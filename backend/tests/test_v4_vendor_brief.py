@@ -1,5 +1,6 @@
-"""v4 업체 브리핑 글 점검(06-answer-audit 5절 #3 · #4 · #12, 한자): 공정 · 지역이 맞지 않으면 기간 답하기 카드 없이
-까닭만 · 벽지 미정은 확인 필요 · 칸 수는 카드에 보이는 하나 · 도구 오류 문장에 도구 이름 없음 · AI 문장 한자 거름.
+"""v4 업체 브리핑 글 점검(06-answer-audit 5절 #3 · #4 · #12, 한자): 공정이 맞지 않으면 기간 답하기 카드 없이
+까닭만(지역은 리드 결정 D11로 막지 않고 확인 필요) · 벽지 미정은 확인 필요 · 칸 수는 카드에 보이는 하나 · 도구 오류
+문장에 도구 이름 없음 · AI 문장 한자 거름. 브리핑 카드는 POST(제안 만들기)로 읽어요(GET은 읽기만, 리뷰 B3).
 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import json
@@ -36,7 +37,8 @@ def script():
 
 
 def brief(api, visit: str) -> dict:
-    r = api.get(f"/vendor/assistant/briefs/{visit}")
+    """화면 브리핑 카드처럼 POST로 읽어요(요청함이면 기간 답하기 제안을 만들어요)."""
+    r = api.post(f"/vendor/assistant/briefs/{visit}")
     assert r.status_code == 200, r.text
     return r.json()
 
@@ -46,18 +48,18 @@ def fit_of(b: dict, key: str) -> dict:
 
 
 def test_misfit_request_shows_reason_without_window_card(api):
-    """#3(RT36): 지역이 맞지 않는 요청에도 기간 답하기 승인 카드를 저절로 만들던 일."""
+    """#3(RT36): 공정이 맞지 않는 요청에도 기간 답하기 승인 카드를 저절로 만들던 일. 지역은 고객이 이미 보낸
+    요청이라 막지 않아요(서비스 지역 밖은 확인 필요, 리드 결정 D11 · test_v4_assistant_qa_r2_entry)."""
     f = requested(api)
     login(api, f["email"])
-    query(  # 고객 집(노원구)을 출장 지역에서 뺀다
-        "delete from vendor_areas where vendor_id = $1 and sido = 'seoul' and sgg = '노원구'",
-        uuid.UUID(f["vendor"]),
-    )
+    vid = uuid.UUID(f["vendor"])
+    query("delete from vendor_trades where vendor_id = $1", vid)  # 도배를 하지 않는 업체가 됨
+    query("insert into vendor_trades (vendor_id, trade) values ($1, 'mokgong')", vid)
     b = brief(api, f["visit"])
-    area = fit_of(b, "area")
-    assert (area["ok"], area["state"]) == (False, "no")
+    trade = fit_of(b, "trade")
+    assert (trade["ok"], trade["state"]) == (False, "no")
     assert b["suggest"] is None and b["windows"] == []  # 기간 후보 · 제안 없음
-    assert b["sentence"] == "지역이 우리 업체와 맞지 않아요. 받기 어려우면 못 받아요로 답해 주세요."
+    assert b["sentence"] == "공정이 우리 업체와 맞지 않아요. 받기 어려우면 못 받아요로 답해 주세요."
     assert query("select count(*) as n from assistant_actions")[0]["n"] == 0
     # 무료 모드 '기간 답할게요'도 카드 없이 까닭만(못 받아요는 업체가 고른다)
     r = api.post(
@@ -66,13 +68,10 @@ def test_misfit_request_shows_reason_without_window_card(api):
     )
     ev = ok(r)
     (said,) = [d["data"]["text"] for e, d, _ in ev if e == "card" and d["kind"] == "answer"]
-    assert said.startswith("지역이 우리 업체와 맞지 않아 기간 답하기 카드는 만들지 않았어요")
+    assert said.startswith("공정이 우리 업체와 맞지 않아 기간 답하기 카드는 만들지 않았어요")
     assert acts(ev) == []
     # 맞는 요청은 그대로 제안을 만든다
-    query(
-        "insert into vendor_areas (vendor_id, sido, sgg) values ($1, 'seoul', '노원구')",
-        uuid.UUID(f["vendor"]),
-    )
+    query("insert into vendor_trades (vendor_id, trade) values ($1, 'dobae')", vid)
     assert brief(api, f["visit"])["suggest"]
 
 

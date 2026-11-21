@@ -22,6 +22,8 @@ ASKED = "[되물음]"  # chat 지시문이 되물을 때만 답 끝에 붙인다
 
 
 async def start(user_id: uuid.UUID, b: v2.V2AskIn, today: date) -> v2.V2AskOut:
+    # 입구에서 가린다: 저장하는 질문 · 관문 · 임베딩 · LLM · 허용 숫자가 모두 가린 글을 쓴다(보안 M2)
+    b = b.model_copy(update={"message": ask.clean_message(b.message)})
     history: list[dict] = []
     rev, waiting = 1, None
     keep = b.kind == "chat"

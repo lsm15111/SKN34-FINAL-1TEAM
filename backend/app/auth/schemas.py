@@ -4,6 +4,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from app.shared.text import strip_controls
+
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
@@ -26,7 +28,8 @@ def normalize_phone(v: str) -> str:
 
 
 def clean_name(v: str) -> str:
-    v = " ".join(v.split())
+    """제어 문자 · ANSI 색 코드 · 방향 바꾸기 글자를 지우고(NUL은 저장에서 500) 빈칸을 한 칸으로."""
+    v = " ".join(strip_controls(v).split())
     if not v:
         raise ValueError("이름을 적어 주세요.")
     return v

@@ -338,13 +338,14 @@ def test_accept_dates_after_approval(api, script):
 def test_vendor_brief_then_window_answer_after_approval(api, script):
     f = requested(api)
     login(api, f["email"])
-    r = api.get(f"/vendor/assistant/briefs/{f['visit']}")
+    # 화면 브리핑 카드(제안은 POST, GET은 읽기만)
+    r = api.post(f"/vendor/assistant/briefs/{f['visit']}")
     assert r.status_code == 200, r.text
     brief = r.json()
     assert brief["suggest"] and brief["estimate"]["total_won"] > 0
     assert "김믿집" not in json.dumps(brief, ensure_ascii=False)  # 고객 이름 없음
     again = api.get(f"/vendor/assistant/briefs/{f['visit']}").json()
-    assert again["suggest"]["action_id"] == brief["suggest"]["action_id"]  # 같은 제안(멱등)
+    assert again["suggest"]["action_id"] == brief["suggest"]["action_id"]  # 열린 같은 제안
     assert query("select status from visits")[0]["status"] == "requested"
     aid = brief["suggest"]["action_id"]
     assert approve(api, aid).status_code == 403  # 업체 행동을 고객 길로
