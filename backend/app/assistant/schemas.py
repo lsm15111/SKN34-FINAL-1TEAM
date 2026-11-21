@@ -23,11 +23,13 @@ CardKind = Literal[
     "home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule",
     "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist",
     "extra", "notice",  # 07 자동화: 추가 금액 · 이웃 안내문 초안
+    "grade_compare", "market_range", "options",  # 벽지 두 종류 견주기 · 시세 범위 · 고르기 칩
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
     "date_change", "window_answer", "decline", "dates",
     "extra_answer", "work_check", "visit_again",  # 07 자동화
+    "visit_cancel",  # 보낸 실측 요청 취소
 ]  # fmt: skip
 ActionStatus = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 TurnStatus = Literal["running", "done", "stopped", "failed"]
@@ -515,6 +517,56 @@ class NoticeData(BaseModel):
     )
 
 
+class GradeRow(BaseModel):
+    name: str = Field(description="줄 이름(벽지 줄은 '벽지 값')")
+    economy_won: int | None = Field(description="합지로 센 줄 금액(부가세 별도, 계산 엔진)")
+    basic_won: int | None = Field(description="실크로 센 줄 금액(부가세 별도, 계산 엔진)")
+
+
+class GradeCompareData(BaseModel):
+    """벽지 두 종류 견주기: 지금 집 조건으로 도배 표준견적서를 합지 · 실크로 함께 센 값(저장하지 않아요).
+    합계 · 차액 · 줄 금액은 모두 계산 엔진 값이에요. 표준견적서 대비 %는 없어요."""
+
+    label: str = Field(description="집 요약(공급 84.0㎡ · 빈 집 …)")
+    economy_won: int = Field(description="합지 도배 합계(부가세 포함)")
+    basic_won: int = Field(description="실크 도배 합계(부가세 포함)")
+    diff_won: int = Field(description="실크 합계 − 합지 합계(계산 엔진)")
+    current: Literal["economy", "basic"] | None = Field(description="지금 고른 벽지")
+    rows: list[GradeRow] = Field(description="두 벽지로 금액이 달라지는 줄(벽지 줄 먼저)")
+    can_change: bool = Field(
+        description="벽지를 바꿀 수 있음(실측 요청 전). 바꾸기는 집 정보 승인 카드(choice 'grade:<값>')"
+    )
+    href: str
+
+
+class MarketRangeData(BaseModel):
+    """이 집 조건의 시세 범위(계산 엔진 calc.quick_budget · market_band). 원자료(줄 · 업체 · 글 주소)는 없어요.
+    표본이 모자라면 found가 false이고 범위를 비워요."""
+
+    trade: str = Field(description="공정 화면 말(도배 · 목공)")
+    label: str = Field(description="계산에 넣은 집 조건 한 줄")
+    found: bool
+    low_won: int | None = Field(default=None, description="범위 아래(부가세 포함, 만 원 단위)")
+    high_won: int | None = Field(default=None, description="범위 위(부가세 포함, 만 원 단위)")
+    count: int = Field(default=0, description="근거 실견적 수")
+    source: str = Field(description="출처 한 줄")
+    assumed: list[str] = Field(default=[], description="계산에 넣은 가정(코드 글)")
+    note: str | None = Field(default=None, description="범위를 말할 수 없는 까닭(found false)")
+
+
+class OptionOut(BaseModel):
+    label: str = Field(description="단추 글")
+    say: str = Field(description="누르면 비서에게 보낼 말")
+    sub: str | None = None
+
+
+class OptionsData(BaseModel):
+    """고르기 칩: 대상이 여럿일 때(거둘 카드 · 취소할 요청) 하나를 고르게 해요. 누르면 say를 보내요."""
+
+    title: str
+    options: list[OptionOut] = Field(max_length=6)
+
+
 class CardOut(BaseModel):
     """카드 하나. 같은 card_id면 화면이 바꿔 끼운다. data는 kind의 *Data 모양(JSON)."""
 
@@ -592,12 +644,18 @@ class ActionOut(BaseModel):
     kind: ActionKind
     status: ActionStatus
     summary: ActionSummary
+    target_id: uuid.UUID | None = Field(
+        default=None,
+        description="카드가 가리키는 대상 id(공사 · 실측 요청 · 확정 · 공사 날짜 제안 · 추가 금액). 같은 대상이 "
+        "처리됐으면 화면이 단추를 숨겨요",
+    )
     target_ver: str | None
     expires_at: datetime
     decided_at: datetime | None = None
     executed_at: datetime | None = None
     error_code: str | None = Field(
-        default=None, description="실패 코드. 만료면 까닭(due · replaced)"
+        default=None,
+        description="실패 코드. 만료면 까닭(due · replaced · handled_elsewhere), 고객 말로 거둔 카드면 withdrawn",
     )
     result: ActionResult | None = None
     supersedes: uuid.UUID | None = Field(

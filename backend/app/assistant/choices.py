@@ -1,7 +1,7 @@
 """카드 단추로 고른 값(TurnIn.context.choice) 풀기 (계약서 3장 · 4장 11). 사람이 누른 고르기라 LLM 판단 없이 코드가
 승인 카드(대기 행동)를 만든다(무료 모드도). 실행은 여전히 사람이 그 카드를 승인할 때만이다.
 
-- 집 정보 칸 `demolition:<full · partial · none>` → propose_home_info(고객)
+- 집 정보 칸 `demolition:<full · partial · none>` · `grade:<economy · basic>` → propose_home_info(고객)
 - 행동 `<kind>:<이름표,…>` → 그 제안 도구. 이름표는 이 대화의 도구 · 카드가 준 것만 받는다.
   - 고객: `visit_request:v1,v2[,r1]` · `visit_slot:s1` · `vendor_confirm:m1` · `dates_accept:p1`(연기 날짜면 delay_accept)
   - 업체: `window_answer:m1,w1`(w1만 줘도 됨) · `decline:m1,<full · out_of_area · other>`(보던 요청이면 코드만) ·
@@ -24,7 +24,11 @@ from app.shared.errors import AppError
 if TYPE_CHECKING:
     from app.assistant.runtime import Emit, RefTable, TurnCtx, TurnResult
 
-FIELDS: dict[str, tuple[str, ...]] = {"demolition": ("full", "partial", "none")}
+# 집 정보 칸 고르기: 철거 범위 · 벽지(벽지 두 종류 견주기 카드의 [○○로 바꾸기])
+FIELDS: dict[str, tuple[str, ...]] = {
+    "demolition": ("full", "partial", "none"),
+    "grade": ("economy", "basic"),
+}
 ACTIONS: dict[str, str] = {
     "visit_request": "customer", "visit_slot": "customer", "vendor_confirm": "customer",
     "dates_accept": "customer", "delay_accept": "customer",

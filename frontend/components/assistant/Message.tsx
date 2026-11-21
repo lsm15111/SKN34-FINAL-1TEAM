@@ -22,8 +22,10 @@ export type ActionHandlers = {
   remake: (a: ActionOut) => void;
   pending: Record<string, boolean>;
   errors: Record<string, string>;
-  /** 전체 화면 카드 안 v3 단추로 이미 처리한 행동 */
+  /** 전체 화면 카드 안 v3 단추로 이미 처리한 행동(같은 대상이 끝난 행동 ended도 들어 있어요) */
   handled: Record<string, true>;
+  /** 같은 대상이 끝난 행동(실측 요청을 취소해 그 요청의 반나절 · 확정 카드는 쓸 데가 없음) */
+  ended?: Record<string, true>;
   /** 먼저 말 건 제안: 열기([해 볼게요]) · 닫기([괜찮아요]) · 숨길 것(API 없음 · 닫음 · 할 일 끝남) */
   openNudge: (nudgeId: string) => void;
   dismissNudge: (nudgeId: string) => void;
@@ -100,6 +102,7 @@ function Part({ part: p, ctx, act, old }: { part: FeedPart; ctx: CardCtx; act: A
           now={ctx.now}
           busy={!!act.pending[p.action.action_id]}
           handled={!!act.handled[p.action.action_id]}
+          handledText={act.ended?.[p.action.action_id] ? "실측 요청을 취소했어요" : undefined}
           error={act.errors[p.action.action_id] ?? null}
           onApprove={() => act.approve(p.action)}
           onReject={() => act.reject(p.action)}

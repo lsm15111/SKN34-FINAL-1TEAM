@@ -52,7 +52,7 @@ CLOSED_NOTE = "이미 닫힌 제안이에요(새로 만들지 않았어요)."
 # 부탁 · 할게요 …), 또는 '…로 해 주세요'. 하지 말라는 말은 빼요. 거절한 제안을 다시 만들 새 결정으로 본다
 ASK_DO = re.compile(
     r"(?:저장|바꿔|바꾸어|변경|수정|고쳐|반영|적용|넣어|빼|만들어|요청|보내|수락|확정|진행|미뤄|당겨|옮겨|골라|"
-    r"잡아|승인|거절|답해|올려|그걸로|그것으로|이걸로|이것으로|그대로|그렇게|직접)"
+    r"잡아|승인|거절|답해|올려|취소|그걸로|그것으로|이걸로|이것으로|그대로|그렇게|직접)"
     r"\S{0,3}\s{0,2}(?:좀\s{0,2})?(?:해\s{0,2})?"
     r"(?:주세요|주십시오|주실래요|주시겠어요|주실\s{0,2}수\s{0,2}있|줘요|줘|주라|줄래요|줄래|부탁|할게요|할께요|"
     r"할래요|하겠습니다)"
@@ -787,6 +787,240 @@ async def propose_date_change(tc: ToolCtx, a: DateChangeIn) -> ToolOut:
         wish_from=a.wish_from,
     )
     out, _ = await _offer(tc, project_id=pid, **got)
+    return out
+
+
+# ---- 거두기 · 실측 요청 취소(피클 표본 7, 고정 선 1: 실행 전 제안은 고객 말로 거둔다) ----
+
+# 고객 승인 카드 종류(제안 도구 이름에서 propose_를 뗀 것) → 화면 이름
+KIND_NAME: dict[str, str] = {
+    "home_info": "집 정보", "visit_request": "실측 요청", "visit_slot": "실측 시간",
+    "vendor_confirm": "업체 확정", "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락",
+    "date_change": "날짜 바꾸기 요청", "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인",
+    "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소",
+}  # fmt: skip
+WithdrawKind = Literal[
+    "any", "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept",
+    "delay_accept", "date_change", "extra_answer", "work_check", "visit_again", "visit_cancel",
+]  # fmt: skip
+_PLAIN = re.compile(r"[\s·,.!?~()\[\]'\"“”‘’:;\-]+")
+# 말 조각 끝의 조사(업체 이름 · 카드 이름에 붙은 '솔빛도배에' · '요청을')
+_JOSA = re.compile(r"(?:에게|한테|으로|이랑|하고|에서|에|의|을|를|이|가|은|는|로|도|만|랑|께)$")
+# 거둘 카드를 가리킬 때 같이 오는 말(카드를 가르지 않는 말)
+FILLER = frozenset({
+    "카드", "승인", "제안", "그", "그거", "그것", "이거", "이것", "저거", "아까", "방금", "좀", "거", "것", "꺼",
+})  # fmt: skip
+WITHDRAWN_NOTE = (
+    "카드를 거뒀어요. 실행 전이라 업체에 간 것은 없어요. 고객이 다시 원하면 새로 만들 수 있어요."
+)
+CHOOSE_NOTE = "거둘 카드가 여럿이에요. 어느 카드인지 고객에게 물어요(카드의 단추로 고를 수 있어요)."
+NONE_NOTE = "지금 거둘 승인 카드가 없어요."
+EXECUTED_NOTE = "이미 실행된 카드라 거둘 수 없어요."
+SENT_NOTE = "보낸 실측 요청은 취소 승인 카드(propose_visit_cancel, requests의 이름표)로 취소해요. 고객이 눌러야 취소돼요."
+
+
+def plain(text: str | None) -> str:
+    """띄움 · 문장부호를 뺀 글(카드 제목 · 고객 말 견주기)."""
+    return _PLAIN.sub("", text or "")
+
+
+def haystack(a) -> str:
+    """승인 카드에서 찾을 글: 제목 · 요약 줄 값 · 금액 줄 이름(업체 이름)."""
+    sm = a.summary or {}
+    bits = [
+        sm.get("title") or "",
+        *(str(r.get("value") or "") for r in sm.get("rows") or []),
+        *(str(x.get("label") or "") for x in sm.get("amounts") or []),
+    ]
+    return plain(" ".join(bits))
+
+
+def title_of(a) -> str:
+    return str((a.summary or {}).get("title") or KIND_NAME.get(a.kind, "승인 카드"))
+
+
+def _words(text: str) -> list[str]:
+    out = []
+    for w in re.split(r"[\s·,]+", text or ""):
+        w = plain(w)
+        w = _JOSA.sub("", w) if len(w) > 2 else w
+        if len(w) >= 2 and w not in FILLER:
+            out.append(w)
+    return out
+
+
+def about_hits(rows: list, about: str) -> list:
+    """카드 고르기(about: 카드 제목 또는 업체 이름): 제목이 같은 카드 → 글이 든 카드 → 낱말이 모두 든 카드.
+    about이 비면 모두."""
+    key = plain(about)
+    if not key:
+        return list(rows)
+    same = [a for a in rows if plain(title_of(a)) == key]
+    if same:
+        return same
+    hits = [a for a in rows if key in haystack(a) or plain(title_of(a)) in key]
+    if hits:
+        return hits
+    words = _words(about)
+    return [a for a in rows if words and all(w in haystack(a) for w in words)]
+
+
+def unique_say(rows: list) -> list[tuple[str, str, str | None]]:
+    """고르기 칩(단추 글, 보낼 말, 덧말): 제목이 같은 카드는 첫 요약 줄 값(업체 등)을 붙여 가른다."""
+    titles = [title_of(a) for a in rows]
+    out = []
+    for a, t in zip(rows, titles, strict=True):
+        rows_ = (a.summary or {}).get("rows") or []
+        extra = str(rows_[0].get("value")) if titles.count(t) > 1 and rows_ else ""
+        label = f"{t} · {extra}" if extra else t
+        out.append((label, f"{label} 카드 거둬 줘", KIND_NAME.get(a.kind)))
+    return out
+
+
+async def open_cards(s, user_id: uuid.UUID, pid: uuid.UUID, now: datetime) -> list:
+    """이 공사의 고객 승인 기다리는 카드(기한 전, 오래된 것부터)."""
+    from app.assistant import repository as repo
+
+    rows = await repo.actions_of(s, user_id, "customer", project_id=pid, status="proposed")
+    return sorted((a for a in rows if a.expires_at > now), key=lambda a: a.created_at)
+
+
+def requests_model(tc: ToolCtx, visits: list) -> list[dict]:
+    """보낸 실측 요청(취소할 수 있는 것) → 모델 값(이름표 m…). 이름표는 이 대화 표에 넣는다."""
+    return [
+        {
+            "ref": tc.refs.put(
+                "visit", {"id": str(v.id), "vendor_name": v.vendor_name, "trade": v.trade}
+            ),
+            "vendor_name": v.vendor_name,
+            "state": cards.SENT_STATE.get(v.status, "진행 중"),
+        }
+        for v in visits
+    ]
+
+
+async def withdraw_one(tc: ToolCtx, a) -> tuple[ToolOut, str]:
+    """카드 하나를 거둔다(조건부: 그사이 승인 · 거절 · 만료면 지금 상태로 알린다). (도구 결과, state)."""
+    from app.assistant import repository as repo
+
+    async with SessionLocal() as s:
+        got = await actions.withdraw(s, a, tc.now)
+        await s.commit()
+        if got is None:
+            got = await repo.action_owned(s, tc.user.id, a.id, "customer")
+    row = actions.out(got)  # type: ignore[arg-type]
+    if row.status == "rejected" and row.error_code == actions.WITHDRAWN:
+        data = {"state": "withdrawn", "title": row.summary.title, "note": WITHDRAWN_NOTE}
+        return ToolOut(data=data, closed=[row]), "withdrawn"
+    note = EXECUTED_NOTE if row.status in ("approved", "executed") else CLOSED_NOTE
+    return ToolOut(data={"state": "closed", "title": row.summary.title, "note": note}), "closed"
+
+
+class WithdrawIn(BaseModel):
+    kind: WithdrawKind = "any"
+    about: str = Field(default="", max_length=80)
+
+
+@tool(
+    "withdraw_proposal",
+    surface="customer",
+    kind="propose",
+    status="카드를 거두고 있어요",
+    description="고객이 아직 누르지 않은 승인 카드(승인 기다리는 카드)를 고객 말로 거둬요('그 카드 취소해 줘' · "
+    "'아까 요청 카드 거둬 줘'). 거절과 같게 남아 다시 만들지 않아요. kind는 카드 종류(모르면 any), about은 거둘 "
+    "카드 제목(턴 사실 · 도구 결과의 제목 그대로) 또는 업체 이름이고 모르면 빈 글이에요. 하나로 정해지면 바로 "
+    "거두고(state withdrawn), 여럿이면 후보(items)와 고르기 칩 카드를 돌려줘요(state choose: 어느 카드인지 물어요). "
+    "이미 실행된 카드는 거둘 수 없어요: 보낸 실측 요청은 propose_visit_cancel(requests의 m 이름표)로 취소 승인 "
+    "카드를 만들어요.",
+    model=WithdrawIn,
+    schema=obj(
+        {
+            "kind": {
+                "type": "string",
+                "enum": ["any", *KIND_NAME],
+                "description": "거둘 카드 종류(제안 도구 이름에서 propose_를 뗀 것), 모르면 any",
+            },
+            "about": {
+                "type": "string",
+                "description": "거둘 카드 제목 또는 업체 이름(모르면 빈 글)",
+            },
+        }
+    ),
+)
+async def withdraw_proposal(tc: ToolCtx, a: WithdrawIn) -> ToolOut:
+    pid = pid_of(tc)
+    async with SessionLocal() as s:
+        rows = await open_cards(s, tc.user.id, pid, tc.now)
+        got = about_hits([x for x in rows if a.kind in ("any", x.kind)], a.about)
+        visits = await cards.sent_visits(s, tc.user, pid) if len(got) != 1 else []
+    if len(got) == 1:
+        out, _ = await withdraw_one(tc, got[0])
+        return out
+    sent = requests_model(tc, visits)
+    if len(got) > 1:
+        options = unique_say(got)
+        card = cards.options_card("withdraw-pick", "어느 카드를 거둘까요?", options)
+        items = [{"title": t, "kind": k} for t, _, k in options]
+        data = {"state": "choose", "items": items, "note": CHOOSE_NOTE}
+        return ToolOut(data={**data, **({"requests": sent} if sent else {})}, cards=[card])
+    note = NONE_NOTE + (" " + SENT_NOTE if sent else "")
+    return ToolOut(data={"state": "none", "note": note, **({"requests": sent} if sent else {})})
+
+
+class VisitCancelIn(BaseModel):
+    visit_ref: str
+    code: Literal["changed", "other_vendor", "other"]
+
+
+@tool(
+    "propose_visit_cancel",
+    surface="customer",
+    kind="propose",
+    status="실측 요청 취소를 준비하고 있어요",
+    description="이미 보낸 실측 요청(m1…)을 취소하는 승인 카드를 만들어요. code: changed 일정이 바뀜 · "
+    "other_vendor 다른 업체로 할래요 · other 그 밖. 고객이 카드를 눌러야 취소되고 업체에도 알림이 가요(잡은 실측 "
+    "날짜도 풀려요). 견적서가 온 뒤 · 확정 · 이미 닫힌 요청은 취소할 수 없어요. 아직 보내지 않은 실측 요청 카드는 "
+    "withdraw_proposal로 거둬요.",
+    model=VisitCancelIn,
+    schema=obj(
+        {
+            "visit_ref": {"type": "string", "description": "실측 요청 이름표 m…"},
+            "code": {"type": "string", "enum": list(actions.CANCEL_REASONS)},
+        }
+    ),
+)
+async def propose_visit_cancel(tc: ToolCtx, a: VisitCancelIn) -> ToolOut:
+    pid = pid_of(tc)
+    visit_id = uuid.UUID(tc.refs.get(a.visit_ref, "visit")["id"])
+    async with SessionLocal() as s:
+        v = next((x for x in await cards.sent_visits(s, tc.user, pid) if x.id == visit_id), None)
+    if v is None:
+        raise ToolError(
+            "not_cancellable",
+            "견적서가 왔거나 이미 끝난 요청이라 취소할 수 없어요.",
+            hint="today_tasks로 지금 진행 중인 요청(m…)을 다시 봐요",
+        )
+    summary = ActionSummary(
+        title=f"{v.vendor_name}에 보낸 실측 요청 취소",
+        rows=[
+            SummaryRow(label="업체", value=v.vendor_name),
+            SummaryRow(label="지금", value=cards.SENT_STATE.get(v.status, "진행 중")),
+            SummaryRow(label="까닭", value=actions.CANCEL_REASONS[a.code]),
+        ],
+        note="취소하면 업체에 알림이 가고 이 업체의 담기 칸이 비어요. 잡아 둔 실측 날짜도 풀려요",
+        approve_label="실측 요청 취소하기",
+    )
+    out, _ = await _offer(
+        tc,
+        kind="visit_cancel",
+        target_kind="visit",
+        target_id=visit_id,
+        target_ver=v.status,
+        payload={"visit_id": str(visit_id), "code": a.code, "vendor_name": v.vendor_name},
+        summary=summary,
+        expires_at=tc.now + timedelta(days=2),
+        project_id=pid,
+    )
     return out
 
 

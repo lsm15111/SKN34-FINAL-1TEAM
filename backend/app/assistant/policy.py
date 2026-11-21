@@ -136,7 +136,9 @@ _OFFER = re.compile(r"(?:면|다면|라면)(?:\s|,)|\?\s*$")
 # 말이 가리키는 행동 종류(카드 이름 낱말). 없으면 종류를 가리지 않는다
 KIND_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("home_info", re.compile(r"집\s*정보|면적|평형|평수|철거\s*범위|방\s*개수")),
-    ("visit_request", re.compile(r"실측\s*요청")),
+    # '실측 요청을 취소하는 카드'는 실측 요청 카드가 아니라 취소 카드다
+    ("visit_request", re.compile(r"실측\s*요청(?!\S{0,3}\s*취소)")),
+    ("visit_cancel", re.compile(r"취소")),
     ("visit_slot", re.compile(r"실측\s*(?:시간|날짜|일정)|반나절|시간\s*(?:카드|고르기)")),
     (
         "vendor_confirm",
@@ -157,12 +159,17 @@ BUTTONS: dict[str, frozenset[str]] = {
     "quote_compare": frozenset({"vendor_confirm"}),
     "schedule": frozenset({"dates_accept", "delay_accept"}),
     "vendor_brief": frozenset({"window_answer", "decline"}),
+    # [합지로 바꾸기] · [실크로 바꾸기] → 집 정보(벽지) 승인 카드
+    "grade_compare": frozenset({"home_info"}),
 }
 
 
 def buttons_of(kind: str, data: dict) -> frozenset[str]:
-    """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만."""
+    """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만, 벽지 견주기 카드는
+    벽지를 바꿀 수 있을 때(can_change)만."""
     if kind == "schedule" and not data.get("proposal_ref"):
+        return frozenset()
+    if kind == "grade_compare" and not data.get("can_change"):
         return frozenset()
     return BUTTONS.get(kind, frozenset())
 

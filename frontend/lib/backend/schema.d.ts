@@ -3090,13 +3090,18 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again";
+            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again" | "visit_cancel";
             /**
              * Status
              * @enum {string}
              */
             status: "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
             summary: components["schemas"]["ActionSummary"];
+            /**
+             * Target Id
+             * @description 카드가 가리키는 대상 id(공사 · 실측 요청 · 확정 · 공사 날짜 제안 · 추가 금액). 같은 대상이 처리됐으면 화면이 단추를 숨겨요
+             */
+            target_id?: string | null;
             /** Target Ver */
             target_ver: string | null;
             /**
@@ -3110,7 +3115,7 @@ export interface components {
             executed_at?: string | null;
             /**
              * Error Code
-             * @description 실패 코드. 만료면 까닭(due · replaced)
+             * @description 실패 코드. 만료면 까닭(due · replaced · handled_elsewhere), 고객 말로 거둔 카드면 withdrawn
              */
             error_code?: string | null;
             result?: components["schemas"]["ActionResult"] | null;
@@ -3819,7 +3824,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice";
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options";
             /** Data */
             data: {
                 [key: string]: unknown;

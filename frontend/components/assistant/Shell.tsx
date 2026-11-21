@@ -98,6 +98,7 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
     pending: a.pending,
     errors: a.errors,
     handled: a.handled,
+    ended: a.ended,
     openNudge: (id) => { void a.openNudge(id); },
     dismissNudge: (id) => { void a.dismissNudge("", id); },
     gone: a.gone,
