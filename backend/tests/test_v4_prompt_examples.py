@@ -47,15 +47,13 @@ READ_CARD = {
     "compare_quotes": "quote_compare",
     "get_schedule": "schedule",
     "request_brief": "vendor_brief",
+    "compare_grades": "grade_compare",
 }
 # 요청함이면 기간 답하기 승인 카드도 만드는 읽기 도구(계약서 3장)
 MADE_BY_READ = {"request_brief": "window_answer"}
-# 코드가 아직 따라오지 않은 예시: (판, 예시) → 까닭
-CANCEL_WHY = (
-    "policy.KIND_WORDS에 visit_cancel 낱말('취소')이 없어 '실측 요청을 취소하는 카드를 만들었어요'를 "
-    "실측 요청 카드 말로 읽어요(propose_visit_cancel을 만드는 갈래 몫)"
-)
-PENDING = {("customer_v4", "9(이미 보냈을 때)"): CANCEL_WHY}
+# 코드가 아직 따라오지 않은 예시: (판, 예시) → 까닭. 9(이미 보냈을 때)의 취소 카드 말은 KIND_WORDS에 visit_cancel이
+# 들어가 맞게 읽혀 지웠어요(갈래 T)
+PENDING: dict[tuple[str, str], str] = {}
 
 
 def _part(lines: list[tuple[str, str, str]], kind: str, tag: str) -> str:
