@@ -3,20 +3,42 @@
 
 - 직접 할 일(반셀프 칩)은 공사를 만들 때 HomeInfoIn.diy로 같은 트랜잭션에 저장한다(None 묻지 않음 · [] 없어요).
   가입 뒤에는 PUT /projects/{id}/diy로 고친다(만든 고객만, 남의 것 404, 업체 403, 모르는 키 422).
-- 모은 조건 칩 이름표는 '직접 할 일: 페인트(문틀 · 몰딩)'처럼 화면 말로 보인다."""
+- 모은 조건 칩 이름표와 비서 get_home(집 정보 카드 · 모델 값 · 턴 사실)에 시기 · 방 개수 · 직접 할 일이 보인다.
+유료 호출 0회(Claude 대본)."""
 
+import json
 import uuid
 
 import asyncpg
 import pytest
+from v3_kb import repo_index
 
+from app.agent import llm
 from tests.conftest import query
 from tests.helpers import signup, use
 from tests.test_v3_project_home import HOME, create
+from tests.test_v4_assistant_turns import ask, ok
 from tests.test_vendor_profile import approved_vendor
 
 PAINT = "페인트(문틀 · 몰딩)"
 CLEAN = "입주 청소"
+
+
+@pytest.fixture(autouse=True)
+def repo_knowledge(monkeypatch):
+    from app.knowledge import service as knowledge
+
+    async def index(_s):
+        return repo_index()
+
+    monkeypatch.setattr(knowledge, "index", index)
+
+
+@pytest.fixture
+def script():
+    llm.clear_stubs()
+    yield llm.set_claude_script
+    llm.clear_stubs()
 
 
 def diy_rows(pid: str) -> list[tuple[str, str, str]]:
@@ -133,3 +155,39 @@ def test_diy_keys_are_checked_by_db(api):
     query(insert, pid, "diy.paint", "self")
     query(insert, pid, "dobae.mold", "있어요")  # 다른 칸은 그대로
     assert set(chips(api, pid)) == {("직접 할 일", PAINT), ("곰팡이 · 물자국", "있어요")}
+
+
+# ---- 비서 get_home ----
+
+
+def _get_home(api, script, pid: str) -> tuple[list[str], dict, str]:
+    """대본 턴으로 get_home을 불러 (카드 facts, 모델 값, 턴 사실 글)"""
+    log = script([{"tool_calls": [{"id": "h", "name": "get_home", "input": {}}]}, {"text": "네."}])
+    ev = ok(ask(api, pid, "집 정보 보여 줘"))
+    card = next(d for e, d, _ in ev if e == "card" and d["kind"] == "home_info")
+    first, second = log
+    result = second["messages"][-1]["content"][0]
+    assert result["type"] == "tool_result"
+    return card["data"]["facts"], json.loads(result["content"]), first["messages"][-1]["content"]
+
+
+def test_get_home_knows_start_rooms_and_diy(api, script):
+    signup(api)
+    pid = create(api, {**HOME, "rooms": 3, "diy": ["clean", "paint"]}).json()["id"]
+    facts, model, turn = _get_home(api, script, pid)
+    said = f"직접 할 일 {PAINT}, {CLEAN}"
+    assert {"방 3개", f"공사 시작 희망 {HOME['start_date']}", said} <= set(facts)
+    assert (model["rooms"], model["start_date"], model["diy"]) == (
+        3,
+        HOME["start_date"],
+        [PAINT, CLEAN],
+    )
+    assert said in turn and "방 3개" in turn  # 턴마다 넘기는 사실(다시 묻지 않게)
+
+    other = create(api, {**HOME, "start_date": None}).json()["id"]
+    facts, model, _ = _get_home(api, script, other)
+    assert "공사 시작 희망 아직 몰라요" in facts
+    assert not any(f.startswith("직접 할 일") for f in facts) and "diy" not in model  # 아직 안 물음
+    assert api.put(f"/projects/{other}/diy", json={"diy": []}).status_code == 200
+    facts, model, _ = _get_home(api, script, other)
+    assert "직접 할 일 없어요" in facts and model["diy"] == []
