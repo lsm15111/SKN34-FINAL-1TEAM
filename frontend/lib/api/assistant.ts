@@ -237,6 +237,8 @@ export type ActionOut = {
   result?: { text: string; href?: string | null; label?: string | null } | null;
   /** 판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤) */
   supersedes?: string | null;
+  /** 같은 대상의 새 제안으로 바뀌어 닫힌 행동(expired · replaced)이면 그 새 행동 id */
+  replaced_by?: string | null;
 };
 
 /** 다음에 물을 말(코드가 고름). feed의 suggest 조각(먼저 말 건 줄) · done.suggest(0~3개)로 와요. 먼저 말 걸기에서 왔으면 nudge_id */
@@ -288,6 +290,8 @@ export type AssistantItem = {
   settled?: boolean;
   /** 한도에 닿아 카드만으로 끝냈어요(done.stopped) */
   stopped?: boolean;
+  /** 화면이 만든 말(오늘 정할 일 · 기록 밖 열린 승인 카드). 서버 기록에 없어요 */
+  local?: boolean;
 };
 export type FeedItem = { id: string; role: "user"; at: string; text: string } | AssistantItem;
 /** before: 더 앞 쪽을 읽을 커서(턴 번호, 없으면 처음) */
@@ -481,11 +485,31 @@ export function actionsIn(items: FeedItem[]): ActionOut[] {
 }
 
 /**
+ * 공사에 한 번만 정하는 종류(대상이 공사 · 공정 하나): 집 정보 · 실측 요청 · 업체 확정(한 곳을 확정하면 다른 곳 확정 제안도 끝나요).
+ * 나머지(반나절 · 공사 날짜 · 날짜 바꾸기 · 추가 금액 …)는 실측 · 확정 · 추가 금액마다 열린 제안이 따로 있어요.
+ */
+const ONE_DECISION: ReadonlySet<ActionKind> = new Set<ActionKind>(["home_info", "visit_request", "vendor_confirm"]);
+
+/**
  * 할 일을 마친 먼저 말 건 줄(nudge_id): 서버가 '완료'로 보낸 줄(settled), 그 줄에 달린 승인 카드가 실행됐거나, 화면 v3 단추로
- * 처리됐거나(handled · handled_elsewhere), 같은 대상의 새 카드로 바뀐(replaced) 뒤 그 뒤 대화에서 같은 종류 행동이 실행됐으면요.
+ * 처리됐거나(handled · handled_elsewhere), 같은 대상의 새 카드로 바뀐(replaced) 뒤 그 새 카드(replaced_by를 따라감)가 실행 · 처리됐으면요.
+ * replaced_by가 없는 옛 행동은 공사에 한 번 정하는 종류만 '뒤에 같은 종류 실행'으로 봐요(다른 업체 반나절 실행으로 닫지 않게).
  * 화면은 그 줄을 바로 '완료'로 그려요(제안 · 카드 단추 없이). 서버 정리(2분) 전에는 열린 줄로 와서 그릴 때마다 다시 봐요.
  */
 export function settledNudges(items: FeedItem[], handled: Record<string, true>): string[] {
+  const byId = new Map(actionsIn(items).map((a) => [a.action_id, a]));
+  const finished = (a: ActionOut) => a.status === "executed" || !!handled[a.action_id] || (a.status === "expired" && a.error_code === "handled_elsewhere");
+  const replaced = (a: ActionOut) => a.status === "expired" && a.error_code === "replaced";
+  /** 새 카드 사슬 끝이 실행 · 처리됐는지 */
+  const chainDone = (a: ActionOut): boolean => {
+    const seen = new Set<string>();
+    let cur: ActionOut | undefined = a;
+    while (cur && replaced(cur) && cur.replaced_by && !seen.has(cur.action_id)) {
+      seen.add(cur.action_id);
+      cur = byId.get(cur.replaced_by);
+    }
+    return !!cur && cur !== a && finished(cur);
+  };
   const out: string[] = [];
   items.forEach((it, i) => {
     if (it.role !== "assistant" || !it.nudge_id) return;
@@ -493,9 +517,8 @@ export function settledNudges(items: FeedItem[], handled: Record<string, true>):
     const later = (kind: ActionKind) =>
       items.slice(i + 1).some((x) => x.role === "assistant" && x.parts.some((p) => p.t === "action" && p.action.kind === kind && p.action.status === "executed"));
     const done = it.parts.some((p) => p.t === "action" && (
-      p.action.status === "executed"
-      || !!handled[p.action.action_id]
-      || (p.action.status === "expired" && (p.action.error_code === "handled_elsewhere" || (p.action.error_code === "replaced" && later(p.action.kind))))
+      finished(p.action)
+      || (replaced(p.action) && (p.action.replaced_by ? chainDone(p.action) : ONE_DECISION.has(p.action.kind) && later(p.action.kind)))
     ));
     if (done) out.push(it.nudge_id);
   });
@@ -515,22 +538,58 @@ export function lastCardIn<K extends CardKind>(items: FeedItem[], kind: K, test?
   return null;
 }
 
-/** 대화에서 가장 나중에 그려진 그 종류 행동(상태 상관없이). 없으면 null */
-export function lastActionIn(items: FeedItem[], kind: ActionKind): ActionOut | null {
+/** 대화에서 가장 나중에 그려진 그 종류 행동(상태 상관없이, test를 주면 맞는 것만). 없으면 null */
+export function lastActionIn(items: FeedItem[], kind: ActionKind, test?: (a: ActionOut) => boolean): ActionOut | null {
   for (let i = items.length - 1; i >= 0; i--) {
     const it = items[i];
     if (it.role !== "assistant") continue;
     for (let k = it.parts.length - 1; k >= 0; k--) {
       const p = it.parts[k];
-      if (p.t === "action" && p.action.kind === kind) return p.action;
+      if (p.t === "action" && p.action.kind === kind && (!test || test(p.action))) return p.action;
     }
   }
   return null;
 }
 
 /**
+ * 화면이 만든 말(오늘 정할 일 · 기록 밖 열린 승인 카드)을 끼울 자리: 처음 열 때 마지막 말(anchor) 바로 뒤.
+ * 그 뒤에 보낸 말 · 답은 늘 그 아래에 붙어요. 그 말이 기록에서 빠졌으면(실패 턴 등) 그 말 시각까지의 말 뒤, 처음에 대화가 비었으면 맨 앞이에요.
+ */
+export function anchorIndex(items: FeedItem[], anchor: { id: string; at: string } | null): number {
+  if (!anchor) return 0;
+  const i = items.findIndex((x) => x.id === anchor.id);
+  if (i >= 0) return i + 1;
+  const t = Date.parse(anchor.at);
+  let at = 0;
+  items.forEach((x, k) => { if (Date.parse(x.at) <= t) at = k + 1; });
+  return at;
+}
+
+/**
+ * v3 단추 쓰기(kindsForWrite) 뒤 '처리됨'으로 볼 열린 승인 카드 id(서버 행은 그대로라 화면에서만).
+ * 공사에 한 번 정하는 종류는 그 종류 열린 카드 모두. 대상이 여럿일 수 있는 종류(반나절 · 공사 날짜)는 행동에 대상 id가 없어서
+ * 쓰기 종류의 열린 카드가 하나뿐일 때만 그 카드예요(둘 이상이면 어느 것인지 몰라 서버 정리 handled_elsewhere를 기다려요).
+ */
+export function handledByWrite(kinds: ActionKind[], actions: ActionOut[]): string[] {
+  const open = [...new Set(actions.filter((a) => a.status === "proposed" && kinds.includes(a.kind)).map((a) => a.action_id))];
+  if (kinds.length && kinds.every((k) => ONE_DECISION.has(k))) return open;
+  return open.length === 1 ? open : [];
+}
+
+/** 사이트 안 경로만(링크 · 이동): '/'로 시작하고 '//' · '/\'(브라우저가 다른 사이트로 읽음) · 역빗금 · 공백 · 제어 문자가 없어요
+ *  (브라우저는 주소의 탭 · 줄바꿈을 지우고 역빗금을 빗금으로 읽어요: '/\t/x' · '/\x'도 '//x'가 돼요) */
+export function insideHref(h: string): boolean {
+  if (!h.startsWith("/") || h.startsWith("//") || h.includes("\\")) return false;
+  for (let i = 0; i < h.length; i++) {
+    const c = h.charCodeAt(i);
+    if (c <= 0x20 || c === 0x7f) return false;
+  }
+  return true;
+}
+
+/**
  * 전체 화면 카드 안 v3 단추(사람이 누른 요청)가 한 쓰기 → 같은 일을 하는 제안 행동 종류.
- * 이 쓰기가 성공하면 같은 종류의 열린 승인 카드는 '처리됨'으로 보여요(서버 행은 그대로라 화면에서만).
+ * 이 쓰기가 성공하면 같은 일을 하던 열린 승인 카드는 '처리됨'으로 보여요(handledByWrite, 서버 행은 그대로라 화면에서만).
  */
 export function kindsForWrite(method: string, path: string, projectId: string): ActionKind[] {
   const base = `/projects/${projectId}`;
@@ -594,6 +653,9 @@ export async function getHealth(): Promise<HealthOut | null> {
   if (ASSISTANT_MOCK) return (await mock()).health();
   try { return await call<HealthOut>("GET", "/assistant/health"); } catch { return null; }
 }
+
+/** 끊긴 턴을 같은 client_key로 다시 이을 때 기다리는 시간(턴 상한 45초를 넘기도록). 고객 · 업체 턴이 같이 써요 */
+export const TURN_RETRY_MS = [1200, 2500, 4000, 6000, 8000, 10000, 12000];
 
 /** 한 턴(SSE). 스트림을 열기 전 오류(404 · 409 turn_running · 429 · 422)는 ApiError로 던져요. 끝(done · error)을 받았으면 true */
 export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signal?: AbortSignal): Promise<boolean> {
