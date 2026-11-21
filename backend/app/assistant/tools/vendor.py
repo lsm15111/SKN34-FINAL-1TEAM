@@ -293,11 +293,12 @@ def _brief_facts(data: VendorBriefData) -> dict:
     }
 
 
-def sentence_ok(text: str, facts: str) -> bool:
-    """짧은 AI 문장 검사(먼저 말 걸기 · 브리핑): 길이 · '요' 끝 · 숫자는 사실에 있는 것만 · 한 일처럼 말하지 않음 ·
-    표준 대비 % · 링크 · 연락처 없음."""
-    import re
+HANJA = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff]")  # 한자(확장 A · 통합): AI 문장에 섞이면 틀로
 
+
+def sentence_ok(text: str, facts: str) -> bool:
+    """짧은 AI 문장 검사(먼저 말 걸기 · 브리핑): 길이 · '요' 끝 · 한자 없음 · 숫자는 사실에 있는 것만 · 한 일처럼
+    말하지 않음 · 표준 대비 % · 링크 · 연락처 없음."""
     from app.agent.v3 import check
     from app.agent.v3.schemas import Sentence as Sent
     from app.assistant.runtime import claims_done
@@ -305,6 +306,8 @@ def sentence_ok(text: str, facts: str) -> bool:
 
     t = (text or "").strip()
     if not t or len(t) > SENTENCE_MAX or "\n" in t or not re.search(r"요[.!?]?$", t):
+        return False
+    if HANJA.search(t):
         return False
     ok, _ = check.sentence_ok(Sent(text=t), guard.numbers(facts), None, None, None)
     return (

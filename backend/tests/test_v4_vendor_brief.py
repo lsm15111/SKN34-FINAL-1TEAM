@@ -1,5 +1,5 @@
-"""v4 업체 브리핑 글 점검(06-answer-audit 5절 #3 · #4 · #12): 공정 · 지역이 맞지 않으면 기간 답하기 카드 없이
-까닭만 · 벽지 미정은 확인 필요 · 칸 수는 카드에 보이는 하나 · 도구 오류 문장에 도구 이름 없음.
+"""v4 업체 브리핑 글 점검(06-answer-audit 5절 #3 · #4 · #12, 한자): 공정 · 지역이 맞지 않으면 기간 답하기 카드 없이
+까닭만 · 벽지 미정은 확인 필요 · 칸 수는 카드에 보이는 하나 · 도구 오류 문장에 도구 이름 없음 · AI 문장 한자 거름.
 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import json
@@ -140,3 +140,13 @@ def test_vendor_tool_error_is_korean_without_tool_name(api, script):
     err = json.loads(log[1]["messages"][-1]["content"][0]["content"])
     assert err["error"] == "no_visit"
     assert not re.search(r"[A-Za-z_]", err["message"]) and err["message"].endswith("주세요.")
+
+
+def test_sentence_ok_rejects_hanja():
+    facts = json.dumps({"suggest": {"open_count": 14}}, ensure_ascii=False)
+    assert vendor_tools.sentence_ok("새 요청이 와서 답하기 좋아요.", facts)
+    # 시뮬레이터에서 섞인 한자
+    assert not vendor_tools.sentence_ok("这 요청은 답하기 좋아요.", facts)
+    assert not vendor_tools.sentence_ok("새 要請이 와서 답하기 좋아요.", facts)
+    ext_a = chr(0x3400) + " 새 요청이 와서 답하기 좋아요."  # 확장 A
+    assert not vendor_tools.sentence_ok(ext_a, facts)
