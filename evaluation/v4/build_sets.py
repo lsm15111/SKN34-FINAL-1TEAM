@@ -306,6 +306,9 @@ def check_scenario(path: Path, s: dict) -> list[str]:
         ref = (e.get("args") or {}).get("vendor")
         if ref and ref not in vendors:
             errs.append(f"{sid}: 사건 {e.get('id')}의 업체 {ref}가 없어요")
+        when = (e.get("when") or {}).get("after_action") or {}
+        if when.get("vendor") and when["vendor"] not in vendors:
+            errs.append(f"{sid}: 사건 {e.get('id')}의 after_action 업체 {when['vendor']}가 없어요")
     if not isinstance(s.get("max_turns"), int) or not 1 <= s["max_turns"] <= 30:
         errs.append(f"{sid}: max_turns")
     if mokgong_flow(s):
@@ -323,6 +326,24 @@ def mokgong_flow(s: dict) -> bool:
     rows += [e.get("args") or {} for e in s.get("events") or []]
     rows += [*(end.get("visits") or []), *(end.get("deals") or [])]
     return any(r.get("trade") == "mokgong" for r in rows)
+
+
+def press_problems(p: dict | None, s: dict, vendors: set[str]) -> list[str]:
+    """단추 걸음: 종류 · 화면(고객 · 업체)이 맞는지, 고를 업체가 world에 있는지."""
+    from sim.press import KINDS
+
+    if not p:
+        return []
+    kind = p.get("kind")
+    if kind not in KINDS:
+        return [f"모르는 종류 {kind}"]
+    errs = []
+    if KINDS[kind][0] != s.get("surface"):
+        errs.append(f"{kind}는 {KINDS[kind][0]} 화면 단추예요")
+    for v in [*(p.get("vendors") or []), *([p["vendor"]] if p.get("vendor") else [])]:
+        if v not in vendors:
+            errs.append(f"{kind} 업체 {v}가 world.vendors에 없어요")
+    return errs
 
 
 def check_script(s: dict, kinds: set[str], vendors: set[str]) -> list[str]:
@@ -345,6 +366,12 @@ def check_script(s: dict, kinds: set[str], vendors: set[str]) -> list[str]:
         name = t.get("screen")
         if name and (name not in SCREENS or name.split("_")[0] != s.get("surface")):
             errs.append(f"{sid}: 화면 {name}")
+        errs += [f"{sid}: 단추 {p}" for p in press_problems(t.get("press"), s, vendors)]
+        if t.get("press") and s.get("surface") == "vendor" and not t.get("visit"):
+            errs.append(f"{sid}: 업체 단추 {t['press'].get('kind')}에 보던 요청(visit)이 없어요")
+    presses = sum("press" in t for t in sc.get("turns", []))
+    if len(says) + presses > s.get("max_turns", 0):
+        errs.append(f"{sid}: 말 수 + 단추 수({len(says) + presses})가 max_turns보다 많아요")
     if sc.get("as") and sc["as"] not in vendors:
         errs.append(f"{sid}: 대본 업체 {sc['as']}가 없어요")
     for r in sc.get("decide", []):

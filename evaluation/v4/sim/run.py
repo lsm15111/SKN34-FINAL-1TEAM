@@ -5,9 +5,14 @@
 - 무료 모드만 돌아요(LLM_LIVE=false, 키 환경변수 비움, 유료 호출 0회). --live는 키 · 리드 허락이 생기면 열어요.
 - 판마다 시험 DB(기본 mitjip_eval_sim, Redis 12번)를 비우고 world를 다시 심어요(sim/world.py).
   날짜는 7의 배수 날만큼 옮겨요(요일 그대로, check.week_shift). 대본 글의 'M월 D일'도 같이 옮겨요.
-- 사용자: script.turns 대본(say = 비서 턴, screen = 화면 열기). LLM 사용자 시뮬레이터는 나중에 이 자리에 붙여요.
+- 사용자: script.turns 대본(say = 비서 턴, screen = 화면 열기, press = 카드 단추 누르기). LLM 사용자 시뮬레이터는
+  나중에 이 자리에 붙여요. 단추는 앞서 받은 카드의 이름표로 context.choice 계약 꼴을 보내요(sim/press.py).
+  같은 종류 승인 카드가 이미 있으면 누르지 않고, 카드가 없으면 press.ask 글을 먼저 보내요.
 - 사람 승인: script.decide 규칙(첫 번째로 맞는 규칙, 없으면 누르지 않음). 승인은 /actions/{id}/approve(seen = 카드 판).
 - events: at_start · after_turn · after_event · after_action(그 종류 행동이 그 상태가 되면)으로 업체 · 고객 쪽 일을 일으켜요.
+  after_turn · 승인 규칙의 턴 번호는 대본 글 턴만 세요(단추 · ask 턴은 빼요). max_turns는 모든 턴을 세요.
+- worker: 걸음마다 한 차례 돌려요(기억 뽑기 일 assistant_memory + 비서 정리 · 먼저 말 걸기). --no-worker ·
+  --no-nudges로 끌 수 있어요. 행동마다 출처(button · turn · screen · nudge)를 적어요.
 - 통과: 끝 상태(expected_end) + checks 모두. pass^k = 시나리오마다 C(c, k) / C(n, k) 평균(τ-bench).
 - 저장(runs/<tag>/): sim.jsonl(판마다 한 줄) · summary.json · meta.json
 """
@@ -27,7 +32,7 @@ sys.path.insert(0, str(V4))
 import apienv
 from kit import RUNS, SCENARIOS, append_jsonl, jsonl, utf8_stdout
 
-from sim import check, drive
+from sim import check, drive, press
 from sim.world import SeedError, World
 
 SETTLE = 6  # 한 걸음 뒤 사건 · 승인을 더 바뀌지 않을 때까지 도는 횟수 상한
@@ -66,25 +71,34 @@ class Events:
             ):
                 out.append(e)
             elif "after_action" in w:
-                k = check.db_kind(w["after_action"]["kind"])
+                aa = w["after_action"]
+                k = check.db_kind(aa["kind"])
                 if any(
-                    a["kind"] == k and a["status"] == w["after_action"]["status"] for a in actions
+                    a["kind"] == k
+                    and a["status"] == aa["status"]
+                    and (not aa.get("vendor") or a.get("vendor") == aa["vendor"])
+                    for a in actions
                 ):
                     out.append(e)
         return out
 
 
-def actions_now(app) -> list[dict]:
+def actions_now(app, world: World | None = None) -> list[dict]:
+    """행동 종류 · 상태 · 대상 업체(요청이 대상이면 world.vendors ref)."""
+    vmap = {v["id"]: ref for ref, v in (world.vendors if world else {}).items()}
     return [
-        {"kind": r["kind"], "status": r["status"]}
-        for r in app.query("select kind, status from assistant_actions")
+        {"kind": r["kind"], "status": r["status"], "vendor": vmap.get(r["vendor_id"] or "")}
+        for r in app.query(
+            "select a.kind, a.status, v.vendor_id::text as vendor_id from assistant_actions a"
+            " left join visits v on a.target_kind = 'visit' and v.id = a.target_id"
+        )
     ]
 
 
 def fire(app, world: World, ev: Events, turn_no: int, cref: str) -> int:
     n = 0
     for _ in range(len(ev.specs) + 1):
-        due = ev.due(turn_no, actions_now(app))
+        due = ev.due(turn_no, actions_now(app, world))
         if not due:
             break
         for e in due:
@@ -124,16 +138,59 @@ def decide(app, world, sc, who, surface, pid, turn_no, decided, approved, log) -
     return n
 
 
-def run_one(app, sc: dict, trial: int) -> dict:
+CARD_ID_MAX = 40  # TurnContextIn.card_id 길이 상한(backend schemas)
+
+
+def _shift_step(t: dict, shift: int, base: date) -> dict:
+    """대본 글('M월 D일')을 날짜 옮김에 맞춰요. 단추 걸음의 ask · say도 같이 옮겨요."""
+    t = dict(t)
+    if "say" in t:
+        t["say"] = check.shift_ko(t["say"], shift, base)
+    if "press" in t:
+        p = dict(t["press"])
+        for k in ("ask", "say"):
+            if p.get(k):
+                p[k] = check.shift_ko(p[k], shift, base)
+        t["press"] = p
+    return t
+
+
+def live_kinds(app, world: World, spec: dict) -> dict[str, set[str]]:
+    """상태별 행동 종류 {status: {kind}}. 같은 종류가 열려 있거나 실행됐으면 단추를 누르지 않아요.
+    요청이 대상인 단추(press.PER_VISIT)에 vendor를 주면 그 업체 요청의 행동만 봐요."""
+    vid = (world.vendors.get(spec.get("vendor") or "") or {}).get("id")
+    mine = bool(vid) and spec["kind"] in press.PER_VISIT
+    out: dict[str, set[str]] = {}
+    for a in actions_now(app, world):
+        if a["status"] not in press.LIVE:
+            continue
+        if mine and a["kind"] in press.PER_VISIT and a.get("vendor") != spec.get("vendor"):
+            continue  # 다른 업체 요청의 카드
+        out.setdefault(a["status"], set()).add(a["kind"])
+    return out
+
+
+def source_of(a: dict, turns: list[dict]) -> str:
+    """행동을 만든 곳: nudge(먼저 말 걸기) · button(카드 단추 턴) · turn(글 턴) · screen(화면) ·
+    server(턴 · 화면 밖에서 서버가 만든 카드, 예: 승인 때 견적서가 새 판이면 새 판으로 다시 만든 확정 카드)."""
+    if a.get("origin") == "nudge":
+        return "nudge"
+    for t in turns:
+        if a["id"] in {x.get("id") for x in t.get("actions") or []}:
+            if t.get("press"):
+                return "button"
+            return "screen" if t.get("kind") == "screen" else "turn"
+    return "server"
+
+
+def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True) -> dict:
+    """한 판. worker: 걸음마다 기억 뽑기 일을 돌려요. nudges: 비서 정리(먼저 말 걸기)도 같이 돌려요."""
     real_today = _today()
     base = date.fromisoformat(sc["world"]["today"])
     shift = check.week_shift(base, real_today)
     s = check.shift_obj(sc, shift)
     script = s.get("script") or {}
-    steps = [
-        {**t, "say": check.shift_ko(t["say"], shift, base)} if "say" in t else t
-        for t in script.get("turns") or []
-    ]
+    steps = [_shift_step(t, shift, base) for t in script.get("turns") or []]
     surface = s["surface"]
     world = World(app.api, app.query, real_today)
     cref = (s["world"].get("customer") or {}).get("ref") or "c1"
@@ -144,6 +201,7 @@ def run_one(app, sc: dict, trial: int) -> dict:
         "surface": surface,
         "shift_days": shift,
         "today": real_today.isoformat(),
+        "worker": {"memory": worker, "nudges": worker and nudges},
     }
     t0 = time.monotonic()
     try:
@@ -160,28 +218,92 @@ def run_one(app, sc: dict, trial: int) -> dict:
     approved: set[str] = set()
     dlog: list[dict] = []
     turns: list[dict] = []
-    said = 0
-    fire(app, world, ev, 0, cref)
-    for i, st in enumerate(steps, 1):
-        visit = world.visits.get(st["visit"], {}).get("id") if st.get("visit") else None
-        if "say" in st:
-            if said >= s["max_turns"]:
-                break
-            said += 1
-            rec = drive.turn(app, world, who, surface, st["say"], project_id=pid,
-                             visit_id=visit, context=st.get("context"))  # fmt: skip
-        else:
-            rec = drive.screen(app, world, who, st["screen"], project_id=pid, visit_id=visit)
-        rec["step"] = i
-        turns.append(rec)
+    presses: list[dict] = []
+    ticks: list[dict] = []
+    said = 0  # 비서 턴 수(단추 · ask 턴 포함). max_turns 상한
+    script_no = 0  # 대본 글 턴 수. events · 승인 규칙의 after_turn은 이것으로 세요(단추 턴은 빼요)
+
+    def settle() -> None:
         for _ in range(SETTLE):
-            moved = fire(app, world, ev, said, cref)
-            moved += decide(app, world, s, who, surface, pid, said, decided, approved, dlog)
+            moved = fire(app, world, ev, script_no, cref)
+            if worker:
+                got = drive.tick(app, nudges=nudges)
+                if got:
+                    ticks.append({"after_turn": script_no, **got})
+                    moved += 1
+            moved += decide(app, world, s, who, surface, pid, script_no, decided, approved, dlog)
             if not moved:
                 break
+
+    def send(text: str, visit: str | None, context: dict | None, step: int, **extra) -> dict:
+        nonlocal said
+        said += 1
+        rec = drive.turn(app, world, who, surface, text, project_id=pid, visit_id=visit,
+                         context=context)  # fmt: skip
+        if rec.get("http") == 422 and context and len(context.get("card_id") or "") > CARD_ID_MAX:
+            # 화면처럼 card_id를 그대로 보냈더니 길이 상한(40)에 걸렸어요. 기록하고 card_id 없이 다시 보내요
+            extra["card_id_422"] = context["card_id"]
+            context = {k: v for k, v in context.items() if k != "card_id"}
+            rec = drive.turn(app, world, who, surface, text, project_id=pid, visit_id=visit,
+                             context=context)  # fmt: skip
+        rec.update(step=step, **extra)
+        turns.append(rec)
+        return rec
+
+    def plan(spec: dict, visit: str | None) -> press.Press:
+        chat = next((t.get("chat_id") for t in reversed(turns) if t.get("chat_id")), None)
+        return press.plan(spec, turns, world, live_kinds(app, world, spec), app.refs(chat), visit)
+
+    settle()
+    for i, st in enumerate(steps, 1):
+        visit = world.visits.get(st["visit"], {}).get("id") if st.get("visit") else None
+        if "press" in st:
+            spec = st["press"]
+            pr = plan(spec, visit)
+            if pr.status == "need_card" and spec.get("ask") and said < s["max_turns"]:
+                send(spec["ask"], visit, None, i, ask_for=spec["kind"])
+                settle()
+                pr = plan(spec, visit)
+            if pr.status == "need_card":
+                pr.status = "missed"
+            if pr.status == "pressed" and said >= s["max_turns"]:
+                pr.status, pr.why = "missed", "턴 상한"
+            if pr.status == "pressed":
+                ctx = {"choice": pr.choice, **({"card_id": pr.card_id} if pr.card_id else {})}
+                rec = send(spec.get("say") or pr.text or "", visit, ctx, i)
+                got = pr.record()
+                got["made"] = [a.get("kind") for a in rec.get("actions") or []
+                               if a.get("status") == "proposed"]  # fmt: skip
+                got["reply"] = (rec.get("text") or "")[:160]
+                if rec.get("card_id_422"):
+                    got["card_id_422"] = True
+                rec["press"] = got
+            else:
+                got = pr.record()
+                turns.append({"kind": "press", "step": i, "press": got, "shown": ""})
+            presses.append({"step": i, "after_turn": script_no, **got})
+        elif "say" in st:
+            if said >= s["max_turns"]:
+                break
+            script_no += 1
+            send(st["say"], visit, st.get("context"), i)
+        else:
+            rec = drive.screen(app, world, who, st["screen"], project_id=pid, visit_id=visit)
+            rec["step"] = i
+            turns.append(rec)
+        settle()
     state = world.collect()
     for a in state["actions"]:
         a["approved_by_runner"] = a["id"] in approved
+        a["source"] = source_of(a, turns)
+    mem_jobs = {k: sum(t.get(k, 0) for t in ticks) for k in ("memory_done", "memory_skipped")}
+    if worker and state.get("memory") == [] and drive.llm_off():
+        jobs_run = sum(mem_jobs.values())
+        state["memory_why"] = (
+            f"무료 모드: 기억 뽑기 일 {jobs_run}건을 돌렸지만 Haiku가 꺼져 0줄"
+            if jobs_run
+            else "무료 모드: 기억할 낱말이 든 고객 말이 없어 기억 뽑기 일 0건"
+        )
     use = drive.usage(app)
     run = {
         "turns": turns,
@@ -194,6 +316,9 @@ def run_one(app, sc: dict, trial: int) -> dict:
     row.update(
         notes=world.notes,
         turns=[{k: v for k, v in t.items() if k not in ("shown", "card_data")} for t in turns],
+        presses=presses,
+        ticks=ticks,
+        memory_jobs=mem_jobs,
         decisions=dlog,
         events=ev.log,
         state=state,
@@ -226,6 +351,34 @@ def _items(rs: list[dict], prefix: str = "") -> tuple[int, int]:
     return sum(bool(i["ok"]) for i in its), len(its)
 
 
+def press_stats(rs: list[dict]) -> dict:
+    """단추 걸음: 누름(pressed) · 건너뜀(skip, 승인 카드가 이미 있음) · 못 누름(missed)과 까닭."""
+    ps = [p for r in rs for p in r.get("presses") or []]
+    done = [p for p in ps if p.get("status") == "pressed"]
+    return {
+        "steps": len(ps),
+        "pressed": len(done),
+        "skip": sum(p.get("status") == "skip" for p in ps),
+        "missed": sum(p.get("status") == "missed" for p in ps),
+        "made": sum(len(p.get("made") or []) for p in done),
+        "from_refs": sum(p.get("ref_from") == "refs" for p in done),
+        "card_id_422": sum(bool(p.get("card_id_422")) for p in done),
+        "missed_why": sorted(
+            {f"{p['kind']}: {p.get('why')}" for p in ps if p.get("status") == "missed"}
+        ),
+    }
+
+
+def source_stats(rs: list[dict]) -> dict[str, int]:
+    """행동 출처 · 상태별 수(예: 'button:executed'). 출처: button · turn · screen · nudge · server."""
+    got: dict[str, int] = {}
+    for r in rs:
+        for a in (r.get("state") or {}).get("actions") or []:
+            k = f"{a.get('source', 'other')}:{a['status']}"
+            got[k] = got.get(k, 0) + 1
+    return dict(sorted(got.items()))
+
+
 def summarize(rows: list[dict], trials: int) -> dict:
     by: dict[str, list[dict]] = {}
     for r in rows:
@@ -256,6 +409,12 @@ def summarize(rows: list[dict], trials: int) -> dict:
                 "items": n,
                 "notes": rs[0].get("notes") or [],
                 "modes": sorted({m for r in rs for m in r.get("modes") or []}),
+                "presses": press_stats(rs),
+                "sources": source_stats(rs),
+                "memory_jobs": {
+                    k: sum((r.get("memory_jobs") or {}).get(k, 0) for r in rs)
+                    for k in ("memory_done", "memory_skipped")
+                },
             }
         )
     full = [x for x in out if x["trials"] == trials]
@@ -288,24 +447,39 @@ def summarize(rows: list[dict], trials: int) -> dict:
         "required_tools_recall": round(tool_ok / tool_n, 4) if tool_n else None,
         "paid_calls": sum(r.get("usage", {}).get("calls", 0) for r in rows),
         "cost_usd": round(sum(r.get("usage", {}).get("cost_usd", 0) for r in rows), 6),
+        "presses": press_stats(rows),
+        "sources": source_stats(rows),
+        "worker": rows[0].get("worker") if rows else None,
     }
 
 
 def report(summary: dict, mode: str) -> None:
     k = summary["trials"]
     print(f"\n# 시뮬레이터 결과 ({mode} 모드, 시나리오마다 {k}번)")
-    print("| 시나리오 | 나눔 | 화면 | 통과 | 끝 상태만 | 확인만 | 맞은 항목 | 주된 실패 |")
-    print("| --- | --- | --- | --- | --- | --- | --- | --- |")
+    print("| 시나리오 | 나눔 | 화면 | 통과 | 끝 상태만 | 확인만 | 맞은 항목 | 단추 | 주된 실패 |")
+    print("| --- | --- | --- | --- | --- | --- | --- | --- | --- |")
     for x in summary["scenarios"]:
         why = x["seed_error"] or " · ".join(x["fails"][:3]) or "-"
         print(f"| {x['id']} | {x['split']} | {x['surface']} | {x['passed']}/{x['trials']} | "
               f"{x['end_ok']}/{x['trials']} | {x['checks_ok']}/{x['trials']} | "
-              f"{x['items_ok']}/{x['items']} | {why} |")  # fmt: skip
+              f"{x['items_ok']}/{x['items']} | {press_cell(x.get('presses'))} | {why} |")  # fmt: skip
     print(f"\npass^1 {summary['pass^1']} · pass^{k} {summary[f'pass^{k}']} "
           f"· 끝 상태만 pass^1 {summary['end_only_pass^1']} · 확인만 pass^1 "
           f"{summary['checks_only_pass^1']} · 맞은 항목 {summary['item_rate']} "
           f"· 필수 도구 재현율 {summary['required_tools_recall']}")  # fmt: skip
     print(f"유료 호출 {summary['paid_calls']}회 · 비용 ${summary['cost_usd']}")
+    p = summary.get("presses") or {}
+    print(f"단추 걸음 {p.get('steps', 0)} · 누름 {p.get('pressed', 0)} · 건너뜀 {p.get('skip', 0)} "
+          f"· 못 누름 {p.get('missed', 0)} · 이름표 표에서 찾음 {p.get('from_refs', 0)} "
+          f"· card_id 422 {p.get('card_id_422', 0)}")  # fmt: skip
+    print("행동 출처:", summary.get("sources"))
+
+
+def press_cell(p: dict | None) -> str:
+    """결과표 '단추' 칸: 누름 · 건너뜀 · 못 누름(판 합)."""
+    if not p or not p.get("steps"):
+        return "-"
+    return f"누름 {p['pressed']} · 건너뜀 {p['skip']} · 못 누름 {p['missed']}"
 
 
 def main(argv=None) -> int:
@@ -320,6 +494,12 @@ def main(argv=None) -> int:
     ap.add_argument("--env-file", type=Path, help="DB 접속값을 읽을 .env(키는 읽지 않아요)")
     ap.add_argument("--live", action="store_true", help="유료 모드(지금은 막아 둠)")
     ap.add_argument("--resummarize", action="store_true", help="돌린 sim.jsonl로 요약만 다시 내요")
+    ap.add_argument(
+        "--no-worker", action="store_true", help="worker(기억 뽑기 · 먼저 말 걸기)를 돌리지 않아요"
+    )
+    ap.add_argument(
+        "--no-nudges", action="store_true", help="기억 뽑기만 돌리고 먼저 말 걸기는 빼요"
+    )
     a = ap.parse_args(argv)
     if a.live:
         print("유료 모드는 아직 막아 뒀어요(키 무효 · 리드 허락 전). 무료 모드로만 돌려요.")
@@ -350,7 +530,7 @@ def main(argv=None) -> int:
             for t in range(a.trials):
                 app.reset()
                 try:
-                    row = run_one(app, sc, t)
+                    row = run_one(app, sc, t, worker=not a.no_worker, nudges=not a.no_nudges)
                 except Exception as e:  # noqa: BLE001 - 한 판이 깨져도 기록하고 이어 가요
                     row = {"scenario": sc["id"], "trial": t, "split": sc["split"],
                            "surface": sc["surface"], "passed": False,
@@ -367,7 +547,8 @@ def main(argv=None) -> int:
     write_json(out / "summary.json", summary)
     meta = {"tag": a.tag, "mode": mode, "db": a.db, "redis_db": a.redis_db,
             "env_file": env.name if env else None, "scenarios": [s["id"] for s in scen],
-            "trials": a.trials}  # fmt: skip
+            "trials": a.trials, "worker": not a.no_worker,
+            "nudges": not a.no_worker and not a.no_nudges}  # fmt: skip
     write_json(out / "meta.json", meta)
     report(summary, "무료")
     return 0
