@@ -128,6 +128,22 @@ class HomeIn(BaseModel):
     fields: HomeFields
 
 
+def home_note(changes: dict, locked: bool) -> str:
+    """집 정보 승인 카드 메모: 바뀌는 것에 맞춰요. 직접 할 일만 바꾸면 표준견적서는 그대로예요(실행은 칩 저장만)."""
+    from app.calc.dobae import DEMOLITION_KEY
+
+    if set(changes) == {"diy"}:
+        if locked:  # 요청 때 고정한 '업체에 알릴 것'은 그대로예요(visit.flow.request)
+            return (
+                "저장하면 공정표에 직접 할 일 날짜가 들어가요. "
+                "이미 보낸 요청은 그대로라 업체에는 채팅으로 알려 주세요"
+            )
+        return "저장하면 공정표에 직접 할 일 날짜가 들어가요. 표준견적서는 그대로예요"
+    if changes.get(DEMOLITION_KEY) == "full":
+        return "저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
+    return "저장하면 표준견적서를 새로 계산해요"
+
+
 NEED_BASIS = (
     "면적(㎡)을 바꿀 때는 기준(area_basis: supply 공급 · exclusive 전용)을 같이 넣어요. "
     "계약서 · 등기 · 'nn 타입'의 ㎡는 전용, 평형은 pyeong에 넣어요."
@@ -241,11 +257,9 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         target_ver=str(p.rev),
         payload={"fields": changes},
         summary=ActionSummary(
-            title="집 정보 저장",
+            title="직접 할 일 저장" if set(changes) == {"diy"} else "집 정보 저장",
             rows=rows,
-            note="저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
-            if changes.get(DEMOLITION_KEY) == "full"
-            else "저장하면 표준견적서를 새로 계산해요",
+            note=home_note(changes, p.locked),
             approve_label="맞아요, 저장",
         ),
         expires_at=tc.now + timedelta(days=7),
@@ -320,7 +334,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     if start <= tc.today:
         raise ToolError("past", "희망 기간이 지났어요. 시간 후보를 다시 찾아 주세요.")
     summary = ActionSummary(
-        title="실측 요청 보내기",
+        title=f"{' · '.join(c.name for c in rows)}에 실측 요청 보내기",  # 턴 사실에 업체가 보이게
         amounts=[AmountRow(label=c.name, won=c.estimate_total) for c in rows],
         rows=[
             SummaryRow(label="희망 기간", value=f"{start.isoformat()} ~ {end.isoformat()}"),

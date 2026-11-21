@@ -310,7 +310,7 @@ async def out_offer(
         sub=f"{v.vendor_name}에 보낸 요청과 같은 기간" if same else None,
     )
     summary = ActionSummary(
-        title="실측 요청 보내기",
+        title=f"{pick['name']}에 실측 요청 보내기",  # 턴 사실 '승인 기다리는 카드'에 업체가 보이게
         amounts=[AmountRow(label=pick["name"], won=pick["estimate_won"])],
         rows=[
             period,

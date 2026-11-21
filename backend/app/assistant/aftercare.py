@@ -2,7 +2,8 @@
 
 - 트리거(TRIGGERS, proactive.TRIGGERS에 등록 줄 하나로 더함). 고르는 건 코드이고 문장만 Haiku(검사에 걸리면 틀)다.
   · vendor_out(고객): 업체가 못 받음 · 48시간 무응답 · 업체 멈춤 · 견적서 늦음 → 다른 업체 추천 + 첫 업체 실측 요청 카드
-  · extra_added(고객): 업체가 추가 금액을 올림 → 추가 금액 카드 + 승인 카드(extra_answer)
+  · extra_added(고객): 업체가 추가 금액을 올림 → 추가 금액 카드(승인 · 거절 · 업체에 묻기 단추, 고른 답으로 승인
+    카드를 만든다. 망설이는 고객을 승인 쪽으로 밀지 않게 승인 카드를 미리 만들지 않는다)
   · work_done(고객): 업체가 공사를 끝냈다고 올림 · 자동 끝 3일 전(done_remind는 알림 채널) → 점검표 + 끝 확인 카드
   · prep_week(고객, 시간): 공사 시작 7일 전 10시 → 공사 전 할 일 + 이웃 안내문 초안(승인 카드 없음)
   · dates_requested(업체): 고객이 다른 날짜 · 날짜 바꾸기를 요청 → 고객이 고른 시작일로 공사 날 후보 + 날짜 보내기 카드
@@ -52,6 +53,7 @@ TRIGGERS: tuple[dict, ...] = (
         "notify": "{vendor} 대신 맞는 업체를 골라 뒀어요. 추천을 확인해 주세요.",
     },
     {
+        # action: 카드 단추(승인 · 거절 · 업체에 묻기)로 고객이 고른 답의 승인 카드를 만든다(미리 만들지 않음)
         "name": "extra_added", "surface": "customer", "kinds": ("extra_added",),
         "follow": timedelta(days=1), "decision": True, "action": True, "state": "extra",
         "say": "추가 금액 보여 줘", "why": "업체가 추가 금액을 올렸어요",
@@ -176,6 +178,27 @@ async def out_room(s: AsyncSession, v: Visit, since: datetime | None) -> bool:
         Visit.created_at > since,
     )
     return not await s.scalar(select(newer))
+
+
+async def out_vendors(s: AsyncSession, project_id: uuid.UUID, trade: str) -> frozenset:
+    """이 공사 · 공정에서 빠진 업체(못 받음 · 48시간 무응답 · 믿집에서 멈춤, out_sentence와 같은 까닭). 같은 업체에
+    살아 있는 요청(한 번 더 요청 등)이 있으면 빼지 않는다. 업체 추천(cards.vendor_picks)이 늘 뺀다."""
+    rows = (
+        await s.execute(
+            select(Visit.vendor_id, Visit.status, Visit.expired_reason, Visit.close_reason).where(
+                Visit.project_id == project_id, Visit.trade == trade, Visit.vendor_id.is_not(None)
+            )
+        )
+    ).all()
+    live = {v for v, st, _, _ in rows if st in LIVE}
+    out = {
+        v
+        for v, st, why, closed in rows
+        if st == "declined"
+        or (st == "expired" and why == "reply")
+        or (st == "closed" and closed == "vendor_stopped")
+    }
+    return frozenset(out - live)
 
 
 async def asked_vendors(s: AsyncSession, project_id: uuid.UUID, trade: str) -> frozenset:
@@ -465,9 +488,9 @@ async def build(s: AsyncSession, t, n: AssistantNudge, user: User, c, now: datet
                 shown = [card]
                 offer = await tools.out_offer(s, user, pid, v, card, today, now)
         elif t.name == "extra_added":
+            # 승인 카드는 미리 만들지 않아요: 카드 단추(승인 · 거절 · 묻기)로 고객이 골라요
             tx = await tools.extra_of(s, user, pid, n.ref_id, today)
             shown = [tools.extra_card(*tx, pid, refs)[0]]
-            offer = tools.extra_offer(*tx, "approve", now)
         elif t.name == "work_done":
             d = await tools.deal_of(s, user, pid, n.ref_id, today)
             shown = [tools.done_card(d, pid, refs)]

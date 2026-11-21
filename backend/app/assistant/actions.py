@@ -461,7 +461,8 @@ def moved(a: AssistantAction, t: Targets) -> bool:
             if p is None or str(p[0]) != a.target_ver:
                 return True
             if a.kind == "home_info":
-                return p[1]
+                # 잠겨도 직접 할 일만 바꾸는 제안은 실행할 수 있다(_home_info와 같음)
+                return p[1] and set(pl.get("fields") or {}) != {"diy"}
             ids = [uuid.UUID(v) for v in pl.get("vendor_ids", [])]
             return bool(ids) and all((a.target_id, pl.get("trade"), v) in t.live for v in ids)
         case "vendor_confirm":

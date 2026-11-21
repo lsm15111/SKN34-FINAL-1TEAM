@@ -136,7 +136,8 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         "rooms": h.rooms if h else None,
         "start_date": h.start_date if h else (p.when.start if p.when else None),
         "demolition": demo,
-        "diy": diy,
+        # 직접 할 일: 고른 목록 · '없어요'(빈 목록) · 아직 안 고름(저장했는지 비서가 짐작하지 않게 늘 적어요)
+        "diy": diy if diy else "없어요" if diy is not None else "아직 고르지 않았어요",
         "locked": p.locked,
         "facts": facts,
     }
@@ -229,10 +230,20 @@ async def vendor_picks(
     exclude: frozenset[uuid.UUID] = frozenset(),
 ) -> tuple[CardOut, dict]:
     """업체 고르기 화면과 같은 카드에서 계산 엔진 점수로 3곳(calc.vendor_pick). 사유는 틀 글(표준 대비 % 뗌).
-    exclude: 고르지 않을 업체(07 업체가 빠짐: 이미 요청 · 확정한 업체)."""
+    exclude: 고르지 않을 업체(07 업체가 빠짐: 이미 요청 · 확정한 업체). 이 공사에서 빠진 업체(못 받음 · 무응답 ·
+    멈춤)는 늘 뺀다. 열린 실측 요청 승인 카드에 든 업체는 모델 값에 proposed로 알린다(새로 만들지 않게)."""
+    from app.assistant import aftercare
+    from app.assistant import repository as repo
     from app.calc import vendor_pick
     from app.visit import service as visit_service
 
+    exclude = exclude | await aftercare.out_vendors(s, pid, trade)
+    opened = [
+        a
+        for a in await repo.open_on(s, user.id, "project", pid)
+        if a.kind == "visit_request" and (a.payload or {}).get("trade") == trade
+    ]
+    asked = {uuid.UUID(v) for a in opened for v in (a.payload or {}).get("vendor_ids", [])}
     lst = await visit_service.vendors_for(s, user, pid, trade)
     by_id = {c.vendor_id: c for c in (*lst.local, *lst.nearby)}
     cands = [
@@ -294,11 +305,18 @@ async def vendor_picks(
                 "reasons": x.reasons,
                 "picked": x.picked,
                 "instant": x.badge is not None,
+                "proposed": x.vendor_id in asked,  # 열린 실측 요청 승인 카드에 든 업체
             }
             for x in picks
         ],
         "count": len(picks),
     }
+    if opened:
+        names = [x.name for x in picks if x.vendor_id in asked]
+        model["note"] = (
+            f"{' · '.join(names) or '고른 업체'}에 보낼 실측 요청 승인 카드가 이미 열려 있어요. "
+            "새로 만들지 말고 그 카드를 확인하고 눌러 달라고 안내해요."
+        )
     return card, model
 
 

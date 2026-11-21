@@ -23,8 +23,9 @@ from tests.test_dates import days, propose, ready
 from tests.test_extras import MOLD, scheduled
 from tests.test_quote_compare import quote
 from tests.test_v3_visit_kit import booked, handle, quiet, requested, status, vendor
-from tests.test_v4_assistant_actions import approve
+from tests.test_v4_assistant_actions import acts, approve
 from tests.test_v4_assistant_nudges import add_nudge, at, nudges, run
+from tests.test_v4_assistant_turns import ask, ok
 from tests.test_visit_inbox import login
 
 TODAY = today_seoul()
@@ -186,7 +187,12 @@ def test_extra_added_card_amounts_and_approve_closes_line(api, monkeypatch):
     assert d["after_total_won"] == extras["items"][0]["after_total"]  # 계산 엔진 값 그대로
     assert d["grand_total_won"] == extras["grand_total"]
     assert (d["title"], d["vendor_note"], d["ref"]) == (MOLD["title"], MOLD["reason"], "x1")
-    a = action(n["action_id"])
+    # 승인 카드는 미리 만들지 않아요(망설이는 고객을 승인 쪽으로 밀지 않게): 카드 단추로 고른 답의 승인 카드
+    assert n["action_id"] is None and not query("select 1 from assistant_actions")
+    choice = {"card_id": card["card_id"], "choice": f"extra_answer:{d['ref']}"}
+    ev = ok(ask(api, pid, "추가 금액 승인할래요", context=choice))
+    (a,) = [x for x in acts(ev) if x["kind"] == "extra_answer" and x["status"] == "proposed"]
+    a = action(uuid.UUID(a["action_id"]))
     assert (a["kind"], a["target_kind"], a["payload"]["answer"]) == (
         "extra_answer",
         "extra",
@@ -197,7 +203,7 @@ def test_extra_added_card_amounts_and_approve_closes_line(api, monkeypatch):
     assert MOLD["reason"] not in json.dumps(
         a["summary"], ensure_ascii=False
     )  # 업체 글은 카드 칸에만
-    r = approve(api, str(n["action_id"]))
+    r = approve(api, str(a["id"]))
     assert r.json()["status"] == "executed", r.text
     assert query("select ack from extra_charges")[0]["ack"] == "approved"
     assert line(n["id"]) == ("expired", "acted")
@@ -227,11 +233,9 @@ def test_extra_answered_on_screen_closes_line_and_waiting_line(api, monkeypatch)
         f"/projects/{pid}/deals/{did}/extras/{one['id']}/answer", json={"answer": "approve"}
     )
     assert r.status_code == 200
-    tally = run(api, assistant_service.sweep, now_utc())
-    assert tally["handled"] >= 1
+    run(api, assistant_service.sweep, now_utc())
     assert line(first["id"]) == ("expired", "handled")
-    a = action(first["action_id"])
-    assert (a["status"], a["result"]["reason"]) == ("expired", "handled_elsewhere")
+    assert first["action_id"] is None  # 승인 카드는 미리 만들지 않아요(카드 단추로 고른 답만)
 
 
 # ---- 공사 끝(work_done · done_remind) ----
