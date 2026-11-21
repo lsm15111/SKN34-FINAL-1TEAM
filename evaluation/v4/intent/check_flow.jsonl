@@ -1,0 +1,28 @@
+{"id": "flow:01", "text": "걸레받이도 바꿀 건데 그건 벽지 붙이기 전에 끝내야 하나요?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:02", "text": "방문을 바꿀 생각인데 도배 끝나고 해도 되나요?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:03", "text": "천장 몰딩까지 교체하려면 순서를 어떻게 잡아요?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:04", "text": "아트월을 목공으로 만들고 싶은데 도배는 그다음에 하는 거죠?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:05", "text": "실크로 하려는데 초배는 어떻게 해요?", "label": "knowledge", "alt": [], "kind": "want_method", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:06", "text": "가벽을 세우고 싶은데 언제 하는 게 좋아요?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:07", "text": "문틀 교체하면 며칠 지나서 도배해도 돼요?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:08", "text": "합지로 바꿀까 하는데 붙이기 전에 벽은 어떻게 손봐요?", "label": "knowledge", "alt": [], "kind": "want_method", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:09", "text": "몰딩은 그대로 두고 도배만 하면 테두리는 어떻게 마감해요?", "label": "knowledge", "alt": [], "kind": "want_method", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:10", "text": "체리색 문짝을 바꾸고 싶은데 필름을 먼저 붙여요, 도배를 먼저 해요?", "label": "knowledge", "alt": [], "kind": "want_order", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:11", "text": "작은방 천장도 이번에 같이 도배해 주세요.", "label": "home_info", "alt": [], "kind": "want", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:12", "text": "현관 쪽 걸레받이만 흰색으로 바꾸고 싶어요.", "label": "home_info", "alt": [], "kind": "want", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:13", "text": "등기부에 전용 59㎡로 나와 있어요.", "label": "home_info", "alt": [], "kind": "fact", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:14", "text": "몰딩까지 넣으면 표준견적서 금액이 얼마나 늘어요?", "label": "standard_quote", "alt": [], "kind": "price", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:15", "text": "도배랑 걸레받이 같이 하면 대충 며칠 잡아야 해요?", "label": "standard_quote", "alt": [], "kind": "period", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:16", "text": "근처에서 도배 잘하는 데 두세 곳만 알려 주세요.", "label": "vendor_pick", "alt": [], "kind": "vendor", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:17", "text": "추천받은 곳 중에 후기가 제일 많은 데가 어디예요?", "label": "vendor_pick", "alt": [], "kind": "vendor", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:18", "text": "실측하러 오시는 날은 몇 시쯤이에요?", "label": "visit", "alt": [], "kind": "visit", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:19", "text": "실측은 이번 주 토요일 아침이면 좋겠어요.", "label": "visit", "alt": [], "kind": "visit", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:20", "text": "견적서 두 장 가운데 폐기물 처리비가 빠진 곳이 있나요?", "label": "quote_compare", "alt": [], "kind": "quote", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:21", "text": "받은 견적서끼리 금액이 왜 이렇게 차이 나요?", "label": "quote_compare", "alt": [], "kind": "quote", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:22", "text": "업체가 올린 공사 날짜가 이사 전에 끝나는지 봐 주세요.", "label": "schedule", "alt": [], "kind": "schedule", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:23", "text": "이제 제가 다음에 뭘 하면 돼요?", "label": "guide", "alt": [], "kind": "next", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:24", "text": "지금 제가 정해야 하는 게 남았나요?", "label": "guide", "alt": [], "kind": "next", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:25", "text": "스위치 커버는 제가 직접 갈아도 돼요?", "label": "knowledge", "alt": [], "kind": "diy", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:26", "text": "방문 페인트칠할 때 뭘 준비해야 해요?", "label": "knowledge", "alt": [], "kind": "diy", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:27", "text": "살면서 도배하면 큰 가구는 어떻게 옮겨요?", "label": "knowledge", "alt": [], "kind": "living", "surface": "customer", "src": "flow_check", "synthetic": true}
+{"id": "flow:28", "text": "저는 주말 오전에만 집에 있어요.", "label": "visit", "alt": ["guide", "home_info"], "kind": "availability", "surface": "customer", "src": "flow_check", "synthetic": true}

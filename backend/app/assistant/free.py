@@ -1,5 +1,5 @@
 """무료 모드 코드 길잡이 (계약서 4장 9, 2026-11-21 보강). 키 없음 · 상한 · 차단기일 때 LLM 없이
-말 → 의도(낱말 규칙) → 도구 함수(카드) → 정해 둔 글로 답한다.
+말 → 의도(고객: 학습한 의도 모델 intent_v4, 업체: 낱말 규칙) → 도구 함수(카드) → 정해 둔 글로 답한다.
 
 - 고객: 업체 추천 → vendor_picks · 실측 시간 → visit_slots(요청 전 희망 기간, 업체 답 뒤 반나절) · 견적서 비교 ·
   공정표 · 표준견적서 · 오늘 할 일 · 집 정보. 그 밖(지식 · 공통)은 answer_only로 답하고 공사 단계 · 보던 카드에 맞는
@@ -122,6 +122,52 @@ def intent_of(text: str, surface: str) -> str | None:
     return None
 
 
+# 고객 의도: 학습한 비서 의도 모델(intent_v4) 라벨 → handler. dev로 고른 길은 '모델만'이에요
+# (규칙만 · 규칙 먼저 + 모델보다 카드 정답률이 높았어요, docs/v4/eval/intent.md 7절). 모델 파일이 없으면 낱말 규칙.
+# guide는 오늘 할 일을 물을 때(낱말 규칙 today)만 _today, 그 밖(인사 · 서비스 안내)은 answer_only 글 + today 카드.
+# 지식 · 범위 밖은 카드 없이 answer_only로 답해요.
+LABEL_DO: dict[str, str] = {
+    "home_info": "home", "standard_quote": "standard", "vendor_pick": "vendors", "visit": "slots",
+    "quote_compare": "compare", "schedule": "schedule",
+}  # fmt: skip
+# 바람 · 진술 뒤에 순서 · 시기 · 방법을 묻는 말은 지식이에요(라벨 규칙 10: 배경 뒤 묻는 말이면 묻는 쪽).
+# 모델이 이 꼴을 집 정보 · 표준견적서로 보는 일이 있어서, 낱말 규칙이 없고 이 꼴이면 지식 답으로 내려요
+# (어려운 예 재학습보다 dev에서 나았어요, intent.md 8절). 돈 · 기간을 묻는 말은 표준견적서 그대로예요
+HOW_LABELS = ("home_info", "standard_quote")
+MONEY_DAYS = re.compile(r"얼마|비용|금액|가격|시세|평당|단가|예산|며칠|몇\s*일|기간")
+# 묻는 낱말(언제 · 어떻게 · 순서 …)은 그대로, 때 낱말(전에 · 후에 · 먼저 …)은 묻는 꼴 문장에서만 세요
+ASK_WORD = re.compile(
+    r"언제|어떻게|어떡|순서|뭐부터|무엇부터|뭘\s{0,2}먼저|뭐가\s{0,2}먼저|"
+    r"해야\s{0,2}(?:하나요|하죠|할까요|되나요|될까요)|해도\s{0,2}(?:되나요|될까요|괜찮)"
+)
+ASK_TIME = re.compile(r"전에|후에|뒤에|다음에|먼저|나중")
+QUESTION = re.compile(r"\?|나요|까요|가요|죠|는지|ㄹ지|할지|되요|돼요|해요\s{0,2}\?")
+
+
+def asks_how(text: str) -> bool:
+    """순서 · 시기 · 방법을 묻는 말인지(돈 · 기간을 묻는 말은 빼요)."""
+    t = text or ""
+    if MONEY_DAYS.search(t):
+        return False
+    return bool(ASK_WORD.search(t) or (ASK_TIME.search(t) and QUESTION.search(t)))
+
+
+def customer_intent(text: str) -> tuple[str | None, str | None]:
+    """고객 말 → (handler 이름, 지식 답에 붙일 단계 카드 길). 단계 카드 길: 'gate'(입구 관문 길) · 'guide'(오늘 할 일
+    카드) · None(카드 없음)."""
+    from app.assistant import intent_v4
+
+    g = intent_v4.predict(text)
+    rule = intent_of(text, "customer")
+    if g is None:
+        return rule, "gate"
+    if g.label == "guide":
+        return ("today", None) if rule == "today" else (None, "guide")
+    if g.label in HOW_LABELS and rule is None and asks_how(text):
+        return None, None  # 순서 · 시기 · 방법 질문: 카드 없이 지식 답
+    return LABEL_DO.get(g.label), None
+
+
 def trades_in(text: str) -> list[str]:
     from app.agent.v3 import trades
 
@@ -228,9 +274,12 @@ async def _today(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolO
     return (TODAY if model["count"] else TODAY_NONE), ToolOut(data={}, cards=[card], task=task)
 
 
-async def _home(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut]:
+async def _home(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut] | None:
+    """집 정보 카드. 실측을 요청해 집 정보가 잠긴 공사는 고칠 수 없어서 카드를 다시 띄우지 않는다(None → 답만)."""
     async with SessionLocal() as s:
-        card, _ = await cards.home(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+        card, model = await cards.home(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+    if model["locked"]:
+        return None
     return HOME, ToolOut(data={}, cards=[card])
 
 
@@ -298,19 +347,24 @@ async def view_for(tc: ToolCtx, card_id: str | None) -> str | None:
 
 
 async def _knowledge(
-    tc: ToolCtx, text: str, found: list[str], card_id: str | None
+    tc: ToolCtx, text: str, found: list[str], card_id: str | None, step: str | None = "gate"
 ) -> tuple[str, ToolOut]:
-    """지식 · 공통 질문: 입구 관문 길의 단계 카드 + answer_only(공사 단계 화면, 목공만 물으면 목공 담당)."""
+    """지식 · 공통 질문: 단계 카드 + answer_only(공사 단계 화면, 목공만 물으면 목공 담당).
+    step: 'gate'면 입구 관문 길의 단계 카드, 길 이름(guide …)이면 그 길의 카드, None이면 카드 없음."""
     from app.agent.v3 import gate as gate_mod
     from app.agent.v3.schemas import Button
     from app.chat import service as chat_service
 
     out = ToolOut(data={})
-    if tc.surface == "customer":
-        g = gate_mod.gate(text, has_project=tc.project_id is not None)
-        step = await cards.step_card(tc, g.route)
-        if step is not None:
-            out.cards.append(step)
+    if tc.surface == "customer" and step is not None:
+        route = (
+            gate_mod.gate(text, has_project=tc.project_id is not None).route
+            if step == "gate"
+            else step
+        )
+        card = await cards.step_card(tc, route)
+        if card is not None:
+            out.cards.append(card)
     button = Button(route="trade", trade="mokgong") if found == ["mokgong"] else None
     view = await view_for(tc, card_id) if tc.surface == "customer" else None
     query = f"{text} 순서" if found and WHEN_WORK.search(text) else text
@@ -395,10 +449,9 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
 
 async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, ToolOut]:
     """무료 모드 답 한 번(글, 카드 · 행동 · 작업 카드). 글이 비면 부르는 쪽이 실패 문구를 쓴다."""
-    intent = intent_of(text, tc.surface)
     found = trades_in(text)
     if tc.surface == "vendor":
-        got = await _vendor(tc, text, intent)
+        got = await _vendor(tc, text, intent_of(text, "vendor"))
         if got is not None:
             return got
         said, out = await _knowledge(tc, text, found, card_id)
@@ -408,6 +461,7 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         return said, out
     if tc.project_id is None:
         return await _knowledge(tc, text, found, card_id)
+    intent, step = customer_intent(text)
     if intent in LINKED and found and "dobae" not in found:  # 업체 연결은 아직 도배만
         said = policy.DOBAE_ONLY if "mokgong" in found else OTHER_TRADE
         _, out = await _today(tc, text, found)
@@ -416,5 +470,9 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
     got = await handler(tc, text, found) if handler is not None else None
     if got is not None:
         return got
-    said, out = await _knowledge(tc, text, found, card_id)
+    # handler가 카드를 못 만들면: 잠긴 집 정보(home)는 카드 없이 답만, 그 밖(목공 표준견적서 없음 등)은
+    # 지금처럼 입구 관문 길의 단계 카드
+    if handler is not None:
+        step = None if intent == "home" else "gate"
+    said, out = await _knowledge(tc, text, found, card_id, step)
     return await fit_cards(tc, said, out), out
