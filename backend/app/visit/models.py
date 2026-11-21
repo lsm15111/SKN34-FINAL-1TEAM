@@ -51,6 +51,8 @@ CANCEL_CODES = ("changed", "other_vendor", "late_quote", "other")
 HALVES = ("am", "pm")  # 오전 · 오후
 WISH_SPAN_MAX = 62  # 희망 기간 · 업체 기간 최대 길이(일)
 EXCLUDED_MAX = 31
+# v4 반셀프: 요청에 남기는 직접 할 일 칩 키(project.diy.DIY와 같은 키, 0046 CHECK)
+DIY_KEYS = ("paint", "outlet", "light", "silicone", "handle", "clean")
 # 기록(visit_events.code) 값. CHECK는 두지 않는다(옛 값 full · out_of_area · resent · other_chosen · reselected)
 EVENT_CODES = (
     "asked",
@@ -230,6 +232,9 @@ class Visit(Base):
             "cancel_note is null or (cancel_code is not null and length(btrim(cancel_note)) > 0)",
             name="cancel_note",
         ),
+        CheckConstraint(
+            "diy <@ array[" + ", ".join(f"'{k}'" for k in DIY_KEYS) + "]::varchar[]", name="diy"
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
@@ -281,6 +286,8 @@ class Visit(Base):
     requote_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))  # '다시 받기'(D20)
     # v3 (0034): 요청 때 고객이 고른 벽지 사본(합지 economy · 실크 basic). 비면 공사 벽지
     grade: Mapped[str | None] = mapped_column(String(10))
+    # v4 (0046): 요청 때 고객이 '업체에 알릴 것'으로 승인한 직접 할 일 칩 사본(project.diy 키). 비면 알린 것 없음
+    diy: Mapped[list[str]] = mapped_column(ARRAY(String(10)), default=list, server_default="{}")
 
 
 class VisitPhoto(Base):

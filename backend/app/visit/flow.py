@@ -32,6 +32,7 @@ from app.visit import repository as repo
 from app.visit import service as svc
 from app.visit.models import (
     ATTEMPTS_MAX,
+    DIY_KEYS,
     SLOTS,
     WISH_SPAN_MAX,
     Shortlist,
@@ -358,12 +359,20 @@ async def remove_shortlist(
 
 
 async def request(
-    s: AsyncSession, user: User, project_id: uuid.UUID, data: VisitCreateIn, now: datetime
+    s: AsyncSession,
+    user: User,
+    project_id: uuid.UUID,
+    data: VisitCreateIn,
+    now: datetime,
+    *,
+    diy: list[str] | None = None,
 ) -> VisitCreateOut:
     """실측 요청 보내기 (v3): 담은 업체에만 · 희망 기간(62일 안) · 시도 번호 · 가견적 사본 · 공사 희망일
     사본(L04) · 프로젝트 잠금 · 담기 칸과 연결 · 답 기한 일(+48시간) · 업체 알림.
-    보낼 수 없는 업체는 만들지 않고 failed로 돌려준다(모두 안 되면 409)."""
+    보낼 수 없는 업체는 만들지 않고 failed로 돌려준다(모두 안 되면 409).
+    v4 반셀프: diy는 고객이 승인 카드에서 본 '업체에 알릴 것'(직접 할 일 칩 키)이에요. 요청마다 사본으로 고정해요."""
     today = svc.today_of(now)
+    told = [k for k in DIY_KEYS if k in set(diy or ())]
     if data.wish_start is None or data.wish_end is None:
         raise _invalid("희망 기간 시작과 끝을 같이 골라 주세요.", ["wish_end"])
     if data.wish_end < data.wish_start or (data.wish_end - data.wish_start).days > WISH_SPAN_MAX:
@@ -425,6 +434,7 @@ async def request(
             wish_end=data.wish_end,
             work_wish_on=work,
             grade=(picked[vid] or base) if data.trade == "dobae" else None,
+            diy=told,
             reply_due_at=deadline.reply_due(now),
             created_at=now,
         )
