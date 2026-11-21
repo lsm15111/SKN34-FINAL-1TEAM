@@ -157,7 +157,8 @@
 - kind는 제안 도구 이름에서 `propose_`를 뗀 것(home_info · visit_request · visit_slot · vendor_confirm · dates_accept · delay_accept · window_answer · decline · dates)이에요.
 - summary: `{title, amount_won?, amounts[], diff?, version?, rows[], file?, note?, approve_label}`. 금액 · 차액은 계산 엔진 값이에요.
 - 만료 까닭은 `result.reason`에 두고 `error_code`로 내보내요(DB의 error_code는 failed에만, 2장 CHECK): `due`(기한 지남) · `replaced`(같은 대상 새 제안) · `handled_elsewhere`(대상 상태가 비서 밖에서 바뀜, 아래).
-- 닫힌 행동을 승인하면 409예요: due는 `expired`, 그 밖은 `action_closed`(문구: replaced '새 카드로 바뀐 제안이에요.' · handled_elsewhere '화면에서 이미 처리했거나 상태가 바뀐 제안이에요.').
+- 닫힌 행동을 승인하면 409예요: due는 `expired`(문구 '기한이 지난 제안이에요. …'), 그 밖은 `action_closed`(문구: replaced '새 카드로 바뀐 제안이에요.' · handled_elsewhere '화면에서 이미 처리했거나 상태가 바뀐 제안이에요.').
+- 기능 오류로 실패한 행동은 고객에게 준 말을 `result.message`에 남겨요(턴 사실 '최근 처리한 카드'의 까닭, 2026-11-22).
 
 #### 화면에서 직접 처리한 제안 닫기(handled_elsewhere, 2026-11-21)
 - 사람이 v3 화면 단추(업체 확정 · 날짜 수락 · 기간 답하기 …)로 직접 처리하면 같은 대상의 비서 제안이 proposed로 남아요. sweep(2분)이 열린 제안(새 것부터 200개)의 대상 지금 상태를 읽기 조인으로 보고, 만든 때 상태(target_ver)와 다르면 `proposed → expired`, `result.reason = handled_elsewhere`로 닫아요.
@@ -166,7 +167,7 @@
 
 | 행동 kind | target_kind · target_ver | 닫는 때 |
 | --- | --- | --- |
-| home_info | project · rev | rev가 바뀜(집 정보 고침) · 잠김(실측 요청) |
+| home_info | project · rev(직접 할 일을 바꾸면 `rev:칩 지문`) | rev가 바뀜(집 정보 고침) · 잠김(실측 요청, 직접 할 일만 바꾸는 카드는 빼요) · 화면에서 직접 할 일 칩이 바뀜 |
 | visit_request | project · rev | rev가 바뀜 · 고른 업체 모두 살아 있는 실측이 생김(화면에서 직접 요청) |
 | visit_slot · window_answer · decline | visit · 만든 때 실측 상태 | 실측 상태가 바뀜(직접 고름 · 답함 · 닫힘) |
 | vendor_confirm | visit · 견적서 판 | 실측 상태가 quoted가 아님(직접 확정 · 다시 고르기 · 닫힘). 새 판은 승인 때 quote_changed로 새 제안 |
@@ -296,9 +297,11 @@
 4. approved로 2분 넘게 남은 행은 sweep이 failed로 바꿔요(다시 실행하지 않음).
 - 기능 함수가 여러 번 commit하는 실행(visit_request: 안 담은 업체 담기 → 요청)은 마지막 기능 함수 바로 앞에서 executed를 써요(담기가 먼저 commit돼도 행동은 executed가 아니에요).
 
-- 대상마다 열린 제안은 하나예요(`actions.offer` · `propose`). 같은 (사람, 대상)의 제안 만들기는 트랜잭션 잠금으로 줄 서요. 같은 제안(종류 · target_ver · payload)이 열려 있으면 턴이 달라도 새 행을 만들지 않고 그 행을 써요. 다르면 그 대상의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을 넣어요(예: 업체 기간 답하기 → 못 받아요).
+- 대상마다 열린 제안은 하나예요(`actions.offer` · `propose`). 같은 (사람, 대상)의 제안 만들기는 트랜잭션 잠금으로 줄 서요. 같은 제안(종류 · target_ver · payload)이 열려 있으면 턴이 달라도 새 행을 만들지 않고 그 행을 써요. 다르면 그 대상의 열린 제안 중 서로 바꾸는 묶음(같은 종류, 그리고 기간 답하기 ↔ 못 받아요 · 날짜 수락 ↔ 바뀐 날짜 수락)만 만료(replaced)로 바꾸고 새 행을 넣어요(예: 업체 기간 답하기 → 못 받아요). 같은 공사의 직접 할 일 · 집 정보 카드와 실측 요청 카드는 서로 바꾸지 않아요(2026-11-22).
   - 먼저 말 걸기는 같은 종류 · 같은 판의 열린 카드(대화에서 만든 것)를 덮지 않고 그 행을 써요.
-  - 거절한 제안은 대상 판 · 금액 · 날짜가 같으면 다시 만들지 않아요. 도구는 오류 대신 모델 값 state rejected('고객이 거절한 제안이에요')를 돌려줘요. 카드 단추로 직접 고른 턴(pressed)은 새로 만들어요.
+  - 거절한 제안은 대상 판 · 금액 · 날짜가 같으면 다시 만들지 않아요. 도구는 오류 대신 모델 값 state rejected('고객이 거절한 제안이에요')를 돌려줘요. 카드 단추로 직접 고른 턴(pressed)과 LLM 턴에서 고객이 분명히 해 달라고 한 말('저장해 주세요' 같은 부탁)은 새 결정이라 새로 만들어요. 거절 막기는 먼저 말 걸기 · 비서가 스스로 낸 제안에만 걸어요.
+  - 멱등 키(턴 · 종류 · 대상 · payload)가 같은 행이 닫혔거나 기한이 지났으면 새로 만들어요(먼저 말 걸기는 턴이 없어 키가 늘 같아요).
+  - 실행 중 기능 함수 안 읽기 도우미(표준견적서 · 예상 공정표)의 commit이 executed를 먼저 확정하지 않게, 승인 실행은 그 도우미를 executed 표시 앞에서 먼저 불러 맞춰요.
 - 업체 연결 도구(`recommend_vendors` · `compare_quotes` · `propose_visit_request`)는 trade가 dobae가 아니면 도구 오류 `dobae_only`('아직 도배 업체만 연결돼요. …')예요. `get_standard_quote`(mokgong) · 지식 답은 그대로예요.
 - 업체가 쓴 자유 글(견적서 벽지 사양 · 다른 날 제안 메모 · 날짜 바꾼 까닭)은 고객 카드의 `vendor_note`('업체가 적은 말', 연락처 가림 · 한 줄 · 40자, 넘으면 …)에만 둬요. 모델 값에는 있는지만(`vendor_note: true`) 가서 비서 문장 · 요약 · 버튼 문구로 옮겨지지 않아요. `quote_compare.cols[].paper`는 `vendor_note`로 바뀌었고 `visit_slots` · `schedule`(dates)에도 `vendor_note`가 있어요.
 

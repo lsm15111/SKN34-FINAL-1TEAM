@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import and_, delete, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,7 @@ from app.assistant.models import (
     AssistantTurn,
 )
 from app.chat.models import Chat, ChatMessage
-from app.project.models import Project
+from app.project.models import Project, ProjectCondition
 from app.schedule.models import DateProposal
 from app.shared.ids import uuid7
 from app.visit.models import LIVE, Visit
@@ -206,11 +206,10 @@ async def decided_of(
     closed: Sequence[str] = ("due", "handled_elsewhere"),
 ) -> list[AssistantAction]:
     """사람이 최근에 처리한 제안(실행됨 · 거절함 · 실행 못 함)과 실행 없이 닫힌 제안(만료 까닭이 closed), 처리한 때
-    (닫힌 제안은 만든 때) 새것부터. 턴 사실 '최근 처리한 카드'."""
-    shut = and_(
-        AssistantAction.status == "expired",
-        AssistantAction.result["reason"].astext.in_(list(closed)),
-    )
+    새것부터. 닫힌 제안은 기한이 지나 닫혔으면 기한(방금 닫힌 오래된 카드가 밀려나지 않게), 그 밖은 만든 때.
+    턴 사실 '최근 처리한 카드'."""
+    reason = AssistantAction.result["reason"].astext
+    shut = and_(AssistantAction.status == "expired", reason.in_(list(closed)))
     q = select(AssistantAction).where(
         AssistantAction.user_id == user_id,
         AssistantAction.surface == surface,
@@ -218,7 +217,11 @@ async def decided_of(
     )
     if project_id is not None:
         q = q.where(AssistantAction.project_id == project_id)
-    when = func.coalesce(AssistantAction.decided_at, AssistantAction.created_at)
+    due = and_(AssistantAction.status == "expired", reason == "due")
+    when = func.coalesce(
+        AssistantAction.decided_at,
+        case((due, AssistantAction.expires_at), else_=AssistantAction.created_at),
+    )
     rows = await s.scalars(
         q.order_by(when.desc()).limit(limit).execution_options(populate_existing=True)
     )
@@ -268,16 +271,22 @@ async def rejected_on(
 
 
 async def replace_open(
-    s: AsyncSession, user_id: uuid.UUID, target_kind: str, target_id: uuid.UUID, by: uuid.UUID
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    target_kind: str,
+    target_id: uuid.UUID,
+    by: uuid.UUID,
+    kinds: Sequence[str],
 ) -> list[AssistantAction]:
-    """같은 (사람, 대상)의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 바뀐 행을 돌려준다(대상마다 열린
-    제안 하나, 계약서 6장). by = 새 제안 id."""
+    """같은 (사람, 대상)의 열린 제안 중 종류가 kinds(서로 바꾸는 묶음, actions.swap_kinds)인 것을 만료(replaced)로
+    바꾸고 바뀐 행을 돌려준다. by = 새 제안 id."""
     res = await s.execute(
         update(AssistantAction)
         .where(
             AssistantAction.user_id == user_id,
             AssistantAction.target_kind == target_kind,
             AssistantAction.target_id == target_id,
+            AssistantAction.kind.in_(list(kinds)),
             AssistantAction.status == "proposed",
         )
         .values(status="expired", result={"reason": "replaced", "replaced_by": str(by)})
@@ -362,6 +371,21 @@ async def project_states(
         select(Project.id, Project.rev, Project.locked_at).where(Project.id.in_(list(ids)))
     )
     return {i: (rev, locked is not None) for i, rev, locked in rows}
+
+
+async def project_diys(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, set[str]]:
+    """공사 id → 직접 할 일 칩 줄의 키(모은 조건 diy.*). 줄이 없는 공사는 빠진다. 읽기 조인."""
+    if not ids:
+        return {}
+    rows = await s.execute(
+        select(ProjectCondition.project_id, ProjectCondition.key).where(
+            ProjectCondition.project_id.in_(list(ids)), ProjectCondition.key.like("diy.%")
+        )
+    )
+    out: dict[uuid.UUID, set[str]] = {}
+    for pid, key in rows:
+        out.setdefault(pid, set()).add(key)
+    return out
 
 
 async def visit_states(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
@@ -509,13 +533,20 @@ SETTLES: dict[str, tuple[str, ...]] = {
 }
 
 
-async def close_lines_of(s: AsyncSession, a: AssistantAction, reason: str = "acted") -> int:
-    """행동 a를 실행했다: 그 사람의 보이는 먼저 말 건 줄(sent · opened) 중 같은 대상의 승인 카드를 단 줄(새 카드로
-    바뀐 옛 카드 포함)과 같은 대상을 가리키는 줄(SETTLES)을 닫는다(expired · reason). 닫은 줄 수."""
+async def close_lines_of(
+    s: AsyncSession,
+    a: AssistantAction,
+    reason: str = "acted",
+    kinds: Sequence[str] | None = None,
+) -> int:
+    """행동 a를 실행했다: 그 사람의 보이는 먼저 말 건 줄(sent · opened) 중 같은 대상 · 같은 묶음 종류(kinds, 없으면
+    a의 종류만)의 승인 카드를 단 줄(새 카드로 바뀐 옛 카드 포함)과 같은 대상을 가리키는 줄(SETTLES)을 닫는다(expired ·
+    reason). 다른 종류 카드를 단 줄(예: 업체 빠짐 줄의 실측 요청 카드)은 직접 할 일 실행으로 닫지 않는다. 닫은 줄 수."""
     same = select(AssistantAction.id).where(
         AssistantAction.user_id == a.user_id,
         AssistantAction.target_kind == a.target_kind,
         AssistantAction.target_id == a.target_id,
+        AssistantAction.kind.in_(list(kinds or (a.kind,))),
     )
     hit = AssistantNudge.action_id.in_(same)
     if a.kind in SETTLES:

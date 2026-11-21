@@ -1,16 +1,23 @@
 """대기 행동 (계약서 5장 actions.execute · 7장 함정 다섯). 비서는 행만 만들고, 실행은 사람이 누른 승인으로만 한다.
 
-- propose(offer): 대상마다 열린 제안은 하나다. 같은 (사람, 대상)의 제안 만들기는 트랜잭션 잠금으로 줄 선다.
+- propose(offer): 대상마다 서로 바꾸는 묶음(SWAPS, 없으면 같은 종류)의 열린 제안은 하나다. 같은 (사람, 대상)의
+  제안 만들기는 트랜잭션 잠금으로 줄 선다.
   - 같은 제안(종류 · 대상 판 · payload)이 열려 있으면 새로 만들지 않고 그 행을 쓴다(턴 · 먼저 말 걸기가 달라도).
   - 먼저 말 걸기는 같은 종류 · 같은 대상 판의 열린 제안이 있으면 내용이 달라도 그 행을 쓴다(대화에서 고른 것을
     덮지 않는다).
   - 고객이 거절한 제안과 새 사실(대상 판 · 금액 · 날짜)이 같으면 다시 만들지 않고 거절한 행을 돌려준다(피클 규칙:
-    사용자가 취소한 일은 다시 시작하지 않는다). 사람이 카드 단추를 누른 고르기(pressed)는 새로 정한 것이라 만든다.
-  - 그 밖이면 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을 넣는다(멱등 키가 같으면 그 행).
+    사용자가 취소한 일은 다시 시작하지 않는다). 사람이 새로 정한 제안(pressed: 카드 단추 · 이번 턴에 분명히 부탁한
+    말)은 만든다.
+  - 그 밖이면 같은 묶음의 열린 제안을 만료(replaced)로 바꾸고 새 행을 넣는다. 다른 묶음(예: 직접 할 일 ↔ 실측
+    요청)은 같은 공사여도 그대로 둔다.
+  - 멱등 키가 같은 행이 열려 있고 기한 전이면 그 행, 승인 · 실행됐으면 그 행을 돌려준다. 닫혔거나 기한이 지난 행이면
+    지금 시각을 섞은 키로 새로 만든다(먼저 말 걸기는 턴이 없어 키가 늘 같다).
   commit은 부르는 쪽(도구)이 한다. action 이벤트는 commit 뒤에 보낸다.
 - execute(승인): tx1 proposed → approved(조건부 UPDATE, 만료 전) commit → tx2 기능 함수 바로 앞에서
-  approved → executed(mark)를 쓰고 기능 함수의 commit으로 같이 확정한다. AppError면 rollback하고 새 트랜잭션에서
-  failed(기능 오류 코드)로 바꾼 뒤 409. 견적서가 새 판(quote_changed)이면 새 판 + 차액으로 새 제안을 만든다.
+  approved → executed(mark)를 쓰고 기능 함수의 commit으로 같이 확정한다. 기능 함수 안 읽기 도우미의 commit(낡은
+  표준견적서 · 예상 공정표 새 판 저장)이 mark를 먼저 확정하지 않게 tx2 첫머리(_ready)에서 미리 맞춘다. AppError면
+  rollback하고 새 트랜잭션에서 failed(기능 오류 코드 · 고객에게 준 말)로 바꾼 뒤 409. 견적서가 새 판(quote_changed)이면
+  새 판 + 차액으로 새 제안을 만든다.
 - executed를 다시 승인하면 같은 결과(200). rejected · expired · failed는 409. approved는 처리 중(409 in_progress).
 - 만료 sweep: 기한 지난 proposed → expired(due), approved로 2분 넘게 남은 행 → failed 'stalled'(다시 실행 안 함).
   대상 상태가 비서 밖(화면 단추)에서 바뀐 proposed → expired(handled_elsewhere).
@@ -21,7 +28,7 @@ import json
 import logging
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 
 from sqlalchemy.exc import IntegrityError
@@ -43,13 +50,29 @@ log = logging.getLogger(__name__)
 STALL = timedelta(minutes=2)  # approved로 이만큼 남으면 멈춘 것으로 본다
 DEFAULT_TTL = timedelta(days=3)
 NOT_FOUND = "제안을 찾을 수 없어요."
+EXPIRED = "기한이 지난 제안이에요. 비서에게 다시 만들어 달라고 해 주세요."
+FAILED = "실행하지 못했어요. 다시 해 주세요."  # 기능 오류가 아닌 실패(종류 이름만 로그)
+# 닫힌 제안을 누를 때 · 턴 사실 '최근 처리한 카드'의 까닭 말(상태, 만료면 result.reason)
 CLOSED = {
     "rejected": "거절한 제안이에요.",
-    "expired": "기한이 지난 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.",
+    "expired": EXPIRED,
+    "due": EXPIRED,  # 만료 까닭: 기한 지남
     "replaced": "새 카드로 바뀐 제안이에요.",
     "failed": "실행하지 못한 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.",
     "handled_elsewhere": "화면에서 이미 처리했거나 상태가 바뀐 제안이에요.",
 }
+# 바꿔치기 묶음: 같은 대상에서 하나를 고르면 다른 것은 뜻이 없어지는 종류끼리만 열린 제안을 바꾼다. 묶음에 없는
+# 종류는 같은 종류끼리만 바꾼다(직접 할 일 · 집 정보(home_info)와 실측 요청(visit_request)은 같은 공사여도 따로다)
+SWAPS: tuple[frozenset[str], ...] = (
+    frozenset({"window_answer", "decline"}),  # 업체: 요청에 기간으로 답하기 ↔ 못 받아요
+    frozenset({"dates_accept", "delay_accept"}),  # 고객: 같은 공사 날짜의 수락
+)
+
+
+def swap_kinds(kind: str) -> tuple[str, ...]:
+    """kind와 서로 바꾸는 종류(자기 포함, 이름순)."""
+    return tuple(sorted(next((g for g in SWAPS if kind in g), frozenset({kind}))))
+
 
 Mark = Callable[[dict], Awaitable[None]]
 Executor = Callable[[AsyncSession, User, AssistantAction, datetime, Mark], Awaitable[object]]
@@ -86,9 +109,19 @@ def out(a: AssistantAction) -> ActionOut:
     )
 
 
-def idem_key(turn_id: uuid.UUID | None, kind: str, target_id: uuid.UUID, payload: dict) -> str:
-    """같은 턴의 같은 제안은 한 행(UNIQUE(user_id, idem_key)). 턴이 다르면 새 행(옛 것은 replaced)."""
-    raw = json.dumps([str(turn_id), kind, str(target_id), payload], sort_keys=True, default=str)
+def idem_key(
+    turn_id: uuid.UUID | None,
+    kind: str,
+    target_id: uuid.UUID,
+    payload: dict,
+    again: datetime | None = None,
+) -> str:
+    """같은 턴의 같은 제안은 한 행(UNIQUE(user_id, idem_key)). 턴이 다르면 새 행(옛 것은 replaced). 먼저 말 걸기는
+    턴이 없어 같은 제안이면 키가 늘 같다: 그 행이 닫힌 뒤 다시 만들 때는 again(지금 시각)을 섞는다."""
+    parts = [str(turn_id), kind, str(target_id), payload]
+    if again is not None:
+        parts.append(again.isoformat())
+    raw = json.dumps(parts, sort_keys=True, default=str)
     return hashlib.sha256(raw.encode()).hexdigest()[:40]
 
 
@@ -140,11 +173,18 @@ async def offer(
     origin: str = "turn",
     pressed: bool = False,
 ) -> Offered:
-    """제안 하나(모듈 머리 규칙). commit은 부르는 쪽이 한다. pressed = 사람이 카드 단추로 고른 제안."""
+    """제안 하나(모듈 머리 규칙). commit은 부르는 쪽이 한다. pressed = 사람이 새로 정한 제안(카드 단추로 고름 ·
+    이번 턴에 분명히 해 달라고 함): 거절한 같은 제안도 다시 만든다."""
     key = idem_key(turn_id, kind, target_id, payload)
     got = await repo.action_by_idem(s, user.id, key)
     if got is not None:
-        return Offered(got, [], "same" if got.status == "proposed" else got.status)
+        if got.status == "proposed" and got.expires_at > now:
+            return Offered(got, [], "same")
+        if got.status in ("approved", "executed"):
+            return Offered(got, [], got.status)  # 사람이 승인한 같은 제안: 다시 만들지 않는다
+        # 닫힌 행(기한 지남 · 바뀜 · 화면에서 처리 · 실패 · 거절) · 기한이 지난 행: 같은 키로는 새 행을 넣을 수 없어
+        # 지금 시각을 섞은 키로 새로 만든다. 거절한 같은 제안은 아래 rejected_on이 막는다
+        key = idem_key(turn_id, kind, target_id, payload, again=now)
     exp = expires_at or now + DEFAULT_TTL
     if exp <= now:
         raise AppError(409, "expired", "기한이 지나 제안할 수 없어요.")
@@ -152,7 +192,8 @@ async def offer(
     facts = summary.model_dump(mode="json", exclude_none=True)
     await repo.lock_target(s, user.id, target_id)
     for a in await repo.open_on(s, user.id, target_kind, target_id):
-        if a.expires_at <= now:
+        if a.expires_at <= now:  # 정리(2분) 전이라 열려 있는 기한 지난 행: 기한 지남으로 닫는다
+            await repo.set_action(s, a.id, ["proposed"], status="expired", result={"reason": "due"})
             continue
         if (a.kind, a.target_ver, a.payload) == (kind, target_ver, body):
             return Offered(a, [], "same")  # 같은 대상의 같은 제안이 열려 있다: 새로 만들지 않는다
@@ -163,7 +204,7 @@ async def offer(
             if same_facts(r, target_ver, body, facts):
                 return Offered(r, [], "rejected")
     new_id = uuid7()
-    closed = await repo.replace_open(s, user.id, target_kind, target_id, new_id)
+    closed = await repo.replace_open(s, user.id, target_kind, target_id, new_id, swap_kinds(kind))
     row = AssistantAction(
         id=new_id,
         user_id=user.id,
@@ -303,10 +344,12 @@ async def execute(
             if row is None:
                 raise AppError(409, "stale", "그사이 상태가 바뀌었어요. 새로 불러올게요.")
             # 이 대상의 먼저 말 건 줄은 할 일이 끝났다: 정리(2분)를 기다리지 않고 같은 트랜잭션에서 닫는다
-            await repo.close_lines_of(s, a)
+            await repo.close_lines_of(s, a, kinds=swap_kinds(a.kind))
             marked = True
 
         try:
+            # 기능 함수 안 읽기 도우미의 commit이 mark를 먼저 확정하지 않게 미리 맞춘다
+            await _ready(s, user, a, now)
             await EXECUTORS[a.kind](s, user, a, now, mark)
             if not marked:  # 기능 함수가 commit하지 않는 실행(없어야 함)
                 raise RuntimeError("실행 표시 없음")
@@ -314,25 +357,62 @@ async def execute(
             await s.rollback()
             visit_service.drop_later(s)
             schedule_service.drop_later(s)
-            await _fail(user, a, e.code, now)
+            await _fail(user, a, e.code, now, e.message)
             raise AppError(409, e.code, e.message) from None
         except Exception as e:  # noqa: BLE001 - 어떤 실패든 failed로 남긴다(종류 이름만 로그)
             await s.rollback()
             visit_service.drop_later(s)
             schedule_service.drop_later(s)
             log.warning("비서 행동 실행 실패 (%s, %s)", a.kind, type(e).__name__)
-            await _fail(user, a, "error", now)
-            raise AppError(409, "action_failed", "실행하지 못했어요. 다시 해 주세요.") from None
+            await _fail(user, a, "error", now, FAILED)
+            raise AppError(409, "action_failed", FAILED) from None
         await visit_service.flush_later(s)
         await schedule_service.flush_later(s)
         done = await repo.action_owned(s, user.id, a.id, surface)
         return out(done)  # type: ignore[arg-type]
 
 
-async def _fail(user: User, a: AssistantAction, code: str, now: datetime) -> None:
-    """approved → failed(code). 견적서가 새 판이면 새 판으로 다시 제안한다(supersedes)."""
+# 기능 함수가 검사 앞에서 읽기 도우미를 부르는 종류: 표준견적서(quote.ensure_standard) · 예상 공정표
+# (schedule.ensure_expected). 도우미는 낡았으면 새 판을 저장하고 commit한다
+READY_STANDARD = frozenset({"visit_request", "visit_again"})
+READY_PLAN = frozenset({"dates_accept", "delay_accept", "date_change"})
+
+
+async def _ready(s: AsyncSession, user: User, a: AssistantAction, now: datetime) -> None:
+    """mark(executed) 앞에서 기능 함수가 읽을 표준견적서 · 예상 공정표를 같은 도우미로 미리 맞춘다. 맞추는 commit이
+    mark 뒤에 일어나면 기능 검사가 실패해도 executed가 먼저 확정되기 때문이다(_date_change의 schedule_for와 같음).
+    여기 AppError는 기능 오류와 같이 failed로 남는다. schedule · quote service는 그대로 쓴다."""
+    from app.project import service as project_service
+    from app.quote import service as quote_service
+    from app.schedule import service as schedule_service
+
+    today = _day(now)
+    if a.kind == "dates":  # 업체 공사 날짜 보내기(propose_dates)는 그 공사의 예상 공정표를 읽는다
+        from app.schedule.models import Deal
+
+        d = await s.get(Deal, uuid.UUID(a.payload["deal_id"]))
+        if d is not None and d.vendor_id == user.id:
+            p = await project_service.get_out(s, d.project_id)
+            await schedule_service.ensure_expected(s, p, today)
+        return
+    if a.project_id is None or a.kind not in READY_STANDARD | READY_PLAN:
+        return
+    p = await project_service.get_for(s, user, a.project_id)
+    if a.kind in READY_STANDARD:
+        await quote_service.ensure_standard(s, p)
+    if a.kind in READY_PLAN:
+        await schedule_service.ensure_expected(s, p, today)
+
+
+async def _fail(
+    user: User, a: AssistantAction, code: str, now: datetime, message: str | None = None
+) -> None:
+    """approved → failed(code). 고객에게 준 말(message)을 result에 남긴다(턴 사실 '최근 처리한 카드'의 까닭).
+    견적서가 새 판이면 새 판으로 다시 제안한다(supersedes)."""
     async with SessionLocal() as s:
         result: dict = {"reason": code}
+        if message:
+            result["message"] = message
         if code == "quote_changed" and a.kind == "vendor_confirm":
             try:
                 fresh = await _remake_confirm(s, user, a, now)
@@ -404,11 +484,13 @@ def confirm_summary(
     days: int | None,
     valid_until: date | None,
 ) -> ActionSummary:
+    from app.assistant.tools.cards import md_week
+
     rows = []
     if days:
         rows.append(SummaryRow(label="공사 기간", value=f"{days}일"))
     if valid_until:
-        rows.append(SummaryRow(label="유효기간", value=f"{valid_until.isoformat()}까지"))
+        rows.append(SummaryRow(label="유효기간", value=f"{md_week(valid_until)}까지"))
     return ActionSummary(
         title=f"{euro(vendor_name)} 확정",
         amount_won=total,
@@ -449,6 +531,15 @@ class Targets:
     proposals: dict[uuid.UUID, str]  # 업체가 낸 공사 날짜 → 상태
     dates: dict[uuid.UUID, str]  # 업체 확정 → 공사 날짜 상태(dates_state)
     live: set[tuple[uuid.UUID, str, uuid.UUID | None]]  # 살아 있는 실측 (공사, 공정, 업체)
+    diys: dict[uuid.UUID, str] = field(default_factory=dict)  # 공사 → 직접 할 일 칩 지문(diy_ver)
+
+
+def home_ver(rev: int, fields: dict, picked: list[str] | None) -> str:
+    """집 정보 제안의 target_ver: 공사 rev. 직접 할 일(diy)을 바꾸는 제안이면 지금 칩 지문을 붙인다('3:d05').
+    칩은 rev를 올리지 않아서, 화면에서 칩을 바꾼 뒤 옛 카드를 승인하면 옛 목록으로 덮지 않게 판으로 본다."""
+    from app.project.diy import diy_ver
+
+    return f"{rev}:{diy_ver(picked)}" if "diy" in fields else str(rev)
 
 
 def moved(a: AssistantAction, t: Targets) -> bool:
@@ -458,9 +549,12 @@ def moved(a: AssistantAction, t: Targets) -> bool:
     match a.kind:
         case "home_info" | "visit_request":
             p = t.projects.get(a.target_id)
-            if p is None or str(p[0]) != a.target_ver:
+            rev, _, chips = (a.target_ver or "").partition(":")
+            if p is None or str(p[0]) != rev:
                 return True
             if a.kind == "home_info":
+                if chips and t.diys.get(a.target_id) != chips:  # 화면에서 직접 할 일 칩이 바뀜
+                    return True
                 # 잠겨도 직접 할 일만 바꾸는 제안은 실행할 수 있다(_home_info와 같음)
                 return p[1] and set(pl.get("fields") or {}) != {"diy"}
             ids = [uuid.UUID(v) for v in pl.get("vendor_ids", [])]
@@ -482,6 +576,7 @@ async def close_handled() -> int:
     """sweep: 대상(target_kind · target_id)의 상태가 비서 밖(화면 단추 · 상대의 응답)에서 바뀐 열린 제안을 닫는다.
     proposed → expired, result.reason = handled_elsewhere(화면 error_code). 그 행동을 단 먼저 말 걸기 줄도 닫는다.
     바꾸기는 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이긴다. 닫은 수."""
+    from app.project.diy import diy_ver, picked_of
     from app.schedule import service as schedule_service
 
     async with SessionLocal() as s:
@@ -492,12 +587,14 @@ async def close_handled() -> int:
         def of(kind: str) -> list[uuid.UUID]:
             return list({a.target_id for a in rows if a.target_kind == kind})
 
+        chips = await repo.project_diys(s, of("project"))
         t = Targets(
             projects=await repo.project_states(s, of("project")),
             visits=await repo.visit_states(s, of("visit")),
             proposals=await repo.proposal_states(s, of("proposal")),
             dates=await schedule_service.dates_states(s, of("deal")),
             live=await repo.live_visits(s, of("project")),
+            diys={pid: diy_ver(picked_of(chips.get(pid, ()))) for pid in of("project")},
         )
         gone = [a.id for a in rows if moved(a, t)]
         gone += await aftercare.moved_ids(s, rows)  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
@@ -519,18 +616,24 @@ def _stale(message: str) -> AppError:
 
 async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
     """집 정보 칸이 바뀌면 project.service.update(rev가 오르고 철거 범위도 같이 쓴다), 철거 범위만 바뀌면
-    모은 조건만 쓴다(set_demolition, rev 그대로). 한 트랜잭션이다."""
+    모은 조건만 쓴다(set_demolition, rev 그대로). 한 트랜잭션이다. 공사 행을 먼저 잠가 판(rev · 직접 할 일 칩 지문)
+    검사와 저장 사이에 화면 저장(PUT /diy · 집 정보 고치기)이 끼지 않게 한다."""
     from pydantic import ValidationError
 
     from app.calc.dobae import DEMOLITION_KEY
+    from app.project import diy
     from app.project import service as project_service
     from app.project.schemas import HomeInfoIn
 
     pid = a.project_id
+    await project_service.lock(s, pid)  # type: ignore[arg-type]
     p = await project_service.get_for(s, user, pid)  # type: ignore[arg-type]
-    if p.home is None or str(p.rev) != a.target_ver:
+    rev, chipped, _ = (a.target_ver or "").partition(":")  # 칩 지문이 없는 판(옛 카드)은 rev만 본다
+    if p.home is None or str(p.rev) != rev:
         raise _stale("집 정보가 그사이 바뀌었어요. 비서에게 다시 물어봐 주세요.")
     fields = dict(a.payload["fields"])
+    if chipped and home_ver(p.rev, fields, await diy.diy_for(s, pid)) != a.target_ver:  # type: ignore[arg-type]
+        raise _stale("직접 할 일이 화면에서 바뀌었어요. 비서에게 다시 물어봐 주세요.")
     diy_keys = fields.pop("diy", None)  # 직접 할 일(모은 조건): 요청 뒤에도 바꿀 수 있다
     if p.locked and (fields or diy_keys is None):
         raise AppError(409, "locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
@@ -553,8 +656,6 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
     if demolition is not None:
         await project_service.set_demolition(s, pid, demolition)  # type: ignore[arg-type]
     if diy_keys is not None:
-        from app.project import diy
-
         await diy.set_diy(s, pid, list(diy_keys))  # type: ignore[arg-type]
     await s.commit()
 
