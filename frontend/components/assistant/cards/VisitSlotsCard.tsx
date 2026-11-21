@@ -13,7 +13,7 @@ import { chosenVendors, isWish } from "./picks";
 import type { CardProps } from "./types";
 import c from "./cards.module.css";
 
-export function VisitSlotsCard({ card, ctx }: CardProps<"visit_slots">) {
+export function VisitSlotsCard({ card, ctx, old }: CardProps<"visit_slots">) {
   const d = card.data;
   const before = isWish(d);
   // 고른 것: 화면에서 고른 것(이 카드 안 이름표일 때) → 서버가 고른 것
@@ -25,11 +25,33 @@ export function VisitSlotsCard({ card, ctx }: CardProps<"visit_slots">) {
     ctx.mark(card.card_id, [ref]);
     ctx.send(text, { card_id: card.card_id, choice });
   };
+  const title = before ? "희망 기간 어때요?" : "이 시간 어때요?";
+  const sub = `${d.vendor_name}${d.window ? ` · ${rangeText(d.window.start, d.window.end)}` : ""}`;
+  if (old) {
+    // 할 일이 끝난 줄의 카드: 보낸 때 후보만 글로 남겨요(고르기 · 달력 단추 없음)
+    const rows = before
+      ? d.wishes.map((w) => ({ ref: w.ref, main: rangeText(w.start, w.end, { weekday: true }), sub: `업체 빈 반나절 ${w.open_count}칸` }))
+      : d.candidates.map((s) => ({ ref: s.ref, main: halfDayText(s.day, s.half, true), sub: whyText(s.why).join(" · ") }));
+    return (
+      <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
+        <div className={k.top}>
+          <h3 id={`${card.card_id}-t`}>{title}</h3>
+          <span className={`${k.muted} ${k.num}`}>{sub}</span>
+        </div>
+        {rows.length ? (
+          <ul className={c.cands} aria-label={`${d.vendor_name} ${before ? "실측 희망 기간 후보" : "실측 시간 후보"}`}>
+            {rows.map((r) => <li key={r.ref} className={c.candOld}><b className={k.num}>{r.main}</b>{r.sub ? <small className={k.num}>{r.sub}</small> : null}</li>)}
+          </ul>
+        ) : null}
+        {d.vendor_note ? <blockquote className={c.vnote}><b>업체가 적은 말</b>{d.vendor_note}</blockquote> : null}
+      </section>
+    );
+  }
   return (
     <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
-        <h3 id={`${card.card_id}-t`}>{before ? "희망 기간 어때요?" : "이 시간 어때요?"}</h3>
-        <span className={`${k.muted} ${k.num}`}>{d.vendor_name}{d.window ? ` · ${rangeText(d.window.start, d.window.end)}` : ""}</span>
+        <h3 id={`${card.card_id}-t`}>{title}</h3>
+        <span className={`${k.muted} ${k.num}`}>{sub}</span>
       </div>
       {before ? (
         <ul className={c.cands} role="radiogroup" aria-label={`${d.vendor_name} 실측 희망 기간 후보`}>

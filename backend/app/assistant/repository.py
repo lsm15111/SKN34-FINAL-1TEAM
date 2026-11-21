@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import delete, func, or_, select, update
+from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,15 @@ async def messages(
         q.order_by(ChatMessage.turn.desc(), (ChatMessage.role == "assistant").desc()).limit(limit)
     )
     return list(reversed(rows.all()))
+
+
+async def turn_started(s: AsyncSession, chat_id: uuid.UUID, turn: int) -> datetime | None:
+    """그 턴부터 첫 말 시각. 대화 기록 쪽 사이 경계: 먼저 말 건 줄은 보낸 때가 이 시각 앞이면 앞 쪽에 끼운다."""
+    return await s.scalar(
+        select(func.min(ChatMessage.created_at)).where(
+            ChatMessage.chat_id == chat_id, ChatMessage.turn >= turn
+        )
+    )
 
 
 # ---- 턴 ----
@@ -509,6 +518,48 @@ async def shown_nudges(
         q = q.where(AssistantNudge.project_id == project_id)
     if since is not None:
         q = q.where(AssistantNudge.sent_at >= since)
+    rows = await s.scalars(
+        q.order_by(AssistantNudge.sent_at.desc())
+        .limit(limit)
+        .execution_options(populate_existing=True)
+    )
+    return list(rows.all())
+
+
+SETTLED = ("acted", "handled")  # 할 일이 끝나 닫은 줄의 까닭: 대화 기록에 '완료'로 남는다
+
+
+async def feed_nudges(
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    surface: str,
+    project_id: uuid.UUID | None,
+    *,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    settled: bool = False,
+    limit: int = 30,
+) -> list[AssistantNudge]:
+    """대화 기록 한 쪽에 끼울 먼저 말 건 줄(새것부터): 보이는 줄(sent · opened)과, settled면 할 일이 끝나 닫힌 줄
+    (expired acted · handled, '완료'로 남김). 보낸 때가 [since, until) 안인 줄만. 고객은 그 공사 것만.
+    닫은 줄(dismissed) · 새 줄에 밀린 줄(replaced)은 오지 않는다."""
+    hit = AssistantNudge.status.in_(SHOWN)
+    if settled:
+        done = and_(AssistantNudge.status == "expired", AssistantNudge.reason.in_(SETTLED))
+        hit = or_(hit, done)
+    q = select(AssistantNudge).where(
+        AssistantNudge.user_id == user_id,
+        AssistantNudge.surface == surface,
+        AssistantNudge.sent_at.is_not(None),
+        AssistantNudge.body.is_not(None),
+        hit,
+    )
+    if project_id is not None:
+        q = q.where(AssistantNudge.project_id == project_id)
+    if since is not None:
+        q = q.where(AssistantNudge.sent_at >= since)
+    if until is not None:
+        q = q.where(AssistantNudge.sent_at < until)
     rows = await s.scalars(
         q.order_by(AssistantNudge.sent_at.desc())
         .limit(limit)

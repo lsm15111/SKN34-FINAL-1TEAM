@@ -14,13 +14,14 @@ import c from "./cards.module.css";
 const yes = (v: boolean | null | undefined, miss = "안 적혀 있어요") => (v === true ? "포함" : v === false ? "빠짐" : <em className={c.miss}>{miss}</em>);
 const months = (n: number | null | undefined) => (n == null ? "—" : n % 12 === 0 ? `${n / 12}년` : `${n}개월`);
 
-export function QuoteCompareCard({ card, ctx }: CardProps<"quote_compare">) {
+export function QuoteCompareCard({ card, ctx, old }: CardProps<"quote_compare">) {
   const d = card.data;
   const cols = d.cols;
   const td = (x: CompareCol, v: React.ReactNode) => <td key={x.visit_id} className={x.state === "waiting" ? c.waitCol : undefined}>{x.state === "waiting" ? "" : v}</td>;
   const deal = ctx.lastAction("vendor_confirm");
   const decided = !!deal && (deal.status === "executed" || (deal.status === "proposed" && ctx.handledOf(deal.action_id)));
-  const pickable = decided ? [] : cols.filter((x) => x.state === "quoted" && !x.expired && x.ref);
+  // 할 일이 끝난 줄의 카드(old)는 보낸 때 표만 남겨요(확정 · 물을 말 · 크게 보기 단추 없음)
+  const pickable = decided || old ? [] : cols.filter((x) => x.state === "quoted" && !x.expired && x.ref);
   return (
     <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
@@ -65,15 +66,17 @@ export function QuoteCompareCard({ card, ctx }: CardProps<"quote_compare">) {
           ))}
         </div>
       ) : null}
-      {d.ask_chips.length ? (
+      {d.ask_chips.length && !old ? (
         <div className={c.askTo}>
           <span>업체에 물을 말</span>
           {d.ask_chips.map((q) => <button key={q} type="button" className={`${k.chip} ${k.chipSm} ${k.chipWrap}`} disabled={ctx.busy} onClick={() => ctx.send(q)}><I n="chat" />{q}</button>)}
         </div>
       ) : null}
-      <div className={k.row}>
-        <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>비교표 크게 보기</Link>
-      </div>
+      {old ? null : (
+        <div className={k.row}>
+          <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>비교표 크게 보기</Link>
+        </div>
+      )}
     </section>
   );
 }

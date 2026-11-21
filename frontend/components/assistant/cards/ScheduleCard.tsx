@@ -14,7 +14,7 @@ import c from "./cards.module.css";
 /** 수락할 공사 날짜 제안 이름표(backend assistant/schemas.py ScheduleData, 수락 전 날짜일 때만) */
 type Proposal = { proposal_ref?: string | null; proposal_kind?: "dates_accept" | "delay_accept" | null };
 
-export function ScheduleCard({ card, ctx }: CardProps<"schedule">) {
+export function ScheduleCard({ card, ctx, old }: CardProps<"schedule">) {
   const d: typeof card.data & Proposal = card.data;
   const final = d.phase === "final";
   const accept = !final && d.proposal_ref && d.proposal_kind && !d.conflicts.length ? `${d.proposal_kind}:${d.proposal_ref}` : null;
@@ -43,16 +43,19 @@ export function ScheduleCard({ card, ctx }: CardProps<"schedule">) {
         <DecidedLine>다른 공정과 겹치지 않아요</DecidedLine>
       )}
       {d.vendor_note ? <blockquote className={c.vnote}><b>업체가 적은 말</b>{d.vendor_note}</blockquote> : null}
-      <div className={k.row}>
-        {accept ? (
-          <button type="button" className={`${k.btn} ${k.sm} ${k.pri}`} disabled={ctx.busy}
-            onClick={() => ctx.send("이 날짜로 수락할래요", { card_id: card.card_id, choice: accept })}>
-            이 날짜로 수락
-          </button>
-        ) : null}
-        <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>공정표 열기</Link>
-        {d.ics_href ? <a className={`${k.btn} ${k.sm}`} href={d.ics_href} download><I n="calendar" />달력에 넣기</a> : null}
-      </div>
+      {/* 할 일이 끝난 줄의 카드(old)는 보낸 때 날짜만 남겨요(수락 · 열기 단추 없음) */}
+      {old ? null : (
+        <div className={k.row}>
+          {accept ? (
+            <button type="button" className={`${k.btn} ${k.sm} ${k.pri}`} disabled={ctx.busy}
+              onClick={() => ctx.send("이 날짜로 수락할래요", { card_id: card.card_id, choice: accept })}>
+              이 날짜로 수락
+            </button>
+          ) : null}
+          <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>공정표 열기</Link>
+          {d.ics_href ? <a className={`${k.btn} ${k.sm}`} href={d.ics_href} download><I n="calendar" />달력에 넣기</a> : null}
+        </div>
+      )}
     </section>
   );
 }

@@ -499,7 +499,8 @@ async def feed_for(
     limit: int = FEED_LIMIT,
 ) -> FeedPage:
     """대화 기록 한 쪽(오래된 것부터). 카드는 턴에 남긴 것, 승인 카드는 지금 상태(새 판이면 새 행동)로 그린다.
-    첫 쪽(지금, before 없음)에는 먼저 말 건 줄(보낸 · 연 것)을 보낸 때 자리에 끼운다(대화가 없어도)."""
+    먼저 말 건 줄은 보낸 때 자리에 끼운다(대화가 없어도): 그 쪽 말 사이에 보낸 줄만(첫 쪽은 맨 뒤까지, 앞 쪽은
+    다음 쪽 첫 말 앞까지). 고객은 할 일이 끝나 닫힌 줄(acted · handled)도 '완료'로 남긴다(settled)."""
     from app.assistant import proactive
     from app.assistant.tools import cards
     from app.project import service as project_service
@@ -515,6 +516,7 @@ async def feed_for(
         if surface == "customer":
             await project_service.get_for(s, user, project_id)
         chat = await repo.assistant_chat(s, user.id, project_id)
+        since = until = None
         if chat is not None:
             rows = await repo.messages(s, chat.id, limit, before)
             turns = {
@@ -528,14 +530,20 @@ async def feed_for(
                 if before is None
                 else []
             )
-        if before is None:
-            full = len(rows) == limit and bool(rows)
-            nudges = await repo.shown_nudges(
+            # 쪽 경계는 턴 첫 말 시각: 앞 쪽(before)의 끝과 그다음 쪽의 처음이 같은 값이라 줄이 빠지거나 겹치지 않는다
+            if _has_older(rows, limit):
+                since = await repo.turn_started(s, chat.id, rows[0].turn)
+            if before is not None:
+                until = await repo.turn_started(s, chat.id, before)
+        if before is None or until is not None:
+            nudges = await repo.feed_nudges(
                 s,
                 user.id,
                 surface,
                 project_id if surface == "customer" else None,
-                since=rows[0].created_at if full else None,
+                since=since,
+                until=until,
+                settled=surface == "customer",
                 limit=NUDGE_FEED,
             )
             acts.update(
@@ -543,7 +551,11 @@ async def feed_for(
                     s, user.id, [n.action_id for n in nudges if n.action_id not in (None, *acts)]
                 )
             )
-            if surface == "customer" and any(n.trigger in TASK_TRIGGERS for n in nudges):
+            if (
+                before is None
+                and surface == "customer"
+                and any(n.trigger in TASK_TRIGGERS for n in nudges)
+            ):
                 task = await cards.visit_task_for(s, user, project_id, today_seoul(), now)
         later = {
             uuid.UUID(a.result["superseded_by"])
@@ -588,12 +600,14 @@ async def feed_for(
                 error=ErrorOut(code=t.error_code or "failed", message=FAILED),
             )
         )
-    tasked = next((n.id for n in nudges if n.trigger in TASK_TRIGGERS), None)  # 새것 하나에만
+    # 작업 카드는 실측 · 견적서 줄 가장 새것 하나에만(열린 줄이 있으면 그것, 없으면 완료 줄)
+    tasks = [n for n in nudges if n.trigger in TASK_TRIGGERS]
+    tasked = next((n.id for n in tasks if not _settled(n)), tasks[0].id if tasks else None)
     for n in nudges:
         items.append(_nudge_item(n, acts, task if n.id == tasked else None, proactive))
     items.sort(key=lambda x: x.at)  # 같은 때면 원래 순서(질문 → 답)
     last = turns.get(max(turns)) if turns else None
-    more = len(rows) == limit and rows and rows[0].turn > 1
+    more = _has_older(rows, limit)
     chips = (
         runtime.chips_for(last.cards, await chip_facts(user, surface, project_id, last.cards))
         if last
@@ -656,17 +670,31 @@ async def chip_facts(
     return out
 
 
-NUDGE_FEED = 10  # 첫 쪽에 끼우는 먼저 말 건 줄 수
+NUDGE_FEED = 30  # 한 쪽에 끼우는 먼저 말 건 줄 수(보이는 줄 + 완료 줄)
 TASK_TRIGGERS = ("visit_offered", "quote_sent")  # 실측 진행 작업 카드를 붙이는 제안
 
 
+def _has_older(rows: list[ChatMessage], limit: int) -> bool:
+    """이 쪽 앞에 더 읽을 말이 있다(쪽이 꽉 찼고 첫 말이 첫 턴이 아님)."""
+    return len(rows) == limit and bool(rows) and rows[0].turn > 1
+
+
+def _settled(n) -> bool:
+    """할 일이 끝나 닫힌 줄(대화 기록에 '완료'로 남는다)."""
+    return n.status == "expired" and n.reason in repo.SETTLED
+
+
 def _nudge_item(n, acts: dict, task, proactive) -> AssistantItem:
-    """먼저 말 건 줄 → 대화 기록 한 줄: 문장 · 카드 · 승인 카드(지금 상태) · 작업 카드 · 다음에 물을 말."""
+    """먼저 말 건 줄 → 대화 기록 한 줄: 문장 · 카드 · 승인 카드(지금 상태) · 작업 카드 · 다음에 물을 말.
+    할 일이 끝난 줄(settled)은 다음에 물을 말을 빼고, 카드는 보낸 때 모습 그대로 둔다(card_id에 줄 id를 붙여 뒤
+    턴 · 새 줄의 같은 카드와 한 자리로 합쳐지지 않게)."""
     from app.assistant.schemas import SuggestOut, SuggestPart, TaskPart
 
+    done = _settled(n)
     parts: list = [TextPart(text=n.body or "", src=n.src or "guide")]
     if n.card:
-        parts.append(CardPart(card=CardOut.model_validate(n.card)))
+        card = {**n.card, "card_id": f"{n.card.get('card_id')}@{n.id}"} if done else n.card
+        parts.append(CardPart(card=CardOut.model_validate(card)))
     a = acts.get(n.action_id) if n.action_id else None
     nxt = (a.result or {}).get("superseded_by") if a else None
     a = acts.get(uuid.UUID(nxt), a) if nxt else a
@@ -674,8 +702,11 @@ def _nudge_item(n, acts: dict, task, proactive) -> AssistantItem:
         parts.append(ActionPart(action=actions.out(a)))
     if task is not None:
         parts.append(TaskPart(task=task))
-    parts.append(SuggestPart(suggest=SuggestOut(**proactive.suggest_of(n))))
-    return AssistantItem(id=f"n-{n.id}", at=n.sent_at, turn_id=None, parts=parts, nudge_id=n.id)
+    if not done:
+        parts.append(SuggestPart(suggest=SuggestOut(**proactive.suggest_of(n))))
+    return AssistantItem(
+        id=f"n-{n.id}", at=n.sent_at, turn_id=None, parts=parts, nudge_id=n.id, settled=done
+    )
 
 
 # ---- 보드 · 오늘 ----

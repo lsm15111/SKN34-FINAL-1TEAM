@@ -13,7 +13,7 @@ import k from "../kit/kit.module.css";
 import type { CardProps } from "./types";
 import c from "./cards.module.css";
 
-export function KnowledgeCard({ card }: CardProps<"knowledge">) {
+export function KnowledgeCard({ card, old }: CardProps<"knowledge">) {
   const d = card.data;
   const [done, setDone] = useState<Record<string, boolean>>(() => Object.fromEntries((d.checklist ?? []).map((x) => [x.key, x.done])));
   return (
@@ -25,13 +25,16 @@ export function KnowledgeCard({ card }: CardProps<"knowledge">) {
           <ul>{d.lines.map((l) => <li key={l}>{l}</li>)}</ul>
         </div>
       </div>
-      {d.checklist?.length ? (
+      {/* 할 일이 끝난 줄의 카드(old)는 준비물을 글로만 남겨요(체크 칸 없음) */}
+      {d.checklist?.length ? (old ? (
+        <ul className={c.basisList} aria-label="준비물">{d.checklist.map((x) => <li key={x.key}>{x.label}</li>)}</ul>
+      ) : (
         <ul className={c.checks} aria-label="준비물">
           {d.checklist.map((x) => (
             <li key={x.key}><label><input type="checkbox" checked={!!done[x.key]} onChange={(e) => setDone((v) => ({ ...v, [x.key]: e.target.checked }))} />{x.label}</label></li>
           ))}
         </ul>
-      ) : null}
+      )) : null}
       <div className={c.knowFoot}>
         <span className={c.srcText}>{d.source}</span>
         {d.href ? <Link className={k.text} href={d.href} scroll={false}>더 보기<I n="chev" /></Link> : null}

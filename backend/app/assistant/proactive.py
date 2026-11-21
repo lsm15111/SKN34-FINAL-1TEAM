@@ -602,10 +602,11 @@ SETTLE_BATCH = 200  # 정리 한 번에 보는 보이는 줄 수(새것부터)
 async def close_settled(now: datetime, limit: int = SETTLE_BATCH) -> int:
     """정리(2분): 보이는 먼저 말 건 줄(sent · opened) 중 할 일이 끝난 줄을 닫는다. 달린 승인 카드가 실행됐으면
     acted, 대상 상태가 바뀌었으면(context 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도) handled. 닫은 줄 수.
-    (승인으로 실행한 행동은 actions.execute가 바로 닫는다. 이것은 화면 단추 · 상대 응답 · 시간으로 바뀐 줄을 닫는다)"""
+    (승인으로 실행한 행동은 actions.execute가 바로 닫는다. 이것은 화면 단추 · 상대 응답 · 시간으로 바뀐 줄을 닫는다)
+    닫은 줄은 대화 기록에 '완료'로 남고, commit 뒤 그 사람에게 화면 신호(state)를 보낸다."""
     from app.assistant.models import AssistantAction
 
-    closed = 0
+    closed: list[AssistantNudge] = []
     async with SessionLocal() as s:
         rows = await repo.shown_all(s, limit)
         ids = [n.action_id for n in rows if n.action_id is not None]
@@ -632,9 +633,11 @@ async def close_settled(now: datetime, limit: int = SETTLE_BATCH) -> int:
                 log.warning("먼저 말 건 줄 정리 실패 (%s, %s)", n.trigger, type(e).__name__)
                 continue
             if await repo.set_nudge(s, n.id, repo.SHOWN, status="expired", reason=reason):
-                closed += 1
+                closed.append(n)
         await s.commit()
-    return closed
+    for n in closed:  # 열어 둔 대화가 그 줄을 '완료'로 다시 그리게(commit 뒤)
+        await _signal(n, TRIGGERS[n.trigger], unread=False)
+    return len(closed)
 
 
 async def _close(n: AssistantNudge, status: str, reason: str, **values) -> None:
@@ -771,14 +774,15 @@ def _link(t: Trigger, n: AssistantNudge) -> str:
     return f"/vendor/requests/{n.ref_id}"
 
 
-async def _signal(n: AssistantNudge, t: Trigger) -> None:
-    """commit 뒤 화면 신호: 대화 기록을 다시 읽게(state), 알림이면 안 읽은 수(notif). 실패해도 보낸 것은 그대로."""
+async def _signal(n: AssistantNudge, t: Trigger, *, unread: bool = True) -> None:
+    """commit 뒤 화면 신호: 대화 기록을 다시 읽게(state, 그 공사 · 업체는 공사 없음), 알림이면 안 읽은 수(notif).
+    보낼 때와 할 일이 끝나 닫을 때(unread=False) 보낸다. 실패해도 바꾼 것은 그대로(화면은 다음에 다시 읽어 맞춘다)."""
     from app.notify import service as notify_service
     from app.realtime import service as realtime
 
     try:
         await realtime.push_state([n.user_id], t.state, n.ref_id, n.project_id)  # type: ignore[arg-type]
-        if n.channel == "notify":
+        if unread and n.channel == "notify":
             async with SessionLocal() as s:
                 await notify_service.push_unread(s, [n.user_id])
     except Exception as e:  # noqa: BLE001 - 신호는 지워져도 되는 것(화면은 다시 읽어 맞춘다)

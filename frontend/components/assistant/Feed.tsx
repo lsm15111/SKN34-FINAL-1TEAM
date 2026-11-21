@@ -130,9 +130,11 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
   );
 }
 
-/** 대화가 바뀐 정도(말 수 · 마지막 말의 조각 수 · 상태)만 봐요 */
+/** 대화가 바뀐 정도(말 수 · 마지막 말의 조각 수 · 상태)만 봐요. 다음에 물을 말은 세지 않아요
+ *  (먼저 말 건 줄이 '완료'가 되며 제안만 빠질 때 보던 자리에서 그 말 머리로 끌어올리지 않게) */
 function signature(items: FeedItem[]) {
   const last = items[items.length - 1];
   if (!last) return "0";
-  return `${items.length}:${last.id}:${last.role === "assistant" ? `${last.parts.length}:${last.done ? 1 : 0}:${last.status ?? ""}` : ""}`;
+  const parts = last.role === "assistant" ? last.parts.filter((p) => p.t !== "suggest").length : 0;
+  return `${items.length}:${last.id}:${last.role === "assistant" ? `${parts}:${last.done ? 1 : 0}:${last.status ?? ""}` : ""}`;
 }

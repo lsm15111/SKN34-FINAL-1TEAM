@@ -615,6 +615,10 @@ class AssistantItem(BaseModel):
     nudge_id: uuid.UUID | None = Field(
         default=None, description="먼저 말 건 줄이면 그 id(열기 · 닫기 API)"
     )
+    settled: bool = Field(
+        default=False,
+        description="할 일이 끝나 닫힌 먼저 말 건 줄('완료'로 남기고 단추 · 다음에 물을 말이 없다)",
+    )
 
 
 FeedItem = Annotated[UserItem | AssistantItem, Field(discriminator="role")]

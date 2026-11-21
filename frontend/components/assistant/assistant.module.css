@@ -68,6 +68,8 @@
 .ai { display: grid; gap: 6px; }
 .aiTag { justify-self: start; }
 .note { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-mute); }
+/* 할 일이 끝난 먼저 말 건 줄 끝 '완료' */
+.settled { margin: 0; display: flex; align-items: center; min-height: 24px; }
 /* 다음에 물을 말 둘째부터(칩, 긴 글은 줄을 바꿔요) */
 .ideas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
 .ideas button { white-space: normal; text-align: left; line-height: 1.35; padding-block: 8px; max-width: 100%; }

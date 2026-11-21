@@ -15,14 +15,15 @@ import c from "./cards.module.css";
 
 const same = (a: string[], b: string[]) => a.length === b.length && a.every((x) => b.includes(x));
 
-export function VendorPicksCard({ card, ctx }: CardProps<"vendor_picks">) {
+export function VendorPicksCard({ card, ctx, old }: CardProps<"vendor_picks">) {
   const d = card.data;
   const [basis, setBasis] = useState(false);
-  const now = pickedVendors(ctx, card);
+  // 할 일이 끝난 줄의 카드(old)는 보낸 때 추천만 남겨요(고르기 · 요청 · 다른 업체 단추 없음)
+  const now = old ? [] : pickedVendors(ctx, card);
   const touched = ctx.marks[card.card_id] !== undefined;
   const { live, sent } = requestState(ctx);
   // 보낸 뒤에는 단추를 두지 않아요. 열린 승인 카드가 있으면 고른 업체가 바뀔 때만, 없으면 고른 업체가 있으면 보여요
-  const bar = !sent && (live ? touched && !same(now, vendorsOf(card, live)) : now.length > 0 || touched);
+  const bar = !old && !sent && (live ? touched && !same(now, vendorsOf(card, live)) : now.length > 0 || touched);
   const toggle = (ref: string) => ctx.mark(card.card_id, now.includes(ref) ? now.filter((x) => x !== ref) : [...now, ref]);
   const names = d.picks.filter((p) => now.includes(p.ref)).map((p) => p.name);
   const request = () => {
@@ -45,7 +46,7 @@ export function VendorPicksCard({ card, ctx }: CardProps<"vendor_picks">) {
               <div className={c.ph}>
                 {p.photo ? <img src={p.photo} alt={p.photo_alt} loading="lazy" /> : null}
                 {p.badge ? <span className={c.phBadge}>{p.badge}</span> : null}
-                <button type="button" className={c.pick} aria-pressed={on} aria-label={`${p.name} 고르기`} onClick={() => toggle(p.ref)}><span><I n="check" /></span></button>
+                {old ? null : <button type="button" className={c.pick} aria-pressed={on} aria-label={`${p.name} 고르기`} onClick={() => toggle(p.ref)}><span><I n="check" /></span></button>}
               </div>
               <div className={c.vcIn}>
                 <div className={c.vcName}>
@@ -71,9 +72,11 @@ export function VendorPicksCard({ card, ctx }: CardProps<"vendor_picks">) {
           </button>
         </div>
       ) : null}
-      <div className={k.row}>
-        <Link className={`${k.btn} ${k.sm}`} href={d.more_href} scroll={false}>다른 업체 보기</Link>
-      </div>
+      {old ? null : (
+        <div className={k.row}>
+          <Link className={`${k.btn} ${k.sm}`} href={d.more_href} scroll={false}>다른 업체 보기</Link>
+        </div>
+      )}
     </section>
   );
 }
