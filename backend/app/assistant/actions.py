@@ -529,15 +529,18 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
     p = await project_service.get_for(s, user, pid)  # type: ignore[arg-type]
     if p.home is None or str(p.rev) != a.target_ver:
         raise _stale("집 정보가 그사이 바뀌었어요. 비서에게 다시 물어봐 주세요.")
-    if p.locked:
-        raise AppError(409, "locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
     fields = dict(a.payload["fields"])
+    diy_keys = fields.pop("diy", None)  # 직접 할 일(모은 조건): 요청 뒤에도 바꿀 수 있다
+    if p.locked and (fields or diy_keys is None):
+        raise AppError(409, "locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
     demolition = fields.pop(DEMOLITION_KEY, None)
     data = None
     if fields:
-        merged = {**p.home.model_dump(exclude={DEMOLITION_KEY}), **fields}
+        merged = {**p.home.model_dump(exclude={DEMOLITION_KEY, "diy"}), **fields}
         if demolition is not None:
             merged[DEMOLITION_KEY] = demolition
+        if diy_keys is not None:
+            merged["diy"] = diy_keys
         try:
             data = HomeInfoIn.model_validate(merged)
         except ValidationError as e:
@@ -545,9 +548,14 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
     await mark({"text": "집 정보를 저장했어요", "href": f"/projects/{pid}", "label": "공사 보기"})
     if data is not None:
         await project_service.update(s, user, pid, data, _day(now))  # type: ignore[arg-type]
-    else:
+        return
+    if demolition is not None:
         await project_service.set_demolition(s, pid, demolition)  # type: ignore[arg-type]
-        await s.commit()
+    if diy_keys is not None:
+        from app.project import diy
+
+        await diy.set_diy(s, pid, list(diy_keys))  # type: ignore[arg-type]
+    await s.commit()
 
 
 async def _visit_request(

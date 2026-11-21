@@ -18,6 +18,9 @@ from app.assistant.schemas import ActionSummary, AmountRow, LinkOut, SummaryRow
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import TRADE, dobae_only, pid_of
 from app.db import SessionLocal
+from app.project import diy as project_diy
+from app.project.diy import DIY as DIY_LABELS
+from app.project.diy import DiyKey
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 from app.shared.korean import euro
@@ -32,6 +35,7 @@ FIELD_LABEL = {
     "rooms": "방 개수",
     "start_date": "공사 시작 희망",
     "demolition": "철거 범위",
+    "diy": "직접 할 일",
 }
 # 제안 결과(state) → 모델에 줄 한 줄(고객에게 할 말의 근거). 거절은 오류가 아니라 값으로 알린다
 OFFER_NOTE = {
@@ -62,6 +66,10 @@ def _show(key: str, v) -> str:
         return "살면서 공사" if v else "빈 집"
     if key == "demolition":
         return DEMOLITION.get(v, v)
+    if key == "diy":
+        from app.project.diy import DIY
+
+        return " · ".join(DIY.get(k, k) for k in v) or "없어요"
     return str(v)
 
 
@@ -111,6 +119,9 @@ class HomeFields(BaseModel):
     rooms: int | None = Field(default=None, ge=1, le=5)
     start_date: date | None = None
     demolition: Literal["full", "partial", "none"] | None = None  # 모은 조건(집 정보 칸 아님)
+    diy: list[DiyKey] | None = Field(
+        default=None, max_length=6
+    )  # 직접 할 일(모은 조건, 바꾼 뒤 전체 목록)
 
 
 class HomeIn(BaseModel):
@@ -135,7 +146,8 @@ NEED_BASIS = (
     "계약서 · 등기 · 'nn 타입'('84 타입' = 전용 84㎡)의 ㎡는 exclusive, 분양 면적이라고 한 ㎡는 supply예요. "
     "평형과 타입을 같이 말하면 타입(전용 ㎡)을 넣어요. "
     "철거 범위는 전체 철거(full) · 부분 철거(partial) · 철거 안 함(none)이고, 전체 철거면 표준견적서가 "
-    "리모델링 기준으로 바뀌어요.",
+    "리모델링 기준으로 바뀌어요. 직접 할 일(diy)은 고객이 업체 없이 직접 하는 일의 바뀐 뒤 전체 목록이고, 빈 목록이면 "
+    "'없어요'예요. 직접 할 일만 바꾸는 건 실측을 요청한 뒤에도 돼요.",
     model=HomeIn,
     schema=obj(
         {
@@ -159,6 +171,13 @@ NEED_BASIS = (
                         "type": "string",
                         "enum": ["full", "partial", "none"],
                         "description": "철거 범위: full 전체 · partial 부분 · none 안 함",
+                    },
+                    "diy": {
+                        "type": "array",
+                        "items": {"type": "string", "enum": list(DIY_LABELS)},
+                        "description": "직접 할 일 전체 목록(바꾼 뒤): paint 페인트(문틀 · 몰딩) · outlet 콘센트 · "
+                        "스위치 커버 · light 조명 · silicone 실리콘 · 줄눈 · handle 손잡이 · clean 입주 청소. "
+                        "없어요는 빈 목록",
                     },
                 },
                 required=[],
@@ -185,16 +204,20 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     async with SessionLocal() as s:
         p = await project_service.get_for(s, tc.user, pid)
         card, _ = await cards.home(s, tc.user, pid)
-    if p.locked:
-        raise ToolError("locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
+        diy_now = await project_diy.diy_for(s, pid)
     if p.home is None:
         raise ToolError("no_home", "이 공사는 집 정보 화면에서 고쳐 주세요.")
     now_home = p.home.model_dump(mode="json")  # 철거 범위(모은 조건)도 들어 있다
-    home_now = {k: v for k, v in now_home.items() if k != DEMOLITION_KEY}
+    now_home["diy"] = diy_now
+    home_now = {k: v for k, v in now_home.items() if k not in (DEMOLITION_KEY, "diy")}
+    if "diy" in asked:  # 칩 순서로 맞춰 견준다
+        asked["diy"] = [k for k in tuple(DIY_LABELS) if k in set(asked["diy"])]
     changes = {k: v for k, v in asked.items() if str(now_home.get(k)) != str(v)}
     if not changes:
         raise ToolError("no_change", "바뀐 칸이 없어요.")
-    home_changes = {k: v for k, v in changes.items() if k != DEMOLITION_KEY}
+    if p.locked and set(changes) != {"diy"}:  # 직접 할 일만 바꾸는 건 요청 뒤에도 된다
+        raise ToolError("locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
+    home_changes = {k: v for k, v in changes.items() if k not in (DEMOLITION_KEY, "diy")}
     if home_changes:  # 철거 범위만 바꾸면 집 정보는 그대로라 다시 검사하지 않는다
         try:
             merged = HomeInfoIn.model_validate({**home_now, **home_changes})

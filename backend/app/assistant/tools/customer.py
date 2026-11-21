@@ -47,7 +47,7 @@ class TradeIn(BaseModel):
     surface="customer",
     kind="read",
     status="집 정보를 보고 있어요",
-    description="이 공사의 집 정보(지역 · 면적 · 평 · 살면서 공사 · 벽지 · 방 · 공사 시작 희망 · 잠김)를 읽어요.",
+    description="이 공사의 집 정보(지역 · 면적 · 평 · 살면서 공사 · 벽지 · 방 · 공사 시작 희망 · 직접 할 일 · 잠김)를 읽어요.",
     model=NoArgs,
     schema=obj({}),
 )
