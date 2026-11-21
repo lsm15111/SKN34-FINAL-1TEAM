@@ -73,6 +73,6 @@ def test_composer_drops_other_trade_numbers(qid, monkeypatch):
     ctx = TurnContext(user_id=uuid.UUID(int=0), today=date(2026, 11, 21), mode="llm")
     a = asyncio.run(run_turn(DEV[qid], ctx, kb=repo_kb())).answer
     texts = [x.text for s in a.sections for x in s.sentences]
-    assert a.trace.prompts == ["composer_v8"] and keep in texts
+    assert a.trace.prompts == ["composer_v9"] and keep in texts
     assert not any(DIGIT.search(x) for x in texts), texts
     assert any(d.startswith("알아 두기 숫자") for d in a.trace.dropped), a.trace.dropped
