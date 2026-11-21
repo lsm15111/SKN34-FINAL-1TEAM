@@ -1,4 +1,5 @@
-"""v4 업체 쪽: 같은 업체의 다른 공사와 공사 날짜 겹침(공사 화면 · 미리보기 · 비서 my_jobs · 먼저 말 걸기 후보).
+"""v4 업체 쪽: 같은 업체의 다른 공사와 공사 날짜 겹침(공사 화면 · 미리보기 · 비서 my_jobs · 먼저 말 걸기 후보) ·
+오늘 할 일 공사 날짜 보내기 단추.
 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import json
@@ -193,3 +194,57 @@ def test_deal_confirmed_nudge_candidate_avoids_the_other_job(api, monkeypatch):
     assert r.status_code == 200 and r.json()["status"] == "executed", r.text
     (p,) = query("select days from date_proposals where deal_id = $1", uuid.UUID(did))
     assert list(p["days"]) == days
+
+
+# ---- 오늘 할 일: 공사 날짜 보내기 단추 ----
+
+
+def dates_row(api) -> dict:
+    (row,) = [r for r in api.get("/vendor/assistant/today").json()["rows"] if r["id"] == "dates"]
+    return row
+
+
+def test_vendor_today_dates_button_makes_an_approval_card(api):
+    _, _, did, _ = dates_ready(api)
+    first = first_block(api.get(f"/vendor/jobs/{did}").json())
+    row = dates_row(api)
+    assert (row["title"], row["icon"]) == ("공사 날짜 낼 공사 1", "calendar")
+    assert f"후보 {first[0]:%m.%d}~{first[-1]:%m.%d}" in row["sub"]
+    a = row["action"]
+    assert a["choice"].startswith("dates:d") and ",n" in a["choice"] and a["primary"] and a["say"]
+    # 단추 = 업체 턴(무료 모드) + 고르기 → 공사 날짜 승인 카드(실행은 승인 뒤)
+    r = api.post(
+        "/vendor/assistant/turns",
+        json={
+            "client_key": uuid.uuid4().hex,
+            "text": a["say"],
+            "context": {"card_id": "today", "choice": a["choice"]},
+        },
+    )
+    (act,) = [x for x in acts(ok(r)) if x["status"] == "proposed"]
+    assert act["kind"] == "dates" and act["target_ver"] == "waiting"
+    assert query("select count(*) as n from date_proposals")[0]["n"] == 0
+    r = approve(api, act["action_id"], prefix="/vendor/assistant")
+    assert r.status_code == 200 and r.json()["status"] == "executed", r.text
+    (p,) = query("select days from date_proposals where deal_id = $1", uuid.UUID(did))
+    assert list(p["days"]) == first
+    rows = api.get("/vendor/assistant/today").json()["rows"]
+    assert "dates" not in {x["id"] for x in rows}  # 날짜를 냈으면 줄이 빠진다
+
+
+def test_vendor_today_candidate_avoids_other_job_and_free_turn_card_has_button(api):
+    _, _, did, _ = dates_ready(api)
+    _, did2 = second_deal(api)
+    first = first_block(api.get(f"/vendor/jobs/{did}").json())
+    assert post_days(api, did2, first).status_code == 200
+    row = dates_row(api)
+    assert row["title"] == "공사 날짜 낼 공사 1"  # 날짜를 낸 공사는 세지 않는다
+    assert f"후보 {first[0]:%m.%d}" not in row["sub"]  # 다른 공사 날을 피한 후보
+    # 무료 모드 '오늘 할 일' 카드에도 같은 단추(이 턴의 이름표)
+    r = api.post(
+        "/vendor/assistant/turns",
+        json={"client_key": uuid.uuid4().hex, "text": "오늘 할 일 알려 줘"},
+    )
+    card = next(d for e, d, _ in ok(r) if e == "card" and d["kind"] == "today")
+    (got,) = [x for x in card["data"]["todo"] if x["id"] == "dates"]
+    assert got["action"]["choice"].startswith("dates:") and got["sub"] == row["sub"]

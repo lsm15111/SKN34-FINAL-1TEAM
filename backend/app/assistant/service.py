@@ -995,10 +995,18 @@ async def checklist_for(vendor: User, visit_id: uuid.UUID) -> QuoteChecklistData
 
 
 async def vendor_today(vendor: User) -> VendorTodayData:
+    """업체 오늘 브리핑(REST). 공사 날짜 줄의 공사 날 후보 이름표(d# · n#)는 업체 비서 대화의 표에 넣어
+    단추(choice 'dates:d#,n#')로 보낸 턴이 승인 카드를 만들게 한다."""
     from app.assistant.tools import vendor as vendor_tools
 
     async with SessionLocal() as s:
-        return await vendor_tools.vendor_today(s, vendor, today_seoul())
+        chat = await ensure_chat(s, vendor.id, None)
+        # 처음이면 만든 업체 대화를 먼저 남긴다(예상 공정표 저장의 rollback과 섞지 않게)
+        await s.commit()
+        refs = await RefTable.load(chat.id)
+        data = await vendor_tools.vendor_today(s, vendor, today_seoul(), refs)
+    await refs.save()
+    return data
 
 
 # ---- 상태 · 정리 ----

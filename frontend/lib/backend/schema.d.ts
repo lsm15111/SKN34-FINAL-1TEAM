@@ -8091,6 +8091,11 @@ export interface components {
              * @default false
              */
             primary: boolean;
+            /**
+             * Choice
+             * @description 누르면 say와 함께 보낼 카드 고르기(context.choice, 업체 공사 날짜 'dates:d#,n#'). 이름표는 이 대화의 표에 있다
+             */
+            choice?: string | null;
         };
         /**
          * SameNameOut

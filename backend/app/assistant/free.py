@@ -459,8 +459,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
     from app.assistant.tools import vendor as vendor_tools
 
     if intent == "today":
-        async with SessionLocal() as s:
-            rows = (await vendor_tools.vendor_today(s, tc.user, tc.today)).rows
+        async with SessionLocal() as s:  # 공사 날짜 줄 단추(dates:d#,n#)의 이름표는 이 턴의 표에
+            rows = (await vendor_tools.vendor_today(s, tc.user, tc.today, tc.refs)).rows
         data = TodayData(date=tc.today, todo=rows, waiting=[], news=[])
         card = CardOut(card_id="today", kind="today", data=data.model_dump(mode="json"))
         return VENDOR_TODAY, ToolOut(data={}, cards=[card])

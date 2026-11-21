@@ -418,8 +418,15 @@ async def checklist(
     return card, model, data
 
 
-async def vendor_today(s: AsyncSession, vendor: User, today: date) -> VendorTodayData:
-    """업체 작업함 맨 위 '오늘 브리핑': 새 요청 · 오늘 실측 · 보낼 견적서(줄은 코드가 고른다)."""
+DATES_TODO = ("waiting", "requested")  # 공사 날짜를 낼 공사(아직 안 냄 · 고객이 다른 날짜를 요청함)
+
+
+async def vendor_today(
+    s: AsyncSession, vendor: User, today: date, refs: "RefTable | None" = None
+) -> VendorTodayData:
+    """업체 작업함 맨 위 '오늘 브리핑': 새 요청 · 오늘 실측 · 보낼 견적서 · 공사 날짜 낼 공사(줄은 코드가 고른다).
+    refs를 주면 공사 날짜 줄에 기한이 가까운 공사의 날 후보 첫 것(date_candidates) 이름표를 넣어 단추
+    (choice 'dates:d#,n#')로 승인 카드를 받게 한다. REST는 업체 비서 대화의 표, 턴은 그 턴의 표를 준다."""
     from app.schedule import service as schedule_service
     from app.visit import flow
 
@@ -453,6 +460,40 @@ async def vendor_today(s: AsyncSession, vendor: User, today: date) -> VendorToda
                 icon="file",
                 title=f"보낼 견적서 {len(quote)}",
                 sub=" · ".join(dict.fromkeys(r.area_name for r in quote[:3])),
+            )
+        )
+    jobs = (await schedule_service.vendor_inbox(s, vendor, "jobs", today, None, 50)).items
+    need = [r for r in jobs if r.deal_id is not None and r.dates_state in DATES_TODO]
+    if need:
+        far = datetime.max.replace(tzinfo=SEOUL)
+        need.sort(key=lambda r: r.next.due_at if r.next and r.next.due_at else far)
+        first = need[0]
+        due = first.next.due_at if first.next else None
+        sub = list(dict.fromkeys(r.area_name for r in need[:3]))
+        action = RowAction(label="보기", href=f"/vendor/jobs/{first.deal_id}")
+        if refs is not None:
+            job = await schedule_service.job_for(s, vendor, first.deal_id, today)
+            cands = date_candidates(job, first.deal_id, today)
+            if cands:
+                c = cands[0]
+                d = refs.put("deal", {"id": str(first.deal_id), "trade": first.trade})
+                n = refs.put("days", c)
+                days = [date.fromisoformat(x) for x in c["days"]]
+                sub.append(f"후보 {_md(days[0])}~{_md(days[-1])}")
+                action = RowAction(
+                    label="공사 날짜 보내기",
+                    say="공사 날짜 보낼래요",
+                    choice=f"dates:{d},{n}",
+                    primary=True,
+                )
+        rows.append(
+            TodayRow(
+                id="dates",
+                icon="calendar",
+                title=f"공사 날짜 낼 공사 {len(need)}",
+                sub=" · ".join(sub),
+                due=due is not None and due.astimezone(SEOUL).date() <= today + timedelta(days=1),
+                action=action,
             )
         )
     return VendorTodayData(date=today, rows=rows)
