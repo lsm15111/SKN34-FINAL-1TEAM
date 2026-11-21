@@ -6,10 +6,12 @@ v3(C07 · C60 · D01): 도배는 calc.dobae.standard_v3 — 도배지 줄만 벽
 부분 공사는 공간 몫 표(share_ver 고정)로 벽 · 천장 면적을 줄인다. v2 공사는 전체 공사(벽 + 천장)로 본다.
 v4(ADR 0004): 도배 단가 판은 계산 엔진(calc.dobae.pick_profile)이 공사 조건(고른 목공 항목 · 모은 조건)으로
 고른 기준의 판이다. 모은 조건이 바뀌어 기준이 바뀌면 판(price_ver)이 달라져 새 버전을 쌓는다.
+v4 반셀프 '벽지 직접 구매'(모은 조건 diy.paper_buy): 도배지 줄을 '안 함'(고객 구매)으로 합계에서 뺀다(계산 엔진).
+칩이 바뀌면 own_paper가 달라져 새 버전을 쌓는다. 업체 가견적은 벽지 값이 든 값이라 견줄 때는 compare_total을 쓴다.
 """
 
 import uuid
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from datetime import date, datetime
 from decimal import Decimal
@@ -20,7 +22,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
-from app.calc import deadline, dobae, mokgong
+from app.calc import deadline, dobae, mokgong, rolls
 from app.calc.common import FORMULA_VERSION, Money, Step, from_entered, sum_days, sum_won
 from app.calc.quote_diff import budget_fit, budget_gap
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
@@ -31,6 +33,7 @@ from app.jobs import service as jobs_service
 from app.notify import catalog
 from app.notify import service as notify_service
 from app.notify.models import Notification
+from app.project import diy as project_diy
 from app.project import service as project_service
 from app.project.schemas import ProjectOut
 from app.quote.models import (
@@ -44,12 +47,13 @@ from app.quote.schemas import (
     QuoteBriefOut,
     QuoteDraftIn,
     QuoteFileOut,
+    RollOut,
     StandardLineOut,
     StandardOut,
     StandardTradeOut,
     VendorQuoteOut,
 )
-from app.refprice.book import DOBAE_BY_VER, DOBAE_PROFILES, MOKGONG_2026H2
+from app.refprice.book import DOBAE_BY_VER, DOBAE_PROFILES, MOKGONG_2026H2, dobae_prices_of
 from app.refprice.house import HOUSE_2026H2
 from app.refprice.wallpaper_market import paper_market
 from app.shared.clock import SEOUL, now_utc
@@ -60,6 +64,11 @@ from app.vendor import service as vendor_service
 ROOM = "방"  # 방문 개수: 목공을 고른 공간 중 이름에 '방'이 든 곳
 FULL_FACES = ("wall", "ceiling")
 VALID_SOON = "quote_valid_soon"  # 기한 일 kind (jobs.models.KINDS) · 알림 kind (notify.catalog)
+# 벽지 직접 구매 안내 한 줄(틀): 표준견적서 · 업체 보기 · 비서 업체 고르기 카드가 같은 글을 써요.
+# 업체 가견적의 '시공만' 값은 업체가 단가를 따로 넣어야 해서 뒤로 미뤘어요(2026-11-22 리드 결정)
+OWN_PAPER_NOTE = (
+    "업체 가견적은 벽지 값이 들어간 값이에요. 직접 사시면 실측 때 빼 달라고 말씀해 주세요."
+)
 
 
 @dataclass(frozen=True)
@@ -84,6 +93,7 @@ class TradeCalc:
     market_ver: str | None = None
     days: Decimal | None = None  # 이 공정만 했을 때 예상 일수 (계산 엔진, 반나절 단위)
     price_ver: str = MOKGONG_2026H2.version  # 이 공정 단가 판 (도배는 고른 기준의 판)
+    own_paper: bool = False  # 도배: 벽지 직접 구매(도배지 줄 '안 함' · 고객 구매)
 
 
 def _area(p: ProjectOut) -> tuple[Decimal, str]:
@@ -111,15 +121,25 @@ def work_facts(p: ProjectOut, said: Mapping[str, str] | None = None) -> dobae.Wo
 
 
 def standard_v3(
-    h: dobae.HomeV3, crew: int | None = None, pick: dobae.ProfilePick | None = None
+    h: dobae.HomeV3,
+    crew: int | None = None,
+    pick: dobae.ProfilePick | None = None,
+    own_paper: bool = False,
 ) -> dobae.StandardV3:
     """v3 도배 표준견적서 (계산 엔진 + refprice 판). 손님 계산 · 가견적도 같은 함수 꼴을 쓴다.
-    pick(기준 고르기 결과)이 없으면 공사 조건이 없는 집으로 보고 계산 엔진이 고른 기준(도배만 하는 공사)."""
+    pick(기준 고르기 결과)이 없으면 공사 조건이 없는 집으로 보고 계산 엔진이 고른 기준(도배만 하는 공사).
+    own_paper(벽지 직접 구매)면 도배지 줄을 '안 함'(고객 구매)으로 합계에서 뺀다."""
     pick = pick or dobae.pick_profile(dobae.WorkFacts())
     base = DOBAE_PROFILES[pick.profile]
     dp = replace(base, crew=crew) if crew else base
     return dobae.standard_v3(
-        h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2, pick.why
+        h,
+        dp,
+        paper_market(h.grade),
+        SPACE_SHARE_ROOMS_2026_11,
+        HOUSE_2026H2,
+        pick.why,
+        own_paper=own_paper,
     )
 
 
@@ -130,7 +150,8 @@ def calc_trades(
 ) -> list[TradeCalc]:
     """이 집 정보로 고른 공정을 계산한다(목공 → 도배 순서). 공정표도 이 결과를 쓴다.
     crews를 주면 그 공정의 하루 인원을 바꿔 기간을 센다(업체가 적은 인원).
-    said(모은 조건)는 도배 기준 고르기에 쓴다. 품 · 기간은 기준과 상관없어 공정표는 비워도 같다."""
+    said(모은 조건)는 도배 기준 고르기 · 벽지 직접 구매(도배지 줄 고객 구매)에 쓴다. 품 · 기간은 기준 · 벽지 구매와
+    상관없어 공정표는 비워도 같다."""
     crews = crews or {}
     mp = replace(MOKGONG_2026H2, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG_2026H2
     pick = dobae.pick_profile(work_facts(p, said))
@@ -169,7 +190,8 @@ def calc_trades(
         )
     if p.trades.dobae:
         h = home_v3(p)
-        v = standard_v3(h, crews.get("dobae"), pick)
+        own = project_diy.buys_paper(said or {})
+        v = standard_v3(h, crews.get("dobae"), pick, own_paper=own)
         d = v.quote
         out.append(
             TradeCalc(
@@ -190,6 +212,7 @@ def calc_trades(
                 market_ver=v.market_ver,
                 days=d.days,
                 price_ver=dp.version,
+                own_paper=own,
             )
         )
     return out
@@ -216,6 +239,7 @@ def _fresh(row: StandardQuote, p: ProjectOut, c: TradeCalc) -> bool:
         and row.price_ver == c.price_ver
         and row.market_ver == c.market_ver
         and row.share_ver == c.share_ver
+        and row.own_paper == c.own_paper
     )
 
 
@@ -255,6 +279,7 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
                 space_keys=list(c.spaces),
                 share_ver=c.share_ver,
                 market_ver=c.market_ver,
+                own_paper=c.own_paper,
             )
             s.add(row)
             await s.flush()
@@ -339,6 +364,42 @@ def profile_out(row: StandardQuote) -> dict[str, str | None]:
     return {"profile": pf.key if pf else None, "profile_name": pf.name if pf else None}
 
 
+def paper_note(row: StandardQuote | None) -> str | None:
+    """벽지 직접 구매인 도배 표준견적서면 안내 한 줄(틀), 아니면 None."""
+    return OWN_PAPER_NOTE if row is not None and row.own_paper else None
+
+
+def rolls_of(row: StandardQuote, lines: Sequence[StandardQuoteLine]) -> RollOut | None:
+    """도배 표준견적서 도배지 줄 양 → 롤 수(계산 엔진 calc.rolls, 보이기용). 합지는 광폭 롤이에요.
+    v3 줄은 벽지 평, 옛 줄은 ㎡예요. 도배가 아니거나 도배지 줄이 없으면 None."""
+    paper = next((ln for ln in lines if ln.key == "paper"), None)
+    if row.trade != "dobae" or paper is None or paper.qty is None or row.grade is None:
+        return None
+    key = rolls.roll_key(row.grade)
+    n = (
+        rolls.need(key, paper_py=paper.qty)
+        if paper.unit == "벽지 평"
+        else rolls.need(key, paper_m2=paper.qty)
+    )
+    return RollOut(
+        key=n.key,
+        name=n.name,
+        size=n.size,
+        count=n.count,
+        spare_min=n.spare_min,
+        spare_max=n.spare_max,
+        text=n.text,
+    )
+
+
+def compare_total(row: StandardQuote, lines: Sequence[StandardQuoteLine]) -> int:
+    """업체 가견적과 견줄 표준견적서 합계(부가세 포함). 가견적은 벽지 값이 든 값이라 고객 구매로 뺀 도배지 줄도
+    넣어 센다(계산 엔진). 벽지 직접 구매가 아니면 저장한 합계 그대로."""
+    if not row.own_paper:
+        return row.total
+    return dobae.with_own_paper(lines, dobae_prices_of(row.price_ver).vat_rate).total
+
+
 async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> StandardOut:
     """GET /projects/{id}/standard: 만든 사람 · 관리자만(남의 것은 404)."""
     p = await project_service.get_for(s, user, project_id)
@@ -371,6 +432,9 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
             crew=rows[t].crew,
             notes=list(rows[t].notes),
             **profile_out(rows[t]),
+            own_paper=rows[t].own_paper,
+            rolls=rolls_of(rows[t], lines[rows[t].id]),
+            paper_note=paper_note(rows[t]),
         )
         for t in order
     ]

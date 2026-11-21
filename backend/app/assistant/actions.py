@@ -649,14 +649,24 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
             data = HomeInfoIn.model_validate(merged)
         except ValidationError as e:
             raise AppError(409, "invalid", "집 정보 칸을 다시 확인해 주세요.") from e
-    await mark({"text": "집 정보를 저장했어요", "href": f"/projects/{pid}", "label": "공사 보기"})
+    done = {"text": "집 정보를 저장했어요", "href": f"/projects/{pid}", "label": "공사 보기"}
     if data is not None:
+        await mark(done)
         await project_service.update(s, user, pid, data, _day(now))  # type: ignore[arg-type]
         return
     if demolition is not None:
         await project_service.set_demolition(s, pid, demolition)  # type: ignore[arg-type]
     if diy_keys is not None:
-        await diy.set_diy(s, pid, list(diy_keys))  # type: ignore[arg-type]
+        from app.visit import flow
+
+        picked = await diy.set_diy(s, pid, list(diy_keys))  # type: ignore[arg-type]
+        # 확정 전 실측 요청의 '업체에 알릴 것'도 맞추고 업체에 알려요. 확정한 업체는 따로(QA r2 c2)
+        synced = await flow.sync_diy(s, pid, picked, now)  # type: ignore[arg-type]
+        if synced.told:
+            done["text"] += f" · 실측을 요청한 업체({' · '.join(synced.told)})에도 알렸어요"
+        if synced.note:
+            done["text"] += f" · {synced.note}"
+    await mark(done)
     await s.commit()
 
 

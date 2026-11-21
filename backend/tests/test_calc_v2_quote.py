@@ -86,7 +86,7 @@ def test_inputs_defaults_and_doors():
     assert (i.py, i.area_m2, i.grade) == (D(32), D("105.8"), "basic")  # 32 × 3.3058
     assert i.assumed == [
         "평형을 몰라서 32평으로 잡았어요",
-        "벽지를 아직 안 골라서 실크벽지 (LX 베스띠 or 개나리 로하스)로 잡았어요",
+        "벽지를 아직 안 골라서 실크벽지 (LX 실크벽지 베스트 or 개나리 로하스)로 잡았어요",
     ]
     assert i.silk == SILK_2026[SILK_DEFAULT]
     assert i.doors_auto == {"n": 5, "how": "32평 기준 방 3 + 욕실 2"}

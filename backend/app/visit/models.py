@@ -51,8 +51,8 @@ CANCEL_CODES = ("changed", "other_vendor", "late_quote", "other")
 HALVES = ("am", "pm")  # 오전 · 오후
 WISH_SPAN_MAX = 62  # 희망 기간 · 업체 기간 최대 길이(일)
 EXCLUDED_MAX = 31
-# v4 반셀프: 요청에 남기는 직접 할 일 칩 키(project.diy.DIY와 같은 키, 0046 CHECK)
-DIY_KEYS = ("paint", "outlet", "light", "silicone", "handle", "clean")
+# v4 반셀프: 요청에 남기는 직접 할 일 칩 키(project.diy.DIY와 같은 키, 0047 · 0053 CHECK)
+DIY_KEYS = ("paint", "outlet", "light", "silicone", "handle", "clean", "paper_buy")
 # 기록(visit_events.code) 값. CHECK는 두지 않는다(옛 값 full · out_of_area · resent · other_chosen · reselected)
 EVENT_CODES = (
     "asked",

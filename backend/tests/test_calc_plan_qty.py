@@ -110,9 +110,16 @@ def test_totals_expanded():
     assert r.windows_m == D("3.9")
     # 실크: 한 롤 6띠. 벽 띠 31 ÷ 6 + 천장 3/5 + 4/3 + 2/5 + 2/9 = 7.72 × 1.1 → 9롤
     assert (r.rolls["silk"].per_roll, r.rolls["silk"].rolls) == (6, 9)
-    # 합지: 한 롤 5띠. 벽 4 + 5 + 1.6 + 1.6, 천장 1.5 + 4 + 1 + 3/7 = 19.13 × 1.1 → 22롤
-    assert (r.rolls["hapji"].per_roll, r.rolls["hapji"].rolls) == (5, 22)
+    # 합지는 광폭(0.93m × 17.75m)이 기본(판 2026.11.2): 한 롤 7띠. 벽 띠 12 + 14 + 5 + 5 = 36 ÷ 7,
+    # 천장 4/5 + 5/3 + 3/5 + 2/11 = 8.39 × 1.1 → 10롤(옛 판은 소폭만 세서 22롤)
+    assert (r.rolls["hapji"].per_roll, r.rolls["hapji"].rolls) == (7, 10)
+    assert (r.rolls["hapji"].ko, r.rolls["hapji"].size) == ("광폭 합지", "0.93m × 17.75m")
     assert r.rolls["silk"].size == "1.06m × 15.6m"
+    # 소폭(0.53m × 12.5m)은 고를 때만: 한 롤 5띠. 벽 4 + 5 + 1.6 + 1.6, 천장 1.5 + 4 + 1 + 3/7
+    # = 19.13 × 1.1 → 22롤
+    n = from_plan(PLAN, PlanOptions(hapji="narrow")).rolls["hapji"]
+    assert (n.ko, n.per_roll, n.rolls) == ("소폭 합지", 5, 22)
+    assert r.rules_version == "2026.11.2"
     assert r.low == ["확장 칸"]
 
 

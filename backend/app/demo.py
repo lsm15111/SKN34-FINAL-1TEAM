@@ -1061,7 +1061,7 @@ async def _quote_v3(t: _Trip, key: str) -> None:
             valid_until=t.day(44),
             incl_removal=maru,
             incl_waste=maru,
-            paper_spec="LX 베스띠" if maru else None,
+            paper_spec="LX 실크벽지 베스트" if maru else None,
             warranty_months=12 if maru else 6,
         )
         await visit_service.save_quote(t.s, vendor, t.visits[key], data, today)

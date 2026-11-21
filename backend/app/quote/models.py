@@ -43,6 +43,7 @@ class StandardQuote(Base):
         # 부분 공사만 공간 몫 표 판이 있다
         CheckConstraint("(scope = 'partial') = (share_ver is not null)", name="share_ver"),
         CheckConstraint("market_ver is null or length(btrim(market_ver)) > 0", name="market_ver"),
+        CheckConstraint("trade = 'dobae' or not own_paper", name="own_paper"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
@@ -78,6 +79,9 @@ class StandardQuote(Base):
     share_ver: Mapped[str | None] = mapped_column(String(20))
     # v3 (0033): 벽지 시장 평균 가격 판(paper-market-2026.11). price_ver(공공 단가 판)와 따로 고정한다
     market_ver: Mapped[str | None] = mapped_column(String(40))
+    # v4 (0053): 만든 때 고객이 벽지를 직접 샀는지(반셀프 '벽지 직접 구매'). 참이면 도배지 줄이 '안 함'(고객 구매)이고
+    # 합계에서 빠졌다(계산 엔진). 칩이 바뀌면 새 판을 쌓는다
+    own_paper: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
 
 
 class StandardQuoteLine(Base):
@@ -132,6 +136,10 @@ class VendorQuote(Base):
         CheckConstraint("code ~ '^Q-[0-9]{4}-[0-9]{4,}$'", name="code"),
         CheckConstraint("vat_mode in ('included', 'excluded', 'exempt')", name="vat_mode"),
         CheckConstraint("entered_amount >= 0", name="entered_amount"),
+        # 1원 이상(0052): 0원으로 임시 저장한 옛 행이 있을 수 있어 NOT VALID(새로 넣거나 고치는 행부터)
+        CheckConstraint(
+            "entered_amount >= 1", name="entered_amount_min", postgresql_not_valid=True
+        ),
         CheckConstraint(
             "(supply is null) = (total is null) and (vat is null) = (total is null)"
             " and (total is null or (supply >= 0 and vat >= 0 and total = supply + vat))",
@@ -172,7 +180,7 @@ class VendorQuote(Base):
     # v3 (0025, D21) '포함됐나요?' 칩 4칸: 기존 벽지 철거 · 폐기물 처리 · 벽지 제조사 · 규격 · 하자 보수 기간
     incl_removal: Mapped[bool | None] = mapped_column(Boolean)
     incl_waste: Mapped[bool | None] = mapped_column(Boolean)
-    paper_spec: Mapped[str | None] = mapped_column(String(60))  # LX 베스띠 · 폭 106cm
+    paper_spec: Mapped[str | None] = mapped_column(String(60))  # LX 실크벽지 베스트 · 폭 106cm
     warranty_months: Mapped[int | None] = mapped_column(SmallInteger)
 
 

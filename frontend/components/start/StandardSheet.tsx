@@ -25,6 +25,8 @@ export function StandardSheet({ view, changeHref }: { view: StdView; changeHref:
         <QuoteLines lines={view.lines} totals={{ supply: view.supply, vat: view.vat, total: view.total }} vatSplit caption="표준견적서 줄" />
       </section>
       {part ? <p className={s.info}>부분 공사는 고른 공간의 넓이를 어림해 계산했어요. 실측 뒤 업체 견적서로 확정해요.</p> : null}
+      {/* 벽지 직접 구매: 도배지 줄은 '고객 구매'로 합계 밖(계산 엔진). 업체 가견적은 벽지 값이 든 값이라 안내 한 줄(틀) */}
+      {view.paperNote ? <p className={s.info}>{view.paperNote}</p> : null}
     </>
   );
 }

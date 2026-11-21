@@ -144,11 +144,13 @@ def test_knowledge_bundle_matches_chip_contract():
         assert not any(re.search(r"\d", x) for x in texts), k  # 정해 둔 글에 숫자 · 금액 없음
         assert all(x.endswith("요.") for x in [it.when, *it.how, *it.cautions]), k
         assert any(src.kind in ("public", "maker") for src in it.sources), k
+        # 벽지 직접 구매(diy_know_v2)의 제조사 자료는 2026-11-22에 확인했어요
         assert all(
-            src.checked == "2026-11-21" and src.url.startswith("https://") for src in it.sources
+            src.checked in ("2026-11-21", "2026-11-22") and src.url.startswith("https://")
+            for src in it.sources
         )
     assert "차단기" in " ".join(know.item("outlet").cautions)  # 전기는 차단기부터
-    assert know.book().version == "diy_know_v1"
+    assert know.book().version == "diy_know_v2"
 
 
 # ---- 공정표 '고객이 직접' 줄 ----
@@ -392,7 +394,15 @@ def test_diy_plan_tool_weekend_and_model_values(api, script):
     assert (got["state"], got["phase"]) == ("chips", "expected")
     (item,) = got["items"]
     assert item["kind"] == "paint" and "사포" in item["prep"] and item["when"].startswith("목공이")
-    start, end = D(item["start"]), D(item["end"])
+    # 날짜는 공정표 '고객이 직접' 줄과 같은 값이고(QA r2 c3), 주말 · 공휴일 값은 weekend에 따로 와요
+    p = plan(api, pid)
+    (row,) = [b for b in p["blocks"] if b["kind"] == "diy" and b["label"].startswith("페인트")]
+    assert (item["start"], item["end"]) == (row["start"], row["end"])
+    start, end = D(item["weekend"]["start"]), D(item["weekend"]["end"])
     assert start.weekday() >= 5 and end.weekday() >= 5 and start <= end  # 주말만
-    dobae = block(plan(api, pid), "work", "dobae")
+    dobae = block(p, "work", "dobae")
     assert end <= D(dobae["start"]) - timedelta(days=calc_diy.PAINT_DRY_DAYS)
+    assert got["days"] == "weekend" and diy_tools.DAYS_NOTE["asked"] in got["basis"]
+    assert (
+        f"페인트(문틀 · 몰딩) 칠하기: {item['text']}" in card["data"]["lines"]
+    )  # 카드 말 = 모델 말

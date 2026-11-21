@@ -40,7 +40,7 @@ def test_precise_paper_line_uses_chosen_silk():
     dia = precise_dobae.quote(base.__class__(**{**base.__dict__, "silk": DIA}), DOBAE_2026H2)
     pb, pd = paper(best.lines), paper(dia.lines)
     assert (pb.name, pb.qty, pb.unit, pb.unit_price, pb.amount) == (
-        "실크벽지 (LX 베스띠 or 개나리 로하스)",
+        "실크벽지 (LX 실크벽지 베스트 or 개나리 로하스)",
         D("63.0"),
         "평",
         9_500,
@@ -73,7 +73,7 @@ def test_market_paper_line_uses_chosen_silk():
 def test_quick_budget_asks_silk_instead_of_grade():
     papers = (BEST, DIA)
     r = quick(QuickIn(area_m2=pyeong_to_m2(D(32)), papers=papers), MARKET_2026_11)
-    assert "벽지는 실크벽지 (LX 베스띠 or 개나리 로하스)로 계산" in r.assumed
+    assert "벽지는 실크벽지 (LX 실크벽지 베스트 or 개나리 로하스)로 계산" in r.assumed
     assert r.alt is not None and r.alt.value == "diamant" and r.alt.lo > r.lo
     keys = [a.key for a in r.asks]
     assert "paper" in keys and "grade" not in keys

@@ -172,8 +172,10 @@ def test_locked_project_diy_proposal_survives_sweep(api, script):
     assert len(got) == 1, len(log) > 1 and tool_result(log, 1)
     (a,) = got
     assert a["summary"]["title"] == "직접 할 일 저장"
-    # 직접 할 일만 바꾸면 다시 계산하지 않고, 이미 보낸 요청은 채팅으로 알리라고 해요
-    assert "표준견적서를 새로" not in a["summary"]["note"] and "채팅" in a["summary"]["note"]
+    # 직접 할 일만 바꾸면 다시 계산하지 않아요. QA r2 c2부터 확정 전 요청은 믿집이 알리고 확정한 업체만
+    # 채팅으로 알리라고 해요. 이 공사는 잠기기만 하고 요청이 없어 업체 말이 없어요(test_v4_qa_r2_diy)
+    note = a["summary"]["note"]
+    assert "표준견적서를 새로" not in note and "업체" not in note
     run(api, assistant_service.sweep, now_utc())
     r = approve(api, a["action_id"])
     assert r.status_code == 200 and r.json()["status"] == "executed", r.text

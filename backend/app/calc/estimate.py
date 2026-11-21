@@ -16,7 +16,10 @@
   표준견적서 부자재 줄도 벽지마다 값이 달라요(도배만 하는 공사 기준 실크 6,900 · 합지 3,300원/공급 평).
   1209 줄이 없는 옛 확인 묶음(줄을 더하기 전)은 합지 집에도 1205 단가를 쓴다(그때 업체가 한 줄로 확인한 뜻 그대로).
 - '다른 줄에 포함'은 대상이 그 줄이 나오는 모든 집에 같이 나오는 줄일 때만 받는다(same_home: 모든 집 줄 또는 같은
-  벽지 줄). 대상이 이 집 가견적에서 단가로 센 줄이 아니면 그 줄 금액을 알 수 없어 missing에 남긴다(가견적 없음).
+  벽지 줄). 대상이 이 집 가견적 합계에 단가로 들어가는 줄이 아니면(다른 벽지 줄 · 빼기 줄 · 이 집에서 '선택'인 줄)
+  그 줄 금액을 알 수 없어 missing에 남긴다(가견적 없음, 0원으로 빼지 않음). '선택' 줄은 판마다 달라 저장 때 막지 않는다.
+- 고객이 벽지를 직접 사도(표준견적서 도배지 줄 '안 함' · 고객 구매) 업체 가견적은 벽지 값이 든 값이에요. 그 도배지
+  줄도 가견적에 넣는다('시공만' 값은 업체가 단가를 따로 넣어야 해서 뒤로, 2026-11-22 리드 결정).
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -25,7 +28,7 @@ from decimal import Decimal
 from typing import Literal
 
 from app.calc.common import COUNTED, Money, with_vat, won
-from app.calc.dobae import GRADE_PAPER, QtyV3
+from app.calc.dobae import GRADE_PAPER, QtyV3, own_paper_line
 from app.calc.quote_diff import percent_vs
 
 
@@ -183,11 +186,15 @@ def estimate(
     exempt: bool = False,
 ) -> Estimate:
     keys = PRICE_KEYS[trade]
+
+    def counted(ln: StdLine) -> bool:  # 고객 구매로 뺀 도배지 줄도 업체 가견적에는 넣어요
+        return ln.state in COUNTED or own_paper_line(ln.key, ln.state)
+
     # 포함 대상은 이번 집에서 수량과 직접 단가로 실제 계산하는 줄이어야 한다.
     priced_keys = {
         price_key(ln.key, grade)
         for ln in lines
-        if ln.state in COUNTED
+        if counted(ln)
         and ln.qty is not None
         and ln.qty > 0
         and price_key(ln.key, grade) in keys
@@ -198,7 +205,7 @@ def estimate(
     missing: list[str] = []
     left_out: list[str] = []
     for ln in lines:
-        if ln.state not in COUNTED:
+        if not counted(ln):
             continue
         pk = price_key(ln.key, grade)
         if pk not in keys or ln.qty is None:
@@ -305,24 +312,26 @@ def estimate_v3(
     exempt면(간이 · 면세, L02) 부가세 0. 비교 %는 표준견적서 합계에 같은 일이 없는 줄을 빼고 센다.
     standard_keys(표준견적서에서 합계에 드는 줄 키)를 주면 그 집 기준대로, 안 주면 줄의 옛 고정값으로 가른다.
     optional_keys(표준견적서 '선택' 줄 키)에 든 일의 줄은 '선택'이라 합계에서도 뺀다(ADR 0006).
-    '다른 줄에 포함' 줄의 대상이 이 집 가견적에서 단가로 센 줄이 아니면(다른 벽지 줄 · 빼기 줄) 그 줄은 missing에 남긴다.
-    옛 묶음이 대신 쓴 줄(fallback, 1205)은 이 집에서 단가로 센 줄로 본다."""
+    '다른 줄에 포함' 줄의 대상이 이 집 가견적 합계에 단가로 들어가는 줄이 아니면(다른 벽지 줄 · 빼기 줄 · '선택' 줄)
+    그 줄은 missing에 남긴다. 옛 묶음이 대신 쓴 줄(fallback, 1205)은 이 집에서 단가로 센 줄로 본다."""
     keys = frozenset(standard_keys) if standard_keys is not None else None
     optional = frozenset(optional_keys)
     out: list[EstimateV3Line] = []
-    priced: set[str] = set()  # 이 집 가견적에서 단가로 센 줄 키(포함 대상이 될 수 있는 줄)
+    # 이 집 가견적 합계에 단가로 들어가는 줄 키(포함 대상이 될 수 있는 줄). '선택' 줄은 합계 밖이라 빼요:
+    # 거기에 포함한 줄(식대 → 운송비)은 0원으로 합계에서 빠지니 금액을 알 수 없어요(G 보고 '선택' 줄, 리드 결정)
+    priced: set[str] = set()
     for row in V3_ROWS:
         if row.grade is not None and row.grade != grade:
             continue
         vp = price_of(row, prices) or PriceV3("excluded")
-        if vp.mode == "price":
-            priced.add(row.key)
-            if row.key not in prices and row.fallback is not None:
-                priced.add(row.fallback)  # 옛 묶음: 대신 쓴 줄(1205)의 단가가 이 집에 들어가요
         n, amount = row_amount(row, vp, qty)
         alike = set(V3_STD_KEYS[row.key])
         inside = row.in_standard if keys is None else bool(keys & alike)
         opt = not inside and bool(optional & alike)
+        if vp.mode == "price" and not opt:
+            priced.add(row.key)
+            if row.key not in prices and row.fallback is not None:
+                priced.add(row.fallback)  # 옛 묶음: 대신 쓴 줄(1205)의 단가가 이 집에 들어가요
         out.append(
             EstimateV3Line(row, n, vp.mode, vp.unit_price, vp.included_in, amount, inside, opt)
         )

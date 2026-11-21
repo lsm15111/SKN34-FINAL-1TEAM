@@ -338,6 +338,10 @@ class ExtraCharge(Base):
         CheckConstraint("length(btrim(reason)) > 0", name="reason"),
         CheckConstraint("vat_mode in ('included', 'excluded', 'exempt')", name="vat_mode"),
         CheckConstraint(f"entered_amount between 0 and {EXTRA_AMOUNT_MAX}", name="entered_amount"),
+        # 1원 이상(0052): 0원 옛 행이 있을 수 있어 NOT VALID(새로 넣거나 고치는 행부터)
+        CheckConstraint(
+            "entered_amount >= 1", name="entered_amount_min", postgresql_not_valid=True
+        ),
         CheckConstraint(
             "supply >= 0 and vat >= 0 and total = supply + vat"
             " and (vat_mode <> 'exempt' or vat = 0)"

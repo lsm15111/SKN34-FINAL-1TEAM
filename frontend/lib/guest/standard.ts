@@ -37,12 +37,19 @@ function nameOf(l: StdLineIn): { name: string; note?: string } {
   return { name: l.name };
 }
 
-export function toQuoteLines(lines: StdLineIn[], scope: "full" | "partial" | null | undefined): QuoteLine[] {
+/** 벽지 직접 구매(API own_paper): 도배지 줄은 '고객 구매'(합계 밖, 계산 엔진). rolls는 롤 수 글(API rolls.text) */
+export type OwnPaper = { rolls: string | null };
+
+export function toQuoteLines(lines: StdLineIn[], scope: "full" | "partial" | null | undefined, own?: OwnPaper): QuoteLine[] {
   return lines.map((l) => {
     const { name, note: base } = nameOf(l);
     const state = (STATES as string[]).includes(l.state) ? (l.state as LineState) : undefined;
     let note = base;
     if (l.key === "paper" && (l.basis === "market" || l.basis === "assumed" || (l.source ?? "").includes("시장"))) note = "시장 평균 가격";
+    // 고객 구매 줄: 사야 할 양(수량 · 롤 수)만 보이고 단가 · 금액은 '—'(합계 밖이라 '안 함' 말은 붙이지 않아요)
+    if (own && l.key === "paper" && state === "excluded") {
+      return { key: l.key, name, note: ["고객 구매", own.rolls].filter(Boolean).join(" · "), qty: l.qty, unit: unitText(l.unit), amount: null };
+    }
     if (state === "excluded" && scope === "partial") note = "고르지 않았어요";
     if (state === "excluded" && scope === "partial") return { key: l.key, name, note, amount: null, state };
     return { key: l.key, name, note, qty: l.qty, unit: unitText(l.unit), unitPrice: l.unit_price, amount: l.amount, state };
@@ -72,4 +79,6 @@ export type StdView = {
   budget: string | null;
   /** '도배 전체 · 아파트 공급 69.4㎡ · 실크 · 빈 집' */
   condition: string;
+  /** 벽지 직접 구매일 때 안내 한 줄(API paper_note, 틀): 업체 가견적은 벽지 값이 든 값이에요 */
+  paperNote?: string | null;
 };

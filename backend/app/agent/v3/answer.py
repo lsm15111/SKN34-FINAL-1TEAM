@@ -520,6 +520,11 @@ def calc_box(ref: str, facts: ProjectFacts | None, label: str = "") -> CalcBox |
             if ln.key == key:
                 return line_box(ln)
         return None
+    if ref == "standard.rolls" and facts.standard and facts.standard.rolls is not None:
+        st = facts.standard  # 벽지 롤 수(계산 엔진 calc.rolls, 보이기용 · 돈은 벽지 평으로 세요)
+        return CalcBox(
+            label=label or "벽지 롤 수", ref=ref, qty=st.rolls, unit="롤", note=st.rolls_text,
+        )  # fmt: skip
     if ref == "plan.range" and facts.plan:
         p = facts.plan
         return CalcBox(

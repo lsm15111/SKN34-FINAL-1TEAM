@@ -199,7 +199,9 @@ def dobae_prices_of(price_ver: str | None) -> DobaePrices:
 # 실견적 자료가 더 모이면 바꾼다. 화면 자재 id(wall-silk-*)로 고른다 (frontend/public/v2/data.json · v2_materials.json)
 _SILK_SRC = "업체 도배 견적서 1건 (2026-11) · 실크벽지 평당 자재값"
 SILK_2026 = {
-    "wall-silk-best": SilkPaper("best", "실크벽지 (LX 베스띠 or 개나리 로하스)", 9_500, _SILK_SRC),
+    "wall-silk-best": SilkPaper(
+        "best", "실크벽지 (LX 실크벽지 베스트 or 개나리 로하스)", 9_500, _SILK_SRC
+    ),
     "wall-silk-diamant": SilkPaper(
         "diamant", "실크벽지 (LX 디아망 or 개나리 프리모)", 15_000, _SILK_SRC
     ),

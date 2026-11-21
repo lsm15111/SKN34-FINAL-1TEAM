@@ -1,10 +1,11 @@
-"""계산 엔진 calc.diy: 반셀프 직접 할 일 '언제부터 · 언제까지'(판 diy_v2). DB 없음.
+"""계산 엔진 calc.diy: 반셀프 직접 할 일 '언제부터 · 언제까지'(판 diy_v3, 빈 집은 diy_v2와 같은 값). DB 없음.
 
 - 도배만 맡긴 빈 집(S19): 페인트는 칠하고 사흘을 비우게 도배 나흘 전까지(diy_v2, v1은 사흘 전이라 빈 날 이틀),
   콘센트는 도배 전 덮개 떼기 → 도배 뒤 새 커버.
 - 목공 뒤 · 도배 전 페인트, 사이가 모자라면 빠듯함(short). 빠듯한 일의 공정표 날은 할 수 있는 첫날(diy_v2).
 - 주말만 할 수 있는 고객 · 공휴일(성탄절) · 할 수 있는 날이 없음(no_free_day).
 - 공사 날짜가 없을 때(순서만) · 마감 지남(late) · 7일 안 마감 · 도배 없는 공사의 콘센트.
+- 사는 집(diy_v3, QA r2 c3): 입주 청소가 마감이 아니라 뒤에 할 일 마감이 공사 뒤 첫 주말(일요일)까지예요.
 """
 
 from datetime import date
@@ -32,10 +33,17 @@ def span(t: diy.DiyTask) -> tuple[str | None, str | None, str | None]:
 
 
 def test_rule_constants_are_versioned():
-    assert diy.RULE_VER == "diy_v2" and diy.RULES is diy.RULES_V2
+    # diy_v3(QA r2 c3): 사는 집만 다른 판이라 판 이름을 옮겼어요(빈 집은 v2와 같은 값)
+    assert diy.RULE_VER == "diy_v3" and diy.RULES is diy.RULES_V3
     assert diy.PAINT_DRY_DAYS == 3 and diy.COVER_OFF_DAYS == 3
     assert DRY_DAYS == 2  # 공정표 자연 건조(도배 다음 날부터 이틀) 뒤 입주 청소
-    assert {r.key for r in diy.RULES_V2} == {r.key for r in diy.RULES_V1} == set(diy.KEYS)
+    keys = set(diy.KEYS)
+    assert {r.key for r in diy.RULES_V3} == {r.key for r in diy.RULES_V2} == keys
+    assert {r.key for r in diy.RULES_V1} == keys
+    # 사는 집에서 늘리는 규칙: 뒤에 할 일 중 입주 청소 빼고(입주 청소 자체는 그대로)
+    assert {r.key for r in diy.RULES_V3 if r.lived} == {"outlet", "light", "silicone", "handle"}
+    assert not any(r.lived for r in (*diy.RULES_V2, *diy.RULES_V1))
+    assert all(r.kind == "after" for r in diy.RULES_V3 if r.lived)
     # 옛 판 diy_v1은 기록으로 남아 같은 값을 다시 셀 수 있어요(페인트 도배 − 3일, 빠듯하면 마감 날)
     (v1,) = diy.plan(["paint"], DOBAE, TODAY, rules=diy.RULES_V1)
     assert (v1.end, v1.rule_ver) == (D("2026-12-04"), "diy_v1")
@@ -51,7 +59,11 @@ def test_dobae_only_paint_and_outlet_vacant_home():
     # 덮개 떼기: 도배 사흘 전 ~ 전날(12.4 ~ 12.6), 새 커버: 도배 다음 날 ~ 입주 청소 날(12.10 ~ 12.12)
     assert span(by(got, "outlet", "off")) == ("2026-12-04", "2026-12-06", "2026-12-06")
     assert span(by(got, "outlet", "on")) == ("2026-12-10", "2026-12-12", "2026-12-10")
-    assert all(t.rule_ver == "diy_v2" for t in got)
+    assert all(t.rule_ver == "diy_v3" for t in got)
+    # 빈 집은 diy_v2와 같은 값이에요(판 이름만 달라요)
+    v2 = diy.plan(["outlet", "paint"], DOBAE, TODAY, dry=DRY, clean=CLEAN, rules=diy.RULES_V2)
+    assert [span(t) for t in v2] == [span(t) for t in got]
+    assert all(t.rule_ver == "diy_v2" for t in v2)
 
 
 def test_after_dobae_tasks_light_silicone_handle_clean():
@@ -93,6 +105,36 @@ def test_weekend_only_customer_picks_weekend_days():
     # 아무 날이나 되면 창 그대로
     anyday = diy.plan(["paint"], work, TODAY, dry=dry, clean=clean)
     assert span(anyday[0]) == ("2026-12-01", "2026-12-05", "2026-12-05")
+
+
+def test_occupied_home_after_tasks_run_to_first_weekend_after_work():
+    """QA r2 c3: 살면서 공사(월 ~ 수 도배, 목 · 금 자연 건조, 토 입주 청소 줄)인데 주말만 되는 고객에게 실리콘을
+    입주 청소 전날(금)까지로 몰아 평일 하루를 비우라고 했어요. 사는 집은 공사 뒤 첫 주말(일요일)까지 해도 돼요."""
+    work = {"dobae": (D("2026-12-14"), D("2026-12-16"))}  # 월 ~ 수
+    dry, clean = (D("2026-12-17"), D("2026-12-18")), (D("2026-12-19"), D("2026-12-19"))
+    keys = ["outlet", "light", "silicone", "handle", "clean"]
+    today = D("2026-12-01")
+    # 빈 집(v2와 같아요): 실리콘은 입주 청소 전날(12.18 금)까지라 주말만 되면 날이 없어요
+    vacant = diy.plan(keys, work, today, dry=dry, clean=clean, free="weekend")
+    sil = by(vacant, "silicone")
+    assert (sil.fit, sil.why, sil.end) == (False, "no_free_day", D("2026-12-18"))
+    # 사는 집: 실리콘 · 조명 · 새 커버 · 손잡이는 공사 뒤 첫 주말(12.19 토 ~ 12.20 일)도 돼요
+    lived = diy.plan(keys, work, today, dry=dry, clean=clean, free="weekend", occupied=True)
+    for k, step in (("silicone", ""), ("light", ""), ("outlet", "on"), ("handle", "")):
+        assert span(by(lived, k, step)) == ("2026-12-19", "2026-12-20", "2026-12-19"), k
+        assert by(lived, k, step).fit
+    # 덮개 떼기(도배 전) · 입주 청소는 그대로예요
+    assert span(by(lived, "outlet", "off")) == span(by(vacant, "outlet", "off"))
+    assert span(by(lived, "clean")) == span(by(vacant, "clean"))
+    # 아무 날이나 되면 공정표 날은 그대로 공사 다음 날(12.17 목)이고 마감만 일요일까지 늘어요
+    anyday = by(diy.plan(keys, work, today, dry=dry, clean=clean, occupied=True), "silicone")
+    assert span(anyday) == ("2026-12-17", "2026-12-20", "2026-12-17")
+    # 입주 청소 날이 첫 주말보다 늦으면 원래 마감(더 늦은 날)을 그대로 써요
+    late_clean = (D("2026-12-22"), D("2026-12-22"))
+    light = by(diy.plan(["light"], work, today, dry=dry, clean=late_clean, occupied=True), "light")
+    assert light.end == D("2026-12-22")
+    assert diy.first_sunday(D("2026-12-17")) == D("2026-12-20")
+    assert diy.first_sunday(D("2026-12-20")) == D("2026-12-20")
 
 
 def test_weekend_only_holiday_counts_and_no_free_day():

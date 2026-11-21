@@ -16,6 +16,7 @@ from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant.tools.cards import md_long
+from app.project.diy import DIY
 from tests.conftest import query
 from tests.helpers import signup, use
 from tests.test_v3_project_home import HOME, create
@@ -87,7 +88,8 @@ def test_create_project_saves_rooms_and_diy_in_one_go(api):
     before = query("select count(*) as n from projects")[0]["n"]
     bad = create(api, {**HOME, "diy": ["floor"]})
     assert bad.status_code == 422 and bad.json()["error"]["fields"][0]["loc"][0] == "diy"
-    assert create(api, {**HOME, "diy": ["paint"] * 7}).status_code == 422
+    # 칩 수보다 많으면 422(칩이 '벽지 직접 구매'까지 7개라 8개부터)
+    assert create(api, {**HOME, "diy": ["paint"] * (len(DIY) + 1)}).status_code == 422
     assert query("select count(*) as n from projects")[0]["n"] == before
 
 
@@ -120,13 +122,15 @@ def test_put_diy_is_for_the_owner_only(api):
     pid = create(api, HOME).json()["id"]
     r = api.put(f"/projects/{pid}/diy", json={"diy": ["outlet", "paint"]})
     assert r.status_code == 200, r.text
-    assert r.json() == {"diy": ["paint", "outlet"]}  # 칩 순서
+    # 칩 순서. 실측 요청이 없으면 알린 업체도 안내도 없어요(QA r2 c2: told · notice, test_v4_qa_r2_diy)
+    assert r.json() == {"diy": ["paint", "outlet"], "told": [], "notice": None}
     assert chips(api, pid) == [("직접 할 일", "콘센트 · 스위치 커버"), ("직접 할 일", PAINT)]
     assert api.get(f"/projects/{pid}").json()["rev"] == 1  # 집 정보 rev는 그대로
     r = api.put(f"/projects/{pid}/diy", json={"diy": []})
-    assert r.json() == {"diy": []} and diy_rows(pid) == [("diy", "diy.none", "self")]
+    assert r.json()["diy"] == [] and diy_rows(pid) == [("diy", "diy.none", "self")]
     r = api.put(f"/projects/{pid}/diy", json={"diy": ["silicone"]})
-    assert r.json() == {"diy": ["silicone"]} and diy_rows(pid) == [("diy", "diy.silicone", "self")]
+    assert r.json()["diy"] == ["silicone"]
+    assert diy_rows(pid) == [("diy", "diy.silicone", "self")]
 
     for body in ({"diy": ["tile"]}, {"diy": ["paint"], "extra": 1}, {}, {"diy": None}):
         assert api.put(f"/projects/{pid}/diy", json=body).status_code == 422, body

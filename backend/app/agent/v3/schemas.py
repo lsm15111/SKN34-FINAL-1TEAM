@@ -68,6 +68,9 @@ class StandardFacts(BaseModel):
     ] = {}  # 공정별 합계(부가세 포함, 계산 엔진 값). 공정이 둘 이상일 때 공정 질문에 씀
     lines: list[StandardLineFact] = []
     days: int | None = None  # 계산 엔진 공정 일수(있을 때만)
+    # 도배 벽지 롤 수(계산 엔진 calc.rolls, 보이기용) · 롤 종류 글('실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로')
+    rolls: int | None = None
+    rolls_text: str = ""
 
 
 class PlanBlockFact(BaseModel):
@@ -306,7 +309,7 @@ class CalcBox(BaseModel):
     """'믿집 계산' 상자. 값은 계산 엔진 결과를 옮긴 것이고 글로 쓰지 않는다."""
 
     label: str
-    ref: str  # 예: standard.lines.demolish · standard.total · plan.range · visit_draft.recommend
+    ref: str  # 예: standard.lines.demolish · standard.total · standard.rolls · plan.range · visit_draft.recommend
     qty: float | None = None
     unit: str = ""
     unit_price: int | None = None

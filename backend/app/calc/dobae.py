@@ -13,6 +13,9 @@
   퍼티 · 식대 · 운송비 줄을 더한다. profile이 없는 옛 판은 옛 줄 그대로다.
 - 가견적과 같은 규칙(ADR 0006): 판에 품 배수(md_mult)가 있으면 품 = 0.5 올림(표준품셈 품 × 도배 유형별 배수).
   same_rules 판은 '선택' 줄 키를 StandardV3.optional_keys로 넘겨 가견적도 그 줄을 합계 밖에 둔다.
+- v4 반셀프 '벽지 직접 구매'(own_paper, 2026-11-22 리드 결정): 도배지 줄을 '안 함'(까닭 '고객 구매')으로 두어
+  합계에서 뺀다. 수량 · 단가 · 금액은 참고로 남긴다(업체 가견적과 견줄 때 with_own_paper). 포함 상태는 6종 그대로다.
+  도배지 줄이 '안 함'인 것은 이때뿐이다(own_paper_line).
 """
 
 from collections.abc import Mapping, Sequence
@@ -28,6 +31,7 @@ from app.calc.common import (
     Basis,
     Line,
     LineState,
+    Money,
     Step,
     half_days,
     half_up,
@@ -366,11 +370,41 @@ class DobaeV3Input:
     rooms: int | None = None  # 방 개수 (회귀식 단가 판에서 꼭 필요)
     # 부자재 · 퍼티 수량(공급 평, 부분 공사면 공간 몫을 곱한 값). 두 기준(profile) 판에서 꼭 필요
     floor_py: Decimal | None = None
+    # 벽지를 고객이 직접 사요(반셀프 '벽지 직접 구매'): 도배지 줄 '안 함' · 고객 구매
+    own_paper: bool = False
+
+
+# 반셀프 '벽지 직접 구매': 도배지 줄 까닭(줄 근거 글 앞머리) · 가정 줄
+OWN_PAPER = "고객 구매"
+OWN_PAPER_ASSUMED = "벽지는 고객이 직접 사요(고객 구매). 도배지 줄은 합계에 넣지 않았어요."
 
 
 def paper_py(paper_m2: Decimal) -> Decimal:
     """도배지 소요량 ㎡ → 벽지 평 (0.1평 반올림, 벽지 1평 = 3.3058㎡)"""
     return m2(paper_m2 / PYEONG_M2)
+
+
+def own_paper_line(key: str, state: str) -> bool:
+    """고객이 직접 사서 합계에서 뺀 도배지 줄인가. 도배지 줄은 own_paper일 때만 '안 함'이에요(quote · quote_v3)."""
+    return key == "paper" and state == "excluded"
+
+
+class _AmountLine(Protocol):
+    key: str
+    state: str
+    amount: int | None
+
+
+def with_own_paper(lines: Sequence[_AmountLine], vat_rate: Decimal) -> Money:
+    """고객 구매 도배지 줄까지 넣은 공급가 · 부가세 · 합계(표준견적서 합계와 같은 반올림). 업체 가견적은 벽지 값이
+    든 값이라('시공만' 값은 뒤로) 견줄 때 이 값을 써요. 고객 구매 줄이 없으면 표준견적서 합계와 같아요."""
+    supply = sum(
+        ln.amount
+        for ln in lines
+        if (ln.state in COUNTED or own_paper_line(ln.key, ln.state)) and ln.amount is not None
+    )
+    vat = won(Decimal(supply) * vat_rate)
+    return Money(supply, vat, supply + vat)
 
 
 class _QtyLine(Protocol):
@@ -516,6 +550,9 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
     wall_amt = won(wall_used * labor_wall)
     ceil_amt = won(ceil_used * labor_ceiling)
     paper_qty = paper_py(m2(paper_area * ratio))
+    # 벽지 직접 구매면 도배지 줄은 '안 함'(까닭 고객 구매). 수량 · 단가 · 금액은 참고로 남기고 합계에서 뺀다
+    paper_state: LineState = "excluded" if inp.own_paper else "included"
+    paper_src = f"{OWN_PAPER} · {_paper_source(paper)}" if inp.own_paper else _paper_source(paper)
     lines = [
         Line(
             "wall",
@@ -546,8 +583,8 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
             "벽지 평",
             paper.per_py,
             won(paper_qty * paper.per_py),
-            "included",
-            _paper_source(paper),
+            paper_state,
+            paper_src,
             "market",
         ),
     ]
@@ -656,6 +693,8 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
         )
     if inp.balcony_ext and p.balcony_factor != 1:
         assumptions.append(f"발코니 확장은 도배 면적을 {p.balcony_factor}배로 잡았어요.")
+    if inp.own_paper:
+        assumptions.append(OWN_PAPER_ASSUMED)
     return DobaeQuote(
         version=p.version,
         paper_m2=paper_area,
@@ -723,10 +762,12 @@ def standard_v3(
     shares: SpaceShares | RoomSpaceShares,
     house: HouseRules,
     why: Sequence[str] = (),
+    own_paper: bool = False,
 ) -> StandardV3:
     """기본 정보 → v3 표준견적서 + 가견적 수량. 표준견적서 저장 · 손님 계산 · 가견적이 같은 값을 쓴다.
     부분 공사 몫은 방 개수에 맞는 표로 센다(방 개수에 없는 방 칩이면 ValueError).
-    두 기준 판이면 고른 기준과 근거(why, pick_profile 결과)를 가정 첫 줄에 적는다."""
+    두 기준 판이면 고른 기준과 근거(why, pick_profile 결과)를 가정 첫 줄에 적는다.
+    own_paper(벽지 직접 구매)면 도배지 줄을 '안 함'(고객 구매)으로 합계에서 뺀다. 가견적 수량(qty)은 그대로다."""
     if h.area_m2 <= 0:
         raise ValueError("면적은 0보다 커야 해요")
     by_rooms = p.area_per_supply is not None
@@ -751,6 +792,7 @@ def standard_v3(
             h.balcony_ext,
             rooms,
             floor if p.profile is not None else None,
+            own_paper,
         ),
         p,
         paper,

@@ -9,9 +9,11 @@
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
 from fastapi.responses import Response
+from sqlalchemy import update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,6 +36,7 @@ from app.visit import service as svc
 from app.visit.models import (
     ATTEMPTS_MAX,
     DIY_KEYS,
+    LIVE,
     SLOTS,
     WISH_SPAN_MAX,
     Shortlist,
@@ -1284,3 +1287,80 @@ async def vendor_schedule(
         capacity=await svc.capacity_of(s, vendor.id),
         items=await svc.vendor_slots(s, vendor.id, start, end),
     )
+
+
+# ---- v4 반셀프: 직접 할 일이 바뀌면 요청 사본 맞추기(리드 결정 2026-11-22, QA r2 c2) ----
+
+DIY_SYNC = tuple(x for x in LIVE if x != "chosen")  # 확정 전 살아 있는 요청(요청함 ~ 견적서 옴)
+DIY_DEALT_NOTE = "확정 뒤라 업체에 따로 알려야 해요"
+
+
+@dataclass(frozen=True)
+class DiyReach:
+    live: list[str]  # 확정 전 살아 있는 요청의 업체(칩을 바꾸면 사본을 고치고 알림이 가요)
+    dealt: list[str]  # 확정한 업체(사본은 그대로, 업체 채팅으로 따로 알려야 해요)
+
+
+async def diy_reach(s: AsyncSession, project_id: uuid.UUID) -> DiyReach:
+    """직접 할 일을 바꾸면 닿는 업체(읽기만). 승인 카드 메모 · 직접 할 일 도구가 같이 써요."""
+    live: list[str] = []
+    dealt: list[str] = []
+    for v in await repo.of_project(s, project_id, None):
+        if v.status == "chosen":
+            dealt.append(v.vendor_name)
+        elif v.status in DIY_SYNC:
+            live.append(v.vendor_name)
+    return DiyReach(live, dealt)
+
+
+@dataclass(frozen=True)
+class DiySync:
+    told: list[str]  # 바뀐 직접 할 일을 알린 업체 이름(확정 전 살아 있는 요청)
+    dealt: list[str]  # 확정한 업체 이름(사본은 그대로, 업체 채팅으로 따로 알려야 해요)
+
+    @property
+    def note(self) -> str | None:
+        """도구 · 승인 결과에 붙일 말(확정한 업체가 있을 때만)."""
+        return f"{DIY_DEALT_NOTE}({' · '.join(self.dealt)})" if self.dealt else None
+
+
+async def sync_diy(
+    s: AsyncSession, project_id: uuid.UUID, keys: list[str], now: datetime
+) -> DiySync:
+    """직접 할 일 칩이 바뀐 뒤 같은 트랜잭션에서 부른다(commit은 부르는 쪽). 확정 전 살아 있는 실측 요청의
+    '업체에 알릴 것' 사본(visits.diy)을 지금 칩으로 맞추고, 바뀐 요청의 업체에 앱 안 알림 한 줄을 보낸다
+    (사본이 이미 같으면 그대로라 두 번 불러도 한 번만 가요). 확정한 요청(chosen)은 고치지 않고 업체 이름만
+    돌려준다(비서가 업체 채팅으로 따로 알리라고 안내해요). 벽지 직접 구매(paper_buy)도 같은 길이에요."""
+    from app.project.diy import DIY, diy_ver
+
+    want = [k for k in DIY_KEYS if k in set(keys)]
+    sent: list[str] = []
+    dealt: list[str] = []
+    for v in await repo.of_project(s, project_id, None):
+        if v.status == "chosen":
+            if list(v.diy or ()) != want:
+                dealt.append(v.vendor_name)
+            continue
+        if v.status not in DIY_SYNC or list(v.diy or ()) == want:
+            continue
+        res = await s.execute(
+            update(Visit)
+            .where(Visit.id == v.id, Visit.status.in_(DIY_SYNC), Visit.diy != want)
+            .values(diy=want)
+            .execution_options(synchronize_session=False)
+        )
+        if res.rowcount != 1:  # 그사이 확정 · 닫힘이거나 이미 같은 사본
+            continue
+        sent.append(v.vendor_name)
+        if v.vendor_id is None:
+            continue
+        what = " · ".join(DIY[k] for k in want) or "없어요"
+        await notify_service.add(
+            s,
+            user_id=v.vendor_id,
+            kind="visit_diy_changed",
+            body=f"고객이 직접 할 일을 바꿨어요: {what}",
+            link=link("visit_diy_changed", vid=v.id),
+            dedup_key=f"visit_diy_changed:{v.id}:{diy_ver(want)}:{now:%Y%m%d%H%M%S}",
+        )
+    return DiySync(sent, dealt)

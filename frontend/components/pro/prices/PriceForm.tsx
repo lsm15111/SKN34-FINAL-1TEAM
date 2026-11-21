@@ -6,6 +6,8 @@
 // '다른 줄에 포함'은 그 줄이 나오는 집에 늘 같이 나오는 줄에만 할 수 있어요: 벽지별 줄(API grade: 도배지 · 부자재 1205 실크 · 1209 합지)은
 // 같은 벽지 줄이나 모든 집 줄에, 모든 집 줄(인건비 · 식대 등)은 모든 집 줄에만(벽지별 줄에 넣으면 다른 벽지 집 가견적에서 그 금액이 빠져요).
 // 확인한 묶음에 없던 새 줄(1209를 더하기 전에 확인한 묶음)은 받는 법이 비어 와서 위에 알려요.
+// '선택' 줄(예시 가견적 optional: 퍼티 · 운송비)에 포함한 줄은 그 줄이 합계 밖인 집에서 금액을 알 수 없어 가견적이 안 보여요
+// (계산 엔진 missing). '선택' 줄은 판마다 달라 저장은 막지 않고 위에 한 줄로 알려요.
 // 저장 → POST /vendor/prices/dobae/confirm {base_version, lines}(멱등 키). 본 판이 아니면 409(다른 곳에서 먼저 저장).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -18,7 +20,7 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import type { PriceRowV3, PricesV3 } from "@/lib/api/vendor";
 import { ApiError, errorText } from "@/lib/backend/client";
-import { decText, numText, won } from "@/lib/format";
+import { decText, eulReul, numText, won } from "@/lib/format";
 import { LINE_STATES } from "@/lib/labels";
 import { newKey, send } from "../send";
 import { PRICE_UNIT } from "../text";
@@ -81,6 +83,8 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
   const warns = prices.lines.filter((r) => warnOf(r, lines[r.key]));
   // 예시 가견적의 '선택' 줄 키(API optional, 판 2026.11b)
   const optional = new Set((prices.example?.lines ?? []).filter((x) => x.optional).map((x) => x.key));
+  // '선택' 줄(합계 밖)에 포함한 줄: 그 줄이 '선택'인 집은 이 줄 금액을 알 수 없어 가견적이 안 보여요(계산 엔진, 저장은 돼요)
+  const inOptional = prices.lines.filter((r) => lines[r.key].mode === "included" && optional.has(lines[r.key].included_in ?? ""));
 
   function check(): boolean {
     const e: Record<string, string> = {};
@@ -138,6 +142,7 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
         />
         {prices.needs_setup ? <Notice tone="info">단가표가 새 줄(1201~1209)로 바뀌었어요. 줄마다 받는 법과 단가를 넣고 확인해 주세요.</Notice> : null}
         {fresh.length ? <Notice tone="info">새 줄이 생겼어요({fresh.map((r) => `${r.code} ${r.name}`).join(" · ")}). 받는 법과 단가를 넣고 확인해 주세요.</Notice> : null}
+        {inOptional.length ? <Notice tone="info">{`${eulReul(inOptional.map((r) => `${r.code} ${r.name}`).join(" · "))} '선택' 줄에 포함했어요. 그 줄이 합계 밖인 집에서는 이 금액을 알 수 없어 가견적이 안 보여요.`}</Notice> : null}
         <div className={s.box}>
           <div className={s.head} aria-hidden="true"><span>코드 · 줄</span><span>받는 법</span><span>단가(원)</span><span className={s.r}>{homeLabel}이면</span></div>
           <ul className={s.rows} aria-label="도배 단가 줄">

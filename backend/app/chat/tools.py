@@ -505,7 +505,16 @@ async def _standard(s: AsyncSession, user: User, project_id: uuid.UUID) -> Stand
         if ln.state in STATES
     ]
     trades = {t.trade: t.total for t in st.trades if t.trade in TRADES}
-    return StandardFacts(total=st.total, supply=st.supply, vat=st.vat, trades=trades, lines=lines)
+    rolls = next((t.rolls for t in st.trades if t.rolls is not None), None)  # 도배 롤 수(계산 엔진)
+    return StandardFacts(
+        total=st.total,
+        supply=st.supply,
+        vat=st.vat,
+        trades=trades,
+        lines=lines,
+        rolls=rolls.count if rolls else None,
+        rolls_text=rolls.text if rolls else "",
+    )
 
 
 async def _plan(

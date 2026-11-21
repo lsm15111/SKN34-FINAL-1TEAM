@@ -504,8 +504,8 @@ class V2Calc7In(BaseModel):
     doors: Len = 0
     windows: Len = 0
     ceiling: bool = False
-    rollW: Pos = 0.53
-    rollLen: Pos = 12.5
+    rollW: Pos = 0.93  # 빈 칸이면 광폭 합지 롤(calc.rolls, 소폭 0.53 × 12.5는 고를 때만)
+    rollLen: Pos = 17.75
     repeat: Len = 0
     loss: Len = 10
     doorW: Len = 0.9
@@ -568,7 +568,7 @@ class V2QuickIn(BaseModel):
     door: Literal["none", "leaf", "frame"] | None = None
     grade: Literal["economy", "basic"] | None = None
     paper: Literal["best", "diamant"] | None = (
-        None  # 실크벽지 종류 (베스띠 · 로하스 / 디아망 · 프리모)
+        None  # 실크벽지 종류 (실크벽지 베스트 · 로하스 / 디아망 · 프리모)
     )
     ceiling: StrictBool | None = None
     occupied: StrictBool | None = None

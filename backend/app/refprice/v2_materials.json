@@ -133,7 +133,7 @@
 {"id": "paint-bm-scuffx", "cat": "paint", "tier": "premium", "brand": "벤자민무어", "name": "스커프-엑스 무광 (긁힘 · 오염 방지)", "price": {"min": 177100, "max": 181500, "unit": "통(4L)"}},
 {"id": "paint-dunn-aristoshield", "cat": "paint", "tier": "premium", "brand": "던에드워드", "name": "아리스토쉴드 반광 (수성 우레탄 알키드)", "price": {"min": 172750, "max": 172750, "unit": "통(3.78L)"}},
 {"id": "paint-brceratec-hyggero", "cat": "paint", "tier": "premium", "brand": "BR세라텍", "name": "휘게로 유럽미장 내부용 (석회 미장 느낌)", "price": {"min": 28000, "max": 42000, "unit": "통(5kg)"}},
-{"id": "wall-silk-best", "cat": "wallpaper", "tier": "basic", "brand": "LX Z:IN · 개나리벽지(GNI)", "name": "실크벽지 (LX 베스띠 or 개나리 로하스)", "price": {"min": 9500, "max": 9500, "unit": "평"}},
+{"id": "wall-silk-best", "cat": "wallpaper", "tier": "basic", "brand": "LX Z:IN · 개나리벽지(GNI)", "name": "실크벽지 (LX 실크벽지 베스트 or 개나리 로하스)", "price": {"min": 9500, "max": 9500, "unit": "평"}},
 {"id": "wall-silk-diamant", "cat": "wallpaper", "tier": "premium", "brand": "LX Z:IN · 개나리벽지(GNI)", "name": "실크벽지 (LX 디아망 or 개나리 프리모)", "price": {"min": 15000, "max": 15000, "unit": "평"}},
 {"id": "wall-lx-best-01", "cat": "wallpaper", "tier": "basic", "brand": "LX Z:IN", "name": "실크벽지 베스트(구 베스띠) 딥 페인팅 초크 화이트 82577-01", "price": {"min": 48000, "max": 49300, "unit": "롤"}},
 {"id": "wall-lx-fiance93-01", "cat": "wallpaper", "tier": "economy", "brand": "LX Z:IN", "name": "합지벽지(휘앙세93) 샌드 화이트 49146-01", "price": {"min": 25400, "max": 25400, "unit": "롤"}},

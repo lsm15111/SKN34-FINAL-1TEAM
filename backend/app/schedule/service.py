@@ -426,15 +426,25 @@ def diy_tasks(
     *,
     free: calc_diy.Free = "any",
     move_in: date | None = None,
+    occupied: bool = False,
 ) -> list[calc_diy.DiyTask]:
     """공정표 블록(공사 날 · 자연 건조 · 입주 청소) → 직접 할 일 '언제부터 · 언제까지'(calc.diy).
-    free는 고객이 할 수 있는 날(any · weekend: 주말 · 공휴일)이에요."""
+    free는 고객이 할 수 있는 날(any · weekend: 주말 · 공휴일)이에요. occupied(사는 집)면 공사 뒤 일의 마감이
+    공사 뒤 첫 주말까지예요(calc.diy diy_v3)."""
     work = {b.trade: (b.start, b.end) for b in plan.blocks if b.kind == "work" and b.trade}
     dry = next(((b.start, b.end) for b in plan.blocks if b.kind == "dry"), None)
     clean = next(((b.start, b.end) for b in plan.blocks if b.kind == "clean"), None)
     lo = min([today, *(a for a, _ in work.values())])
     return calc_diy.plan(
-        keys, work, today, dry=dry, clean=clean, move_in=move_in, free=free, days_off=_off(lo)
+        keys,
+        work,
+        today,
+        dry=dry,
+        clean=clean,
+        move_in=move_in,
+        free=free,
+        days_off=_off(lo),
+        occupied=occupied,
     )
 
 
@@ -463,7 +473,8 @@ async def _with_diy(s: AsyncSession, p: ProjectOut, out: PlanOut, today: date) -
     keys = await diy_for(s, p.id)
     if not keys:
         return out
-    tasks = [t for t in diy_tasks(out, keys, today, move_in=move_in_of(p)) if t.key != "clean"]
+    got = diy_tasks(out, keys, today, move_in=move_in_of(p), occupied=bool(p.occupied))
+    tasks = [t for t in got if t.key != "clean"]
     days = {d.day: d for d in out.days}
     blocks = list(out.blocks)
     for t in tasks:

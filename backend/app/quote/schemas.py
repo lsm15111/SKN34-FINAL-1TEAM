@@ -28,6 +28,18 @@ class StandardLineOut(BaseModel):
     )
 
 
+class RollOut(BaseModel):
+    """벽지 롤 수(calc.rolls): 롤 한 개 넓이(제조사 규격)로 나눠 올림. 여분은 셈 밖이에요."""
+
+    key: Literal["silk", "hapji_wide", "hapji_narrow"]
+    name: str = Field(description="실크 · 광폭 합지 · 소폭 합지")
+    size: str = Field(description="롤 크기(폭 × 길이) '106cm × 15.6m'")
+    count: int = Field(description="롤 수(올림, 여분 빼고)")
+    spare_min: int = Field(description="여분 롤(셈 밖, 따로 보이기만)")
+    spare_max: int
+    text: str = Field(description="화면 말 '실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로'")
+
+
 class StandardTradeOut(BaseModel):
     trade: str
     version: int
@@ -46,6 +58,20 @@ class StandardTradeOut(BaseModel):
     )
     profile_name: str | None = Field(
         default=None, description="기준 화면 이름: 도배만 하는 공사 기준 · 리모델링 기준"
+    )
+    own_paper: bool = Field(
+        default=False,
+        description="도배: 고객이 벽지를 직접 사요(반셀프 '벽지 직접 구매'). 도배지 줄(key paper)은 '안 함' · "
+        "고객 구매라 합계 밖이에요(수량 · 금액은 참고)",
+    )
+    rolls: RollOut | None = Field(
+        default=None,
+        description="도배: 도배지 줄 양 → 벽지 롤 수(계산 엔진, 보이기용. 돈은 벽지 평으로 세요). "
+        "지식 카드 계산 ref standard.rolls",
+    )
+    paper_note: str | None = Field(
+        default=None,
+        description="벽지 직접 구매일 때 안내 한 줄(틀): 업체 가견적은 벽지 값이 든 값이에요",
     )
 
 
@@ -102,7 +128,7 @@ class QuoteDraftIn(BaseModel):
     incl_removal: bool | None = Field(default=None, description="기존 벽지 철거 포함")
     incl_waste: bool | None = Field(default=None, description="폐기물 처리 포함")
     paper_spec: Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)] | None = (
-        Field(default=None, description="벽지 제조사 · 규격 (LX 베스띠 · 폭 106cm)")
+        Field(default=None, description="벽지 제조사 · 규격 (LX 실크벽지 베스트 · 폭 106cm)")
     )
     warranty_months: int | None = Field(
         default=None, ge=0, le=120, description="하자 보수 기간(개월)"
