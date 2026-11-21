@@ -1,5 +1,6 @@
 // 예시: 업체 보기 · 자세히 · 리뷰 · 담기(api.md 4장 모양). 9판 C10 · C11 · C12 · C48 · D06 · D07의 업체 셋을 옮겼어요.
-// 가견적 줄 합 = 공급가, 공급가 + 부가세 = 합계가 맞게 넣었어요(화면은 이 값을 그대로 보여요).
+// 수량 · 단가는 9판 그대로이고, 줄 규칙은 판 2026.11b(ADR 0006): 퍼티 · 운송비는 '선택'이라 금액만 보이고 합계 밖이에요.
+// 공급가 = '선택'이 아닌 줄 합, 공급가 + 부가세 = 합계, 비교 % = 표준견적서에 있는 줄만(API와 같은 규칙, 계산 엔진 함수로 셈).
 import type { Schemas } from "@/lib/backend/client";
 import { MOCK_PROJECT, MOCK_VENDOR, type MockKey } from "./mode";
 
@@ -15,8 +16,8 @@ const card = (c: Partial<VendorCardData> & Pick<VendorCardData, "vendor_id" | "n
   visit_fee: 0, instant_badge: false, state: "ok", shortlisted: false, ...c,
 });
 
-const GYEOL = card({ vendor_id: MOCK_VENDOR.gyeol, name: "결도배", estimate_total: 2774200, vs_standard_pct: "41", rating: "4.7", review_count: 3, done_count: 3, shortlisted: true });
-const MARU = card({ vendor_id: MOCK_VENDOR.maru, name: "마루와벽", estimate_total: 3186150, vs_standard_pct: "61", rating: "4.8", review_count: 5, done_count: 5, instant_badge: true, shortlisted: true });
+const GYEOL = card({ vendor_id: MOCK_VENDOR.gyeol, name: "결도배", estimate_total: 2394700, vs_standard_pct: "21.3", rating: "4.7", review_count: 3, done_count: 3, shortlisted: true });
+const MARU = card({ vendor_id: MOCK_VENDOR.maru, name: "마루와벽", estimate_total: 2691150, vs_standard_pct: "32.1", rating: "4.8", review_count: 5, done_count: 5, instant_badge: true, shortlisted: true });
 const HAN = card({ vendor_id: MOCK_VENDOR.hangyeol, name: "한결인테리어", rating: "5.0", review_count: 1, done_count: 1, state: "no_estimate" });
 
 const base = (key: MockKey, area: string, region: string): Omit<VendorList, "local" | "nearby" | "nearby_sgg" | "shortlist" | "slots_left"> => ({
@@ -47,52 +48,56 @@ export function mockVendorList(key: MockKey): VendorList {
 export function mockShortlist(key: MockKey): Shortlist {
   const items = key === "full" || key === "final"
     ? [
-        { vendor_id: MOCK_VENDOR.gyeol, name: "결도배", slot: 1, estimate_total: 2774200, state: "ok" as const, visit_id: null, visit_status: null, added_at: "2026-11-18T09:20:00+09:00" },
-        { vendor_id: MOCK_VENDOR.maru, name: "마루와벽", slot: 2, estimate_total: 3186150, state: "ok" as const, visit_id: null, visit_status: null, added_at: "2026-11-18T09:22:00+09:00" },
+        { vendor_id: MOCK_VENDOR.gyeol, name: "결도배", slot: 1, estimate_total: 2394700, state: "ok" as const, visit_id: null, visit_status: null, added_at: "2026-11-18T09:20:00+09:00" },
+        { vendor_id: MOCK_VENDOR.maru, name: "마루와벽", slot: 2, estimate_total: 2691150, state: "ok" as const, visit_id: null, visit_status: null, added_at: "2026-11-18T09:22:00+09:00" },
       ]
     : [];
   return { project_id: MOCK_PROJECT[key], trade: "dobae", items, count: items.length, left: 3 - items.length };
 }
 
-// ───── 업체 자세히(D07 · C11): 가견적 1201~1208
+// ───── 업체 자세히(D07 · C11): 가견적 1201~1209(부자재는 벽지마다 1205 실크 · 1209 합지)
 
 type Line = S["EstimateV3LineOut"];
-/** 표준견적서에 없는 줄(퍼티 · 식대 · 운송비)은 in_standard false — 비교 %에서 빠져요(API와 같은 규칙) */
+/** 표준견적서 합계에 같은 일이 없는 줄(퍼티 · 식대 · 운송비)은 in_standard false — 비교 %에서 빠져요(API와 같은 규칙) */
 const OUTSIDE = new Set(["putty", "meal", "truck"]);
+/** 표준견적서에서 '선택'인 일(도배만 하는 공사 기준의 퍼티 · 운송비, 판 2026.11b): 금액은 보이고 합계 밖 */
+const OPTIONAL = new Set(["putty", "truck"]);
 /** 고객 화면 이름 · 짧은 뜻(API label · note, 백엔드 계산 엔진 줄 정의와 같은 값) */
-const LABEL: Record<string, string> = { paper_silk: "실크벽지", paper_hapji: "합지벽지" };
-const NOTE: Record<string, string> = { putty: "사전퍼티 또는 밀작업", material: "풀 · 부직포 · 네바리 · 실리콘 등", labor: "품 = 1명이 하루 하는 일" };
+const LABEL: Record<string, string> = { paper_silk: "실크벽지", paper_hapji: "합지벽지", material: "부자재", material_hapji: "부자재" };
+const MATERIAL_NOTE = "풀 · 부직포 · 네바리 · 실리콘 등";
+const NOTE: Record<string, string> = { putty: "사전퍼티 또는 밀작업", material: MATERIAL_NOTE, material_hapji: MATERIAL_NOTE, labor: "품 = 1명이 하루 하는 일" };
 const L = (code: string, key: string, name: string, qty: string, unit: string, unit_price: number | null, amount: number, mode: Line["mode"] = "price"): Line =>
-  ({ code, key, name, label: LABEL[key] ?? name, note: NOTE[key] ?? "", qty, unit, unit_price, amount, mode, included_in: null, in_standard: !OUTSIDE.has(key), optional: false });
+  ({ code, key, name, label: LABEL[key] ?? name, note: NOTE[key] ?? "", qty, unit, unit_price, amount, mode, included_in: null, in_standard: !OUTSIDE.has(key), optional: OPTIONAL.has(key) });
 
-/** 마루와벽 실크(318만 6,150원) · 합지(287만 4,300원) — D07 AI 답의 숫자와 같아요 */
+/** 마루와벽 실크(269만 1,150원) · 합지(222만 9,150원). 퍼티 42만 · 운송비 3만은 '선택'이라 합계 밖, 합지 부자재는 1209(6,500원) */
 const MARU_LINES: Record<"basic" | "economy", Line[]> = {
   basic: [
-    L("1201", "putty", "퍼티작업", "21.0", "평", 20000, 420000),
+    L("1201", "putty", "퍼티작업", "21.0", "공급 평", 20000, 420000),
     L("1204", "paper_silk", "실크", "63.0", "벽지 평", 9500, 598500),
-    L("1205", "material", "부자재", "21.0", "평", 13000, 273000),
+    L("1205", "material", "실크 부자재", "21.0", "공급 평", 13000, 273000),
     L("1206", "labor", "인건비", "5.0", "품", 300000, 1500000),
-    L("1207", "meal", "식대", "5", "품", 15000, 75000),
+    L("1207", "meal", "식대", "5.0", "품", 15000, 75000),
     L("1208", "truck", "운송비", "1", "대", 30000, 30000),
   ],
   economy: [
-    L("1201", "putty", "퍼티작업", "21.0", "평", 20000, 420000),
+    L("1201", "putty", "퍼티작업", "21.0", "공급 평", 20000, 420000),
     L("1203", "paper_hapji", "합지", "63.0", "벽지 평", 5000, 315000),
-    L("1205", "material", "부자재", "21.0", "평", 13000, 273000),
+    L("1209", "material_hapji", "합지 부자재", "21.0", "공급 평", 6500, 136500),
     L("1206", "labor", "인건비", "5.0", "품", 300000, 1500000),
-    L("1207", "meal", "식대", "5", "품", 15000, 75000),
+    L("1207", "meal", "식대", "5.0", "품", 15000, 75000),
     L("1208", "truck", "운송비", "1", "대", 30000, 30000),
   ],
 };
-const MARU_SUM = { basic: { supply: 2896500, vat: 289650, total: 3186150, pct: "61" }, economy: { supply: 2613000, vat: 261300, total: 2874300, pct: "46" } };
+// 비교 %: 표준견적서에 있는 줄(벽지 · 부자재 · 인건비) × 1.1 ÷ 표준 1,974,069
+const MARU_SUM = { basic: { supply: 2446500, vat: 244650, total: 2691150, pct: "32.1" }, economy: { supply: 2026500, vat: 202650, total: 2229150, pct: "8.7" } };
 
-/** 결도배 실크(277만 4,200원). 식대는 다른 줄에 포함, 합지는 '빼기' */
+/** 결도배 실크(239만 4,700원). 식대는 다른 줄에 포함, 합지 · 합지 부자재는 '빼기'. 퍼티 · 운송비는 '선택' */
 const GYEOL_LINES: Line[] = [
-  L("1201", "putty", "퍼티작업", "21.0", "평", 15000, 315000),
+  L("1201", "putty", "퍼티작업", "21.0", "공급 평", 15000, 315000),
   L("1204", "paper_silk", "실크", "63.0", "벽지 평", 9000, 567000),
-  L("1205", "material", "부자재", "21.0", "평", 10000, 210000),
+  L("1205", "material", "실크 부자재", "21.0", "공급 평", 10000, 210000),
   L("1206", "labor", "인건비", "5.0", "품", 280000, 1400000),
-  { ...L("1207", "meal", "식대", "5", "품", null, 0, "included"), included_in: "1206" },
+  { ...L("1207", "meal", "식대", "5.0", "품", null, 0, "included"), included_in: "1206" },
   L("1208", "truck", "운송비", "1", "대", 30000, 30000),
 ];
 
@@ -130,7 +135,7 @@ export function mockVendorDetail(key: MockKey, vid: string, grade?: "basic" | "e
       estimate_v3: { rows_ver: "dobae_v3", set_id: "a3a40000-0000-4000-8000-000000000002", version: 3, grade: g, tax_kind: "general", lines: MARU_LINES[g], supply: sum.supply, vat: sum.vat, total: sum.total, vs_standard_pct: sum.pct, paper_ok: true },
       grade: g, reply_hours: 20,
       // 보이는 벽지와 다른 벽지의 차이(다른 벽지 − 보이는 벽지)
-      grade_diff: g === "basic" ? -311850 : 311850,
+      grade_diff: g === "basic" ? -462000 : 462000,
       state: "ok", instant_badge: true,
       rating: { avg: "4.8", count: 5, done_count: 5, tags: { seam: 3, on_time: 2, kind: 1, tidy: 1 } },
       review_links: [
@@ -146,7 +151,7 @@ export function mockVendorDetail(key: MockKey, vid: string, grade?: "basic" | "e
       ...common,
       profile: { ...profile(vid, "결도배", "박결", ["노원구"], "2021-06-14", "2026-10-20"), portfolio: MARU_PHOTOS.slice(0, 3) },
       verified_on: "2026-10-20", years_open: 5,
-      estimate_v3: no ? null : { rows_ver: "dobae_v3", set_id: "a3a40000-0000-4000-8000-000000000001", version: 2, grade: "basic", tax_kind: "general", lines: GYEOL_LINES, supply: 2522000, vat: 252200, total: 2774200, vs_standard_pct: "41", paper_ok: true },
+      estimate_v3: no ? null : { rows_ver: "dobae_v3", set_id: "a3a40000-0000-4000-8000-000000000001", version: 2, grade: "basic", tax_kind: "general", lines: GYEOL_LINES, supply: 2177000, vat: 217700, total: 2394700, vs_standard_pct: "21.3", paper_ok: true },
       grade: g, reply_hours: 30,
       grade_diff: null,
       state: no ? "paper_unsupported" : "ok", instant_badge: false,

@@ -101,8 +101,9 @@ const T = {
   checked: "2027-01-05T17:30:00+09:00",
   reviewed: "2027-01-05T17:40:00+09:00",
 };
-const MARU = { id: I.vendor.maru, name: "마루와벽", estimate: 3186150 };
-const GYEOL = { id: I.vendor.gyeol, name: "결도배", estimate: 2774200 };
+// 요청 때 고정한 가견적 = 업체 보기 예시(v3a/vendors.ts, 판 2026.11b 줄 규칙: 퍼티 · 운송비는 '선택' 합계 밖)
+const MARU = { id: I.vendor.maru, name: "마루와벽", estimate: 2691150 };
+const GYEOL = { id: I.vendor.gyeol, name: "결도배", estimate: 2394700 };
 const ACTIVE = new Set(["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen"]);
 
 // ───── 실측 일정 상태판 ─────
@@ -407,12 +408,12 @@ export function mockCompare(step: StepKey, projectId: string): S["CompareDealOut
   if (g && c.past("both_booked")) rows.push({
     visit_id: g.visit_id, vendor_id: GYEOL.id, vendor_name: GYEOL.name, status: g.status, requested_at: T.againAt, seen_ver: quoted(g.status) ? 1 : null,
     latest: quoted(g.status) ? gyeolQuote() : null, history: [], changed: [], estimate_total: GYEOL.estimate, vs_standard: null, vs_direction: null,
-    expired: false, diff_vs_estimate: quoted(g.status) ? 85800 : null, visit_day: "2026-12-16", valid_soon: false, valid_soon_at: quoted(g.status) ? ["2026-12-28T18:00:00+09:00", "2026-12-30T18:00:00+09:00"] : [], requote_at: null, rating: RATING.gyeol,
+    expired: false, diff_vs_estimate: quoted(g.status) ? 465300 : null, visit_day: "2026-12-16", valid_soon: false, valid_soon_at: quoted(g.status) ? ["2026-12-28T18:00:00+09:00", "2026-12-30T18:00:00+09:00"] : [], requote_at: null, rating: RATING.gyeol,
   });
   if (m && c.past("done")) rows.push({
     visit_id: m.visit_id, vendor_id: MARU.id, vendor_name: MARU.name, status: m.status, requested_at: T.sent, seen_ver: quoted(m.status) ? 1 : null,
     latest: quoted(m.status) ? maruQuote() : null, history: [], changed: [], estimate_total: MARU.estimate, vs_standard: null, vs_direction: null,
-    expired: false, diff_vs_estimate: quoted(m.status) ? 80850 : null, visit_day: "2026-12-15", valid_soon: false, valid_soon_at: quoted(m.status) ? ["2026-12-28T18:00:00+09:00", "2026-12-30T18:00:00+09:00"] : [], requote_at: null, rating: RATING.maru,
+    expired: false, diff_vs_estimate: quoted(m.status) ? 575850 : null, visit_day: "2026-12-15", valid_soon: false, valid_soon_at: quoted(m.status) ? ["2026-12-28T18:00:00+09:00", "2026-12-30T18:00:00+09:00"] : [], requote_at: null, rating: RATING.maru,
   });
   return {
     project_id: projectId, trade: "dobae", standard_total: 1974069, formula_ver: "dobae-v3.1", price_ver: "2026H2", computed_at: c.now,
