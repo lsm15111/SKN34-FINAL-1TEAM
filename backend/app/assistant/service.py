@@ -85,7 +85,21 @@ def _history(rows: list[ChatMessage]) -> list[dict]:
     return out
 
 
-async def _customer_facts(s, user: User, pid: uuid.UUID, today, opened: list) -> str:
+# 처리한 제안 상태 → 턴 사실 말(모델이 이미 처리된 카드를 '안 만들어졌다'고 고쳐 말하지 않게)
+DECIDED = {"executed": "승인해 실행됨", "rejected": "거절함", "failed": "승인했지만 실행 못 함"}
+
+
+def decided_line(rows: list) -> str | None:
+    """최근 처리한 카드 한 줄('제목(상태) · …'). 없으면 None."""
+    got = [
+        f"{(a.summary or {}).get('title') or a.kind}({DECIDED[a.status]})"
+        for a in rows
+        if a.status in DECIDED
+    ]
+    return "최근 처리한 카드: " + " · ".join(got) if got else None
+
+
+async def _customer_facts(s, user: User, pid: uuid.UUID, today, opened: list, decided: list) -> str:
     from app.assistant import memory
     from app.assistant.tools import cards
 
@@ -98,18 +112,22 @@ async def _customer_facts(s, user: User, pid: uuid.UUID, today, opened: list) ->
     ]
     if opened:
         lines.append("승인 기다리는 카드: " + " · ".join(a.summary["title"] for a in opened))
+    if done := decided_line(decided):
+        lines.append(done)
     remembered = memory.facts_line(await repo.memories(s, user.id))
     if remembered:
         lines.append(remembered)
     return "\n".join(lines)
 
 
-def _vendor_facts(today, visit_ref: str | None, opened: list) -> str:
+def _vendor_facts(today, visit_ref: str | None, opened: list, decided: list) -> str:
     lines = [f"오늘: {today.isoformat()}", "화면: 업체 비서"]
     if visit_ref:
         lines.append(f"지금 보는 요청: {visit_ref}")
     if opened:
         lines.append("승인 기다리는 카드: " + " · ".join(a.summary["title"] for a in opened))
+    if done := decided_line(decided):
+        lines.append(done)
     return "\n".join(lines)
 
 
@@ -198,14 +216,15 @@ async def start_turn(
         opened = await repo.actions_of(
             s, user.id, surface, project_id=project_id, status="proposed", limit=5
         )
+        decided = await repo.decided_of(s, user.id, surface, project_id=project_id)
         refs = await RefTable.load(chat.id)
         visit_ref = (
             refs.put("visit", {"id": str(visit_id)}) if surface == "vendor" and visit_id else None
         )
         facts = (
-            await _customer_facts(s, user, project_id, today, opened)
+            await _customer_facts(s, user, project_id, today, opened, decided)
             if surface == "customer"
-            else _vendor_facts(today, visit_ref, opened)
+            else _vendor_facts(today, visit_ref, opened, decided)
         )
         rev = chat.rev
         await s.commit()
