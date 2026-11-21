@@ -25,11 +25,11 @@ export function KnowledgeCard({ card, old }: CardProps<"knowledge">) {
           <ul>{d.lines.map((l) => <li key={l}>{l}</li>)}</ul>
         </div>
       </div>
-      {/* 할 일이 끝난 줄의 카드(old)는 준비물을 글로만 남겨요(체크 칸 없음) */}
+      {/* 할 일이 끝난 줄의 카드(old)는 체크 항목을 글로만 남겨요(체크 칸 없음). 목록 이름은 카드 제목(준비물 · 점검표 · 공사 전 할 일) */}
       {d.checklist?.length ? (old ? (
-        <ul className={c.basisList} aria-label="준비물">{d.checklist.map((x) => <li key={x.key}>{x.label}</li>)}</ul>
+        <ul className={c.basisList} aria-label={d.title}>{d.checklist.map((x) => <li key={x.key}>{x.label}</li>)}</ul>
       ) : (
-        <ul className={c.checks} aria-label="준비물">
+        <ul className={c.checks} aria-label={d.title}>
           {d.checklist.map((x) => (
             <li key={x.key}><label><input type="checkbox" checked={!!done[x.key]} onChange={(e) => setDone((v) => ({ ...v, [x.key]: e.target.checked }))} />{x.label}</label></li>
           ))}
