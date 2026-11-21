@@ -148,7 +148,9 @@ class RefTable:
         it = self.items.get(ref or "")
         if it is None or it["kind"] != kind:
             raise ToolError(
-                "unknown_ref", f"모르는 이름표예요: {ref}. 도구 결과에 나온 이름표만 써 주세요."
+                "unknown_ref",
+                "지금 대화에서 찾을 수 없는 항목이에요. 카드를 다시 불러와 골라 주세요.",
+                hint=f"이름표 '{ref}'는 이 대화에 없어요({kind} 이름표가 필요해요). 도구 결과에 나온 이름표만 넘겨요",
             )
         return it
 
@@ -652,8 +654,9 @@ class _Turn:
         return results, failed
 
     @staticmethod
-    def _error(cid: str, code: str, message: str) -> dict:
-        body = json.dumps({"error": code, "message": message}, ensure_ascii=False)
+    def _error(cid: str, code: str, message: str, hint: str | None = None) -> dict:
+        got = {"error": code, "message": message, **({"hint": hint} if hint else {})}
+        body = json.dumps(got, ensure_ascii=False)
         return {"type": "tool_result", "tool_use_id": cid, "content": body, "is_error": True}
 
     async def _one(self, name: str, cid: str, args) -> tuple[dict, str | None]:
@@ -666,7 +669,7 @@ class _Turn:
             out = await tools_mod.run(t, self.tc, args)
         except ToolError as e:
             trace["ms"] = int((time.monotonic() - t0) * 1000)
-            return self._error(cid, e.code, e.message), e.code
+            return self._error(cid, e.code, e.message, e.hint), e.code
         except AppError as e:  # 기능 service 오류(404 · 409 …): 코드와 정해 둔 문장만
             trace["ms"] = int((time.monotonic() - t0) * 1000)
             return self._error(cid, e.code, e.message), e.code

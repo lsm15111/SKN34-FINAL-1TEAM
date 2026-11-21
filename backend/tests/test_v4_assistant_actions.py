@@ -229,7 +229,7 @@ def test_recommend_then_request_visit_after_approval(api, script):
                     {
                         "id": "w",
                         "name": "vendor_free_slots",
-                        "input": {"vendor_ref": "v1", "prefer": "am", "days": "any"},
+                        "input": {"ref": "v1", "prefer": "am", "days": "any"},
                     }
                 ]
             },
@@ -279,7 +279,7 @@ def test_pick_a_slot_after_the_vendor_answered(api, script):
                     {
                         "id": "s",
                         "name": "vendor_free_slots",
-                        "input": {"visit_ref": "m1", "prefer": "pm", "days": "any"},
+                        "input": {"ref": "m1", "prefer": "pm", "days": "any"},
                     }
                 ]
             },

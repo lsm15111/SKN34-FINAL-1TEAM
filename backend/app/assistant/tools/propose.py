@@ -494,9 +494,15 @@ async def _dates(tc: ToolCtx, a: ProposalIn, kind: Literal["dates_accept", "dela
     pid = pid_of(tc)
     pr = tc.refs.get(a.proposal_ref, "proposal")
     want = "delay" if kind == "delay_accept" else "dates"
-    if pr.get("type") != want:
+    if pr.get("type") != want:  # 글에는 도구 이름 없이, 모델 힌트에만
         other = "propose_delay_accept" if want == "dates" else "propose_dates_accept"
-        raise ToolError("wrong_kind", f"이 날짜는 {other}로 제안해 주세요.")
+        raise ToolError(
+            "wrong_kind",
+            "수락한 뒤 바뀐 날짜예요. 바뀐 날짜 수락 카드로 만들어야 해요."
+            if want == "dates"
+            else "처음 올린 날짜예요. 날짜 수락 카드로 만들어야 해요.",
+            hint=f"{other}로 다시 불러요",
+        )
     async with SessionLocal() as s:
         sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
     out, _ = await _offer(tc, project_id=pid, **dates_offer(sch, pr["id"], kind, tc.now))

@@ -22,11 +22,12 @@ if TYPE_CHECKING:
 
 
 class ToolError(Exception):
-    """도구가 돌려줄 오류(is_error). code는 영어 이름, message는 모델에 보일 한국어 한 줄."""
+    """도구가 돌려줄 오류(is_error). code는 영어 이름, message는 사람에게도 보일 수 있는 한국어 한 줄(이름표 ·
+    도구 이름 없이), hint는 모델에만 가는 고칠 방법(이름표 · 도구 이름 · 빠진 칸)."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(self, code: str, message: str, hint: str | None = None) -> None:
         super().__init__(message)
-        self.code, self.message = code, message
+        self.code, self.message, self.hint = code, message, hint
 
 
 @dataclass
@@ -118,12 +119,22 @@ def get(name: str, surface: Surface) -> Tool:
     return t
 
 
+def input_hint(e: ValidationError) -> str:
+    """입력 검사 오류 → 모델에 줄 고칠 칸(칸 이름: 까닭, 세 개까지)."""
+    got = []
+    for x in e.errors()[:3]:
+        where = ".".join(str(k) for k in x.get("loc") or ()) or "입력"
+        why = str(x.get("msg") or "").removeprefix("Value error, ")
+        got.append(f"{where}: {why}")
+    return "고칠 칸 - " + " / ".join(got) if got else "입력 칸을 도구 설명과 맞춰 다시 넣어요"
+
+
 async def run(t: Tool, tc: ToolCtx, args: Any) -> ToolOut:
     """입력을 검사하고(틀리면 bad_input) 도구를 부른다."""
     try:
         parsed = t.model.model_validate(args if isinstance(args, dict) else {})
     except ValidationError as e:
-        raise ToolError("bad_input", "도구 입력이 맞지 않아요.") from e
+        raise ToolError("bad_input", "도구 입력이 맞지 않아요.", hint=input_hint(e)) from e
     return await t.run(tc, parsed)
 
 
