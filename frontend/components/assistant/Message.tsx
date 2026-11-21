@@ -4,7 +4,10 @@
 // 비서 글은 굵게 · 줄바꿈 · '- ' 목록만 화면 꼴로 그려요(RichText, HTML 주입 없음). 고객 말은 쓴 그대로예요.
 // 무료 모드(LLM 없이)에서 카드만 남았으면 '설명을 만들지 못했어요', 한도에 닿아 멈췄으면(stopped) 그렇게 알려요.
 // 할 일이 끝난 먼저 말 건 줄(settled)은 기록에 '완료'로 남아요: 카드는 보낸 때 모습에서 단추를 빼고, 다음에 물을 말은 두지 않아요.
+// AI 글의 '고객님'은 그릴 때만 로그인한 사람 이름('○○ 님')으로 바꿔요(MyName, lib/callName). 저장 · LLM 기록은 '고객님' 그대로예요.
+import { createContext, useContext } from "react";
 import type { ActionOut, FeedItem, FeedPart, SuggestOut } from "@/lib/api/assistant";
+import { callName } from "@/lib/callName";
 import { ApprovalCard } from "./kit/ApprovalCard";
 import { RichText } from "./kit/RichText";
 import { SourceTag, StatusTag } from "./kit/StatusTag";
@@ -15,6 +18,9 @@ import { Card } from "./cards/registry";
 import type { CardCtx } from "./cards/types";
 import k from "./kit/kit.module.css";
 import s from "./assistant.module.css";
+
+/** 로그인한 고객 이름(Shell이 넣어요). 없으면 '고객님' 그대로 */
+export const MyName = createContext<string | null>(null);
 
 export type ActionHandlers = {
   approve: (a: ActionOut) => void;
@@ -70,7 +76,7 @@ export function Message({ item, ctx, act, live, onRetry }: { item: FeedItem; ctx
         {item.done && item.stopped ? <p className={s.note}>설명을 끝까지 만들지 못해 카드만 보여 드려요</p> : null}
         {item.done && !item.stopped && item.mode === "free" && hasCard && !hasAi && !hasAnswer ? <p className={s.note}>설명을 만들지 못했어요</p> : null}
         {item.error ? (
-          <p className={s.fail} role="alert"><I n="alert" />{item.error.message}<button type="button" className={s.textBtn} onClick={onRetry}>다시 불러오기</button></p>
+          <p className={s.fail} role="alert"><I n="alert" />{item.error.message}{item.error.code === "busy" ? null : <button type="button" className={s.textBtn} onClick={onRetry}>다시 불러오기</button>}</p>
         ) : null}
       </div>
     </div>
@@ -81,10 +87,11 @@ const partKey = (p: FeedPart, i: number) =>
   p.t === "card" ? `c-${p.card.card_id}` : p.t === "task" ? `t-${p.task.task_id}` : p.t === "action" ? `a-${p.action.action_id}` : p.t === "suggest" ? `s-${p.suggest.id}` : `x-${i}`;
 
 function Part({ part: p, ctx, act, old }: { part: FeedPart; ctx: CardCtx; act: ActionHandlers; old: boolean }) {
+  const me = useContext(MyName);
   switch (p.t) {
     case "text":
       return p.src === "ai"
-        ? <div className={s.ai}><span className={s.aiTag}><SourceTag src="ai" /></span><div className={s.bubble}><RichText text={p.text} /></div></div>
+        ? <div className={s.ai}><span className={s.aiTag}><SourceTag src="ai" /></span><div className={s.bubble}><RichText text={callName(p.text, me)} /></div></div>
         : <div className={`${s.bubble} ${s.say}`}><RichText text={p.text} /></div>;
     case "card":
       return (

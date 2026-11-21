@@ -36,13 +36,13 @@ from app.assistant.tools.propose import REF, _offer
 from app.assistant.tools.vendor import VAT
 from app.auth.models import User
 from app.db import SessionLocal
+from app.shared import kdate
 from app.shared.clock import SEOUL
 from app.shared.korean import i_ga
 
 if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
 
-WEEK = "월화수목금토일"
 # 공통 공사 전 줄 '직접 할 일(콘센트 옮기기 등)…'의 머리(고른 직접 할 일로 바꿔 넣어요)
 DIY_LINE = "직접 할 일("
 TTL = timedelta(days=3)
@@ -55,7 +55,8 @@ NOTICE_NOTE = (
 
 
 def ko_day(d: date) -> str:
-    return f"{d.month}월 {d.day}일({WEEK[d.weekday()]})"
+    """'12월 15일(화)'(긴 꼴, 공용 kdate.md_long)."""
+    return kdate.md_long(d)
 
 
 def trade_ko(code: str) -> str:
@@ -367,7 +368,7 @@ async def out_offer(
         raise ToolError("past", "희망 기간이 지났어요. 시간 후보를 다시 찾아 주세요.")
     period = SummaryRow(
         label="희망 기간",
-        value=f"{cards.md_week(start)} ~ {cards.md_week(end)}",
+        value=kdate.md_range(start, end, today),
         sub=f"{v.vendor_name}에 보낸 요청과 같은 기간" if same else None,
     )
     summary = ActionSummary(
@@ -553,7 +554,7 @@ def again_offer(v, today: date, now: datetime) -> dict:
     rows = []
     if v.wish_start is not None and v.wish_end is not None:
         a, b = again_wish(v.wish_start, v.wish_end, today)
-        rows.append(SummaryRow(label="희망 기간", value=f"{cards.md_week(a)} ~ {cards.md_week(b)}"))
+        rows.append(SummaryRow(label="희망 기간", value=kdate.md_range(a, b, today)))
     rows.append(SummaryRow(label="요청", value="같은 업체에 보내는 두 번째 요청이에요"))
     summary = ActionSummary(
         title=f"{v.vendor_name}에 한 번 더 요청",
@@ -608,11 +609,13 @@ def request_dates_offer(job, deal_id: uuid.UUID, days: dict, now: datetime) -> d
     wished = picked[0] in set(job.request.wish_dates)
     # 고객이 바란 날이 모두 다른 공사와 겹쳐 다른 날을 제안
     other = bool(days.get("alt")) and not wished
+    today = _seoul_day(now)
     summary = ActionSummary(
+        # 제목은 비서도 읽어요(턴 사실 '승인 기다리는 카드'): 긴 꼴 날짜
         title=f"{'다른 날 제안' if other else '새 공사 날짜'} "
-        f"{cards.md_week(picked[0])} ~ {cards.md_week(picked[-1])} 보내기",
+        f"{kdate.long_range(picked[0], picked[-1], today)} 보내기",
         rows=[
-            SummaryRow(label="일하는 날", value=cards.day_list(picked)),
+            SummaryRow(label="일하는 날", value=kdate.day_list(picked, today)),
             SummaryRow(label="하루 인원", value=f"{days['crew']}명"),
             SummaryRow(
                 label="시작일",
@@ -621,7 +624,7 @@ def request_dates_offer(job, deal_id: uuid.UUID, days: dict, now: datetime) -> d
                 else "고객이 바란 날은 다른 공사와 겹쳐요 · 가장 가까운 빈 날이에요"
                 if other
                 else "믿집이 고른 날이에요",
-                sub=f"고객이 바란 날 {cards.md_list(sorted(job.request.wish_dates))}"
+                sub=f"고객이 바란 날 {kdate.md_list(sorted(job.request.wish_dates), today)}"
                 if other
                 else None,
             ),

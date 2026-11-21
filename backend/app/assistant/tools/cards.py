@@ -48,6 +48,15 @@ from app.assistant.schemas import (
 from app.auth.models import User
 from app.calc.common import COUNTED
 from app.shared.clock import SEOUL
+from app.shared.kdate import (  # noqa: F401 - 옮긴 날짜 글 함수(cards.md_week …로 부르는 곳이 그대로 쓴다)
+    WEEK,
+    day_list,
+    long_range,
+    md_list,
+    md_long,
+    md_range,
+    md_week,
+)
 from app.shared.korean import i_ga
 
 if TYPE_CHECKING:
@@ -1131,40 +1140,8 @@ def visit_task(pid: uuid.UUID, o, now: datetime) -> "TaskOut | None":
     )
 
 
-WEEK = "월화수목금토일"
-
-
-def md_week(d: date) -> str:
-    """'12.14(월)'"""
-    return f"{d.month:02d}.{d.day:02d}({WEEK[d.weekday()]})"
-
-
-def md_list(days) -> str:
-    """'12.24(목) · 12.28(월)'(날마다, 주말 · 휴일을 건너뛴 날이 보이게)."""
-    return " · ".join(md_week(d) for d in days)
-
-
-def md_range(start: date, end: date) -> str:
-    """'12.07(월)~12.21(월)': 승인 카드 요약 줄 · 판 글의 기간(짧은 꼴). ISO 날짜를 화면에 그대로 보이지 않는다."""
-    return f"{md_week(start)}~{md_week(end)}"
-
-
-def md_long(d: date) -> str:
-    """'12월 15일(화)': 승인 카드 제목 · 사실 줄처럼 비서도 읽는 날짜 글(긴 꼴). 짧은 꼴 '12.15'는 문장 숫자 검사가
-    한 수(12.15)로 읽어 비서가 '12월 15일'이라고 말하면 그 문장을 버리므로, 비서가 읽는 글은 월 · 일이 따로 보이게 쓴다."""
-    return f"{d.month}월 {d.day}일({WEEK[d.weekday()]})"
-
-
-def long_range(start: date, end: date) -> str:
-    """'12월 1일(화)~4일(금)', 달이 바뀌면 '12월 29일(화)~1월 2일(토)'(긴 꼴 기간)."""
-    if (start.year, start.month) == (end.year, end.month):
-        return f"{md_long(start)}~{end.day}일({WEEK[end.weekday()]})"
-    return f"{md_long(start)}~{md_long(end)}"
-
-
-def day_list(days: list[date]) -> str:
-    """일하는 날 칸: '2일 · 12.24(목) · 12.28(월)'."""
-    return f"{len(days)}일 · {md_list(days)}"
+# 날짜 글 꼴(md_week · md_list · md_range · md_long · long_range · day_list)은 공용 자리(shared.kdate, 카피 가이드
+# F2)로 옮겼다. 맨 위 import로 이 모듈 이름(cards.md_week …)도 그대로 쓴다
 
 
 # 보드 업체 줄 · 확정한 업체: 공사 요약의 지금 할 일 코드(calc.progress) → (상태, 화면 말)

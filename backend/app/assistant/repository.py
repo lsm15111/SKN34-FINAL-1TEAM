@@ -501,16 +501,16 @@ async def sent_count(
 
 async def dismissals(
     s: AsyncSession, user_id: uuid.UUID, since: datetime
-) -> list[tuple[str, datetime]]:
-    """since 뒤에 닫은 제안(트리거, 닫은 때)."""
+) -> list[tuple[str, datetime, uuid.UUID]]:
+    """since 뒤에 닫은 제안(트리거, 닫은 때, 대상 id)."""
     rows = await s.execute(
-        select(AssistantNudge.trigger, AssistantNudge.acted_at).where(
+        select(AssistantNudge.trigger, AssistantNudge.acted_at, AssistantNudge.ref_id).where(
             AssistantNudge.user_id == user_id,
             AssistantNudge.status == "dismissed",
             AssistantNudge.acted_at >= since,
         )
     )
-    return [(t, at) for t, at in rows]
+    return [(t, at, ref) for t, at, ref in rows]
 
 
 # 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상, 또는

@@ -533,6 +533,7 @@ def test_slot_and_confirm_summaries_show_korean_dates():
     assert got.version == "업체가 답한 기간 12.14(월)~12.18(금)"
     s = actions.confirm_summary("마루와벽", 2, 3_000_000, 3, date(2026, 12, 31))
     assert {r.label: r.value for r in s.rows}["유효기간"] == "12.31(목)까지"
-    assert cards.md_range(date(2026, 12, 7), date(2026, 12, 21)) == "12.07(월)~12.21(월)"
+    # 카피 가이드 F2: 0을 붙이지 않는다
+    assert cards.md_range(date(2026, 12, 7), date(2026, 12, 21)) == "12.7(월)~12.21(월)"
     assert cards.long_range(date(2026, 12, 1), date(2026, 12, 4)) == "12월 1일(화)~4일(금)"
     assert cards.long_range(date(2026, 12, 29), date(2027, 1, 2)) == "12월 29일(화)~1월 2일(토)"

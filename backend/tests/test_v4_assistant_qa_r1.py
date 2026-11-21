@@ -19,6 +19,7 @@ from app.assistant.tools import aftercare as aftercare_tools
 from app.assistant.tools import cards
 from app.assistant.tools import vendor as vendor_tools
 from app.refprice.holidays import HOLIDAYS
+from app.shared import kdate
 from app.shared.clock import now_utc, today_seoul
 from tests.conftest import query
 from tests.helpers import use
@@ -397,7 +398,8 @@ def test_today_and_my_jobs_follow_customer_date_request(api, script):
     assert r.status_code == 201, r.text
     login(api, "maru@mitjip.test")
     row = dates_row(api)
-    assert f"후보 {date.fromisoformat(w1):%m.%d}" in row["sub"] and row["action"]["choice"]
+    assert f"후보 {kdate.md(date.fromisoformat(w1), today_seoul())}~" in row["sub"]
+    assert row["action"]["choice"]
     log = script(
         [
             {"tool_calls": [{"id": "j", "name": "my_jobs", "input": {}}]},
@@ -426,7 +428,8 @@ def test_today_lists_change_request_with_wish_candidates(api):
     login(api, "maru@mitjip.test")
     row = dates_row(api)
     assert row["title"] == "공사 날짜 낼 공사 1건"
-    assert f"후보 {date.fromisoformat(w1):%m.%d}" in row["sub"] and row["action"]["choice"]
+    assert f"후보 {kdate.md(date.fromisoformat(w1), today_seoul())}~" in row["sub"]
+    assert row["action"]["choice"]
 
 
 def test_request_brief_model_due_is_seoul_text(api, script):

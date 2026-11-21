@@ -14,11 +14,12 @@ import { Feed } from "./Feed";
 import { Header } from "./Header";
 import type { CardCtx } from "./cards/types";
 import { useAssistant } from "./hooks/useAssistant";
-import type { ActionHandlers } from "./Message";
+import { MyName, type ActionHandlers } from "./Message";
 import { StepBar } from "./StepBar";
 import s from "./assistant.module.css";
 
-export function Shell({ projectId, name, unread, children }: { projectId: string; name: string; unread: number; children: ReactNode }) {
+/** me: 로그인한 고객 이름(비서 글의 '고객님'을 그릴 때만 바꿔요, 없으면 null) */
+export function Shell({ projectId, name, me, unread, children }: { projectId: string; name: string; me: string | null; unread: number; children: ReactNode }) {
   const a = useAssistant(projectId);
   const router = useRouter();
   const path = usePathname();
@@ -137,24 +138,27 @@ export function Shell({ projectId, name, unread, children }: { projectId: string
               today={a.board?.today_pin ?? 0}
               onToday={() => { scrollTo("[data-today]"); }}
             />
-            <Feed
-              items={a.items}
-              loaded={a.loaded}
-              loadError={a.loadError}
-              ctx={ctx}
-              act={act}
-              liveId={liveId}
-              waitingReply={waitingReply}
-              scroller={col}
-              headroom={headroom}
-              onRetry={() => { void a.reload(); }}
-              fresh={a.fresh}
-              hasOlder={a.hasOlder}
-              olderBusy={a.olderBusy}
-              onOlder={() => { void a.loadOlder(); }}
-            />
-            {/* 대화를 못 읽었으면(읽는 중 · 실패) 보내지 않아요: 보낸 말 · 답이 보이지 않은 채 턴만 돌지 않게 */}
-            <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => { void a.send(t); }} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
+            <MyName.Provider value={me}>
+              <Feed
+                items={a.items}
+                loaded={a.loaded}
+                loadError={a.loadError}
+                ctx={ctx}
+                act={act}
+                liveId={liveId}
+                waitingReply={waitingReply}
+                scroller={col}
+                headroom={headroom}
+                onRetry={() => { void a.reload(); }}
+                fresh={a.fresh}
+                hasOlder={a.hasOlder}
+                olderBusy={a.olderBusy}
+                onOlder={() => { void a.loadOlder(); }}
+              />
+            </MyName.Provider>
+            {/* 대화를 못 읽었으면(읽는 중 · 실패) 보내지 않아요: 보낸 말 · 답이 보이지 않은 채 턴만 돌지 않게.
+                넘쳐서(503) 끝내 못 보냈으면 send가 "busy"를 돌려주고 입력 칸이 쓴 글을 되살려요 */}
+            <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => a.send(t)} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
           </div>
         </div>
         <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />

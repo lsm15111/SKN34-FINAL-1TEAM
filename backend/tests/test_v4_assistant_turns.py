@@ -223,7 +223,7 @@ def test_llm_turn_runs_tools_checks_numbers_and_caches(api, script):
     assert first["system"][-1]["cache_control"] == {"type": "ephemeral"}
     assert first["tool_choice"] == {"type": "auto"}
     user, facts = first["messages"][-2:]
-    assert user["role"] == "user" and facts["role"] == "system" and "오늘:" in facts["content"]
+    assert user["role"] == "user" and facts["role"] == "system" and "지금:" in facts["content"]
     assert "010-1234-5678" not in json.dumps(first, ensure_ascii=False)  # LLM 전에 가림
     result = second["messages"][-1]["content"][0]
     assert result["type"] == "tool_result" and "region" in result["content"]

@@ -10,7 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth,
   getLatestThread, getMemory, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
-  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, targetOfWrite, TURN_RETRY_MS,
+  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, targetOfWrite, BUSY_TEXT, TURN_RETRY_MS,
+  TurnBusy,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -239,7 +240,9 @@ export function useAssistant(projectId: string) {
     return () => window.removeEventListener(API_WRITE_EVENT, on);
   }, [projectId, markHandled, later]);
 
-  const send = useCallback(async (text: string, context?: TurnIn["context"]) => {
+  /** 한 턴 보내기. 넘쳐서(503 busy · unavailable) Retry-After만큼 기다렸다 같은 client_key로 한 번 다시 보내도 넘치면
+   *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요) */
+  const send = useCallback(async (text: string, context?: TurnIn["context"]): Promise<"busy" | void> => {
     const t = text.trim();
     if (!t || runningRef.current) return;
     runningRef.current = true;
@@ -253,6 +256,7 @@ export function useAssistant(projectId: string) {
     const body: TurnIn = { project_id: projectId, client_key: key, text: t, context: context ?? null };
     let turnId = "";
     let tries = 0;
+    let busyTried = false;
     const failMsg = (message: string, code = "send") =>
       setItems((cur) => [...cur, { id: `a-fail-${key}-${Date.now()}`, role: "assistant", at: nowRef.current, turn_id: null, parts: [], done: true, error: { code, message } }]);
     try {
@@ -271,6 +275,19 @@ export function useAssistant(projectId: string) {
           throw new Dropped();
         } catch (e) {
           if (ctl.signal.aborted) return;
+          // 넘침(503, 턴을 만들기 전): Retry-After만큼 기다렸다 같은 client_key로 한 번 더. 또 넘치면 서버가 받지 않은 말이라
+          // 보낸 말을 빼고 안내해요(입력 칸에는 글을 되살려요)
+          if (e instanceof TurnBusy) {
+            if (!busyTried) {
+              busyTried = true;
+              await wait(e.waitMs);
+              if (ctl.signal.aborted) return;
+              continue;
+            }
+            setItems((cur) => cur.filter((x) => x.id !== userId));
+            failMsg(BUSY_TEXT, "busy");
+            return "busy";
+          }
           // 같은 client_key로 다시 잇는 중(again)에 온 409 turn_running은 내 턴이 아직 도는 거예요(ack 전에 끊겼어도)
           const ours = e instanceof ApiError && e.code === "turn_running" && (!!turnId || again);
           const drop = e instanceof Dropped || (e instanceof ApiError && e.code === "network");
