@@ -1,5 +1,5 @@
-"""v4 업체 브리핑 글 점검(06-answer-audit 5절 #3 · #12): 공정 · 지역이 맞지 않으면 기간 답하기 카드 없이
-까닭만 · 벽지 미정은 확인 필요 · 칸 수는 카드에 보이는 하나.
+"""v4 업체 브리핑 글 점검(06-answer-audit 5절 #3 · #4 · #12): 공정 · 지역이 맞지 않으면 기간 답하기 카드 없이
+까닭만 · 벽지 미정은 확인 필요 · 칸 수는 카드에 보이는 하나 · 도구 오류 문장에 도구 이름 없음.
 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import json
@@ -120,3 +120,23 @@ def test_template_check_sentence_when_no_suggestion():
         memo=None,
     )
     assert vendor_tools.brief_template(data) == "벽지 확인이 필요해요. 고객이 아직 정하지 않았어요."
+
+
+def test_vendor_tool_error_is_korean_without_tool_name(api, script):
+    """#4: 도구 오류 문장에 도구 이름(my_jobs)이 보이던 일. 모델 값의 코드만 영어예요."""
+    f = requested(api)
+    login(api, f["email"])
+    log = script(
+        [
+            {"tool_calls": [{"id": "b", "name": "request_brief", "input": {}}]},
+            {"text": "어느 요청인지 골라 주세요."},
+        ]
+    )
+    r = api.post(
+        "/vendor/assistant/turns",
+        json={"client_key": uuid.uuid4().hex, "text": "브리핑해 줘"},  # 보던 요청 없음
+    )
+    ok(r)
+    err = json.loads(log[1]["messages"][-1]["content"][0]["content"])
+    assert err["error"] == "no_visit"
+    assert not re.search(r"[A-Za-z_]", err["message"]) and err["message"].endswith("주세요.")

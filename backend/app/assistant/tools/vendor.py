@@ -62,7 +62,7 @@ def _visit_id(tc: ToolCtx, ref: str | None) -> uuid.UUID:
     if ref:
         return uuid.UUID(tc.refs.get(ref, "visit")["id"])
     if tc.visit_id is None:
-        raise ToolError("no_visit", "어느 요청인지 몰라요. my_jobs로 요청을 먼저 찾아 주세요.")
+        raise ToolError("no_visit", "어느 요청인지 몰라요. 할 일 목록에서 요청을 먼저 골라 주세요.")
     return tc.visit_id
 
 
@@ -574,7 +574,9 @@ async def my_free_slots(tc: ToolCtx, a: FreeIn) -> ToolOut:
         lo = a.start or d.wish_start or tc.today + timedelta(days=1)
         hi = a.end or d.wish_end or lo + timedelta(days=13)
         if hi < lo or (hi - lo).days > slots.SPAN_MAX:
-            raise ToolError("bad_range", "기간을 62일 안으로 다시 골라 주세요.")
+            raise ToolError(
+                "bad_range", "기간은 시작일부터 끝나는 날까지 62일 안으로 다시 골라 주세요."
+            )
         free = await open_halves(s, tc.user.id, lo, hi)
     wins = slots.best_windows(free, lo, hi, tc.today, days_off=days_off(lo, hi))
     out = []
