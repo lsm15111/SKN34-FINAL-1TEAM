@@ -68,11 +68,13 @@ def _user(email: str) -> uuid.UUID:
 
 
 def test_purposes_match_usage_table_and_migration():
-    spec = importlib.util.spec_from_file_location(
-        "m0039", BACKEND / "migrations" / "versions" / "0039_v4_llm_usage.py"
-    )
-    mig = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mig)
+    # llm_usage.purpose 목록을 마지막으로 바꾼 migration(0039 → 0050_v4_research 조사 담당 …)과 맞춘다
+    for path in sorted((BACKEND / "migrations" / "versions").glob("*.py"), reverse=True):
+        spec = importlib.util.spec_from_file_location(f"m_{path.stem}", path)
+        mig = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mig)
+        if hasattr(mig, "PURPOSES"):
+            break
     assert set(get_args(llm.Purpose)) == set(usage_models.PURPOSES)
     assert set(re.findall(r"'(\w+)'", mig.PURPOSES)) == set(usage_models.PURPOSES)
     assert set(get_args(llm.Role)) <= set(usage_models.PURPOSES)

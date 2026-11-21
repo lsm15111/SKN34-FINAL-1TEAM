@@ -10,6 +10,7 @@ import { ExtraCard } from "./ExtraCard";
 import { HomeInfoCard } from "./HomeInfoCard";
 import { NoticeCard } from "./NoticeCard";
 import { QuoteCompareCard } from "./QuoteCompareCard";
+import { ResearchCard } from "./ResearchCard";
 import { ScheduleCard } from "./ScheduleCard";
 import { AnswerCard, FloorplanLinksCard, KnowledgeCard } from "./SmallCards";
 import { StandardQuoteCard } from "./StandardQuoteCard";
@@ -34,6 +35,7 @@ export const CARDS: Registry = {
   quote_checklist: ({ card }) => <QuoteChecklist visitId={card.data.visit_id} data={card.data} />,
   extra: ExtraCard,
   notice: NoticeCard,
+  research: ResearchCard,
 };
 
 /** old: 할 일이 끝난 먼저 말 건 줄의 카드(보낸 때 모습). 서버는 그 카드 id에 '@줄 id'를 붙여 보내요(뒤 카드와 합쳐지지 않게).
