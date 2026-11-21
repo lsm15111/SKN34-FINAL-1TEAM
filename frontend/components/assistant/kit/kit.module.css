@@ -1,7 +1,8 @@
 /* 비서 카드 공통 조각(v2 모양 + --mj-* 토큰). 시안 mock.html 3 · 4절을 옮겼어요. 지역 색은 두지 않아요. */
 
 /* ───── 카드 바탕 ───── */
-.card { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-card); padding: 20px; min-width: 0; display: grid; gap: 16px; }
+/* 칸 너비를 카드 너비로 묶어요(minmax(0, 1fr)): 안의 긴 글 · 줄 바꿈 없는 조각이 카드와 대화 칸을 가로로 밀지 않게 */
+.card { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-card); padding: 20px; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; overflow-wrap: anywhere; }
 .card h3 { margin: 0; font-size: var(--mj-type-title-s); line-height: 1.35; letter-spacing: -0.015em; }
 .done { opacity: .55; }
 .done :is(button, a, input, select) { pointer-events: none; }
@@ -27,8 +28,10 @@
 .chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--mj-chip-h); padding: 0 16px; border-radius: var(--mj-radius-pill); border: 1px solid var(--mj-line-control); background: var(--mj-bg); font: inherit; font-size: var(--mj-type-label); color: var(--mj-text); cursor: pointer; white-space: nowrap; text-decoration: none; }
 .chip:hover { background: var(--mj-surface-sub); }
 .chip[aria-pressed="true"] { border-color: var(--mj-primary); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-weight: var(--mj-weight-bold); }
-.chip svg { width: 16px; height: 16px; color: var(--mj-text-mute); }
+.chip svg { width: 16px; height: 16px; color: var(--mj-text-mute); flex: none; }
 .chipSm { padding: 0 12px; font-size: var(--mj-type-caption); }
+/* 긴 말 칩(업체에 물을 말 등): 줄을 바꿔 카드 너비 안에 들어와요 */
+.chipWrap { white-space: normal; text-align: left; line-height: 1.35; padding-block: 8px; max-width: 100%; }
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
 
 /* ───── 상태 표시(아이콘 + 글자, 색은 아이콘에만) ───── */
@@ -47,9 +50,10 @@
 .src { display: inline-flex; align-items: center; gap: 4px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); background: var(--mj-fill); border-radius: var(--mj-radius-badge); padding: 1px 8px; white-space: nowrap; }
 .srcAi { color: var(--mj-on-primary-weak); background: var(--mj-primary-weak); }
 .srcAi svg { width: 12px; height: 12px; }
-.basis { display: inline-flex; align-items: center; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); border-radius: var(--mj-radius-pill); padding: 1px 9px; background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); white-space: nowrap; }
-.facts { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.facts li { font-size: var(--mj-type-caption); background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-pill); padding: 3px 10px; white-space: nowrap; }
+/* 짧은 이름표 · 사실 칩: 한 줄이고, 카드보다 길면 줄임표로 잘라요(가로로 밀지 않게) */
+.basis { display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); border-radius: var(--mj-radius-pill); padding: 1px 9px; background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); white-space: nowrap; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; min-width: 0; }
+.facts li { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: var(--mj-type-caption); background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-pill); padding: 3px 10px; white-space: nowrap; }
 
 /* ───── 큰 숫자 상자 ───── */
 .kpi { display: grid; gap: 2px; padding: 12px 16px; border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); }
@@ -84,6 +88,7 @@
 .rows > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
 .rows dt { color: var(--mj-text-mute); }
 .rows dd { margin: 0; color: var(--mj-text); min-width: 0; }
+.rows dd :is(a, button) { white-space: normal; justify-content: flex-start; text-align: left; min-width: 0; max-width: 100%; }
 .rows small { display: block; color: var(--mj-text-mute); font-size: var(--mj-type-caption); }
 .amtList { list-style: none; margin: 0; padding: 0; display: grid; }
 .amtList li { display: flex; justify-content: space-between; gap: 8px; max-width: 320px; }
@@ -92,6 +97,8 @@
 .note svg { width: 18px; height: 18px; margin-top: 2px; color: var(--mj-text-mute); flex: none; }
 .acts { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .acts .pri { min-width: 180px; }
+/* 긴 단추 이름(업체 이름이 든 승인 단추 등)은 두 줄로(잘리거나 카드 밖으로 나가지 않게) */
+.acts .btn { white-space: normal; text-align: center; line-height: 1.3; padding-block: 6px; max-width: 100%; }
 .changed { display: flex; gap: 8px; align-items: flex-start; padding: 10px 12px; border-radius: var(--mj-radius-field); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); }
 .changed svg { width: 18px; height: 18px; flex: none; margin-top: 2px; }
 .result { display: flex; align-items: center; gap: 6px 10px; flex-wrap: wrap; font-size: var(--mj-type-label); color: var(--mj-text-sub); }

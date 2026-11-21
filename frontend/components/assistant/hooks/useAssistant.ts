@@ -2,10 +2,12 @@
 // 비서 대화 상태 한 곳: 다시 열기(threads/latest · feed · board · today) · 턴(SSE) 이어 붙이기 · 끊기면 같은 client_key로 다시 잇기 ·
 // 승인(멱등 키 · 본 판 · 409 · 만료) · 먼저 말 걸기(nudges) · 기억 · 무료 모드 · 전체 화면 카드 안 v3 단추 뒤 다시 읽기.
 // 대화 원본은 서버 feed예요. 카드 값은 서버가 바꿔 보내요(화면은 계산하지 않아요).
+// 실시간: 이 공사 상태 소식(state) · 다시 이음(resync)이 오면 대화 기록을 다시 읽어요. 먼저 말 걸기를 보내거나 닫아도 대화 번호표(rev)는
+// 그대로라 번호표만 보면 문장 · 카드를 놓쳐요. 턴이 도는 중에 온 소식은 턴이 끝난 뒤 읽어요.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth, getLatestThread,
-  getMemory, getToday, kindsForWrite, listActions, newClientKey, openNudge as openApi, rejectAction, replaceAction, resetMock, resetTurn,
+  getMemory, getToday, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi, rejectAction, replaceAction, resetMock, resetTurn,
   seqFilter, settledNudges, streamTurn, subscribeTurns,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
@@ -52,6 +54,10 @@ export function useAssistant(projectId: string) {
   /** 오늘 정할 일 카드 자리: 처음 열었을 때 오늘 비서 말이 없으면 그때 마지막 말 뒤(그날 첫 비서 말). 한 번 정하면 그대로 둬요 */
   const [todayAt, setTodayAt] = useState<{ after: string | null } | null>(null);
   const anchored = useRef(false);
+  /** '앞 대화 더 보기'로 앞 쪽을 붙였어요(첫 쪽을 다시 읽을 때 그대로 둬요) */
+  const olderRef = useRef(false);
+  /** 턴이 도는 중에 온 다시 읽기(끝난 뒤 한 번). true면 번호표와 상관없이 기록을 다시 읽어요 */
+  const syncLater = useRef<boolean | null>(null);
   const itemsRef = useRef<FeedItem[]>([]);
   const openRef = useRef<ActionOut[]>([]);
   nowRef.current = now;
@@ -100,11 +106,15 @@ export function useAssistant(projectId: string) {
     ]);
   }, [projectId, refreshBoard]);
 
-  /** 대화 기록 첫 쪽. 대화가 없으면(처음) 비우고 처음 칩을 보여요 */
+  /** 대화 기록 첫 쪽. 대화가 없으면(처음) 비우고 처음 칩을 보여요. 앞 쪽을 읽어 뒀으면 그 앞에 그대로 이어 붙여요 */
   const loadFeed = useCallback(async () => {
     const [thread, page] = await Promise.all([getLatestThread(projectId), getFeed(projectId)]);
-    setItems(foldCards(page.items));
-    setBefore(page.before);
+    if (olderRef.current) {
+      setItems((cur) => foldCards(keepOlder(cur, page.items)));
+    } else {
+      setItems(foldCards(page.items));
+      setBefore(page.before);
+    }
     setNow(page.now);
     setFresh(!thread && !page.items.length);
     setChips(page.items.length ? page.chips : FIRST_CHIPS);
@@ -117,6 +127,7 @@ export function useAssistant(projectId: string) {
   }, [projectId]);
 
   const load = useCallback(async () => {
+    olderRef.current = false;
     try {
       await loadFeed();
       setLoadError(null);
@@ -133,9 +144,10 @@ export function useAssistant(projectId: string) {
     return () => abortRef.current?.abort();
   }, [load]);
 
-  /** 서버 쪽이 바뀌었을 수 있을 때(실시간 소식 · v3 단추 뒤): 대화가 바뀌었으면(rev) 기록을 다시 읽고 옆 값들을 새로 읽어요 */
+  /** 서버 쪽이 바뀌었을 수 있을 때(실시간 소식 · v3 단추 뒤): 대화가 바뀌었으면(rev · force) 기록을 다시 읽고 옆 값들을 새로 읽어요.
+   *  턴이 도는 중이면 버리지 않고 턴이 끝난 뒤로 미뤄요 */
   const resync = useCallback(async (force = false) => {
-    if (runningRef.current) return;
+    if (runningRef.current) { syncLater.current = !!syncLater.current || force; return; }
     try {
       const t = await getLatestThread(projectId);
       if (force || (t?.rev ?? 0) !== (revRef.current ?? 0)) await loadFeed();
@@ -165,13 +177,26 @@ export function useAssistant(projectId: string) {
     });
   }, [projectId, apply]);
 
-  // 실제: 실시간 한 줄기(/stream)의 상태 소식이 오면 대화 · 보드를 다시 읽어요(턴이 도는 중이면 끝난 뒤)
+  // 실제: 실시간 한 줄기(/stream). 이 공사 상태 소식(state, 업체 답 · 먼저 말 걸기 보냄 · 할 일이 끝나 닫음)과 다시 이음(resync)은
+  // 대화 기록을 다시 읽어요(먼저 말 걸기는 rev를 올리지 않아요). 알림 수(notif)는 바뀌었을 때만(rev). 턴이 도는 중이면 끝난 뒤.
+  // 잇따라 오면 마지막 것 하나로 모으되, 기록을 다시 읽을 일(force)은 잃지 않아요
   const reloadTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reloadForce = useRef(false);
   const later = useCallback((force: boolean, ms = 400) => {
     if (reloadTimer.current) clearTimeout(reloadTimer.current);
-    reloadTimer.current = setTimeout(() => { void resync(force); }, ms);
+    reloadForce.current = reloadForce.current || force;
+    reloadTimer.current = setTimeout(() => {
+      const f = reloadForce.current;
+      reloadForce.current = false;
+      void resync(f);
+    }, ms);
   }, [resync]);
-  useStream(["state", "notif", "resync"], () => { if (!ASSISTANT_MOCK) later(false); });
+  useStream(["state", "notif", "resync"], (e) => {
+    if (ASSISTANT_MOCK) return;
+    if (e.type === "notif") { later(false); return; }
+    if (e.type === "state" && e.data.project_id && e.data.project_id !== projectId) return;
+    later(true);
+  });
 
   // 전체 화면 카드 안 v3 단추(사람이 누른 확정 · 수락)가 쓰기를 마치면: 같은 일을 하던 열린 승인 카드는 '처리됨',
   // 그리고 대화 · 보드 · 열린 대기 행동을 다시 읽어요
@@ -248,6 +273,10 @@ export function useAssistant(projectId: string) {
     } finally {
       runningRef.current = false;
       setRunning(false);
+      // 턴이 도는 동안 온 실시간 소식(먼저 말 걸기 등)을 이제 읽어요
+      const pend = syncLater.current;
+      syncLater.current = null;
+      if (pend !== null) later(pend, 300);
     }
   }, [projectId, apply, later]);
 
@@ -348,6 +377,7 @@ export function useAssistant(projectId: string) {
         return foldCards([...page.items.filter((x) => !have.has(x.id)), ...cur]);
       });
       setBefore(page.before);
+      olderRef.current = true;
     } catch { /* 다시 누르면 돼요 */ } finally {
       setOlderBusy(false);
     }
@@ -362,11 +392,13 @@ export function useAssistant(projectId: string) {
   const actionOf = useCallback((id: string): ActionOut | null =>
     actionsIn(items).find((x) => x.action_id === id) ?? open.find((x) => x.action_id === id) ?? null, [items, open]);
 
-  /** 숨길 먼저 말 건 줄: 닫은 것 + 그 줄의 승인 카드(같은 대상)를 실행 · 처리한 것. 서버가 정리하기 전에도 바로 닫아요 */
-  const shut = useMemo<Record<string, true>>(() => {
-    const ids = settledNudges(items, handled);
-    return ids.length ? { ...gone, ...Object.fromEntries(ids.map((x) => [x, true as const])) } : gone;
-  }, [items, handled, gone]);
+  /** 할 일이 끝난 먼저 말 건 줄('완료'로 그려요): 서버가 닫은 줄 + 그 줄의 승인 카드(같은 대상)를 실행 · 처리한 것(서버 정리 전에도) */
+  const settled = useMemo<Record<string, true>>(
+    () => Object.fromEntries(settledNudges(items, handled).map((x) => [x, true as const])),
+    [items, handled],
+  );
+  /** 제안을 숨길 줄: 고객이 닫은 것 + 할 일이 끝난 것 */
+  const shut = useMemo<Record<string, true>>(() => ({ ...gone, ...settled }), [gone, settled]);
 
   /** 보이는 대화: 기록 + 오늘 정할 일(그날 첫 비서 말 자리, 그날 카드가 기록에 없을 때) + (기록에 없는) 열린 대기 행동 */
   const view = useMemo<FeedItem[]>(() => {
@@ -386,7 +418,7 @@ export function useAssistant(projectId: string) {
   }, [items, open, today, todayAt, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone: shut, fresh,
+    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone: shut, settled, fresh,
     hasOlder: !!before, olderBusy, loadOlder,
     send, approve, reject, openNudge, dismissNudge, forget, reset, reload: load, actionOf,
   };

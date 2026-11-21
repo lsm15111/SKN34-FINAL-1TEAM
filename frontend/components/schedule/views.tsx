@@ -1,4 +1,4 @@
-// 공사 화면 세 가지(서버): 공사 날짜(C35 · 기다림 · 다른 날짜 요청함 · 확정) · 추가 금액(C37) · 공사 끝 확인(C38).
+// 공사 화면 세 가지(서버): 공사 날짜(C35 · 기다림 · 다른 날짜 요청함 · 확정 · 확정 뒤 날짜 바꾸기 요청) · 추가 금액(C37) · 공사 끝 확인(C38).
 // 화면마다 { body(Main 안), bar(Main 바로 뒤 아래 단추 띠) }를 돌려줘요. 금액 · 날짜 · 기한은 API 값 그대로예요.
 // 9판의 '바뀌면 332만 2,000원'(승인하면 합계) · '공사 금액 · 추가 포함 합계'는 API에 값이 없어 따로 보여요(합치지 않아요).
 import type { ReactNode } from "react";
@@ -8,7 +8,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Money } from "@/components/ui/Money";
 import { Eyebrow, Group, Notice, Pics, Quote, Row, Rows, Small, Sub, Title } from "@/components/project/Kit";
 import { iGa } from "@/components/visit/text";
-import { DatesActions } from "./DatesActions";
+import { DatesActions, DatesChangeBar } from "./DatesActions";
 import { DoneActions } from "./DoneActions";
 import { ExtraActions } from "./ExtraActions";
 import { WorkDays } from "./WorkDays";
@@ -58,16 +58,22 @@ export function datesView({ projectId, t, holidays, finalVersion, today, startDa
   }
   if (t.dates_state === "requested" || t.dates_state === "change_requested") {
     const r = t.request;
+    const change = t.dates_state === "change_requested";
     return {
       body: (
         <>
           <Group hi>
-            <Eyebrow>다른 날짜를 요청했어요</Eyebrow>
+            <Eyebrow>{change ? "공사 날짜 바꾸기를 요청했어요" : "다른 날짜를 요청했어요"}</Eyebrow>
             {r?.wish_dates.length ? <Title>원하는 시작일 {r.wish_dates.map((d) => dateShort(d)).join(" · ")}</Title> : null}
             {r?.reason ? <Quote>{r.reason}</Quote> : null}
             {r ? <Sub>{r.overdue ? `${iGa(v)} 새 날짜를 아직 올리지 않았어요 · 채팅으로 물어보세요` : `${iGa(v)} ${dueText(r.due_at)} 새 날짜를 올려요`}</Sub> : null}
           </Group>
-          {p ? (
+          {change && t.deal.work_days.length ? (
+            <Group>
+              <Eyebrow>지금 공사 날짜</Eyebrow>
+              <Sub>{daysText(t.deal.work_days)}</Sub>
+            </Group>
+          ) : p ? (
             <Group>
               <Eyebrow>먼저 올린 공사 날짜</Eyebrow>
               <Sub>{daysText(p.days)}</Sub>
@@ -81,6 +87,8 @@ export function datesView({ projectId, t, holidays, finalVersion, today, startDa
   }
   if (t.dates_state === "scheduled" || (p && p.status === "accepted")) {
     const days = t.deal.work_days.length ? t.deal.work_days : p?.days ?? [];
+    // 수락한 뒤 · 공사 끝 알림 전(확정)에만 날짜를 바꿀 수 있어요(서버 규칙). 요청은 다른 날짜 요청과 합쳐 2번까지
+    const changeable = t.deal.status === "scheduled" && t.dates_state === "scheduled";
     return {
       body: (
         <>
@@ -92,9 +100,12 @@ export function datesView({ projectId, t, holidays, finalVersion, today, startDa
           </Group>
           {days.length ? <Group><div className={s.cal}><WorkDays days={days} holidays={holidays} today={today} /></div></Group> : null}
           <Group list><Rows>{dealRow(t)}</Rows></Group>
+          {changeable && t.requests_left <= 0 ? <Notice tone="gray">날짜 바꾸기 요청은 2번을 다 썼어요. 날짜를 바꿔야 하면 채팅으로 이야기해요.</Notice> : null}
         </>
       ),
-      bar: null,
+      bar: changeable && t.requests_left > 0 ? (
+        <DatesChangeBar projectId={projectId} dealId={t.deal.id} vendorName={v} requestsLeft={t.requests_left} options={t.start_options.map((o) => o.start)} today={today} requestDue={requestDue ?? null} />
+      ) : null,
     };
   }
   if (t.dates_state === "closed") {

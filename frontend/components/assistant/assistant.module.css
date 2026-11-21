@@ -68,6 +68,8 @@
 .ai { display: grid; gap: 6px; }
 .aiTag { justify-self: start; }
 .note { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-mute); }
+/* 할 일이 끝난 먼저 말 건 줄 끝 '완료' */
+.settled { margin: 0; display: flex; align-items: center; min-height: 24px; }
 /* 다음에 물을 말 둘째부터(칩, 긴 글은 줄을 바꿔요) */
 .ideas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
 .ideas button { white-space: normal; text-align: left; line-height: 1.35; padding-block: 8px; max-width: 100%; }
@@ -118,8 +120,8 @@
 .board .boardX { display: none; }
 .bsec { display: grid; gap: 10px; }
 .bsecT { font-size: var(--mj-type-caption); color: var(--mj-text-mute); font-weight: var(--mj-weight-semibold); margin: 0; }
-.facts { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.facts li { font-size: var(--mj-type-caption); background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-pill); padding: 3px 10px; white-space: nowrap; }
+.facts { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; min-width: 0; }
+.facts li { max-width: 100%; overflow: hidden; text-overflow: ellipsis; font-size: var(--mj-type-caption); background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-pill); padding: 3px 10px; white-space: nowrap; }
 .now2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .now2 > div { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); padding: 10px 12px; display: grid; }
 .now2 span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }

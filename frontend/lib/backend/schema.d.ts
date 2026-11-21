@@ -3388,6 +3388,12 @@ export interface components {
              * @description 먼저 말 건 줄이면 그 id(열기 · 닫기 API)
              */
             nudge_id?: string | null;
+            /**
+             * Settled
+             * @description 할 일이 끝나 닫힌 먼저 말 건 줄('완료'로 남기고 단추 · 다음에 물을 말이 없다)
+             * @default false
+             */
+            settled: boolean;
         };
         /** AssistantThreadOut */
         AssistantThreadOut: {

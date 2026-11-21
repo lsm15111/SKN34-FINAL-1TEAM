@@ -219,8 +219,12 @@ def test_slot_picked_on_screen_closes_the_nudge_and_its_action(api, monkeypatch)
     assert handled(str(n["action_id"]))
     (row,) = query("select status, reason from assistant_nudges where id = $1", n["id"])
     assert (row["status"], row["reason"]) == ("expired", "handled")
+    # 대화 기록에는 '완료'로 남는다(다음에 물을 말 없음, 승인 카드는 '화면에서 처리됨'으로 닫힘)
     feed = api.get("/assistant/feed", params={"project_id": f["pid"]}).json()
-    assert f"n-{n['id']}" not in {x["id"] for x in feed["items"]}
+    (item,) = [x for x in feed["items"] if x["id"] == f"n-{n['id']}"]
+    assert item["settled"] is True and all(p["t"] != "suggest" for p in item["parts"])
+    (a,) = [p["action"] for p in item["parts"] if p["t"] == "action"]
+    assert (a["status"], a["error_code"]) == ("expired", "handled_elsewhere")
 
 
 def test_tool_names_match_their_functions():

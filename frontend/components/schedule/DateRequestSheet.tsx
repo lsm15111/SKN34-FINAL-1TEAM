@@ -1,6 +1,8 @@
 "use client";
 // 공사 다른 날짜 요청(C52): 이유 + 원하는 시작일 3개까지 → POST /projects/{id}/deals/{did}/date-requests {wish_dates, reason}.
 // 열린 요청은 하나 · 2번까지(서버 규칙). 업체가 새 날짜를 올리는 기한(요청 + 48시간)은 보낸 뒤 서버 값으로 보여요.
+// change: 수락한 뒤 날짜 바꾸기 요청(같은 API, 이유 필수 · 요청 수는 다른 날짜 요청과 합쳐 2번). 업체가 새 날짜를 올려 고객이
+// 수락하기 전까지 지금 날짜는 그대로예요. 예시 데이터(목업)에는 이 단계가 없어 보내지 않았다고 알려요.
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { errorText } from "@/lib/backend/client";
@@ -19,9 +21,11 @@ import s from "./v3.module.css";
 
 const MAX = 3;
 
-export function DateRequestSheet({ open, onClose, projectId, dealId, vendorName, requestsLeft, options, today, requestDue = null }: {
+export function DateRequestSheet({ open, onClose, projectId, dealId, vendorName, requestsLeft, options, today, requestDue = null, change = false }: {
   /** 지금 보내면 업체가 새 날짜를 올릴 기한(서버 계산 request_due_preview) */
   requestDue?: string | null;
+  /** 수락한 공사 날짜 바꾸기 요청이에요(확정 뒤) */
+  change?: boolean;
   open: boolean;
   onClose: () => void;
   projectId: string;
@@ -66,8 +70,8 @@ export function DateRequestSheet({ open, onClose, projectId, dealId, vendorName,
     setErr(null);
     setBusy(true);
     try {
-      await send("POST", `/projects/${encodeURIComponent(projectId)}/deals/${encodeURIComponent(dealId)}/date-requests`, { wish_dates: picked, reason }, { step: "date_req" });
-      toast.show("다른 날짜를 요청했어요");
+      await send("POST", `/projects/${encodeURIComponent(projectId)}/deals/${encodeURIComponent(dealId)}/date-requests`, { wish_dates: picked, reason }, change ? undefined : { step: "date_req" });
+      toast.show(change ? "날짜 바꾸기를 요청했어요" : "다른 날짜를 요청했어요");
       onClose();
       router.refresh();
     } catch (e) {
@@ -81,7 +85,7 @@ export function DateRequestSheet({ open, onClose, projectId, dealId, vendorName,
     <Sheet
       open={open}
       onClose={() => !busy && onClose()}
-      title="다른 날짜를 요청할까요?"
+      title={change ? "공사 날짜 바꾸기를 요청할까요?" : "다른 날짜를 요청할까요?"}
       dismissible={!busy}
       hideClose
       actions={
