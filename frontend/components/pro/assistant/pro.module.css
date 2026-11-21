@@ -13,11 +13,13 @@
 .est span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 .est b { font-size: var(--mj-size-28); font-weight: var(--mj-weight-heavy); letter-spacing: var(--mj-track-amount); line-height: var(--mj-lh-tight); }
 .secT { font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); margin: 0; }
+.weeks { display: grid; gap: 12px; }
 .slots { display: grid; grid-template-columns: 40px repeat(7, minmax(0, 1fr)); gap: 4px; font-size: var(--mj-type-caption); }
 .slots .h { text-align: center; color: var(--mj-text-mute); line-height: 1.25; padding-bottom: 2px; }
 .slots .h b { display: block; color: var(--mj-text); font-size: var(--mj-type-caption); }
 .slots .off, .slots .off b { color: var(--mj-holiday); }
-.slots .lab { color: var(--mj-text-mute); align-self: center; }
+/* 이름 칸은 늘 첫 열에서 새 줄을 열어요(7일보다 짧은 주도 칸이 밀리지 않게) */
+.slots .lab { grid-column: 1; color: var(--mj-text-mute); align-self: center; }
 .cell { height: 34px; border-radius: 8px; background: var(--mj-primary-weak); box-shadow: inset 0 0 0 1px var(--mj-range-vendor); }
 .taken { background: repeating-linear-gradient(135deg, var(--mj-fill) 0 6px, var(--mj-surface-sub) 6px 12px); box-shadow: inset 0 0 0 1px var(--mj-line); display: grid; place-items: center; color: var(--mj-text-mute); overflow: hidden; white-space: nowrap; }
 .cellOff { background: var(--mj-surface-sub); box-shadow: none; }
