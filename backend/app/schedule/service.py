@@ -2057,6 +2057,18 @@ async def _extras(s: AsyncSession, deals: list[Deal]) -> dict[uuid.UUID, TradeEx
     return out
 
 
+async def work_money(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[TradeExtrasOut]:
+    """공정마다 지금 공사 금액(비서 보드 · 도구가 읽는다): 확정 금액(deal_total) · 승인한 추가 금액(ok) ·
+    확정 금액 + 승인한 추가 금액(grand_total). 만든 사람 · 관리자만, 다시 고른 확정은 빼요. 값은 계산 엔진이 더한 것."""
+    p = await project_service.get_for(s, user, project_id)
+    q = select(Deal).where(Deal.project_id == p.id, Deal.status != "reselected")
+    deals = sorted(
+        (await s.execute(q.execution_options(populate_existing=True))).scalars().all(),
+        key=lambda d: ORDER.index(d.trade),
+    )
+    return list((await _extras(s, deals)).values())
+
+
 async def _approved_extras(s: AsyncSession, deal_ids: list[uuid.UUID]) -> dict[uuid.UUID, list]:
     """공사마다 고객이 승인한 추가 금액(최신 판, 부가세 포함). 더하기는 계산 엔진(work_view)."""
     if not deal_ids:

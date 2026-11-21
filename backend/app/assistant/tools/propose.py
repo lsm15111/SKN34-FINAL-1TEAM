@@ -98,7 +98,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
         "note": note,
     }
     if got.live:
-        model["expires_at"] = a.expires_at
+        model["expires_at"] = cards.seoul_text(a.expires_at)  # 서울 시각 글(UTC를 그대로 읽지 않게)
     out = ToolOut(
         data=model,
         actions=[a] if got.live else [],
@@ -445,11 +445,24 @@ async def propose_vendor_confirm(tc: ToolCtx, a: VisitRefIn) -> ToolOut:
     row = next((r for r in cmp.vendors if r.visit_id == visit_id), None)
     done = next((r for r in cmp.vendors if r.status == "chosen"), None)
     if done is not None:  # 이미 확정했다('확정할 견적서가 없어요'라고 하지 않는다)
+        if done is not row:
+            raise ToolError(
+                "already_chosen",
+                f"이미 {euro(done.vendor_name)} 확정했어요. 바꾸려면 견적서 화면에서 다시 골라 주세요.",
+            )
+        from app.schedule import service as schedule_service
+
+        # 확정 뒤 지금 공사 날짜 상태로 말해요(끝난 일을 기다리라고 하지 않게)
+        async with SessionLocal() as s:
+            sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
+        t = next((x for x in sch.trades if x.deal.visit_id == visit_id), None)
+        state = cards.DATES_STATE.get(t.dates_state) if t else None
+        d = t.deal if t else None
+        if t is not None and t.dates_state == "scheduled" and d.start_date and d.end_date:
+            state = f"공사 날짜 {d.start_date.isoformat()} ~ {d.end_date.isoformat()}도 수락했어요"
         raise ToolError(
             "already_chosen",
-            f"이미 {euro(done.vendor_name)} 확정했어요. 업체가 공사 날짜를 올리면 수락할 수 있어요."
-            if done is row
-            else f"이미 {euro(done.vendor_name)} 확정했어요. 바꾸려면 견적서 화면에서 다시 골라 주세요.",
+            f"이미 {euro(done.vendor_name)} 확정했어요." + (f" {state}." if state else ""),
         )
     if row is None or row.latest is None or row.status != "quoted" or row.seen_ver is None:
         raise ToolError("not_quoted", "아직 확정할 수 있는 견적서가 없어요.")

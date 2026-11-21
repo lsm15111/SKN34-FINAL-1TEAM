@@ -26,6 +26,7 @@ from app.assistant.schemas import (
     HomeArea,
     HomeInfoData,
     KnowledgeData,
+    LinkOut,
     NameWon,
     QuoteCompareData,
     ScheduleData,
@@ -45,7 +46,7 @@ from app.shared.korean import i_ga
 
 if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
-    from app.assistant.schemas import TaskOut
+    from app.assistant.schemas import BoardVendorRow, TaskOut, TodayRow
 
 GRADE = {"economy": "합지", "basic": "실크"}
 SCOPE = {"full": "전체", "partial": "부분"}
@@ -61,6 +62,18 @@ PICK_BASIS = [
 
 def href(pid: uuid.UUID, tail: str = "") -> str:
     return f"/projects/{pid}{tail}"
+
+
+def seoul_text(at: datetime | None) -> str | None:
+    """시각 → 모델에 줄 서울 시각 글 '11월 23일(월) 오후 6시'. 시각(UTC)을 그대로 넘기면 모델이 09:00Z를 '오전
+    9시'로 읽어요(QA r1 c6). 말하는 꼴 그대로라 문장 숫자 검사에도 그 숫자가 들어가요."""
+    if at is None:
+        return None
+    x = at.astimezone(SEOUL)
+    hour = x.hour % 12 or 12
+    minute = f" {x.minute}분" if x.minute else ""
+    half = "오전" if x.hour < 12 else "오후"
+    return f"{x.month}월 {x.day}일({'월화수목금토일'[x.weekday()]}) {half} {hour}시{minute}"
 
 
 def _m2(x: Decimal | float | None) -> str | None:
@@ -462,6 +475,9 @@ async def compare(
     from app.visit import service as visit_service
 
     out = await visit_service.compare(s, user, pid, trade, today)
+    decided = any(r.status == "chosen" for r in out.vendors)
+    # 실측이 확정된(채팅이 열린) 업체에는 '채팅 열기'를 단다: 다른 업체를 확정해 닫힌 요청은 빼요
+    chats = await chat_links(s, pid, [r.vendor_id for r in out.vendors if r.status in CHAT_STATES])
     cols: list[CompareCol] = []
     model_cols: list[dict] = []
     for r in out.vendors:
@@ -498,6 +514,8 @@ async def compare(
             warranty_months=q.warranty_months if q else None,
             file=_file(pid, q) if q else None,
             wait_note=None if q else "견적서 기다림",
+            chosen=r.status == "chosen",
+            chat_href=chats.get(r.vendor_id) if r.vendor_id else None,
         )
         cols.append(col)
         model_cols.append(
@@ -505,6 +523,7 @@ async def compare(
                 "ref": ref,
                 "vendor_name": r.vendor_name,
                 "status": r.status,
+                "links": [{"label": CHAT_MODEL}] if col.chat_href else [],
                 "version": col.version,
                 "total": col.total_won,  # 고객이 낼 금액(부가세 포함)
                 "vat_way": VAT_WAY.get(q.vat_mode or "") if q else None,
@@ -529,7 +548,7 @@ async def compare(
         else []
     )
     data = QuoteCompareData(
-        cols=cols, gap_won=out.gap_total, ask_chips=asks, href=href(pid, "/quotes")
+        cols=cols, gap_won=out.gap_total, ask_chips=asks, href=href(pid, "/quotes"), decided=decided
     )
     quoted = sum(1 for c in cols if c.state == "quoted")
     card = CardOut(
@@ -538,10 +557,29 @@ async def compare(
         data=data.model_dump(mode="json"),
         say=f"실측 견적서가 {quoted}곳 왔어요." if quoted else None,
     )
-    return card, {"trade": trade, "cols": model_cols, "gap_won": out.gap_total}
+    model = {"trade": trade, "cols": model_cols, "gap_won": out.gap_total}
+    if decided:  # 확정했으면 지금 공사 금액(승인한 추가 금액 포함)
+        from app.schedule import service as schedule_service
+
+        works = await schedule_service.work_money(s, user, pid)
+        w = next((x for x in works if x.trade == trade), None)
+        if w is not None:
+            model["money"] = money_model(w)
+    return card, model
 
 
 # ---- 공사 날짜 · 공정표 ----
+
+# 공사 날짜 상태(schedule.service dates_state) → 모델에 줄 화면 말(끝난 일을 기다리라고 하지 않게)
+DATES_STATE = {
+    "waiting": "업체가 공사 날짜를 정하는 중이에요",
+    "proposed": "업체가 올린 공사 날짜를 수락할 차례예요",
+    "requested": "다른 날짜를 요청했어요. 업체 답을 기다려요",
+    "scheduled": "공사 날짜를 수락했어요",
+    "change_requested": "날짜 바꾸기를 요청했어요. 업체가 새 날짜를 올리면 수락할 수 있어요",
+    "change_proposed": "업체가 바뀐 날짜를 올렸어요. 수락할 차례예요",
+    "closed": "다시 고른 업체예요",
+}
 
 
 async def schedule(
@@ -554,6 +592,12 @@ async def schedule(
     from app.schedule import service as schedule_service
 
     sch = await schedule_service.schedule_for(s, user, pid, today)
+    links = await chat_links(s, pid, [t.deal.vendor_id for t in sch.trades])
+    chats = [
+        LinkOut(label=f"{t.deal.vendor_name} 채팅 열기", href=links[t.deal.vendor_id])
+        for t in sch.trades
+        if t.deal.vendor_id in links
+    ]
     deals: list[dict] = []
     card: CardOut | None = None
     for t in sch.trades:
@@ -565,8 +609,11 @@ async def schedule(
             "vendor_name": d.vendor_name,
             "status": d.status,
             "dates_state": t.dates_state,
+            "state": DATES_STATE.get(t.dates_state),  # 지금 공사 날짜 상태(화면 말)
             "start_date": d.start_date,
             "end_date": d.end_date,
+            "money": money_model(t.extras),
+            "links": [{"label": CHAT_MODEL}] if d.vendor_id in links else [],
         }
         x = t.proposal
         if x is not None and x.status == "pending":
@@ -625,6 +672,9 @@ async def schedule(
                     if kind == "delay"
                     else "dates_accept",
                     action_id=accept,
+                    chats=[LinkOut(label=f"{d.vendor_name} 채팅 열기", href=links[d.vendor_id])]
+                    if d.vendor_id in links
+                    else [],
                 )
                 card = CardOut(
                     card_id=f"dates-{x.id}",
@@ -633,8 +683,15 @@ async def schedule(
                     say=f"{d.vendor_name}{'가' if _batchim_free(d.vendor_name) else '이'} 공사 날짜를 올렸어요.",
                 )
         deals.append(row)
-    if card is None and sch.final_version > 0:
-        plan = await schedule_service.plan_for(s, user, pid, today, "final")
+    model: dict = {"final_version": sch.final_version, "deals": deals}
+    plan = (
+        await schedule_service.plan_for(s, user, pid, today, "final")
+        if sch.final_version > 0
+        else None
+    )
+    if plan is not None:
+        model["period"] = plan_model(plan)  # 카드에 보이는 날짜별 이름을 비서도 읽게
+    if card is None and plan is not None:
         by_day: dict[date, list[str]] = {}
         for dd in plan.days:
             by_day.setdefault(dd.day, []).extend(dd.names)
@@ -651,6 +708,7 @@ async def schedule(
             plan_version=plan.version,
             href=href(pid, "/plan"),
             ics_href=f"/api/projects/{pid}/plan.ics",
+            chats=chats,
         )
         card = CardOut(
             card_id=f"plan-{plan.version}",
@@ -658,7 +716,74 @@ async def schedule(
             data=data.model_dump(mode="json"),
             say="확정 공정표예요.",
         )
-    return card, {"final_version": sch.final_version, "deals": deals}
+    return card, model
+
+
+WORK_MONEY = "지금 공사 금액(확정 금액 + 승인한 추가 금액, 부가세 포함)"
+
+
+def money_model(w) -> dict:
+    """공정 하나의 지금 공사 금액(schedule TradeExtrasOut, 계산 엔진 값 그대로) → 모델 값. 더하지 않아요."""
+    rows = [{"label": "확정 금액", "won": w.deal_total}]
+    for label, m in (
+        ("승인한 추가 금액", w.ok),
+        ("답을 기다리는 추가 금액", w.pending),
+        ("채팅으로 물어본 추가 금액", w.talk),
+    ):
+        if m.total:
+            rows.append({"label": label, "won": m.total})
+    return {"label": WORK_MONEY, "total": w.grand_total, "rows": rows}
+
+
+def work_total(money, works: dict) -> tuple[int, int]:
+    """보드 돈 줄(공사 요약 money · 공정마다 work_money): 확정한 공정은 지금 공사 금액(확정 + 승인한 추가 금액),
+    아니면 표준견적서. 더하기는 계산 엔진(sum_won). (합계, 그중 승인한 추가 금액)."""
+    from app.calc.common import sum_won
+
+    vals: list[int] = []
+    extra: list[int] = []
+    for x in money.by_trade:
+        w = works.get(x.trade)
+        if x.source == "deal" and w is not None and w.grand_total is not None:
+            vals.append(w.grand_total)
+            extra.append(w.ok.total)
+        else:
+            vals.append(x.total)
+    return sum_won(vals), sum_won(extra)
+
+
+BLOCK_LABEL = {"dry": "자연 건조", "clean": "입주 청소 · 고객이 직접"}
+PLAN_STATE = {"pending": "수락 전"}  # 수락 기다리는 날짜로 놓은 공정(확정은 따로 말하지 않아요)
+
+
+def plan_model(plan) -> dict:
+    """확정 공정표(schedule.service.plan_for, '고객이 직접' 줄 포함) → 모델 값. 날짜는 계산 엔진 값 그대로예요.
+    rows는 줄마다 이름 · 처음 · 끝(업체 공사 · 자연 건조 · 입주 청소 · 고객이 직접 할 일), days는 이름이 있는 날만."""
+    rows: list[dict] = []
+    for b in sorted(plan.blocks, key=lambda b: (b.start, b.end)):
+        if b.kind == "work":
+            label = f"{TRADE.get(b.trade or '', b.label)} 공사"
+        elif b.kind == "diy":
+            label = f"{b.label} · 고객이 직접"
+        else:
+            label = BLOCK_LABEL.get(b.kind, b.label)
+        row: dict = {"label": label, "start": b.start, "end": b.end}
+        if b.kind == "work":
+            row["work_days"] = b.days
+            if b.vendor_name:
+                row["vendor_name"] = b.vendor_name
+            if b.state in PLAN_STATE:
+                row["state"] = PLAN_STATE[b.state]
+        rows.append(row)
+    return {
+        "phase": "확정 공정표",
+        "plan_version": plan.version,
+        "start": plan.start,
+        "end": plan.end,
+        "work_days": plan.work_days,
+        "rows": rows,
+        "days": [{"day": d.day, "names": list(d.names)} for d in plan.days if d.names],
+    }
 
 
 def _batchim_free(word: str) -> bool:
@@ -722,6 +847,76 @@ def visit_task(pid: uuid.UUID, o, now: datetime) -> "TaskOut | None":
         rows=rows,
         link=LinkOut(label="실측 일정 보기", href=href(pid, "/visits")),
     )
+
+
+WEEK = "월화수목금토일"
+
+
+def md_week(d: date) -> str:
+    """'12.14(월)'"""
+    return f"{d.month:02d}.{d.day:02d}({WEEK[d.weekday()]})"
+
+
+def md_list(days) -> str:
+    """'12.24(목) · 12.28(월)'(날마다, 주말 · 휴일을 건너뛴 날이 보이게)."""
+    return " · ".join(md_week(d) for d in days)
+
+
+def day_list(days: list[date]) -> str:
+    """일하는 날 칸: '2일 · 12.24(목) · 12.28(월)'."""
+    return f"{len(days)}일 · {md_list(days)}"
+
+
+# 보드 업체 줄 · 확정한 업체: 공사 요약의 지금 할 일 코드(calc.progress) → (상태, 화면 말)
+DEAL_TEXT: dict[str, tuple[str, str]] = {
+    "dates_waiting": ("waiting", "공사 날짜 기다림"),
+    "dates_overdue": ("need", "공사 날짜가 늦어요"),
+    "dates_received": ("need", "공사 날짜 수락할 차례"),
+    "dates_requested": ("waiting", "날짜 요청 답 기다림"),
+    "dates_change": ("need", "바뀐 날짜 수락할 차례"),
+    "extra": ("need", "추가 금액 답할 차례"),
+    "working": ("running", "공사 중"),
+    "fixing": ("waiting", "남은 일 하는 중"),
+    "check": ("need", "공사 끝 확인할 차례"),
+    "done": ("done", "공사 끝"),
+}
+
+
+def board_row(v, o, works: dict, today: date) -> "BoardVendorRow":
+    """보드 업체 줄 하나(공사 요약 schedule.overview_for의 업체 v). 확정한 업체는 공사 단계와 지금 공사 금액,
+    닫힌 요청은 닫힌 까닭(다른 업체를 확정했으면 '고르지 않음'), 그 밖은 다음 할 일."""
+    from app.assistant.schemas import BoardVendorRow
+
+    if v.status == "chosen":
+        t = next((x for x in o.trades if x.trade == v.trade), None)
+        code = t.todo.code if t is not None and t.todo is not None else ""
+        if code == "before_work" and t is not None and t.start_date is not None:
+            state, text = "done", f"{md_week(t.start_date)} 공사 시작"
+        else:
+            state, text = DEAL_TEXT.get(code, ("done", ENDED_TEXT["chosen"]))
+        w = works.get(v.trade)
+        won = w.grand_total if w is not None and w.grand_total is not None else v.total
+        return BoardVendorRow(name=v.vendor_name, state=state, text=text, won=won)  # type: ignore[arg-type]
+    if v.status in ENDED:
+        other = any(x.status == "chosen" and x.trade == v.trade for x in o.vendors)
+        text = "고르지 않음" if v.status == "closed" and other else ENDED_TEXT[v.status]
+        return BoardVendorRow(name=v.vendor_name, state="cancelled", text=text, won=v.total)
+    n = v.next
+    state = "need" if n.who == "customer" else "waiting" if n.who == "vendor" else "done"
+    text = NEXT_TEXT.get(n.kind) or ENDED_TEXT.get(v.status, "진행 중")
+    return BoardVendorRow(name=v.vendor_name, state=state, text=text, won=v.total)  # type: ignore[arg-type]
+
+
+# 공사 요약의 지금 할 일(o.todo) 코드 → 오늘 정할 일 · 보드에서 어디에 두는지(업체 차례 · 공사 중은 기다리는 일)
+TODO_WAIT = frozenset({"dates_waiting", "dates_requested", "working", "fixing"})
+TODO_SKIP = frozenset({"visit_requested"})  # 실측 요청 뒤: 업체마다 '답 기다림' 줄이 따로 있어요
+
+
+def todo_kind(todo) -> str | None:
+    """'todo'(고객이 정할 일) · 'waiting'(기다리는 일) · None(따로 보이지 않음)."""
+    if todo is None or todo.code in TODO_SKIP:
+        return None
+    return "waiting" if todo.code in TODO_WAIT else "todo"
 
 
 async def visit_task_for(
@@ -813,6 +1008,48 @@ NEXT_TEXT = {
 }
 
 
+async def chat_links(s: AsyncSession, pid: uuid.UUID, vendor_ids) -> dict[uuid.UUID, str]:
+    """업체 → 이 공사의 열린 믿집 채팅 주소(/chat/{id}). 채팅은 실측이 확정되면 열려요. 닫힌(읽기만) 채팅은 빼요.
+    비서는 연락처를 보이지 않고 연락은 믿집 채팅으로 해요(ADR 0005). 읽기 조인."""
+    from sqlalchemy import select
+
+    from app.thread.models import Thread
+
+    ids = [v for v in dict.fromkeys(vendor_ids) if v is not None]
+    if not ids:
+        return {}
+    rows = await s.execute(
+        select(Thread.vendor_id, Thread.id).where(
+            Thread.project_id == pid, Thread.vendor_id.in_(ids), Thread.status == "open"
+        )
+    )
+    return {v: f"/chat/{t}" for v, t in rows}
+
+
+CHAT_LABEL = "채팅 열기"
+CHAT_STATES = ("booked", "visited", "quoted", "chosen")  # 실측이 확정된 뒤(믿집 채팅이 열린 요청)
+CHAT_MODEL = "이 업체와 믿집 채팅이 열려 있어요(카드의 [채팅 열기])"  # 모델 값: 물어볼 때 누를 곳
+CONTACT = "연락처 보기"  # v3 할 일 단추(연락처를 보여 줘요): 비서 화면은 채팅 열기로 바꾸거나 빼요
+
+
+async def _todo_row(s: AsyncSession, pid: uuid.UUID, o, *, primary: bool) -> "TodayRow":
+    """공사 요약 지금 할 일(o.todo) → 오늘 정할 일 줄. v3 [연락처 보기]는 채팅이 열렸으면 [채팅 열기], 아니면 뺀다."""
+    from app.assistant.schemas import RowAction, TodayRow
+
+    t = o.todo
+    title, action = t.text, RowAction(label=t.action, href=t.link, primary=primary)
+    if t.action == CONTACT:
+        tp = next((x for x in o.trades if x.trade == t.trade), None)
+        chosen = [v.vendor_id for v in o.vendors if v.trade == t.trade and v.status == "chosen"]
+        links = await chat_links(s, pid, chosen)
+        href = next(iter(links.values()), None)
+        action = RowAction(label=CHAT_LABEL, href=href, primary=primary) if href else None
+        if t.code == "done" and tp is not None and tp.vendor_name:
+            title = f"공사가 끝났어요 · 하자가 보이면 {tp.vendor_name}에 믿집 채팅으로 알려요"
+    icon = "chat" if action is not None and action.label == CHAT_LABEL else "doc"
+    return TodayRow(id=f"t-{t.code}", icon=icon, title=title, action=action)  # type: ignore[arg-type]
+
+
 async def today(
     s: AsyncSession, user: User, pid: uuid.UUID, today_: date, now: datetime, refs: "RefTable"
 ) -> tuple[CardOut, dict]:
@@ -842,24 +1079,21 @@ async def today(
                 due=soon,
             )
         )
-        model_todo.append({"title": x.summary.title, "kind": a.kind, "due_at": a.expires_at})
-    if o.todo is not None:
-        todo.append(
-            TodayRow(
-                id=f"t-{o.todo.code}",
-                icon="doc",
-                title=o.todo.text,
-                action=RowAction(label=o.todo.action, href=o.todo.link, primary=not todo),
-            )
+        model_todo.append(
+            {"title": x.summary.title, "kind": a.kind, "due_at": seoul_text(a.expires_at)}
         )
-        model_todo.append({"title": o.todo.text})
+    waiting: list[TodayRow] = []
+    model_wait: list[dict] = []
+    kind = todo_kind(o.todo)
+    if o.todo is not None and kind is not None:
+        row = await _todo_row(s, pid, o, primary=kind == "todo" and not todo)
+        (todo if kind == "todo" else waiting).append(row)
+        (model_todo if kind == "todo" else model_wait).append({"title": row.title})
     from app.assistant.tools import diy as diy_tools  # 반셀프: 마감이 7일 안인 직접 할 일
 
     diy_rows, diy_items = await diy_tools.today_rows(s, user, pid, today_)
     todo += diy_rows
     model_todo += diy_items
-    waiting: list[TodayRow] = []
-    model_wait: list[dict] = []
     for v in o.vendors:
         n = v.next
         if n.kind == "none":
@@ -874,7 +1108,12 @@ async def today(
             sub=n.due_at.astimezone(SEOUL).strftime("%m.%d %H:%M까지") if n.due_at else None,
             due=n.soon or n.overdue,
         )
-        item = {"ref": ref, "vendor_name": v.vendor_name, "next": n.kind, "due_at": n.due_at}
+        item = {
+            "ref": ref,
+            "vendor_name": v.vendor_name,
+            "next": NEXT_TEXT.get(n.kind, n.kind),
+            "due_at": seoul_text(n.due_at),
+        }
         if n.who == "customer":
             todo.append(row)
             model_todo.append(item)

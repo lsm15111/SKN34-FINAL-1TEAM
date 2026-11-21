@@ -189,6 +189,7 @@ def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
         after_total_won=x.after_total,
         photo_count=len(x.photos),
         href=cards.href(pid, "/plan"),
+        chat_href=f"/chat/{d.thread_id}" if d.thread_id else None,  # 사진 · 까닭은 채팅으로 물어요
     )
     card = CardOut(
         card_id=f"extra-{x.id}",
@@ -212,6 +213,7 @@ def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
         "title": policy.data(x.title),  # 업체가 적은 칸: 자료 상자로만
         "vendor_note": bool(x.reason),  # 업체가 적은 이유는 카드 칸에만(있는지만)
         "rows": rows,
+        "links": [{"label": cards.CHAT_MODEL}] if d.thread_id else [],
     }
     return card, model
 
@@ -632,7 +634,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
                     "vendor_name": d.vendor_name,
                     "trade": d.trade,
                     "status": d.status,
-                    "due_at": d.auto_done_at,
+                    "due_at": cards.seoul_text(d.auto_done_at),
                 }
             )
             if d.auto_done_at is not None:
@@ -658,19 +660,33 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
     surface="customer",
     kind="read",
     status="추가 금액을 보고 있어요",
-    description="업체가 올린 추가 금액 중 답을 기다리는 것(x1…)을 읽어요. 금액은 공급가 · 부가세 · 합계 · 승인하면 공사 "
-    "금액(믿집 계산)이고, 업체가 적은 이유는 카드에만 보여요. 고객이 추가 금액을 묻거나 답하려 할 때 써요.",
+    description="업체가 올린 추가 금액 중 답을 기다리는 것(x1…)과 공사마다 지금 공사 금액(deals: 확정 금액 + 승인한 "
+    "추가 금액)을 읽어요. 금액은 공급가 · 부가세 · 합계 · 승인하면 공사 금액(믿집 계산)이고, 업체가 적은 이유는 "
+    "카드에만 보여요. 고객이 추가 금액 · 지금 공사 금액을 묻거나 추가 금액에 답하려 할 때 써요.",
     model=NoArgs,
     schema=obj({}),
 )
 async def get_extras(tc: ToolCtx, _: NoArgs) -> ToolOut:
     pid = pid_of(tc)
     async with SessionLocal() as s:
-        got = await pending_extras(s, tc.user, pid, tc.today)
+        sch = await _schedule(s, tc.user, pid, tc.today)
+    got = [(t, x) for t in sch.trades for x in t.extras.items if _waiting(x)]
     shown = [extra_card(t, x, pid, tc.refs) for t, x in got[:EXTRA_MAX]]
-    return ToolOut(
-        data={"items": [m for _, m in shown], "count": len(got)}, cards=[c for c, _ in shown]
-    )
+    data: dict = {
+        "items": [m for _, m in shown],
+        "count": len(got),
+        "deals": [  # 승인한 추가 금액은 지금 공사 금액에 들어가요(계산 엔진 값)
+            {
+                "vendor_name": t.deal.vendor_name,
+                "trade": t.deal.trade,
+                "money": cards.money_model(t.extras),
+            }
+            for t in sch.trades
+        ],
+    }
+    if not got:
+        data["note"] = NO_EXTRAS
+    return ToolOut(data=data, cards=[c for c, _ in shown])
 
 
 class ExtraAnswerIn(BaseModel):

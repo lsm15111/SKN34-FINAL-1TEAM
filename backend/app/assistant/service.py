@@ -34,7 +34,6 @@ from app.assistant.schemas import (
     BoardMoneyOut,
     BoardOut,
     BoardPeriod,
-    BoardVendorRow,
     BoardVendors,
     CardOut,
     CardPart,
@@ -786,6 +785,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         p = await project_service.get_for(s, user, project_id)
         _, home = await cards.home(s, user, project_id)
         o = await schedule_service.overview_for(s, user, project_id, today)
+        works = {w.trade: w for w in await schedule_service.work_money(s, user, project_id)}
         opened = await repo.open_count(s, user.id, project_id)
         estimates = await _estimates(s, project_id)
         remembered = await repo.memories(s, user.id)
@@ -794,26 +794,15 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     step = 6 if o.phase in ("work", "done") else STEP.get(now_key, 0)
     m = o.money
     dealt = any(x.source == "deal" for x in m.by_trade)
+    total, extra = cards.work_total(m, works)  # 승인한 추가 금액은 공사 금액에 들어가요(계산 엔진)
     label = (
-        "확정 금액 · 부가세 포함"
+        ("공사 금액 · 부가세 포함" if extra else "확정 금액 · 부가세 포함")
         if m.all_confirmed
         else "낼 금액 · 부가세 포함"
         if dealt
         else "표준견적서 · 부가세 포함"
     )
-    rows = [
-        BoardVendorRow(
-            name=v.vendor_name,
-            state="need"
-            if v.next.who == "customer"
-            else "waiting"
-            if v.next.who == "vendor"
-            else "done",
-            text=cards.NEXT_TEXT.get(v.next.kind, "끝났어요"),
-            won=v.total,
-        )
-        for v in o.vendors
-    ]
+    rows = [cards.board_row(v, o, works, today) for v in o.vendors]
     final = o.period.kind == "final"
     docs = [
         LinkOut(label="표준견적서", href=cards.href(p.id, "/standard")),
@@ -827,9 +816,12 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         step=step,
         facts=home["facts"],
         confirmed=p.home is not None,
-        todo=opened + (1 if o.todo else 0),
-        waiting=sum(1 for v in o.vendors if v.next.who == "vendor"),
-        money=BoardMoneyOut(label=label, won=m.total, range=money_range(o, estimates))
+        todo=opened + (1 if cards.todo_kind(o.todo) == "todo" else 0),
+        waiting=sum(1 for v in o.vendors if v.next.who == "vendor")
+        + (1 if cards.todo_kind(o.todo) == "waiting" else 0),
+        money=BoardMoneyOut(
+            label=label, won=total, range=money_range(o, estimates), extra_won=extra or None
+        )
         if m.by_trade
         else None,
         vendors=BoardVendors(title="업체", rows=rows) if rows else None,

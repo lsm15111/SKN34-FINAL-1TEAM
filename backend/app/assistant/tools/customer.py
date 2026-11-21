@@ -152,7 +152,8 @@ async def compare_quotes(tc: ToolCtx, a: TradeIn) -> ToolOut:
     surface="customer",
     kind="read",
     status="공사 날짜를 보고 있어요",
-    description="확정한 업체의 공사 날짜: 수락 기다리는 날짜(제안 이름표 p1…) · 겹침 · 확정 공정표 판.",
+    description="확정한 업체의 공사 날짜: 수락 기다리는 날짜(제안 이름표 p1…) · 겹침 · 지금 날짜 상태 · 확정 공정표"
+    "(period: 처음 · 끝 · 줄마다 업체 공사 · 자연 건조 · 입주 청소 · 고객이 직접 할 일의 날짜, 날마다 이름).",
     model=NoArgs,
     schema=obj({}),
 )

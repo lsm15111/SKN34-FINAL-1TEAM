@@ -83,6 +83,11 @@ export function ExtraCard({ card, ctx, old }: CardProps<"extra">) {
         <Link className={k.text} href={d.href} scroll={false}>
           공사 화면에서 보기<I n="chev" />
         </Link>
+        {d.chat_href && !old ? (
+          <Link className={k.text} href={d.chat_href} scroll={false}>
+            {d.vendor_name} 채팅 열기<I n="chev" />
+          </Link>
+        ) : null}
         {d.photo_count ? <span className={k.muted}>사진 {d.photo_count}장</span> : null}
       </div>
     </section>

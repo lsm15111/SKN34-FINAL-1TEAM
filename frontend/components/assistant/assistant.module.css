@@ -134,6 +134,7 @@
 .vmini li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
 .vmini li:first-child { border-top: 0; }
 .vmini li b { font-weight: var(--mj-weight-semibold); }
+.vstate { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 8px; min-width: 0; text-align: right; }
 .links { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .links a { display: inline-flex; align-items: center; min-height: var(--mj-hit-min); color: var(--mj-link); font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-label); text-decoration: none; }
 .links a:hover { text-decoration: underline; text-underline-offset: 3px; }
