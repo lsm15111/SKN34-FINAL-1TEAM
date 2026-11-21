@@ -437,7 +437,7 @@ async def compare(
             vendor_name=r.vendor_name,
             state="quoted" if q is not None else "waiting",
             version=q.version if q else None,
-            received_on=q.sent_at.date() if q and q.sent_at else None,
+            received_on=q.sent_at.astimezone(SEOUL).date() if q and q.sent_at else None,
             total_won=q.total if q else None,
             changed=changed,
             diff_vs_estimate_won=r.diff_vs_estimate,
