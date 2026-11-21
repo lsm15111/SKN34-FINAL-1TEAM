@@ -199,6 +199,31 @@ def honest(claim: tuple[str, set[str]], opened: set[str]) -> str:
     return CARD_NOT_OPEN if opened else NO_CARD
 
 
+# ---- 인사 · 맞장구 ----
+
+# 인사 · 고마움만 한 말(LLM 턴은 도구를 부르지 못하게 tool_choice none, 무료 모드는 한 문장). '네 · 좋아요'처럼
+# 앞 물음에 답하는 말은 넣지 않는다(카드를 만들어 달라는 대답일 수 있다)
+_SOFT = r"(?:(?:네|넵|예|아|오|와|알겠어요|알겠습니다|알았어요)\s*[,.!~]*\s*)?"
+_TAIL = r"[\s,.!~♡^ㅎㅋ]*"
+SMALL_TALK = re.compile(
+    rf"^{_SOFT}(?:고마워요?|고맙습니다|감사(?:해요|합니다|드려요)?|안녕(?:하세요|하십니까)?|반가워요|"
+    rf"수고(?:하세요|하셨어요|하셨습니다|많으셨어요))"
+    rf"{_TAIL}(?:(?:고마워요?|감사(?:해요|합니다)?|좋은\s*하루\s*(?:보내세요|되세요)){_TAIL})?$"
+)
+# 무료 모드만: 맞장구('네 · 알겠어요 · 좋아요')도 한 문장으로 받는다(무료 모드는 말로 제안을 만들지 않는다)
+ACK = re.compile(
+    rf"^(?:네|넵|예|응|알겠어요|알겠습니다|알았어요|좋아요|그래요|오케이|ㅇㅋ){_TAIL}$"
+)
+
+
+def small_talk(text: str) -> bool:
+    return bool(SMALL_TALK.match((text or "").strip()))
+
+
+def ack(text: str) -> bool:
+    return bool(ACK.match((text or "").strip()))
+
+
 Over = Literal["tools", "llm", "time", "cost"]
 
 

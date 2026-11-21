@@ -168,6 +168,7 @@ async def standard(
         "supply": supply,
         "vat": vat,
         "days": out.days,
+        "days_for": [TRADE.get(t.trade, t.trade) for t in out.trades],  # 예상 일수는 이 공정들의 합
         "area_m2": out.area_m2,
         "area_basis": out.area_basis,
         "pyeong": out.pyeong,

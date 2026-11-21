@@ -469,6 +469,8 @@ class _Turn:
         self.system = prompts.system(ctx.surface)
         self.defs = tools_mod.defs(ctx.surface)  # type: ignore[arg-type]
         self.gate = SentenceGate(emit, self.system, f"{ctx.text}\n{ctx.facts}", made=res.made)
+        # 인사 · 고마움만 한 턴: 도구를 부르지 못하게(도구 정의는 그대로 보내 캐시를 지킨다)
+        self.chat_only = policy.small_talk(ctx.text) and not ctx.choice and not ctx.stale
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -566,7 +568,7 @@ class _Turn:
                         tools=self.defs,
                         on_text=self.gate.feed,
                         purpose="assistant",
-                        tool_choice={"type": "none"} if wrap else None,
+                        tool_choice={"type": "none"} if wrap or self.chat_only else None,
                     ),
                     timeout=b.left(time.monotonic(), wrap),
                 )
