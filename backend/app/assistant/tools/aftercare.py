@@ -43,6 +43,8 @@ if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
 
 WEEK = "월화수목금토일"
+# 공통 공사 전 줄 '직접 할 일(콘센트 옮기기 등)…'의 머리(고른 직접 할 일로 바꿔 넣어요)
+DIY_LINE = "직접 할 일("
 TTL = timedelta(days=3)
 EXTRA_MAX = 3  # 한 번에 보여 줄 추가 금액 카드
 BLANK_DAY = "○월 ○일"
@@ -105,20 +107,37 @@ async def deal_of(s: AsyncSession, user: User, pid: uuid.UUID, deal_id: uuid.UUI
 
 
 def check_card(
-    card_id: str, stage: str, trades: list[str], lines: list[str], extra: list[str] | None = None
+    card_id: str,
+    stage: str,
+    trades: list[str],
+    lines: list[str],
+    extra: list[str] | None = None,
+    home: "cards.HomeCtx | None" = None,
 ) -> CardOut:
     """공사 전 할 일(before) · 공사 끝 점검표(after): knowledge 카드의 체크 칸(공정 설정 값, 정해 둔 글).
-    extra는 공정 설정 뒤에 더할 체크 칸(반셀프 직접 할 일, tools.diy.prep_part)이에요."""
+    extra는 공정 설정 뒤에 더할 체크 칸(반셀프 직접 할 일, tools.diy.prep_part)이에요. home이 있으면 이 집에 맞춰요:
+    빈 집은 가구 · 짐 줄을 빼고, 평일에 집을 비우는 집 · 반려동물이 있는 집은 줄을 더해요. 공통 줄 '직접 할 일
+    (콘센트 옮기기 등)'은 쓰지 않고 고른 직접 할 일을 그 이름으로 넣어요(날짜가 없으면 전 · 뒤만)."""
     from app.agent.v3.trades import BY_CODE, CHECK_NOTE, CHECK_SOURCE
 
     codes = [c for c in dict.fromkeys(trades) if c in BY_CODE and c != "common"] or ["dobae"]
     specs, common = [BY_CODE[c] for c in codes], BY_CODE["common"]
     if stage == "before":
-        items = [
-            *common.check_before,
-            *(x for sp in specs for x in sp.prep),
-            *(x for sp in specs for x in sp.check_before),
-        ]
+        items = cards.fit_items(
+            [
+                *(x for x in common.check_before if not x.startswith(DIY_LINE)),
+                *(x for sp in specs for x in sp.prep),
+                *(x for sp in specs for x in sp.check_before),
+            ],
+            home,
+        )
+        if home is not None and home.occupied and home.pet:
+            items.append(cards.PET_ITEM)
+        if home is not None and home.diy and not extra:  # 공사 날짜 전: 고른 일을 전 · 뒤로만
+            from app.assistant.tools import diy as diy_tools
+
+            extra = diy_tools.undated_items(home.diy)
+        lines = [*cards.home_lines(home), *lines]
         title, source = "공사 전 할 일", "믿집 안내"
         tail = ["관리사무소 신고 · 엘리베이터 보양은 단지마다 달라서 관리사무소에 물어봐요."]
     else:
@@ -160,7 +179,8 @@ async def prep_card(s: AsyncSession, user: User, pid: uuid.UUID, today: date) ->
     from app.assistant.tools import diy as diy_tools  # 반셀프: 고른 직접 할 일의 마감 · 시작
 
     more, extra = await diy_tools.prep_part(s, user, pid, today)
-    return check_card(f"before-{pid}", "before", trades, [*lines, *more], extra)
+    home = await diy_tools.home_ctx(s, user, pid, today)  # 빈 집 · 평일 공사 · 반려동물
+    return check_card(f"before-{pid}", "before", trades, [*lines, *more], extra, home)
 
 
 def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
@@ -620,6 +640,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
             if a.stage == "before"
             else ([], [])
         )
+        home = await diy_tools.home_ctx(s, tc.user, pid, tc.today) if a.stage == "before" else None
     deals: list[dict] = []
     lines: list[str] = []
     for t in sch.trades:
@@ -643,7 +664,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
         elif a.stage == "before" and d.status == "scheduled" and d.start_date:
             if d.start_date > tc.today:
                 lines.append(f"{trade_ko(d.trade)} 공사가 {ko_day(d.start_date)}에 시작해요.")
-    card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra)
+    card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra, home)
     model = {
         "title": card.data["title"],
         "stage": a.stage,

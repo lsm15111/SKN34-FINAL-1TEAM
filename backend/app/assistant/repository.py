@@ -526,6 +526,25 @@ async def close_lines_of(s: AsyncSession, a: AssistantAction, reason: str = "act
     return res.rowcount or 0
 
 
+async def settled_events(
+    s: AsyncSession, user_id: uuid.UUID, notification_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """알림 id 중 그 알림에서 만든 먼저 말 건 줄(dedup_key ev:{알림 id})이 할 일을 끝내 닫힌 것(SETTLED).
+    오늘 정할 일 '새 소식'에서 끝난 일을 다시 보이지 않게 쓴다."""
+    if not notification_ids:
+        return set()
+    keys = {f"ev:{i}": i for i in notification_ids}
+    rows = await s.scalars(
+        select(AssistantNudge.dedup_key).where(
+            AssistantNudge.user_id == user_id,
+            AssistantNudge.dedup_key.in_(list(keys)),
+            AssistantNudge.status == "expired",
+            AssistantNudge.reason.in_(SETTLED),
+        )
+    )
+    return {keys[k] for k in rows.all()}
+
+
 async def shown_all(s: AsyncSession, limit: int) -> list[AssistantNudge]:
     """모든 사람의 보이는 먼저 말 건 줄(sent · opened), 새것부터(정리: 할 일이 끝난 줄 닫기)."""
     rows = await s.scalars(

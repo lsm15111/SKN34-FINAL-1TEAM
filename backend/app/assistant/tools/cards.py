@@ -10,6 +10,7 @@
 
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -948,16 +949,55 @@ async def visit_task_for(
 # ---- 지식 ----
 
 
-def prep_card(card_id: str, trades: list[str]) -> CardOut:
-    """공사 전날 준비물(공정 설정 agent.v3.trades의 고객 준비 · 주의점, 정해 둔 글)."""
+@dataclass(frozen=True)
+class HomeCtx:
+    """공사 전 할 일 · 전날 준비물을 이 집에 맞추는 코드 사실(tools.diy.home_ctx가 읽는다)."""
+
+    occupied: bool = True  # 살면서 공사(빈 집이면 가구 · 짐 줄을 뺀다)
+    pet: bool = False  # 기억: 반려동물이 있어요
+    away_weekdays: bool = False  # 기억: 주말에만 시간이 돼요(평일엔 집을 비워요)
+    weekday_work: bool = False  # 수락한 공사 날에 평일이 있어요
+    diy: tuple[str, ...] = ()  # 고른 직접 할 일 칩 키
+
+
+FURNITURE = re.compile(r"가구|짐")
+ENTRY_ITEM = "공사 날 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정하기"
+PET_ITEM = "공사 날 반려동물이 지낼 곳 정하기"
+AWAY_LINE = (
+    "평일에 공사해요. 집을 비우시면 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정해 두세요."
+)
+PET_LINE = "반려동물은 풀 냄새 · 먼지 · 소음을 피해 공사 날 지낼 곳을 미리 정해 두세요."
+
+
+def fit_items(items, h: "HomeCtx | None") -> list[str]:
+    """빈 집이면 가구 · 짐 줄을 뺀다(정해 둔 글은 그대로)."""
+    return [x for x in items if h is None or h.occupied or not FURNITURE.search(x)]
+
+
+def home_lines(h: "HomeCtx | None") -> list[str]:
+    """살면서 하는 집의 평일 공사(집을 비움) · 반려동물 줄."""
+    if h is None or not h.occupied:
+        return []
+    out = [AWAY_LINE] if h.weekday_work and h.away_weekdays else []
+    return [*out, *([PET_LINE] if h.pet else [])]
+
+
+def prep_card(card_id: str, trades: list[str], home: "HomeCtx | None" = None) -> CardOut:
+    """공사 전날 준비물(공정 설정 agent.v3.trades의 고객 준비 · 주의점, 정해 둔 글). home이 있으면 이 집에 맞춘다:
+    빈 집은 가구 줄을 빼고 출입 방법을, 평일에 집을 비우면 출입 방법을, 반려동물이 있으면 지낼 곳을 더한다."""
     from app.agent.v3.trades import SPECS
 
     specs = [x for x in SPECS if x.code in trades] or [x for x in SPECS if x.code == "dobae"]
-    prep = list(dict.fromkeys(p for x in specs for p in x.prep))
+    prep = fit_items(dict.fromkeys(p for x in specs for p in x.prep), home)
+    if home is not None:
+        if not home.occupied or (home.weekday_work and home.away_weekdays):
+            prep.append(ENTRY_ITEM)
+        if home.occupied and home.pet:
+            prep.append(PET_ITEM)
     cautions = list(dict.fromkeys(c for x in specs for c in x.cautions))
     data = KnowledgeData(
         title="공사 전날 준비물",
-        lines=[*prep, *cautions][:6],
+        lines=[*home_lines(home), *prep, *cautions][:6],
         source="믿집 안내",
         checklist=[CheckItem(key=f"prep{i}", label=p) for i, p in enumerate(prep[:5], 1)],
     )
@@ -1139,6 +1179,9 @@ async def today(
             waiting.append(row)
             model_wait.append(item)
     page = await notify_service.page(s, user.id, pid)
+    fresh = [x for x in page.items if not x.read and now - x.created_at <= timedelta(days=2)]
+    # 비서 카드로 할 일을 끝낸 알림('날짜를 골라 주세요' 뒤 시간을 골랐어요)은 새 소식에서 뺀다
+    done = await repo.settled_events(s, user.id, [x.id for x in fresh])
     news = [
         TodayRow(
             id=f"n-{x.id}",
@@ -1147,8 +1190,8 @@ async def today(
             sub=news_line(x.body)[1],
             action=RowAction(label="보기", href=x.link),
         )
-        for x in page.items
-        if not x.read and now - x.created_at <= timedelta(days=2)
+        for x in fresh
+        if x.id not in done
     ][:3]
     data = TodayData(date=today_, todo=todo, waiting=waiting, news=news)
     card = CardOut(card_id="today", kind="today", data=data.model_dump(mode="json"))
