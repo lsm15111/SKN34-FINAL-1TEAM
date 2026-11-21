@@ -667,10 +667,11 @@ def test_free_quote_step_card_without_quotes_falls_back_to_the_standard(api):
     """무료 모드 견적 질문의 단계 카드(입구 관문 quote_explanation): 받은 견적서가 없으면 비교 카드가 없어서(None)
     표준견적서 카드로 가요(오류 · 빈 카드 없이)."""
     f = two_requests(api)
+    uid = user_id("home@mitjip.test")
 
     async def go():
         async with SessionLocal() as s:
-            user = await s.get(User, user_id("home@mitjip.test"))
+            user = await s.get(User, uid)
         tc = SimpleNamespace(
             surface="customer",
             visit_id=None,
