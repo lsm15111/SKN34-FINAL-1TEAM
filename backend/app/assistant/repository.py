@@ -428,14 +428,18 @@ async def dismissals(
 
 # 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상일 때)
 SETTLES: dict[str, tuple[str, ...]] = {
-    "visit_request": ("no_pick",),
+    "visit_request": ("no_pick", "vendor_out"),
     "visit_slot": ("visit_offered",),
     "vendor_confirm": ("quote_sent",),
     "dates_accept": ("dates_proposed",),
     "delay_accept": ("dates_proposed",),
     "window_answer": ("visit_requested", "visit_picked"),
     "decline": ("visit_requested", "visit_picked"),
-    "dates": ("deal_confirmed",),
+    "dates": ("deal_confirmed", "dates_requested"),
+    # 07 자동화(대상: 추가 금액 · 확정 · 빠진 요청)
+    "extra_answer": ("extra_added",),
+    "work_check": ("work_done",),
+    "visit_again": ("vendor_out",),
 }
 
 

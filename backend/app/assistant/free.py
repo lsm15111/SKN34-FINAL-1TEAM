@@ -20,6 +20,7 @@ from collections.abc import Awaitable, Callable
 from app.assistant import policy
 from app.assistant.schemas import CardOut, TodayData
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards
+from app.assistant.tools import aftercare as aftercare_tools
 from app.db import SessionLocal
 from app.shared.errors import AppError
 
@@ -508,6 +509,8 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         return said, out
     if MEMORY_WHERE.search(text):
         return MEMORY_GUIDE, ToolOut(data={})
+    if (more := await aftercare_tools.free_answer(tc, text)) is not None:  # 07 자동화 카드
+        return more
     # 업체 이름을 뺀 뒤 공종을 찾는다(업체 이름 속 '마루' · '목공'은 공종 말이 아니에요)
     found = trades_in(without_names(text, await vendor_names(tc)))
     if tc.project_id is None:

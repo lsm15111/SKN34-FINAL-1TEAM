@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 
 from app.assistant.schemas import CardOut
 from app.assistant.tools import ToolCtx, ToolError, ToolOut
+from app.assistant.tools import aftercare as aftercare_tools
 from app.shared.errors import AppError
 
 if TYPE_CHECKING:
@@ -28,13 +29,17 @@ ACTIONS: dict[str, str] = {
     "visit_request": "customer", "visit_slot": "customer", "vendor_confirm": "customer",
     "dates_accept": "customer", "delay_accept": "customer",
     "window_answer": "vendor", "decline": "vendor", "dates": "vendor",
+    "extra_answer": "customer", "work_check": "customer", "visit_again": "customer",  # 07
 }  # fmt: skip
 LABEL = {
     "visit_request": "실측 요청", "visit_slot": "실측 시간 고르기", "vendor_confirm": "업체 확정",
     "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락", "window_answer": "기간 답하기",
     "decline": "못 받아요", "dates": "공사 날짜 보내기",
+    "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인", "visit_again": "한 번 더 요청",
 }  # fmt: skip
 DECLINE_CODES = ("full", "out_of_area", "other")
+# 이름표가 아닌 단추 값: 못 받아요 까닭 + 07 추가 금액 답(approve · reject · ask) · 공사 끝(done · fixing)
+WORDS = (*DECLINE_CODES, *aftercare_tools.WORDS)
 MADE = "고른 것으로 승인 카드를 만들었어요. 카드를 확인하고 눌러 주세요."
 RELOADED = "카드를 새로 불러왔어요. 다시 골라 주세요."
 GONE = "지금은 고를 수 있는 것이 없어요. 진행 상황을 확인해 주세요."
@@ -44,6 +49,7 @@ CARD_TARGET: dict[str, dict[str, str]] = {
     "slots": {"slot": "visit_id", "visit": "id"},
     "dates": {"proposal": "id"},
     "brief": {"window": "visit_id", "visit": "id"},
+    "extra": {"extra": "id"},  # 07 추가 금액 카드
 }
 
 
@@ -61,7 +67,7 @@ def action(choice: str, refs: "RefTable | None" = None) -> tuple[str, list[str]]
     args = [a.strip() for a in rest.split(",") if a.strip()]
     if not 1 <= len(args) <= 4:
         return None
-    if refs is not None and not all(a in DECLINE_CODES or refs.known(a) for a in args):
+    if refs is not None and not all(a in WORDS or refs.known(a) for a in args):
         return None
     return kind, args
 
@@ -122,6 +128,8 @@ async def _run(tc: ToolCtx, kind: str, args: list[str]) -> ToolOut:
     from app.assistant.tools import propose
 
     refs = tc.refs
+    if kind in aftercare_tools.CHOICES:  # 07: 추가 금액 답 · 공사 끝 확인 · 한 번 더 요청
+        return await aftercare_tools.run_choice(tc, kind, args)
     if kind == "visit_request":
         vs = _refs(args, "v")
         if not vs:
@@ -189,6 +197,8 @@ async def reload(tc: ToolCtx, kinds: list[str], card_id: str | None) -> list[Car
     out: list[CardOut] = []
 
     async def one(s, kind: str) -> list[CardOut]:
+        if kind in aftercare_tools.CHOICES:
+            return await aftercare_tools.reload_cards(s, tc, kind)
         if kind == "visit_request" and pid:
             card, model = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
             return [card] if model["picks"] else []
@@ -257,6 +267,7 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
         today=ctx.today,
         now=ctx.now,
         refs=ctx.refs,
+        text=ctx.text,
     )
     outs: list[ToolOut] = []
     errors: list[str] = []
