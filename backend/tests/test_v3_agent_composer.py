@@ -64,7 +64,7 @@ def test_blocks_become_sections_and_bad_numbers_are_dropped(stub):
     )
     a = turn(Q).answer
     # 차이 질문은 설명 꼴이라 개요(첫 문장)만 먼저 보이고 나머지는 '자세히'에 접혀요
-    assert a.trace.prompts == ["composer_v8"] and a.brief is not None
+    assert a.trace.prompts == ["composer_v9"] and a.brief is not None
     assert a.brief.lines[0].text.startswith("실크는 코팅이 있어") and a.brief.more >= 2
     texts = [x.text for s in a.sections for x in s.sentences]
     assert texts[0].startswith("실크는 코팅이 있어")
@@ -114,7 +114,7 @@ def test_calc_only_answer_gets_composer_context_after_calc(stub):
 
     period_stub(stub)
     a = turn(PERIOD_Q, general=general_facts(PERIOD_Q)).answer
-    assert a.trace.prompts == ["composer_v8"]
+    assert a.trace.prompts == ["composer_v9"]
     assert a.sections[0].source == "calc"
     assert a.sections[0].sentences[0].text.startswith("믿집 계산으로 34평 도배는")
     assert [x.text for s in a.sections if s.source == "llm" for x in s.sentences] == [PAINT]
@@ -540,7 +540,7 @@ def test_empty_new_is_fine_without_fixed_part(stub):
     lead = CItem(text="실크는 코팅이 있어 관리가 쉽고, 합지는 값이 싸요.", cites=refs[:1])
     stub(Composed(new=[], verdict="answer", lead=lead, blocks=[], follow=[]))
     a = turn(Q).answer
-    assert a.trace.prompts == ["composer_v8"] and lead.text in [
+    assert a.trace.prompts == ["composer_v9"] and lead.text in [
         x.text for s in a.sections for x in s.sentences
     ]
 
@@ -598,6 +598,16 @@ def test_composer_v8_rule_against_standard_comparison():
     from app.agent.v3 import composer
 
     rules = composer.rules()
-    assert composer.VERSION == "composer_v8" and "표준견적서와 업체 금액을 견주지 마" in rules
+    assert composer.VERSION == "composer_v9" and "표준견적서와 업체 금액을 견주지 마" in rules
     assert "표준 대비 % ·" not in rules
     assert (composer.PROMPTS / "composer_v7.md").exists()
+
+
+def test_composer_v9_optional_lines_outside_total():
+    """v9(판 2026.11b): 퍼티 · 운송비는 선택 줄이라 합계 밖이에요. 합계를 키운다는 옛 예시가 없어요."""
+    from app.agent.v3 import composer
+
+    text = (composer.PROMPTS / "composer_v9.md").read_text(encoding="utf-8")
+    assert "퍼티작업 · 식대 · 운송비처럼 따로 받는 줄이 합계를 키워요" not in text
+    assert "퍼티작업 · 운송비는 선택 줄이라 합계 밖이에요" in text
+    assert (composer.PROMPTS / "composer_v8.md").exists()

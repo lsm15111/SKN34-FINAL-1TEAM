@@ -153,7 +153,7 @@ def test_judge_and_rank_answer_from_screen_numbers(stub):
         got.append(a)
 
     a = turn("이 견적 괜찮은 거야? 제일 비싼 건 뭐고?", _facts(), on_part=on_part)
-    assert a.trace.prompts == ["planner_v1", "composer_v8"]
+    assert a.trace.prompts == ["planner_v1", "composer_v9"]
     assert a.trace.parts == ["quote_explanation:compare"]
     # 비교 도구의 고정 몫(정해 둔 글 · 계산 상자)이 먼저 보이고, 그 아래 작성기 글이 붙어요
     assert (
