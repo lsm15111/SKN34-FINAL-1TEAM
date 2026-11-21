@@ -15,6 +15,7 @@
   (propose_date_change, 며칠 뒤 · 이날부터는 말에서 코드가 읽고 없으면 일주일 뒤)로 안내한다. 바라는 말이 없으면
   ('미루면 어떻게 돼요?') 안내 글만. 업체가 낸 날짜에 답하는 말 · 업체가 미루자는 말 · 실측 날짜는 여기로 오지 않는다.
 - 글이 카드를 말하면 같은 턴에 그 카드가 있어야 한다(fit_cards): 없으면 만들고, 못 만들면 그 문장을 뺀다.
+- 업체를 확정한 뒤 견적 비교를 물으면 확정한 업체 · 견적서 판을 말한다(확정 단추 안내를 하지 않는다).
 """
 
 import re
@@ -86,6 +87,7 @@ HALVES = (
 )
 VISITS = "실측 진행은 작업 카드에서 볼 수 있어요. 업체가 기간을 답하면 반나절 후보를 보여 드릴게요."
 QUOTES = "실측 견적서가 {n}곳 왔어요. 합계 · 포함 항목 · 기간 · 유효기간을 카드에서 견줘 보세요. 확정할 업체를 카드에서 고르면 승인 카드를 만들어요."
+CONFIRMED = "{vendor} 견적서 {version}판으로 확정했어요. 받은 견적서는 카드에서 다시 볼 수 있어요."
 NO_QUOTES = "아직 받은 실측 견적서가 없어요. 업체가 실측하고 견적서를 보내면 여기서 견줄 수 있어요."
 NO_DATES = "아직 확정한 업체의 공사 날짜가 없어요. 업체를 확정하면 업체가 공사 날짜를 올려요."
 DATES = "카드에서 수락을 누르면 승인 카드를 만들어요."
@@ -300,12 +302,25 @@ async def _slots(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolO
     return WISHES, ToolOut(data={}, cards=[picks, wish])
 
 
+async def _confirmed(s, tc: ToolCtx, trade: str) -> dict | None:
+    """그 공정에서 확정한 업체 · 견적서 판(확정 때 고정한 판, schedule service 값). 없으면 None."""
+    from app.schedule import service as schedule_service
+
+    sch = await schedule_service.schedule_for(s, tc.user, tc.project_id, tc.today)  # type: ignore[arg-type]
+    d = next((t.deal for t in sch.trades if t.deal.trade == trade), None)
+    return {"vendor": d.vendor_name, "version": d.quote.version} if d is not None else None
+
+
 async def _compare(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut]:
     pid = tc.project_id
     async with SessionLocal() as s:
         card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)  # type: ignore[arg-type]
         task = await cards.visit_task_for(s, tc.user, pid, tc.today, tc.now)  # type: ignore[arg-type]
+        chosen = any(c.get("status") == "chosen" for c in model["cols"])
+        done = await _confirmed(s, tc, "dobae") if chosen else None
     n = sum(1 for c in model["cols"] if c.get("version"))
+    if done is not None:  # 확정한 뒤: 확정 단추 대신 확정한 업체 · 견적서 판을 말한다
+        return CONFIRMED.format(**done), ToolOut(data={}, cards=[card] if n else [], task=task)
     if not n:
         return NO_QUOTES, ToolOut(data={}, task=task)
     return QUOTES.format(n=n), ToolOut(data={}, cards=[card], task=task)
