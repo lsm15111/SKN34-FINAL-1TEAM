@@ -1,12 +1,14 @@
 """지식 · 질문 답 도구 (계약서 5장): search_knowledge · answer_question.
 
 - search_knowledge: 지식 검색(knowledge.service.search) 근거 조각. 조각 글은 자료 상자로 넘긴다.
-- answer_question: 질문 종류(kind)별 설정(ASSISTANT_ANSWER_ROUTE, 기본 v3)으로 답 파이프라인 하나를 부른다.
+- answer_question: 질문 종류(kind)별 설정(ASSISTANT_ANSWER_ROUTE)으로 답 파이프라인 하나를 부른다.
   - v3: chat.service.answer_only를 무료 모드로(겹친 LLM 호출 없이 근거 문장만).
   - v2: v2.ask.answer_only(저장 없이 v2 답 · 서버 도구만). 턴이 LLM이면 v2도 LLM으로 답한다(평가로 고를 자리).
-  - v2+v3: v2 먼저. v2 입구 관문(v2.ask.start와 같은 분류)이 범위 밖으로 보면 v2 LLM은 부르지 않고 v3를 부른다.
-    v3가 실제로 답하면(범위 밖 · 되묻기가 아니고 모름 줄 말고 문장이 있음) v3 근거, 아니면 v2 범위 밖 안내 그대로.
-    data의 engine(근거를 낸 엔진) · v2_out(관문이 범위 밖으로 봤는지)은 기록용이라 모델에 가지 않는다(to_model).
+  - v2g: v2.ask.grounds(v2 근거만, LLM 없이): 지식 조각 · 출처, 공정 순서, 공정 설정, 되물을 조건.
+    비서가 이 근거로 글을 한 번에 쓴다. 금액 · 기간 질문은 이 공사 계산 엔진 값을 쓰는 v3로 넘긴다(engine v3).
+  - v2+v3 · v2g+v3: v2(v2g) 먼저. v2 입구 관문(v2.ask.start와 같은 분류)이 범위 밖으로 보면 v2는 부르지 않고 v3를
+    부른다. v3가 실제로 답하면(범위 밖 · 되묻기가 아니고 모름 줄 말고 문장이 있음) v3 근거, 아니면 v2 범위 밖 안내 그대로.
+  data의 engine(근거를 낸 엔진) · v2_out(관문이 범위 밖으로 봤는지)은 기록용이라 모델에 가지 않는다(to_model).
   비서 모델이 돌려준 글 범위 안에서 답한다. 숫자는 이 결과가 허용 숫자가 된다.
 """
 
@@ -21,12 +23,16 @@ from app.config import settings
 from app.db import SessionLocal
 
 HYBRID = "v2+v3"
-ENGINES = ("v2", "v3", HYBRID)
+GROUND = "v2g"
+HYBRID_G = "v2g+v3"
+ENGINES = ("v2", "v3", HYBRID, GROUND, HYBRID_G)
 V3_NO_ANSWER = ("out_of_scope", "ask_back")  # v3가 답하지 않은 길(범위 밖 안내 · 되묻기)
+GROUND_CHARS = 320  # v2g 조각 글 앞 몇 글자
+NOT_ENOUGH = "질문과 잘 맞는 자료가 없어요. 단정하지 말고 확인할 곳을 알려요."
 
 
 def engine_for(kind: str, route: str | None = None) -> str:
-    """ASSISTANT_ANSWER_ROUTE → 그 질문 종류의 답 엔진. 'v3' · 'v2' · 'v2+v3'면 모두,
+    """ASSISTANT_ANSWER_ROUTE → 그 질문 종류의 답 엔진. 'v3' · 'v2' · 'v2g' · 'v2+v3' · 'v2g+v3'면 모두,
     'price=v2,material=v2+v3'면 적은 종류만(나머지 v3). 모르는 값은 v3."""
     raw = (route if route is not None else settings.assistant_answer_route).strip()
     if raw in ENGINES:
@@ -109,10 +115,12 @@ class AskIn(BaseModel):
 async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     question = policy.mask_in(a.question)
     engine = engine_for(a.kind)
-    if engine == HYBRID:
-        return await _hybrid(tc, question)
+    if engine in (HYBRID, HYBRID_G):
+        return await _hybrid(tc, question, ground=engine == HYBRID_G)
     if engine == "v2":
         return await _v2_answer(tc, question)
+    if engine == GROUND:
+        return await _v2g_answer(tc, question)
     out, _ = await _v3_answer(tc, question)
     return out
 
@@ -138,8 +146,8 @@ async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
     return out, bool(said) and ans.route not in V3_NO_ANSWER
 
 
-async def _hybrid(tc: ToolCtx, question: str) -> ToolOut:
-    """v2+v3: v2 입구 관문이 범위 밖으로 보고 v3가 실제로 답하면 v3 근거, 아니면 v2 그대로.
+async def _hybrid(tc: ToolCtx, question: str, *, ground: bool = False) -> ToolOut:
+    """v2+v3(ground면 v2g+v3): v2 입구 관문이 범위 밖으로 보고 v3가 실제로 답하면 v3 근거, 아니면 v2(v2g) 그대로.
     v2 범위 밖 질문(다른 공정)은 v3 알아 두기가 나았고, 잡담은 v2 거절이 나았다(평가 2026-11-21)."""
     from app.agent import gate as agent_gate
     from app.v2 import ask
@@ -147,7 +155,10 @@ async def _hybrid(tc: ToolCtx, question: str) -> ToolOut:
     # v2.ask.start와 같은 관문(학습 모델 · 규칙, Jev는 켜졌을 때 신뢰도가 낮으면만)
     intent = await agent_gate.classify(question)
     v2_out = intent is not None and intent.label == "out_of_scope"
-    if not v2_out:
+    if not v2_out and ground:
+        out = await _v2g_answer(tc, question)
+        engine = out.data.get("engine") or GROUND
+    elif not v2_out:
         out, engine = await _v2_answer(tc, question), "v2"
     else:
         out, answered = await _v3_answer(tc, question)
@@ -164,6 +175,50 @@ async def _hybrid(tc: ToolCtx, question: str) -> ToolOut:
             engine = "v2"
     out.data.update(engine=engine, v2_out=v2_out)
     return out
+
+
+async def _v2g_answer(tc: ToolCtx, question: str) -> ToolOut:
+    """v2 근거만(LLM 없이, v2.ask.grounds). 비서가 이 근거로 글을 한 번에 쓴다.
+    금액 · 기간 질문은 v2 평형 금액 대신 이 공사 계산 엔진 값(표준견적서 · 공정표)을 쓰는 v3로 넘긴다(engine v3)."""
+    from app.v2 import ask
+
+    living = ""
+    if tc.project_id is not None:
+        async with SessionLocal() as s:
+            _, home = await cards.home(s, tc.user, tc.project_id)
+        living = "살면서 공사" if home.get("occupied") else "빈 집"
+    g = await ask.grounds(question, living=living, mode=tc.mode)
+    if g.money:
+        out, _ = await _v3_answer(tc, question)
+        out.data["engine"] = "v3"
+        return out
+    named = (
+        ("공정 순서(앞에서부터, 믿집 안내)", g.order),
+        (f"{g.trade or '공정'} 주의점", g.cautions),
+        ("실측 때 정할 것", g.survey),
+        ("고객 준비", g.prep),
+        ("되물을 조건(답이 갈리는데 모르면 하나만)", g.ask),
+    )
+    found = g.enough and bool(g.hits)
+    data: dict = {
+        "route": GROUND,
+        "hits": [
+            {
+                "title": h.title,
+                "publisher": h.publisher,
+                "section": h.section,
+                "source": h.source_type,
+                "text": policy.data(h.text, limit=GROUND_CHARS),
+            }
+            for h in g.hits
+        ],
+        "items": [{"label": label, "lines": lines} for label, lines in named if lines],
+        "found": found,
+        "engine": GROUND,
+    }
+    if not found:
+        data["note"] = NOT_ENOUGH
+    return ToolOut(data=data)
 
 
 async def _v2_answer(tc: ToolCtx, question: str) -> ToolOut:

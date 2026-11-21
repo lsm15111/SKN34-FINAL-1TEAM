@@ -722,6 +722,31 @@ class V2AskOut(BaseModel):
     trade: str | None = None  # 답한 공정 담당 (도배 · 목공). 없으면 일반 상담
 
 
+class V2Ground(BaseModel):
+    """v2 근거 조각 하나(출처 칸 + 조각 글). 글은 자료라 부르는 쪽이 자료 상자로 넘긴다"""
+
+    ref: str
+    source_type: str
+    title: str
+    publisher: str
+    section: str
+    text: str
+
+
+class V2GroundsOut(BaseModel):
+    """v2 답 파이프라인의 근거만(LLM 없이, ask.grounds). 금액 · 기간 숫자는 넣지 않는다"""
+
+    trade: str | None = None  # 질문 공정(도배 · 목공 하나일 때)
+    hits: list[V2Ground] = []  # 질문으로 먼저 찾은 지식 조각
+    enough: bool = False  # 질문과 잘 맞는 조각이 있는지
+    order: list[str] = []  # 공정 순서(GUIDE). 순서를 묻거나 공정이 둘 이상일 때만
+    cautions: list[str] = []  # 공정 설정: 주의점
+    survey: list[str] = []  # 공정 설정: 실측 때 정할 것
+    prep: list[str] = []  # 공정 설정: 고객 준비
+    ask: list[str] = []  # 되물을 조건(공정 지시문 '조건 묻기', 아는 칸은 뺌)
+    money: bool = False  # 금액 · 기간 질문(부르는 쪽이 계산 엔진 값으로 답한다)
+
+
 class V2AskHealthOut(BaseModel):
     ok: bool
     live: bool

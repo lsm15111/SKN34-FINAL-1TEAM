@@ -96,6 +96,22 @@ STATE_KO = {
     "excluded": "안 함",
 }
 DATE = r"^\d{4}-\d{2}-\d{2}$"
+# 되물을 조건(grounds): 공정 지시문(trade_*_v1.md) '조건 묻기'의 말 그대로(시험이 지시문에 있는지 봐요)
+ASK_IF = {
+    "도배": (
+        "벽지 종류(합지 · 실크)",
+        "천장까지 하는지",
+        "지금 벽 상태(들뜸 · 곰팡이 · 결로 · 요철)",
+        "사는 채로 하는지",
+    ),
+    "목공": (
+        "바꿀 것(몰딩 · 걸레받이 · 방문 · 문틀)",
+        "문짝만인지 문틀까지인지",
+        "천장 평탄화 · 가벽을 하는지",
+        "사는 채로 하는지",
+    ),
+}
+LIVING_ASK = "사는 채로 하는지"  # 집 사실(거주)을 알면 묻지 않아요
 
 
 def health() -> v2.V2AskHealthOut:
@@ -573,6 +589,42 @@ async def answer_only(
     }
     _remember(turn, first.hits)
     return await _run(secrets.token_urlsafe(16), turn, server_only=True)
+
+
+async def grounds(message: str, *, living: str = "", mode: str = "llm") -> v2.V2GroundsOut:
+    """v2 답 파이프라인(일반 상담)의 근거만 LLM 없이 모은다(v4 비서 answer_question 'v2g', 저장 없음).
+
+    answer_only가 지시문에 넣는 재료와 같다: 질문으로 먼저 찾은 지식 조각 · 출처(임베딩은 LLM 모드만), 공정 순서
+    (GUIDE, 순서를 묻거나 공정이 둘 이상일 때), 공정 설정(주의점 · 실측 때 정할 것 · 고객 준비), 되물을 조건(아는 칸은 뺌).
+    price_reference는 넣지 않는다(금액 규칙): 평형만으로는 공사 범위가 비어 금액 · 기간이 없고, v2 평형 계산은 비서
+    표준견적서와 다른 값이다. 금액 · 기간 질문이면 money만 표시해 부르는 쪽이 이 공사 계산 엔진 값으로 답하게 한다."""
+    from app.agent.v3.orchestrator import ORDER_ASK
+    from app.agent.v3.policy import policy_of
+    from app.agent.v3.trades import trades_in
+
+    b = v2.V2AskIn(kind="chat", message=message[:1_000])
+    trade = route(b)
+    first = await _search(b.message, trade=trade, embed=mode != "free")
+    many = len([t for t in trades_in(b.message) if t != "common"]) >= 2
+    c = BY_TRADE.get(trade) if trade else None
+    known = {LIVING_ASK} if living.strip() else set()
+    return v2.V2GroundsOut(
+        trade=trade,
+        hits=[
+            v2.V2Ground(
+                ref=h.ref, source_type=h.source_type, title=h.title, publisher=h.publisher,
+                section=h.section, text=h.text,
+            )
+            for h in first.hits
+        ],
+        enough=first.enough,
+        order=[f"{n}: {t}" for n, t in GUIDE] if many or ORDER_ASK.search(b.message) else [],
+        cautions=list(c.cautions) if c else [],
+        survey=list(c.survey_vars) if c else [],
+        prep=list(c.prep) if c else [],
+        ask=[x for x in ASK_IF.get(trade or "", ()) if x not in known],
+        money=bool({"price", "period"} & set(policy_of(b.message))),
+    )  # fmt: skip
 
 
 def _intent_out(i: Intent) -> v2.V2IntentOut:
