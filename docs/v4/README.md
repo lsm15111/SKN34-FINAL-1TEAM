@@ -9,6 +9,7 @@
 | [02-architecture.md](02-architecture.md) | 구성도 · 경계 · 대표 흐름 · 원칙의 자리 · 모델과 비용 |
 | [03-agent.md](03-agent.md) | 비서 백엔드 계약: 표 · API · SSE · 도구 · 승인 행동 · 먼저 말 걸기 · 안전 · 테스트 |
 | [04-design.md](04-design.md) | 화면 설계: 대화 + 단계 카드, 공통 카드, 업체 화면 |
+| [05-results.md](05-results.md) | 결과: 목표 대비 · 무엇을 해서 얼마나 좋아졌나 · 사용자 흐름 |
 | [adr/](adr) | 결정 기록 |
 | [research/](research) | 조사: 참고 영상 · 코드 지도 · 평가 · 피클 사례 · 도면 · 가격 자료 |
 | [eval/](eval) | 평가 계획 · 결과 기록 |
