@@ -67,8 +67,11 @@ VENDOR: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"일정\s*(?:보내|답)|수락|받을게|받을래|갈게"
     )),
     ("checklist", re.compile(r"견적서|체크|항목|빠진|빠뜨|확인할\s*것")),
+    ("brief", re.compile(r"브리핑|요약해|정리해\s*줘")),
     ("today", re.compile(r"오늘|할\s*일|새\s*요청|공사\s*날짜|일정\s*(?:확인|보여)|작업함")),
 )  # fmt: skip
+# 업체 말의 '수락'이 업체가 받는다는 뜻이 아닌 꼴: 고객이 수락 · 수락 안 함('고객이 아직 수락 안 했는데 …')
+NOT_ACCEPT = re.compile(r"고객\S{0,2}\s+(?:\S+\s+){0,2}?수락|수락\s*(?:안|않|못|을\s*안)|수락하지")
 DECLINE_CODE = (
     ("full", re.compile(r"일정|바빠|바쁘|꽉|여유|시간이\s*없")),
     ("out_of_area", re.compile(r"지역|멀|거리|구역|동네")),
@@ -126,6 +129,10 @@ NO_WINDOW = "지금은 이 요청에 바로 답할 빈 기간을 찾지 못했�
 ANSWERED = "이미 답했거나 닫힌 요청이에요. 진행은 요청 화면에서 볼 수 있어요."
 CHECKLIST = "견적서를 낼 때 확인할 것이에요. 낼 금액 · 부가세 방식 · 공사 기간 · 유효기간은 칸에 적어 주세요."
 VENDOR_TODAY = "오늘 할 일이에요."
+BRIEF = "요청 브리핑이에요. 맞는 조건과 답할 기간을 카드에서 확인해 주세요."
+ACCEPT_RULE = (
+    "공사 날짜는 업체가 올리고 고객이 수락해야 확정돼요. 수락 전에는 비서도 대신 확정할 수 없어요."
+)
 
 # 보던 카드 · 공사 단계 → v3 화면 이름(answer_only view)
 CARD_VIEW = {
@@ -594,10 +601,19 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         data = TodayData(date=tc.today, todo=rows, waiting=[], news=[])
         card = CardOut(card_id="today", kind="today", data=data.model_dump(mode="json"))
         return VENDOR_TODAY, ToolOut(data={}, cards=[card])
+    # '고객이 아직 수락 안 했는데 …'는 기간 답하기가 아니다
+    if intent == "window" and NOT_ACCEPT.search(text):
+        out = (await _brief(tc, propose_window=False))[2] if tc.visit_id else ToolOut(data={})
+        return ACCEPT_RULE, out
     if intent is None:
         return None
+    if intent == "brief" and tc.visit_id is None:  # 보던 요청이 없으면 새 요청이 든 오늘 할 일
+        return await _vendor(tc, text, "today")
     if tc.visit_id is None:
         return NO_VISIT, ToolOut(data={})
+    if intent == "brief":
+        _card, _model, out = await _brief(tc, propose_window=False)
+        return BRIEF, out
     if intent == "checklist":
         async with SessionLocal() as s:
             card, *_ = await vendor_tools.checklist(s, tc.user, tc.visit_id, tc.today, tc.refs)

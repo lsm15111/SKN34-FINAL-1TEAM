@@ -784,7 +784,13 @@ async def propose_decline(tc: ToolCtx, a: DeclineIn) -> ToolOut:
     visit_id = _vendor_visit_id(tc, a.visit_ref)
     async with SessionLocal() as s:
         d = await visit_service.vendor_visit(s, tc.user, visit_id, tc.today)
-    if d.status not in ("requested", "offered", "picked", "proposed", "booked", "visited"):
+    # visit.service.decline은 requested에서만 바꾼다(기간을 답한 뒤 카드를 만들면 승인해도 409)
+    if d.status in ("offered", "picked", "proposed", "booked", "visited"):
+        raise ToolError(
+            "answered",
+            "기간을 답한 뒤에는 못 받아요를 보낼 수 없어요. 고객과 믿집 채팅으로 이야기해 주세요.",
+        )
+    if d.status != "requested":
         raise ToolError("stale", "이미 닫혔거나 견적서를 보낸 요청이에요.")
     summary = ActionSummary(
         title="이번 요청 못 받아요",
