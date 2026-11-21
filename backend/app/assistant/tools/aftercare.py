@@ -43,6 +43,8 @@ if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
 
 WEEK = "월화수목금토일"
+# 공통 공사 전 줄 '직접 할 일(콘센트 옮기기 등)…'의 머리(고른 직접 할 일로 바꿔 넣어요)
+DIY_LINE = "직접 할 일("
 TTL = timedelta(days=3)
 EXTRA_MAX = 3  # 한 번에 보여 줄 추가 금액 카드
 BLANK_DAY = "○월 ○일"
@@ -105,20 +107,37 @@ async def deal_of(s: AsyncSession, user: User, pid: uuid.UUID, deal_id: uuid.UUI
 
 
 def check_card(
-    card_id: str, stage: str, trades: list[str], lines: list[str], extra: list[str] | None = None
+    card_id: str,
+    stage: str,
+    trades: list[str],
+    lines: list[str],
+    extra: list[str] | None = None,
+    home: "cards.HomeCtx | None" = None,
 ) -> CardOut:
     """공사 전 할 일(before) · 공사 끝 점검표(after): knowledge 카드의 체크 칸(공정 설정 값, 정해 둔 글).
-    extra는 공정 설정 뒤에 더할 체크 칸(반셀프 직접 할 일, tools.diy.prep_part)이에요."""
+    extra는 공정 설정 뒤에 더할 체크 칸(반셀프 직접 할 일, tools.diy.prep_part)이에요. home이 있으면 이 집에 맞춰요:
+    빈 집은 가구 · 짐 줄을 빼고, 평일에 집을 비우는 집 · 반려동물이 있는 집은 줄을 더해요. 공통 줄 '직접 할 일
+    (콘센트 옮기기 등)'은 쓰지 않고 고른 직접 할 일을 그 이름으로 넣어요(날짜가 없으면 전 · 뒤만)."""
     from app.agent.v3.trades import BY_CODE, CHECK_NOTE, CHECK_SOURCE
 
     codes = [c for c in dict.fromkeys(trades) if c in BY_CODE and c != "common"] or ["dobae"]
     specs, common = [BY_CODE[c] for c in codes], BY_CODE["common"]
     if stage == "before":
-        items = [
-            *common.check_before,
-            *(x for sp in specs for x in sp.prep),
-            *(x for sp in specs for x in sp.check_before),
-        ]
+        items = cards.fit_items(
+            [
+                *(x for x in common.check_before if not x.startswith(DIY_LINE)),
+                *(x for sp in specs for x in sp.prep),
+                *(x for sp in specs for x in sp.check_before),
+            ],
+            home,
+        )
+        if home is not None and home.occupied and home.pet:
+            items.append(cards.PET_ITEM)
+        if home is not None and home.diy and not extra:  # 공사 날짜 전: 고른 일을 전 · 뒤로만
+            from app.assistant.tools import diy as diy_tools
+
+            extra = diy_tools.undated_items(home.diy)
+        lines = [*cards.home_lines(home), *lines]
         title, source = "공사 전 할 일", "믿집 안내"
         tail = ["관리사무소 신고 · 엘리베이터 보양은 단지마다 달라서 관리사무소에 물어봐요."]
     else:
@@ -160,7 +179,8 @@ async def prep_card(s: AsyncSession, user: User, pid: uuid.UUID, today: date) ->
     from app.assistant.tools import diy as diy_tools  # 반셀프: 고른 직접 할 일의 마감 · 시작
 
     more, extra = await diy_tools.prep_part(s, user, pid, today)
-    return check_card(f"before-{pid}", "before", trades, [*lines, *more], extra)
+    home = await diy_tools.home_ctx(s, user, pid, today)  # 빈 집 · 평일 공사 · 반려동물
+    return check_card(f"before-{pid}", "before", trades, [*lines, *more], extra, home)
 
 
 def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
@@ -189,6 +209,7 @@ def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
         after_total_won=x.after_total,
         photo_count=len(x.photos),
         href=cards.href(pid, "/plan"),
+        chat_href=f"/chat/{d.thread_id}" if d.thread_id else None,  # 사진 · 까닭은 채팅으로 물어요
     )
     card = CardOut(
         card_id=f"extra-{x.id}",
@@ -212,6 +233,7 @@ def extra_card(t, x, pid: uuid.UUID, refs: "RefTable") -> tuple[CardOut, dict]:
         "title": policy.data(x.title),  # 업체가 적은 칸: 자료 상자로만
         "vendor_note": bool(x.reason),  # 업체가 적은 이유는 카드 칸에만(있는지만)
         "rows": rows,
+        "links": [{"label": cards.CHAT_MODEL}] if d.thread_id else [],
     }
     return card, model
 
@@ -308,7 +330,7 @@ async def out_offer(
         sub=f"{v.vendor_name}에 보낸 요청과 같은 기간" if same else None,
     )
     summary = ActionSummary(
-        title="실측 요청 보내기",
+        title=f"{pick['name']}에 실측 요청 보내기",  # 턴 사실 '승인 기다리는 카드'에 업체가 보이게
         amounts=[AmountRow(label=pick["name"], won=pick["estimate_won"])],
         rows=[
             period,
@@ -494,8 +516,9 @@ def again_offer(v, today: date, now: datetime) -> dict:
 
 def request_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
     """고객의 다른 날짜 · 날짜 바꾸기 요청에 답할 공사 날 후보(이름표 days 값 꼴). 고객이 고른 시작일마다
-    vendor_tools.date_candidates(겹침 빼기는 업체 갈래 몫)로 날을 세고, 시작일이 고객이 고른 날인 후보만 쓴다.
-    수락하기 전 요청에서 후보가 없으면 date_candidates 그대로. kind · request_id를 같이 둔다(실행이 넘긴다)."""
+    vendor_tools.date_candidates(같은 업체의 다른 공사로 찬 날 빼기)로 날을 세고, 시작일이 고객이 고른 날인 후보만
+    쓴다. 고른 날이 모두 다른 공사로 찼으면 가장 이른 고른 날부터 가장 가까운 빈 날(다른 날 제안, alt=True)을 쓴다
+    (schedule service가 같은 조건에서만 받아 준다). kind · request_id를 같이 둔다(실행이 넘긴다)."""
     from app.assistant.tools import vendor as vendor_tools
 
     r = job.request
@@ -503,17 +526,17 @@ def request_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
         return []
     kind = "change" if job.status == "scheduled" else "initial"
     out: list[dict] = []
-    for w in sorted(set(r.wish_dates)):
-        if w <= today:
-            continue
-        probe = job.model_copy(update={"plan_start": w - timedelta(days=1)})
+    wishes = sorted(w for w in set(r.wish_dates) if w > today)
+    for w in wishes:
+        probe = job.model_copy(update={"plan_start": w})
         for c in vendor_tools.date_candidates(probe, deal_id, today):
             if c["start"] == w.isoformat() and all(x["start"] != c["start"] for x in out):
                 out.append({**c, "kind": kind, "request_id": str(r.id)})
-    if not out and kind == "initial":
+    if not out:  # 고른 날이 모두 막힘: 다른 날 제안(가장 이른 고른 날부터, 없으면 예상 시작일부터)
+        probe = job.model_copy(update={"plan_start": wishes[0]}) if wishes else job
         out = [
-            {**c, "kind": kind, "request_id": str(r.id)}
-            for c in vendor_tools.date_candidates(job, deal_id, today)
+            {**c, "kind": kind, "request_id": str(r.id), "alt": True}
+            for c in vendor_tools.date_candidates(probe, deal_id, today)
         ]
     return out
 
@@ -524,16 +547,30 @@ def request_dates_offer(job, deal_id: uuid.UUID, days: dict, now: datetime) -> d
         raise ToolError("stale", "고객 요청이 바뀌었어요. 공사 화면에서 확인해 주세요.")
     picked = [date.fromisoformat(x) for x in days["days"]]
     change = days["kind"] == "change"
+    wished = picked[0] in set(job.request.wish_dates)
+    # 고객이 바란 날이 모두 다른 공사와 겹쳐 다른 날을 제안
+    other = bool(days.get("alt")) and not wished
     summary = ActionSummary(
-        title=f"새 공사 날짜 {picked[0].isoformat()} ~ {picked[-1].isoformat()} 보내기",
+        title=f"{'다른 날 제안' if other else '새 공사 날짜'} "
+        f"{picked[0].isoformat()} ~ {picked[-1].isoformat()} 보내기",
         rows=[
-            SummaryRow(label="일하는 날", value=f"{len(picked)}일"),
+            SummaryRow(label="일하는 날", value=cards.day_list(picked)),
             SummaryRow(label="하루 인원", value=f"{days['crew']}명"),
-            SummaryRow(label="시작일", value="고객이 고른 날이에요")
-            if picked[0] in set(job.request.wish_dates)
-            else SummaryRow(label="시작일", value="믿집이 고른 날이에요"),
+            SummaryRow(
+                label="시작일",
+                value="고객이 고른 날이에요"
+                if wished
+                else "고객이 바란 날은 다른 공사와 겹쳐요 · 가장 가까운 빈 날이에요"
+                if other
+                else "믿집이 고른 날이에요",
+                sub=f"고객이 바란 날 {cards.md_list(sorted(job.request.wish_dates))}"
+                if other
+                else None,
+            ),
         ],
-        note="고객이 수락하면 공정표가 바뀐 날짜로 다시 짜여요"
+        note="고객에게 다른 날을 제안해요. 고객이 수락해야 바뀌어요"
+        if other
+        else "고객이 수락하면 공정표가 바뀐 날짜로 다시 짜여요"
         if change
         else "고객이 수락하면 확정 공정표가 만들어져요",
         approve_label="이 날짜로 보내기",
@@ -618,6 +655,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
             if a.stage == "before"
             else ([], [])
         )
+        home = await diy_tools.home_ctx(s, tc.user, pid, tc.today) if a.stage == "before" else None
     deals: list[dict] = []
     lines: list[str] = []
     for t in sch.trades:
@@ -632,7 +670,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
                     "vendor_name": d.vendor_name,
                     "trade": d.trade,
                     "status": d.status,
-                    "due_at": d.auto_done_at,
+                    "due_at": cards.seoul_text(d.auto_done_at),
                 }
             )
             if d.auto_done_at is not None:
@@ -641,7 +679,7 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
         elif a.stage == "before" and d.status == "scheduled" and d.start_date:
             if d.start_date > tc.today:
                 lines.append(f"{trade_ko(d.trade)} 공사가 {ko_day(d.start_date)}에 시작해요.")
-    card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra)
+    card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra, home)
     model = {
         "title": card.data["title"],
         "stage": a.stage,
@@ -658,19 +696,33 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
     surface="customer",
     kind="read",
     status="추가 금액을 보고 있어요",
-    description="업체가 올린 추가 금액 중 답을 기다리는 것(x1…)을 읽어요. 금액은 공급가 · 부가세 · 합계 · 승인하면 공사 "
-    "금액(믿집 계산)이고, 업체가 적은 이유는 카드에만 보여요. 고객이 추가 금액을 묻거나 답하려 할 때 써요.",
+    description="업체가 올린 추가 금액 중 답을 기다리는 것(x1…)과 공사마다 지금 공사 금액(deals: 확정 금액 + 승인한 "
+    "추가 금액)을 읽어요. 금액은 공급가 · 부가세 · 합계 · 승인하면 공사 금액(믿집 계산)이고, 업체가 적은 이유는 "
+    "카드에만 보여요. 고객이 추가 금액 · 지금 공사 금액을 묻거나 추가 금액에 답하려 할 때 써요.",
     model=NoArgs,
     schema=obj({}),
 )
 async def get_extras(tc: ToolCtx, _: NoArgs) -> ToolOut:
     pid = pid_of(tc)
     async with SessionLocal() as s:
-        got = await pending_extras(s, tc.user, pid, tc.today)
+        sch = await _schedule(s, tc.user, pid, tc.today)
+    got = [(t, x) for t in sch.trades for x in t.extras.items if _waiting(x)]
     shown = [extra_card(t, x, pid, tc.refs) for t, x in got[:EXTRA_MAX]]
-    return ToolOut(
-        data={"items": [m for _, m in shown], "count": len(got)}, cards=[c for c, _ in shown]
-    )
+    data: dict = {
+        "items": [m for _, m in shown],
+        "count": len(got),
+        "deals": [  # 승인한 추가 금액은 지금 공사 금액에 들어가요(계산 엔진 값)
+            {
+                "vendor_name": t.deal.vendor_name,
+                "trade": t.deal.trade,
+                "money": cards.money_model(t.extras),
+            }
+            for t in sch.trades
+        ],
+    }
+    if not got:
+        data["note"] = NO_EXTRAS
+    return ToolOut(data=data, cards=[c for c, _ in shown])
 
 
 class ExtraAnswerIn(BaseModel):

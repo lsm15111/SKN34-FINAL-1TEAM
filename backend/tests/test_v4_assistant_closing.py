@@ -118,16 +118,20 @@ def test_new_card_replaces_the_line_action_and_its_approval_closes_the_line(api,
 
 
 def test_sweep_closes_lines_without_action_when_the_target_moved(api, monkeypatch):
-    """견적 도착 줄(승인 카드 없음)은 화면에서 업체를 확정해 실측 상태가 바뀌면 정리가 닫는다. 닫은 줄은 대화 기록에
-    '완료'로 남고, 열어 둔 화면이 다시 읽게 그 사람에게 화면 신호를 보낸다."""
+    """견적 도착 줄(승인 카드 없음)은 화면에서 업체를 확정해 실측 상태가 바뀌면 정리가 닫는다. 같은 공사의 견적서 줄은
+    새 줄 하나로 합친다(앞 줄은 replaced, QA r1). 닫은 줄은 대화 기록에 '완료'로 남고, 열어 둔 화면이 다시 읽게 그
+    사람에게 화면 신호를 보낸다."""
     _token, pid, va, _vb, _ = deal_setup(api)
     quiet(monkeypatch)
     run(api, proactive.scan_events, at(14))
     run(api, proactive.evaluate_due, at(14))
     shown = nudges(trigger="quote_sent")
-    assert len(shown) == 2 and all(x["status"] == "sent" and x["action_id"] is None for x in shown)
+    assert len(shown) == 2 and all(x["action_id"] is None for x in shown)
+    (live,) = [x for x in shown if x["status"] == "sent"]
+    (old,) = [x for x in shown if x["id"] != live["id"]]
+    assert line(old["id"]) == ("expired", "replaced")  # 같은 공사의 견적서 줄은 새 줄 하나로
     run(api, assistant_service.sweep, now_utc())
-    assert all(line(x["id"]) == ("sent", None) for x in shown)  # 그대로면 닫지 않는다
+    assert line(live["id"]) == ("sent", None)  # 그대로면 닫지 않는다
     seen = {
         x["visit_id"]: x["seen_ver"]
         for x in api.get(f"/projects/{pid}/quotes?trade=dobae").json()["vendors"]
@@ -135,21 +139,18 @@ def test_sweep_closes_lines_without_action_when_the_target_moved(api, monkeypatc
     assert confirm(api, pid, va, seen[va]).status_code == 200  # v3 화면에서 확정
     got = record(monkeypatch)
     tally = run(api, assistant_service.sweep, now_utc())
-    assert tally["settled"] >= 2
-    for x in shown:
-        assert line(x["id"]) == ("expired", "handled")
+    assert tally["settled"] >= 1
+    assert line(live["id"]) == ("expired", "handled")
+    assert line(old["id"]) == ("expired", "replaced")  # 바뀐 줄은 그대로
     items = {x["id"]: x for x in feed(api, pid)["items"]}
-    cards = set()
-    for x in shown:
-        item = items[f"n-{x['id']}"]
-        assert item["settled"] is True and all(p["t"] != "suggest" for p in item["parts"])
-        (card,) = [p["card"] for p in item["parts"] if p["t"] == "card"]
-        assert card["kind"] == "quote_compare" and card["card_id"].endswith(f"@{x['id']}")
-        cards.add(card["card_id"])
-    assert len(cards) == 2  # 같은 'compare-dobae' 카드였어도 줄마다 따로 남는다
-    owner = str(shown[0]["user_id"])
+    assert f"n-{old['id']}" not in items  # 바뀐 줄은 기록에서 빠진다
+    item = items[f"n-{live['id']}"]
+    assert item["settled"] is True and all(p["t"] != "suggest" for p in item["parts"])
+    (card,) = [p["card"] for p in item["parts"] if p["t"] == "card"]
+    assert card["kind"] == "quote_compare" and card["card_id"].endswith(f"@{live['id']}")
+    owner = str(live["user_id"])
     signals = {(d["id"], d["project_id"]) for u, e, d in got if u == owner and e == "state"}
-    assert {(str(x["ref_id"]), pid) for x in shown} <= signals
+    assert (str(live["ref_id"]), pid) in signals
 
 
 def test_sending_a_nudge_signals_the_open_screen(api, monkeypatch):

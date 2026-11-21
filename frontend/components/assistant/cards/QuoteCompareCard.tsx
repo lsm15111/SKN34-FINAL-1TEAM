@@ -1,7 +1,8 @@
 // C5 실측 견적서 비교(업체 = 열): 낼 금액(앞 판과 차액) · 가견적과 차이 · 공사 기간 · 유효기간 · 철거 · 폐기물 · 업체가 적은 말 · 하자 보수 · 파일.
 // 금액 · 차이는 계산 엔진 값(서버)이에요. 표준견적서와 견준 %는 넣지 않아요(리드 결정). 업체 견적서는 줄로 바꾸지 않아요(파일 + 칸).
 // 업체가 적은 말(벽지 사양 칸, vendor_note)은 업체 글 그대로라 그 줄에만 보여요(다른 글에 섞지 않아요).
-// '확정할 업체' [○○로 할래요]는 그 업체 확정 승인 카드를 받아요(choice vendor_confirm:m…, 무료 모드도). 유효기간이 지났거나 이미 확정했으면 없어요.
+// '확정할 업체' [○○로 할래요]는 그 업체 확정 승인 카드를 받아요(choice vendor_confirm:m…, 무료 모드도). 유효기간이 지났거나 이미 확정했으면(서버 decided) 없어요.
+// 실측이 확정된 업체는 [○○ 채팅]으로 믿집 채팅을 열어 물어봐요(연락처는 보이지 않아요).
 import Link from "next/link";
 import { CHOICE, type CompareCol } from "@/lib/api/assistant";
 import { dateShort, euro, won, wonDelta } from "@/lib/format";
@@ -19,7 +20,8 @@ export function QuoteCompareCard({ card, ctx, old }: CardProps<"quote_compare">)
   const cols = d.cols;
   const td = (x: CompareCol, v: React.ReactNode) => <td key={x.visit_id} className={x.state === "waiting" ? c.waitCol : undefined}>{x.state === "waiting" ? "" : v}</td>;
   const deal = ctx.lastAction("vendor_confirm");
-  const decided = !!deal && (deal.status === "executed" || (deal.status === "proposed" && ctx.handledOf(deal.action_id)));
+  const decided = !!d.decided || (!!deal && (deal.status === "executed" || (deal.status === "proposed" && ctx.handledOf(deal.action_id))));
+  const chats = old ? [] : cols.filter((x) => x.chat_href);
   // 할 일이 끝난 줄의 카드(old)는 보낸 때 표만 남겨요(확정 · 물을 말 · 크게 보기 단추 없음)
   const pickable = decided || old ? [] : cols.filter((x) => x.state === "quoted" && !x.expired && x.ref);
   return (
@@ -37,7 +39,7 @@ export function QuoteCompareCard({ card, ctx, old }: CardProps<"quote_compare">)
               {cols.map((x) => (
                 <th key={x.visit_id} scope="col" className={x.state === "waiting" ? c.waitCol : undefined}>
                   {x.vendor_name}
-                  <small className={k.num}>{x.state === "waiting" ? x.wait_note ?? "기다리는 중" : `${x.version}판 · ${x.received_on ? dateShort(x.received_on) : ""}`}</small>
+                  <small className={k.num}>{x.state === "waiting" ? x.wait_note ?? "기다리는 중" : `${x.version}판 · ${x.received_on ? dateShort(x.received_on) : ""}`}{x.chosen ? " · 확정" : ""}</small>
                 </th>
               ))}
             </tr>
@@ -75,6 +77,7 @@ export function QuoteCompareCard({ card, ctx, old }: CardProps<"quote_compare">)
       {old ? null : (
         <div className={k.row}>
           <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>비교표 크게 보기</Link>
+          {chats.map((x) => <Link key={x.visit_id} className={`${k.btn} ${k.sm}`} href={x.chat_href!} scroll={false}><I n="chat" />{x.vendor_name} 채팅</Link>)}
         </div>
       )}
     </section>

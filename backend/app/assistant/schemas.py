@@ -216,12 +216,24 @@ class CompareCol(BaseModel):
     warranty_months: int | None = None
     file: CompareFileOut | None = None
     wait_note: str | None = None
+    chosen: bool = Field(default=False, description="고객이 이 업체로 확정함")
+    chat_href: str | None = Field(
+        default=None, description="이 업체와 열린 믿집 채팅(/chat/{id}, 실측이 확정되면 열려요)"
+    )
 
 
 class QuoteCompareData(BaseModel):
     cols: list[CompareCol]
     gap_won: int | None = Field(description="받은 견적서 합계 차이(2곳 이상, 계산 엔진)")
     ask_chips: list[str] = []
+    href: str
+    decided: bool = Field(
+        default=False, description="이 공정을 이미 확정함(확정 단추를 두지 않아요)"
+    )
+
+
+class LinkOut(BaseModel):
+    label: str
     href: str
 
 
@@ -260,6 +272,9 @@ class ScheduleData(BaseModel):
         description="이 날짜의 수락 승인 카드가 열려 있으면 그 행동 id. 그때는 카드 단추(proposal_ref · "
         "proposal_kind)를 비워 수락 단추가 승인 카드 하나만 남아요",
     )
+    chats: list[LinkOut] = Field(
+        default=[], description="공사 업체와 열린 믿집 채팅(업체에 물어볼 때 누를 곳)"
+    )
 
 
 class CheckItem(BaseModel):
@@ -274,11 +289,6 @@ class KnowledgeData(BaseModel):
     source: str
     checklist: list[CheckItem] = []
     href: str | None = None
-
-
-class LinkOut(BaseModel):
-    label: str
-    href: str
 
 
 class AnswerData(BaseModel):
@@ -378,6 +388,15 @@ class BriefWindow(BaseModel):
     open_count: int
 
 
+class BriefPicked(BaseModel):
+    """고객이 고른 반나절(업체 수락 기다림). 수락은 요청 화면에서 해요(href)."""
+
+    day: date
+    half: Half
+    due_at: datetime | None = Field(description="수락 기한(잡아 둔 기한)")
+    href: str
+
+
 class VendorBriefData(BaseModel):
     visit_id: uuid.UUID
     title: str
@@ -395,6 +414,9 @@ class VendorBriefData(BaseModel):
     diy: list[str] = Field(
         default=[],
         description="고객이 직접 할 일(반셀프 칩 화면 말, 요청 때 고객이 승인해 고정한 사본 · 자료)",
+    )
+    picked: BriefPicked | None = Field(
+        default=None, description="고객이 고른 반나절(날짜 수락 차례일 때만)"
     )
 
 
@@ -454,6 +476,9 @@ class ExtraData(BaseModel):
     after_total_won: int | None = Field(default=None, description="승인하면 공사 금액")
     photo_count: int = 0
     href: str
+    chat_href: str | None = Field(
+        default=None, description="이 업체와 열린 믿집 채팅(사진 · 까닭을 물어볼 때 누를 곳)"
+    )
 
 
 class NoticeData(BaseModel):
@@ -759,11 +784,17 @@ class NudgeOut(BaseModel):
 
 class BoardMoneyOut(BaseModel):
     label: str
-    won: int | None = None
+    won: int | None = Field(
+        default=None,
+        description="확정한 공정은 지금 공사 금액(확정 금액 + 승인한 추가 금액), 아니면 표준견적서(부가세 포함)",
+    )
     range: list[int] | None = Field(
         default=None,
         description="[가장 작은 값, 가장 큰 값]. 확정 전 업체 금액(받은 실측 견적서, 없으면 요청 때 고정한 "
         "가견적, 부가세 포함)이 두 곳 이상일 때",
+    )
+    extra_won: int | None = Field(
+        default=None, description="won에 들어간 승인한 추가 금액(부가세 포함, 없으면 비움)"
     )
 
 

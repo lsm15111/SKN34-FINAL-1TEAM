@@ -1730,6 +1730,12 @@ def _request_options(
     ]
 
 
+async def _wishes_taken(s: AsyncSession, d: Deal, r: DateRequest, today: date) -> bool:
+    """고객이 고른 시작일이 모두 지났거나 같은 업체의 다른 공사로 팀이 모두 나간 날이다(계산 엔진 busy_days)."""
+    busy = set(await _busy(s, d, today))
+    return all(w <= today or w in busy for w in r.wish_dates)
+
+
 async def _vendor_deal(s: AsyncSession, vendor: User, deal_id: uuid.UUID) -> Deal:
     d = await s.get(Deal, deal_id, populate_existing=True)
     if d is None or d.vendor_id != vendor.id:
@@ -1899,7 +1905,8 @@ async def propose_dates(
                 raise AppError(
                     422, "request_dates", "고객이 고른 시작일 중에서 같은 기간으로 골라 주세요."
                 )
-        elif start not in set(r.wish_dates):
+        elif start not in set(r.wish_dates) and not await _wishes_taken(s, d, r, today):
+            # 고른 날이 모두 지났거나 우리 업체의 다른 공사로 찼으면 다른 날로 답할 수 있다(고객이 수락해야 바뀐다)
             raise _field("days", "고객이 고른 시작일 중 하루에 시작해 주세요.")
     if change and r is None and data.reason is None:
         raise AppError(422, "reason", "날짜를 바꾸는 이유를 적어 주세요. 고객에게 보여요.")
@@ -2055,6 +2062,18 @@ async def _extras(s: AsyncSession, deals: list[Deal]) -> dict[uuid.UUID, TradeEx
             talk=sum_of("asked"),
         )
     return out
+
+
+async def work_money(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[TradeExtrasOut]:
+    """공정마다 지금 공사 금액(비서 보드 · 도구가 읽는다): 확정 금액(deal_total) · 승인한 추가 금액(ok) ·
+    확정 금액 + 승인한 추가 금액(grand_total). 만든 사람 · 관리자만, 다시 고른 확정은 빼요. 값은 계산 엔진이 더한 것."""
+    p = await project_service.get_for(s, user, project_id)
+    q = select(Deal).where(Deal.project_id == p.id, Deal.status != "reselected")
+    deals = sorted(
+        (await s.execute(q.execution_options(populate_existing=True))).scalars().all(),
+        key=lambda d: ORDER.index(d.trade),
+    )
+    return list((await _extras(s, deals)).values())
 
 
 async def _approved_extras(s: AsyncSession, deal_ids: list[uuid.UUID]) -> dict[uuid.UUID, list]:

@@ -34,7 +34,6 @@ from app.assistant.schemas import (
     BoardMoneyOut,
     BoardOut,
     BoardPeriod,
-    BoardVendorRow,
     BoardVendors,
     CardOut,
     CardPart,
@@ -822,6 +821,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         p = await project_service.get_for(s, user, project_id)
         _, home = await cards.home(s, user, project_id)
         o = await schedule_service.overview_for(s, user, project_id, today)
+        works = {w.trade: w for w in await schedule_service.work_money(s, user, project_id)}
         opened = await repo.open_count(s, user.id, project_id)
         estimates = await _estimates(s, project_id)
         remembered = await repo.memories(s, user.id)
@@ -830,26 +830,15 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     step = 6 if o.phase in ("work", "done") else STEP.get(now_key, 0)
     m = o.money
     dealt = any(x.source == "deal" for x in m.by_trade)
+    total, extra = cards.work_total(m, works)  # 승인한 추가 금액은 공사 금액에 들어가요(계산 엔진)
     label = (
-        "확정 금액 · 부가세 포함"
+        ("공사 금액 · 부가세 포함" if extra else "확정 금액 · 부가세 포함")
         if m.all_confirmed
         else "낼 금액 · 부가세 포함"
         if dealt
         else "표준견적서 · 부가세 포함"
     )
-    rows = [
-        BoardVendorRow(
-            name=v.vendor_name,
-            state="need"
-            if v.next.who == "customer"
-            else "waiting"
-            if v.next.who == "vendor"
-            else "done",
-            text=cards.NEXT_TEXT.get(v.next.kind, "끝났어요"),
-            won=v.total,
-        )
-        for v in o.vendors
-    ]
+    rows = [cards.board_row(v, o, works, today) for v in o.vendors]
     final = o.period.kind == "final"
     docs = [
         LinkOut(label="표준견적서", href=cards.href(p.id, "/standard")),
@@ -863,9 +852,12 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         step=step,
         facts=home["facts"],
         confirmed=p.home is not None,
-        todo=opened + (1 if o.todo else 0),
-        waiting=sum(1 for v in o.vendors if v.next.who == "vendor"),
-        money=BoardMoneyOut(label=label, won=m.total, range=money_range(o, estimates))
+        todo=opened + (1 if cards.todo_kind(o.todo) == "todo" else 0),
+        waiting=sum(1 for v in o.vendors if v.next.who == "vendor")
+        + (1 if cards.todo_kind(o.todo) == "waiting" else 0),
+        money=BoardMoneyOut(
+            label=label, won=total, range=money_range(o, estimates), extra_won=extra or None
+        )
         if m.by_trade
         else None,
         vendors=BoardVendors(title="업체", rows=rows) if rows else None,
@@ -986,16 +978,47 @@ STEP_IDEAS = {
         "확정한 업체의 공사 날짜를 챙길 차례예요",
         "공사 날짜 보여 줘",
     ),
-    "work": (
-        "공사 전날 준비물을 볼까요?",
-        "공사 전에 챙길 것이 있어요",
-        "공사 전날 준비물 알려 줘",
+    # 공사 단계(날짜 수락 뒤): 때에 맞는 것만(work_idea). 3주 전에 '공사 전날 준비물'을 권하지 않아요
+    "prep": ("공사 전에 할 일을 볼까요?", "공사 전에 챙길 것이 있어요", "공사 전에 할 일 알려 줘"),
+    "eve": ("공사 전날 준비물을 볼까요?", "내일 공사가 시작돼요", "공사 전날 준비물 알려 줘"),
+    "check": (
+        "공사 끝 점검표를 볼까요?",
+        "업체가 공사를 끝냈다고 했어요",
+        "공사 끝 점검표 보여 줘",
     ),
 }
+# 제안이 이어지는 카드 종류: 바로 앞 턴에 그 카드를 보였으면 같은 제안을 되풀이하지 않아요
+STEP_CARD = {
+    "house": "home_info",
+    "standard": "vendor_picks",
+    "pick": "visit_slots",
+    "visit": "today",
+    "deal": "quote_compare",
+    "dates": "schedule",
+    "prep": "knowledge",
+    "eve": "knowledge",
+    "check": "knowledge",
+}
+RECENT_SAID = 6  # 고객이 최근에 한 말 줄 수(이미 물은 제안은 빼요)
 VENDOR_IDEAS = {
     "new": ("새 요청을 정리해 볼까요?", "답할 새 요청이 있어요", "새 요청 브리핑해 줘"),
     "quote": ("보낼 견적서를 챙길까요?", "실측을 마친 요청이 있어요", "견적서 체크리스트 보여 줘"),
 }
+
+
+def step_key(o, today) -> str | None:
+    """공사 요약(overview) → 다음에 물을 말 단계 키. 날짜를 수락한 뒤에는 때에 맞는 것(공사 1주 전 할 일 ·
+    전날 준비물 · 끝 확인)만, 맞는 것이 없으면 None."""
+    if o.phase in ("work", "done"):
+        code = o.todo.code if o.todo else ""
+        if code == "check":
+            return "check"
+        if code == "before_work":
+            start = o.next.day if o.next is not None and o.next.kind == "start" else None
+            return "eve" if start == today + timedelta(days=1) else "prep"
+        return None
+    tr = next((t for t in o.trades if t.trade == "dobae"), o.trades[0] if o.trades else None)
+    return next((x.key for x in tr.steps if x.state == "now"), "house") if tr else "house"
 
 
 async def suggest_for(
@@ -1007,11 +1030,14 @@ async def suggest_for(
     chips: list[str] | tuple[str, ...] = (),
 ) -> list[SuggestOut]:
     """다음에 물을 말 0~3개(코드가 고름): 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일).
-    이번 말 · 칩과 같은 말은 뺀다. 못 읽으면 비운다(턴은 그대로 끝낸다)."""
+    이번 말 · 칩과 같은 말, 고객이 최근에 이미 물은 말, 바로 앞 턴에 보인 카드로 이어지는 단계 제안은 뺀다(같은
+    제안을 여러 턴 되풀이하지 않게). 담은 업체가 없으면 '실측 시간' 대신 업체 고르기를 권한다. 못 읽으면 비운다."""
     from app.assistant import proactive
     from app.schedule import service as schedule_service
+    from app.visit import service as visit_service
 
     out: list[SuggestOut] = []
+    recent: set[str] = set()
     try:
         async with SessionLocal() as s:
             shown = await repo.shown_nudges(
@@ -1019,16 +1045,16 @@ async def suggest_for(
             )
             out += [SuggestOut(**proactive.suggest_of(n)) for n in shown]
             if surface == "customer" and project_id is not None:
-                o = await schedule_service.overview_for(s, user, project_id, today_seoul())
-                tr = next(
-                    (t for t in o.trades if t.trade == "dobae"), o.trades[0] if o.trades else None
-                )
-                key = (
-                    next((x.key for x in tr.steps if x.state == "now"), "house") if tr else "house"
-                )
-                key = "work" if o.phase in ("work", "done") else key
-                text, why, say = STEP_IDEAS.get(key, STEP_IDEAS["house"])
-                out.append(SuggestOut(id=f"step-{key}", text=text, why=why, say=say))
+                today = today_seoul()
+                o = await schedule_service.overview_for(s, user, project_id, today)
+                key = step_key(o, today)
+                if key == "pick":  # 담은 업체가 없으면 실측 시간이 아니라 업체 고르기부터
+                    lst = await visit_service.shortlist_for(s, user, project_id, "dobae")
+                    key = "pick" if lst.items else "standard"
+                last, recent = await _recent(s, user.id, project_id)
+                if key is not None and STEP_CARD.get(key) not in last:
+                    text, why, say = STEP_IDEAS[key]
+                    out.append(SuggestOut(id=f"step-{key}", text=text, why=why, say=say))
             elif surface == "vendor":
                 from app.assistant.tools import vendor as vendor_tools
 
@@ -1043,11 +1069,23 @@ async def suggest_for(
     seen: set[str] = set()
     picked: list[SuggestOut] = []
     for x in out:
-        if x.say in skip or x.say in seen:
+        if x.say in skip or x.say in seen or (x.id.startswith("step-") and x.say in recent):
             continue
         seen.add(x.say)
         picked.append(x)
     return picked[:SUGGEST_MAX]
+
+
+async def _recent(s, user_id: uuid.UUID, project_id: uuid.UUID) -> tuple[set[str], set[str]]:
+    """(바로 앞 턴에 보인 카드 종류, 고객이 최근에 한 말). 대화가 없으면 둘 다 빈 집합."""
+    chat = await repo.assistant_chat(s, user_id, project_id)
+    if chat is None:
+        return set(), set()
+    rows = await repo.messages(s, chat.id, RECENT_SAID * 2)
+    said = {m.text.strip() for m in rows if m.role == "user"}
+    turns = await repo.turns_of(s, chat.id, [rows[-1].turn]) if rows else []
+    kinds = {c.get("kind") for t in turns for c in (t.cards or [])}
+    return {k for k in kinds if k}, said
 
 
 # ---- 업체 ----

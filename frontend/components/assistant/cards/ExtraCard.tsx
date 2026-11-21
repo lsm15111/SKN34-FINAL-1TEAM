@@ -1,8 +1,9 @@
 "use client";
 // 07 추가 금액 카드: 한 일 · 공급가 · 부가세 · 합계(부가세 포함) · 승인하면 공사 금액 · 업체가 적은 말.
 // 금액은 서버(계산 엔진) 값 그대로예요. 한 일 · 업체가 적은 말은 업체 글이라 그 칸에만 보여요.
-// [승인할래요] · [거절할래요] · [채팅으로 물어볼래요]는 choice extra_answer:x…로 승인 카드를 받아요(무료 모드도).
-// 업체에 답이 가는 건 그 승인 카드를 눌렀을 때뿐이에요.
+// [승인할래요] · [거절할래요] · [업체에 물어볼래요]는 choice extra_answer:x…로 그 답의 승인 카드를 받아요(무료 모드도).
+// 업체에 답이 가는 건 그 승인 카드를 눌렀을 때뿐이에요. 비서는 승인 카드를 미리 만들지 않아요(고객이 단추로 골라요).
+// 이미 채팅으로 물어봤으면(asked) [물어볼래요]는 빼요. [○○ 채팅 열기]는 사진 · 까닭을 물어볼 믿집 채팅이에요.
 import Link from "next/link";
 import { CHOICE } from "@/lib/api/assistant";
 import { won } from "@/lib/format";
@@ -74,15 +75,22 @@ export function ExtraCard({ card, ctx, old }: CardProps<"extra">) {
           <button type="button" className={`${k.btn} ${k.sm}`} disabled={ctx.busy} onClick={() => press("reject", "추가 금액 거절할래요")}>
             거절할래요
           </button>
-          <button type="button" className={`${k.btn} ${k.sm}`} disabled={ctx.busy} onClick={() => press("ask", "추가 금액을 채팅으로 물어볼래요")}>
-            채팅으로 물어볼래요
-          </button>
+          {d.answer === "pending" ? (
+            <button type="button" className={`${k.btn} ${k.sm}`} disabled={ctx.busy} onClick={() => press("ask", "추가 금액을 업체에 물어볼래요")}>
+              업체에 물어볼래요
+            </button>
+          ) : null}
         </div>
       ) : null}
       <div className={k.row}>
         <Link className={k.text} href={d.href} scroll={false}>
           공사 화면에서 보기<I n="chev" />
         </Link>
+        {d.chat_href && !old ? (
+          <Link className={k.text} href={d.chat_href} scroll={false}>
+            {d.vendor_name} 채팅 열기<I n="chev" />
+          </Link>
+        ) : null}
         {d.photo_count ? <span className={k.muted}>사진 {d.photo_count}장</span> : null}
       </div>
     </section>

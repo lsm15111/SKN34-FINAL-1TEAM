@@ -3,6 +3,7 @@
 // (choice '<proposal_kind>:<proposal_ref>': 처음 날짜 dates_accept · 수락한 뒤 바뀐 날짜 delay_accept). 실행은 승인 카드를 눌러야 해요.
 // 다른 공정과 겹치면 수락할 수 없어서 단추를 두지 않아요.
 // 업체가 날짜를 바꾼 까닭은 '업체가 적은 말' 칸에만 보여요(업체 글 그대로).
+// [○○ 채팅 열기]는 공사 업체와 열린 믿집 채팅이에요(업체에 물어볼 때 누를 곳, 연락처는 보이지 않아요).
 import Link from "next/link";
 import { dayParts, rangeText } from "@/lib/format";
 import { DecidedLine, SourceTag } from "../kit/StatusTag";
@@ -54,6 +55,7 @@ export function ScheduleCard({ card, ctx, old }: CardProps<"schedule">) {
           ) : null}
           <Link className={`${k.btn} ${k.sm}`} href={d.href} scroll={false}>공정표 열기</Link>
           {d.ics_href ? <a className={`${k.btn} ${k.sm}`} href={d.ics_href} download><I n="calendar" />달력에 넣기</a> : null}
+          {(d.chats ?? []).map((c) => <Link key={c.href} className={`${k.btn} ${k.sm}`} href={c.href} scroll={false}><I n="chat" />{c.label}</Link>)}
         </div>
       )}
     </section>

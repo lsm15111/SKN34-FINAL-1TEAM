@@ -2,7 +2,8 @@
 
 - 트리거(TRIGGERS, proactive.TRIGGERS에 등록 줄 하나로 더함). 고르는 건 코드이고 문장만 Haiku(검사에 걸리면 틀)다.
   · vendor_out(고객): 업체가 못 받음 · 48시간 무응답 · 업체 멈춤 · 견적서 늦음 → 다른 업체 추천 + 첫 업체 실측 요청 카드
-  · extra_added(고객): 업체가 추가 금액을 올림 → 추가 금액 카드 + 승인 카드(extra_answer)
+  · extra_added(고객): 업체가 추가 금액을 올림 → 추가 금액 카드(승인 · 거절 · 업체에 묻기 단추, 고른 답으로 승인
+    카드를 만든다. 망설이는 고객을 승인 쪽으로 밀지 않게 승인 카드를 미리 만들지 않는다)
   · work_done(고객): 업체가 공사를 끝냈다고 올림 · 자동 끝 3일 전(done_remind는 알림 채널) → 점검표 + 끝 확인 카드
   · prep_week(고객, 시간): 공사 시작 7일 전 10시 → 공사 전 할 일 + 이웃 안내문 초안(승인 카드 없음)
   · dates_requested(업체): 고객이 다른 날짜 · 날짜 바꾸기를 요청 → 고객이 고른 시작일로 공사 날 후보 + 날짜 보내기 카드
@@ -48,13 +49,15 @@ TRIGGERS: tuple[dict, ...] = (
         "kinds": ("visit_declined", "visit_reply_expired", "visit_vendor_stopped", "quote_late"),
         "follow": timedelta(days=2), "action": True, "state": "visit",
         "say": "다른 업체 찾아 줘", "why": "요청한 업체가 이번 요청에서 빠졌어요",
+        "ask": "다른 업체를 볼까요?",
         "feed": "{out} 맞는 업체를 더 골라 뒀어요.",
         "notify": "{vendor} 대신 맞는 업체를 골라 뒀어요. 추천을 확인해 주세요.",
     },
     {
+        # action: 카드 단추(승인 · 거절 · 업체에 묻기)로 고객이 고른 답의 승인 카드를 만든다(미리 만들지 않음)
         "name": "extra_added", "surface": "customer", "kinds": ("extra_added",),
         "follow": timedelta(days=1), "decision": True, "action": True, "state": "extra",
-        "say": "추가 금액 보여 줘", "why": "업체가 추가 금액을 올렸어요",
+        "say": "추가 금액 보여 줘", "why": "업체가 추가 금액을 올렸어요", "ask": "추가 금액을 볼까요?",
         "feed": "{vendor_i_ga} 추가 금액을 올렸어요. 금액을 확인해 주세요.",
         "notify": "{vendor_i_ga} 올린 추가 금액이 아직 답을 기다려요.",
     },
@@ -62,6 +65,7 @@ TRIGGERS: tuple[dict, ...] = (
         "name": "work_done", "surface": "customer", "kinds": ("work_done", "done_remind"),
         "notify_kinds": ("done_remind",), "action": True, "state": "deal",
         "say": "공사 끝 점검표 보여 줘", "why": "업체가 공사를 끝냈다고 했어요",
+        "ask": "공사 끝 점검표를 볼까요?",
         "feed": "{vendor_i_ga} 공사를 끝냈다고 했어요. 점검표로 확인해 주세요.",
         "notify": "{vendor} 공사가 곧 자동으로 끝나요. 점검표로 확인해 주세요.",
     },
@@ -69,22 +73,29 @@ TRIGGERS: tuple[dict, ...] = (
         # 대화 줄(feed)로 보내요: 알림(notify)은 점수 50이라 판정에 기대고 무료 모드에서는 늘 기록만 됐어요
         "name": "prep_week", "surface": "customer", "decision": True, "state": "deal",
         "say": "공사 전에 할 일 알려 줘", "why": "공사가 일주일 남았어요",
+        "ask": "공사 전에 할 일을 볼까요?",
         "feed": "{trade} 공사가 일주일 남았어요. 미리 할 일과 이웃 안내문 초안을 준비했어요.",
         "notify": "{trade} 공사가 일주일 남았어요. 미리 할 일을 챙겨 볼까요?",
     },
     {
+        # {next}: 카드를 만든 뒤 사실로 채워요(고객이 고른 날 후보 · 바란 날이 겹쳐 가장 가까운 빈 날 · 후보 없음)
         "name": "dates_requested", "surface": "vendor", "kinds": ("dates_requested",),
         "follow": timedelta(days=1), "decision": True, "action": True, "state": "deal",
         "say": "공사 날짜 다시 볼래요", "why": "고객이 공사 날짜를 바꾸고 싶어 해요",
-        "feed": "{area} 요청에서 고객이 공사 날짜를 바꾸고 싶어 해요. 새 날짜 후보를 골라 뒀어요.",
+        "ask": "공사 날짜를 다시 볼까요?",
+        "feed": "{area} 고객이 공사 날짜를 바꾸고 싶어 해요. {next}",
         "notify": "{area} 요청에서 고객이 바란 날짜에 아직 답하지 않았어요. 후보를 확인해 주세요.",
     },
     {
         "name": "quote_due", "surface": "vendor", "channel": "notify", "state": "visit",
         "say": "견적서 체크리스트 보여 줘", "why": "견적서 기한이 하루 남았어요",
+        "ask": "견적서 체크리스트를 볼까요?",
         "notify": "{area} 견적서 기한이 하루 남았어요. 빠진 항목을 같이 볼까요?",
     },
 )  # fmt: skip
+# 날짜 바꾸기 요청 줄의 다음 걸음(틀 {next}): 후보가 고객이 고른 날 · 다른 날 제안(바란 날이 모두 다른 공사와 겹침)
+NEXT_PICKED = "고른 날로 후보를 골라 뒀어요."
+NEXT_OTHER = "바란 날은 겹쳐서 가까운 빈 날을 골라 뒀어요."
 NAMES = frozenset(t["name"] for t in TRIGGERS)
 RESOLVE = frozenset(
     {"work_done", "dates_requested"}
@@ -176,6 +187,27 @@ async def out_room(s: AsyncSession, v: Visit, since: datetime | None) -> bool:
         Visit.created_at > since,
     )
     return not await s.scalar(select(newer))
+
+
+async def out_vendors(s: AsyncSession, project_id: uuid.UUID, trade: str) -> frozenset:
+    """이 공사 · 공정에서 빠진 업체(못 받음 · 48시간 무응답 · 믿집에서 멈춤, out_sentence와 같은 까닭). 같은 업체에
+    살아 있는 요청(한 번 더 요청 등)이 있으면 빼지 않는다. 업체 추천(cards.vendor_picks)이 늘 뺀다."""
+    rows = (
+        await s.execute(
+            select(Visit.vendor_id, Visit.status, Visit.expired_reason, Visit.close_reason).where(
+                Visit.project_id == project_id, Visit.trade == trade, Visit.vendor_id.is_not(None)
+            )
+        )
+    ).all()
+    live = {v for v, st, _, _ in rows if st in LIVE}
+    out = {
+        v
+        for v, st, why, closed in rows
+        if st == "declined"
+        or (st == "expired" and why == "reply")
+        or (st == "closed" and closed == "vendor_stopped")
+    }
+    return frozenset(out - live)
 
 
 async def asked_vendors(s: AsyncSession, project_id: uuid.UUID, trade: str) -> frozenset:
@@ -465,9 +497,9 @@ async def build(s: AsyncSession, t, n: AssistantNudge, user: User, c, now: datet
                 shown = [card]
                 offer = await tools.out_offer(s, user, pid, v, card, today, now)
         elif t.name == "extra_added":
+            # 승인 카드는 미리 만들지 않아요: 카드 단추(승인 · 거절 · 묻기)로 고객이 골라요
             tx = await tools.extra_of(s, user, pid, n.ref_id, today)
             shown = [tools.extra_card(*tx, pid, refs)[0]]
-            offer = tools.extra_offer(*tx, "approve", now)
         elif t.name == "work_done":
             d = await tools.deal_of(s, user, pid, n.ref_id, today)
             shown = [tools.done_card(d, pid, refs)]
@@ -482,8 +514,9 @@ async def build(s: AsyncSession, t, n: AssistantNudge, user: User, c, now: datet
         ):  # 카드 없이 첫 후보로 날짜 보내기 승인 카드(업체 확정 줄과 같음)
             job = await schedule_service.job_for(s, user, n.ref_id, today)
             cands = tools.request_candidates(job, n.ref_id, today)
-            if cands:
+            if cands:  # 고객이 바란 날이 모두 겹치면 가장 가까운 빈 날(다른 날 제안, alt)
                 offer = tools.request_dates_offer(job, n.ref_id, cands[0], now)
+                c.names["next"] = NEXT_OTHER if cands[0].get("alt") else NEXT_PICKED
         elif t.name == "quote_due":
             card, *_ = await vendor_tools.checklist(s, user, n.ref_id, today, refs)
             shown = [card]

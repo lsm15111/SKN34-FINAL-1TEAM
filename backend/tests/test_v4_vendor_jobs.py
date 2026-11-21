@@ -63,8 +63,9 @@ def second_deal(api) -> tuple[str, str]:
 
 
 def first_block(job: dict) -> list[date]:
-    """다른 공사가 없을 때 비서가 고르는 첫 공사 날 후보(예상 공정표 시작 다음 날부터 견적서 공사 기간)."""
-    start = max(date.fromisoformat(job["plan_start"]), TODAY) + timedelta(days=1)
+    """다른 공사가 없을 때 비서가 고르는 첫 공사 날 후보(예상 공정표 시작일 그날부터, 내일보다 앞이면 내일부터
+    견적서 공사 기간. QA r1 c6: 하루 밀려 잡히던 것)."""
+    start = max(date.fromisoformat(job["plan_start"]), TODAY + timedelta(days=1))
     return workdays(start, job["quote"]["days"], OFF)
 
 
@@ -209,7 +210,7 @@ def test_vendor_today_dates_button_makes_an_approval_card(api):
     _, _, did, _ = dates_ready(api)
     first = first_block(api.get(f"/vendor/jobs/{did}").json())
     row = dates_row(api)
-    assert (row["title"], row["icon"]) == ("공사 날짜 낼 공사 1", "calendar")
+    assert (row["title"], row["icon"]) == ("공사 날짜 낼 공사 1건", "calendar")
     assert f"후보 {first[0]:%m.%d}~{first[-1]:%m.%d}" in row["sub"]
     a = row["action"]
     assert a["choice"].startswith("dates:d") and ",n" in a["choice"] and a["primary"] and a["say"]
@@ -239,7 +240,7 @@ def test_vendor_today_candidate_avoids_other_job_and_free_turn_card_has_button(a
     first = first_block(api.get(f"/vendor/jobs/{did}").json())
     assert post_days(api, did2, first).status_code == 200
     row = dates_row(api)
-    assert row["title"] == "공사 날짜 낼 공사 1"  # 날짜를 낸 공사는 세지 않는다
+    assert row["title"] == "공사 날짜 낼 공사 1건"  # 날짜를 낸 공사는 세지 않는다
     assert f"후보 {first[0]:%m.%d}" not in row["sub"]  # 다른 공사 날을 피한 후보
     # 무료 모드 '오늘 할 일' 카드에도 같은 단추(이 턴의 이름표)
     r = api.post(

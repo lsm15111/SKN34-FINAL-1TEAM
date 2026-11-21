@@ -350,6 +350,7 @@ async def free_answer(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
                 g = await gather(s, tc.user, pid, tc.today, free=free, keys=keys)
             else:
                 g = await gather(s, tc.user, pid, tc.today, free=free)
+            home = await home_ctx(s, tc.user, pid, tc.today) if prep else None
     except AppError:
         return None
     g.pet = g.pet or bool(PET.search(t))
@@ -361,7 +362,7 @@ async def free_answer(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     if prep and not listing:
         if not g.tasks:
             return None  # 직접 할 일이 없으면 원래 길잡이(지식 답)로
-        work = cards.prep_card(f"prep-{pid}", g.trades or ["dobae"])  # 공사 날 준비물(공정 설정)
+        work = cards.prep_card(f"prep-{pid}", g.trades or ["dobae"], home)  # 공사 날 준비물
         return FREE_PREP, ToolOut(data={}, cards=[list_card(pid, g, tools=True), work])
     if g.src == "none":
         return FREE_NONE, ToolOut(data={})
@@ -393,6 +394,49 @@ def _focus_text(key: str, g: Got) -> str:
     if key in ELECTRIC:
         said += f" {SAFETY}"
     return said + " 방법 · 준비물 · 주의점은 카드에 적었어요."
+
+
+# ---- 집에 맞추기: 공사 전 할 일 · 전날 준비물 ----
+
+
+async def home_ctx(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> cards.HomeCtx:
+    """이 집 사실(cards.HomeCtx): 살면서 공사 · 기억(반려동물 · 주말에만) · 수락한 공사 날에 평일이 있는지 · 고른
+    직접 할 일. 남의 공사면 AppError(404)."""
+    from datetime import timedelta
+
+    from app.assistant import memory
+    from app.project import service as project_service
+    from app.schedule import service as schedule_service
+
+    p = await project_service.get_for(s, user, pid)
+    rows = await repo.memories(s, user.id)
+    keys, _src = await keys_for(s, user.id, pid)
+    weekday = False
+    for d in await schedule_service.deals_for(s, user, pid, None, today):
+        if d.start_date is None or d.end_date is None:
+            continue
+        span = d.work_days or [
+            d.start_date + timedelta(days=i) for i in range((d.end_date - d.start_date).days + 1)
+        ]
+        weekday = weekday or any(x.weekday() < 5 for x in span)
+    return cards.HomeCtx(
+        occupied=bool(p.occupied),
+        pet=any(m.key == "pet" for m in rows),
+        away_weekdays=memory.prefs(rows)[1] == "weekend",
+        weekday_work=weekday,
+        diy=tuple(keys),
+    )
+
+
+def undated_items(keys) -> list[str]:
+    """공사 날짜가 정해지기 전: 고른 직접 할 일을 공사 전 · 뒤로만(이름은 calc.diy, 업체 공사 날짜가 없으면
+    calc.diy.plan은 날짜 없이 순서만 줘서 오늘 값을 쓰지 않아요)."""
+    from app.shared.clock import today_seoul
+
+    return [
+        f"{t.name} · {'공사 전에 해요' if t.kind == 'before' else '공사 뒤에 해요'} · {calc_diy.SELF}"
+        for t in calc_diy.plan(list(keys), {}, today_seoul())
+    ]
 
 
 # ---- 챙기기(확정 공정표만) ----

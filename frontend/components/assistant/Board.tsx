@@ -77,6 +77,8 @@ function Sections({ b, memory, onForget }: { b: BoardOut; memory: MemoryOut[] | 
           <div className={s.money}>
             <small>{b.money.label}</small>
             <b className={s.num}>{b.money.range ? `${won(b.money.range[0])} ~ ${won(b.money.range[1])}` : b.money.won != null ? won(b.money.won) : "—"}</b>
+            {/* 승인한 추가 금액은 공사 금액에 들어가요(서버 계산 값) */}
+            {b.money.extra_won ? <small className={s.num}>승인한 추가 금액 {won(b.money.extra_won)} 포함</small> : null}
           </div>
         </section>
       ) : null}
@@ -84,7 +86,16 @@ function Sections({ b, memory, onForget }: { b: BoardOut; memory: MemoryOut[] | 
         <section className={s.bsec}>
           <h3 className={s.bsecT}>{b.vendors.title}</h3>
           <ul className={s.vmini}>
-            {b.vendors.rows.map((r) => <li key={r.name}><b>{r.name}</b>{r.won != null ? <span className={`${s.num} ${s.muted}`}>{r.text} {won(r.won)}</span> : <StatusTag tone={r.state}>{r.text}</StatusTag>}</li>)}
+            {/* 상태(공사 단계 · 닫힌 까닭 · 다음 할 일)와 금액(확정한 업체는 지금 공사 금액)을 같이 보여요 */}
+            {b.vendors.rows.map((r) => (
+              <li key={r.name}>
+                <b>{r.name}</b>
+                <span className={s.vstate}>
+                  <StatusTag tone={r.state}>{r.text}</StatusTag>
+                  {r.won != null ? <span className={`${s.num} ${s.muted}`}>{won(r.won)}</span> : null}
+                </span>
+              </li>
+            ))}
           </ul>
         </section>
       ) : null}

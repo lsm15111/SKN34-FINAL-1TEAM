@@ -142,7 +142,10 @@ def test_done_suggest_task_and_board_range(api, script):
     assert task["task_id"] == "visits" and task["title"] == "실측 요청 2곳"
     assert {r["label"] for r in task["rows"]} == {"마루와벽", "결도배"}
     assert {r["state"] for r in task["rows"]} == {"waiting"} and task["state"] == "waiting"
-    done = ev[-1][1]
+    # 바로 앞 턴에 오늘 정할 일 카드를 보였으면 '오늘 할 일 알려 줘' 제안을 되풀이하지 않아요(QA r1)
+    assert "오늘 할 일 알려 줘" not in {x["say"] for x in ev[-1][1]["suggest"]}
+    script([{"text": "업체 답이 오면 알려 드릴게요."}])
+    done = ok(ask(api, pid, "알겠어요"))[-1][1]
     assert 1 <= len(done["suggest"]) <= 3
     assert all({"id", "text", "why", "say"} <= set(x) for x in done["suggest"])
     assert len({x["say"] for x in done["suggest"]}) == len(done["suggest"])

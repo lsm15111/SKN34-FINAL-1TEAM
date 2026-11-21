@@ -399,11 +399,15 @@ def test_vendor_turn_proposes_decline_and_checklist(api, script):
     c = api.get(f"/vendor/assistant/checklists/{f['visit']}")
     assert c.status_code == 200, c.text
     got = c.json()
+    # 고객 견적 비교 카드에 보이는 칸(철거 · 폐기물 · 하자 보증)도 같이 본다(QA r1 c6)
     assert got["items"] and {x["label"] for x in got["fields"]} == {
         "낼 금액",
         "부가세 방식",
         "공사 기간",
         "유효기간",
+        "철거",
+        "폐기물 처리",
+        "하자 보증",
     }
     assert api.get("/vendor/assistant/today").status_code == 200
 

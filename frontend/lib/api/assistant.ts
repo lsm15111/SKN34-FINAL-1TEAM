@@ -104,8 +104,13 @@ export type CompareCol = {
   warranty_months?: number | null;
   file?: { kind: "pdf" | "image" | "sheet"; label: string; href: string } | null;
   wait_note?: string | null;
+  /** 고객이 이 업체로 확정함 */
+  chosen?: boolean;
+  /** 이 업체와 열린 믿집 채팅(실측이 확정되면 열려요). 업체에 물어볼 때 누를 곳 */
+  chat_href?: string | null;
 };
-export type QuoteCompareData = { cols: CompareCol[]; gap_won: number | null; ask_chips: string[]; href: string };
+/** decided: 이 공정을 이미 확정함(확정 단추를 두지 않아요) */
+export type QuoteCompareData = { cols: CompareCol[]; gap_won: number | null; ask_chips: string[]; href: string; decided?: boolean };
 
 export type ScheduleData = {
   /** dates: 업체가 올린 공사 날짜(수락 전) · final: 확정 공정표 */
@@ -120,6 +125,8 @@ export type ScheduleData = {
   ics_href?: string | null;
   /** 업체가 적은 말(날짜를 바꾼 까닭). 업체 글 그대로라 이 칸에만 보여요 */
   vendor_note?: string | null;
+  /** 공사 업체와 열린 믿집 채팅(업체에 물어볼 때 누를 곳) */
+  chats?: { label: string; href: string }[];
 };
 
 export type KnowledgeData = {
@@ -152,6 +159,8 @@ export type VendorBriefData = {
   sentence: string | null;
   /** 고객이 직접 할 일(반셀프 칩 화면 말). 요청 때 고객이 승인해 고정한 사본이에요. 없으면 빈 목록 */
   diy?: string[];
+  /** 고객이 고른 반나절(날짜 수락 차례일 때만). 수락은 요청 화면(href)에서 해요 */
+  picked?: { day: string; half: "am" | "pm"; due_at: string | null; href: string } | null;
 };
 export type QuoteChecklistData = {
   visit_id: string;
@@ -169,6 +178,8 @@ export type ExtraData = {
   supply_won: number; vat_won: number; total_won: number; vat_label: string;
   deal_total_won: number | null; grand_total_won: number | null; after_total_won: number | null;
   photo_count: number; href: string;
+  /** 이 업체와 열린 믿집 채팅(사진 · 까닭을 물어볼 때) */
+  chat_href?: string | null;
 };
 /** 이웃 안내문 초안(07 자동화, 코드 틀). 이웃에게 붙이는 글이라 '-합니다'체예요(style_exempt: 화면 문체 검사에서 빼요) */
 export type NoticeData = {
@@ -325,7 +336,8 @@ export type BoardOut = {
   facts: string[];
   confirmed: boolean;
   todo: number; waiting: number;
-  money: { label: string; won?: number | null; range?: number[] | null } | null;
+  /** won: 확정한 공정은 지금 공사 금액(확정 + 승인한 추가 금액). extra_won: 그중 승인한 추가 금액 */
+  money: { label: string; won?: number | null; range?: number[] | null; extra_won?: number | null } | null;
   /** 업체 줄: 상태 또는 가견적(won) */
   vendors: { title: string; rows: { name: string; state: RowState; text: string; won?: number | null }[] } | null;
   period: { label: string; value: string; sub?: string | null } | null;

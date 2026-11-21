@@ -357,7 +357,8 @@ def static_bag() -> Bag:
         bag.add(
             "틀 · 다음에 물을 말(고객 · 업체 목소리)", "user", say, f"service.STEP_IDEAS[{key}]"
         )
-    # 업체 브리핑 한 줄 틀(vendor.brief_template): 맞지 않는 칸 · 확인 필요 칸마다 · 답하기 좋은 기간 · 다 맞음
+    # 업체 브리핑 한 줄 틀(vendor.brief_template): 고객이 고른 반나절 · 맞지 않는 칸 · 확인 필요 칸마다 · 답하기 좋은
+    # 기간 · 다 맞음
     for key, label in (
         ("trade", "공정"),
         ("area", "지역"),
@@ -366,12 +367,16 @@ def static_bag() -> Bag:
     ):
         for state in ("no", "check"):
             fit = [SimpleNamespace(key=key, label=label, ok=False, state=state)]
-            got = vendor_tools.brief_template(SimpleNamespace(fit=fit, suggest=None))
+            got = vendor_tools.brief_template(SimpleNamespace(fit=fit, suggest=None, picked=None))
             bag.add("틀 · 업체 브리핑 한 줄", "line", got, "tools/vendor.py:brief_template")
     good = SimpleNamespace(start=date(2026, 11, 24), end=date(2026, 11, 30), open_count=14)
     for suggest in (good, None):
         fit = [SimpleNamespace(key="trade", label="공정", ok=True, state="ok")]
-        s = SimpleNamespace(fit=fit, suggest=suggest)
+        s = SimpleNamespace(fit=fit, suggest=suggest, picked=None)
+        bag.add("틀 · 업체 브리핑 한 줄", "line", vendor_tools.brief_template(s), "tools/vendor.py:brief_template")  # fmt: skip
+    for half in ("am", "pm"):
+        picked = SimpleNamespace(day=date(2026, 11, 24), half=half)
+        s = SimpleNamespace(fit=[], suggest=None, picked=picked)
         bag.add("틀 · 업체 브리핑 한 줄", "line", vendor_tools.brief_template(s), "tools/vendor.py:brief_template")  # fmt: skip
     # 확정 승인 카드 요약(actions.confirm_summary)과 업체 추천 사유(calc.vendor_pick.reasons)
     cs = actions.confirm_summary("마루와벽", 2, 3_388_000, 3, date(2026, 12, 5))
