@@ -316,7 +316,9 @@ def test_log_tab_for_customer_and_vendor(api):
     assert sorted(i["amount"] for i in sent) == [3_388_000, 3_762_000]
     assert {i["actor"] for i in sent} == {"vendor"}
     assert {i["actor"] for i in log if i["code"] == "asked"} == {"customer"}
-    assert codes.count("other_chosen") == 2 and "chosen" in codes and "confirmed" in codes
+    # 업체 확정은 한 줄(확정 이력 confirmed). 같은 요청의 '골랐어요'(chosen)는 남기지 않는다
+    assert codes.count("other_chosen") == 2 and "chosen" not in codes
+    assert codes.count("confirmed") == 1
     dates = next(i for i in log if i["code"] == "dates_sent")
     assert (dates["day"], dates["day_to"], dates["vendor_name"]) == (
         first.isoformat(),

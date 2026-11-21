@@ -1,5 +1,5 @@
 """v4 업체 쪽: 같은 업체의 다른 공사와 공사 날짜 겹침(공사 화면 · 미리보기 · 비서 my_jobs · 먼저 말 걸기 후보) ·
-오늘 할 일 공사 날짜 보내기 단추 · 견적서 올리기 화면 기한.
+오늘 할 일 공사 날짜 보내기 단추 · 견적서 올리기 화면 기한 · 업체 확정 기록 한 줄.
 유료 호출 0회(Claude 대본 · 무료 모드)."""
 
 import json
@@ -265,3 +265,21 @@ def test_quote_board_due_is_the_ledger_value(api):
     assert due == v["quote_due_at"] == deadline.quote_due(day(6))
     nxt = api.get(f"/vendor/visits/{f['visit']}").json()["next"]
     assert datetime.fromisoformat(nxt["due_at"]) == deadline.half_end(day(6), "am") != due
+
+
+# ---- 기록: 업체 확정 한 줄 ----
+
+
+def test_confirm_is_one_line_in_vendor_and_customer_log(api):
+    customer, pid, did, _ = dates_ready(api)
+    mine = [i["code"] for i in api.get(f"/vendor/jobs/{did}/log").json()]
+    # '골랐어요' · '확정했어요' 두 줄이던 일
+    assert mine.count("confirmed") == 1 and "chosen" not in mine
+    use(api, customer)
+    codes = [i["code"] for i in api.get(f"/projects/{pid}/log").json()]
+    assert codes.count("confirmed") == 1 and "chosen" not in codes
+    assert codes.count("other_chosen") == 2  # 닫힌 다른 요청 기록은 그대로
+    # 확정 이력이 없는 옛 '골랐어요'는 그대로 남긴다
+    query("delete from deal_events where deal_id = $1", uuid.UUID(did))
+    codes = [i["code"] for i in api.get(f"/projects/{pid}/log").json()]
+    assert codes.count("chosen") == 1 and "confirmed" not in codes

@@ -111,6 +111,14 @@ async def _all(s: AsyncSession, q) -> list:
     return list((await s.execute(q)).scalars())
 
 
+def _deal_code(ev: DealEvent) -> str:
+    if ev.code is not None:
+        return ev.code
+    if ev.to_status == "scheduled":
+        return "dates_accepted" if ev.from_status == "confirmed" else "dates_changed"
+    return DEAL_CODE.get(ev.to_status, ev.to_status)
+
+
 async def items(
     s: AsyncSession,
     *,
@@ -118,8 +126,16 @@ async def items(
     visit_ids: list[uuid.UUID],
     deal_ids: list[uuid.UUID],
 ) -> list[LogItemOut]:
-    """요청 · 확정 기록을 시간 순으로 (같은 때면 들어온 순)."""
+    """요청 · 확정 기록을 시간 순으로 (같은 때면 들어온 순). 업체 확정은 한 사건이라 한 줄이다: 확정 이력
+    (deal_events confirmed)이 있는 요청의 '골랐어요'(visit_events chosen)는 남기지 않는다."""
     out: list[LogItemOut] = []
+    deals: dict[uuid.UUID, Deal] = {}
+    deal_events: list[DealEvent] = []
+    if deal_ids:
+        deals = {d.id: d for d in await _all(s, select(Deal).where(Deal.id.in_(deal_ids)))}
+    if deals:
+        deal_events = await _all(s, select(DealEvent).where(DealEvent.deal_id.in_(list(deals))))
+    confirmed = {deals[ev.deal_id].visit_id for ev in deal_events if _deal_code(ev) == "confirmed"}
     visits: dict[uuid.UUID, Visit] = {}
     if visit_ids:
         visits = {v.id: v for v in await _all(s, select(Visit).where(Visit.id.in_(visit_ids)))}
@@ -131,6 +147,8 @@ async def items(
                 continue
             v = visits[ev.visit_id]
             code = ev.code or VISIT_CODE.get(ev.to_status, ev.to_status)
+            if code == "chosen" and v.id in confirmed:  # 업체 확정 한 줄(deal_events)로 남긴다
+                continue
             if ev.from_status is None and ev.code is None and v.attempt > 1:
                 code = "re_asked"
             day, half, day_to, half_to = ev.day, ev.half, ev.day_to, None
@@ -161,21 +179,18 @@ async def items(
             v = visits[q.visit_id]
             code = "quote_resent" if q.version > 1 else "quote_sent"
             out.append(_item(q.sent_at, "vendor", v.vendor_name, v.trade, code, amount=q.total))
-    deals: dict[uuid.UUID, Deal] = {}
-    if deal_ids:
-        deals = {d.id: d for d in await _all(s, select(Deal).where(Deal.id.in_(deal_ids)))}
     if deals:
         ids = list(deals)
-        for ev in await _all(s, select(DealEvent).where(DealEvent.deal_id.in_(ids))):
+        for ev in deal_events:
             d = deals[ev.deal_id]
-            code = ev.code
-            if code is None:
-                if ev.to_status == "scheduled":
-                    code = "dates_accepted" if ev.from_status == "confirmed" else "dates_changed"
-                else:
-                    code = DEAL_CODE.get(ev.to_status, ev.to_status)
             out.append(
-                _item(ev.at, _actor(ev.by_id, owner_id, d.vendor_id), d.vendor_name, d.trade, code)
+                _item(
+                    ev.at,
+                    _actor(ev.by_id, owner_id, d.vendor_id),
+                    d.vendor_name,
+                    d.trade,
+                    _deal_code(ev),
+                )
             )
         for x in await _all(s, select(DateProposal).where(DateProposal.deal_id.in_(ids))):
             d = deals[x.deal_id]
