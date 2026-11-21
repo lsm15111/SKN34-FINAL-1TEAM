@@ -2,7 +2,8 @@
 
 - assistant_memory: 비서 턴 저장(finish_turn)이 같은 트랜잭션에 넣은 일. ref_id = 그 턴의 고객 메시지.
   비서 대화(chats.kind=assistant)의 고객 줄만 읽고, 읽은 뒤 트랜잭션을 닫고 Haiku(memory.extract)를 부른다.
-  검사(memory.validate)를 지난 것만 저장한다. commit은 worker가 한다.
+  검사(memory.validate)를 지난 것만 저장하고, 그 말이 직접 할 일을 업체에 넘기면 앞 기억에서 뺀다(Haiku는 뺀 일을
+  뽑지 않는다). commit은 worker가 한다.
 """
 
 from datetime import datetime
@@ -36,10 +37,7 @@ async def remember(s: AsyncSession, job: Job, now: datetime) -> bool:
     text, user_id = row
     await s.commit()  # LLM을 기다리는 동안 트랜잭션을 쥐지 않는다(읽기만 했다)
     items = memory.validate(await memory.extract(text, user_id), text)
-    if not items:
-        return False
-    await memory.save(s, user_id, job.ref_id, items, now)
-    return True
+    return await memory.save(s, user_id, job.ref_id, items, now, said=text) > 0
 
 
 HANDLERS: dict[str, JobHandler] = {"assistant_memory": remember}
