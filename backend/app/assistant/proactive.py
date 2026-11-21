@@ -596,6 +596,47 @@ async def evaluate_due(now: datetime, limit: int = BATCH) -> Counter[str]:
     return tally
 
 
+SETTLE_BATCH = 200  # 정리 한 번에 보는 보이는 줄 수(새것부터)
+
+
+async def close_settled(now: datetime, limit: int = SETTLE_BATCH) -> int:
+    """정리(2분): 보이는 먼저 말 건 줄(sent · opened) 중 할 일이 끝난 줄을 닫는다. 달린 승인 카드가 실행됐으면
+    acted, 대상 상태가 바뀌었으면(context 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도) handled. 닫은 줄 수.
+    (승인으로 실행한 행동은 actions.execute가 바로 닫는다. 이것은 화면 단추 · 상대 응답 · 시간으로 바뀐 줄을 닫는다)"""
+    from app.assistant.models import AssistantAction
+
+    closed = 0
+    async with SessionLocal() as s:
+        rows = await repo.shown_all(s, limit)
+        ids = [n.action_id for n in rows if n.action_id is not None]
+        ran = (
+            set(
+                await s.scalars(
+                    select(AssistantAction.id).where(
+                        AssistantAction.id.in_(ids), AssistantAction.status == "executed"
+                    )
+                )
+            )
+            if ids
+            else set()
+        )
+        for n in rows:
+            try:
+                if n.action_id in ran:
+                    reason = "acted"
+                elif await context(s, n, now) is None:
+                    reason = "handled"
+                else:
+                    continue
+            except Exception as e:  # noqa: BLE001 - 줄 하나를 못 읽어도 다른 줄은 정리한다(종류 이름만 로그)
+                log.warning("먼저 말 건 줄 정리 실패 (%s, %s)", n.trigger, type(e).__name__)
+                continue
+            if await repo.set_nudge(s, n.id, repo.SHOWN, status="expired", reason=reason):
+                closed += 1
+        await s.commit()
+    return closed
+
+
 async def _close(n: AssistantNudge, status: str, reason: str, **values) -> None:
     async with SessionLocal() as s:
         await repo.set_nudge(s, n.id, ["pending"], status=status, reason=reason, **values)

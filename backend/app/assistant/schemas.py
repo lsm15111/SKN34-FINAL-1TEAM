@@ -497,6 +497,10 @@ class ActionOut(BaseModel):
     supersedes: uuid.UUID | None = Field(
         default=None, description="판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤)"
     )
+    replaced_by: uuid.UUID | None = Field(
+        default=None,
+        description="같은 대상의 새 제안으로 바뀌어 닫힌 행동(expired · replaced)이면 그 새 행동 id",
+    )
 
 
 # ---- SSE 이벤트(문서용 모양. 실제로는 text/event-stream으로 흐른다) ----

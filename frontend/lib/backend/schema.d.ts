@@ -3078,6 +3078,11 @@ export interface components {
              * @description 판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤)
              */
             supersedes?: string | null;
+            /**
+             * Replaced By
+             * @description 같은 대상의 새 제안으로 바뀌어 닫힌 행동(expired · replaced)이면 그 새 행동 id
+             */
+            replaced_by?: string | null;
         };
         /** ActionPart */
         ActionPart: {

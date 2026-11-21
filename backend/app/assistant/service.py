@@ -1014,13 +1014,15 @@ async def health(user: User) -> HealthOut:
 
 
 async def sweep(now: datetime) -> dict[str, int]:
-    """worker assistant_sweep(2분): 만료 제안 · 멈춘 승인 · 화면에서 직접 처리한 제안(handled_elsewhere) · 멈춘 턴 ·
-    상태 전이 알림 → 먼저 말 걸기 · 기한이 된 제안 평가(보냄 · 미룸 · 기록만 · 닫음).
+    """worker assistant_sweep(2분): 만료 제안 · 멈춘 승인 · 화면에서 직접 처리한 제안(handled_elsewhere) · 할 일이 끝난
+    먼저 말 건 줄(settled) · 멈춘 턴 · 상태 전이 알림 → 먼저 말 걸기 · 기한이 된 제안 평가(보냄 · 미룸 · 기록만 · 닫음).
     기억 뽑기는 sweep_jobs(jobs kind=assistant_memory)가 한다."""
     from app.assistant import proactive
 
     expired, stuck = await actions.expire_due(now)
     handled = await actions.close_handled()
+    # 할 일이 끝난 먼저 말 건 줄(실행 · 대상 상태 바뀜)
+    settled = await proactive.close_settled(now)
     async with SessionLocal() as s:
         stalled = await repo.fail_stalled(s, now, now - STALL)
         await s.commit()
@@ -1030,6 +1032,7 @@ async def sweep(now: datetime) -> dict[str, int]:
         "expired": expired,
         "stuck": stuck,
         "handled": handled,
+        "settled": settled,
         "stalled": stalled,
         "events": events,
         **{f"nudge_{k}": v for k, v in tally.items()},

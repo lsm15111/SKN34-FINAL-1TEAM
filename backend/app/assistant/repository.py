@@ -426,6 +426,52 @@ async def dismissals(
     return [(t, at) for t, at in rows]
 
 
+# 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상일 때)
+SETTLES: dict[str, tuple[str, ...]] = {
+    "visit_request": ("no_pick",),
+    "visit_slot": ("visit_offered",),
+    "vendor_confirm": ("quote_sent",),
+    "dates_accept": ("dates_proposed",),
+    "delay_accept": ("dates_proposed",),
+    "window_answer": ("visit_requested", "visit_picked"),
+    "decline": ("visit_requested", "visit_picked"),
+    "dates": ("deal_confirmed",),
+}
+
+
+async def close_lines_of(s: AsyncSession, a: AssistantAction, reason: str = "acted") -> int:
+    """행동 a를 실행했다: 그 사람의 보이는 먼저 말 건 줄(sent · opened) 중 같은 대상의 승인 카드를 단 줄(새 카드로
+    바뀐 옛 카드 포함)과 같은 대상을 가리키는 줄(SETTLES)을 닫는다(expired · reason). 닫은 줄 수."""
+    same = select(AssistantAction.id).where(
+        AssistantAction.user_id == a.user_id,
+        AssistantAction.target_kind == a.target_kind,
+        AssistantAction.target_id == a.target_id,
+    )
+    hit = AssistantNudge.action_id.in_(same)
+    if a.kind in SETTLES:
+        hit = or_(
+            hit,
+            (AssistantNudge.ref_id == a.target_id) & AssistantNudge.trigger.in_(SETTLES[a.kind]),
+        )
+    res = await s.execute(
+        update(AssistantNudge)
+        .where(AssistantNudge.user_id == a.user_id, AssistantNudge.status.in_(SHOWN), hit)
+        .values(status="expired", reason=reason)
+    )
+    return res.rowcount or 0
+
+
+async def shown_all(s: AsyncSession, limit: int) -> list[AssistantNudge]:
+    """모든 사람의 보이는 먼저 말 건 줄(sent · opened), 새것부터(정리: 할 일이 끝난 줄 닫기)."""
+    rows = await s.scalars(
+        select(AssistantNudge)
+        .where(AssistantNudge.status.in_(SHOWN))
+        .order_by(AssistantNudge.sent_at.desc())
+        .limit(limit)
+    )
+    return list(rows.all())
+
+
 async def replace_shown(
     s: AsyncSession, user_id: uuid.UUID, ref_id: uuid.UUID, keep: uuid.UUID
 ) -> int:
