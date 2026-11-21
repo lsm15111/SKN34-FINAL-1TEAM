@@ -19,6 +19,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     Index,
+    Integer,
     SmallInteger,
     String,
     UniqueConstraint,
@@ -269,3 +270,24 @@ class AssistantMemory(Base):
     evidence_quote: Mapped[str] = mapped_column(String(200))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssistantRefTop(Base):
+    """비서 대화 이름표 머리글자(v · m · s …)마다 쓴 가장 큰 번호(runtime.RefTable). 늘기만 한다.
+
+    이름표 표 · 번호 기록은 Redis(지워져도 되는 값)에 있어, 모두 지워지면 번호를 1부터 다시 매겨 지난 카드 단추의
+    이름표가 새 대상을 가리킬 수 있었다(QA edge P3). 새 번호를 쓴 표를 저장할 때 여기 번호보다 크지 않으면 그 이름을
+    버려(모르는 이름표 → 카드를 새로 불러옴) 같은 이름이 다른 대상을 가리키지 않게 한다.
+    """
+
+    __tablename__ = "assistant_ref_tops"
+    __table_args__ = (
+        CheckConstraint("prefix ~ '^[a-z]$'", name="prefix"),
+        CheckConstraint("top >= 1", name="top"),
+    )
+
+    chat_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chats.id", ondelete="CASCADE"), primary_key=True
+    )
+    prefix: Mapped[str] = mapped_column(String(1), primary_key=True)
+    top: Mapped[int] = mapped_column(Integer)

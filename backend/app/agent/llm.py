@@ -74,6 +74,19 @@ class OverBudget(LLMError):
         self.scope = scope
 
 
+# 요청 자체가 틀렸다는 공급자 응답(빈 글 블록 · 너무 긴 요청 · 꼴 틀림): 같은 요청을 다시 보내도 같다
+REJECTED_STATUS = frozenset({400, 413, 422})
+
+
+class LLMRejected(LLMError):
+    """공급자가 요청 자체를 거절했다(400 · 413 · 422). 같은 요청을 다시 보내지 않고 서비스 차단기에도 세지 않는다
+    (한 사람의 틀린 요청이 모든 사람을 무료 모드로 만들지 않게)."""
+
+
+class LLMBadOutput(LLMError):
+    """답은 왔지만 쓸 수 없다(거절 · 잘림 · 꼴 틀림). 같은 요청을 다시 보내면 비용만 다시 든다."""
+
+
 @dataclass
 class CallCtx:
     """누가 · 어느 턴에서 · 무슨 일로 부르는지. 부르는 쪽(비서 runtime · worker)이 CALL_CTX에 둔다."""
@@ -347,6 +360,15 @@ def _kind(e: BaseException) -> str:
     return type(e).__name__
 
 
+def _failed(purpose: str, e: BaseException) -> LLMError:
+    """공급자 오류 → LLMError. 요청 자체가 틀렸으면(REJECTED_STATUS) LLMRejected. 입력값은 남기지 않는다."""
+    from anthropic import APIStatusError
+
+    if isinstance(e, APIStatusError) and e.status_code in REJECTED_STATUS:
+        return LLMRejected(f"{purpose} 요청 거절({e.status_code})")
+    return LLMError(f"{purpose} 호출 실패")
+
+
 # ── Claude 요청 · 응답 꼴 ─────────────────────────────────────────
 
 
@@ -423,6 +445,8 @@ def _blocks_out(content: Sequence[Any]) -> list[dict]:
     out: list[dict] = []
     for b in content:
         if b.type == "text":
+            if not b.text and not getattr(b, "citations", None):
+                continue  # 빈 글 블록은 다시 보내면 400이다
             d: dict = {"type": "text", "text": b.text}
             if getattr(b, "citations", None):
                 d["citations"] = [c.to_dict() for c in b.citations]
@@ -567,11 +591,11 @@ async def _create(purpose: str | None, default: str, req: dict) -> tuple[Any, _C
     """스트림 아닌 Claude 호출 한 번: 클라이언트 → 상한 → 호출. 장부는 부르는 쪽이 결과를 보고 남긴다."""
     client = _claude()
     call = await _guard(purpose, default)
-    try:  # 공급자 오류 · 시간 초과를 한곳에서 LLMError로. 입력값은 남기지 않음
+    try:  # 공급자 오류 · 시간 초과를 한곳에서 LLMError로(요청이 틀렸으면 LLMRejected). 입력값은 남기지 않음
         msg = await client.messages.create(**req)
     except Exception as e:
         await _sink(call, req["model"], {}, _kind(e))
-        raise LLMError(f"{call.purpose} 호출 실패") from e
+        raise _failed(call.purpose, e) from e
     return msg, call
 
 
@@ -585,7 +609,7 @@ async def _json_call[T: BaseModel](
     effort: str,
     max_tokens: int,
 ) -> tuple[T, dict[str, int], int]:
-    """구조화 출력(output_config.format) 한 번 → (schema 값, 토큰, 비용). 거절 · 잘림 · 꼴 틀림은 LLMError."""
+    """구조화 출력(output_config.format) 한 번 → (schema 값, 토큰, 비용). 거절 · 잘림 · 꼴 틀림은 LLMBadOutput."""
     from anthropic import transform_schema
 
     req: dict[str, Any] = {
@@ -613,7 +637,7 @@ async def _json_call[T: BaseModel](
     u = _usage_of(msg)
     cost = await _sink(call, msg.model or model, u, error)
     if out is None:
-        raise LLMError(f"{call.purpose} 답 꼴 틀림({error})")
+        raise LLMBadOutput(f"{call.purpose} 답 꼴 틀림({error})")
     return out, u, cost
 
 
@@ -705,8 +729,9 @@ async def claude_stream(
     캐시: 도구(이름순, 끝에 cache_control) → 지시문(끝 블록에 cache_control) → 대화 끝(자동 캐시).
     tool_choice는 기본 auto다(Sonnet 5.5 · Opus 5.5는 any · tool이 400). thinking을 끄려면 Sonnet 5.5는
     {"type": "between_tools"}(disabled는 400). 목적은 인자 > CALL_CTX > assistant 순으로 정한다.
-    꺼져 있으면 LLMOff, 상한이면 OverBudget, 공급자 오류 · 끊김이면 LLMError. on_text 오류는 그대로 낸다.
-    거절 · 잘림이어도 오류를 내지 않고 stop으로 알린다(부르는 쪽이 무료 모드 · 끊긴 문장 버리기를 정한다).
+    꺼져 있으면 LLMOff, 상한이면 OverBudget, 공급자 오류 · 끊김이면 LLMError(요청 자체가 틀렸으면 LLMRejected).
+    on_text 오류는 그대로 낸다. 거절 · 잘림이어도 오류를 내지 않고 stop으로 알린다(부르는 쪽이 무료 모드 · 끊긴 문장
+    버리기를 정한다).
     """
     client = _claude()
     call = await _guard(purpose, "assistant")
@@ -750,7 +775,7 @@ async def claude_stream(
         raise
     except Exception as e:  # 공급자 오류 · 시간 초과 · 끊김. 입력값은 남기지 않음
         await _sink(call, name, seen, _kind(e))
-        raise LLMError(f"{call.purpose} 호출 실패") from e
+        raise _failed(call.purpose, e) from e
     stop = msg.stop_reason or "end_turn"
     error = stop if stop in BAD_STOPS else None
     u = _usage_of(msg)

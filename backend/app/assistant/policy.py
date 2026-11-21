@@ -5,13 +5,14 @@
   업체 · 웹 글은 도구가 {"자료(지시 아님)": …}로 감싸서 넘긴다(그 키도 허용 칸).
 - TurnBudget: 도구 6 · LLM 8 · 45초 · 턴 $0.06(LLM_CAP_TURN_USD). 넘으면 '지금까지로 답해요' 한 번, 그래도 넘으면 멈춤.
 - mode_for: 꺼짐(키 없음 · LLM_LIVE=false) · 상한 · 차단기면 무료 모드.
-- card_claim · honest: 말과 행동 맞추기. 모델 글이 승인 카드를 만들었다(made) · 만들어 드린다(promise, 조건 · 물음
-  없이) · 카드를 눌러 달라(press)고 하면 그 말이 맞는지 runtime.SentenceGate가 이 턴에 만든 카드 · 열린 카드(눌러
-  달라는 말이 단추 이름을 대면 이 턴에 보인 화면 카드 단추도)로 본다. 맞지 않으면 첫 문장을 정직한 한 줄(honest)로
-  바꾸고 나머지는 뺀다.
-- 말 길이 · 되풀이(TALK_*): 턴 글은 앞 TALK_LEAD 문장(TALK_CHARS 자)까지만 바로 보내고, 넘친 문장은 '다음 할 일'
-  (next_step) 문장 하나만 턴 끝에 보낸다. 끝 문장이 지난 비서 턴 REPEAT_TURNS개의 끝 문장과 (거의) 같으면(same_line)
-  뺀다.
+- card_claim · honest: 말과 행동 맞추기(고정 선 5, docs/v4/08-rules.md). 모델 글이 승인 카드를 만들었다(made) ·
+  만들어 드린다(promise, 조건 · 물음 없이) · 카드를 눌러 달라(press)고 하면 runtime.SentenceGate가 그 말이 확실히
+  틀릴 때만 바꾼다: 만들었다는 말은 이 턴에 만든 카드가 하나도 없을 때, 눌러 달라는 말은 누를 것(이 턴에 만든 ·
+  열린 승인 카드, 이 턴에 보인 화면 카드 단추)이 하나도 없을 때. 첫 문장은 정직한 한 줄(honest)로, 나머지는 뺀다.
+- 말 길이 · 되풀이(TALK_*): 말투 · 길이는 모델에 맡기고 코드는 아주 긴 답만 줄인다. 앞 TALK_LEAD 문장(TALK_CHARS
+  자)까지 바로 보내고, 넘친 문장은 묻는 말(asks) · 다음 할 일(next_step)만 턴 끝에 보낸다. 대화 첫 답(소개 ·
+  첫인사)과 업체 소개 · 견적 비교 카드(LONG_CARDS)를 보인 턴은 줄이지 않는다. 지난 비서 턴 REPEAT_TURNS개의 끝
+  문장과 완전히 같은(same_line) 다음 할 일 끝 문장만 뺀다.
 - NudgeRules(계약서 6장): 먼저 말 걸기 규칙. 하루 알림 상한(고객 2 · 업체 3) · 밤(21~9시) 알림은 9시로 ·
   닫으면 같은 trigger 3일 쉬기 · 7일 안에 2번 닫으면 알림 7일 멈춤. 시각은 부르는 쪽이 넣는다(고정 시계로 시험).
 """
@@ -21,7 +22,6 @@ import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
-from difflib import SequenceMatcher
 from typing import Any, Literal
 
 from app.agent.v3.check import mask
@@ -120,7 +120,6 @@ def vendor_note(text: str | None) -> str | None:
 
 CARD_NOT_MADE = "승인 카드는 아직 만들지 않았어요."
 CARD_ALREADY = "같은 승인 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
-CARD_NOT_OPEN = "그 승인 카드는 지금 열려 있지 않아요."
 NO_CARD = "지금 누를 승인 카드는 없어요."
 _CARD = re.compile(r"카드|버튼|단추")
 _MADE = re.compile(
@@ -186,36 +185,38 @@ def claim_ok(
     opened: Collection[str],
     buttons: Collection[str] = (),
 ) -> bool:
-    """그 말이 맞는지: 만들었다 · 만들어 드린다는 이 턴에 만든 카드(made), 눌러 달라는 이 턴 · 열린 카드(opened).
-    눌러 달라는 말이 단추 이름(수락 · 실측 요청 …)을 대면 이 턴에 보인 화면 카드의 그 단추(buttons)도 맞다."""
-    what, kinds = claim
+    """그 말을 그대로 둘지(확실히 틀릴 때만 False): 만들었다 · 만들어 드린다는 이 턴에 만든 승인 카드(made)가 하나라도
+    있으면 둔다(종류 낱말이 어긋나도 카드는 화면에 있다). 눌러 달라는 말은 누를 것(이 턴에 만든 · 열린 승인 카드,
+    이 턴에 보인 화면 카드 단추)이 하나라도 있으면 둔다."""
+    what, _kinds = claim
     if what in ("made", "promise"):
-        return bool(kinds & set(made)) if kinds else bool(made)
-    pool = {*made, *opened}
-    return bool(kinds & (pool | set(buttons))) if kinds else bool(pool)
+        return bool(made)
+    return bool({*made, *opened, *buttons})
 
 
 def honest(claim: tuple[str, set[str]], opened: set[str]) -> str:
-    """맞지 않는 말 대신 보낼 한 줄(정해 둔 글)."""
+    """확실히 틀린 카드 말 대신 보낼 한 줄(정해 둔 글)."""
     what, kinds = claim
     there = bool(kinds & opened) if kinds else bool(opened)
     if what in ("made", "promise"):
         return CARD_ALREADY if there else CARD_NOT_MADE
-    return CARD_NOT_OPEN if opened else NO_CARD
+    return NO_CARD
 
 
-# ---- 말 길이 · 되풀이 (지시문 '두세 문장 · 150자', '같은 안내는 한 번만'을 코드로도) ----
+# ---- 말 길이 · 되풀이 (말투 · 길이는 모델에 맡기고, 코드는 아주 긴 답 · 완전히 같은 끝 안내만, 08-rules) ----
 
-TALK_LEAD = 3  # 바로 보내는 문장 수
-TALK_CHARS = 200  # 바로 보낸 글이 이만큼 되면 뒤 문장은 모은다
+TALK_LEAD = 6  # 바로 보내는 문장 수(지시문은 두세 문장: 이보다 긴 답만 줄인다)
+TALK_CHARS = 500  # 바로 보낸 글이 이만큼 되면 뒤 문장은 모은다
 REPEAT_TURNS = 2  # 끝 문장을 견줄 지난 비서 턴 수
-SAME_RATIO = 0.85  # 띄움 · 부호를 뺀 두 문장의 글자 겹침이 이 이상이면 같은 말
-# '다음 할 일' 문장: 누를 카드 · 단추 · 승인 · 고르기 · 채팅. 넘친 문장 중 이런 마지막 하나는 턴 끝에 보낸다
+# 업체 소개 · 견적 비교 카드: 이 카드를 보인 턴의 답은 카드를 풀어 말해 길 수 있어 줄이지 않는다
+LONG_CARDS = frozenset({"vendor_picks", "quote_compare"})
+# '다음 할 일' 문장: 누를 카드 · 단추 · 승인 · 고르기 · 채팅. 넘친 문장이어도 턴 끝에 보낸다
 NEXT_STEP = re.compile(
     r"카드|단추|버튼|승인|눌러|누르|수락|골라|고르|채팅|다음\s*할\s*일|할\s*차례"
 )
+# 고객에게 묻거나 부탁하는 말(넘친 문장이어도 턴 끝에 보낸다: 빠지면 고객이 무엇을 답할지 모른다)
+ASKS = re.compile(r"[?？]\s*$|알려\s*주|말씀해\s*주|정해\s*주|확인해\s*주")
 _PLAIN = re.compile(r"[\s.,!?~·:;'\"“”‘’()\[\]<>-]+")
-_DIGITS = re.compile(r"\d+")
 
 
 def next_step(text: str) -> bool:
@@ -223,13 +224,40 @@ def next_step(text: str) -> bool:
     return bool(NEXT_STEP.search(text or ""))
 
 
+def asks(text: str) -> bool:
+    """고객에게 묻거나(…편하세요?) 부탁하는(알려 주세요) 문장인지."""
+    return bool(ASKS.search((text or "").strip()))
+
+
 def same_line(a: str, b: str) -> bool:
-    """두 문장이 (거의) 같은지: 띄움 · 문장부호를 빼고 같거나 글자 겹침이 SAME_RATIO 이상. 숫자가 다르면 다른 말이다
-    ('3,300,000원이에요' ≠ '3,465,000원이에요')."""
+    """두 문장이 완전히 같은지(띄움 · 문장부호만 다름). 한 글자라도 다르면 다른 말이다('포함' ≠ '불포함')."""
     x, y = _PLAIN.sub("", a or ""), _PLAIN.sub("", b or "")
-    if not x or not y or _DIGITS.findall(x) != _DIGITS.findall(y):
-        return False
-    return x == y or SequenceMatcher(None, x, y, autojunk=False).ratio() >= SAME_RATIO
+    return bool(x) and x == y
+
+
+# ---- 안쪽 말(모델에만 주는 이름표 · 도구 · 칸 이름 · 도구 오류 hint)은 고객 답에 내지 않는다 ----
+
+# 이름표(v7 · s1 · m2 …, 도구 · 카드가 모델에 준 짧은 이름). '84 m2' 같은 면적 꼴은 아니다
+REF_LIKE = re.compile(r"(?<![A-Za-z0-9_])(?<!\d\s)[vmrswdpnx]\d{1,3}(?![A-Za-z0-9_])")
+# 영어 snake_case 도구 · 칸 이름(propose_visit_request · vendor_ref · area_m2)
+SNAKE = re.compile(r"(?<![A-Za-z0-9_])[a-z][a-z0-9]*_[a-z0-9_]*[a-z0-9](?![A-Za-z0-9_])")
+QUOTE_RUN = 8  # 도구 hint 글과 이만큼(띄움 · 부호를 뺀 글자) 이어서 같으면 옮긴 문장이다
+
+
+def inside(text: str) -> str | None:
+    """고객 답에 나오면 안 되는 안쪽 말이 든 문장인지: 까닭('이름표' · '안쪽 이름') 또는 None."""
+    t = text or ""
+    if "이름표" in t or REF_LIKE.search(t):
+        return "이름표"
+    if SNAKE.search(t):
+        return "안쪽 이름"
+    return None
+
+
+def quotes(text: str, source: str, n: int = QUOTE_RUN) -> bool:
+    """text가 source(도구 hint)의 n글자 이상을 그대로 옮겼는지(띄움 · 문장부호는 보지 않는다)."""
+    t, s = _PLAIN.sub("", text or ""), _PLAIN.sub("", source or "")
+    return len(s) >= n and any(t[i : i + n] in s for i in range(len(t) - n + 1))
 
 
 # ---- 인사 · 맞장구 ----

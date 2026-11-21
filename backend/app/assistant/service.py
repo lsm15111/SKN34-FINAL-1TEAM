@@ -452,6 +452,8 @@ async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
         return
     if text and turn.mode == "llm" and not text.startswith(CARDS_ONLY):
         yield ev("token", {"text": text})
+    elif text and (kept := (turn.trace or {}).get("kept")):  # 무료 모드 앞에 보낸 LLM 글(R14)
+        yield ev("token", {"text": text[:kept]})
     r = (turn.trace or {}).get("rev")
     rev = r + 1 if isinstance(r, int) else (chat.rev if chat else 1)
     facts = await chip_facts(user, turn.surface, turn.project_id, turn.cards or [])
@@ -632,6 +634,8 @@ async def feed_for(
                 parts.append(ActionPart(action=actions.out(a)))
         if t is not None and t.mode == "llm" and not m.text.startswith(CARDS_ONLY):
             parts.append(TextPart(text=m.text, src="ai"))
+        elif t is not None and (kept := (t.trace or {}).get("kept")):  # 무료 모드 앞 LLM 글(R14)
+            parts.append(TextPart(text=m.text[:kept], src="ai"))
         elif t is None:
             parts.append(TextPart(text=m.text, src="guide"))
         items.append(
