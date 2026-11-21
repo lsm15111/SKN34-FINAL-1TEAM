@@ -22,7 +22,8 @@ import build_sets
 import judge
 import kappa
 import prices
-from kit import Budget, CostLog, est_tokens, wilson
+import run_v4_answers as v4ans
+from kit import SETS, Budget, CostLog, est_tokens, jsonl, wilson
 from redteam import score as rtscore
 from sim import check as simcheck
 from sim import drive as simdrive
@@ -604,6 +605,126 @@ class LiveCostTest(unittest.TestCase):
         self.assertEqual((got["OPENAI_API_KEY"], got["OPENROUTER_API_KEY"], got["VOYAGE_API_KEY"]),
                          ("", "", ""))  # fmt: skip
         self.assertEqual((got["JEV_ENABLED"], got["LLM_PROVIDER"]), ("false", "anthropic"))
+
+
+class V4AnswersTest(unittest.TestCase):
+    """run_v4_answers 순수 함수: 세트 고르기 · 집 몸통 · 보이는 글 · 받은 계산 값 · 길 세기."""
+
+    def test_pick_is_seeded_dev_quota(self):
+        rows = jsonl(SETS / "compare.jsonl")
+        got = v4ans.pick(rows)
+        self.assertEqual(len(got), 40)
+        by = {g: sum(r["group"] == g for r in got) for g in v4ans.PICK}
+        self.assertEqual(by, v4ans.PICK)
+        self.assertTrue(all(r["split"] == "dev" for r in got))
+        self.assertEqual([r["id"] for r in got], [r["id"] for r in v4ans.pick(rows)])  # 씨앗 고정
+        self.assertNotEqual({r["id"] for r in got}, {r["id"] for r in v4ans.pick(rows, seed=1)})
+        order = [r["id"] for r in rows]
+        self.assertEqual([r["id"] for r in got], sorted((r["id"] for r in got), key=order.index))
+
+    def test_order_alternates_by_question(self):
+        s = list(v4ans.SYSTEMS)
+        got = {tuple(v4ans.order_of(f"q{i}", s)) for i in range(20)}
+        self.assertEqual(got, {tuple(s), tuple(s[::-1])})
+        self.assertEqual(v4ans.order_of("q1", s), v4ans.order_of("q1", s))
+
+    def test_project_body_and_home_text(self):
+        h = v4ans.homes.HOMES["H32"]
+        b = v4ans.project_body(h)
+        self.assertEqual(b["size"], {"basis": "supply", "m2": "105.8"})
+        self.assertEqual(b["trades"]["dobae"]["grade"], "basic")
+        self.assertEqual(b["trades"]["mokgong"]["items"], ["molding", "base"])
+        self.assertEqual((b["occupied"], b["when"]["start"]), (False, "2027-01-04"))
+        keys = {s["key"] for s in b["spaces"]}
+        self.assertTrue(set(b["trades"]["dobae"]["spaces"]) <= keys)
+        t = v4ans.home_text(h, date(2026, 11, 21))
+        self.assertIn("오늘 2026-11-21 · 서울 마포구 (예산은 정하지 않음)", t)
+        self.assertIn("공사 시작 희망 2027-01-04", t)
+
+    def test_render_tokens_cards_actions(self):
+        ev = [
+            ("ack", {"turn_id": "t"}),
+            ("status", {"text": "답을 찾고 있어요"}),
+            ("card", {"card_id": "standard", "kind": "standard_quote", "data": {"total_won": 1, "label": "옛", "lines": []}}),
+            ("token", {"text": "도배는 **이틀** 걸려요 [K12]."}),
+            ("card", {"card_id": "standard", "kind": "standard_quote",
+                      "data": {"total_won": 4072840, "label": "목공 · 도배", "days": "3.5",
+                               "lines": [{"name": "벽 도배", "won": 1200000}]}}),
+            ("card", {"card_id": "know-1", "kind": "knowledge",
+                      "data": {"title": "도배 순서", "lines": ["몰딩 먼저"], "source": "표준 시방서"}}),
+            ("action", {"action_id": "a1", "status": "proposed",
+                        "summary": {"title": "실측 요청", "rows": [{"label": "업체", "value": "2곳"}], "approve_label": "요청하기"}}),
+            ("action", {"action_id": "a2", "status": "expired", "summary": {"title": "옛 카드"}}),
+            ("done", {"chips": ["업체 추천해 줘"]}),
+        ]  # fmt: skip
+        got = v4ans.render(ev)
+        self.assertTrue(got.startswith("도배는 이틀 걸려요."))  # 꾸밈 · 인용 번호 지움
+        self.assertIn(
+            "[카드] 표준견적서 목공 · 도배: 합계(부가세 포함) 4,072,840원 · 예상 3.5일", got
+        )
+        self.assertNotIn("1원", got)  # 같은 card_id는 마지막 것만
+        self.assertIn("· 몰딩 먼저", got)
+        self.assertIn("출처: 표준 시방서", got)
+        self.assertIn("[승인 카드] 실측 요청", got)
+        self.assertIn("단추: 요청하기", got)
+        self.assertNotIn("옛 카드", got)
+        self.assertNotIn("답을 찾고", got)  # 상태 글 · 칩은 빼요
+        self.assertNotIn("업체 추천해 줘", got)
+        free = [
+            (
+                "card",
+                {
+                    "card_id": "answer-t",
+                    "kind": "answer",
+                    "data": {"text": "무료 답이에요.", "src": "guide"},
+                },
+            )
+        ]
+        self.assertEqual(v4ans.render(free), "무료 답이에요.")
+
+    def test_facts_digest_unboxes_data(self):
+        facts = "오늘: 2026-11-21\n화면: 고객 비서\n집: 서울 마포구 · 공급 105.8㎡ · 32평 · 빈 집"
+        tools = [
+            {"name": "answer_question", "seen": {"route": "trade", "answer": {v4ans.DATA_KEY: "몰딩 먼저 달아요."},
+                                                 "found": True}},
+            {"name": "get_standard_quote", "seen": {"total": 4072840, "href": "/projects/x/standard"}},
+            {"name": "get_schedule", "error": "not_found"},
+        ]  # fmt: skip
+        got = v4ans.facts_digest(facts, tools)
+        self.assertIn(
+            "턴 사실: 오늘: 2026-11-21 / 집: 서울 마포구 · 공급 105.8㎡ · 32평 · 빈 집", got
+        )
+        self.assertNotIn("화면:", got)
+        self.assertIn('"answer":"몰딩 먼저 달아요."', got)
+        self.assertIn('"total":4072840', got)
+        self.assertNotIn("href", got)
+        self.assertIn("get_schedule: 오류 not_found", got)
+        self.assertEqual(v4ans.facts_digest(None, []), "(없음)")
+
+    def test_paths_and_summary(self):
+        def tool(engine, v2_out):
+            return {
+                "name": "answer_question",
+                "data": {"route": "trade", "engine": engine, "v2_out": v2_out},
+            }
+
+        rows = [
+            {"system": "v4_hybrid", "cost_usd": 0.03, "ms": 9000, "answer_paths": v4ans.answer_paths([tool("v3", True)])},
+            {"system": "v4_hybrid", "cost_usd": 0.07, "ms": 12000, "answer_paths": v4ans.answer_paths([tool("v2", True)])},
+            {"system": "v4_hybrid", "cost_usd": 0.02, "ms": 8000, "answer_paths": v4ans.answer_paths([tool("v2", False)])},
+            {"system": "v4_v3", "cost_usd": 0.01, "ms": 5000, "answer_paths": []},
+        ]  # fmt: skip
+        s = v4ans.summarize(rows, [{"system": "v4_v3", "cost_usd": 0.005}])
+        h, v = s["v4_hybrid"], s["v4_v3"]
+        self.assertEqual(
+            (h["n"], h["to_v3"], h["v2_out"], h["engine"]), (3, 1, 2, {"v3": 1, "v2": 2})
+        )
+        self.assertEqual(
+            (h["over_turn_cap"], h["turn_usd_median"], h["turn_ms_median"]), (1, 0.03, 9000)
+        )
+        self.assertEqual((v["n"], v["errors"], v["asked"], v["cost_usd"]), (1, 1, 0, 0.015))
+        self.assertAlmostEqual(v4ans.next_estimate([]), v4ans.TURN_USD)
+        self.assertAlmostEqual(v4ans.next_estimate([0.02, 0.04]), 0.05)
 
 
 if __name__ == "__main__":
