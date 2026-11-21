@@ -221,7 +221,9 @@ ACTION_KINDS = {
                  "propose_extra_answer", "propose_work_check", "propose_visit_again"},
     "vendor": {"propose_window_answer", "propose_decline", "propose_dates"},
 }  # fmt: skip
-MEMORY_KEYS = {"avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"}
+MEMORY_KEYS = {
+    "avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy", "move_in",
+}  # fmt: skip
 
 
 def check_compare(rows: list[dict]) -> list[str]:

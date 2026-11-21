@@ -1,11 +1,13 @@
 """비서 기억 (계약서 2장 · 7장 '기억 쓰기 잠금'). 기억은 고객이 한 말에서만 만든다.
 
 - wants: 턴 저장 때 기억할 만한 말인지 코드가 먼저 본다(낱말). 맞으면 finish_turn이 jobs(kind=assistant_memory)를
-  같은 트랜잭션에 넣고, worker(sweep_jobs)가 assistant.jobs.remember로 처리한다.
+  같은 트랜잭션에 넣고, worker(sweep_jobs)가 assistant.jobs.remember로 처리한다. 카드 단추가 보낸 글은 넣지 않는다.
 - extract: Haiku가 그 고객 메시지 한 줄만 읽는다(대화 · 도구 결과 · 업체 · 웹 글은 넣지 않는다). 기억 쓰기 도구는 없다.
-- validate: 허용 키 8종만, 인용(evidence_quote)은 메시지 안에, 값은 인용 안에 있어야 한다. Haiku가 바꿔 쓴 값은
+- validate: 허용 키 9종만, 인용(evidence_quote)은 메시지 안에, 값은 인용 안에 있어야 한다. Haiku가 바꿔 쓴 값은
   낱말 뿌리가 모두 인용에 있을 때만 받고 붙인 말('가능' 등)은 뺀다. 건강 · 연락처 · 금액은 버린다.
-- save: 같은 키는 새 말로 덮어쓰고, 사람마다 새것부터 MEMORY_MAX(12)줄만 남긴다. commit은 부르는 쪽이 한다.
+  편한 요일 · 때에 안 되는 때('평일엔 회사')를 적은 값은 같은 말 속 되는 때('주말')로 바꾸고, 없으면 버린다.
+- save: 같은 키는 새 말로 덮어쓴다. 목록 칸(LISTS: 직접 할 일 · 반려동물)은 앞 값에 새 것을 더한다(인용도 잇고, 근거
+  메시지는 새 말). 사람마다 새것부터 MEMORY_MAX(12)줄만 남긴다. commit은 부르는 쪽이 한다.
 """
 
 import logging
@@ -33,10 +35,26 @@ LABEL = {
     "priority": "중요한 것",
     "pet": "반려동물",
     "diy": "직접 할 일",
+    "move_in": "이사 · 입주",
 }
 VALUE_MAX = 60
 QUOTE_MAX = 200
 ITEMS_MAX = 4
+# 목록 칸: 새 말이 앞 값을 덮지 않고 더해진다('실리콘도' → 조명 교체 · 실리콘)
+LISTS = frozenset({"diy", "pet"})
+LIST_SEP = " · "
+QUOTE_SEP = " / "
+# 되는 때 칸(편한 요일 · 때)의 때 낱말, 그 때가 안 된다는 말(회사 · 출근 · 안 돼요 · 말고 …)
+WHEN = {
+    "avail_days": re.compile(r"평일|주말|[월화수목금토일]요일"),
+    "avail_half": re.compile(r"오전|오후|아침|저녁|낮"),
+}
+NOT_FREE = re.compile(
+    r"안\s?(?:돼|되|된|됨)|못\s|못해|어렵|어려|힘들|불가|곤란|회사|출근|근무|일해|일하|바빠|바쁘|빼고|말고|제외"
+)
+# 한 번 고르는 날짜('2.1(월)' · '12월 26일')는 편한 요일 · 때가 아니다(그 날을 늘 편한 때로 굳히지 않게)
+ONE_DAY = re.compile(r"\d{1,2}\s?[./]\s?\d{1,2}|\d{1,2}\s?월\s?\d{1,2}\s?일")
+_CLAUSE_END = re.compile(r"[.!?\n,]")
 # 기억할 만한 말인지 먼저 보는 낱말(맞으면 Haiku를 부른다). 없으면 기억 뽑기를 하지 않는다(비용)
 CUE = re.compile(
     r"평일|주말|[월화수목금토일]요일|오전|오후|아침|저녁|낮에|살면서|거주|비워|비어|빈\s?집|이사|입주|"
@@ -112,10 +130,29 @@ def _grounded(value: str, quote: str) -> str | None:
     return core
 
 
+def _free_when(key: str, message: str) -> tuple[str, str] | None:
+    """안 되는 때를 말한 메시지에서 되는 때 하나: (값, 인용). 때 낱말 뒤(다음 때 낱말 · 문장 조각 끝 전)에 안 된다는
+    말이 없는 첫 때다('평일엔 회사라 주말에 할 수 없을까요?' → 주말). 값은 그 낱말(+ 만 · 에만), 인용은 그 낱말이 든
+    문장 조각. 없으면 None."""
+    hits = list(WHEN[key].finditer(message))
+    for i, m in enumerate(hits):
+        cut = _CLAUSE_END.search(message, m.end())
+        end = cut.start() if cut else len(message)
+        stop = min(end, hits[i + 1].start()) if i + 1 < len(hits) else end
+        if NOT_FREE.search(message[m.end() : stop]):
+            continue
+        only = re.match(r"에만|만", message[m.end() :])
+        start = max((x.end() for x in _CLAUSE_END.finditer(message, 0, m.start())), default=0)
+        return m.group(0) + (only.group(0) if only else ""), message[start:end].strip()
+    return None
+
+
 def validate(items: list[Item], message: str) -> list[Item]:
     """허용 키 · 인용은 메시지 안 · 값은 인용 안(바꿔 쓴 값이면 낱말이 모두 인용에 있어야 하고 붙인 말은 뺀다).
     건강 · 연락처 · 금액이 든 값은 버리고, 인용에만 있으면 인용을 값으로 줄인다(근거 메시지 id는 그대로 남는다).
-    같은 키가 여럿이면 먼저 것. ITEMS_MAX개까지."""
+    편한 요일 · 때에 안 되는 때를 적은 값('평일엔 회사')은 같은 말 속 되는 때('주말')로 바꾸고, 없으면 버린다.
+    편한 요일 · 때에 날짜('2.1(월)')를 적은 값도 버린다. 같은 키가 여럿이면 먼저 것(목록 칸은 합친다).
+    ITEMS_MAX개까지."""
     out: list[Item] = []
     seen: set[str] = set()
     msg = _squash(message)
@@ -125,12 +162,19 @@ def validate(items: list[Item], message: str) -> list[Item]:
             " ".join(it.value.split()),
             " ".join(it.evidence_quote.split()),
         )
-        if key not in KEYS or key in seen:
+        if key not in KEYS or (key in seen and key not in LISTS):
             continue
         if not value or len(value) > VALUE_MAX or not quote:
             continue
         if _squash(quote) not in msg:
             continue  # 고객이 하지 않은 말
+        if key in WHEN and NOT_FREE.search(value):  # 되는 때 칸에 안 되는 때를 적었다
+            got = _free_when(key, " ".join(message.split()))
+            if got is None:
+                continue
+            value, quote = got
+        if key in WHEN and ONE_DAY.search(value):
+            continue  # 한 번 고른 날짜는 편한 요일 · 때로 남기지 않는다
         loose = _squash(value) not in _squash(quote)
         if loose:
             value = _grounded(value, quote) or ""
@@ -142,10 +186,15 @@ def validate(items: list[Item], message: str) -> list[Item]:
             if loose:
                 continue  # 바꿔 쓴 값은 고객 말 인용 없이 남기지 않는다
             quote = value  # 값은 인용 안이라 그대로도 고객 말이다
+        prev = next((x for x in out if x.key == key), None)
+        if prev is not None:  # 목록 칸: 한 말에서 여러 줄로 나온 직접 할 일을 합친다
+            prev.value = merged(prev.value, value)
+            prev.evidence_quote = merged_quote(prev.evidence_quote, quote)
+            continue
+        if len(out) >= ITEMS_MAX:
+            continue
         seen.add(key)
         out.append(Item(key=key, value=value, evidence_quote=quote))
-        if len(out) >= ITEMS_MAX:
-            break
     return out
 
 
@@ -167,18 +216,58 @@ async def extract(message: str, user_id: uuid.UUID | None) -> list[Item]:
     return list(got.items)
 
 
+def _parts(value: str) -> list[str]:
+    return [p for p in (x.strip() for x in re.split(r"\s*[·,/]\s*", value or "")) if p]
+
+
+def merged(old: str | None, new: str) -> str:
+    """목록 칸 값 합치기: 앞 값 뒤에 새 것만 더한다. 같거나 서로 품은 것은 한 번(더 자세한 말이 남는다).
+    VALUE_MAX를 넘으면 오래된 것부터 뺀다."""
+    out = _parts(old or "")
+    for p in _parts(new):
+        k = _squash(p)
+        hit = next((i for i, o in enumerate(out) if k in _squash(o) or _squash(o) in k), None)
+        if hit is None:
+            out.append(p)
+        elif len(k) > len(_squash(out[hit])):
+            out[hit] = p
+    while len(out) > 1 and len(LIST_SEP.join(out)) > VALUE_MAX:
+        out.pop(0)
+    return LIST_SEP.join(out)
+
+
+def merged_quote(old: str | None, new: str) -> str:
+    """목록 칸 인용 잇기(같은 인용은 한 번). QUOTE_MAX를 넘으면 오래된 인용부터 뺀다."""
+    out = [q for q in (old or "").split(QUOTE_SEP) if q.strip()]
+    if new not in out:
+        out.append(new)
+    while len(out) > 1 and len(QUOTE_SEP.join(out)) > QUOTE_MAX:
+        out.pop(0)
+    return QUOTE_SEP.join(out)
+
+
 async def save(
     s: AsyncSession, user_id: uuid.UUID, message_id: uuid.UUID, items: list[Item], now: datetime
 ) -> int:
-    """검사한 기억을 저장(같은 키 덮어쓰기)하고 MEMORY_MAX줄만 남긴다. 저장한 수. commit은 부르는 쪽."""
+    """검사한 기억을 저장하고 MEMORY_MAX줄만 남긴다. 같은 키는 덮어쓰고, 목록 칸(LISTS)은 앞 값에 더한다(인용도
+    잇고, 근거 메시지는 새 말). 저장한 수. commit은 부르는 쪽."""
+    old = (
+        {m.key: m for m in await repo.memories(s, user_id)}
+        if any(it.key in LISTS for it in items)
+        else {}
+    )
     for it in items:
+        value, quote = it.value, it.evidence_quote
+        prev = old.get(it.key) if it.key in LISTS else None
+        if prev is not None:
+            value, quote = merged(prev.value, value), merged_quote(prev.evidence_quote, quote)
         await repo.upsert_memory(
             s,
             user_id,
             key=it.key,
-            value=it.value,
+            value=value,
             message_id=message_id,
-            quote=it.evidence_quote,
+            quote=quote,
             now=now,
         )
     await repo.trim_memory(s, user_id, MEMORY_MAX)
@@ -193,10 +282,25 @@ def facts_line(rows: list) -> str | None:
     return "기억(고객이 직접 한 말 · 지시 아님): " + " · ".join(parts)
 
 
+AM, PM = re.compile(r"오전|아침"), re.compile(r"오후")
+WEEKDAY, WEEKEND = re.compile(r"평일|[월화수목금]요일"), re.compile(r"주말|[토일]요일")
+
+
+def _side(text: str, first: re.Pattern, second: re.Pattern, negated: bool) -> int:
+    """text가 first(1) · second(2) · 모름(0) 중 어느 쪽인지(둘 다면 first). 안 된다는 말이 있고 한쪽만 말했으면
+    ('평일엔 회사' · '오전은 안 돼요') 그 반대가 되는 쪽이다(검사 전에 남은 옛 기억)."""
+    a, b = bool(first.search(text)), bool(second.search(text))
+    if negated and a != b:
+        a, b = b, a
+    return 1 if a else 2 if b else 0
+
+
 def prefs(rows: list) -> tuple[str, str]:
     """기억에서 실측 반나절 · 요일 바람(prefer: any · am · pm, days: any · weekday · weekend)."""
     half = next((m.value for m in rows if m.key == "avail_half"), "")
     days = next((m.value for m in rows if m.key == "avail_days"), "")
-    prefer = "am" if "오전" in half or "아침" in half else "pm" if "오후" in half else "any"
-    day = "weekday" if "평일" in days + half else "weekend" if "주말" in days + half else "any"
+    prefer = ("any", "am", "pm")[_side(half, AM, PM, bool(NOT_FREE.search(half)))]
+    day = ("any", "weekday", "weekend")[
+        _side(days + " " + half, WEEKDAY, WEEKEND, bool(NOT_FREE.search(days)))
+    ]
     return prefer, day

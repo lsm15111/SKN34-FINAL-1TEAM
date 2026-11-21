@@ -9,6 +9,9 @@
   없이) · 카드를 눌러 달라(press)고 하면 그 말이 맞는지 runtime.SentenceGate가 이 턴에 만든 카드 · 열린 카드(눌러
   달라는 말이 단추 이름을 대면 이 턴에 보인 화면 카드 단추도)로 본다. 맞지 않으면 첫 문장을 정직한 한 줄(honest)로
   바꾸고 나머지는 뺀다.
+- 말 길이 · 되풀이(TALK_*): 턴 글은 앞 TALK_LEAD 문장(TALK_CHARS 자)까지만 바로 보내고, 넘친 문장은 '다음 할 일'
+  (next_step) 문장 하나만 턴 끝에 보낸다. 끝 문장이 지난 비서 턴 REPEAT_TURNS개의 끝 문장과 (거의) 같으면(same_line)
+  뺀다.
 - NudgeRules(계약서 6장): 먼저 말 걸기 규칙. 하루 알림 상한(고객 2 · 업체 3) · 밤(21~9시) 알림은 9시로 ·
   닫으면 같은 trigger 3일 쉬기 · 7일 안에 2번 닫으면 알림 7일 멈춤. 시각은 부르는 쪽이 넣는다(고정 시계로 시험).
 """
@@ -18,6 +21,7 @@ import re
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import datetime, time, timedelta
+from difflib import SequenceMatcher
 from typing import Any, Literal
 
 from app.agent.v3.check import mask
@@ -198,6 +202,34 @@ def honest(claim: tuple[str, set[str]], opened: set[str]) -> str:
     if what in ("made", "promise"):
         return CARD_ALREADY if there else CARD_NOT_MADE
     return CARD_NOT_OPEN if opened else NO_CARD
+
+
+# ---- 말 길이 · 되풀이 (지시문 '두세 문장 · 150자', '같은 안내는 한 번만'을 코드로도) ----
+
+TALK_LEAD = 3  # 바로 보내는 문장 수
+TALK_CHARS = 200  # 바로 보낸 글이 이만큼 되면 뒤 문장은 모은다
+REPEAT_TURNS = 2  # 끝 문장을 견줄 지난 비서 턴 수
+SAME_RATIO = 0.85  # 띄움 · 부호를 뺀 두 문장의 글자 겹침이 이 이상이면 같은 말
+# '다음 할 일' 문장: 누를 카드 · 단추 · 승인 · 고르기 · 채팅. 넘친 문장 중 이런 마지막 하나는 턴 끝에 보낸다
+NEXT_STEP = re.compile(
+    r"카드|단추|버튼|승인|눌러|누르|수락|골라|고르|채팅|다음\s*할\s*일|할\s*차례"
+)
+_PLAIN = re.compile(r"[\s.,!?~·:;'\"“”‘’()\[\]<>-]+")
+_DIGITS = re.compile(r"\d+")
+
+
+def next_step(text: str) -> bool:
+    """다음 할 일(카드 · 단추 · 승인 · 고르기 · 채팅)을 말하는 문장인지."""
+    return bool(NEXT_STEP.search(text or ""))
+
+
+def same_line(a: str, b: str) -> bool:
+    """두 문장이 (거의) 같은지: 띄움 · 문장부호를 빼고 같거나 글자 겹침이 SAME_RATIO 이상. 숫자가 다르면 다른 말이다
+    ('3,300,000원이에요' ≠ '3,465,000원이에요')."""
+    x, y = _PLAIN.sub("", a or ""), _PLAIN.sub("", b or "")
+    if not x or not y or _DIGITS.findall(x) != _DIGITS.findall(y):
+        return False
+    return x == y or SequenceMatcher(None, x, y, autojunk=False).ratio() >= SAME_RATIO
 
 
 # ---- 인사 · 맞장구 ----

@@ -85,17 +85,49 @@ def _history(rows: list[ChatMessage]) -> list[dict]:
     return out
 
 
-# 처리한 제안 상태 → 턴 사실 말(모델이 이미 처리된 카드를 '안 만들어졌다'고 고쳐 말하지 않게)
-DECIDED = {"executed": "승인해 실행됨", "rejected": "거절함", "failed": "승인했지만 실행 못 함"}
+# 처리한 제안 상태 → 턴 사실 말(모델이 이미 처리된 카드를 '안 만들어졌다'고 고쳐 말하지 않게).
+# 실행 못 한 카드(실패 · 실행 없이 닫힘)는 서버가 고객에게 준 말을 까닭으로 붙인다(비서가 까닭을 지어내지 않게)
+DECIDED = {
+    "executed": "승인해 실행됨",
+    "rejected": "거절함",
+    "failed": "승인했지만 실행 못 함",
+    "expired": "실행 안 됨 · 닫힘",
+}
+# 실행 없이 닫힌 제안 중 턴 사실에 넣는 까닭(새 카드로 바뀜은 뺀다)
+CLOSED_REASONS = ("due", "handled_elsewhere")
+
+
+def _why_not(a) -> str | None:
+    """실행 못 한 카드의 까닭(첫 문장): 서버가 남긴 말(result.message), 없으면 그 카드를 누를 때 서버가 주는 말."""
+    from app.visit.service import QUOTE_CHANGED
+
+    res = a.result or {}
+    if a.status not in ("failed", "expired"):
+        return None
+    reason = res.get("reason") if a.status == "expired" else (a.error_code or "failed")
+    said = res.get("message") or (
+        QUOTE_CHANGED
+        if reason == "quote_changed"
+        else actions.CLOSED.get(reason or "failed", actions.CLOSED["failed"])
+    )
+    return runtime.SENT_END.split(str(said).strip())[0]
 
 
 def decided_line(rows: list) -> str | None:
-    """최근 처리한 카드 한 줄('제목(상태) · …'). 없으면 None."""
-    got = [
-        f"{(a.summary or {}).get('title') or a.kind}({DECIDED[a.status]})"
-        for a in rows
-        if a.status in DECIDED
-    ]
+    """최근 처리한 카드 한 줄('제목(상태) · …'). 실행 못 한 카드는 '제목(상태 · 서버가 알린 까닭: …)'. 없으면 None."""
+    got = []
+    for a in rows:
+        if a.status not in DECIDED:
+            continue
+        if a.status == "expired" and (a.result or {}).get("reason") not in CLOSED_REASONS:
+            continue
+        title = (a.summary or {}).get("title") or a.kind
+        why = _why_not(a)
+        got.append(
+            f"{title}({DECIDED[a.status]} · 서버가 알린 까닭: {why})"
+            if why
+            else f"{title}({DECIDED[a.status]})"
+        )
     return "최근 처리한 카드: " + " · ".join(got) if got else None
 
 
@@ -216,7 +248,9 @@ async def start_turn(
         opened = await repo.actions_of(
             s, user.id, surface, project_id=project_id, status="proposed", limit=5
         )
-        decided = await repo.decided_of(s, user.id, surface, project_id=project_id)
+        decided = await repo.decided_of(
+            s, user.id, surface, project_id=project_id, closed=CLOSED_REASONS
+        )
         refs = await RefTable.load(chat.id)
         visit_ref = (
             refs.put("visit", {"id": str(visit_id)}) if surface == "vendor" and visit_id else None
@@ -252,6 +286,7 @@ async def start_turn(
         client_key=client_key,
         card_id=card_id,
         stale=stale,
+        pressed=bool(picked),
     )
 
 
@@ -260,7 +295,8 @@ async def start_turn(
 
 async def finish_turn(ctx: TurnCtx, res: TurnResult) -> int:
     """대화 저장과 턴 끝을 한 트랜잭션으로. 새 rev를 돌려준다.
-    고객 말에 기억할 낱말이 있으면 기억 뽑기 일(jobs kind=assistant_memory, ref = 고객 메시지)도 같이 넣는다."""
+    고객 말에 기억할 낱말이 있으면 기억 뽑기 일(jobs kind=assistant_memory, ref = 고객 메시지)도 같이 넣는다.
+    카드 단추가 보낸 글('11.28(토) 오전로 할래요')은 화면이 만든 말이라 기억을 뽑지 않는다."""
     from app.assistant import memory
     from app.jobs import service as jobs_service
 
@@ -271,7 +307,7 @@ async def finish_turn(ctx: TurnCtx, res: TurnResult) -> int:
             await s.rollback()
             raise AppError(409, "conflict", "다른 질문이 먼저 저장됐어요. 다시 물어봐 주세요.")
         chat_repo.add_turn(s, ctx.chat_id, ctx.rev, ctx.text, res.text, None)
-        if ctx.surface == "customer" and memory.wants(ctx.text):
+        if ctx.surface == "customer" and not ctx.pressed and memory.wants(ctx.text):
             await s.flush()
             said = await s.scalar(
                 select(ChatMessage.id).where(

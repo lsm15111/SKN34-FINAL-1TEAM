@@ -719,7 +719,7 @@ class AssistantThreadOut(BaseModel):
 
 
 MemoryKey = Literal[
-    "avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"
+    "avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy", "move_in"
 ]
 
 

@@ -5799,7 +5799,7 @@ export interface components {
              * Key
              * @enum {string}
              */
-            key: "avail_days" | "avail_half" | "living" | "style" | "material" | "priority" | "pet" | "diy";
+            key: "avail_days" | "avail_half" | "living" | "style" | "material" | "priority" | "pet" | "diy" | "move_in";
             /**
              * Label
              * @description 키의 화면 이름(예: 편한 시간)
