@@ -82,9 +82,10 @@ async def brief(
     origin: str = "turn",
     propose_window: bool = True,
 ) -> tuple[CardOut, dict, VendorBriefData, list[ActionOut], list[ActionOut]]:
-    """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지) · 가견적(요청 때 고정한 값) ·
-    빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 → window_answer 제안 행,
-    요청함 상태일 때만) · 한 문장(틀).
+    """새 요청 브리핑(UC-V1): 요약 · 맞음 여부(공정 · 지역 · 일정 · 벽지: 맞음 · 확인 필요 · 맞지 않음) · 가견적(요청
+    때 고정한 값) · 빈 반나절 · 답할 기간 후보(w…, 카드 단추 'window_answer:w…') · 추천 응답(첫 후보 →
+    window_answer 제안 행, 요청함 상태일 때만) · 한 문장(틀). 공정 · 지역이 맞지 않으면 기간 후보 · 제안을 만들지
+    않고 맞지 않는 까닭만 보인다(못 받아요는 업체가 고른다). 칸 수는 카드에 보이는 하나(제안 기간의 칸)만 쓴다.
     AI 한 문장은 세션 밖에서 brief_sentence로 바꿔 끼운다. commit=False면 제안 행을 commit하지 않는다
     (먼저 말 걸기가 같은 트랜잭션에서 보낸다). propose_window=False면 제안을 만들지 않는다(무료 모드에서 답하기를
     말하지 않은 턴). 돌려주는 값: (카드, 모델용 값, 브리핑 data, 새 제안, 닫힌 제안)."""
@@ -105,25 +106,26 @@ async def brief(
     trade = TRADE.get(d.trade, d.trade)
     grade = GRADE.get(d.grade or "")
     in_area = any(a.sgg == d.area_name or a.label == d.region for a in prof.areas)
+    wish = f"고객 희망 {start.isoformat()} ~ {end.isoformat()}"
+    has_open = (d.open_count or 0) > 0
     fit = [
-        FitRow(key="trade", label="공정", ok=d.trade in prof.trades, text=f"{trade} 요청"),
-        FitRow(key="area", label="지역", ok=in_area, text=d.region),
-        FitRow(
-            key="schedule",
-            label="일정",
-            ok=(d.open_count or 0) > 0,
-            text=f"고객 희망 {start.isoformat()} ~ {end.isoformat()} · 빈 반나절 {d.open_count or 0}칸",
-        ),
+        _fit("trade", "공정", d.trade in prof.trades, f"{trade} 요청"),
+        _fit("area", "지역", in_area, d.region),
+        # 칸 수는 쓰지 않는다(카드 · 한 문장의 칸 수는 제안 기간 하나)
+        _fit("schedule", "일정", has_open, wish if has_open else f"{wish} · 빈 반나절 없음"),
     ]
-    if d.trade == "dobae":
+    if d.trade == "dobae":  # 고객이 벽지를 아직 안 정했으면 맞지 않음이 아니라 확인 필요
         fit.append(
-            FitRow(key="paper", label="벽지", ok=grade is not None, text=grade or "벽지 미정")
+            FitRow(key="paper", label="벽지", ok=True, text=grade, state="ok")
+            if grade
+            else FitRow(key="paper", label="벽지", ok=False, text="벽지 미정", state="check")
         )
+    misfit = next((f for f in fit if f.key in MISFIT_KEYS and f.state == "no"), None)
     suggest: BriefSuggest | None = None
     made: list[ActionOut] = []
     closed: list[ActionOut] = []
-    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게)
-    live = d.status == "requested"
+    # 요청함: 답할 기간 후보(w…)를 카드에 둔다(무료 모드에서도 단추로 고르게). 공정 · 지역이 맞지 않으면 두지 않는다
+    live = d.status == "requested" and misfit is None
     free = await open_halves(s, vendor.id, start, end) if live else None
     wins = slots.best_windows(free, start, end, today, days_off=off) if free is not None else []
     windows = [
@@ -227,18 +229,26 @@ async def brief(
         "status": d.status,
         "title": data.title,
         "facts": facts,
-        "fit": [{"label": f.label, "ok": f.ok, "text": f.text} for f in fit],
+        "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in fit],
         "estimate_won": d.estimate_total,
-        "open_count": d.open_count,
         "due_at": d.reply_due_at,
         "memo": policy.data(d.message),
         "proposed": bool(made),
+        # 공정 · 지역이 맞지 않음(무료 모드 답이 쓴다, 허용 칸이 아니라 모델 값에는 안 감)
+        "misfit": misfit.label if misfit else None,
         "windows": [
             {"ref": w.ref, "start": w.start, "end": w.end, "open_count": w.open_count}
             for w in windows
         ],
     }
     return card, model, data, made, closed
+
+
+MISFIT_KEYS = ("trade", "area")  # 맞지 않으면 기간 답하기를 권하지 않는 칸
+
+
+def _fit(key, label: str, ok: bool, text: str) -> FitRow:
+    return FitRow(key=key, label=label, ok=ok, text=text, state="ok" if ok else "no")
 
 
 SENTENCE_MAX = 60
@@ -254,22 +264,28 @@ def _md(d: date) -> str:
 
 
 def brief_template(data: VendorBriefData) -> str:
-    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터, 다 맞으면 답하기 좋은 기간."""
-    bad = next((f for f in data.fit if not f.ok), None)
+    """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터(공정 · 지역이면 못 받아요로 답하는 길), 다 맞으면 답하기 좋은
+    기간(카드의 제안 칸 수), 그다음 확인 필요(고객이 아직 정하지 않은 것)."""
+    bad = next((f for f in data.fit if f.state == "no"), None)
+    if bad is not None and bad.key in MISFIT_KEYS:
+        return f"{i_ga(bad.label)} 우리 업체와 맞지 않아요. 받기 어려우면 못 받아요로 답해 주세요."
     if bad is not None:
         return f"{i_ga(bad.label)} 맞지 않아요. 요청을 열어 확인해 주세요."
     g = data.suggest
     if g is not None:
         return f"{_md(g.start)}~{_md(g.end)}에 빈 반나절 {g.open_count}칸이 있어 답하기 좋아요."
+    check = next((f for f in data.fit if f.state == "check"), None)
+    if check is not None:
+        return f"{check.label} 확인이 필요해요. 고객이 아직 정하지 않았어요."
     return "공정 · 지역 · 일정이 맞아요. 요청을 열어 확인해 주세요."
 
 
 def _brief_facts(data: VendorBriefData) -> dict:
+    """AI 한 문장에 넘길 사실: 카드에 보이는 값만(칸 수는 제안 기간 하나, 맞음은 세 갈래)."""
     g = data.suggest
     return {
         "title": data.title,
-        "fit": [{"label": f.label, "ok": f.ok, "text": f.text} for f in data.fit],
-        "open_count": data.halves.open_count,
+        "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in data.fit],
         "suggest": {"start": _md(g.start), "end": _md(g.end), "open_count": g.open_count}
         if g
         else None,

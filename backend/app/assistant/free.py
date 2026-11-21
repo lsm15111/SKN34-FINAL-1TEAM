@@ -103,6 +103,8 @@ NO_VISIT = "어느 요청인지 몰라요. 요청을 열고 다시 말해 주세
 DECLINED = "못 받아요 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 알려져요."
 WINDOW = "답하기 좋은 기간으로 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 보내져요."
 NO_WINDOW = "지금은 이 요청에 바로 답할 빈 기간을 찾지 못했어요. 요청 화면에서 기간을 골라 주세요."
+# 공정 · 지역이 맞지 않는 요청: 기간 답하기 카드를 만들지 않는다({what}은 '지역이' 꼴)
+NO_FIT = "{what} 우리 업체와 맞지 않아 기간 답하기 카드는 만들지 않았어요. 받기 어려우면 못 받아요로 답해 주세요."
 ANSWERED = "이미 답했거나 닫힌 요청이에요. 진행은 요청 화면에서 볼 수 있어요."
 CHECKLIST = "견적서를 낼 때 확인할 것이에요. 낼 금액 · 부가세 방식 · 공사 기간 · 유효기간은 칸에 적어 주세요."
 VENDOR_TODAY = "오늘 할 일이에요."
@@ -476,6 +478,10 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         _card, model, out = await _brief(tc, propose_window=True)
         if model["status"] != "requested":
             return ANSWERED, out
+        if model["misfit"]:  # 공정 · 지역이 맞지 않음: 까닭만(못 받아요는 업체가 고른다)
+            from app.shared.korean import i_ga
+
+            return NO_FIT.format(what=i_ga(model["misfit"])), out
         return (WINDOW if out.actions else NO_WINDOW), out
     # decline: 브리핑(새 기간 제안 없이) + 못 받아요 제안 하나(같은 대상의 열린 제안은 이것으로 바뀐다)
     _card, model, out = await _brief(tc, propose_window=False)

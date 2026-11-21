@@ -4890,10 +4890,19 @@ export interface components {
             key: "trade" | "area" | "schedule" | "paper";
             /** Label */
             label: string;
-            /** Ok */
+            /**
+             * Ok
+             * @description 맞음(state ok)일 때만 참
+             */
             ok: boolean;
             /** Text */
             text: string;
+            /**
+             * State
+             * @description 맞음 · 확인 필요(고객이 아직 정하지 않음, 벽지 미정) · 맞지 않음
+             * @enum {string}
+             */
+            state: "ok" | "check" | "no";
         };
         /**
          * GuestLineOut

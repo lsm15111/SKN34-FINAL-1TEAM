@@ -134,7 +134,8 @@ export type TodayIcon = "doc" | "calendar" | "file" | "chat" | "bulb" | "inbox";
 export type TodayRow = { id: string; icon: TodayIcon; title: string; sub?: string | null; due?: boolean; action?: { label: string; href?: string | null; say?: string | null; primary?: boolean; choice?: string | null } | null };
 export type TodayData = { date: string; nudge_id: string | null; dismissed?: boolean; todo: TodayRow[]; waiting: TodayRow[]; news: TodayRow[]; know?: TodayRow[] };
 
-export type FitRow = { key: "trade" | "area" | "schedule" | "paper"; label: string; ok: boolean; text: string };
+/** state: 맞음(ok) · 확인 필요(check: 고객이 아직 안 정함) · 맞지 않음(no). 없으면 ok로만 나눠요(목업) */
+export type FitRow = { key: "trade" | "area" | "schedule" | "paper"; label: string; ok: boolean; text: string; state?: "ok" | "check" | "no" };
 export type VendorBriefData = {
   visit_id: string;
   title: string;
