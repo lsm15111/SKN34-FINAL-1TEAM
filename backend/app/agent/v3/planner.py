@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from app.agent import llm
 from app.agent.v3 import check, llm_mode
-from app.agent.v3.schemas import ProjectFacts
+from app.agent.v3.schemas import ProjectFacts, ScreenLineFact
 
 PROMPTS = Path(__file__).with_name("prompts")
 VERSION = "planner_v1"
@@ -52,6 +52,8 @@ STATE_KO = {
     "after_visit": "실측 뒤 업체가 정함(합계 밖)",
     "excluded": "안 함",
 }
+# 업체 가견적의 '선택' 줄(퍼티 · 운송비): 표준견적서에 없는 줄이 아니라 표준에도 선택 줄로 있어요(화면 말 '선택 · 합계 밖')
+VENDOR_OPTIONAL = "표준견적서에도 있는 선택 줄 · 합계 밖"
 
 
 class Ask(BaseModel):
@@ -76,6 +78,14 @@ def rules() -> str:
     return prompt().split("## 예시")[0]
 
 
+def vendor_meaning(x: ScreenLineFact) -> str:
+    """업체 가견적 줄의 짧은 뜻: 줄 뜻 또는 표준견적서와의 관계. '선택' 줄(도배만 하는 공사 기준의 퍼티 · 운송비,
+    판 2026.11b · ADR 0006)은 표준견적서에도 선택 줄로 있고 가견적 합계 밖이라, 줄 뜻에 그 말을 붙여요."""
+    if x.optional:
+        return " · ".join(t for t in (x.note, VENDOR_OPTIONAL) if t)
+    return x.note or ("표준견적서에 없는 줄" if not x.in_standard else "표준견적서와 같은 일")
+
+
 def items_of(view: str | None, facts: ProjectFacts | None) -> list[dict]:
     """화면 항목 목록(키 · 이름 · 뜻). 숫자는 넣지 않아요."""
     if facts is None:
@@ -83,10 +93,8 @@ def items_of(view: str | None, facts: ProjectFacts | None) -> list[dict]:
     v = facts.screen.vendor if facts.screen is not None else None
     if view == "vendor" and v is not None:
         return [
-            {"key": f"vendor.{x.key}", "name": x.name,
-             "뜻": x.note or ("표준견적서에 없는 줄" if not x.in_standard else "표준견적서와 같은 일")}
-            for x in v.lines
-        ]  # fmt: skip
+            {"key": f"vendor.{x.key}", "name": x.name, "뜻": vendor_meaning(x)} for x in v.lines
+        ]
     if view == "standard" and facts.standard is not None:
         return [
             {"key": f"standard.{x.key}", "name": x.name,

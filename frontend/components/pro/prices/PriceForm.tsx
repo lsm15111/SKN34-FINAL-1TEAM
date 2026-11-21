@@ -3,6 +3,8 @@
 // L01: 줄마다 무엇 1단위당인지 분명히 쓰고(PRICE_UNIT), 기준 단가와 10배쯤 다르면 경고해요(저장은 한 번 더 물어요). 빈 단가는 저장을 막아요.
 // '공급 69.4㎡ 집이면' 금액 · 아래 가견적 합계는 계산 엔진 값이에요: 저장한 값 그대로일 때만 보이고, 바꾼 줄은 '수량 × 단가' 식만 보여요(화면은 곱하지 않아요).
 // 예시 가견적에서 '선택'인 줄(퍼티 · 운송비)은 괄호 금액 · '선택 · 합계 밖'으로 보여요(아래 합계에 안 들어가요, ADR 0006).
+// 벽지별 줄(API grade: 도배지 · 부자재 1205 실크 · 1209 합지)은 같은 벽지 줄이나 모든 집 줄에만 '다른 줄에 포함'할 수 있어요.
+// 확인한 묶음에 없던 새 줄(1209를 더하기 전에 확인한 묶음)은 받는 법이 비어 와서 위에 알려요.
 // 저장 → POST /vendor/prices/dobae/confirm {base_version, lines}(멱등 키). 본 판이 아니면 409(다른 곳에서 먼저 저장).
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -30,6 +32,9 @@ const MODES: { value: Mode; label: string }[] = [{ value: "price", label: "단�
 const digits = (v: string) => v.replace(/\D/g, "").slice(0, 9);
 const PAPER = new Set(["paper_hapji", "paper_silk"]);
 const OPTIONAL_WORD = `${LINE_STATES.optional} · 합계 밖`; // 표준견적서 · 고객 가견적의 선택 줄과 같은 말(QuoteLines)
+
+/** 한 집 가견적에 같이 나오는 줄인지: 벽지별 줄끼리는 같은 벽지만(API grade, 서버도 같은 규칙으로 막아요) */
+const sameHome = (a: PriceRowV3, b: PriceRowV3) => !a.grade || !b.grade || a.grade === b.grade;
 
 function warnOf(r: PriceRowV3, l: Line): "high" | "low" | null {
   if (l.mode !== "price" || !l.price) return null;
@@ -61,6 +66,10 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
   };
   const anyChanged = prices.lines.some(changed) || prices.needs_setup;
   const priceRows = prices.lines.filter((r) => lines[r.key].mode === "price");
+  /** '다른 줄에 포함'으로 고를 수 있는 줄: 단가를 넣은 다른 줄 중 같은 집 가견적에 같이 나오는 줄 */
+  const targets = (r: PriceRowV3) => priceRows.filter((x) => x.key !== r.key && sameHome(x, r));
+  // 확인한 묶음에 없던 새 줄(받는 법이 비어 와요). 넣고 확인하기 전에는 고객 가견적이 앞 줄 값을 써요
+  const fresh = prices.needs_setup ? [] : prices.lines.filter((r) => r.mode == null);
   const nameOf = (key: string | null) => { const r = prices.lines.find((x) => x.key === key); return r ? `${r.code} ${r.name}` : "다른 줄"; };
   const warns = prices.lines.filter((r) => warnOf(r, lines[r.key]));
   // 예시 가견적의 '선택' 줄 키(API optional, 판 2026.11b)
@@ -71,7 +80,11 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
     for (const r of prices.lines) {
       const l = lines[r.key];
       if (l.mode === "price" && !(Number(l.price) > 0)) e[r.key] = "단가를 넣어 주세요";
-      if (l.mode === "included" && (!l.included_in || lines[l.included_in]?.mode !== "price")) e[r.key] = "포함할 줄을 골라 주세요(단가를 넣은 줄만)";
+      if (l.mode === "included") {
+        const host = prices.lines.find((x) => x.key === l.included_in);
+        if (!host || lines[host.key]?.mode !== "price") e[r.key] = "포함할 줄을 골라 주세요(단가를 넣은 줄만)";
+        else if (!sameHome(host, r)) e[r.key] = "같은 벽지 집에 쓰는 줄로 골라 주세요";
+      }
     }
     setErr(e);
     const first = prices.lines.find((r) => e[r.key]);
@@ -116,7 +129,8 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
           crumbs={[{ label: "업체 정보", href: "/vendor/profile" }, { label: "도배 단가" }]}
           desc={simplified ? "받을 금액 그대로 원 단위로 넣어요 · 간이과세라 부가세를 따로 붙이지 않아요" : "부가세 빼고 원 단위로 넣어요 · 고객에게는 집마다 업체 단가 × 믿집 수량으로 보여요"}
         />
-        {prices.needs_setup ? <Notice tone="info">단가표가 새 줄(1201~1208)로 바뀌었어요. 줄마다 받는 법과 단가를 넣고 확인해 주세요.</Notice> : null}
+        {prices.needs_setup ? <Notice tone="info">단가표가 새 줄(1201~1209)로 바뀌었어요. 줄마다 받는 법과 단가를 넣고 확인해 주세요.</Notice> : null}
+        {fresh.length ? <Notice tone="info">새 줄이 생겼어요({fresh.map((r) => `${r.code} ${r.name}`).join(" · ")}). 받는 법과 단가를 넣고 확인해 주세요.</Notice> : null}
         <div className={s.box}>
           <div className={s.head} aria-hidden="true"><span>코드 · 줄</span><span>받는 법</span><span>단가(원)</span><span className={s.r}>{homeLabel}이면</span></div>
           <ul className={s.rows} aria-label="도배 단가 줄">
@@ -132,7 +146,7 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
                     <span className={`${s.code} mj-num`}>{r.code}</span>
                     <span className={s.nm}><b>{r.name}</b><span>{unitText}</span></span>
                   </div>
-                  <div className={s.cMode}><Segmented legend={`${r.code} ${r.name} 받는 법`} hideLegend full options={MODES} value={l.mode} onChange={(v) => { const m = v as Mode; set(r.key, { mode: m, included_in: m === "included" ? l.included_in ?? (r.key === "meal" ? "labor" : priceRows.find((x) => x.key !== r.key)?.key ?? null) : l.included_in }); }} /></div>
+                  <div className={s.cMode}><Segmented legend={`${r.code} ${r.name} 받는 법`} hideLegend full options={MODES} value={l.mode} onChange={(v) => { const m = v as Mode; set(r.key, { mode: m, included_in: m === "included" ? l.included_in ?? (r.key === "meal" ? "labor" : targets(r)[0]?.key ?? null) : l.included_in }); }} /></div>
                   <div className={s.cPrice}>
                     {l.mode === "price" ? (
                       <Field
@@ -152,7 +166,7 @@ export function PriceForm({ prices, taxKind, homeLabel }: { prices: PricesV3; ta
                         id={`price-${r.key}`}
                         label={`${r.code} ${r.name} · 어느 줄에 포함`}
                         hideLabel
-                        options={[{ value: "", label: "포함할 줄 고르기" }, ...priceRows.filter((x) => x.key !== r.key).map((x) => ({ value: x.key, label: `→ ${x.code} ${x.name}` }))]}
+                        options={[{ value: "", label: "포함할 줄 고르기" }, ...targets(r).map((x) => ({ value: x.key, label: `→ ${x.code} ${x.name}` }))]}
                         value={l.included_in ?? ""}
                         error={e}
                         onChange={(ev) => set(r.key, { included_in: ev.target.value || null })}

@@ -65,7 +65,7 @@ const R = {
   sanggye: row({
     id: VID.sanggye, received_at: "2026-11-17T21:40:00+09:00", status: "requested", new: true, area_label: "노원구 상계동 · 공급 69.4㎡",
     home: "아파트 · 도배 전체 · 빈 집", wish_start: "2026-12-07", wish_end: "2026-12-21", work_wish_on: "2027-01-04",
-    estimate_total: 3186150, budget_won: 3000000, state: { icon: "todo", label: "새 실측 요청" },
+    estimate_total: 2691150, budget_won: 3000000, state: { icon: "todo", label: "새 실측 요청" },
     next: { label: "기간 답하기", due_at: "2026-11-19T21:40:00+09:00", overdue: false },
   }),
   wolgye: row({
@@ -243,21 +243,35 @@ export const MOCK_REVIEW_LINKS: VendorReviewLinks = [
   { sort: 1, label: "네이버 플레이스", url: "https://map.naver.com/", status: "shown" },
   { sort: 2, label: "블로그 후기", url: "https://blog.naver.com/", status: "checking" },
 ];
-// 9판 D02 예시(줄 · 받는 법). '공급 69.4㎡ 집이면'과 아래 합계는 계산 엔진 값으로 보고 적었어요.
+// 9판 D02 예시(줄 · 받는 법) + 1209 합지 부자재(합지를 안 해서 '빼기'). '공급 69.4㎡ 집이면'과 아래 합계는 계산 엔진 값으로 보고 적었어요.
+// 판 2026.11b 줄 규칙(ADR 0006): 예시 집(실크) 가견적에서 퍼티 · 운송비는 '선택'이라 금액만 보이고 합계 밖이에요.
+type ExampleLine = NonNullable<PricesV3["example"]>["lines"][number];
+const EX = (code: string, key: string, name: string, qty: string, unit: string, unit_price: number | null, amount: number, more: Partial<ExampleLine> = {}): ExampleLine =>
+  ({ code, key, name, qty, unit, unit_price, amount, mode: "price", included_in: null, in_standard: true, optional: false, label: name, note: "", ...more });
 export const MOCK_PRICES: PricesV3 = {
   rows_ver: "dobae_v3", version: 1, confirmed_at: "2026-11-06T20:30:00+09:00", needs_setup: false,
   lines: [
-    { code: "1201", key: "putty", name: "퍼티작업", unit: "평", mode: "price", unit_price: 15000, included_in: null, example_qty: "21.0", example_amount: 315000, warn: null, warn_high: 150000, warn_low: 1500 },
-    { code: "1203", key: "paper_hapji", name: "합지", unit: "평", mode: "excluded", unit_price: null, included_in: null, example_qty: "63.0", example_amount: 0, warn: null, warn_high: 46000, warn_low: 460 },
-    { code: "1204", key: "paper_silk", name: "실크", unit: "평", mode: "price", unit_price: 9000, included_in: null, example_qty: "63.0", example_amount: 567000, warn: null, warn_high: 98700, warn_low: 987 },
-    { code: "1205", key: "material", name: "부자재", unit: "평", mode: "price", unit_price: 12000, included_in: null, example_qty: "21.0", example_amount: 252000, warn: null, warn_high: 120000, warn_low: 1200 },
-    { code: "1206", key: "labor", name: "인건비", unit: "품", mode: "price", unit_price: 280000, included_in: null, example_qty: "5.0", example_amount: 1400000, warn: null, warn_high: 2700000, warn_low: 27000 },
-    { code: "1207", key: "meal", name: "식대", unit: "품", mode: "included", unit_price: null, included_in: "labor", example_qty: "5.0", example_amount: 0, warn: null, warn_high: 100000, warn_low: 1000 },
-    { code: "1208", key: "truck", name: "운송비", unit: "대", mode: "price", unit_price: 50000, included_in: null, example_qty: "1", example_amount: 50000, warn: null, warn_high: 500000, warn_low: 5000 },
+    { code: "1201", key: "putty", name: "퍼티작업", unit: "공급 평", grade: null, mode: "price", unit_price: 15000, included_in: null, example_qty: "21.0", example_amount: 315000, warn: null, warn_high: 156250, warn_low: 1563 },
+    { code: "1203", key: "paper_hapji", name: "합지", unit: "벽지 평", grade: "economy", mode: "excluded", unit_price: null, included_in: null, example_qty: "63.0", example_amount: 0, warn: null, warn_high: 45770, warn_low: 458 },
+    { code: "1204", key: "paper_silk", name: "실크", unit: "벽지 평", grade: "basic", mode: "price", unit_price: 9000, included_in: null, example_qty: "63.0", example_amount: 567000, warn: null, warn_high: 107490, warn_low: 1075 },
+    { code: "1205", key: "material", name: "실크 부자재", unit: "공급 평", grade: "basic", mode: "price", unit_price: 12000, included_in: null, example_qty: "21.0", example_amount: 252000, warn: null, warn_high: 68750, warn_low: 688 },
+    { code: "1209", key: "material_hapji", name: "합지 부자재", unit: "공급 평", grade: "economy", mode: "excluded", unit_price: null, included_in: null, example_qty: "21.0", example_amount: 0, warn: null, warn_high: 33330, warn_low: 334 },
+    { code: "1206", key: "labor", name: "인건비", unit: "품", grade: null, mode: "price", unit_price: 280000, included_in: null, example_qty: "5.0", example_amount: 1400000, warn: null, warn_high: 2700000, warn_low: 27000 },
+    { code: "1207", key: "meal", name: "식대", unit: "품", grade: null, mode: "included", unit_price: null, included_in: "labor", example_qty: "5.0", example_amount: 0, warn: null, warn_high: 100000, warn_low: 1000 },
+    { code: "1208", key: "truck", name: "운송비", unit: "대", grade: null, mode: "price", unit_price: 50000, included_in: null, example_qty: "1", example_amount: 50000, warn: null, warn_high: 500000, warn_low: 5000 },
   ],
   example: {
     rows_ver: "dobae_v3", set_id: id("s001"), version: 1, grade: "basic", tax_kind: "general",
-    lines: [], supply: 2584000, vat: 258400, total: 2842400, vs_standard_pct: "12.0", paper_ok: true,
+    lines: [
+      EX("1201", "putty", "퍼티작업", "21.0", "공급 평", 15000, 315000, { in_standard: false, optional: true, note: "사전퍼티 또는 밀작업" }),
+      EX("1204", "paper_silk", "실크", "63.0", "벽지 평", 9000, 567000, { label: "실크벽지" }),
+      EX("1205", "material", "실크 부자재", "21.0", "공급 평", 12000, 252000, { label: "부자재", note: "풀 · 부직포 · 네바리 · 실리콘 등" }),
+      EX("1206", "labor", "인건비", "5.0", "품", 280000, 1400000, { note: "품 = 1명이 하루 하는 일" }),
+      EX("1207", "meal", "식대", "5.0", "품", null, 0, { mode: "included", included_in: "labor", in_standard: false }),
+      EX("1208", "truck", "운송비", "1", "대", 50000, 50000, { in_standard: false, optional: true }),
+    ],
+    // 공급가 = 실크 + 부자재 + 인건비(퍼티 31만 5천 · 운송비 5만은 '선택'), 비교 %는 표준 1,974,069 대비
+    supply: 2219000, vat: 221900, total: 2440900, vs_standard_pct: "23.6", paper_ok: true,
   },
   example_home: "공급 69.4㎡ 집",
 };

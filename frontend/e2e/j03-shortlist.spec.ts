@@ -40,6 +40,7 @@ async function hangyeolConfirmsPrices(ctx: BrowserContext) {
         { key: "paper_hapji", mode: "price", unit_price: 5_000 },
         { key: "paper_silk", mode: "price", unit_price: 9_800 },
         { key: "material", mode: "price", unit_price: 12_000 },
+        { key: "material_hapji", mode: "price", unit_price: 6_000 },
         { key: "labor", mode: "price", unit_price: 290_000 },
         { key: "meal", mode: "included", included_in: "labor" },
         { key: "truck", mode: "price", unit_price: 40_000 },

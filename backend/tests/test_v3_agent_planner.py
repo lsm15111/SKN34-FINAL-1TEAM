@@ -56,6 +56,21 @@ def test_items_are_screen_lines_without_numbers():
     assert planner.items_of("plan", _facts()) == []
 
 
+def test_vendor_items_say_optional_lines_are_outside_the_total():
+    """판 2026.11b(ADR 0006): 도배만 하는 공사 기준의 퍼티 · 운송비는 표준견적서에도 '선택' 줄이라 '표준견적서에 없는 줄'이
+    아니에요. 식대는 표준견적서에 줄이 없어 그대로예요."""
+    f = _facts()
+    assert f.screen is not None and f.screen.vendor is not None
+    for x in f.screen.vendor.lines:
+        x.optional = x.key in ("putty", "truck")
+    got = {x["key"]: x["뜻"] for x in planner.items_of("vendor", f)}
+    assert got["vendor.truck"] == "표준견적서에도 있는 선택 줄 · 합계 밖"
+    assert got["vendor.putty"] == "사전퍼티 또는 밀작업 · 표준견적서에도 있는 선택 줄 · 합계 밖"
+    assert got["vendor.meal"] == "표준견적서에 없는 줄"
+    assert got["vendor.labor"] == "품 = 1명이 하루 하는 일"  # 줄 뜻이 있으면 그대로
+    assert not any("표준견적서에 없는" in got[k] for k in ("vendor.putty", "vendor.truck"))
+
+
 def test_standard_items_explain_profile_lines():
     """조건별 두 기준 판의 새 표준 줄(부자재 · 퍼티 · 식대 · 운송 · 경비)도 짧은 해요체 뜻이 붙어요."""
     names = {"material": "부자재", "putty": "퍼티작업", "meal": "식대", "truck": "운송 · 경비"}

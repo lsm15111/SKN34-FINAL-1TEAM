@@ -140,6 +140,32 @@ def test_vendor_screen_copies_engine_values_and_hides_other_paper():
     assert vendor_screen(SimpleNamespace(estimate_v3=None)) is None
 
 
+def test_hapji_material_line_shows_hapji_market():
+    """1209 합지 부자재(2026-11-21): 고객 화면 이름은 실크 집과 같은 '부자재', 시장 기준값은 합지 집 87건 가운데 값."""
+    line = SimpleNamespace(
+        code="1209", key="material_hapji", name="합지 부자재", label="부자재", note="풀 · 부직포 등",
+        qty=Decimal("21.0"), unit="공급 평", unit_price=6_500, amount=136_500, mode="price",
+        included_in=None, in_standard=True,
+    )  # fmt: skip
+    est = SimpleNamespace(
+        grade="economy", total=1, supply=1, vat=0, vs_standard_pct=None, lines=[line]
+    )
+    d = SimpleNamespace(
+        estimate_v3=est, profile=SimpleNamespace(biz_name="마루와벽"), grade_diff=None
+    )
+    v = vendor_screen(d)
+    assert v is not None
+    (ln,) = v.lines
+    assert (ln.key, ln.name, ln.basis) == ("material_hapji", "부자재", "공급면적 1평(3.3058㎡)")
+    m = ln.market
+    assert m is not None and (m.base, m.stat, m.n, m.checked) == (
+        3_333,
+        "median",
+        87,
+        date(2026, 11, 21),
+    )
+
+
 def test_material_question_reads_vendor_line_not_standard_line():
     """'도배 부자재는 왜 이렇게 비싸?' → 마루와벽 부자재 줄(공급 평 × 업체 단가). 전에는 '벽 도배 시공' 줄을 골랐어요."""
     a = _turn("도배 부자재는 왜 이렇게 비싸?", _facts())

@@ -158,6 +158,33 @@ def test_user_flows(area, grade, occupied, std_total, before, after, days):
     assert (str(a.quote.days), str(b.quote.days)) == days
 
 
+def test_hapji_material_row_matches_standard_material_line():
+    """1209 합지 부자재(2026-11-21): 합지 집 가견적 부자재 줄은 표준견적서 부자재 줄과 같은 수량 · 같은 줄(포함)이에요.
+    업체가 표준과 같은 값(3,300원)을 넣으면 두 줄 금액이 같아요. 넣지 않은 옛 묶음은 1205 값(6,900원)을 써요."""
+    v = std(DOBAE_MARKET_2026_11B, "economy", False, D("79.3"))  # F3 합지 24평 · 빈 집
+    line = next(ln for ln in v.quote.lines if ln.key == "material")
+    assert (line.qty, line.unit_price, line.amount, line.state) == (
+        D("24.0"),
+        3_300,
+        79_200,
+        "included",
+    )
+    keys = {ln.key for ln in v.quote.lines if ln.state in COUNTED}
+    new = estimate.estimate_v3(
+        {**TRIAL, "material_hapji": estimate.PriceV3("price", 3_300)},
+        v.qty,
+        grade="economy",
+        standard_total=v.quote.total,
+        standard_keys=keys,
+        optional_keys=v.optional_keys,
+    )
+    mat = next(x for x in new.lines if x.row.key == "material_hapji")
+    assert (mat.qty, mat.amount, mat.in_standard, mat.optional) == (D("24.0"), 79_200, True, False)
+    old = est(v, "economy")  # 옛 묶음(1209 없음): 24.0평 × 6,900 = 165,600
+    assert old.total == 1_444_168 and old.total - new.total == 95_040  # 86,400 + 부가세 8,640
+    assert new.total == 1_349_128  # 표준 1,189,804의 1.13배(앞 1.21배)
+
+
 def test_versions_are_fixed():
     assert DOBAE_DEFAULT is DOBAE_MARKET_2026_11B
     assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11b-market", "2026.11b-remodel"}

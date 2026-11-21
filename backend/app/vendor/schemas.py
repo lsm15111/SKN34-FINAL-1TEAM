@@ -585,7 +585,7 @@ class ContactOut(BaseModel):
     visit_fee_refund: bool
 
 
-# ---- v3 단가표 1201~1208 (dev-06, D02) ----
+# ---- v3 단가표 1201~1209 (dev-06, D02. 1209 합지 부자재는 2026-11-21 더함) ----
 
 
 class PriceLineV3In(BaseModel):
@@ -593,7 +593,8 @@ class PriceLineV3In(BaseModel):
 
     key: str = Field(
         max_length=20,
-        description="putty · paper_hapji · paper_silk · material · labor · meal · truck",
+        description="putty · paper_hapji · paper_silk · material · material_hapji · labor · meal ·"
+        " truck",
     )
     mode: PriceMode
     unit_price: int | None = Field(
@@ -632,7 +633,14 @@ class PriceRowV3Out(BaseModel):
     key: str
     name: str
     unit: str = Field(description="벽지 평 · 품 · 대처럼 분명히")
-    mode: PriceMode | None = Field(description="아직 안 넣었으면 비어 있다")
+    grade: Literal["economy", "basic"] | None = Field(
+        default=None,
+        description="그 벽지(합지 · 실크)를 고른 집에만 쓰는 줄(도배지 · 부자재). 비면 모든 집."
+        " '다른 줄에 포함' 대상은 같은 벽지 줄이나 모든 집 줄만 돼요",
+    )
+    mode: PriceMode | None = Field(
+        description="아직 안 넣었으면 비어 있다(확인한 묶음에 없던 새 줄도 비어 있다)"
+    )
     unit_price: int | None
     included_in: str | None
     example_qty: Decimal

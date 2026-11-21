@@ -72,7 +72,7 @@ export async function getMyProfile() {
   if (MOCK) return M.MOCK_PROFILE;
   return serverGet<ProfileV3>("/vendor/profile");
 }
-/** 도배 단가표 v3(1201~1208). 옛 v2 묶음만 있으면 needs_setup */
+/** 도배 단가표 v3(1201~1209). 옛 v2 묶음만 있으면 needs_setup */
 export async function getMyPricesV3(trade: "dobae"): Promise<PricesV3 | null> {
   if (MOCK) return M.MOCK_PRICES;
   const p = await serverGet<S["PricesOut"]>(`/vendor/prices?trade=${trade}`);

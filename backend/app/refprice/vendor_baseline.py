@@ -1,8 +1,10 @@
-"""업체 단가표 1201~1208 줄의 시장 기준값. 업체가 넣은 값이 기준과 10배 넘게 다르면 경고해요(리드 결정 L01).
+"""업체 단가표 1201~1209 줄의 시장 기준값. 업체가 넣은 값이 기준과 10배 넘게 다르면 경고해요(리드 결정 L01).
 
 - 단위는 9판 업체 단가표(D02)를 따라요. 줄마다 `unit_ko`로 분명히 보여요.
 - 기준값(`base`)은 경고에만 써요. 가견적 금액은 업체 단가로만 계산해요.
 - 자료: data/v3/vendor_baseline/baseline.json (`python -X utf8 data/v3/scripts/vendor_baseline.py`)
+- 1209 합지 부자재(2026-11-21 더함)는 저장소 밖 시장 실견적 모음(d10- price-sources `cases.csv` 본표)의
+  합지 집 부자재 줄 요약 숫자만 옮겼어요. 판은 `vendor-base-2026.11b`이고, 다른 줄은 앞 판 그대로예요.
 """
 
 import math
@@ -14,13 +16,16 @@ VERSION = "vendor-base-2026.11"
 CHECKED = date(2026, 11, 18)
 WARN_RATIO = 10
 SOURCE_FILE = "data/v3/vendor_baseline/baseline.json"
+# 1209 합지 부자재 줄 판 · 확인한 날(자료 파일 밖, 시장 실견적 모음)
+VERSION_B = "vendor-base-2026.11b"
+CHECKED_B = date(2026, 11, 21)
 
 Stat = Literal["median", "mean", "upper_estimate"]
 
 
 @dataclass(frozen=True)
 class VendorBase:
-    code: str  # 화면 코드 1201~1208
+    code: str  # 화면 코드 1201~1209
     key: str  # 계산 엔진 PRICE_ROWS['dobae_v3'] 키
     name: str
     unit: str  # 수량 단위: 공급 평 · 벽지 평 · 품 · 대
@@ -62,6 +67,10 @@ VENDOR_BASE_2026_11: dict[str, VendorBase] = {
                    9_016, 13_223, 279, "실크 롤값 평균 ÷ 16.5㎡ × 3.3058(wallpaper_market)"),
         VendorBase("1205", "material", "부자재", "공급 평", "공급면적 1평(3.3058㎡)당", 6_875, "median",
                    6_279, 7_586, 129, "실견적 부자재 줄 ÷ 공급 평형(실크 7,059 · 합지 3,600)"),
+        VendorBase("1209", "material_hapji", "합지 부자재", "공급 평", "공급면적 1평(3.3058㎡)당", 3_333,
+                   "median", 2_739, 3_820, 87,
+                   "시장 실견적 합지 집 부자재 줄 ÷ 공급 평형(영진벽지 59 · 대동벽지 27 · 디시 1, 2025~2026)",
+                   VERSION_B, CHECKED_B),
         VendorBase("1206", "labor", "인건비", "품", "1품(1명이 하루 하는 일)당", 270_000, "median",
                    250_000, 290_000, 22, "실견적 도배 일당(견적서 인건비 줄 ÷ 인원)"),
         VendorBase("1207", "meal", "식대", "품", "1품당", 10_000, "upper_estimate",
@@ -73,7 +82,7 @@ VENDOR_BASE_2026_11: dict[str, VendorBase] = {
 
 
 def vendor_base(code: str) -> VendorBase:
-    """1201~1208 줄의 기준값. 없는 코드면 KeyError."""
+    """1201~1209 줄의 기준값. 없는 코드면 KeyError."""
     return VENDOR_BASE_2026_11[code]
 
 

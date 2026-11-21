@@ -42,6 +42,7 @@ export const PRICE_UNIT: Record<string, string> = {
   paper_hapji: "벽지 1평(3.3㎡)당",
   paper_silk: "벽지 1평(3.3㎡)당",
   material: "공급면적 1평(3.3㎡)당",
+  material_hapji: "공급면적 1평(3.3㎡)당",
   labor: "1품(1명 하루)당",
   meal: "1품당",
   truck: "1대당",

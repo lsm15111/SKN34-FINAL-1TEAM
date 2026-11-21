@@ -29,13 +29,14 @@ type InboxRow = { id: string; status: string; area_label?: string | null; estima
 type VendorVisit = { id: string; status: string; wish_start?: string | null; wish_end?: string | null; open_count?: number | null; area_label?: string | null };
 type BoardRowV = { visit_id: string; vendor_id: string | null; status: string; window: { start: string; end: string; excluded: string[]; instant: boolean } | null };
 
-/** 단가표 줄마다 넣을 값(마루와벽과 비슷한 시험 값, 원 · 부가세 빼고). meal은 '다른 줄에 포함 → 인건비' */
+/** 단가표 줄마다 넣을 값(마루와벽과 비슷한 시험 값, 원 · 부가세 빼고). meal은 '다른 줄에 포함 → 인건비'.
+ *  material_hapji(1209 합지 부자재)는 시연 마루와벽과 같은 값 */
 const PRICE: Record<string, number | "included"> = {
-  putty: 20_000, paper_hapji: 5_000, paper_silk: 9_500, material: 13_000, labor: 300_000, meal: "included", truck: 50_000,
+  putty: 20_000, paper_hapji: 5_000, paper_silk: 9_500, material: 13_000, material_hapji: 6_500, labor: 300_000, meal: "included", truck: 50_000,
 };
 const PRICE_UNIT: Record<string, string> = {
   putty: "공급면적 1평(3.3㎡)당", paper_hapji: "벽지 1평(3.3㎡)당", paper_silk: "벽지 1평(3.3㎡)당", material: "공급면적 1평(3.3㎡)당",
-  labor: "1품(1명 하루)당", meal: "1품당", truck: "1대당",
+  material_hapji: "공급면적 1평(3.3㎡)당", labor: "1품(1명 하루)당", meal: "1품당", truck: "1대당",
 };
 
 /** "2026-12-13" → "12.13"(rangeText 기본 꼴의 한쪽) */
@@ -310,7 +311,7 @@ test("J10 업체: 가입 신청 → 보완 → 승인 → 처음 할 일 → 단
     });
 
     let saved: PricesV3 | null = null;
-    await test.step("D02 도배 단가(1201~1208): 10배 경고 → 고쳐서 확인하고 저장 = 계산 엔진 값", async () => {
+    await test.step("D02 도배 단가(1201~1209): 10배 경고 → 고쳐서 확인하고 저장 = 계산 엔진 값", async () => {
       await page.goto("/vendor/profile");
       await page.getByRole("list", { name: "처음 할 일" }).getByRole("link", { name: /도배 단가 넣기/ }).click();
       await page.waitForURL(/\/vendor\/prices\/dobae$/);
@@ -321,7 +322,8 @@ test("J10 업체: 가입 신청 → 보완 → 승인 → 처음 할 일 → 단
       await expect(page.getByText(`${before!.example_home}이면`).first()).toBeAttached();
       const rows = page.getByRole("list", { name: "도배 단가 줄" }).getByRole("listitem");
       await expect(rows).toHaveCount(before!.lines.length);
-      expect(before!.lines.map((r) => r.code)).toEqual(["1201", "1203", "1204", "1205", "1206", "1207", "1208"]);
+      // 부자재는 벽지마다 따로(1205 실크 · 1209 합지, 2026-11-21)
+      expect(before!.lines.map((r) => r.code)).toEqual(["1201", "1203", "1204", "1205", "1209", "1206", "1207", "1208"]);
 
       for (const r of before!.lines) {
         const want = PRICE[r.key];

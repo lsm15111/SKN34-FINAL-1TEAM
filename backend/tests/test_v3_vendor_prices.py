@@ -1,18 +1,20 @@
-"""업체 단가표 v3(dobae_v3, 1201~1208, D02 · dev-06): 몸통 있는 '확인하고 저장' 한 번, 본 판이 아니면 409 stale
+"""업체 단가표 v3(dobae_v3, 1201~1209, D02 · dev-06): 몸통 있는 '확인하고 저장' 한 번, 본 판이 아니면 409 stale
 (동시 두 번이면 늦은 쪽), 10배 경고는 저장, 옛 확인 길은 그대로. 고객 가견적 v3(estimate_v3_for):
-업체 단가 × 계산 엔진 수량, 표준에 없는 줄은 비교 %에서 빼기, 간이 부가세 0, 다른 벽지 미리 보기."""
+업체 단가 × 계산 엔진 수량, 표준에 없는 줄은 비교 %에서 빼기, 간이 부가세 0, 다른 벽지 미리 보기.
+1209 합지 부자재(2026-11-21): 합지 집은 그 줄, 줄을 더하기 전에 확인한 묶음은 합지 집에도 1205."""
 
 import asyncio
 import uuid
 from decimal import Decimal
 
 from app.auth.models import User
+from app.config import settings
 from app.db import SessionLocal
 from app.project import service as project_service
 from app.shared.errors import AppError
 from app.vendor import service
 from tests.conftest import query
-from tests.helpers import no_surprises, signup
+from tests.helpers import no_surprises, signup, use
 from tests.test_v3_project_home import HOME
 from tests.test_vendor_profile import URL as PROFILE
 from tests.test_vendor_profile import approved_vendor, vendor_id
@@ -20,24 +22,31 @@ from tests.test_vendor_profile import body as profile_body
 
 PRICES = "/vendor/prices"
 CONFIRM = "/vendor/prices/dobae/confirm"
-D02 = [  # 9판 D02 결도배 (운송비는 넣음)
+D02 = [  # 9판 D02 결도배 (운송비는 넣음). 합지를 안 해서 합지 부자재도 '빼기'
     {"key": "putty", "mode": "price", "unit_price": 15_000},
     {"key": "paper_hapji", "mode": "excluded"},
     {"key": "paper_silk", "mode": "price", "unit_price": 9_000},
     {"key": "material", "mode": "price", "unit_price": 12_000},
+    {"key": "material_hapji", "mode": "excluded"},
     {"key": "labor", "mode": "price", "unit_price": 2_800_000},  # 10배 넘음 → 경고(저장은 돼요)
     {"key": "meal", "mode": "included", "included_in": "labor"},
     {"key": "truck", "mode": "price", "unit_price": 50_000},
 ]
-MARU = [  # 9판 C11 마루와벽
+MARU = [  # 9판 C11 마루와벽. 9판은 부자재가 한 줄이라 합지 부자재도 같은 값
     {"key": "putty", "mode": "price", "unit_price": 20_000},
     {"key": "paper_hapji", "mode": "price", "unit_price": 5_000},
     {"key": "paper_silk", "mode": "price", "unit_price": 9_500},
     {"key": "material", "mode": "price", "unit_price": 13_000},
+    {"key": "material_hapji", "mode": "price", "unit_price": 13_000},
     {"key": "labor", "mode": "price", "unit_price": 300_000},
     {"key": "meal", "mode": "price", "unit_price": 11_000},
     {"key": "truck", "mode": "price", "unit_price": 50_000},
 ]
+
+
+def with_line(lines: list[dict], key: str, **over) -> list[dict]:
+    """줄 하나만 바꾼 목록"""
+    return [{"key": key, **over} if x["key"] == key else x for x in lines]
 
 
 def vendor(api, email: str = "gyeol@mitjip.test", **profile) -> uuid.UUID:
@@ -71,19 +80,24 @@ def test_v3_table_starts_empty_with_example_quantities(api):
         None,
     )
     got = [
-        (x["code"], x["unit"], x["mode"], x["example_qty"], x["example_amount"])
+        (x["code"], x["unit"], x["grade"], x["mode"], x["example_qty"], x["example_amount"])
         for x in v3["lines"]
     ]
     assert got == [
-        ("1201", "공급 평", None, "21.0", 0),
+        ("1201", "공급 평", None, None, "21.0", 0),
         # 도배만 하는 공사 기준(판 2026.11b-market): 69.4㎡ · 방 2개, 실크 소요량 × 1.04 (옛 판 53.9)
-        ("1203", "벽지 평", None, "56.0", 0),
-        ("1204", "벽지 평", None, "56.0", 0),
-        ("1205", "공급 평", None, "21.0", 0),
+        ("1203", "벽지 평", "economy", None, "56.0", 0),
+        ("1204", "벽지 평", "basic", None, "56.0", 0),
+        ("1205", "공급 평", "basic", None, "21.0", 0),
+        ("1209", "공급 평", "economy", None, "21.0", 0),
         # 품 = 표준품셈 4.14품 × 0.91 → 4.0 (ADR 0006, 앞 판 4.5)
-        ("1206", "품", None, "4.0", 0),
-        ("1207", "품", None, "4.0", 0),
-        ("1208", "대", None, "1", 0),
+        ("1206", "품", None, None, "4.0", 0),
+        ("1207", "품", None, None, "4.0", 0),
+        ("1208", "대", None, None, "1", 0),
+    ]
+    assert [x["name"] for x in v3["lines"] if x["key"].startswith("material")] == [
+        "실크 부자재",
+        "합지 부자재",
     ]
     mok = api.get(PRICES, params={"trade": "mokgong"})
     assert mok.status_code == 200 and mok.json()["v3"] is None  # v3 단가표는 도배만
@@ -137,7 +151,7 @@ def test_confirm_v3_saves_every_line_and_warns(api):
     assert {m["key"]: m["mode"] for m in modes}["paper_hapji"] == "excluded"
     # 옛 v2 가견적 길(confirmed_prices)은 v3 묶음을 쓰지 않는다
     assert _run(lambda s: service.confirmed_prices(s, [vid], "dobae")) == {}
-    low = confirm(api, [*D02[:4], {**D02[4], "unit_price": 20_000}, *D02[5:]], base=1)
+    low = confirm(api, with_line(D02, "labor", mode="price", unit_price=20_000), base=1)
     assert next(x for x in low.json()["v3"]["lines"] if x["key"] == "labor")["warn"] == "too_low"
 
 
@@ -181,13 +195,22 @@ def test_confirm_v3_input_is_checked(api):
         return [f["loc"] for f in r.json()["error"]["fields"]]
 
     assert locs(confirm(api, D02[:-1])) == [["lines", "truck"]]  # 빈 줄(받는 법 · 단가 없음)
+    no_hapji = [x for x in D02 if x["key"] != "material_hapji"]
+    assert locs(confirm(api, no_hapji)) == [["lines", "material_hapji"]]  # 새 줄도 꼭 넣어요
     assert ["lines", "wall"] in locs(confirm(api, [*D02, {"key": "wall", "mode": "excluded"}]))
-    bad_target = [
-        *D02[:5],
-        {"key": "meal", "mode": "included", "included_in": "paper_hapji"},
-        D02[6],
-    ]
+    bad_target = with_line(D02, "meal", mode="included", included_in="paper_hapji")
     assert locs(confirm(api, bad_target)) == [["lines", "meal"]]  # 포함 대상이 '빼기' 줄
+    # 합지 부자재를 실크 부자재(1205)에 포함: 합지 집 가견적에는 1205 줄이 없어서 안 돼요
+    other_paper = with_line(MARU, "material_hapji", mode="included", included_in="material")
+    r = confirm(api, other_paper)
+    assert locs(r) == [["lines", "material_hapji"]]
+    assert (
+        r.json()["error"]["fields"][0]["msg"] == "포함할 줄은 같은 벽지 집에 쓰는 줄로 골라 주세요."
+    )
+    # 모르는 줄(단가)에 포함하면 모르는 줄만 422예요(500 아님)
+    unknown = [*with_line(D02, "meal", mode="included", included_in="wall")]
+    unknown.append({"key": "wall", "mode": "price", "unit_price": 1_000})
+    assert locs(confirm(api, unknown)) == [["lines", "wall"]]
     nothing = [{"key": x["key"], "mode": "excluded"} for x in D02]
     assert locs(confirm(api, nothing)) == [["lines"]]
     no_price = [{"key": "putty", "mode": "price"}, *D02[1:]]
@@ -276,6 +299,57 @@ def test_paper_line_excluded_means_paper_unsupported(api):
 async def _many(s, ids, pid):
     p = await project_service.get_out(s, pid)
     return await service.estimates_v3_for(s, vendor_ids=ids, project=p, trade="dobae")
+
+
+def test_hapji_material_line_for_hapji_homes_and_old_sets(api):
+    """1209 합지 부자재: 합지 집 가견적은 그 줄, 실크 집은 1205. 줄을 더하기 전에 확인한 묶음(1209 줄 없음)은
+    합지 집에도 1205를 쓰고, 단가표 화면은 그 줄을 빈 칸(새 줄)으로 보여요. 다시 확인하면 넣은 값을 써요."""
+    maru = vendor(api, "maru@mitjip.test")
+    token = api.cookies.get(settings.session_cookie)
+    split = with_line(MARU, "material_hapji", mode="price", unit_price=6_500)
+    first = confirm(api, split)
+    assert first.status_code == 200, first.text
+    example_total = first.json()["v3"]["example"]["total"]  # 예시 집은 실크라 1205를 써요
+    pid = _project(api, grade="economy")
+
+    e = _estimate(maru, pid)
+    mat = next(x for x in e.lines if x.key == "material_hapji")
+    assert (mat.code, mat.name, mat.label, mat.qty, mat.unit_price, mat.amount) == (
+        "1209",
+        "합지 부자재",
+        "부자재",  # 고객 화면 이름은 실크 집과 같아요
+        Decimal("21.0"),
+        6_500,
+        136_500,
+    )
+    assert mat.in_standard and not mat.optional and "material" not in {x.key for x in e.lines}
+    silk = _estimate(maru, pid, grade="basic")
+    assert next(x for x in silk.lines if x.key == "material").unit_price == 13_000
+
+    # 1209 줄이 없던 때 확인한 묶음: 합지 집에도 1205(13,000원)를 써요
+    query("delete from vendor_price_lines where key = 'material_hapji'")
+    old = _estimate(maru, pid)
+    mat = next(x for x in old.lines if x.key == "material_hapji")
+    assert (mat.unit_price, mat.amount) == (13_000, 273_000)
+    assert old.total - e.total == 150_150  # 21.0평 × 6,500 + 부가세
+    use(api, token)
+    v3 = api.get(PRICES, params={"trade": "dobae"}).json()["v3"]
+    row = next(x for x in v3["lines"] if x["key"] == "material_hapji")
+    assert (v3["needs_setup"], row["mode"], row["unit_price"], row["example_amount"]) == (
+        False,
+        None,
+        None,
+        0,
+    )
+    assert v3["example"]["total"] == example_total
+    again = confirm(api, split, base=1)
+    assert again.status_code == 200, again.text
+    assert _estimate(maru, pid).total == e.total
+    # 같은 벽지 줄(합지 도배지)에는 포함할 수 있어요(실크 부자재 1205에는 안 돼요, 위 입력 검사)
+    inside = with_line(MARU, "material_hapji", mode="included", included_in="paper_hapji")
+    assert confirm(api, inside, base=2).status_code == 200
+    mat = next(x for x in _estimate(maru, pid).lines if x.key == "material_hapji")
+    assert (mat.mode, mat.included_in, mat.amount) == ("included", "paper_hapji", 0)
 
 
 def test_partial_project_estimate_uses_shared_quantities(api):

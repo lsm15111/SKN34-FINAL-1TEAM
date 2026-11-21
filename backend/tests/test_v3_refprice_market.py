@@ -73,16 +73,31 @@ def test_example_house_paper_line_uses_market_mean():
 
 
 def test_vendor_rows_have_units_and_shared_paper_values():
-    codes = ["1201", "1203", "1204", "1205", "1206", "1207", "1208"]
+    codes = ["1201", "1203", "1204", "1205", "1209", "1206", "1207", "1208"]
     assert list(vendor_baseline.VENDOR_BASE_2026_11) == codes
     units = {c: vendor_base(c).unit for c in codes}
     assert units == {
-        "1201": "공급 평", "1203": "벽지 평", "1204": "벽지 평", "1205": "공급 평",
+        "1201": "공급 평", "1203": "벽지 평", "1204": "벽지 평", "1205": "공급 평", "1209": "공급 평",
         "1206": "품", "1207": "품", "1208": "대",
     }  # fmt: skip
     assert vendor_base("1204").base == paper_market("basic").per_py
     assert vendor_base("1203").base == paper_market("economy").per_py
     assert all(vendor_base(c).unit_ko for c in codes)
+
+
+def test_hapji_material_baseline_is_market_median():
+    """1209 합지 부자재(2026-11-21): 시장 실견적 합지 집 87건 부자재 줄 ÷ 공급 평형 가운데 값. 자료 파일 밖이라 판이 따로예요.
+    표준견적서(도배만 하는 공사 기준) 합지 부자재 3,300원과 같은 자료를 반올림한 값이에요."""
+    b = vendor_base("1209")
+    assert (b.key, b.base, b.stat, b.p25, b.p75, b.n) == (
+        "material_hapji", 3_333, "median", 2_739, 3_820, 87
+    )  # fmt: skip
+    assert (b.version, b.checked) == (vendor_baseline.VERSION_B, vendor_baseline.CHECKED_B)
+    assert vendor_base("1205").version == vendor_baseline.VERSION  # 다른 줄은 앞 판 그대로
+    assert round(book.DOBAE_MARKET_2026_11B.profile.material_py["economy"], -2) == round(b.base, -2)
+    assert (b.warn_above, b.warn_below) == (33_330, 334)
+    # 실크 부자재를 그대로 넣어도(6,900 · 13,000) 경고는 없어요(10배 안)
+    assert price_warning("1209", 6_900) is None and price_warning("1209", 13_000) is None
 
 
 def test_ten_times_warning_matches_9th_draft_examples():
@@ -107,7 +122,7 @@ def test_ten_times_warning_matches_9th_draft_examples():
     assert low and low.kind == "too_low" and "0을 빠뜨리지" in low.message
 
 
-@pytest.mark.parametrize("code", ["1201", "1203", "1204", "1205", "1206", "1207", "1208"])
+@pytest.mark.parametrize("code", ["1201", "1203", "1204", "1205", "1209", "1206", "1207", "1208"])
 def test_warning_edges_are_exactly_ten_times(code):
     b = vendor_base(code)
     assert price_warning(code, b.base) is None

@@ -878,7 +878,8 @@ def _std_keys(std: dobae.StandardV3) -> set[str]:
 
 
 def _v3_out(v: Vendor, ps: VendorPriceSet | None, lines: list) -> PricesV3Out:
-    """업체 단가표 v3 (D02): 줄 1201~1208 + '공급 69.4㎡ 집이면' 예시 + 10배 경고"""
+    """업체 단가표 v3 (D02): 줄 1201~1209 + '공급 69.4㎡ 집이면' 예시 + 10배 경고.
+    확인한 묶음에 없는 줄(1209를 더하기 전에 확인한 묶음)은 받는 법이 비어 있어요(화면이 '새 줄'로 알려요)."""
     ex = _std_v3(EXAMPLE_V3)
     stored = {ln.key: ln for ln in lines}
     prices = _prices_v3(lines)
@@ -893,6 +894,7 @@ def _v3_out(v: Vendor, ps: VendorPriceSet | None, lines: list) -> PricesV3Out:
                 key=r.key,
                 name=r.name,
                 unit=r.unit,
+                grade=r.grade,
                 mode=ln.mode if ln else None,
                 unit_price=ln.unit_price if ln else None,
                 included_in=ln.included_in if ln else None,
@@ -1086,24 +1088,28 @@ async def confirm_prices(s: AsyncSession, vendor: User, trade: str) -> PricesOut
 
 
 def _v3_line_errors(data: ConfirmPricesIn) -> list[dict]:
-    """빈 칸(줄 빠짐) · 모르는 줄 · 포함 대상이 단가 줄이 아님. 칸 이름은 ["lines", 줄 키]."""
+    """빈 칸(줄 빠짐) · 모르는 줄 · 포함 대상이 단가 줄이 아님 · 포함 대상이 다른 벽지 줄(합지 부자재 → 실크 부자재처럼
+    한 집 가견적에 같이 나오지 않는 줄). 칸 이름은 ["lines", 줄 키]."""
     given = {ln.key: ln for ln in data.lines}
-    fields = [
-        {"loc": ["lines", k], "msg": "모르는 줄이에요."}
-        for k in given
-        if k not in estimate.V3_BY_KEY
-    ]
+    rows = estimate.V3_BY_KEY
+    fields = [{"loc": ["lines", k], "msg": "모르는 줄이에요."} for k in given if k not in rows]
     fields += [
         {"loc": ["lines", r.key], "msg": "받는 법과 단가를 넣어 주세요."}
         for r in estimate.V3_ROWS
         if r.key not in given
     ]
-    fields += [
-        {"loc": ["lines", k], "msg": "포함할 줄은 단가를 넣은 줄로 골라 주세요."}
-        for k, ln in given.items()
-        if ln.included_in is not None
-        and (ln.included_in not in given or given[ln.included_in].mode != "price")
-    ]
+    for k, ln in given.items():
+        if ln.included_in is None:
+            continue
+        if ln.included_in not in given or given[ln.included_in].mode != "price":
+            fields.append({"loc": ["lines", k], "msg": "포함할 줄은 단가를 넣은 줄로 골라 주세요."})
+        elif (
+            k in rows  # 모르는 줄은 위에서 이미 막아요
+            and ln.included_in in rows
+            and not estimate.same_home(rows[k], rows[ln.included_in])
+        ):
+            msg = "포함할 줄은 같은 벽지 집에 쓰는 줄로 골라 주세요."
+            fields.append({"loc": ["lines", k], "msg": msg})
     if not fields and not any(ln.mode == "price" for ln in data.lines):
         fields.append({"loc": ["lines"], "msg": "단가를 하나 이상 넣어 주세요."})
     return fields
@@ -1112,11 +1118,11 @@ def _v3_line_errors(data: ConfirmPricesIn) -> list[dict]:
 async def confirm_prices_v3(
     s: AsyncSession, vendor: User, trade: str, data: ConfirmPricesIn
 ) -> PricesOut:
-    """v3 '확인하고 저장' 한 번(D02): 줄 1201~1208을 모두 받아 새 확인 묶음(dobae_v3)을 만들고, 지금 확인 묶음
+    """v3 '확인하고 저장' 한 번(D02): 줄 1201~1209를 모두 받아 새 확인 묶음(dobae_v3)을 만들고, 지금 확인 묶음
     (옛 v2 포함)은 retired로 둔다. 본 판(base_version)이 지금 v3 확인 묶음 판(없으면 0)이 아니면 409 stale
     (동시 두 번이면 늦은 쪽). 빈 칸 · 모르는 줄 422(fields). 10배 경고는 저장되고 응답 warn에 보인다."""
     if trade != "dobae":
-        msg = "1201~1208 단가표는 도배만 있어요."
+        msg = "1201~1209 단가표는 도배만 있어요."
         raise app_error("invalid", msg, fields=[{"loc": ["trade"], "msg": msg}])
     fields = _v3_line_errors(data)
     if fields:

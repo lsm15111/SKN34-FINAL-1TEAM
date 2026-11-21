@@ -2,7 +2,8 @@
 
 - 사례: price-sources `cases.csv` 본표(서울12호 밖 실크 · 합지). 원자료는 저장소 밖이고 여기엔 숫자만 나와요.
 - 집: 평형(공급) · 빈 집 · 집 전체(벽 + 천장) · 방 개수 기본값. 둘 다 부가세 빼고 견줘요(ADR 0004 시장 줄과 같음).
-- 가견적 단가: 업체 단가표 시장 기준값(refprice.vendor_baseline, 1201~1208 전부 '단가').
+- 가견적 단가: 업체 단가표 시장 기준값(refprice.vendor_baseline, 1201~1209 전부 '단가').
+  1209 합지 부자재(2026-11-21)를 뺀 '옛 묶음'(합지 집도 1205 단가)과 같은 실행에서 견줘요(metrics_old_set).
 - 안은 모두 계산 엔진 판으로 셈해요(옛 판 2026.11-market에 규칙만 바꾼 판 · 새 판 2026.11b-market).
 - 시장 품 계수는 dev(출처 · 벽지 · 평형대로 섞어 2:1, seed 20261121)에서 맞추고 held-out으로도 재요.
 
@@ -41,7 +42,9 @@ SEED = 20261121
 HAPJI = D("0.55")
 BANDS = ("~19", "20~29", "30~39", "40~")
 BASE = {b.key: estimate.PriceV3("price", b.base) for b in VENDOR_BASE_2026_11.values()}
-# 오늘 사용자 흐름의 시험 업체 단가
+# 1209 합지 부자재 줄을 더하기 전에 확인한 묶음(7줄): 합지 집도 1205 단가를 써요(계산 엔진 fallback)
+BASE_OLD = {k: v for k, v in BASE.items() if k != "material_hapji"}
+# 오늘 사용자 흐름의 시험 업체 단가(합지 부자재는 기준값 근처 3,300원)
 TRIAL = {
     k: estimate.PriceV3("price", v)
     for k, v in {
@@ -49,6 +52,7 @@ TRIAL = {
         "paper_hapji": 4_600,
         "paper_silk": 10_500,
         "material": 6_900,
+        "material_hapji": 3_300,
         "labor": 270_000,
         "meal": 10_000,
         "truck": 50_000,
@@ -193,14 +197,14 @@ def variants(k: Decimal) -> dict:
     }
 
 
-def evaluate(cases, books) -> dict:
+def evaluate(cases, books, prices=BASE) -> dict:
     out = {}
     for name, p in books.items():
         res = {}
         for g in ("basic", "economy"):
             rows = []
             for c in (x for x in cases if x["g"] == g):
-                v, e = est(p, c["py"], g)
+                v, e = est(p, c["py"], g, prices=prices)
                 rows.append(
                     dict(
                         c,
@@ -280,11 +284,13 @@ def shapley(cases, k: Decimal) -> dict:
             L = {ln.key: ln.amount or 0 for ln in v.quote.lines if ln.state in COUNTED}
             a = {x.row.key: x.amount for x in est(p3, c["py"], g)[1].lines}
             pk = "paper_silk" if g == "basic" else "paper_hapji"
+            # 부자재 줄: 합지 집은 1209(줄을 더하기 전 계산 엔진은 1205 하나)
+            mat = a.get("material_hapji", a.get("material", 0))
             parts["시공(품 × 일당 · 0.5 올림)"] += (
                 100 * (a["labor"] - L["wall"] - L["ceiling"]) / s0
             )
             parts["식대 줄"] += 100 * a["meal"] / s0
-            parts["부자재 단가"] += 100 * (a["material"] - L["material"]) / s0
+            parts["부자재 단가"] += 100 * (mat - L["material"]) / s0
             parts["벽지 단가"] += 100 * (a[pk] - L["paper"]) / s0
         out[f"{g}|남음(표준 대비) 줄 묶음"] = {x: round(y / len(xs), 1) for x, y in parts.items()}
     return out
@@ -378,11 +384,14 @@ def main() -> None:
         "새 판 품 배수 = dev 계수"
     )
     books = variants(k)
+    now = {"안3 안2 + 시장 품 계수(= 2026.11b-market)": DOBAE_MARKET_2026_11B}
     res = {
         "k_fit": fit,
         "k": str(k),
         "split": {s: sum(1 for c in cases if c["split"] == s) for s in ("dev", "held")},
         "metrics": evaluate(cases, books),
+        # 같은 판 · 같은 집, 단가 묶음만 다름: 1209 없는 옛 묶음(합지 집도 1205 단가)
+        "metrics_old_set": evaluate(cases, now, BASE_OLD),
         "decomp": shapley(cases, k),
         "grid": grid(books),
         "flows": flows(books),
@@ -392,11 +401,21 @@ def main() -> None:
     text = json.dumps(res, ensure_ascii=False, indent=1)
     if a.out:
         Path(a.out).write_text(text, encoding="utf-8")
-    for name, m in res["metrics"].items():
-        for g in ("basic", "economy"):
-            print(
-                name, g, m[g]["est"], "held", m[g]["est_held"]["med"], "÷표준", m[g]["est_over_std"]
-            )
+    for tag in ("metrics", "metrics_old_set"):
+        for name, m in res[tag].items():
+            for g in ("basic", "economy"):
+                print(
+                    tag if tag != "metrics" else "",
+                    name,
+                    g,
+                    m[g]["est"],
+                    "held",
+                    m[g]["est_held"]["med"],
+                    "÷표준",
+                    m[g]["est_over_std"],
+                    "구간",
+                    m[g]["est_ci"],
+                )
     print(
         json.dumps(
             {"k_fit": fit, "decomp": res["decomp"], "flows": res["flows"]}, ensure_ascii=False
