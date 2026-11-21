@@ -14,6 +14,7 @@ VERSION = {
     "nudge_write": "nudge_write_v2",
     "memory": "memory_v3",
     "brief": "brief_v2",
+    "researcher": "researcher_v1",  # 조사 담당(worker, 웹 검색 · 가져오기)
 }
 _DIR = Path(__file__).resolve().parent
 

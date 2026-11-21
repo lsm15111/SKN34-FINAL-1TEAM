@@ -162,8 +162,8 @@ def test_chat_examples_keep_fixed_lines():
     got = answers("customer_v4") + answers("vendor_v4")
     customer = {a["key"][1].split("(")[0] for a in got if a["key"][0] == "customer_v4"}
     vendor = {a["key"][1].split("(")[0] for a in got if a["key"][0] == "vendor_v4"}
-    # 좋은 예시 6~10개(지시서), 읽기가 비면 알아챈다
-    assert 6 <= len(customer) <= 10 and len(vendor) >= 4
+    # 좋은 예시 6~10개(지시서) + 조사 담당 예시 하나(09-research, 리드 지시), 읽기가 비면 알아챈다
+    assert 6 <= len(customer) <= 11 and len(vendor) >= 4
     bad = {f"{a['key'][0]} {a['key'][1]}": p for a in got if (p := problems(a))}
     assert not bad, bad
     missed = {a["key"]: m for a in got if (m := claim_misses(a))}
