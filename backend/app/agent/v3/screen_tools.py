@@ -50,6 +50,8 @@ def screen_text(view: str | None, facts: ProjectFacts | None) -> dict | None:
         out.append("줄(금액 큰 순서, 단가는 부가세 빼고):")
         for x in sorted(v.lines, key=lambda x: -x.amount):
             same = "표준견적서와 같은 일" if x.in_standard else "표준견적서에 없는 줄"
+            if x.optional:  # '선택' 줄(퍼티 · 운송비, ADR 0006)은 금액만 보이고 위 합계에 없어요
+                same = "선택 · 합계 밖"
             row = f"- {x.name}: {x.qty:g} {x.unit}"
             row += (
                 f" × {_won(x.unit_price)} = {_won(x.amount)}"

@@ -98,8 +98,14 @@ async def project_facts(
     if seen is not None:  # 보는 업체의 따로 받는 줄(표준견적서에 없는 줄)을 가견적 칸에도 적어요
         for e in facts.estimates:
             if e.vendor == seen.vendor and not e.separate:
-                e.separate = [x.name for x in seen.lines if not x.in_standard and x.amount > 0]
+                e.separate = separate_names(seen)
     return facts
+
+
+def separate_names(v: VendorScreenFacts) -> list[str]:
+    """따로 받는 줄 이름: 표준견적서에 같은 일이 없고 가견적 합계에 든 줄(식대 등).
+    '선택' 줄(퍼티 · 운송비, 판 2026.11b)은 가견적 합계 밖이라 빼요(ADR 0006)."""
+    return [x.name for x in v.lines if not x.in_standard and not x.optional and x.amount > 0]
 
 
 async def _vendor_screen(
@@ -152,6 +158,7 @@ def vendor_screen(d) -> VendorScreenFacts | None:
                 unit_price=ln.unit_price,
                 amount=ln.amount,
                 in_standard=ln.in_standard,
+                optional=getattr(ln, "optional", False),
                 included_in=ln.included_in,
                 basis=base.unit_ko.removesuffix("당").strip() if base else "",
             )

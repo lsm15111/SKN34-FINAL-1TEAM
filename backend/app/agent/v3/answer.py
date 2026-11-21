@@ -537,8 +537,11 @@ def line_box(ln) -> CalcBox:
 
 
 def screen_box(ln, vendor: str) -> CalcBox:
-    """보던 화면(업체 자세히)의 가견적 줄 상자. 값은 화면과 같은 계산 엔진 값 그대로."""
+    """보던 화면(업체 자세히)의 가견적 줄 상자. 값은 화면과 같은 계산 엔진 값 그대로.
+    '선택' 줄(퍼티 · 운송비, ADR 0006)은 금액이 있어도 합계 밖이에요(화면 '선택 · 합계 밖')."""
+    tag = " · 선택" if ln.optional else ""
     return CalcBox(
-        label=f"{vendor} {ln.name}".strip(), ref=f"screen.vendor.lines.{ln.key}", qty=ln.qty,
-        unit=ln.unit, unit_price=ln.unit_price, amount=ln.amount, in_total=ln.amount > 0,
+        label=f"{vendor} {ln.name}{tag}".strip(), ref=f"screen.vendor.lines.{ln.key}", qty=ln.qty,
+        unit=ln.unit, unit_price=ln.unit_price, amount=ln.amount,
+        in_total=ln.amount > 0 and not ln.optional,
     )  # fmt: skip
