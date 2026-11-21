@@ -694,10 +694,18 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
                 "end_date": r.end_date,
                 "due_at": r.dates_due_at,
             }
-            if r.dates_state in ("waiting", "requested"):
+            if r.dates_state in ("waiting", "requested", "change_requested"):
+                from app.assistant.tools import aftercare as aftercare_tools
+
                 job = await schedule_service.job_for(s, tc.user, r.deal_id, tc.today)
+                # 고객의 날짜 요청이 열려 있으면 고객이 고른 시작일 후보(먼저 말 걸기 dates_requested와 같은 길)
+                got = (
+                    aftercare_tools.request_candidates(job, r.deal_id, tc.today)
+                    if job.request is not None
+                    else date_candidates(job, r.deal_id, tc.today)
+                )
                 cands = []
-                for c in date_candidates(job, r.deal_id, tc.today):
+                for c in got:
                     picked = [date.fromisoformat(x) for x in c["days"]]
                     nref = tc.refs.put("days", c)
                     cands.append(

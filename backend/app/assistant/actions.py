@@ -36,6 +36,7 @@ from app.db import SessionLocal
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 from app.shared.ids import uuid7
+from app.shared.korean import euro
 
 log = logging.getLogger(__name__)
 
@@ -409,12 +410,12 @@ def confirm_summary(
     if valid_until:
         rows.append(SummaryRow(label="유효기간", value=f"{valid_until.isoformat()}까지"))
     return ActionSummary(
-        title=f"{vendor_name}로 확정",
+        title=f"{euro(vendor_name)} 확정",
         amount_won=total,
         version=f"견적서 {version}판",
         rows=rows,
         note="확정하면 같은 공정의 다른 요청은 닫혀요",
-        approve_label=f"{vendor_name}로 확정",
+        approve_label=f"{euro(vendor_name)} 확정",
     )
 
 
@@ -614,7 +615,8 @@ async def _vendor_confirm(
 
     pl = a.payload
     href = f"/projects/{a.project_id}/quotes"
-    await mark({"text": f"{pl['vendor_name']}로 확정했어요", "href": href, "label": "견적서 보기"})
+    text = f"{euro(pl['vendor_name'])} 확정했어요"
+    await mark({"text": text, "href": href, "label": "견적서 보기"})
     await schedule_service.confirm(
         s,
         user,

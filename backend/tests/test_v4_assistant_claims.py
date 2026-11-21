@@ -92,7 +92,7 @@ def test_card_words_without_a_card_are_made_honest(api, script):
             },
         ]
     )
-    ev = ok(ask(api, pid, "고마워요"))
+    ev = ok(ask(api, pid, "면적 다시 봐 주세요"))
     text = tokens(ev)
     assert "만들어 드릴게요" not in text and "눌러 주세요" not in text
     assert policy.CARD_NOT_MADE in text and "표준견적서도 같이 바뀌어요" in text

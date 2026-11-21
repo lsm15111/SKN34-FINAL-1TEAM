@@ -49,7 +49,7 @@
 | `policy.py` | `mask_in` · `to_model` · `TurnBudget` · `mode_for` · `NudgeRules` |
 | `proactive.py` | `TRIGGERS` · `scan_events` · `scan_time` · `evaluate_due` · `score` · `judge` · `write` |
 | `memory.py` | `KEYS` · `wants` · `extract` · `validate` · `save` |
-| `prompts/` | `customer_v2.md` · `vendor_v2.md`(업체 연결은 도배만, 2026-11-21) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v1` · `memory_v1` · `brief_v1` |
+| `prompts/` | `customer_v3.md` · `vendor_v3.md`(2026-11-21, 말투 · 지난 말 · 범위 밖 · 도구 앞 말) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v2` · `memory_v2` · `brief_v2` |
 | `schemas.py` | `TurnIn` · SSE 이벤트 · `CardOut`(kind로 구분) · `ActionOut` · `NudgeOut` · `SuggestOut` · `MemoryOut` · 도구 입력(strict) |
 | `models.py` · `repository.py` · `jobs.py` | 표 4개 · 조건부 UPDATE(commit 안 함) · `HANDLERS`(assistant_memory) |
 
@@ -259,7 +259,7 @@
 | `get_home`() | `project.service.get_for` |
 | `get_standard_quote`(trade) | `quote.service.standard_for` |
 | `recommend_vendors`(trade) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3 |
-| `vendor_free_slots`(vendor_ref · visit_ref, prefer) | 요청 전: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 요청 뒤: `pick_view` + `calc.slots.candidates`(새) → s1~s3 |
+| `vendor_free_slots`(ref, prefer, days) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3 |
 | `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요 |
 | `get_schedule`() | `schedule.service.schedule_for` |
 | `today_tasks`() | `service.feed_for`(`schedule.service.overview_for` + 열린 행동) |
@@ -280,6 +280,7 @@
 | `propose_visit_slot`(slot_ref) | `visit.flow.pick` · `pick_proposal` |
 | `propose_vendor_confirm`(visit_ref) | `schedule.service.confirm`(seen_ver) |
 | `propose_dates_accept` · `propose_delay_accept`(proposal_ref) | `schedule.service.accept_dates`(seen_version) |
+| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수) |
 | 업체 `propose_window_answer`(visit_ref, window_ref) | `visit.flow.answer_window` |
 | 업체 `propose_decline`(visit_ref, code) | `visit.service.decline` |
 | 업체 `propose_dates`(deal_ref, days_ref) | `schedule.service.propose_dates` |
@@ -291,7 +292,9 @@
 4. approved로 2분 넘게 남은 행은 sweep이 failed로 바꿔요(다시 실행하지 않음).
 - 기능 함수가 여러 번 commit하는 실행(visit_request: 안 담은 업체 담기 → 요청)은 마지막 기능 함수 바로 앞에서 executed를 써요(담기가 먼저 commit돼도 행동은 executed가 아니에요).
 
-- 대상마다 열린 제안은 하나예요(`actions.propose`). 같은 (사람, 대상)에 같은 제안(종류 · target_ver · payload)이 열려 있으면 턴이 달라도 새 행을 만들지 않고 그 행을 써요. 다르면 그 대상의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을 넣어요(예: 업체 기간 답하기 → 못 받아요).
+- 대상마다 열린 제안은 하나예요(`actions.offer` · `propose`). 같은 (사람, 대상)의 제안 만들기는 트랜잭션 잠금으로 줄 서요. 같은 제안(종류 · target_ver · payload)이 열려 있으면 턴이 달라도 새 행을 만들지 않고 그 행을 써요. 다르면 그 대상의 열린 제안을 종류와 상관없이 만료(replaced)로 바꾸고 새 행을 넣어요(예: 업체 기간 답하기 → 못 받아요).
+  - 먼저 말 걸기는 같은 종류 · 같은 판의 열린 카드(대화에서 만든 것)를 덮지 않고 그 행을 써요.
+  - 거절한 제안은 대상 판 · 금액 · 날짜가 같으면 다시 만들지 않아요. 도구는 오류 대신 모델 값 state rejected('고객이 거절한 제안이에요')를 돌려줘요. 카드 단추로 직접 고른 턴(pressed)은 새로 만들어요.
 - 업체 연결 도구(`recommend_vendors` · `compare_quotes` · `propose_visit_request`)는 trade가 dobae가 아니면 도구 오류 `dobae_only`('아직 도배 업체만 연결돼요. …')예요. `get_standard_quote`(mokgong) · 지식 답은 그대로예요.
 - 업체가 쓴 자유 글(견적서 벽지 사양 · 다른 날 제안 메모 · 날짜 바꾼 까닭)은 고객 카드의 `vendor_note`('업체가 적은 말', 연락처 가림 · 한 줄 · 40자, 넘으면 …)에만 둬요. 모델 값에는 있는지만(`vendor_note: true`) 가서 비서 문장 · 요약 · 버튼 문구로 옮겨지지 않아요. `quote_compare.cols[].paper`는 `vendor_note`로 바뀌었고 `visit_slots` · `schedule`(dates)에도 `vendor_note`가 있어요.
 
@@ -310,7 +313,19 @@
 - `vendor_free_slots`는 `prefer`(any · am · pm)와 `days`(any · weekday · weekend)를 받아요. `find_floorplan_docs`는 고객이 말한 단지 이름(`complex`, 동 · 호수 뗌)을 받을 수 있어요.
 - `vendor_free_slots`(요청 전) · `request_brief` · `my_free_slots`의 업체 빈 반나절은 도메인 갈래의 `visit.service.open_halves_for`(실제 함수, 공사 날 · 잡기 반영)를 불러요. 가견적은 요청 때 고정한 값(`vendor_visit.estimate_total`)이에요.
 - `propose_dates`의 날 후보(n1~)는 `my_jobs`가 견적서 공사 기간 · 예상 공정표 시작일로 `calc.schedule.workdays`에서 만들어요.
+  - 고객의 날짜 요청이 열려 있으면(dates_state requested · change_requested) 후보는 고객이 고른 시작일(`aftercare.request_candidates`)이고, 카드는 먼저 말 걸기 `dates_requested`와 같은 `request_dates_offer`(payload kind · request_id)예요.
 - `assistant_actions`에는 turn_id 칸을 두지 않았어요. 턴의 행동 id는 `assistant_turns.trace.actions`에 있어요.
+
+### 구현 메모(2026-11-21, 카드 갈래)
+- 제안 도구 모델 값 `state`: new(새 행) · same(열린 같은 행) · rejected(거절한 같은 제안, 승인 카드 없음) · closed. 승인 카드(action)는 new · same일 때만 보내요.
+- 수락 승인 카드가 열려 있으면 공사 날짜 카드(schedule dates)는 수락 단추(proposal_ref · proposal_kind)를 비우고 `action_id`를 달아요. 먼저 말 걸기 반나절 카드는 승인 카드의 반나절을 `chosen`으로 표시해요.
+- 말과 행동 맞추기(`runtime.SentenceGate` · `policy.card_claim`): '카드를 만들었어요 · 만들어 드릴게요 · 눌러 주세요'는 이번 턴에 만든 승인 카드 · 열린 승인 카드가 있을 때만 보내요. 눌러 달라는 말이 단추 이름(수락 · 실측 요청 …)을 대면 이번 턴에 보인 화면 카드 단추도 맞아요. 아직 모르면 붙잡아 두고, 턴 끝까지 없으면 첫 문장을 정직한 한 줄로 바꾸고 나머지는 빼요.
+- `propose_home_info`는 평형(`pyeong`, 계산 엔진이 공급 ㎡로 바꿈)을 받아요. ㎡만 오고 기준(area_basis)이 없으면 `need_basis` 오류예요.
+- 날짜 바꾸기 요청(행동 `date_change`, 0044): 대상은 확정(deal), target_ver는 '공사 날짜 상태:기준 시작일', payload는 {deal_id, wish_dates 1~3, reason(move · family · other_work · other), proposal_id}. 실행하면 그 확정의 '공사 전날' · 그 날짜 제안의 '공사 날짜 왔어요' 줄을 닫아요(SETTLES). 무료 모드도 '공사 미루고 싶어요'처럼 바라는 말이면 이 승인 카드를 만들어요(묻는 말은 안내만, 계약 4장 9의 예외).
+- 턴 사실에 '최근 처리한 카드'(사람이 처리한 제안 4개까지, '제목(승인해 실행됨 · 거절함 · 승인했지만 실행 못 함)')를 넣어요. 이미 처리된 카드를 '안 만들어졌다'고 고쳐 말하지 않게 해요.
+- 도구 오류 글(message)에는 이름표 · 도구 이름을 넣지 않아요(카드 단추 답에 그대로 보여요). 고칠 방법은 모델에만 가는 `hint`(이름표 · 도구 이름 · bad_input의 빠진 칸)로 줘요.
+- 인사 · 고마움만 한 턴은 `tool_choice` none이에요(도구 정의는 그대로 보내 캐시를 지켜요). '네 · 좋아요'처럼 앞 물음에 답하는 말은 막지 않아요.
+- 카드만 보낸 턴의 기록 글은 카드 화면 이름이에요('(카드를 보여 줬어요: 집 정보)').
 
 ## 6. 먼저 말 걸기
 - 원천: 상태를 바꾸는 트랜잭션 안에서 함께 쓰는 `notifications`를 아웃박스로 읽어요.

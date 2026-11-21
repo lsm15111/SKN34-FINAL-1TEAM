@@ -43,6 +43,13 @@ Emit = Callable[[str, dict], Awaitable[None]]
 WRAP = "도구는 더 부르지 말고, 지금까지 얻은 결과로만 짧게 답해 주세요."
 FAIL_TEXT = "설명을 만들지 못했어요. 카드와 버튼으로 이어서 진행해 주세요."
 TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
+# 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글)
+CARD_NAME = {
+    "home_info": "집 정보", "standard_quote": "표준견적서", "vendor_picks": "업체 추천",
+    "visit_slots": "실측 시간", "quote_compare": "견적서 비교", "schedule": "공사 날짜",
+    "knowledge": "자료", "answer": "답", "floorplan_links": "평면도 찾기", "today": "오늘 할 일",
+    "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트",
+}  # fmt: skip
 BREAKER_KEY = "assistant:breaker"
 BREAKER_TTL = 300  # Claude가 한 턴에 두 번 실패하면 5분 동안 무료 모드
 PAUSE_MAX = 2
@@ -150,7 +157,9 @@ class RefTable:
         it = self.items.get(ref or "")
         if it is None or it["kind"] != kind:
             raise ToolError(
-                "unknown_ref", f"모르는 이름표예요: {ref}. 도구 결과에 나온 이름표만 써 주세요."
+                "unknown_ref",
+                "지금 대화에서 찾을 수 없는 항목이에요. 카드를 다시 불러와 골라 주세요.",
+                hint=f"이름표 '{ref}'는 이 대화에 없어요({kind} 이름표가 필요해요). 도구 결과에 나온 이름표만 넘겨요",
             )
         return it
 
@@ -469,6 +478,8 @@ class _Turn:
         self.system = prompts.system(ctx.surface)
         self.defs = tools_mod.defs(ctx.surface)  # type: ignore[arg-type]
         self.gate = SentenceGate(emit, self.system, f"{ctx.text}\n{ctx.facts}", made=res.made)
+        # 인사 · 고마움만 한 턴: 도구를 부르지 못하게(도구 정의는 그대로 보내 캐시를 지킨다)
+        self.chat_only = policy.small_talk(ctx.text) and not ctx.choice and not ctx.stale
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -567,7 +578,7 @@ class _Turn:
                         tools=self.defs,
                         on_text=self.gate.feed,
                         purpose="assistant",
-                        tool_choice={"type": "none"} if wrap else None,
+                        tool_choice={"type": "none"} if wrap or self.chat_only else None,
                     ),
                     timeout=b.left(time.monotonic(), wrap),
                 )
@@ -655,8 +666,9 @@ class _Turn:
         return results, failed
 
     @staticmethod
-    def _error(cid: str, code: str, message: str) -> dict:
-        body = json.dumps({"error": code, "message": message}, ensure_ascii=False)
+    def _error(cid: str, code: str, message: str, hint: str | None = None) -> dict:
+        got = {"error": code, "message": message, **({"hint": hint} if hint else {})}
+        body = json.dumps(got, ensure_ascii=False)
         return {"type": "tool_result", "tool_use_id": cid, "content": body, "is_error": True}
 
     async def _one(self, name: str, cid: str, args) -> tuple[dict, str | None]:
@@ -669,7 +681,7 @@ class _Turn:
             out = await tools_mod.run(t, self.tc, args)
         except ToolError as e:
             trace["ms"] = int((time.monotonic() - t0) * 1000)
-            return self._error(cid, e.code, e.message), e.code
+            return self._error(cid, e.code, e.message, e.hint), e.code
         except AppError as e:  # 기능 service 오류(404 · 409 …): 코드와 정해 둔 문장만
             trace["ms"] = int((time.monotonic() - t0) * 1000)
             return self._error(cid, e.code, e.message), e.code
@@ -782,7 +794,9 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
             kept = turn.gate.text
             await free_turn(ctx, emit, res, f.reason, note)
             res.text = f"{kept}\n{res.text}".strip() if kept else res.text
+    # 카드만 보낸 턴의 기록 글(화면은 숨기고 다음 턴 LLM이 읽는다): 카드 화면 이름으로
     if not res.text:
-        res.text = "(카드를 보여 줬어요: " + " · ".join(c["kind"] for c in res.cards) + ")"
+        names = dict.fromkeys(CARD_NAME.get(c["kind"], "카드") for c in res.cards)
+        res.text = "(카드를 보여 줬어요: " + " · ".join(names) + ")"
     res.chips = chips_for(res.cards)
     return res

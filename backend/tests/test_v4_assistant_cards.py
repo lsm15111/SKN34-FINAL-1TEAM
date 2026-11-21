@@ -68,7 +68,10 @@ def test_vendor_name_is_not_read_as_a_trade(api):
     _token, pid, _va, _vb, _ = deal_setup(api)
     ev = ok(ask(api, pid, "마루와벽으로 확정할게요"))
     assert "아직 도배 업체만" not in said(ev)
-    assert cards_of(ev, "quote_compare") and said(ev).startswith("실측 견적서가 2곳 왔어요")
+    (cmp,) = cards_of(ev, "quote_compare")
+    assert (
+        cmp["say"] == "실측 견적서가 2곳 왔어요." and said(ev) == free.QUOTES
+    )  # 카드 위 한 줄은 되풀이 안 함
     # 업체 이름이 아닌 다른 공사 말은 그대로 '아직 도배 업체만'
     ev = ok(ask(api, pid, "바닥 업체 추천해 줘"))
     assert said(ev).startswith(free.OTHER_TRADE)

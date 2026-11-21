@@ -6,7 +6,7 @@
 // 업체가 다른 날을 내며 적은 메모는 '업체가 적은 말' 칸에만 보여요(업체 글 그대로, 다른 글에 섞지 않아요).
 import Link from "next/link";
 import { CHOICE, whyText } from "@/lib/api/assistant";
-import { halfDayText, rangeText } from "@/lib/format";
+import { euro, halfDayText, rangeText } from "@/lib/format";
 import { I } from "../kit/icons";
 import k from "../kit/kit.module.css";
 import { chosenVendors, isWish } from "./picks";
@@ -61,7 +61,7 @@ export function VisitSlotsCard({ card, ctx, old }: CardProps<"visit_slots">) {
             return (
               <li key={w.ref}>
                 <button type="button" role="radio" aria-checked={on} className={c.cand} disabled={ctx.busy && !on}
-                  onClick={() => pick(w.ref, `${range}로 할래요`, CHOICE.visitRequest(chosenVendors(ctx), w.ref))}>
+                  onClick={() => pick(w.ref, `${euro(range)} 할래요`, CHOICE.visitRequest(chosenVendors(ctx), w.ref))}>
                   <span className={c.radio} aria-hidden="true" />
                   <b className={k.num}>{range}</b>
                   <small className={k.num}>업체 빈 반나절 {w.open_count}칸</small>
@@ -78,7 +78,7 @@ export function VisitSlotsCard({ card, ctx, old }: CardProps<"visit_slots">) {
             return (
               <li key={s.ref}>
                 <button type="button" role="radio" aria-checked={on} className={c.cand} disabled={ctx.busy && !on}
-                  onClick={() => pick(s.ref, `${halfDayText(s.day, s.half)}로 할래요`, CHOICE.visitSlot(s.ref))}>
+                  onClick={() => pick(s.ref, `${euro(halfDayText(s.day, s.half))} 할래요`, CHOICE.visitSlot(s.ref))}>
                   <span className={c.radio} aria-hidden="true" />
                   <b className={k.num}>{halfDayText(s.day, s.half, true)}</b>
                   {why.length ? <small>{why.join(" · ")}</small> : null}

@@ -24,7 +24,7 @@ from tests.test_extras import MOLD, scheduled
 from tests.test_quote_compare import quote
 from tests.test_v3_visit_kit import booked, handle, quiet, requested, status, vendor
 from tests.test_v4_assistant_actions import approve
-from tests.test_v4_assistant_nudges import add_nudge, at, nudges, run, sent
+from tests.test_v4_assistant_nudges import add_nudge, at, nudges, run
 from tests.test_visit_inbox import login
 
 TODAY = today_seoul()

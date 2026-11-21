@@ -20,6 +20,7 @@ from app.assistant.tools.customer import TRADE, dobae_only, pid_of
 from app.db import SessionLocal
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
+from app.shared.korean import euro
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 HALF = {"am": "오전", "pm": "오후"}
@@ -415,6 +416,14 @@ async def propose_vendor_confirm(tc: ToolCtx, a: VisitRefIn) -> ToolOut:
     async with SessionLocal() as s:
         cmp = await visit_service.compare(s, tc.user, pid, trade, tc.today)
     row = next((r for r in cmp.vendors if r.visit_id == visit_id), None)
+    done = next((r for r in cmp.vendors if r.status == "chosen"), None)
+    if done is not None:  # 이미 확정했다('확정할 견적서가 없어요'라고 하지 않는다)
+        raise ToolError(
+            "already_chosen",
+            f"이미 {euro(done.vendor_name)} 확정했어요. 업체가 공사 날짜를 올리면 수락할 수 있어요."
+            if done is row
+            else f"이미 {euro(done.vendor_name)} 확정했어요. 바꾸려면 견적서 화면에서 다시 골라 주세요.",
+        )
     if row is None or row.latest is None or row.status != "quoted" or row.seen_ver is None:
         raise ToolError("not_quoted", "아직 확정할 수 있는 견적서가 없어요.")
     if row.expired:
@@ -494,9 +503,15 @@ async def _dates(tc: ToolCtx, a: ProposalIn, kind: Literal["dates_accept", "dela
     pid = pid_of(tc)
     pr = tc.refs.get(a.proposal_ref, "proposal")
     want = "delay" if kind == "delay_accept" else "dates"
-    if pr.get("type") != want:
+    if pr.get("type") != want:  # 글에는 도구 이름 없이, 모델 힌트에만
         other = "propose_delay_accept" if want == "dates" else "propose_dates_accept"
-        raise ToolError("wrong_kind", f"이 날짜는 {other}로 제안해 주세요.")
+        raise ToolError(
+            "wrong_kind",
+            "수락한 뒤 바뀐 날짜예요. 바뀐 날짜 수락 카드로 만들어야 해요."
+            if want == "dates"
+            else "처음 올린 날짜예요. 날짜 수락 카드로 만들어야 해요.",
+            hint=f"{other}로 다시 불러요",
+        )
     async with SessionLocal() as s:
         sch = await schedule_service.schedule_for(s, tc.user, pid, tc.today)
     out, _ = await _offer(tc, project_id=pid, **dates_offer(sch, pr["id"], kind, tc.now))
@@ -610,7 +625,7 @@ def date_change_offer(
     summary = ActionSummary(
         title=f"{name} 공사 날짜 바꾸기 요청" if change else f"{name} 다른 공사 날짜 요청",
         rows=rows,
-        note="업체가 새 날짜를 올리면 수락할 수 있어요. 수락하기 전까지 지금 날짜는 그대로예요. "
+        note="업체가 새 날짜를 올려 수락하기 전까지 지금 날짜는 그대로예요. "
         f"날짜 바꾸기 요청은 {t.requests_left}번 남았어요",
         approve_label="날짜 바꾸기 요청 보내기",
     )
@@ -778,7 +793,13 @@ async def propose_decline(tc: ToolCtx, a: DeclineIn) -> ToolOut:
     visit_id = _vendor_visit_id(tc, a.visit_ref)
     async with SessionLocal() as s:
         d = await visit_service.vendor_visit(s, tc.user, visit_id, tc.today)
-    if d.status not in ("requested", "offered", "picked", "proposed", "booked", "visited"):
+    # visit.service.decline은 requested에서만 바꾼다(기간을 답한 뒤 카드를 만들면 승인해도 409)
+    if d.status in ("offered", "picked", "proposed", "booked", "visited"):
+        raise ToolError(
+            "answered",
+            "기간을 답한 뒤에는 못 받아요를 보낼 수 없어요. 고객과 믿집 채팅으로 이야기해 주세요.",
+        )
+    if d.status != "requested":
         raise ToolError("stale", "이미 닫혔거나 견적서를 보낸 요청이에요.")
     summary = ActionSummary(
         title="이번 요청 못 받아요",
@@ -836,11 +857,13 @@ def vendor_dates_offer(job, deal_id: uuid.UUID, days: dict, now) -> dict:
     surface="vendor",
     kind="propose",
     status="공사 날짜 보내기를 준비하고 있어요",
-    description="확정된 공사(d1…)에 공사 날 후보(n1…)를 보내는 승인 카드를 만들어요.",
+    description="확정된 공사(d1…)에 공사 날 후보(n1…)를 보내는 승인 카드를 만들어요. 고객이 다른 날짜 · 날짜 "
+    "바꾸기를 요청했으면 그 요청에 답하는 카드예요(후보는 고객이 고른 시작일).",
     model=DatesPropose,
     schema=obj({"deal_ref": REF, "days_ref": REF}),
 )
 async def propose_dates(tc: ToolCtx, a: DatesPropose) -> ToolOut:
+    from app.assistant.tools import aftercare as aftercare_tools
     from app.schedule import service as schedule_service
 
     deal = tc.refs.get(a.deal_ref, "deal")
@@ -850,5 +873,14 @@ async def propose_dates(tc: ToolCtx, a: DatesPropose) -> ToolOut:
     deal_id = uuid.UUID(deal["id"])
     async with SessionLocal() as s:
         job = await schedule_service.job_for(s, tc.user, deal_id, tc.today)
-    out, _ = await _offer(tc, **vendor_dates_offer(job, deal_id, days, tc.now))
+    if job.dates_state in ("requested", "change_requested") and job.request is not None:
+        # 고객의 날짜 요청에 답한다: 먼저 말 걸기(dates_requested)와 같은 조건 · 같은 행동 값(kind · request_id).
+        # 이름표 값의 kind 칸은 이름표 종류('days')라 쓰지 않고 공사 상태로 정한다
+        kind = "change" if job.status == "scheduled" else "initial"
+        days = {**days, "kind": kind}
+        days.setdefault("request_id", str(job.request.id))
+        offer = aftercare_tools.request_dates_offer(job, deal_id, days, tc.now)
+    else:
+        offer = vendor_dates_offer(job, deal_id, days, tc.now)
+    out, _ = await _offer(tc, **offer)
     return out

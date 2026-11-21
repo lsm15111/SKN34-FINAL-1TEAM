@@ -57,18 +57,11 @@ sl = _lint()
 # 지금 걸리는 (길, 규칙)만 OFF에 두고 보고서 '고칠 목록' 번호를 적는다. 고치면 OFF에서 지운다
 ALL = frozenset({"R2", "R3", "R4", "R11", "R13", "R14"})
 OFF: dict[str, dict[str, str]] = {
-    # '모르는 이름표예요: v1' · 'propose_delay_accept로' · 'my_jobs로'
-    "틀 · 도구 오류 문장": {"R3": "#4", "R4": "#4"},
-    # 업체 틀 끝이 '· 노원구 상계동 도배.'
-    "틀 · 먼저 말 걸기 문장": {"R3": "#10"},
-    # '마루와벽로 확정' · '마루와벽로 확정했어요'
-    "틀 · 승인 카드 제목 · 단추": {"R3": "#9"},
-    "무료 · 승인 카드 제목 · 칸": {"R3": "#9"},
-    "무료 · 실행 결과": {"R3": "#9"},
     # 4문장 넘음 · '[도배]' 묶음 이름표 · 따옴표 인용
     "무료 · 답 글(지식 답 answer_only)": {"R2": "#5", "R3": "#5", "R11": "#5"},
-    # 알림 글 '… 보냈어요 · 도배'
-    "무료 · 카드 · 새 소식 줄": {"R3": "#10"},
+    # 자동화 갈래 aftercare.py: dates_requested 틀 끝이 '· 노원구 상계동 도배.'(#10) · 도구 오류 글의 'note'(#4)
+    "틀 · 먼저 말 걸기 문장": {"R3": "#10"},
+    "틀 · 도구 오류 문장": {"R11": "#4"},
 }  # fmt: skip
 
 
@@ -204,6 +197,10 @@ FREE_NAMES = (
     "NO_DATES", "DATES", "PLAN", "STANDARD", "STANDARD_NO_TOTAL", "TODAY", "TODAY_NONE", "HOME",
     "OTHER_TRADE", "MEMORY_GUIDE", "NO_VISIT", "DECLINED", "WINDOW", "NO_WINDOW", "ANSWERED",
     "CHECKLIST", "VENDOR_TODAY",
+    "VISITS_WAIT", "VISITS_BOOKED", "VISITS_DONE", "CONFIRMED", "DATES_OPEN", "CHANGE_NONE",
+    "CHANGE_HOW", "CHANGE_HOW_EARLY", "CHANGE_MADE", "CHANGE_SAME", "CHANGE_REJECTED",
+    "STANDARD_DAYS", "MEMORY_SAY", "SMALL_TALK_HI", "SMALL_TALK", "LEGAL", "PREFS",
+    "DECLINE_REJECTED", "WINDOW_REJECTED", "BRIEF", "ACCEPT_RULE",
 )  # fmt: skip
 CONSTS = {
     "free.py": {n: ("틀 · 무료 모드 정해 둔 답", "answer") for n in FREE_NAMES},
@@ -246,7 +243,7 @@ CONSTS = {
 # 실행 결과 글(승인 뒤 카드에 남는 말): actions.py의 {"text": …} · text = … 꼴
 RESULT = ("틀 · 실행 결과", "note")
 # 정해 둔 답 글 자리 채우기(값은 보기)
-FILL = {"area": "마포구", "n": 2, "won": "3,241,268"}
+FILL = {"area": "마포구", "n": 2, "won": "3,241,268", "vendor": "마루와벽", "version": 2, "who": "도배 공사가", "days": "2.5"}  # fmt: skip
 
 
 def _consts(tree: ast.Module, names: dict, rel: str, bag: Bag) -> None:
@@ -354,14 +351,21 @@ def static_bag() -> Bag:
         bag.add(
             "틀 · 다음에 물을 말(고객 · 업체 목소리)", "user", say, f"service.STEP_IDEAS[{key}]"
         )
-    # 업체 브리핑 한 줄 틀(vendor.brief_template): 맞지 않는 칸마다 · 답하기 좋은 기간 · 다 맞음
-    for label in ("공정", "지역", "일정", "벽지"):
-        fit = [SimpleNamespace(label=label, ok=False)]
-        got = vendor_tools.brief_template(SimpleNamespace(fit=fit, suggest=None))
-        bag.add("틀 · 업체 브리핑 한 줄", "line", got, "tools/vendor.py:brief_template")
+    # 업체 브리핑 한 줄 틀(vendor.brief_template): 맞지 않는 칸 · 확인 필요 칸마다 · 답하기 좋은 기간 · 다 맞음
+    for key, label in (
+        ("trade", "공정"),
+        ("area", "지역"),
+        ("schedule", "일정"),
+        ("paper", "벽지"),
+    ):
+        for state in ("no", "check"):
+            fit = [SimpleNamespace(key=key, label=label, ok=False, state=state)]
+            got = vendor_tools.brief_template(SimpleNamespace(fit=fit, suggest=None))
+            bag.add("틀 · 업체 브리핑 한 줄", "line", got, "tools/vendor.py:brief_template")
     good = SimpleNamespace(start=date(2026, 11, 24), end=date(2026, 11, 30), open_count=14)
     for suggest in (good, None):
-        s = SimpleNamespace(fit=[SimpleNamespace(label="공정", ok=True)], suggest=suggest)
+        fit = [SimpleNamespace(key="trade", label="공정", ok=True, state="ok")]
+        s = SimpleNamespace(fit=fit, suggest=suggest)
         bag.add("틀 · 업체 브리핑 한 줄", "line", vendor_tools.brief_template(s), "tools/vendor.py:brief_template")  # fmt: skip
     # 확정 승인 카드 요약(actions.confirm_summary)과 업체 추천 사유(calc.vendor_pick.reasons)
     cs = actions.confirm_summary("마루와벽", 2, 3_388_000, 3, date(2026, 12, 5))

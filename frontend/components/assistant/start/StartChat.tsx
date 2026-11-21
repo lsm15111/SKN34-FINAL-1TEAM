@@ -12,7 +12,7 @@ import { JoinDialog } from "@/components/auth/JoinDialog";
 import { DEMOLITION, resetMock, type StandardQuoteData } from "@/lib/api/assistant";
 import type { Region } from "@/lib/api/project";
 import { errorText, type Schemas } from "@/lib/backend/client";
-import { decText } from "@/lib/format";
+import { decText, euro } from "@/lib/format";
 import { calcGuest, sendHome, type GuestStandard } from "@/lib/guest/api";
 import { guessArea, guessOccupied } from "@/lib/guest/guess";
 import { checkDraft, EMPTY_DRAFT, GRADE_WORD, pyeongToM2, toHomeInfo, type InfoDraft } from "@/lib/guest/info";
@@ -192,7 +192,7 @@ export function StartChat({ regions, mode, mock }: { regions: Region[]; mode: "g
               {showCard ? (
                 <Bot>
                   <p className={`${s.bubble} ${s.say}`}>
-                    {said == null ? "넣던 집 정보예요. 맞는지 확인해 주세요." : found ? `${place}로 찾았어요. 이 집이 맞는지 확인해 주세요.` : "지역을 찾지 못했어요. 지역을 골라 주세요."}
+                    {said == null ? "넣던 집 정보예요. 맞는지 확인해 주세요." : found ? `${euro(place)} 찾았어요. 이 집이 맞는지 확인해 주세요.` : "지역을 찾지 못했어요. 지역을 골라 주세요."}
                   </p>
                   <section className={locked ? `${k.card} ${k.done}` : k.card} aria-label="집 확인">
                     <div className={k.top}><h3>우리 집</h3><span className={k.muted}>아파트 · 도배</span></div>

@@ -21,6 +21,7 @@
 import re
 from collections.abc import Awaitable, Callable
 from datetime import date
+from decimal import Decimal
 
 from app.assistant import policy
 from app.assistant.schemas import CardOut, TodayData
@@ -54,9 +55,9 @@ CUSTOMER: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"총\s*(?:비용|금액)"
     )),
     ("home", re.compile(r"집\s*정보|우리\s*집\s*(?:정보|조건)|평수\s*(?:확인|보여)")),
-    ("today", re.compile(
-        r"오늘|할\s*일|뭐\s*(?:하면|해야|할까)|다음\s*(?:단계|할|은|엔|에)|지금\s*(?:뭐|무엇|어디)|"
-        r"진행\s*(?:상황|중)|어디까지"
+    ("today", re.compile(  # '오늘'만으로는 잡지 않는다('오늘 점심 뭐 먹지?'는 잡담)
+        r"오늘\s*(?:할|정할|해야|뭐\s*(?:하|해|할))|할\s*일|뭐\s*(?:하면|해야|할까)|다음\s*(?:단계|할|은|엔|에)|"
+        r"지금\s*(?:뭐|무엇|어디)|진행\s*(?:상황|중)|어디까지"
     )),
 )  # fmt: skip
 VENDOR: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -68,8 +69,11 @@ VENDOR: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"일정\s*(?:보내|답)|수락|받을게|받을래|갈게"
     )),
     ("checklist", re.compile(r"견적서|체크|항목|빠진|빠뜨|확인할\s*것")),
+    ("brief", re.compile(r"브리핑|요약해|정리해\s*줘")),
     ("today", re.compile(r"오늘|할\s*일|새\s*요청|공사\s*날짜|일정\s*(?:확인|보여)|작업함")),
 )  # fmt: skip
+# 업체 말의 '수락'이 업체가 받는다는 뜻이 아닌 꼴: 고객이 수락 · 수락 안 함('고객이 아직 수락 안 했는데 …')
+NOT_ACCEPT = re.compile(r"고객\S{0,2}\s+(?:\S+\s+){0,2}?수락|수락\s*(?:안|않|못|을\s*안)|수락하지")
 DECLINE_CODE = (
     ("full", re.compile(r"일정|바빠|바쁘|꽉|여유|시간이\s*없")),
     ("out_of_area", re.compile(r"지역|멀|거리|구역|동네")),
@@ -87,13 +91,18 @@ HALVES = (
     "업체가 답한 기간에서 고르기 좋은 반나절이에요. 카드에서 시간을 고르면 승인 카드를 만들어요."
 )
 VISITS = "실측 진행은 작업 카드에서 볼 수 있어요. 업체가 기간을 답하면 반나절 후보를 보여 드릴게요."
-QUOTES = "실측 견적서가 {n}곳 왔어요. 합계 · 포함 항목 · 기간 · 유효기간을 카드에서 견줘 보세요. 확정할 업체를 카드에서 고르면 승인 카드를 만들어요."
+VISITS_WAIT = "고른 시간을 업체가 수락하면 실측 날짜가 정해져요. 진행은 작업 카드에서 볼 수 있어요."
+VISITS_BOOKED = "실측 날짜가 정해졌어요. 날짜는 작업 카드에서 볼 수 있어요."
+VISITS_DONE = "실측은 끝났어요. 받은 견적서는 견적서 비교에서 볼 수 있어요."
+# 카드 위 한 줄('실측 견적서가 2곳 왔어요.')을 되풀이하지 않는다
+QUOTES = "합계 · 포함 항목 · 기간 · 유효기간을 카드에서 견줘 보세요. 확정할 업체를 카드에서 고르면 승인 카드를 만들어요."
 CONFIRMED = "{vendor} 견적서 {version}판으로 확정했어요. 받은 견적서는 카드에서 다시 볼 수 있어요."
 NO_QUOTES = "아직 받은 실측 견적서가 없어요. 업체가 실측하고 견적서를 보내면 여기서 견줄 수 있어요."
 NO_DATES = "아직 확정한 업체의 공사 날짜가 없어요. 업체를 확정하면 업체가 공사 날짜를 올려요."
 DATES = "카드에서 수락을 누르면 승인 카드를 만들어요."
 DATES_OPEN = "수락 승인 카드가 열려 있어요. 그 카드를 확인하고 눌러 주세요."
-PLAN = "확정 공정표예요. 날짜별 작업은 카드에서 볼 수 있어요."
+PLAN = "날짜별 작업은 카드에서 볼 수 있어요."  # 카드 위 한 줄이 '확정 공정표예요.'
+
 # 공사 날짜 바꾸기(날짜 바꾸기 요청 승인 카드)
 CHANGE_NONE = "아직 날짜를 바꿀 공사가 없어요. 업체가 공사 날짜를 올리면 바꾸기를 요청할 수 있어요."
 CHANGE_HOW = (
@@ -103,7 +112,9 @@ CHANGE_HOW = (
 CHANGE_MADE = "날짜 바꾸기 요청 승인 카드를 만들었어요. 카드를 확인하고 눌러야 업체에 요청이 가요."
 CHANGE_SAME = "같은 날짜 바꾸기 요청 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
 CHANGE_REJECTED = "앞에서 거절한 날짜 바꾸기 요청과 같아요. 다른 날짜를 말해 주시면 새로 만들어요."
+CHANGE_HOW_EARLY = "공사 날짜는 업체를 확정한 뒤 업체가 올려요. 그 뒤에 바꿔야 하면 날짜 바꾸기 요청으로 새 날짜를 부탁할 수 있어요."
 STANDARD = "이 집 표준견적서는 부가세 포함 {won}원이에요. 공공 기준 단가로 믿집이 계산한 참고 금액이고 업체 견적은 아니에요."
+STANDARD_DAYS = "이 집 표준견적서로는 {who} 예상 {days}일이에요. 업체 공사 기간은 실측 견적서에서 확인해 주세요."
 STANDARD_NO_TOTAL = (
     "공공 기준 단가로 믿집이 계산한 표준견적서예요. 업체 견적이 아니라 참고 금액이에요."
 )
@@ -115,6 +126,18 @@ MEMORY_GUIDE = (
     "비서가 기억한 것은 내 정보 → 비서가 기억한 것에서 보고 지울 수 있어요. "
     "지우면 다음 대화부터 쓰지 않아요."
 )
+# '기억해: 내 예산은 …'(기억은 코드가 고객 말에서 따로 골라 저장하고 금액 · 건강 · 연락처는 버린다. 약속하지 않는다)
+MEMORY_SAY = (
+    "예산 같은 금액 · 건강 · 연락처는 비서가 기억하지 않아요. "
+    "공사 금액은 표준견적서와 견적서 카드에서 확인해 주세요."
+)
+SMALL_TALK_HI = "안녕하세요. 공사에서 궁금한 게 있으면 물어봐 주세요."
+SMALL_TALK = "네, 궁금한 게 생기면 언제든 물어봐 주세요."
+LEGAL = (
+    "내용증명 · 소송 같은 법률 문제는 믿집이 판단하거나 대신 써 드리지 않아요. "
+    "소비자상담센터나 법률 상담을 받아 보세요."
+)
+PREFS = "알려 주셔서 고마워요. 실측 시간을 고르거나 업체에 요청할 때 이 조건을 같이 봐 주세요."
 # 업체
 NO_VISIT = "어느 요청인지 몰라요. 요청을 열고 다시 말해 주세요."
 DECLINED = "못 받아요 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 알려져요."
@@ -129,6 +152,10 @@ NO_FIT = "{what} 우리 업체와 맞지 않아 기간 답하기 카드는 만�
 ANSWERED = "이미 답했거나 닫힌 요청이에요. 진행은 요청 화면에서 볼 수 있어요."
 CHECKLIST = "견적서를 낼 때 확인할 것이에요. 낼 금액 · 부가세 방식 · 공사 기간 · 유효기간은 칸에 적어 주세요."
 VENDOR_TODAY = "오늘 할 일이에요."
+BRIEF = "요청 브리핑이에요. 맞는 조건과 답할 기간을 카드에서 확인해 주세요."
+ACCEPT_RULE = (
+    "공사 날짜는 업체가 올리고 고객이 수락해야 확정돼요. 수락 전에는 비서도 대신 확정할 수 없어요."
+)
 
 # 보던 카드 · 공사 단계 → v3 화면 이름(answer_only view)
 CARD_VIEW = {
@@ -142,6 +169,30 @@ WHEN_WORK = re.compile(
     r"언제\s*(?:해|하|바꿔|바꾸|교체|시공|들어가|진행|붙)|(?:먼저|나중에?)\s*(?:해|하)"
 )
 SENT = re.compile(r"(?<=[.!?。])\s+|\n+")
+HELLO = re.compile(r"안녕|처음\s*뵙|반가워")
+# 기억해 달라는 말('기억해: …' · '… 기억해 줘')
+MEMORY_SAY_RX = re.compile(
+    r"^\s*기억(?:해|하세요|해\s*줘|해\s*둬|해\s*두세요)\s*[:：,.]?|기억해\s*(?:줘|주세요|둬|두세요)"
+)
+LEGAL_RX = re.compile(r"내용증명|소송|고소|변호사|손해배상\s*청구|법적으로\s*(?:어떻게|대응|문제)")
+
+
+def prefs_said(text: str) -> bool:
+    """조건 · 사정(요일 · 반려동물 · 사는 방식 …)을 알려 준 말이고 묻는 말이 아닌지."""
+    from app.assistant import memory
+
+    return bool(memory.CUE.search(text) and not QUESTION.search(text) and not ASK_WORD.search(text))
+
+
+def not_kept(text: str) -> bool:
+    """기억으로 남기지 않는 말(금액 · 건강 · 연락처, memory.validate가 버리는 것)이 들었는지."""
+    from app.assistant import memory
+
+    return bool(
+        memory.MONEY.search(text) or memory.HEALTH.search(text) or memory.CONTACT.search(text)
+    )
+
+
 # 비서가 기억한 것을 어디서 보고 지우는지 묻는 말(기억해 달라는 말은 아님): 정해 둔 안내로 답한다
 MEMORY_WHERE = re.compile(
     r"기억(?:한|하는|해\s{0,2}둔|하고\s{0,2}있는|된)\s{0,2}(?:거|것|건|걸|내용|정보|목록)?.{0,15}?"
@@ -168,7 +219,7 @@ LABEL_DO: dict[str, str] = {
 # 바람 · 진술 뒤에 순서 · 시기 · 방법을 묻는 말은 지식이에요(라벨 규칙 10: 배경 뒤 묻는 말이면 묻는 쪽).
 # 모델이 이 꼴을 집 정보 · 표준견적서로 보는 일이 있어서, 낱말 규칙이 없고 이 꼴이면 지식 답으로 내려요
 # (어려운 예 재학습보다 dev에서 나았어요, intent.md 8절). 돈 · 기간을 묻는 말은 표준견적서 그대로예요
-HOW_LABELS = ("home_info", "standard_quote")
+HOW_LABELS = ("home_info", "standard_quote", "quote_compare")
 MONEY_DAYS = re.compile(r"얼마|비용|금액|가격|시세|평당|단가|예산|며칠|몇\s*일|기간")
 # 묻는 낱말(언제 · 어떻게 · 순서 …)은 그대로, 때 낱말(전에 · 후에 · 먼저 …)은 묻는 꼴 문장에서만 세요
 ASK_WORD = re.compile(
@@ -177,13 +228,18 @@ ASK_WORD = re.compile(
 )
 ASK_TIME = re.compile(r"전에|후에|뒤에|다음에|먼저|나중")
 QUESTION = re.compile(r"\?|나요|까요|가요|죠|는지|ㄹ지|할지|되요|돼요|해요\s{0,2}\?")
+# '살면서 도배할 수 있어요?'처럼 되는지 묻는 말(고칠 · 바꿀 칸을 말하면 집 정보 카드 그대로)
+CAN_ASK = re.compile(r"(?:할|될)\s*수\s*(?:있|없)")
+EDIT_WORD = re.compile(r"고치|고칠|고쳐|바꾸|바꿀|바꿔|수정|입력|넣|저장")
 
 
 def asks_how(text: str) -> bool:
-    """순서 · 시기 · 방법을 묻는 말인지(돈 · 기간을 묻는 말은 빼요)."""
+    """순서 · 시기 · 방법 · 되는지를 묻는 말인지(돈 · 기간을 묻는 말은 빼요)."""
     t = text or ""
     if MONEY_DAYS.search(t):
         return False
+    if CAN_ASK.search(t) and QUESTION.search(t) and not EDIT_WORD.search(t):
+        return True
     return bool(ASK_WORD.search(t) or (ASK_TIME.search(t) and QUESTION.search(t)))
 
 
@@ -283,8 +339,10 @@ async def _slots(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolO
                 got.append(card)
         if got:
             return HALVES, ToolOut(data={}, cards=got)
-        if any(v.status not in cards.ENDED for v in o.vendors):
-            return VISITS, ToolOut(data={}, task=cards.visit_task(pid, o, tc.now))  # type: ignore[arg-type]
+        live = {v.status for v in o.vendors if v.status not in cards.ENDED}
+        if live:
+            task = cards.visit_task(pid, o, tc.now)  # type: ignore[arg-type]
+            return visits_text(live), ToolOut(data={}, task=task)
         picks, pm = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)  # type: ignore[arg-type]
         if not pm["picks"]:
             return NO_PICKS, ToolOut(data={})
@@ -303,6 +361,17 @@ async def _slots(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolO
     if not wm["wishes"]:
         return NO_WISHES, ToolOut(data={}, cards=[picks])
     return WISHES, ToolOut(data={}, cards=[picks, wish])
+
+
+def visits_text(live: set[str]) -> str:
+    """진행 중인 실측 요청 상태 → 단계에 맞는 글(견적서가 온 뒤에 '기간을 답하면 …'이라고 하지 않는다)."""
+    if live & {"requested", "offered", "proposed"}:
+        return VISITS
+    if "picked" in live:
+        return VISITS_WAIT
+    if "booked" in live:
+        return VISITS_BOOKED
+    return VISITS_DONE
 
 
 async def _confirmed(s, tc: ToolCtx, trade: str) -> dict | None:
@@ -326,7 +395,7 @@ async def _compare(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, Too
         return CONFIRMED.format(**done), ToolOut(data={}, cards=[card] if n else [], task=task)
     if not n:
         return NO_QUOTES, ToolOut(data={}, task=task)
-    return QUOTES.format(n=n), ToolOut(data={}, cards=[card], task=task)
+    return QUOTES, ToolOut(data={}, cards=[card], task=task)
 
 
 async def _schedule(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut]:
@@ -336,12 +405,15 @@ async def _schedule(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, To
         return NO_DATES, ToolOut(data={})
     if card.data["phase"] != "dates":
         return PLAN, ToolOut(data={}, cards=[card])
-    # 수락 승인 카드가 열려 있으면 카드 단추가 비어 있다(수락 단추는 승인 카드 하나)
-    tail = DATES_OPEN if card.data.get("action_id") else DATES
-    return f"{card.say} {tail}", ToolOut(data={}, cards=[card])
+    # 수락 승인 카드가 열려 있으면 카드 단추가 비어 있다(수락 단추는 승인 카드 하나). 카드 위 한 줄은 되풀이하지 않는다
+    text = DATES_OPEN if card.data.get("action_id") else DATES
+    return text, ToolOut(data={}, cards=[card])
 
 
-async def _standard(tc: ToolCtx, _text: str, found: list[str]) -> tuple[str, ToolOut] | None:
+DAYS_ASK = re.compile(r"며칠|몇\s*일|기간|얼마나\s*걸|오래\s*걸")
+
+
+async def _standard(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOut] | None:
     """표준견적서 카드. 목공만 물었는데 이 공사 표준견적서에 목공이 없으면 None(지식 답으로)."""
     trade = "mokgong" if found == ["mokgong"] else "dobae"
     async with SessionLocal() as s:
@@ -349,6 +421,18 @@ async def _standard(tc: ToolCtx, _text: str, found: list[str]) -> tuple[str, Too
     if trade == "mokgong" and not any(x.get("trade") == "mokgong" for x in model["lines"]):
         return None
     total = model.get("total")
+    days = model.get("days")
+    if DAYS_ASK.search(text) and days:  # 며칠 걸려요? → 금액이 아니라 예상 일수(공정 모두의 합)
+        tr = model.get("days_for") or []
+        who = (
+            f"{tr[0]} 공사가"
+            if len(tr) == 1
+            else f"{' · '.join(tr)} 공사를 합쳐"
+            if tr
+            else "공사가"
+        )
+        said = STANDARD_DAYS.format(who=who, days=f"{Decimal(str(days)).normalize():f}")
+        return said, ToolOut(data={}, cards=[card])
     text = STANDARD.format(won=f"{total:,}") if isinstance(total, int) else STANDARD_NO_TOTAL
     return text, ToolOut(data={}, cards=[card])
 
@@ -378,7 +462,7 @@ CHANGE = re.compile(
 # 바라는 말이 있어야 카드를 만든다. 없으면('미루면 어떻게 돼요?') 안내만 한다
 CHANGE_WANT = re.compile(
     r"싶|원해|주세요|주실|줄\s*수|줄래|줘요|해\s*줘|려고|(?:룰|출|꿀|길|할)\s*(?:게|래)|"
-    r"(?:미뤄|늦춰|바꿔|옮겨|당겨)\s*(?:야|주|줘)"
+    r"(?:미뤄|늦춰|바꿔|옮겨|당겨)\s*(?:주|줘|야(?!\s*(?:하면|되면|한다면)))"
 )
 # 고객의 날짜 바꾸기 요청이 아닌 말: 실측 날짜 · 업체가 낸 날짜에 답하기(수락 · 승인) · 업체가 미루자는 말
 NOT_CHANGE = re.compile(r"실측|방문|수락|승인|받아들|업체\s*(?:가|에서|쪽)|자는|자고|대요")
@@ -435,14 +519,15 @@ async def _change(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOu
         if (d["status"] == "scheduled" and d.get("start_date"))
         or (d["status"] == "confirmed" and d.get("proposal"))
     ]
+    # 묻는 말 · 가정: 안내만(업체가 날짜를 올리기 전이면 그 순서부터)
+    if not CHANGE_WANT.search(text):
+        return (CHANGE_HOW if deals else CHANGE_HOW_EARLY), out
     if not deals:
         return CHANGE_NONE, out
     d = next(
         (x for x in deals if x["trade"] in found),
         next((x for x in deals if x["trade"] == "dobae"), deals[0]),
     )
-    if not CHANGE_WANT.search(text):
-        return CHANGE_HOW, out
     delay, wish = change_wish(text, tc.today)
     try:
         got = await propose.propose_date_change(
@@ -597,10 +682,19 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
         data = TodayData(date=tc.today, todo=rows, waiting=[], news=[])
         card = CardOut(card_id="today", kind="today", data=data.model_dump(mode="json"))
         return VENDOR_TODAY, ToolOut(data={}, cards=[card])
+    # '고객이 아직 수락 안 했는데 …'는 기간 답하기가 아니다
+    if intent == "window" and NOT_ACCEPT.search(text):
+        out = (await _brief(tc, propose_window=False))[2] if tc.visit_id else ToolOut(data={})
+        return ACCEPT_RULE, out
     if intent is None:
         return None
+    if intent == "brief" and tc.visit_id is None:  # 보던 요청이 없으면 새 요청이 든 오늘 할 일
+        return await _vendor(tc, text, "today")
     if tc.visit_id is None:
         return NO_VISIT, ToolOut(data={})
+    if intent == "brief":
+        _card, _model, out = await _brief(tc, propose_window=False)
+        return BRIEF, out
     if intent == "checklist":
         async with SessionLocal() as s:
             card, *_ = await vendor_tools.checklist(s, tc.user, tc.visit_id, tc.today, tc.refs)
@@ -638,6 +732,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
 
 async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, ToolOut]:
     """무료 모드 답 한 번(글, 카드 · 행동 · 작업 카드). 글이 비면 부르는 쪽이 실패 문구를 쓴다."""
+    if policy.small_talk(text) or policy.ack(text):  # 인사 · 맞장구만: 카드 · 지식 답 없이 한 문장
+        return (SMALL_TALK_HI if HELLO.search(text) else SMALL_TALK), ToolOut(data={})
     if tc.surface == "vendor":
         got = await _vendor(tc, text, intent_of(text, "vendor"))
         if got is not None:
@@ -651,6 +747,10 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         return MEMORY_GUIDE, ToolOut(data={})
     if (more := await aftercare_tools.free_answer(tc, text)) is not None:  # 07 자동화 카드
         return more
+    if MEMORY_SAY_RX.search(text) and not_kept(text):  # '기억해: 내 예산은 …' → 기억하지 않는 것
+        return MEMORY_SAY, ToolOut(data={})
+    if LEGAL_RX.search(text):  # 내용증명 · 소송: 법률 판단은 하지 않는다
+        return LEGAL, ToolOut(data={})
     # 업체 이름을 뺀 뒤 공종을 찾는다(업체 이름 속 '마루' · '목공'은 공종 말이 아니에요)
     found = trades_in(without_names(text, await vendor_names(tc)))
     if tc.project_id is None:
@@ -662,6 +762,10 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         said = policy.DOBAE_ONLY if "mokgong" in found else OTHER_TRADE
         _, out = await _today(tc, text, found)
         return f"{said} 도배 쪽 오늘 할 일을 보여 드릴게요.", out
+    # 조건 · 사정을 알려 준 말('주말에만 시간이 되고 강아지가 있어요'): 고마움 + 오늘 할 일
+    if intent is None and step == "guide" and prefs_said(text):
+        _, out = await _today(tc, text, found)
+        return PREFS, out
     handler = CUSTOMER_DO.get(intent or "")
     got = await handler(tc, text, found) if handler is not None else None
     if got is not None:

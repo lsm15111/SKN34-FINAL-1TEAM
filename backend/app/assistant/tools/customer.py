@@ -7,7 +7,7 @@ compare_quotes · get_schedule · today_tasks · show_card.
 import uuid
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel
 
 from app.assistant import policy
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
@@ -90,16 +90,9 @@ async def recommend_vendors(tc: ToolCtx, a: TradeIn) -> ToolOut:
 
 
 class SlotsIn(BaseModel):
-    vendor_ref: str | None = None
-    visit_ref: str | None = None
+    ref: str  # 업체 이름표(v…, 요청 전) 또는 실측 요청 이름표(m…, 업체가 기간을 답한 뒤)
     prefer: Literal["any", "am", "pm"] = "any"
     days: Literal["any", "weekday", "weekend"] = "any"
-
-    @model_validator(mode="after")
-    def _one(self) -> "SlotsIn":
-        if (self.vendor_ref is None) == (self.visit_ref is None):
-            raise ValueError("vendor_ref와 visit_ref 중 하나만")
-        return self
 
 
 @tool(
@@ -107,29 +100,29 @@ class SlotsIn(BaseModel):
     surface="customer",
     kind="read",
     status="실측 시간을 찾고 있어요",
-    description="실측 시간 후보를 찾아요. 요청 전에는 vendor_ref로 희망 기간 후보(r1~r2), 업체가 기간을 "
-    "답한 뒤에는 visit_ref로 반나절 후보(s1~s3). prefer는 고객이 말한 편한 반나절, days는 평일 · 주말이에요.",
+    description="실측 시간 후보를 찾아요. ref는 꼭 넣어요: 요청 전에는 업체 이름표(v1…, recommend_vendors 결과)로 "
+    "희망 기간 후보(r1~r2), 업체가 기간을 답한 뒤에는 실측 요청 이름표(m1…, today_tasks · compare_quotes 결과)로 "
+    "반나절 후보(s1~s3). prefer는 고객이 말한 편한 반나절, days는 평일 · 주말이에요.",
     model=SlotsIn,
     schema=obj(
         {
-            "vendor_ref": REF,
-            "visit_ref": REF,
+            "ref": {"type": "string", "description": "업체 이름표 v… 또는 실측 요청 이름표 m…"},
             "prefer": {"type": "string", "enum": ["any", "am", "pm"]},
             "days": {"type": "string", "enum": ["any", "weekday", "weekend"]},
         },
-        required=["prefer", "days"],
     ),
 )
 async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
     pid = pid_of(tc)
+    kind = (tc.refs.items.get(a.ref) or {}).get("kind")
     async with SessionLocal() as s:
-        if a.visit_ref is not None:
-            v = tc.refs.get(a.visit_ref, "visit")
+        if kind == "visit":
+            v = tc.refs.get(a.ref, "visit")
             card, model = await cards.visit_slots(
                 s, tc.user, pid, uuid.UUID(v["id"]), tc.now, tc.refs, prefer=a.prefer, days=a.days
             )
-        else:
-            vend = {**tc.refs.get(a.vendor_ref, "vendor"), "ref": a.vendor_ref}
+        else:  # 업체 이름표가 아니면 RefTable.get이 모르는 이름표 오류(힌트에 필요한 종류)
+            vend = {**tc.refs.get(a.ref, "vendor"), "ref": a.ref}
             card, model = await cards.wishes(
                 s, tc.user, pid, vend, tc.today, tc.refs, prefer=a.prefer, days=a.days
             )

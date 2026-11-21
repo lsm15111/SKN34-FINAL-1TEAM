@@ -60,8 +60,6 @@ function Sections({ b, memory, onForget }: { b: BoardOut; memory: MemoryOut[] | 
         <section className={s.bsec}>
           <h3 className={s.bsecT}>대표 평면 · 예시</h3>
           <PlanExample />
-          <p className={s.muted}>30평대 · 3베이 · 방 3 · 욕실 2</p>
-          <button type="button" className={s.upl}><I n="upload" />세움터에서 받은 평면도 올리기</button>
         </section>
       ) : null}
       {b.step > 0 ? (

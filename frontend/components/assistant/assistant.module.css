@@ -147,8 +147,6 @@
 .planSvg .wall { stroke-width: 3; stroke: var(--mj-text-sub); }
 .planSvg .wet { fill: var(--mj-primary-weak); stroke: var(--mj-primary); }
 .planSvg text { fill: var(--mj-text-sub); font-family: var(--mj-font-sans); font-size: 9px; stroke: none; }
-.upl { display: flex; align-items: center; gap: 10px; min-height: var(--mj-hit); padding: 12px 14px; border: 1.5px dashed var(--mj-line-control); border-radius: var(--mj-radius-field); background: var(--mj-bg); font: inherit; font-size: var(--mj-type-label); color: var(--mj-text-sub); text-align: left; cursor: pointer; }
-.upl svg { width: 20px; height: 20px; color: var(--mj-text-mute); flex: none; }
 .muted { color: var(--mj-text-mute); font-size: var(--mj-type-label); margin: 0; }
 .scrim { position: fixed; inset: 0; background: var(--mj-scrim); z-index: var(--mj-z-overlay); }
 

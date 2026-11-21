@@ -28,7 +28,7 @@ export function Header({ projectId, name, unread, tick, mock, onMock }: {
           <Pop button={<>{name}<I n="down" /></>} buttonClass={s.proj} left>
             <Link href="/my">내 공사 모두 보기</Link>
             <Link href={`${base}/docs`} scroll={false}>이 공사 서류</Link>
-            <UiSwitchButton to="v3">이전 화면(v3)으로 보기</UiSwitchButton>
+            <UiSwitchButton to="v3">이전 화면으로 보기</UiSwitchButton>
           </Pop>
         </span>
         <span className={s.phoneOnly}>
@@ -49,7 +49,7 @@ export function Header({ projectId, name, unread, tick, mock, onMock }: {
           <Pop label="내 메뉴" button={<span><I n="user" /></span>} buttonClass={s.meBtn}>
             <Link href="/my">내 공사</Link>
             <Link href="/account">내 정보</Link>
-            <UiSwitchButton to="v3">이전 화면(v3)으로 보기</UiSwitchButton>
+            <UiSwitchButton to="v3">이전 화면으로 보기</UiSwitchButton>
           </Pop>
         </span>
       </div>

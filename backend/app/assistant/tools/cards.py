@@ -8,6 +8,7 @@
 - 읽기 도구 · show_card · 무료 모드 단계 카드 · REST(보드 · 오늘 · 브리핑 · 체크리스트)가 같이 쓴다.
 """
 
+import re
 import uuid
 from datetime import date, datetime
 from decimal import Decimal
@@ -40,6 +41,7 @@ from app.assistant.schemas import (
 from app.auth.models import User
 from app.calc.common import COUNTED
 from app.shared.clock import SEOUL
+from app.shared.korean import i_ga
 
 if TYPE_CHECKING:
     from app.assistant.runtime import RefTable
@@ -164,10 +166,12 @@ async def standard(
     )
     card = CardOut(card_id="standard", kind="standard_quote", data=data.model_dump(mode="json"))
     model = {
+        "trades": [TRADE.get(t.trade, t.trade) for t in trades],
         "total": total,
         "supply": supply,
         "vat": vat,
         "days": out.days,
+        "days_for": [TRADE.get(t.trade, t.trade) for t in out.trades],  # 예상 일수는 이 공정들의 합
         "area_m2": out.area_m2,
         "area_basis": out.area_basis,
         "pyeong": out.pyeong,
@@ -177,10 +181,23 @@ async def standard(
         ],
         "version": out.price_ver,
     }
+    if trade and one is None:  # 물은 공정이 이 공사 표준견적서에 없다
+        asked = TRADE.get(trade, trade)
+        model["missing"] = (
+            f"이 공사 표준견적서에는 {i_ga(asked)} 없어요(고객이 고른 공정만 계산해요). "
+            f"위 값은 {' · '.join(model['trades'])} 값이에요."
+        )
     return card, model
 
 
 # ---- 업체 추천 ----
+
+# 업체가 적은 금액의 부가세 방식(코드 값 → 화면 말). 합계는 계산 엔진이 부가세를 더한 고객이 낼 금액이다
+VAT_WAY = {
+    "included": "부가세 포함으로 적음",
+    "excluded": "부가세 별도로 적음(합계에 부가세를 더함)",
+    "exempt": "면세",
+}
 
 
 async def vendor_picks(
@@ -245,6 +262,7 @@ async def vendor_picks(
     model = {
         "area": lst.area_name,
         "trade": trade,
+        "basis": PICK_BASIS,  # 고른 기준(카드 아래 줄과 같은 글)
         "picks": [
             {
                 "ref": x.ref,
@@ -481,7 +499,10 @@ async def compare(
                 "vendor_name": r.vendor_name,
                 "status": r.status,
                 "version": col.version,
-                "total": col.total_won,
+                "total": col.total_won,  # 고객이 낼 금액(부가세 포함)
+                "vat_way": VAT_WAY.get(q.vat_mode or "") if q else None,
+                "supply": q.supply if q else None,
+                "vat": q.vat if q else None,
                 "changed": changed.model_dump() if changed else None,
                 "diff_vs_estimate": col.diff_vs_estimate_won,
                 "days": col.days,
@@ -723,14 +744,51 @@ def prep_card(card_id: str, trades: list[str]) -> CardOut:
     return CardOut(card_id=card_id, kind="knowledge", data=data.model_dump(mode="json"))
 
 
+EXCERPT_MAX = 160
+_UNIT = re.compile(r"(?<=[.!?])\s+|\n+")
+
+
+def excerpt(text: str, n: int = EXCERPT_MAX) -> str:
+    """발췌 한 줄: 문장(또는 줄) 단위로 n자 안에서 끊는다. 첫 문장부터 n자를 넘으면 그 앞 띄어쓰기에서 자르고 '…'."""
+    units = [u.strip() for u in _UNIT.split(text or "") if u.strip()]
+    out = ""
+    for u in units:
+        joined = f"{out} {u}".strip()
+        if len(joined) > n:
+            break
+        out = joined
+    if out or not units:
+        return out
+    cut = units[0][: n - 1]
+    space = cut.rfind(" ")
+    return (cut[:space] if space > n // 2 else cut).rstrip(" ,·") + "…"
+
+
+def public_source(h) -> str:
+    """카드에 보일 출처 이름: 공공 · 표준 · 제조사 · 협회(official)는 펴낸 곳 · 제목, 그 밖(안내서 · 후기 …)은 자료
+    종류 이름만(내부 참고 자료 이름은 보이지 않는다)."""
+    if getattr(h, "official", False):
+        return h.publisher or h.title or "믿집 자료"
+    return getattr(h, "source_type", "") or "믿집 자료"
+
+
 def knowledge_card(card_id: str, title: str, hits: list, source: str = "") -> CardOut:
-    lines = [h.text.strip()[:160] for h in hits[:3] if h.text.strip()]
-    src = source or " · ".join(dict.fromkeys(h.publisher or h.title for h in hits[:3] if h.title))
+    lines = [x for x in (excerpt(h.text) for h in hits[:3]) if x]
+    src = source or " · ".join(dict.fromkeys(public_source(h) for h in hits[:3]))
     data = KnowledgeData(title=title, lines=lines, source=src or "믿집 자료")
     return CardOut(card_id=card_id, kind="knowledge", data=data.model_dump(mode="json"))
 
 
 # ---- 오늘 정할 일 ----
+
+
+def news_line(body: str) -> tuple[str, str | None]:
+    """알림 글 '문장 · 덧말(공정 · 지역 · 업체)' → (문장, 덧말). 새 소식 줄이 문장으로 끝나게 덧말은 sub로 뗀다."""
+    head, sep, tail = body.partition(" · ")
+    if sep and head.rstrip(". ").endswith("요"):
+        return head, tail or None
+    return body, None
+
 
 ACTION_ICON = {
     "home_info": "doc", "visit_request": "inbox", "visit_slot": "calendar",
@@ -814,7 +872,11 @@ async def today(
     page = await notify_service.page(s, user.id, pid)
     news = [
         TodayRow(
-            id=f"n-{x.id}", icon="file", title=x.body, action=RowAction(label="보기", href=x.link)
+            id=f"n-{x.id}",
+            icon="file",
+            title=news_line(x.body)[0],
+            sub=news_line(x.body)[1],
+            action=RowAction(label="보기", href=x.link),
         )
         for x in page.items
         if not x.read and now - x.created_at <= timedelta(days=2)
@@ -825,7 +887,7 @@ async def today(
         "date": today_,
         "todo": model_todo,
         "waiting": model_wait,
-        "news": [{"title": x.title} for x in news],
+        "news": [{"title": x.title, "sub": x.sub} for x in news],
         "count": len(todo),
     }
     return card, model

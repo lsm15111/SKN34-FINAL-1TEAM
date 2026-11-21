@@ -196,6 +196,26 @@ async def actions_of(
     return list(rows.all())
 
 
+async def decided_of(
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    surface: str,
+    *,
+    project_id: uuid.UUID | None = None,
+    limit: int = 4,
+) -> list[AssistantAction]:
+    """사람이 최근에 처리한 제안(실행됨 · 거절함 · 실행 못 함), 처리한 때 새것부터. 턴 사실 '최근 처리한 카드'."""
+    q = select(AssistantAction).where(
+        AssistantAction.user_id == user_id,
+        AssistantAction.surface == surface,
+        AssistantAction.status.in_(("executed", "rejected", "failed")),
+    )
+    if project_id is not None:
+        q = q.where(AssistantAction.project_id == project_id)
+    rows = await s.scalars(q.order_by(AssistantAction.decided_at.desc()).limit(limit))
+    return list(rows.all())
+
+
 async def lock_target(s: AsyncSession, user_id: uuid.UUID, target_id: uuid.UUID) -> None:
     """같은 (사람, 대상)의 제안 만들기를 줄 세운다(트랜잭션 잠금, commit · rollback에 풀림). 대화 턴 · 먼저 말
     걸기가 거의 같이 제안해도 뒤의 것이 앞의 행을 보고 다시 쓴다(행 하나)."""

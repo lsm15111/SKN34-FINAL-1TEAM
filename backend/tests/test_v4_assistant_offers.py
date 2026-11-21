@@ -145,7 +145,7 @@ def test_nudge_keeps_the_open_card_the_chat_made(api, script, monkeypatch):
                     {
                         "id": "s",
                         "name": "vendor_free_slots",
-                        "input": {"visit_ref": "m1", "prefer": "any", "days": "any"},
+                        "input": {"ref": "m1", "prefer": "any", "days": "any"},
                     }
                 ]
             },
