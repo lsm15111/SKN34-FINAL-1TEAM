@@ -49,7 +49,7 @@
 | `policy.py` | `mask_in` · `to_model` · `TurnBudget` · `mode_for` · `NudgeRules` |
 | `proactive.py` | `TRIGGERS` · `scan_events` · `scan_time` · `evaluate_due` · `score` · `judge` · `write` |
 | `memory.py` | `KEYS` · `wants` · `extract` · `validate` · `save` |
-| `prompts/` | `customer_v3.md` · `vendor_v3.md`(2026-11-21, 말투 · 지난 말 · 범위 밖 · 도구 앞 말) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v2` · `memory_v2` · `brief_v2` |
+| `prompts/` | `customer_v3.md` · `vendor_v3.md`(2026-11-21, 말투 · 지난 말 · 범위 밖 · 도구 앞 말) 등 판 번호, Haiku용 `nudge_judge_v1` · `nudge_write_v2` · `memory_v3` · `brief_v2` |
 | `schemas.py` | `TurnIn` · SSE 이벤트 · `CardOut`(kind로 구분) · `ActionOut` · `NudgeOut` · `SuggestOut` · `MemoryOut` · 도구 입력(strict) |
 | `models.py` · `repository.py` · `jobs.py` | 표 4개 · 조건부 UPDATE(commit 안 함) · `HANDLERS`(assistant_memory) |
 
