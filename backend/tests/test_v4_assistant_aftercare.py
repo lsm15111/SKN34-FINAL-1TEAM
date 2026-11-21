@@ -358,7 +358,7 @@ def test_dates_requested_vendor_line_uses_customer_start_and_closes(api, monkeyp
     tick(api)
     (n,) = nudges(trigger="dates_requested")
     assert (n["surface"], n["status"], str(n["ref_id"])) == ("vendor", "sent", did)  # 요청 → 확정
-    assert n["body"].startswith("고객이 공사 날짜를 바꾸고 싶어 해요 · ")
+    assert "요청에서 고객이 공사 날짜를 바꾸고 싶어 해요." in n["body"]
     a = action(n["action_id"])
     assert (a["kind"], a["target_ver"], a["payload"]["kind"]) == ("dates", "requested", "initial")
     assert a["payload"]["days"][0] == w1  # 고객이 고른 시작일
@@ -445,7 +445,7 @@ def test_deal_confirmed_follow_notify_until_dates_sent(api, monkeypatch):
     assert run(api, proactive.scan_time, at(14)) == 1
     assert run(api, proactive.evaluate_due, at(14)) == {"sent": 1}
     (late,) = nudges(channel="notify")
-    assert late["body"].startswith("고객이 확정한 공사 날짜를 아직 내지 않았어요 · ")
+    assert "요청의 공사 날짜를 아직 내지 않았어요." in late["body"]
     (note,) = query("select link from notifications where kind = 'assistant_nudge'")
     assert note["link"] == f"/vendor/jobs/{did}"
     # 날짜를 낸 뒤에는 무응답 알림을 다시 보내지 않는다

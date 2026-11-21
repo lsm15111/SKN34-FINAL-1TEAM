@@ -706,7 +706,9 @@ async def propose_work_check(tc: ToolCtx, a: WorkCheckIn) -> ToolOut:
     pid = pid_of(tc)
     note = " ".join((a.note or "").split()) or None
     if a.result == "fixing" and note is None:
-        raise ToolError("need_note", "남은 일을 고객이 이번에 한 말 그대로 note에 넣어 주세요.")
+        raise ToolError(
+            "need_note", "남은 일을 알려 주세요.", hint="고객이 이번에 한 말 그대로 note에 넣어요."
+        )
     if note is not None and not said_in(note, tc.text):
         raise ToolError("not_said", "남은 일은 고객이 이번에 한 말에 있는 글만 쓸 수 있어요.")
     deal_id = uuid.UUID(tc.refs.get(a.deal_ref, "deal")["id"])

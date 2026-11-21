@@ -76,8 +76,8 @@ TRIGGERS: tuple[dict, ...] = (
         "name": "dates_requested", "surface": "vendor", "kinds": ("dates_requested",),
         "follow": timedelta(days=1), "decision": True, "action": True, "state": "deal",
         "say": "공사 날짜 다시 볼래요", "why": "고객이 공사 날짜를 바꾸고 싶어 해요",
-        "feed": "고객이 공사 날짜를 바꾸고 싶어 해요 · {area}. 새 날짜 후보를 골라 뒀어요.",
-        "notify": "고객이 요청한 날짜에 아직 답하지 않았어요 · {area}. 후보를 확인해 주세요.",
+        "feed": "{area} 요청에서 고객이 공사 날짜를 바꾸고 싶어 해요. 새 날짜 후보를 골라 뒀어요.",
+        "notify": "{area} 요청에서 고객이 바란 날짜에 아직 답하지 않았어요. 후보를 확인해 주세요.",
     },
     {
         "name": "quote_due", "surface": "vendor", "channel": "notify", "state": "visit",
