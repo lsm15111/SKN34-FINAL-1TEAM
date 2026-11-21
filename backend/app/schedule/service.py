@@ -2499,7 +2499,8 @@ async def finish(
     if d.status == "checking":
         raise AppError(409, "invalid_state", "이미 끝냈다고 올렸어요. 고객 확인을 기다려요.")
     if d.status == "done":
-        raise AppError(409, "invalid_state", "고객이 확인해서 끝난 공사예요.")
+        auto = await _done_code(s, d.id) == "auto_done"
+        raise AppError(409, "invalid_state", DONE_AUTO_VENDOR if auto else DONE_CHECKED_VENDOR)
     if d.status not in FINISHABLE:
         raise AppError(409, "invalid_state", "공사 날짜를 수락한 뒤에 올릴 수 있어요.")
     if d.end_date is None or today < d.end_date:
@@ -2561,6 +2562,35 @@ async def finish(
     return await job_for(s, vendor, deal_id, today)
 
 
+# 끝난 공사 문구: 7일 자동 끝(deal_events code auto_done)과 고객 확인을 나눈다
+DONE_AUTO_VENDOR = "고객 확인 없이 7일이 지나 자동으로 끝난 공사예요."
+DONE_CHECKED_VENDOR = "고객이 확인해서 끝난 공사예요."
+DONE_AUTO_CUSTOMER = "업체가 끝냈다고 올린 뒤 7일 동안 확인이 없어 자동으로 끝난 공사예요."
+DONE_CHECKED_CUSTOMER = "이미 공사 끝을 확인한 공사예요."
+FIXING_CUSTOMER = "남은 일을 업체에 알렸어요. 업체가 다 하고 다시 끝냈다고 올리면 확인할 수 있어요."
+
+
+async def _done_code(s: AsyncSession, deal_id: uuid.UUID) -> str | None:
+    """끝난 공사의 마지막 끝 이력 code(auto_done 자동 끝 · checked 고객 확인). 없으면 None."""
+    return await s.scalar(
+        select(DealEvent.code)
+        .where(DealEvent.deal_id == deal_id, DealEvent.to_status == "done")
+        .order_by(DealEvent.at.desc())
+        .limit(1)
+    )
+
+
+async def _not_checking(s: AsyncSession, d: Deal) -> str:
+    """고객이 공사 끝을 확인할 수 없는 까닭(지금 상태 그대로): 자동으로 끝남 · 확인해서 끝남 · 남은 일 하는 중 ·
+    업체가 아직 안 올림."""
+    if d.status == "done":
+        auto = await _done_code(s, d.id) == "auto_done"
+        return DONE_AUTO_CUSTOMER if auto else DONE_CHECKED_CUSTOMER
+    if d.status == "fixing":
+        return FIXING_CUSTOMER
+    return "업체가 공사를 끝냈다고 올린 뒤에 확인할 수 있어요."
+
+
 async def check_work(
     s: AsyncSession,
     user: User,
@@ -2579,7 +2609,7 @@ async def check_work(
     if d is None or d.project_id != p.id:
         raise AppError(404, "not_found", NO_DEAL)
     if d.status != "checking":
-        raise AppError(409, "invalid_state", "업체가 공사를 끝냈다고 올린 뒤에 확인할 수 있어요.")
+        raise AppError(409, "invalid_state", await _not_checking(s, d))
     now = now_utc()
     await _set(s, Deal, d.id, "checking", {"status": data.result})
     ev = DealEvent(

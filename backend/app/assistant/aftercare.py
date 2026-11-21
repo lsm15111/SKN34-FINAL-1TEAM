@@ -220,7 +220,9 @@ async def asked_vendors(s: AsyncSession, project_id: uuid.UUID, trade: str) -> f
     return frozenset(rows.all())
 
 
-async def _out_ctx(s: AsyncSession, n: AssistantNudge, now: datetime):
+async def _out_ctx(s: AsyncSession, n: AssistantNudge, now: datetime, check: bool = False):
+    """업체가 빠진 요청이 그대로이고 이을 자리가 있을 때만. check(정리)면 이을 업체(추천 계산)는 보지 않는다: 업체가
+    잠깐 없다고 아무것도 안 한 줄을 '완료'로 닫지 않는다(고객이 다른 업체에 요청했거나 확정했으면 닫힌다)."""
     from app.assistant.runtime import RefTable
     from app.assistant.tools import cards
 
@@ -234,6 +236,8 @@ async def _out_ctx(s: AsyncSession, n: AssistantNudge, now: datetime):
     since, _ = await _source(s, n)
     if out is None or not await out_room(s, v, since or n.created_at):
         return None
+    if check:
+        return _ctx(p.id, {"vendor": v.vendor_name, "trade_code": v.trade, "out": out})
     user = await s.get(User, n.user_id)
     if user is None:
         return None
@@ -278,10 +282,14 @@ def _deal_names(d: Deal, p: Project, vendor: bool) -> dict:
     }
 
 
+# 답 기다림: 아직 답 안 함 · 채팅으로 물어봄(승인 · 거절은 아직, 도구 · 카드와 같다)
+WAITING_ACK = ("pending", "asked")
+
+
 async def _extra_ctx(s: AsyncSession, n: AssistantNudge):
-    """추가 금액이 아직 답 기다림(최신 판 · pending)이고 다시 고른 공사가 아닐 때만."""
+    """추가 금액이 아직 답 기다림(최신 판 · 답 안 함 또는 채팅으로 물어봄)이고 다시 고른 공사가 아닐 때만."""
     x = await s.get(ExtraCharge, n.ref_id, populate_existing=True)
-    if x is None or x.superseded_at is not None or x.ack != "pending":
+    if x is None or x.superseded_at is not None or x.ack not in WAITING_ACK:
         return None
     d, p = await _owned_deal(s, x.deal_id, n.user_id, vendor=False)
     if d is None or d.status == "reselected":
@@ -358,11 +366,12 @@ async def _quote_ctx(s: AsyncSession, n: AssistantNudge):
     return _ctx(None, names, due)
 
 
-async def context(s: AsyncSession, t, n: AssistantNudge, now: datetime):
-    """07 트리거의 지금 상태(proactive.context가 부른다). 상태가 바뀌었거나 남의 것이면 None."""
+async def context(s: AsyncSession, t, n: AssistantNudge, now: datetime, *, check: bool = False):
+    """07 트리거의 지금 상태(proactive.context가 부른다). 상태가 바뀌었거나 남의 것이면 None.
+    check(정리)면 상태만 가볍게 본다(업체 빠짐 줄의 추천 계산을 건너뛴다)."""
     today = now.astimezone(SEOUL).date()
     if t.name == "vendor_out":
-        return await _out_ctx(s, n, now)
+        return await _out_ctx(s, n, now, check)
     if t.name == "extra_added":
         return await _extra_ctx(s, n)
     if t.name == "work_done":
@@ -393,8 +402,9 @@ async def out_visit(s: AsyncSession, project_id: uuid.UUID, now: datetime) -> Vi
     return None
 
 
-async def again_visit(s: AsyncSession, project_id: uuid.UUID) -> Visit | None:
-    """한 번 더 요청할 수 있는 요청(답 없음 · 고르기 기한 지남 · 취소, 같은 업체 두 번째 전, 가장 새것)."""
+async def again_visits(s: AsyncSession, project_id: uuid.UUID, limit: int = 5) -> list[Visit]:
+    """한 번 더 요청할 수 있는 요청들(답 없음 · 고르기 기한 지남 · 취소, 같은 업체 두 번째 전, 가장 새것부터).
+    무료 모드가 고객이 말한 업체 이름으로 고른다."""
     later = Visit.__table__.alias("later")
     rows = await s.scalars(
         select(Visit)
@@ -411,9 +421,25 @@ async def again_visit(s: AsyncSession, project_id: uuid.UUID) -> Visit | None:
             ),
         )
         .order_by(Visit.created_at.desc())
-        .limit(1)
+        .limit(limit)
     )
-    return rows.first()
+    return list(rows.all())
+
+
+async def done_how(s: AsyncSession, deal_id: uuid.UUID) -> tuple[str | None, datetime | None]:
+    """끝난 공사가 어떻게 끝났는지(마지막 끝 이력): ('auto', 때) 고객 확인 없이 7일 자동 끝 · ('checked', 때) 고객
+    확인. 끝 이력이 없으면 (None, None). 읽기 조인."""
+    row = (
+        await s.execute(
+            select(DealEvent.code, DealEvent.at)
+            .where(DealEvent.deal_id == deal_id, DealEvent.to_status == "done")
+            .order_by(DealEvent.at.desc())
+            .limit(1)
+        )
+    ).first()
+    if row is None:
+        return None, None
+    return ("auto" if row.code == "auto_done" else "checked"), row.at
 
 
 # ---- 시간 트리거 ----

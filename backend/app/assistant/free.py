@@ -126,6 +126,8 @@ CHANGE_HOW = (
 )
 CHANGE_MADE = "날짜 바꾸기 요청 승인 카드를 만들었어요. 카드를 확인하고 눌러야 업체에 요청이 가요."
 CHANGE_SAME = "같은 날짜 바꾸기 요청 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
+# 앞당기기 · '다음 달로'처럼 며칠인지 정할 수 없는 말: 카드 없이 날짜를 묻는다(일주일 뒤로 미루면 반대 · 다른 뜻)
+CHANGE_WHEN = "언제로 바꿀지 '12월 15일부터'처럼 날짜로 말해 주세요. 그 날짜로 날짜 바꾸기 요청 카드를 만들어 드릴게요."
 CHANGE_REJECTED = "앞에서 거절한 날짜 바꾸기 요청과 같아요. 다른 날짜를 말해 주시면 새로 만들어요."
 CHANGE_HOW_EARLY = "공사 날짜는 업체를 확정한 뒤 업체가 올려요. 그 뒤에 바꿔야 하면 날짜 바꾸기 요청으로 새 날짜를 부탁할 수 있어요."
 STANDARD = "이 집 표준견적서는 부가세 포함 {won}원이에요. 공공 기준 단가로 믿집이 계산한 참고 금액이고 업체 견적은 아니에요."
@@ -904,9 +906,13 @@ async def _home(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOu
 
 # 공사 날짜를 바꾸고 싶다는 말(미루기 · 연기 · 늦추기 · 날짜 바꾸기 · 옮기기 · 당기기)
 CHANGE = re.compile(
-    r"미루|미뤄|미룰|늦추|늦춰|연기\s*(?:하|해|할|요청|돼|되)|"
+    r"미루|미뤄|미룰|늦추|늦춰|연기\s*(?:하|해|할|요청|돼|되)|앞당기|앞당겨|"
+    r"당겨\s{0,2}(?:주|줘|달)|당기고\s{0,2}싶|"
     r"(?:날짜|일정)\S{0,2}\s{0,2}(?:바꾸|바꿔|바꿀|옮기|옮겨|옮길|당기|당겨|당길)"
 )
+# 앞당기는 말 · 며칠인지 정할 수 없는 때(날짜 없이는 카드를 만들지 않는다)
+PULL = re.compile(r"당기|당겨|당길|일찍|빨리")
+VAGUE = re.compile(r"다음\s{0,2}달|담달|나중에|언젠가")
 # 바라는 말이 있어야 카드를 만든다. 없으면('미루면 어떻게 돼요?') 안내만 한다
 CHANGE_WANT = re.compile(
     r"싶|원해|주세요|주실|줄\s*수|줄래|줘요|해\s*줘|려고|(?:룰|출|꿀|길|할)\s*(?:게|래)|"
@@ -932,7 +938,8 @@ DEFAULT_DELAY = 7  # 바라는 때를 말하지 않으면 일주일 뒤부터(�
 
 def change_wish(text: str, today: date) -> tuple[int | None, date | None]:
     """말 → (미룰 날 수, 시작해도 되는 첫날) 중 하나. 'M월 D일'은 오늘 뒤 가장 가까운 그날, 'n주' · 'n일' · 일주일 ·
-    한 달 …은 날 수, 없으면 일주일."""
+    한 달 …은 날 수, 바라는 때가 없으면 일주일. 날짜 없이 앞당기는 말 · '다음 달로'처럼 며칠인지 정할 수 없는 말은
+    (None, None)(날짜를 묻는다: 일주일 뒤로 미루면 반대 방향 · 다른 뜻)."""
     m = MONTH_DAY.search(text)
     if m:
         try:
@@ -940,13 +947,20 @@ def change_wish(text: str, today: date) -> tuple[int | None, date | None]:
             return None, got if got > today else date(today.year + 1, got.month, got.day)
         except ValueError:
             pass
+    if PULL.search(text):
+        return None, None
     m = N_WEEKS.search(text)
     if m and 1 <= int(m[1]) <= 25:
         return int(m[1]) * 7, None
     m = N_DAYS.search(text)
     if m and 1 <= int(m[1]) <= 180:
         return int(m[1]), None
-    return next((n for rx, n in WORD_DELAY if rx.search(text)), DEFAULT_DELAY), None
+    got = next((n for rx, n in WORD_DELAY if rx.search(text)), None)
+    if got is not None:
+        return got, None
+    if VAGUE.search(text):
+        return None, None
+    return DEFAULT_DELAY, None
 
 
 def change_reason(text: str) -> str:
@@ -972,11 +986,13 @@ async def _change(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOu
         return (CHANGE_HOW if deals else CHANGE_HOW_EARLY), out
     if not deals:
         return CHANGE_NONE, out
+    delay, wish = change_wish(text, tc.today)
+    if delay is None and wish is None:  # 날짜 없이 앞당기기 · '다음 달로': 날짜를 묻는다
+        return CHANGE_WHEN, out
     d = next(
         (x for x in deals if x["trade"] in found),
         next((x for x in deals if x["trade"] == "dobae"), deals[0]),
     )
-    delay, wish = change_wish(text, tc.today)
     try:
         got = await propose.propose_date_change(
             tc,
@@ -1320,6 +1336,8 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
     if intent == "window" and NOT_ACCEPT.search(text):
         out = (await _brief(tc, propose_window=False))[2] if tc.visit_id else ToolOut(data={})
         return ACCEPT_RULE, out
+    if intent == "decline" and aftercare_tools.unsure(text):
+        return None  # '못 받으면 불이익 있어요?'는 묻는 말: 못 받아요 카드 없이 브리핑 + 지식 답(열린 카드는 그대로)
     if intent is None:
         return None
     if intent == "brief" and tc.visit_id is None:  # 보던 요청이 없으면 새 요청이 든 오늘 할 일

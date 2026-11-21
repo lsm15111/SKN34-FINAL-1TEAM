@@ -313,7 +313,7 @@ def mode_for(
 
 # ---- 먼저 말 걸기 규칙 (계약서 6장) ----
 
-Verdict = Literal["send", "defer", "hold"]
+Verdict = Literal["send", "defer", "hold", "quiet"]
 
 
 @dataclass(frozen=True)
@@ -327,7 +327,7 @@ class Dismissal:
 @dataclass(frozen=True)
 class RuleOut:
     verdict: Verdict
-    reason: str | None = None  # hold · defer 까닭: snooze · mute · night · cap
+    reason: str | None = None  # hold · defer · quiet 까닭: snooze · mute · night · cap
     until: datetime | None = None  # defer면 다시 볼 때
 
 
@@ -374,8 +374,11 @@ class NudgeRules:
         now: datetime,
         sent_today: int,
         dismissals: list[Dismissal],
+        due: datetime | None = None,
     ) -> RuleOut:
-        """보낼지(send) · 미룰지(defer, until) · 기록만 할지(hold). sent_today는 오늘(서울) 보낸 알림 수."""
+        """보낼지(send) · 미룰지(defer, until) · 기록만 할지(hold) · 알림 대신 조용한 대화 줄로 지금 보낼지(quiet).
+        sent_today는 오늘(서울) 보낸 알림 수. due는 할 일의 기한(공사 시작일 등): 밤 · 상한으로 미루면 그 기한이
+        지나는 알림은 미루지 않고 대화 줄(feed, 종 알림 없음)로 보낸다(미룬 공사 전날 알림이 시작일에 닫혀 안 가던 것)."""
         if self.snoozed(trigger, dismissals, now):
             return RuleOut("hold", "snooze")
         if channel != "notify":
@@ -384,7 +387,12 @@ class NudgeRules:
         if muted is not None and now < muted:
             return RuleOut("hold", "mute")
         if self.night(now):
-            return RuleOut("defer", "night", self.morning(now))
-        if sent_today >= self.cap(surface):  # 낮(9~21시)이라 다음 아침은 내일 9시
-            return RuleOut("defer", "cap", self.morning(now))
-        return RuleOut("send")
+            reason = "night"
+        elif sent_today >= self.cap(surface):  # 낮(9~21시)이라 다음 아침은 내일 9시
+            reason = "cap"
+        else:
+            return RuleOut("send")
+        until = self.morning(now)
+        if due is not None and until >= due:
+            return RuleOut("quiet", reason)
+        return RuleOut("defer", reason, until)

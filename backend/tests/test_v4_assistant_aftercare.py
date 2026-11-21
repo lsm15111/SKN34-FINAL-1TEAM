@@ -247,7 +247,7 @@ def worked() -> None:
 
 def test_work_done_checklist_then_remind_notify_and_approve(api, monkeypatch):
     quiet(monkeypatch)
-    customer, pid, did = scheduled(api)
+    customer, _pid, did = scheduled(api)
     worked()
     query("delete from notifications")
     assert api.post(f"/vendor/jobs/{did}/done", json={}).status_code == 200
@@ -282,9 +282,9 @@ def test_work_done_checklist_then_remind_notify_and_approve(api, monkeypatch):
     assert len(remind) == 1 and remind[0]["status"] == "sent"
     assert remind[0]["body"] == "마루와벽 공사가 곧 자동으로 끝나요. 점검표로 확인해 주세요."
     assert line(n["id"]) == ("expired", "replaced")
-    assert query("select link from notifications where kind = 'assistant_nudge'")[0]["link"] == (
-        f"/projects/{pid}"
-    )
+    # 같은 사건 종 알림은 하나: 시스템 done_remind 알림이 이미 울려 비서 알림은 더하지 않는다(QA edge P17)
+    assert not query("select 1 from notifications where kind = 'assistant_nudge'")
+    assert len(query("select 1 from notifications where kind = 'done_remind'")) == 1
     r = approve(api, str(remind[0]["action_id"]))
     assert r.json()["status"] == "executed", r.text
     assert query("select status from deals")[0]["status"] == "done"
