@@ -363,12 +363,14 @@ def to_claude_tools(
         if "type" in t and "input_schema" not in t and "parameters" not in t:
             out.append(dict(t))
             continue
-        d = {k: v for k, v in t.items() if k != "parameters"}
+        d = {k: v for k, v in t.items() if k not in ("parameters", "strict")}
         schema = (
             t.get("input_schema") or t.get("parameters") or {"type": "object", "properties": {}}
         )
-        d["input_schema"] = transform_schema(schema) if strict else schema
-        if strict:
+        # 도구마다 끌 수 있다(Claude는 엄격 도구를 한 요청에 20개까지 받는다)
+        on = bool(t.get("strict", strict))
+        d["input_schema"] = transform_schema(schema) if on else schema
+        if on:
             d["strict"] = True
         out.append(d)
     if cache and out and "cache_control" not in out[-1]:

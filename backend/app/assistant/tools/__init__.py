@@ -104,10 +104,20 @@ def obj(props: dict[str, dict], required: list[str] | None = None) -> dict:
     }
 
 
+# Claude는 한 요청에 엄격(strict) 도구를 20개까지 받는다(넘으면 400 'Too many strict tools').
+# 승인 카드를 만드는 제안 도구만 엄격으로 두고, 읽기 도구는 엄격을 끈다(입력은 run이 pydantic으로 검사).
+STRICT_MAX = 20
+
+
 def defs(surface: Surface) -> list[dict]:
-    """그 화면의 도구 정의(이름순). llm.to_claude_tools가 strict · cache_control을 붙인다."""
+    """그 화면의 도구 정의(이름순). llm.to_claude_tools가 strict(제안 도구만) · cache_control을 붙인다."""
     return [
-        {"name": t.name, "description": t.description, "input_schema": t.schema}
+        {
+            "name": t.name,
+            "description": t.description,
+            "input_schema": t.schema,
+            "strict": t.kind == "propose",
+        }
         for t in sorted(REGISTRY.values(), key=lambda t: t.name)
         if t.surface == surface
     ]

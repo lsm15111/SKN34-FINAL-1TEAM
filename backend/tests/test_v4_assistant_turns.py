@@ -217,7 +217,8 @@ def test_llm_turn_runs_tools_checks_numbers_and_caches(api, script):
     assert first["model"] == "claude-sonnet-5-5"
     tools = [t["name"] for t in first["tools"]]
     assert tools == sorted(tools) and "cache_control" in first["tools"][-1]
-    assert all(t.get("strict") for t in first["tools"])
+    strict = {t["name"] for t in first["tools"] if t.get("strict")}  # 제안 도구만 엄격(20개 한도)
+    assert strict and all(n.startswith("propose_") for n in strict)
     assert "propose_window_answer" not in tools  # 업체 도구는 고객 턴에 없다
     assert first["system"][-1]["cache_control"] == {"type": "ephemeral"}
     assert first["tool_choice"] == {"type": "auto"}
