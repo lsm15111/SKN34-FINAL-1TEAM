@@ -667,6 +667,11 @@ class EstimateV3LineOut(BaseModel):
         " '표준견적서에 없는 줄'로 따로 보여요(도배만 하는 공사 기준이면 퍼티 · 식대 · 운송비,"
         " 리모델링 기준이면 모두 True)",
     )
+    optional: bool = Field(
+        default=False,
+        description="표준견적서에서 '선택'인 일(도배만 하는 공사 기준의 퍼티 · 운송비, 판 2026.11b부터)."
+        " 금액은 보이고 합계 · 비교 %에는 안 넣어요(표준견적서와 같은 줄 규칙)",
+    )
     label: str = Field(default="", description="고객 화면 이름(실크벽지 · 합지벽지 …). 비면 name")
     note: str = Field(
         default="", description="고객 화면 줄 아래 짧은 뜻(풀 · 부직포 · 네바리 · 실리콘 등)"
@@ -682,9 +687,9 @@ class EstimateV3Out(BaseModel):
     grade: Literal["economy", "basic"]
     tax_kind: TaxKind
     lines: list[EstimateV3LineOut]
-    supply: int
+    supply: int = Field(description="공급가 ('선택' 줄은 빼요)")
     vat: int
-    total: int = Field(description="고객이 낼 금액 (부가세 포함)")
+    total: int = Field(description="고객이 낼 금액 (부가세 포함, '선택' 줄은 빼요)")
     vs_standard_pct: Decimal | None = Field(description="표준견적서 대비 % (표준에 없는 줄은 뺀다)")
     paper_ok: bool = Field(
         default=True,

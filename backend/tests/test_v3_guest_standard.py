@@ -33,7 +33,7 @@ def test_guest_standard_without_login_writes_nothing(api):
     assert r.status_code == 200, r.text
     g = r.json()
     # C07 공급 69.4㎡ · 방 2개(21평 기본값): 도배 면적 69.4 × 1.55 + 2 × 20.4 = 148.4㎡.
-    # 손님은 도배만 하는 공사 기준(판 2026.11-market, ADR 0004). 옛 판 2026H2-rooms는 1,802,374
+    # 손님은 도배만 하는 공사 기준(판 2026.11b-market, ADR 0004 · 0006). 옛 판 2026H2-rooms는 1,802,374
     assert (g["supply"], g["vat"], g["total"]) == (1_767_928, 176_793, 1_944_721)
     assert (g["profile"], g["profile_name"]) == ("paper_only", "도배만 하는 공사 기준")
     assert (g["scope"], g["area_m2"], g["area_basis"], g["pyeong"]) == (
@@ -45,11 +45,12 @@ def test_guest_standard_without_login_writes_nothing(api):
     assert (g["market_ver"], g["share_ver"], g["price_ver"]) == (
         "paper-market-2026.11",
         None,
-        "2026.11-market",
+        "2026.11b-market",
     )
     assert g["rooms"] == 2
     assert g["formula_ver"] == "2026.11.2" and g["budget_fit"] is None
-    assert (g["man_day"], g["days"]) == ("4.5", "2.0")
+    # 표준품셈 4.14품 × 0.91 → 4.0품 · 1.5일 (앞 판 4.5품 · 2일)
+    assert (g["man_day"], g["days"]) == ("4.0", "1.5")
     paper = next(ln for ln in g["lines"] if ln["key"] == "paper")
     # 148.4㎡ × 1.248(실크 소요량 1.2 × 1.04) = 185.2㎡ → 56.0 벽지 평
     assert (paper["qty"], paper["unit"], paper["unit_price"], paper["amount"], paper["basis"]) == (
@@ -158,7 +159,7 @@ def test_room_rule_table(api):
     r = api.get("/guest/room-rule")
     assert r.status_code == 200, r.text
     g = r.json()
-    assert (g["min"], g["max"], g["fallback"], g["price_ver"]) == (1, 5, 3, "2026.11-market")
+    assert (g["min"], g["max"], g["fallback"], g["price_ver"]) == (1, 5, 3, "2026.11b-market")
     supply = [(b["min_m2"], b["rooms"]) for b in g["bands"] if b["area_basis"] == "supply"]
     assert supply == [("0.0", 2), ("72.8", 3), ("132.3", 4)]
     assert g["room_kinds"] == ["master", "room1", "room2", "room3", "room4"]

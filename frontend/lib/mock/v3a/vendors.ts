@@ -63,7 +63,7 @@ const OUTSIDE = new Set(["putty", "meal", "truck"]);
 const LABEL: Record<string, string> = { paper_silk: "실크벽지", paper_hapji: "합지벽지" };
 const NOTE: Record<string, string> = { putty: "사전퍼티 또는 밀작업", material: "풀 · 부직포 · 네바리 · 실리콘 등", labor: "품 = 1명이 하루 하는 일" };
 const L = (code: string, key: string, name: string, qty: string, unit: string, unit_price: number | null, amount: number, mode: Line["mode"] = "price"): Line =>
-  ({ code, key, name, label: LABEL[key] ?? name, note: NOTE[key] ?? "", qty, unit, unit_price, amount, mode, included_in: null, in_standard: !OUTSIDE.has(key) });
+  ({ code, key, name, label: LABEL[key] ?? name, note: NOTE[key] ?? "", qty, unit, unit_price, amount, mode, included_in: null, in_standard: !OUTSIDE.has(key), optional: false });
 
 /** 마루와벽 실크(318만 6,150원) · 합지(287만 4,300원) — D07 AI 답의 숫자와 같아요 */
 const MARU_LINES: Record<"basic" | "economy", Line[]> = {

@@ -47,7 +47,9 @@ def pick(items=()) -> dobae.ProfilePick:
 
 def test_no_conditions_is_paper_only():
     assert pick() == dobae.ProfilePick("paper_only", ())
-    assert DOBAE_DEFAULT is DOBAE_MARKET_2026_11  # 공사 조건이 없는 계산(손님 · 평수 질문)
+    # 공사 조건이 없는 계산(손님 · 평수 질문). 지금 판은 같은 규칙 판(ADR 0006)
+    assert DOBAE_DEFAULT is DOBAE_PROFILES["paper_only"]
+    assert DOBAE_DEFAULT.profile == DOBAE_MARKET_2026_11.profile
 
 
 def test_molding_or_base_only_is_paper_only():
@@ -244,10 +246,12 @@ def test_versions_are_fixed_and_old_version_is_unchanged():
         "waste",
     }
     assert DOBAE_V3_2026_11.profile is None
-    assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11-market", "2026.11-remodel"}
+    # 지금 판은 같은 규칙 판(2026.11b-*, ADR 0006). 이 판들(2026.11-*)도 저장본대로 다시 셀 수 있어요
+    assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11b-market", "2026.11b-remodel"}
     assert dobae_prices_of("2026H2-rooms") is DOBAE_V3_2026_11
     assert dobae_prices_of("2026.11-remodel") is DOBAE_REMODEL_2026_11
-    assert dobae_prices_of(None) is dobae_prices_of("없는 판") is DOBAE_MARKET_2026_11
+    assert dobae_prices_of("2026.11-market") is DOBAE_MARKET_2026_11
+    assert dobae_prices_of(None) is dobae_prices_of("없는 판") is DOBAE_DEFAULT
     for p in DOBAE_PROFILES.values():
         assert len(p.version) <= 20  # standard_quotes.price_ver varchar(20)
         q = std(home(occupied=True), p, ("문틀 교체",)).quote

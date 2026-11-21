@@ -76,12 +76,13 @@ def test_v3_table_starts_empty_with_example_quantities(api):
     ]
     assert got == [
         ("1201", "공급 평", None, "21.0", 0),
-        # 도배만 하는 공사 기준(판 2026.11-market): 69.4㎡ · 방 2개, 실크 소요량 × 1.04 (옛 판 53.9)
+        # 도배만 하는 공사 기준(판 2026.11b-market): 69.4㎡ · 방 2개, 실크 소요량 × 1.04 (옛 판 53.9)
         ("1203", "벽지 평", None, "56.0", 0),
         ("1204", "벽지 평", None, "56.0", 0),
         ("1205", "공급 평", None, "21.0", 0),
-        ("1206", "품", None, "4.5", 0),
-        ("1207", "품", None, "4.5", 0),
+        # 품 = 표준품셈 4.14품 × 0.91 → 4.0 (ADR 0006, 앞 판 4.5)
+        ("1206", "품", None, "4.0", 0),
+        ("1207", "품", None, "4.0", 0),
         ("1208", "대", None, "1", 0),
     ]
     mok = api.get(PRICES, params={"trade": "mokgong"})
@@ -100,9 +101,9 @@ def test_confirm_v3_saves_every_line_and_warns(api):
     assert lines["paper_silk"]["example_amount"] == 504_000  # 56.0평 × 9,000 (옛 판 485,100)
     assert lines["material"]["example_amount"] == 252_000
     assert (lines["labor"]["example_amount"], lines["labor"]["warn"]) == (
-        12_600_000,
+        11_200_000,
         "too_high",
-    )  # 4.5품 × 2,800,000
+    )  # 4.0품 × 2,800,000
     # 화면이 저장 전에 쓰는 경고 경계: B6 기준 270,000원 × 10 · ÷ 10 올림
     assert (lines["labor"]["warn_high"], lines["labor"]["warn_low"]) == (2_700_000, 27_000)
     assert (
@@ -117,14 +118,18 @@ def test_confirm_v3_saves_every_line_and_warns(api):
     assert (lines["paper_hapji"]["mode"], lines["paper_hapji"]["unit_price"]) == ("excluded", None)
     assert all(lines[k]["warn"] is None for k in ("putty", "paper_silk", "material", "truck"))
     ex = v3["example"]
-    assert (ex["supply"], ex["vat"], ex["total"], ex["grade"], ex["paper_ok"]) == (
-        13_721_000,  # 퍼티 315,000 + 실크 504,000 + 자재 252,000 + 인건비 12,600,000 + 운송 50,000
-        1_372_100,
-        15_093_100,
-        "basic",
-        True,
+    assert (
+        (ex["supply"], ex["vat"], ex["total"], ex["grade"], ex["paper_ok"])
+        == (
+            11_956_000,  # 실크 504,000 + 자재 252,000 + 인건비 11,200,000 (퍼티 · 운송은 '선택', ADR 0006)
+            1_195_600,
+            13_151_600,
+            "basic",
+            True,
+        )
     )
     assert [x["key"] for x in ex["lines"] if not x["in_standard"]] == ["putty", "meal", "truck"]
+    assert [x["key"] for x in ex["lines"] if x["optional"]] == ["putty", "truck"]
     assert out["draft"] is None and out["confirmed"] is None  # 옛 칸에는 v3 묶음이 안 보인다
     (ps,) = query("select id, rows_ver, status, version from vendor_price_sets")
     assert (ps["rows_ver"], ps["status"], ps["version"]) == ("dobae_v3", "confirmed", 1)
@@ -225,14 +230,17 @@ def test_customer_estimate_v3_for_c11(api):
 
     e = _estimate(maru, pid)
     assert (e.supply, e.vat, e.total, e.tax_kind, e.grade) == (
-        2_674_500,  # 판 2026.11-market 수량 (옛 판 2026H2-rooms 2,654,550)
-        267_450,
-        2_941_950,
+        # 판 2026.11b-market: 4.0품, 퍼티 · 운송은 표준과 같이 '선택'이라 합계 밖(ADR 0006).
+        # 앞 판 2026.11-market 2,674,500 · 옛 판 2026H2-rooms 2,654,550
+        2_049_000,
+        204_900,
+        2_253_900,
         "general",
         "basic",
     )
-    # 도배만 하는 공사 기준이라 퍼티 · 식대 · 운송비는 비교에서 뺌: 215.5만 × 1.1 ÷ 표준 1,944,721
-    assert e.vs_standard_pct == Decimal("21.9") and e.paper_ok is True
+    assert {x.key for x in e.lines if x.optional} == {"putty", "truck"}
+    # 식대는 표준에 줄이 없어 비교에서만 뺌: 200.5만 × 1.1 ÷ 표준 1,944,721
+    assert e.vs_standard_pct == Decimal("13.4") and e.paper_ok is True
     assert [(x.code, x.qty, x.amount) for x in e.lines][:2] == [
         ("1201", Decimal("21.0"), 420_000),
         ("1204", Decimal("56.0"), 532_000),
@@ -240,13 +248,13 @@ def test_customer_estimate_v3_for_c11(api):
     assert e.set_id is not None and e.version == 1
     hapji = _estimate(maru, pid, grade="economy")  # ?grade= 미리 보기: 표준도 그 벽지로
     assert (
-        hapji.grade == "economy" and hapji.total - e.total == -288_750
-    )  # 합지 53.9평 · 실크 56.0평 (옛 판 −266,805)
+        hapji.grade == "economy" and hapji.total - e.total == -801_900
+    )  # 합지 53.9평 · 2.5품, 실크 56.0평 · 4.0품 (앞 판 −288,750)
     assert _estimate(none, pid) is None and _estimate(maru, pid, trade="mokgong") is None
 
     query("update vendors set tax_kind = 'simplified' where user_id = $1", maru)
     simple = _estimate(maru, pid)
-    assert (simple.vat, simple.total, simple.tax_kind) == (0, 2_674_500, "simplified")  # L02
+    assert (simple.vat, simple.total, simple.tax_kind) == (0, 2_049_000, "simplified")  # L02
     query("update vendors set status = 'rejected', review_code = 'closed', approved_at = null"
           " where user_id = $1", maru)  # fmt: skip
     assert _estimate(maru, pid) is None  # 승인된 업체만

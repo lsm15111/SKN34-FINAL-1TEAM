@@ -4538,6 +4538,12 @@ export interface components {
              */
             in_standard: boolean;
             /**
+             * Optional
+             * @description 표준견적서에서 '선택'인 일(도배만 하는 공사 기준의 퍼티 · 운송비, 판 2026.11b부터). 금액은 보이고 합계 · 비교 %에는 안 넣어요(표준견적서와 같은 줄 규칙)
+             * @default false
+             */
+            optional: boolean;
+            /**
              * Label
              * @description 고객 화면 이름(실크벽지 · 합지벽지 …). 비면 name
              * @default
@@ -4579,13 +4585,16 @@ export interface components {
             tax_kind: "general" | "simplified" | "exempt";
             /** Lines */
             lines: components["schemas"]["EstimateV3LineOut"][];
-            /** Supply */
+            /**
+             * Supply
+             * @description 공급가 ('선택' 줄은 빼요)
+             */
             supply: number;
             /** Vat */
             vat: number;
             /**
              * Total
-             * @description 고객이 낼 금액 (부가세 포함)
+             * @description 고객이 낼 금액 (부가세 포함, '선택' 줄은 빼요)
              */
             total: number;
             /**

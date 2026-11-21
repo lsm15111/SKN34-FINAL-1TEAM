@@ -10,6 +10,8 @@
   받는 법은 단가 · 다른 줄에 포함(0원) · 빼기. 간이 · 면세 업체는 부가세 0(L02).
   표준견적서 합계에 같은 일이 없는 줄은 비교 %에서 뺀다. 표준견적서 줄 키를 주면 그 집 기준대로
   (ADR 0004: 리모델링 기준은 퍼티 · 식대 · 운송비도 합계에 있음), 안 주면 옛 고정값(퍼티 · 식대 · 운송비 뺌).
+  표준견적서에서 '선택'인 줄 키(optional_keys, ADR 0006 판부터)를 주면 그 일의 가견적 줄도 '선택'이다:
+  금액은 보이고 합계 · 비교 %에는 안 넣는다(표준견적서와 같은 줄 규칙).
 """
 
 from collections.abc import Collection, Mapping, Sequence
@@ -225,6 +227,7 @@ class EstimateV3Line:
     included_in: str | None
     amount: int  # 포함 · 빼기 줄은 0
     in_standard: bool = True  # 이 집 표준견적서 합계에 같은 일이 있는 줄(비교 %에 넣음)
+    optional: bool = False  # 표준견적서에서 '선택'인 일: 금액은 보이고 합계 · 비교 %에는 안 넣음
 
 
 @dataclass(frozen=True)
@@ -260,20 +263,27 @@ def estimate_v3(
     exempt: bool = False,
     standard_total: int | None = None,
     standard_keys: Collection[str] | None = None,
+    optional_keys: Collection[str] = (),
 ) -> EstimateV3:
     """업체 v3 단가 × 계산 엔진 수량. 도배지는 고른 벽지 줄만, 단가가 없는 줄은 '빼기'로 본다.
     exempt면(간이 · 면세, L02) 부가세 0. 비교 %는 표준견적서 합계에 같은 일이 없는 줄을 빼고 센다.
-    standard_keys(표준견적서에서 합계에 드는 줄 키)를 주면 그 집 기준대로, 안 주면 줄의 옛 고정값으로 가른다."""
+    standard_keys(표준견적서에서 합계에 드는 줄 키)를 주면 그 집 기준대로, 안 주면 줄의 옛 고정값으로 가른다.
+    optional_keys(표준견적서 '선택' 줄 키)에 든 일의 줄은 '선택'이라 합계에서도 뺀다(ADR 0006)."""
     keys = frozenset(standard_keys) if standard_keys is not None else None
+    optional = frozenset(optional_keys)
     out: list[EstimateV3Line] = []
     for row in V3_ROWS:
         if row.grade is not None and row.grade != grade:
             continue
         vp = prices.get(row.key) or PriceV3("excluded")
         n, amount = row_amount(row, vp, qty)
-        inside = row.in_standard if keys is None else bool(keys & set(V3_STD_KEYS[row.key]))
-        out.append(EstimateV3Line(row, n, vp.mode, vp.unit_price, vp.included_in, amount, inside))
-    supply = sum(x.amount for x in out)
+        alike = set(V3_STD_KEYS[row.key])
+        inside = row.in_standard if keys is None else bool(keys & alike)
+        opt = not inside and bool(optional & alike)
+        out.append(
+            EstimateV3Line(row, n, vp.mode, vp.unit_price, vp.included_in, amount, inside, opt)
+        )
+    supply = sum(x.amount for x in out if not x.optional)
     money = Money(supply, 0, supply) if exempt else with_vat(supply)
     same = sum(x.amount for x in out if x.in_standard)
     compare = same if exempt else with_vat(same).total
