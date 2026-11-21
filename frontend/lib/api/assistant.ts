@@ -159,6 +159,8 @@ export type VendorBriefData = {
   sentence: string | null;
   /** 고객이 직접 할 일(반셀프 칩 화면 말). 요청 때 고객이 승인해 고정한 사본이에요. 없으면 빈 목록 */
   diy?: string[];
+  /** 고객이 고른 반나절(날짜 수락 차례일 때만). 수락은 요청 화면(href)에서 해요 */
+  picked?: { day: string; half: "am" | "pm"; due_at: string | null; href: string } | null;
 };
 export type QuoteChecklistData = {
   visit_id: string;

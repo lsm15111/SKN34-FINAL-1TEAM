@@ -3696,6 +3696,29 @@ export interface components {
             /** Open Count */
             open_count: number;
         };
+        /**
+         * BriefPicked
+         * @description 고객이 고른 반나절(업체 수락 기다림). 수락은 요청 화면에서 해요(href).
+         */
+        BriefPicked: {
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Half
+             * @enum {string}
+             */
+            half: "am" | "pm";
+            /**
+             * Due At
+             * @description 수락 기한(잡아 둔 기한)
+             */
+            due_at: string | null;
+            /** Href */
+            href: string;
+        };
         /** BriefSuggest */
         BriefSuggest: {
             /**
@@ -11441,6 +11464,8 @@ export interface components {
              * @default []
              */
             diy: string[];
+            /** @description 고객이 고른 반나절(날짜 수락 차례일 때만) */
+            picked?: components["schemas"]["BriefPicked"] | null;
         };
         /**
          * VendorCardOut

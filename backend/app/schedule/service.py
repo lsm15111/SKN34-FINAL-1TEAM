@@ -1730,6 +1730,12 @@ def _request_options(
     ]
 
 
+async def _wishes_taken(s: AsyncSession, d: Deal, r: DateRequest, today: date) -> bool:
+    """고객이 고른 시작일이 모두 지났거나 같은 업체의 다른 공사로 팀이 모두 나간 날이다(계산 엔진 busy_days)."""
+    busy = set(await _busy(s, d, today))
+    return all(w <= today or w in busy for w in r.wish_dates)
+
+
 async def _vendor_deal(s: AsyncSession, vendor: User, deal_id: uuid.UUID) -> Deal:
     d = await s.get(Deal, deal_id, populate_existing=True)
     if d is None or d.vendor_id != vendor.id:
@@ -1899,7 +1905,8 @@ async def propose_dates(
                 raise AppError(
                     422, "request_dates", "고객이 고른 시작일 중에서 같은 기간으로 골라 주세요."
                 )
-        elif start not in set(r.wish_dates):
+        elif start not in set(r.wish_dates) and not await _wishes_taken(s, d, r, today):
+            # 고른 날이 모두 지났거나 우리 업체의 다른 공사로 찼으면 다른 날로 답할 수 있다(고객이 수락해야 바뀐다)
             raise _field("days", "고객이 고른 시작일 중 하루에 시작해 주세요.")
     if change and r is None and data.reason is None:
         raise AppError(422, "reason", "날짜를 바꾸는 이유를 적어 주세요. 고객에게 보여요.")

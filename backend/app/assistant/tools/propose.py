@@ -888,8 +888,10 @@ def vendor_dates_offer(job, deal_id: uuid.UUID, days: dict, now) -> dict:
     summary = ActionSummary(
         title=f"공사 날짜 {picked[0].isoformat()} ~ {picked[-1].isoformat()} 보내기",
         rows=[
-            SummaryRow(label="일하는 날", value=f"{len(picked)}일"),
+            # 주말 · 휴일을 건너뛴 날이 보이게
+            SummaryRow(label="일하는 날", value=cards.day_list(picked)),
             SummaryRow(label="하루 인원", value=f"{days['crew']}명"),
+            SummaryRow(label="다른 공사", value="우리 업체의 다른 공사 날은 피했어요"),
         ],
         note="고객이 수락하면 확정 공정표가 만들어져요",
         approve_label="이 날짜로 보내기",

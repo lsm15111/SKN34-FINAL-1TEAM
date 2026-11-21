@@ -20,6 +20,7 @@ from app.assistant.schemas import (
     BriefDay,
     BriefEstimate,
     BriefHalves,
+    BriefPicked,
     BriefSuggest,
     BriefWindow,
     CardOut,
@@ -35,7 +36,7 @@ from app.assistant.schemas import (
     VendorTodayData,
 )
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, obj, tool
-from app.assistant.tools.cards import GRADE, TRADE
+from app.assistant.tools.cards import GRADE, HALF, TRADE, md_list, md_week, seoul_text
 from app.auth.models import User
 from app.calc.common import COUNTED
 from app.db import SessionLocal
@@ -47,6 +48,14 @@ if TYPE_CHECKING:
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 VAT = {"included": "부가세 포함", "excluded": "부가세 별도", "exempt": "면세"}
+INSTANT = {
+    True: "켜요 · 고객이 고르면 바로 잡혀요",
+    False: "꺼요 · 고객이 고르면 한 번 더 수락해요",
+}
+INCL = {True: "포함", False: "빠짐"}  # 견적서 칸 철거 · 폐기물(비면 None)
+FURNITURE = re.compile(r"가구|짐")
+# 고객이 반나절을 고른 요청: 수락은 요청 화면 단추로만 해요(비서는 수락 승인 카드를 만들지 않아요)
+PICKED_NOTE = "고객이 고른 반나절이에요. 요청 화면(요청 열기)에서 수락해 주세요."
 
 
 async def open_halves(
@@ -155,6 +164,7 @@ async def brief(
             rows=[
                 SummaryRow(label="기간", value=f"{w.start.isoformat()} ~ {w.end.isoformat()}"),
                 SummaryRow(label="빈 반나절", value=f"{w.open_count}칸"),
+                SummaryRow(label="바로 확정", value=INSTANT[instant]),
             ],
             note="답하면 고객이 그 기간에서 반나절을 골라요",
             approve_label="이 기간으로 답하기",
@@ -198,6 +208,22 @@ async def brief(
         facts.append(f"공사 시작 희망 {d.work_wish_on.isoformat()}")
     if d.photos:
         facts.append(f"사진 {len(d.photos)}장")
+    # 고객이 반나절을 골랐으면(업체 수락 차례) 그 날과 수락 기한 · 누를 곳(요청 화면)
+    b = d.booked if d.status == "picked" else None
+    picked = (
+        BriefPicked(
+            day=b.day, half=b.half, due_at=b.hold_until, href=f"/vendor/requests/{visit_id}"
+        )
+        if b is not None
+        else None
+    )
+    if picked is not None:
+        due = seoul_text(picked.due_at)
+        facts.insert(
+            0,
+            f"고객이 고른 날 {md_week(b.day)} {HALF[b.half]}"
+            + (f" · {due}까지 수락" if due else ""),
+        )
     from app.assistant.tools import diy as diy_tools  # 반셀프: 요청 때 고정한 '고객이 직접 할 일'
 
     told = await diy_tools.told_labels(s, visit_id)
@@ -220,9 +246,11 @@ async def brief(
         ),
         suggest=suggest,
         windows=windows,
-        due_at=d.reply_due_at,
+        # 답한 뒤에는 지난 답 기한을 두지 않아요
+        due_at=d.reply_due_at if d.status == "requested" else None,
         memo=policy.mask_in(d.message or "") or None,
         diy=told,
+        picked=picked,
     )
     data.sentence = brief_template(data)
     card = CardOut(
@@ -235,7 +263,15 @@ async def brief(
         "facts": facts,
         "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in fit],
         "estimate_won": d.estimate_total,
-        "due_at": d.reply_due_at,
+        "due_at": seoul_text(data.due_at),  # 서울 시각 글(UTC를 그대로 읽지 않게)
+        "picked": {
+            "day": b.day,
+            "half": HALF[b.half],
+            "due_at": seoul_text(b.hold_until),
+            "note": PICKED_NOTE,
+        }
+        if b is not None
+        else None,
         "memo": policy.data(d.message),
         "diy": policy.data("고객이 직접 할 일: " + " · ".join(told)) if told else None,
         "proposed": bool(made),
@@ -271,6 +307,10 @@ def _md(d: date) -> str:
 def brief_template(data: VendorBriefData) -> str:
     """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터(공정 · 지역이면 못 받아요로 답하는 길), 다 맞으면 답하기 좋은
     기간(카드의 제안 칸 수), 그다음 확인 필요(고객이 아직 정하지 않은 것)."""
+    if data.picked is not None:  # 고객이 반나절을 골랐어요: 수락 차례
+        p = data.picked
+        half = f"{HALF[p.half]}{'을' if p.half == 'am' else '를'}"  # 오전을 · 오후를
+        return f"고객이 {_md(p.day)} {half} 골랐어요. 요청 화면에서 수락해 주세요."
     bad = next((f for f in data.fit if f.state == "no"), None)
     if bad is not None and bad.key in MISFIT_KEYS:
         return f"{i_ga(bad.label)} 우리 업체와 맞지 않아요. 받기 어려우면 못 받아요로 답해 주세요."
@@ -417,9 +457,18 @@ async def checklist(
             label="유효기간",
             value=cur.valid_until.isoformat() if cur and cur.valid_until else None,
         ),
+        # 고객 견적 비교 카드에 보이는 칸(철거 · 폐기물 · 하자 보증)도 같이 본다
+        FieldValue(label="철거", value=INCL.get(cur.incl_removal) if cur else None),
+        FieldValue(label="폐기물 처리", value=INCL.get(cur.incl_waste) if cur else None),
+        FieldValue(
+            label="하자 보증",
+            value=f"{cur.warranty_months}개월" if cur and cur.warranty_months else None,
+        ),
     ]
     cfg = TRADES.get(d.trade)  # type: ignore[call-overload]
     easy = [*cfg.cautions, *cfg.survey_vars, *cfg.prep] if cfg else []
+    if not d.occupied:  # 빈 집이면 가구 · 짐 옮기기는 빼요
+        easy = [x for x in easy if not FURNITURE.search(x)]
     last = board.sent[0] if board.sent else None
     data = QuoteChecklistData(
         visit_id=visit_id,
@@ -433,26 +482,49 @@ async def checklist(
     card = CardOut(
         card_id=f"check-{visit_id}", kind="quote_checklist", data=data.model_dump(mode="json")
     )
+    missing = [f.label for f in fields if f.value is None]
     model = {
-        "items": [{"label": x.label} for x in items],
+        "missing": missing,  # 비어 있는 칸(먼저 말할 것)
         "fields": [{"label": f.label, "value": f.value} for f in fields],
+        "items": [{"label": x.label} for x in items],
         "easy_miss": easy,
         "prev": data.prev.model_dump() if data.prev else None,
     }
     return card, model, data
 
 
-DATES_TODO = ("waiting", "requested")  # 공사 날짜를 낼 공사(아직 안 냄 · 고객이 다른 날짜를 요청함)
+# 공사 날짜를 낼 공사: 아직 안 냄 · 고객이 다른 날짜를 요청함 · 수락한 뒤 날짜 바꾸기를 요청함
+DATES_TODO = ("waiting", "requested", "change_requested")
+PICK_DAYS = 30  # 고객이 고른 반나절(수락 기다림)을 찾는 기간
+VISIT_DAYS = 7  # 다가오는 실측 일정(my_jobs)
+
+
+async def visit_slots_of(
+    s: AsyncSession, vendor: User, today: date, days: int
+) -> tuple[list, list]:
+    """(수락 기다리는 고객이 고른 반나절, 다가오는 실측) — 업체 일정(visit.flow.vendor_schedule) 중 요청 상태가
+    고른 날(picked) · 실측 확정(booked)인 것만. 오늘부터 days일, 날 · 반나절 순. 고객 이름 없음(동네 · 면적만)."""
+    from app.assistant import repository as repo
+    from app.visit import flow
+
+    slots = (await flow.vendor_schedule(s, vendor, today, today + timedelta(days=days))).items
+    states = await repo.visit_states(s, [x.visit_id for x in slots])
+    picked = [x for x in slots if x.kind == "hold" and states.get(x.visit_id) == "picked"]
+    booked = [x for x in slots if x.kind == "booked" and states.get(x.visit_id) == "booked"]
+    return picked, booked
+
+
+def _slot_text(x) -> str:
+    return f"{md_week(x.day)} {HALF[x.half]}"
 
 
 async def vendor_today(
     s: AsyncSession, vendor: User, today: date, refs: "RefTable | None" = None
 ) -> VendorTodayData:
-    """업체 작업함 맨 위 '오늘 브리핑': 새 요청 · 오늘 실측 · 보낼 견적서 · 공사 날짜 낼 공사(줄은 코드가 고른다).
-    refs를 주면 공사 날짜 줄에 기한이 가까운 공사의 날 후보 첫 것(date_candidates) 이름표를 넣어 단추
-    (choice 'dates:d#,n#')로 승인 카드를 받게 한다. REST는 업체 비서 대화의 표, 턴은 그 턴의 표를 준다."""
+    """업체 작업함 맨 위 '오늘 브리핑': 새 요청 · 날짜 수락(고객이 고른 반나절) · 오늘 · 내일 실측 · 보낼 견적서 ·
+    공사 날짜 낼 공사(줄은 코드가 고른다). refs를 주면 공사 날짜 줄에 기한이 가까운 공사의 날 후보 첫 것(고객 날짜
+    요청이면 request_candidates) 이름표를 넣어 단추(choice 'dates:d#,n#')로 승인 카드를 받게 한다."""
     from app.schedule import service as schedule_service
-    from app.visit import flow
 
     rows: list[TodayRow] = []
     todo = (await schedule_service.vendor_inbox(s, vendor, "todo", today, None, 50)).items
@@ -464,25 +536,60 @@ async def vendor_today(
             TodayRow(
                 id="new",
                 icon="inbox",
-                title=f"새 요청 {len(new)}",
+                title=f"새 요청 {len(new)}건",
                 sub=" · ".join(dict.fromkeys(r.area_name for r in new[:3])),
                 due=soon,
                 action=RowAction(label="보기", href=f"/vendor/requests/{new[0].id}"),
             )
         )
-    booked = (await flow.vendor_schedule(s, vendor, today, today)).items
-    if booked:
-        halves = " · ".join("오전" if x.half == "am" else "오후" for x in booked)
+    picked, booked = await visit_slots_of(s, vendor, today, PICK_DAYS)
+    if picked:  # 고객이 반나절을 골랐어요: 요청 화면에서 수락해요
+        first = min(picked, key=lambda x: x.hold_until or datetime.max.replace(tzinfo=SEOUL))
+        due = seoul_text(first.hold_until)
         rows.append(
-            TodayRow(id="visit", icon="calendar", title=f"오늘 실측 {len(booked)}", sub=halves)
+            TodayRow(
+                id="pick",
+                icon="calendar",
+                title=f"날짜 수락 {len(picked)}건",
+                sub=" · ".join(
+                    x
+                    for x in (
+                        first.area_label.split(" · ")[0],
+                        _slot_text(first),
+                        due and f"{due}까지",
+                    )
+                    if x
+                ),
+                due=first.hold_until is not None
+                and first.hold_until.astimezone(SEOUL).date() <= today + timedelta(days=1),
+                action=RowAction(
+                    label="수락하러 가기", href=f"/vendor/requests/{first.visit_id}", primary=True
+                ),
+            )
         )
+    for day, key, word in (
+        (today, "visit", "오늘"),
+        (today + timedelta(days=1), "tomorrow", "내일"),
+    ):
+        mine = [x for x in booked if x.day == day]
+        if mine:
+            rows.append(
+                TodayRow(
+                    id=key,
+                    icon="calendar",
+                    title=f"{word} 실측 {len(mine)}건",
+                    sub=" · ".join(
+                        f"{HALF[x.half]} {x.area_label.split(' · ')[0]}" for x in mine[:3]
+                    ),
+                )
+            )
     quote = [r for r in todo if r.status == "visited"]
     if quote:
         rows.append(
             TodayRow(
                 id="quote",
                 icon="file",
-                title=f"보낼 견적서 {len(quote)}",
+                title=f"보낼 견적서 {len(quote)}건",
                 sub=" · ".join(dict.fromkeys(r.area_name for r in quote[:3])),
             )
         )
@@ -496,14 +603,23 @@ async def vendor_today(
         sub = list(dict.fromkeys(r.area_name for r in need[:3]))
         action = RowAction(label="보기", href=f"/vendor/jobs/{first.deal_id}")
         if refs is not None:
+            from app.assistant.tools import aftercare as aftercare_tools
+
             job = await schedule_service.job_for(s, vendor, first.deal_id, today)
-            cands = date_candidates(job, first.deal_id, today)
+            # 고객이 날짜를 요청했으면 고객이 고른 날(모두 막히면 가장 가까운 빈 날, 다른 날 제안)
+            cands = (
+                aftercare_tools.request_candidates(job, first.deal_id, today)
+                if job.request is not None
+                else date_candidates(job, first.deal_id, today)
+            )
             if cands:
                 c = cands[0]
                 d = refs.put("deal", {"id": str(first.deal_id), "trade": first.trade})
                 n = refs.put("days", c)
                 days = [date.fromisoformat(x) for x in c["days"]]
                 sub.append(f"후보 {_md(days[0])}~{_md(days[-1])}")
+                if c.get("alt"):
+                    sub.append("고객이 바란 날은 다른 공사와 겹쳐요")
                 action = RowAction(
                     label="공사 날짜 보내기",
                     say="공사 날짜 보낼래요",
@@ -514,7 +630,7 @@ async def vendor_today(
             TodayRow(
                 id="dates",
                 icon="calendar",
-                title=f"공사 날짜 낼 공사 {len(need)}",
+                title=f"공사 날짜 낼 공사 {len(need)}건",
                 sub=" · ".join(sub),
                 due=due is not None and due.astimezone(SEOUL).date() <= today + timedelta(days=1),
                 action=action,
@@ -646,7 +762,8 @@ def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
 
     count = max(job.quote.days or job.need.days, 1)
     weekend = () if job.weekend_work else WEEKEND
-    base = max(job.plan_start or today, today) + timedelta(days=1)
+    tomorrow = today + timedelta(days=1)  # 예상 시작일 그날부터(내일보다 앞이면 내일부터)
+    base = max(job.plan_start or tomorrow, tomorrow)
     last = today + timedelta(days=AHEAD_DAYS)
     blocks = free_blocks(base, count, 2, job.busy_days, days_off(base, last), weekend, until=last)
     return [
@@ -665,7 +782,9 @@ def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
     surface="vendor",
     kind="read",
     status="할 일을 보고 있어요",
-    description="우리 업체의 할 일: 답할 요청 · 보낼 견적서 · 공사 날짜를 낼 공사. 공사 날짜 후보(n1…)도 줘요.",
+    description="우리 업체의 할 일: 답할 요청 · 날짜 수락(고객이 고른 반나절, 요청 화면에서 수락) · 보낼 견적서 · "
+    "공사 날짜를 낼 공사(고객이 날짜를 요청했으면 고객이 바란 날 · 겹침) · 다가오는 실측 일정(7일). 공사 날짜 "
+    "후보(n1…)도 줘요. 시각은 서울 시각이에요.",
     model=NoArgs,
     schema=obj({}),
 )
@@ -675,35 +794,42 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
     async with SessionLocal() as s:
         todo = (await schedule_service.vendor_inbox(s, tc.user, "todo", tc.today, None, 20)).items
         jobs = (await schedule_service.vendor_inbox(s, tc.user, "jobs", tc.today, None, 20)).items
-        requests = [
-            {
+        picked, booked = await visit_slots_of(s, tc.user, tc.today, PICK_DAYS)
+        held = {x.visit_id: x for x in picked}
+        requests = []
+        for r in todo[:10]:
+            row: dict = {
                 "ref": tc.refs.put("visit", {"id": str(r.id), "trade": r.trade}),
                 "status": r.status,
                 "area": r.area_label or r.area_name,
                 "next": r.next.label if r.next else None,
-                "due_at": r.next.due_at if r.next else None,
+                "due_at": seoul_text(r.next.due_at) if r.next else None,  # 서울 시각 글
             }
-            for r in todo[:10]
-        ]
+            if r.id in held:  # 고객이 고른 반나절: 요청 화면에서 수락
+                x = held[r.id]
+                row["picked"] = {"day": x.day, "half": HALF[x.half], "note": PICKED_NOTE}
+            requests.append(row)
         deals = []
         for r in jobs[:5]:
             if r.deal_id is None:
                 continue
             ref = tc.refs.put("deal", {"id": str(r.deal_id), "trade": r.trade})
-            row: dict = {
+            row = {
                 "ref": ref,
                 "trade": r.trade,
                 "area": r.area_label or r.area_name,
                 "dates_state": r.dates_state,
+                "state": DEAL_STATE.get(r.dates_state),
                 "start_date": r.start_date,
                 "end_date": r.end_date,
-                "due_at": r.dates_due_at,
+                "due_at": seoul_text(r.dates_due_at) if r.dates_state == "waiting" else None,
             }
-            if r.dates_state in ("waiting", "requested", "change_requested"):
+            if r.dates_state in DATES_TODO:
                 from app.assistant.tools import aftercare as aftercare_tools
 
                 job = await schedule_service.job_for(s, tc.user, r.deal_id, tc.today)
-                # 고객의 날짜 요청이 열려 있으면 고객이 고른 시작일 후보(먼저 말 걸기 dates_requested와 같은 길)
+                # 고객의 날짜 요청이 열려 있으면 고객이 고른 시작일 후보(먼저 말 걸기 dates_requested와 같은 길),
+                # 고른 날이 모두 다른 공사와 겹치면 가장 가까운 빈 날(다른 날 제안)
                 got = (
                     aftercare_tools.request_candidates(job, r.deal_id, tc.today)
                     if job.request is not None
@@ -711,12 +837,52 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
                 )
                 cands = []
                 for c in got:
-                    picked = [date.fromisoformat(x) for x in c["days"]]
+                    days = [date.fromisoformat(x) for x in c["days"]]
                     nref = tc.refs.put("days", c)
-                    cands.append(
-                        {"ref": nref, "start": picked[0], "end": picked[-1], "days": picked}
-                    )
+                    cands.append({"ref": nref, "start": days[0], "end": days[-1], "days": days})
                 count = max(job.quote.days or job.need.days, 1)
                 row.update(candidates=cands, crew=job.need.crew, days_needed=count)
+                if job.request is not None:
+                    # 날짜 요청 답 기한은 요청 + 48시간(공사 날짜 기한이 아니에요)
+                    wish = sorted(job.request.wish_dates)
+                    row["due_at"] = seoul_text(job.request.due_at)
+                    row["wish"] = wish
+                    if got and got[0].get("alt"):
+                        row["note"] = (
+                            f"고객이 바란 날({md_list(wish)})은 우리 업체의 다른 공사와 "
+                            "겹쳐요. 가장 가까운 빈 날 후보로 다른 날을 제안할 수 있어요(고객이 수락해야 바뀌어요)."
+                        )
+                    elif not got:
+                        row["note"] = (
+                            "보낼 수 있는 빈 날이 없어요. 공사 화면에서 확인하거나 믿집 채팅으로 이야기해요."
+                        )
             deals.append(row)
-    return ToolOut(data={"requests": requests, "deals": deals, "count": len(requests) + len(deals)})
+        visits = [  # 다가오는 실측(7일, 확정한 반나절만)
+            {
+                "label": "실측 예정",
+                "day": x.day,
+                "half": HALF[x.half],
+                "area": x.area_label.split(" · ")[0],
+            }
+            for x in booked
+            if x.day <= tc.today + timedelta(days=VISIT_DAYS)
+        ]
+    return ToolOut(
+        data={
+            "requests": requests,
+            "deals": deals,
+            "items": visits,  # 다가오는 실측 일정(없으면 7일 안에 잡힌 실측이 없어요)
+            "count": len(requests) + len(deals),
+        }
+    )
+
+
+# 업체 쪽 공사 날짜 상태(dates_state) → 모델에 줄 화면 말
+DEAL_STATE = {
+    "waiting": "공사 날짜를 낼 차례예요",
+    "proposed": "보낸 공사 날짜를 고객이 보고 있어요",
+    "requested": "고객이 다른 날짜를 요청했어요. 답할 차례예요",
+    "scheduled": "고객이 공사 날짜를 수락했어요",
+    "change_requested": "고객이 날짜 바꾸기를 요청했어요. 답할 차례예요",
+    "change_proposed": "바꾼 날짜를 고객이 보고 있어요",
+}

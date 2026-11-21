@@ -82,11 +82,17 @@ export function BriefCard({ visitId, seed, data, now, compact = false }: {
   return (
     <section className={`${k.card} ${p.brief}`} aria-label="새 요청 브리핑">
       <div className={k.askHead}>
-        <StatusTag tone="need">새 요청</StatusTag>
+        <StatusTag tone="need">{d.picked ? "날짜 수락" : "새 요청"}</StatusTag>
         {d.due_at ? <StatusTag tone="waiting">답 기한 {dueText(d.due_at, { now, relative: true })}</StatusTag> : null}
       </div>
       <h3>{d.title}</h3>
       <ul className={k.facts}>{d.facts.map((f) => <li key={f}>{f}</li>)}</ul>
+      {/* 고객이 반나절을 골랐어요: 수락은 요청 화면에서 해요(고른 날 · 수락 기한은 위 줄) */}
+      {d.picked ? (
+        <div className={k.acts}>
+          <Link className={`${k.btn} ${k.pri} ${k.sm}`} href={d.picked.href}>요청 열어 수락하기</Link>
+        </div>
+      ) : null}
       {/* 반셀프: 요청 때 고객이 '업체에 알릴 것'으로 승인한 직접 할 일(칩 화면 말 그대로) */}
       {d.diy?.length ? <p className={p.diy}><b>고객이 직접 할 일</b>{d.diy.join(" · ")}</p> : null}
       {d.sentence ? <p className={p.say}><I n="sparkle" />{d.sentence}</p> : null}

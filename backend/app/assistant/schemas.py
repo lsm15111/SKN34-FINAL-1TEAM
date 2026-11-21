@@ -388,6 +388,15 @@ class BriefWindow(BaseModel):
     open_count: int
 
 
+class BriefPicked(BaseModel):
+    """고객이 고른 반나절(업체 수락 기다림). 수락은 요청 화면에서 해요(href)."""
+
+    day: date
+    half: Half
+    due_at: datetime | None = Field(description="수락 기한(잡아 둔 기한)")
+    href: str
+
+
 class VendorBriefData(BaseModel):
     visit_id: uuid.UUID
     title: str
@@ -405,6 +414,9 @@ class VendorBriefData(BaseModel):
     diy: list[str] = Field(
         default=[],
         description="고객이 직접 할 일(반셀프 칩 화면 말, 요청 때 고객이 승인해 고정한 사본 · 자료)",
+    )
+    picked: BriefPicked | None = Field(
+        default=None, description="고객이 고른 반나절(날짜 수락 차례일 때만)"
     )
 
 
