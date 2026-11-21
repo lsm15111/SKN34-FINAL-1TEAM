@@ -25,14 +25,17 @@ from app.calc.schedule import (
     WEEKEND,
     Dated,
     TradePlan,
+    busy_days,
     contact_until,
     count_workdays,
     days_since,
     fix_plan,
     free_range,
     is_off,
+    job_days,
     lay_out,
     order_conflicts,
+    overlap_days,
     start_choices,
     trade_days,
     workdays,
@@ -926,6 +929,7 @@ REQUESTS_MAX = 2  # deals.date_request_count CHECK와 같다
 OPTIONS = 5  # 다른 날짜 요청 후보 수
 HOLIDAY_DAYS = 180  # 화면 달력에 보여 줄 공휴일 범위
 AHEAD_DAYS = 365  # 날짜는 1년 안으로
+TEAMS = 1  # 업체 팀 수 칸이 아직 없다: 한 팀으로 본다(하루에 공사 한 건)
 NO_DEAL = "공사를 찾을 수 없어요."
 STALE = "그사이 상태가 바뀌었어요. 새로 불러올게요."
 
@@ -1661,6 +1665,29 @@ async def _vendor_deal(s: AsyncSession, vendor: User, deal_id: uuid.UUID) -> Dea
     return d
 
 
+async def _busy(s: AsyncSession, d: Deal, today: date) -> list[date]:
+    """같은 업체의 다른 공사(이 공사 빼고)로 팀이 모두 나간 날, 내일부터 1년(계산 엔진 busy_days). 공사마다
+    수락한 날 · 수락 기다리는 낸 날을 합쳐 한 건으로 센다. 공사 날짜 화면 경고 · 미리보기 · 비서 공사 날 후보가 쓴다."""
+    if d.vendor_id is None:
+        return []
+    q = select(Deal).where(
+        Deal.vendor_id == d.vendor_id, Deal.id != d.id, Deal.status.in_(OPEN_DEALS)
+    )
+    deals = list((await s.execute(q)).scalars().all())
+    pend = await _pending(s, [o.id for o in deals])
+    jobs: list[set[date]] = []
+    for o in deals:
+        got: set[date] = set()
+        if o.start_date is not None and o.end_date is not None:
+            got.update(job_days(o.start_date, o.end_date, o.work_days))
+        x = pend.get(o.id)
+        if x is not None:
+            got.update(job_days(x.start_date, x.end_date, x.days))
+        jobs.append(got)
+    lo, hi = today + timedelta(days=1), today + timedelta(days=AHEAD_DAYS)
+    return sorted(x for x in busy_days(jobs, TEAMS) if lo <= x <= hi)
+
+
 async def job_for(s: AsyncSession, vendor: User, deal_id: uuid.UUID, today: date) -> JobOut:
     """GET /vendor/jobs/{id}: 공사 날짜 내기 화면 (내 확정만)"""
     d = await _vendor_deal(s, vendor, deal_id)
@@ -1717,6 +1744,7 @@ async def job_for(s: AsyncSession, vendor: User, deal_id: uuid.UUID, today: date
         thread_id=out.thread_id,
         grand_total=extras.grand_total,
         day_no=work_view.day_no(d.work_days or [], today),
+        busy_days=await _busy(s, d, today),
     )
 
 
@@ -1729,7 +1757,8 @@ async def preview_dates(
     crew: int,
     today: date,
 ) -> PreviewOut:
-    """낼 날짜 미리 계산 (저장하지 않음): 일하는 날 · 그 인원의 필요한 기간 · 다른 공정과 겹침"""
+    """낼 날짜 미리 계산 (저장하지 않음): 일하는 날 · 그 인원의 필요한 기간 · 다른 공정과 겹침 ·
+    우리 업체의 다른 공사와 겹치는 날(막지 않고 알린다)"""
     d = await _vendor_deal(s, vendor, deal_id)
     p = await project_service.get_out(s, d.project_id)
     weekend = _weekend(await ensure_expected(s, p, today))
@@ -1741,6 +1770,7 @@ async def preview_dates(
         need=need,
         short=n < need.days,
         fit=_fit(d.trade, start, end, others, weekend, today),
+        overlaps=overlap_days(_range_workdays(start, end, weekend), await _busy(s, d, today)),
     )
 
 

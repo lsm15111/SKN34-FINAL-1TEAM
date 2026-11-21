@@ -569,27 +569,28 @@ class NoArgs(BaseModel):
 
 
 def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
-    """공사 날 후보 둘(job_for 결과): 견적서 공사 기간 · 예상 공정표 시작일로 계산 엔진(calc.schedule.workdays)이
-    고른 일하는 날. 값은 이름표(days) 값 꼴 {deal_id, start, days, crew}. my_jobs · 먼저 말 걸기가 같이 쓴다."""
-    from app.calc.schedule import WEEKEND, workdays
+    """공사 날 후보 둘(job_for 결과): 견적서 공사 기간 · 예상 공정표 시작일로 계산 엔진(calc.schedule.free_blocks)이
+    고른 일하는 날. 같은 업체의 다른 공사로 찬 날(job.busy_days: 수락한 날 · 낸 날)이 끼지 않게 잇고, 둘째 후보는
+    첫 후보 일주일 뒤부터예요(1년 안). 값은 이름표(days) 값 꼴 {deal_id, start, days, crew}.
+    my_jobs · 먼저 말 걸기(deal_confirmed) · 오늘 할 일이 같이 쓴다."""
+    from app.calc.schedule import WEEKEND, free_blocks
     from app.refprice.holidays import days_off
+    from app.schedule.service import AHEAD_DAYS
 
     count = max(job.quote.days or job.need.days, 1)
     weekend = () if job.weekend_work else WEEKEND
     base = max(job.plan_start or today, today) + timedelta(days=1)
-    out = []
-    for start in (base, base + timedelta(days=7)):
-        off = days_off(start, start + timedelta(days=count * 3 + 14))
-        picked = workdays(start, count, off, weekend)
-        out.append(
-            {
-                "deal_id": str(deal_id),
-                "start": picked[0].isoformat(),
-                "days": [x.isoformat() for x in picked],
-                "crew": job.need.crew,
-            }
-        )
-    return out
+    last = today + timedelta(days=AHEAD_DAYS)
+    blocks = free_blocks(base, count, 2, job.busy_days, days_off(base, last), weekend, until=last)
+    return [
+        {
+            "deal_id": str(deal_id),
+            "start": picked[0].isoformat(),
+            "days": [x.isoformat() for x in picked],
+            "crew": job.need.crew,
+        }
+        for picked in blocks
+    ]
 
 
 @tool(

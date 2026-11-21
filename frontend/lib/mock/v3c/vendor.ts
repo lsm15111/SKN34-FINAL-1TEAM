@@ -195,7 +195,7 @@ const jobBase = {
   quote: quoteBrief, plan_version: 1, plan_start: null, plan_end: null,
   need: { man_day: "4.0", crew: 2, days: 2, steps: [{ name: "도배", half_days: 4 }] }, others: [], weekend_work: false,
   holidays: [{ day: "2027-01-01", name: "신정" }], requests_left: 2, request_options: [], accepted_crew: null,
-  work_done_on: null, contact_until: null, fixing_note: null, done_photos: [],
+  work_done_on: null, contact_until: null, fixing_note: null, done_photos: [], busy_days: [] as string[],
 };
 export const MOCK_JOBS: Record<string, JobV3> = {
   [DID.dates]: {
