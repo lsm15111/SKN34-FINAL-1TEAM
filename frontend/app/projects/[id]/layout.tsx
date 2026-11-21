@@ -21,8 +21,9 @@ export default async function ProjectLayout({ children, params }: { children: Re
   const shell = await getProjectShell(id);
   if (!shell) notFound();
   if ((await uiMode()) === "v4") {
-    const { unread } = await getShellData();
-    return <Shell projectId={shell.id} name={shell.name} unread={unread}>{children}</Shell>;
+    const { session, unread } = await getShellData();
+    // 비서 글의 '고객님'을 그릴 때만 이 이름으로 바꿔요(이름은 LLM에 보내지 않아요)
+    return <Shell projectId={shell.id} name={shell.name} me={session?.name ?? null} unread={unread}>{children}</Shell>;
   }
   const links = stepLinks(shell.id);
   const steps = PROJECT_STEPS.map((st, i) => ({ ...st, href: links[i] }));

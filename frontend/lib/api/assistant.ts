@@ -661,6 +661,22 @@ export async function getHealth(): Promise<HealthOut | null> {
 /** 끊긴 턴을 같은 client_key로 다시 이을 때 기다리는 시간(턴 상한 45초를 넘기도록). 고객 · 업체 턴이 같이 써요 */
 export const TURN_RETRY_MS = [1200, 2500, 4000, 6000, 8000, 10000, 12000];
 
+/** 턴 POST가 넘쳐 거절됐어요(503 busy · unavailable, 턴을 만들기 전). 서버가 알려 준 Retry-After만큼 기다렸다 같은 client_key로
+ *  한 번 다시 보내요. waitMs: 기다릴 때(Retry-After 초, 없거나 이상하면 2초, 길어도 10초) */
+export class TurnBusy extends ApiError {
+  constructor(code: string, message: string, public waitMs: number) {
+    super(503, code, message);
+  }
+}
+/** 다시 보내도 넘쳤을 때 보이는 말(입력 칸 글은 되살려요) */
+export const BUSY_TEXT = "지금 이야기하는 분이 많아요. 잠시 뒤에 다시 보내 주세요.";
+
+/** Retry-After 머리(초) → 기다릴 ms */
+export function busyWaitMs(header: string | null): number {
+  const sec = Number(header);
+  return header && Number.isFinite(sec) && sec > 0 ? Math.min(sec, 10) * 1000 : 2000;
+}
+
 /** 한 턴(SSE). 스트림을 열기 전 오류(404 · 409 turn_running · 429 · 422)는 ApiError로 던져요. 끝(done · error)을 받았으면 true */
 export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signal?: AbortSignal): Promise<boolean> {
   let ended = false;
@@ -694,7 +710,10 @@ async function postSse(url: string, body: TurnIn | VendorTurnIn, emit: (e: TurnE
   }
   if (!res.ok || !res.body) {
     const e = (await res.json().catch(() => null))?.error;
-    throw new ApiError(res.status, e?.code ?? "unknown", e?.message ?? (res.status === 429 ? "너무 많이 물었어요. 잠시 뒤에 다시 해 주세요." : "답을 만들지 못했어요. 다시 해 주세요."));
+    const code: string = e?.code ?? "unknown";
+    const message: string = e?.message ?? (res.status === 429 ? "너무 많이 물었어요. 잠시 뒤에 다시 해 주세요." : "답을 만들지 못했어요. 다시 해 주세요.");
+    if (res.status === 503 && (code === "busy" || code === "unavailable")) throw new TurnBusy(code, message, busyWaitMs(res.headers.get("retry-after")));
+    throw new ApiError(res.status, code, message);
   }
   try {
     await readSse(res.body, emit);

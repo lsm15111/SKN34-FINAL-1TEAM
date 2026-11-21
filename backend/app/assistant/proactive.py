@@ -204,6 +204,30 @@ class Facts:
         }
 
 
+# 고객 문장 사실의 지금 단계 · 남은 할 일(nudge_write_v3가 읽어 할 일을 여기서 고른다). context()가 상태를 확인한
+# 뒤라 트리거마다 단계가 하나다(QA r2 c3: 업체 확정 뒤 공사 날짜 줄에 '이 업체로 확정해 보세요')
+STEPS: dict[str, tuple[str, str]] = {
+    "visit_offered": ("실측 요청 뒤 · 업체가 실측 기간을 답함", "실측 반나절 고르기"),
+    "quote_sent": ("실측 견적서 받음 · 업체 확정 전", "받은 견적서 견주고 업체 확정하기"),
+    "dates_proposed": ("업체 확정 끝 · 공사 날짜 수락 전", "올라온 공사 날짜 확인하고 수락하기"),
+    "work_eve": ("공사 날짜 수락 끝 · 내일 공사 시작", "공사 전날 준비물 챙기기"),
+    "no_pick": ("표준견적서 뒤 · 업체 고르기 전", "맞는 업체 골라 담기"),
+    "vendor_out": ("실측 요청 뒤 · 요청한 업체가 빠짐", "골라 둔 다른 업체 보기"),
+    "extra_added": ("공사 중 · 추가 금액 답 전", "추가 금액 보고 승인 · 거절 고르기"),
+    "work_done": ("업체가 공사를 끝냄 · 공사 끝 확인 전", "점검표로 보고 공사 끝 확인하기"),
+    "prep_week": ("공사 날짜 수락 끝 · 공사 일주일 전", "공사 전에 할 일 챙기기"),
+}
+
+
+def write_facts(f: Facts) -> dict:
+    """문장(write)에 보낼 사실. 지금 단계 · 남은 할 일은 그것을 읽는 판(nudge_write_v3부터)에만 더한다(v2 판 그대로)."""
+    facts = f.public()
+    step = STEPS.get(f.trigger) if f.surface == "customer" else None
+    if step is not None and prompts.version("nudge_write") != "nudge_write_v2":
+        facts["step"], facts["todo"] = step
+    return facts
+
+
 def score(f: Facts) -> int:
     """'부를 만한가' 점수(0~100, 계약서 6장)."""
     s = BASE
@@ -316,7 +340,7 @@ async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
 
     if f.surface == "vendor":
         return template(f), "guide"
-    facts = json.dumps(f.public(), ensure_ascii=False)
+    facts = json.dumps(write_facts(f), ensure_ascii=False)
     try:
         with llm.call_ctx(user_id=user_id, purpose="nudge"):
             got = await asyncio.wait_for(

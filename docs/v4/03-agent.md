@@ -133,7 +133,7 @@
 
 ### SSE
 - 순서: `ack`{turn_id, chat_id, at} → `status`{text, task?} · `card`{card_id, kind, data, say?} · `action`(ActionOut)(여러 번) → `token`{text}(여러 번) → `done`{rev, mode, cards, actions, stopped, chips, suggest}
-- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 같은 client_key 되돌림에서는 비워요.
+- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 그 단계의 다음 일이 열린 승인 카드로 와 있으면(실측 요청 · 반나절 · 업체 확정 · 날짜 수락) 단계 제안은 빼요(`STEP_OPEN`, QA r2 c5). 같은 client_key 되돌림에서는 비워요.
   - 화면 메모: 목업(`lib/api/assistant.ts`)은 `suggest`를 하나(SuggestOut)로 받아요. 백엔드는 목록이라 화면 담당이 맞춰야 해요.
 - 실패하면 `done` 대신 `error`{code, message}를 보내요.
 - 모든 data에 `seq`(턴 안에서 늘기만 함)와 `id: {turn_id}:{seq}`를 붙여요. 화면은 이미 받은 seq 이하를 버려요.
@@ -205,9 +205,11 @@
    - 복원: 최근 12줄(글만) · `project_facts` · 기억 · 열린 행동 · refs(Redis 30분)
    - 세션을 닫은 뒤 LLM을 불러요.
 2. 프롬프트 캐시
-   - 순서: tools(고정 · 이름순, 끝에 cache_control) → system(판 고정, cache_control) → 지난 턴 글 → 이번 글(가림) → `role:"system"` 턴 사실(오늘 · 단계 · 집 요약 · 기억, 코드 값만)
+   - 순서: tools(고정 · 이름순, 끝에 cache_control) → system(판 고정, cache_control) → 지난 턴 글 → 이번 글(가림) → `role:"system"` 턴 사실(지금 · 올해 · 알림 · 단계 · 집 요약 · 기억, 코드 값만)
+   - 시각 줄(2026-11-22): `지금: 11월 22일(일) 새벽 2시 5분`(서울, 때 말은 `shared.kdate.PERIODS` 표 하나) · `올해: 2026년` · `알림: 밤 9시~아침 9시엔 아침에 보내요`(`proactive.RULES` 값에서). 지시문 판 묶음은 `ASSISTANT_PROMPT_SET`(v3 기본 · v4)이고 판마다 system이 달라 캐시도 따로 맞아요
+   - 공정표 줄(QA r2 c5): `공정표: 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일(업체가 공사 날짜를 올리기 전 예상)`, 수락 뒤엔 `(수락한 공사 날짜)`. 공사 판(rev)이 바뀐 낡은 예상은 넣지 않아요(`schedule.service.period_now`, 읽기만). 실측 요청 뒤 비어 있는 시작 희망은 `공사 시작 희망 안 정함(실측 요청 뒤라 업체와 정해요)`으로 넣어요
    - 턴 안에서는 덧붙이기만 하고, 턴 사이에는 글만으로 다시 짜요.
-3. 모델 설정: `claude-sonnet-5-5`, thinking adaptive, effort medium, max_tokens 8000, stream, tool_choice auto + strict
+3. 모델 설정: `claude-sonnet-5-5`, thinking adaptive, effort medium, max_tokens 8000, stream, tool_choice auto + strict. 앱 시작 때 SDK(anthropic · openai)를 작업 스레드로 미리 불러요(`llm.warm`: 첫 LLM 턴의 늦은 import 12~20초 · 이벤트 루프 멈춤, QA r2 c5)
 4. stop_reason
    - tool_use → 도구 실행
    - pause_turn → 다시 보냄(2회까지)
@@ -395,7 +397,7 @@
 - 가림
   - 사용자 글: `mask_in`(저장 · LLM 전)
   - 도구 결과: `to_model` 허용 필드만(이름 · 연락처 · 동호수 없음)
-  - 모델 글: `SentenceGate`(숫자 · AI_ACTS · URL · 누출)
+  - 모델 글: `SentenceGate`(숫자 · AI_ACTS · URL · 누출). 숫자는 근거 값에 더해 어림 · 원대 · 차액 · 합계 · 평당 · 날짜 꼴을 읽고(`guard.loose`, 08-rules 숫자 절), 누출은 지시문의 규칙 절과만 견줘요(`prompts.rules`: `<!-- 규칙 -->`부터 `<!-- 예시 -->` 앞까지, 큰따옴표 말 뺌). 한글이 없고 로마자 같은 다른 글자가 반 넘는 문장(도구 앞 영어 속말, QA r2 c3)은 보내지 않고 까닭만 trace에 남겨요(`runtime.foreign`)
   - 웹 질의: 단지명 · 구만
   - 기록: `llm_usage` · trace · 로그에 글을 남기지 않아요.
 - 주입 방어

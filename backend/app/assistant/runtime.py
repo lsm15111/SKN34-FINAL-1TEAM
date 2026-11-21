@@ -9,8 +9,10 @@
   무료 모드 + 5분 차단기. 요청 자체가 틀린 거절(400 · 413 · 422, llm.LLMRejected)은 다시 보내지 않고 이 턴만
   무료 모드다(차단기에 세지 않는다). 빈 말은 LLM에 보내지 않는다(빈 글 블록은 400).
 - 모델 글은 문장마다 check.sentence_ok(허용 숫자 = 이번 턴 도구 결과 · 사실 · 고객 글)를 지난 것만 token으로 보낸다.
-  말투 · 길이는 모델에 맡기고(docs/v4/08-rules.md) 아주 긴 답만 줄인다: 넘친 문장은 묻는 말 · 다음 할 일만 턴 끝에
-  보낸다. 끝 안내가 지난 두 비서 턴의 끝 문장과 완전히 같으면 뺀다(policy.TALK_* · REPEAT_TURNS).
+  숫자는 근거 값 그대로에 더해 어림 · 차액 · 합계 · 평당 · 날짜 꼴을 읽고(guard.loose), 누출은 지시문의 규칙 절과만
+  견준다(prompts.rules). 말투 · 길이는 모델에 맡기고(docs/v4/08-rules.md) 아주 긴 답만 줄인다: 넘친 문장은
+  묻는 말 · 다음 할 일만 턴 끝에 보낸다. 끝 안내가 지난 두 비서 턴의 끝 문장과 완전히 같으면 뺀다(policy.TALK_* ·
+  REPEAT_TURNS).
 """
 
 import asyncio
@@ -93,6 +95,18 @@ def claims_done(text: str) -> bool:
         return False
     subjects = [m.group(1) for m in SUBJECT.finditer(text) if m.group(1) not in PLACE]
     return not subjects or all(s in FIRST for s in subjects)
+
+
+HANGUL = re.compile(r"[가-힣ㄱ-ㅎㅏ-ㅣ]")
+
+
+def foreign(text: str) -> bool:
+    """한글이 하나도 없고 글자 · 숫자의 반 넘게가 다른 글자(로마자 등)인 문장: 도구 앞에 쓴 영어 속말(QA r2 c3
+    'Direct tasks not saved; make a card.'). 제품 이름 · 단위가 섞인 한국어 문장과 숫자 · 날짜만인 줄은 아니다."""
+    if HANGUL.search(text):
+        return False
+    letters = sum(ch.isalpha() for ch in text)
+    return letters * 2 > sum(ch.isalnum() for ch in text)
 
 
 # ---- 짧은 이름표 ----
@@ -338,9 +352,9 @@ class SentenceGate:
         long_ok: bool = False,
     ) -> None:
         self._emit = emit
-        self._prompt = prompt
+        self._prompt = prompt  # 누출 견주기 글(prompts.rules: 지시문의 규칙 절만)
         self._allowed = [allowed]
-        self._nums: set[float] | None = None
+        self._ground: guard.Ground | None = None
         self._buf = ""
         self._sep = ""  # 다음 문장 앞에 붙일 띄움(빈칸 · 줄 바꿈)
         self.sent: list[str] = []
@@ -367,17 +381,18 @@ class SentenceGate:
     def allow(self, text: str) -> None:
         """이번 턴 도구 결과 글(허용 숫자)."""
         self._allowed.append(text)
-        self._nums = None
+        self._ground = None
 
     def hint(self, text: str) -> None:
         """이번 턴 도구 오류의 hint(모델에만 주는 고칠 방법). 이 글을 옮긴 문장은 고객에게 보내지 않는다."""
         if text and text.strip():
             self._hints.append(text)
 
-    def _numbers(self) -> set[float]:
-        if self._nums is None:
-            self._nums = guard.numbers("\n".join(self._allowed))
-        return self._nums
+    def _grounds(self) -> guard.Ground:
+        """허용 글의 숫자 근거(옛 검사 값 · 어림 · 파생 · 날짜). 도구 결과가 더해지면 다시 읽는다."""
+        if self._ground is None:
+            self._ground = guard.ground("\n".join(self._allowed))
+        return self._ground
 
     async def feed(self, chunk: str) -> None:
         self._buf += chunk
@@ -422,9 +437,20 @@ class SentenceGate:
     async def _one(self, text: str) -> None:
         if not text.strip():
             return
+        # 고객 글이 아닌 속말(도구 앞 영어 메모): 보내지도 기록하지도 않고 까닭만 흔적에
+        if foreign(text):
+            self.dropped.append("한글 없는 외국어 글")
+            return
+        # 숫자: 근거 값 그대로에 더해 어림 · 파생 · 날짜를 읽는다(guard.loose, 08-rules 숫자 절). 통과한 값만 허용에 더해
+        # 아래 검사(한글 금액 · 쓰면 안 되는 표현 · 한 일처럼 · 주소 · 누출)를 같이 지나게 한다
+        g = self._grounds()
+        bad, fine = guard.loose(check.mask(text.strip()), g)
         ok, why = check.sentence_ok(
-            Sentence(text=text.strip()), self._numbers(), None, None, self._prompt
+            Sentence(text=text.strip()), set(g.nums) | fine, None, None, self._prompt
         )
+        # 같은 값이 다른 자리(날짜 · 금액 묶음)에서 지나 위 검사가 놓친 숫자
+        if ok is not None and bad is not None:
+            ok, why = None, f"계산 결과 · 자료에 없는 숫자({bad})"
         if ok is not None and claims_done(ok.text):
             ok, why = None, "승인 없이 한 일처럼 말함"
         if ok is not None and policy.VS_STANDARD.search(ok.text):
@@ -712,7 +738,8 @@ class _Turn:
         )
         self.gate = SentenceGate(
             emit,
-            self.system,
+            # 누출은 규칙 절과만 견준다(성격 소개 · 좋은 예시 · 그대로 말해도 되는 말을 닮은 답은 버리지 않게)
+            prompts.rules(ctx.surface),
             f"{ctx.text}\n{ctx.facts}\n{said_before}",
             made=res.made,
             ends=recent_ends(ctx.history),
