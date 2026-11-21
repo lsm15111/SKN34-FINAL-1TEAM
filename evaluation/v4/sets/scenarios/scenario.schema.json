@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "mitjip/v4/eval/scenario.schema.json",
-  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 2 · 2026-11-21 · 목공 업체 추천 · 실측 요청 흐름 없음)",
+  "title": "믿집 v4 사용자 시뮬레이터 시나리오(판 3 · 2026-11-21 · 목공 업체 추천 · 실측 요청 흐름 없음 · 07 자동화 S14~S18)",
   "description": "시뮬레이터 러너(evaluation/v4/sim/run.py)가 world를 시험 DB에 심고, 사용자 대본(script.turns, 나중에는 persona를 흉내 내는 사용자 LLM)으로 비서(/assistant/turns · /vendor/assistant/turns)와 max_turns까지 대화한 뒤 끝 상태를 expected_end와 견줘요. 사람 승인은 script.decide 규칙대로 눌러요. 행동 · 도구 · 상태 이름은 03-비서 백엔드 설계(계약서) 2 · 5장과 같아요.",
   "type": "object",
   "required": ["id", "title", "surface", "split", "tags", "persona", "world", "opening", "max_turns", "expected_end"],
@@ -94,7 +94,9 @@
         "visits": {"type": "array", "items": {"$ref": "#/$defs/visit_end"}},
         "deals": {"type": "array", "items": {"$ref": "#/$defs/deal_end"}},
         "actions": {"$ref": "#/$defs/actions_end"},
-        "memory": {"$ref": "#/$defs/memory_end"}
+        "memory": {"$ref": "#/$defs/memory_end"},
+        "extras": {"type": "array", "items": {"$ref": "#/$defs/extra_end"}},
+        "nudges": {"$ref": "#/$defs/nudges_end"}
       }
     },
     "checks": {
@@ -136,8 +138,8 @@
     "half": {"type": "string", "pattern": "^\\d{4}-\\d{2}-\\d{2}:(am|pm)$", "description": "반나절(오전 · 오후)"},
     "trade": {"enum": ["dobae", "mokgong"]},
     "memory_key": {"enum": ["avail_days", "avail_half", "living", "style", "material", "priority", "pet", "diy"]},
-    "action_kind": {"enum": ["propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates"]},
-    "tool": {"enum": ["get_home", "get_standard_quote", "recommend_vendors", "vendor_free_slots", "compare_quotes", "get_schedule", "today_tasks", "search_knowledge", "answer_question", "find_floorplan_docs", "show_card", "request_brief", "my_free_slots", "quote_checklist", "my_jobs", "propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates"]},
+    "action_kind": {"enum": ["propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "propose_extra_answer", "propose_work_check", "propose_visit_again"]},
+    "tool": {"enum": ["get_home", "get_standard_quote", "recommend_vendors", "vendor_free_slots", "compare_quotes", "get_schedule", "today_tasks", "search_knowledge", "answer_question", "find_floorplan_docs", "show_card", "request_brief", "my_free_slots", "quote_checklist", "my_jobs", "propose_home_info", "propose_visit_request", "propose_visit_slot", "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept", "propose_window_answer", "propose_decline", "propose_dates", "draft_notice", "check_list", "get_extras", "propose_extra_answer", "propose_work_check", "propose_visit_again"]},
     "visit_status": {"enum": ["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen", "declined", "expired", "cancelled", "no_show", "closed"]},
     "deal_status": {"enum": ["confirmed", "scheduled", "checking", "fixing", "done", "reselected"]},
     "decision": {
@@ -242,7 +244,7 @@
             }
           }
         },
-        "do": {"enum": ["customer_request", "customer_pick_slot", "customer_confirm_deal", "customer_accept_dates", "customer_delete_memory", "vendor_answer_window", "vendor_accept_pick", "vendor_mark_visited", "vendor_send_quote", "vendor_decline", "vendor_propose_dates", "vendor_chat_message"]},
+        "do": {"enum": ["customer_request", "customer_pick_slot", "customer_confirm_deal", "customer_accept_dates", "customer_delete_memory", "vendor_answer_window", "vendor_accept_pick", "vendor_mark_visited", "vendor_send_quote", "vendor_decline", "vendor_propose_dates", "vendor_chat_message", "vendor_add_extra", "vendor_finish_work", "customer_request_dates", "clock_tick"]},
         "args": {"type": "object"},
         "note": {"type": "string"}
       }
@@ -294,6 +296,40 @@
         "never_executed": {"type": "array", "items": {"anyOf": [{"$ref": "#/$defs/action_kind"}, {"const": "*"}]}, "description": "\"*\"는 어떤 행동도 실행되면 안 됨"},
         "max_proposed": {"type": "object", "description": "행동 종류(또는 \"*\") → 제안 수 상한", "additionalProperties": {"type": "integer", "minimum": 0}},
         "none_without_approval": {"const": true, "description": "사람이 [승인]을 누르지 않은 행동이 executed가 되면 실패(모든 시나리오 기본)"}
+      }
+    },
+    "extra_end": {
+      "type": "object",
+      "required": ["status_in"],
+      "additionalProperties": false,
+      "description": "공사 중 추가 금액의 답 상태(07 자동화)",
+      "properties": {
+        "vendor": {"type": "string"},
+        "status_in": {"type": "array", "minItems": 1, "items": {"enum": ["pending", "approved", "rejected", "asked"]}},
+        "count": {"type": "integer", "minimum": 0}
+      }
+    },
+    "nudge_trigger": {"enum": ["visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick", "visit_requested", "visit_picked", "deal_confirmed", "vendor_out", "extra_added", "work_done", "prep_week", "dates_requested", "quote_due"]},
+    "nudge_count": {
+      "type": "object",
+      "required": ["trigger"],
+      "additionalProperties": false,
+      "properties": {
+        "trigger": {"$ref": "#/$defs/nudge_trigger"},
+        "channel": {"enum": ["feed", "notify"]},
+        "count": {"type": "integer", "minimum": 0, "description": "정확한 수"},
+        "min": {"type": "integer", "minimum": 1}
+      }
+    },
+    "nudges_end": {
+      "type": "object",
+      "description": "먼저 말 건 줄(assistant_nudges). sent: 사람에게 보인 줄 수, made: 상태와 상관없이 만든 줄 수, not_sent: 보이면 안 되는 줄, false_alarm_max: 사람이 그 일을 이미 끝낸 뒤 보낸 줄 수 상한(시간 흐름 clock_tick 뒤 확인)",
+      "additionalProperties": false,
+      "properties": {
+        "sent": {"type": "array", "items": {"$ref": "#/$defs/nudge_count"}},
+        "made": {"type": "array", "items": {"$ref": "#/$defs/nudge_count"}},
+        "not_sent": {"type": "array", "items": {"type": "object", "required": ["trigger"], "additionalProperties": false, "properties": {"trigger": {"$ref": "#/$defs/nudge_trigger"}, "channel": {"enum": ["feed", "notify"]}}}},
+        "false_alarm_max": {"type": "integer", "minimum": 0}
       }
     },
     "memory_end": {
@@ -350,7 +386,7 @@
       }
     },
     "view_key": {"enum": ["amount", "version", "day", "half", "wish_start", "wish_end", "vendors", "code", "start", "end"]},
-    "card_kind": {"enum": ["home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule", "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist"], "description": "비서 카드 종류(계약서 3장 CardKind)"},
+    "card_kind": {"enum": ["home_info", "standard_quote", "vendor_picks", "visit_slots", "quote_compare", "schedule", "knowledge", "answer", "floorplan_links", "today", "vendor_brief", "quote_checklist", "extra", "notice"], "description": "비서 카드 종류(계약서 3장 CardKind)"},
     "weekday": {"enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]},
     "rule": {
       "type": "object",

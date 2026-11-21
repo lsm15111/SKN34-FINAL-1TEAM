@@ -1,0 +1,7 @@
+/* 07 이웃 안내문 초안 카드 전용(본문 상자 · 채울 칸 · 복사). 공통 바탕 · 단추는 ../kit/kit.module.css */
+.text { display: block; width: 100%; box-sizing: border-box; min-width: 0; resize: vertical; padding: 12px 14px; border: 1px solid var(--mj-line-control); border-radius: var(--mj-radius-field); background: var(--mj-surface-sub); color: var(--mj-text); font: inherit; font-size: var(--mj-type-label); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.text:focus-visible { outline: 2px solid var(--mj-primary); outline-offset: 2px; }
+.blanks { margin: 0; display: flex; flex-wrap: wrap; gap: 2px 8px; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
+.blanks span { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.said { font-size: var(--mj-type-label); color: var(--mj-text-sub); min-width: 0; overflow-wrap: anywhere; }

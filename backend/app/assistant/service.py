@@ -692,8 +692,8 @@ def _nudge_item(n, acts: dict, task, proactive) -> AssistantItem:
 
     done = _settled(n)
     parts: list = [TextPart(text=n.body or "", src=n.src or "guide")]
-    if n.card:
-        card = {**n.card, "card_id": f"{n.card.get('card_id')}@{n.id}"} if done else n.card
+    for c in n.card if isinstance(n.card, list) else [n.card] if n.card else []:  # 07: 카드 둘
+        card = {**c, "card_id": f"{c.get('card_id')}@{n.id}"} if done else c
         parts.append(CardPart(card=CardOut.model_validate(card)))
     a = acts.get(n.action_id) if n.action_id else None
     nxt = (a.result or {}).get("superseded_by") if a else None
@@ -828,7 +828,8 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     )
 
 
-KNOW_TRIGGERS = ("work_eve", "no_pick")  # 오늘 정할 일 '알아 두기'에 보일 먼저 말 건 줄
+# 오늘 정할 일 '알아 두기'에 보일 먼저 말 건 줄(시간 트리거: 공사 전날 · 담기 없음 · 07 공사 1주 전)
+KNOW_TRIGGERS = ("work_eve", "no_pick", "prep_week")
 
 
 async def today_for(user: User, project_id: uuid.UUID) -> TodayData:

@@ -3049,7 +3049,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates";
+            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again";
             /**
              * Status
              * @enum {string}
@@ -3747,7 +3747,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist";
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice";
             /** Data */
             data: {
                 [key: string]: unknown;
@@ -6019,7 +6019,7 @@ export interface components {
              * Trigger
              * @enum {string}
              */
-            trigger: "visit_offered" | "quote_sent" | "dates_proposed" | "work_eve" | "no_pick" | "visit_requested" | "visit_picked" | "deal_confirmed";
+            trigger: "visit_offered" | "quote_sent" | "dates_proposed" | "work_eve" | "no_pick" | "visit_requested" | "visit_picked" | "deal_confirmed" | "vendor_out" | "extra_added" | "work_done" | "prep_week" | "dates_requested" | "quote_due";
             /**
              * Channel
              * @enum {string}

@@ -184,9 +184,15 @@ async def standard(
 
 
 async def vendor_picks(
-    s: AsyncSession, user: User, pid: uuid.UUID, trade: str, refs: "RefTable"
+    s: AsyncSession,
+    user: User,
+    pid: uuid.UUID,
+    trade: str,
+    refs: "RefTable",
+    exclude: frozenset[uuid.UUID] = frozenset(),
 ) -> tuple[CardOut, dict]:
-    """업체 고르기 화면과 같은 카드에서 계산 엔진 점수로 3곳(calc.vendor_pick). 사유는 틀 글(표준 대비 % 뗌)."""
+    """업체 고르기 화면과 같은 카드에서 계산 엔진 점수로 3곳(calc.vendor_pick). 사유는 틀 글(표준 대비 % 뗌).
+    exclude: 고르지 않을 업체(07 업체가 빠짐: 이미 요청 · 확정한 업체)."""
     from app.calc import vendor_pick
     from app.visit import service as visit_service
 
@@ -206,7 +212,7 @@ async def vendor_picks(
         )
         for local, cards in ((True, lst.local), (False, lst.nearby))
         for c in cards
-        if c.state == "ok"
+        if c.state == "ok" and c.vendor_id not in exclude
     ]
     picks = []
     for p in vendor_pick.pick(cands):

@@ -44,6 +44,7 @@ class ToolCtx:
     refs: "RefTable"
     mode: Literal["llm", "free"] = "llm"
     pressed: bool = False  # 사람이 카드 단추로 고른 제안(거절한 제안도 다시 만든다, choices.apply)
+    text: str = ""  # 이번 턴 고객 글(가린 것). 고객 말에서만 받는 칸(공사 끝 남은 일)을 견준다
 
 
 @dataclass
@@ -128,4 +129,4 @@ async def run(t: Tool, tc: ToolCtx, args: Any) -> ToolOut:
 
 
 # 도구 모듈을 불러 REGISTRY를 채운다(정의 순서와 상관없이 defs는 이름순)
-from app.assistant.tools import answer, customer, floorplan, propose, vendor  # noqa: F401
+from app.assistant.tools import aftercare, answer, customer, floorplan, propose, vendor  # noqa: F401

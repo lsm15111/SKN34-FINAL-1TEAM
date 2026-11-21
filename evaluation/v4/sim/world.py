@@ -4,7 +4,9 @@
 - 실측 · 견적서 · 확정 · 공사 날짜: 고객 · 업체 화면이 부르는 API 그대로예요(담기 → 요청 → 기간 답하기 → 고르기 →
   견적서 보내기 → 확정 → 날짜 내기 → 수락).
 - SQL로 넣는 것(notes에 남겨요): 업체 승인, '실측 받음'(반나절이 지나야 누를 수 있어 시간 건너뜀), 목공 확정
-  (v3 공사는 집 정보가 도배만이라 목공 요청을 API로 만들 수 없어요. 백엔드 test_dates.mokgong_scheduled와 같은 방법).
+  (v3 공사는 집 정보가 도배만이라 목공 요청을 API로 만들 수 없어요. 백엔드 test_dates.mokgong_scheduled와 같은 방법),
+  공사 끝 전 공사 날짜 앞당기기(공사 날이 지나야 끝을 올릴 수 있어 시간 건너뜀).
+- 시간 흐름(clock_tick): 그 시각으로 비서 시간 트리거(hourly)와 정리(sweep)만 한 차례 돌려요.
 - 모든 사람 · 업체 · 번호는 합성 값이에요. 비밀번호는 시험 DB에만 있는 합성 값이에요.
 """
 
@@ -68,10 +70,11 @@ def split_address(address: str | None) -> dict:
 
 
 class World:
-    def __init__(self, api, query, today: date) -> None:
+    def __init__(self, api, query, today: date, call=None) -> None:
         from app.config import settings
 
         self.api, self.q, self.today = api, query, today
+        self.call = call  # 앱 루프에서 async 함수 돌리기(시간 흐름 event)
         self.cookie = settings.session_cookie
         self.vendors: dict[str, dict] = {}
         self.customers: dict[str, dict] = {}
@@ -694,6 +697,77 @@ class World:
         for m in hit:
             self.need(self.api.delete(f"/assistant/memory/{m['id']}"), "기억 지우기")
 
+    # ---- events: 공사 뒤 일 · 시간 흐름(07-automation 4.6) ----
+
+    def ev_vendor_decline(self, a: dict, cref: str) -> None:
+        """업체가 요청을 못 받아요(POST /vendor/visits/{id}/decline, code: full · out_of_area · other)."""
+        v = self.visits[self.visit_ref(a, cref)]
+        self.as_(self.vendors[v["vendor"]])
+        r = self.api.post(
+            f"/vendor/visits/{v['id']}/decline", json={"code": a.get("code") or "full"}
+        )
+        self.need(r, "업체 못 받아요")
+
+    def ev_vendor_add_extra(self, a: dict, cref: str) -> None:
+        """업체가 공사 중 추가 금액을 올려요(업체가 적은 금액 · 부가세 방식, 합계는 계산 엔진)."""
+        did, vendor = self.deal_id(a, cref)
+        self.as_(self.vendors[vendor])
+        body = {
+            "title": a.get("title") or "추가 공사",
+            "reason": a.get("reason") or "현장에서 추가로 할 일이 생겼어요.",
+            "entered_amount": int(a.get("amount") or 100_000),
+            "vat_mode": a.get("vat") or "included",
+        }
+        self.need(self.api.post(f"/vendor/jobs/{did}/extras", json=body), "추가 금액 올리기")
+
+    def ev_vendor_finish_work(self, a: dict, cref: str) -> None:
+        """업체가 공사를 끝냈다고 올려요. 공사 날이 지나야 올릴 수 있어 공사 날짜를 먼저 앞당겨요(SQL)."""
+        did, vendor = self.deal_id(a, cref)
+        rows = self.q(
+            "update deals set start_date = $1, end_date = $2"
+            " where id = $3 and status = 'scheduled' returning id",
+            self.today - timedelta(days=3),
+            self.today,
+            uuid.UUID(did),
+        )
+        if not rows:
+            raise SeedError("공사 날짜를 잡은 확정이 없어 공사 끝을 올릴 수 없어요")
+        self.note(
+            "공사 끝은 공사 날이 지나야 올릴 수 있어 공사 날짜를 SQL로 앞당겼어요(시간 건너뜀)"
+        )
+        self.as_(self.vendors[vendor])
+        self.need(self.api.post(f"/vendor/jobs/{did}/done", json={}), "공사 끝 올리기")
+
+    def ev_customer_request_dates(self, a: dict, cref: str) -> None:
+        """고객이 공사 날짜 바꾸기를 요청해요(희망 시작일 1~3개)."""
+        did, _ = self.deal_id(a, cref)
+        cust = self.customers[cref]
+        self.as_(cust)
+        body: dict = {"wish_dates": a["wish_dates"]}
+        if a.get("reason"):
+            body["reason"] = a["reason"]
+        r = self.api.post(f"/projects/{cust['pid']}/deals/{did}/date-requests", json=body)
+        self.need(r, "날짜 바꾸기 요청")
+
+    def ev_clock_tick(self, a: dict, cref: str) -> None:
+        """시간 흐름: at(시나리오 날짜, 날짜 옮김을 따라요) 또는 days(실제 오늘부터)의 hour시로 비서 시간 트리거
+        (hourly)와 정리(sweep: 만료 · 닫기 · 아웃박스 · 평가)를 한 차례 돌려요. 다른 기한 일은 돌리지 않아요."""
+        from datetime import datetime, time
+
+        from app.assistant import service as assistant_service
+        from app.shared.clock import SEOUL
+
+        if self.call is None:
+            raise SeedError("시간 흐름 event는 앱 루프가 있어야 해요")
+        if a.get("at"):
+            day = date.fromisoformat(a["at"])
+        else:
+            day = self.today + timedelta(days=int(a.get("days") or 0))
+        now = datetime.combine(day, time(int(a.get("hour", 14))), SEOUL)
+        self.call(assistant_service.hourly, now)
+        self.call(assistant_service.sweep, now)
+        self.note("시간 흐름 event는 그 시각으로 비서 시간 트리거 · 정리만 돌렸어요")
+
     # ---- 끝 상태 ----
 
     def memory(self) -> list[dict] | None:
@@ -738,6 +812,11 @@ class World:
             "select id, kind, status, error_code, surface, origin from assistant_actions"
             " order by created_at"
         )
+        extras = self.q(
+            "select e.ack, e.total, d.vendor_id from extra_charges e join deals d on d.id = e.deal_id"
+            " where d.project_id = any($1::uuid[])",
+            pids,
+        )
         return {
             "visits": [
                 {
@@ -771,5 +850,37 @@ class World:
                 }
                 for r in acts
             ],
+            "extras": [
+                {"status": r["ack"], "total": r["total"], "vendor": vmap.get(str(r["vendor_id"]))}
+                for r in extras
+            ],
+            "nudges": self.nudges(),
             "memory": self.memory(),
         }
+
+    def nudges(self) -> list[dict]:
+        """먼저 말 건 줄. sent: 사람에게 보낸 적 있음(보낸 뒤 승인 · 화면 처리로 닫힌 줄도). late: 그 일을 끝내는
+        행동(repository.SETTLES)이 같은 사람 · 같은 대상(공사가 대상인 행동은 그 사람 줄 모두)에서 실행된 뒤에 보낸
+        줄(거짓 경보)."""
+        from app.assistant.repository import SETTLES
+
+        done = self.q(
+            "select kind, user_id, target_kind, target_id, executed_at from assistant_actions"
+            " where status = 'executed' and executed_at is not null"
+        )
+        rows = self.q(
+            "select trigger, channel, status, reason, surface, user_id, ref_id, sent_at"
+            " from assistant_nudges order by created_at"
+        )
+        out = []
+        for r in rows:
+            late = r["sent_at"] is not None and any(
+                a["user_id"] == r["user_id"]
+                and r["trigger"] in SETTLES.get(a["kind"], ())
+                and (a["target_kind"] == "project" or a["target_id"] == r["ref_id"])
+                and a["executed_at"] < r["sent_at"]
+                for a in done
+            )
+            out.append({k: r[k] for k in ("trigger", "channel", "status", "reason", "surface")}
+                       | {"sent": r["sent_at"] is not None, "late": late})  # fmt: skip
+        return out

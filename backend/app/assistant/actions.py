@@ -27,6 +27,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.assistant import aftercare
 from app.assistant import repository as repo
 from app.assistant.models import AssistantAction
 from app.assistant.schemas import ActionOut, ActionResult, ActionSummary, DiffOut, SummaryRow
@@ -497,6 +498,7 @@ async def close_handled() -> int:
             live=await repo.live_visits(s, of("project")),
         )
         gone = [a.id for a in rows if moved(a, t)]
+        gone += await aftercare.moved_ids(s, rows)  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
         closed = await repo.close_handled(s, gone, HANDLED) if gone else []
         await s.commit()
     return len(closed)
@@ -722,7 +724,12 @@ async def _dates(s: AsyncSession, vendor: User, a: AssistantAction, now: datetim
     from app.schedule.schemas import DatesIn
 
     pl = a.payload
-    data = DatesIn(days=[date.fromisoformat(x) for x in pl["days"]], crew=int(pl["crew"]))
+    data = DatesIn(
+        days=[date.fromisoformat(x) for x in pl["days"]],
+        crew=int(pl["crew"]),
+        kind=pl.get("kind", "initial"),  # 07: 수락한 뒤 날짜 바꾸기 요청에 답하면 change
+        request_id=uuid.UUID(pl["request_id"]) if pl.get("request_id") else None,
+    )
     href = f"/vendor/jobs/{pl['deal_id']}"
     text = "공사 날짜를 보냈어요. 고객이 수락하면 확정돼요"
     await mark({"text": text, "href": href, "label": "공사 보기"})
@@ -740,4 +747,5 @@ EXECUTORS: dict[str, Executor] = {
     "window_answer": _window_answer,
     "decline": _decline,
     "dates": _dates,
+    **aftercare.EXECUTORS,  # 07: extra_answer · work_check · visit_again
 }

@@ -288,6 +288,30 @@ class SimEndTest(unittest.TestCase):
         self.assertTrue(got["기억에 없어야 할 것"]["na"])
         self.assertFalse(simcheck.passed(list(got.values())))
 
+    def test_extras_and_nudges(self):
+        # 07 자동화: 추가 금액 답 상태 · 먼저 말 건 줄(보냄 · 만듦 · 보내면 안 됨 · 거짓 경보)
+        st = {"visits": [], "deals": [], "actions": [], "memory": None,
+              "extras": [{"status": "approved", "total": 165000, "vendor": "maru"}],
+              "nudges": [  # 승인으로 닫힌 줄(expired · acted)도 보낸 줄이에요
+                  {"trigger": "extra_added", "channel": "feed", "status": "expired", "sent": True,
+                   "late": False},
+                  {"trigger": "extra_added", "channel": "notify", "status": "sent", "sent": True,
+                   "late": True},
+                  {"trigger": "prep_week", "channel": "notify", "status": "held", "sent": False,
+                   "late": False}]}  # fmt: skip
+        exp = {"extras": [{"vendor": "maru", "status_in": ["approved"], "count": 1}],
+               "nudges": {"sent": [{"trigger": "extra_added", "channel": "feed", "count": 1}],
+                          "made": [{"trigger": "prep_week", "count": 1}],
+                          "not_sent": [{"trigger": "extra_added", "channel": "notify"}],
+                          "false_alarm_max": 0}}  # fmt: skip
+        got = {i["what"]: i for i in simcheck.check_end(exp, st)}
+        bad = sorted(w for w, i in got.items() if not i["ok"])
+        self.assertEqual(bad, ["거짓 경보 ≤0", "줄 extra_added/notify 보냄 0"])
+        self.assertTrue(got["추가 금액 maru approved 1건"]["ok"])
+        self.assertTrue(got["줄 prep_week 만듦 =1"]["ok"])  # 기록만 한 줄도 만든 줄이에요
+        none = simcheck.check_end({"nudges": {"false_alarm_max": 0}}, {**st, "nudges": None})
+        self.assertFalse(none[-1]["ok"])
+
     def test_process_checks(self):
         run = {"turns": [{"kind": "say", "tool_calls": 2, "tools": ["compare_quotes"]},
                          {"kind": "screen"}],

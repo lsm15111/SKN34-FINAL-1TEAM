@@ -464,7 +464,7 @@ async def dismissals(
 # 행동 payload의 공사 날짜 제안 proposal_id일 때). 날짜 바꾸기 요청(date_change, 대상 = 확정)은 그 확정의 '공사
 # 전날'(ref = 확정)과 요청할 때 수락 기다리던 날짜의 '공사 날짜 왔어요'(ref = 제안)를 닫는다
 SETTLES: dict[str, tuple[str, ...]] = {
-    "visit_request": ("no_pick",),
+    "visit_request": ("no_pick", "vendor_out"),
     "visit_slot": ("visit_offered",),
     "vendor_confirm": ("quote_sent",),
     "dates_accept": ("dates_proposed",),
@@ -472,7 +472,11 @@ SETTLES: dict[str, tuple[str, ...]] = {
     "date_change": ("work_eve", "dates_proposed"),
     "window_answer": ("visit_requested", "visit_picked"),
     "decline": ("visit_requested", "visit_picked"),
-    "dates": ("deal_confirmed",),
+    "dates": ("deal_confirmed", "dates_requested"),
+    # 07 자동화(대상: 추가 금액 · 확정 · 빠진 요청)
+    "extra_answer": ("extra_added",),
+    "work_check": ("work_done",),
+    "visit_again": ("vendor_out",),
 }
 
 

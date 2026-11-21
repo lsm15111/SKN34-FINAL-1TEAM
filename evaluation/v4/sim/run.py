@@ -15,6 +15,7 @@
   같은 종류 승인 카드가 이미 있으면 누르지 않고, 카드가 없으면 press.ask 글을 먼저 보내요.
 - 사람 승인: script.decide 규칙(첫 번째로 맞는 규칙, 없으면 누르지 않음). 승인은 /actions/{id}/approve(seen = 카드 판).
 - events: at_start · after_turn · after_event · after_action(그 종류 행동이 그 상태가 되면)으로 업체 · 고객 쪽 일을 일으켜요.
+  clock_tick은 정한 시각으로 비서 시간 트리거 · 정리를 돌려요(먼저 말 건 줄의 거짓 경보 확인, sim/world.py).
   after_turn · 승인 규칙의 턴 번호는 대본 글 턴만 세요(단추 · ask 턴은 빼요). max_turns는 모든 턴을 세요.
 - worker: 걸음마다 한 차례 돌려요(기억 뽑기 일 assistant_memory + 비서 정리 · 먼저 말 걸기). --no-worker ·
   --no-nudges로 끌 수 있어요. 행동마다 출처(button · turn · screen · nudge)를 적어요.
@@ -197,7 +198,7 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
     script = s.get("script") or {}
     steps = [_shift_step(t, shift, base) for t in script.get("turns") or []]
     surface = s["surface"]
-    world = World(app.api, app.query, real_today)
+    world = World(app.api, app.query, real_today, app.call)
     cref = (s["world"].get("customer") or {}).get("ref") or "c1"
     row: dict = {
         "scenario": s["id"],
@@ -458,7 +459,17 @@ def summarize(rows: list[dict], trials: int) -> dict:
         "cost_usd": round(sum(r.get("usage", {}).get("cost_usd", 0) for r in rows), 6),
         "presses": press_stats(rows),
         "sources": source_stats(rows),
+        "nudges": nudge_stats(rows),
         "worker": rows[0].get("worker") if rows else None,
+    }
+
+
+def nudge_stats(rs: list[dict]) -> dict:
+    """먼저 말 건 줄: 보낸 줄(보낸 뒤 닫힌 줄 포함) 수와 거짓 경보(사람이 그 일을 끝낸 뒤 보낸 줄) 수."""
+    ns = [n for r in rs for n in (r.get("state") or {}).get("nudges") or []]
+    return {
+        "shown": sum(check.nudge_sent(n) for n in ns),
+        "false_alarms": sum(bool(n.get("late")) for n in ns),
     }
 
 
@@ -493,6 +504,8 @@ def report(summary: dict, mode: str) -> None:
           f"· 못 누름 {p.get('missed', 0)} · 이름표 표에서 찾음 {p.get('from_refs', 0)} "
           f"· card_id 422 {p.get('card_id_422', 0)}")  # fmt: skip
     print("행동 출처:", summary.get("sources"))
+    nd = summary.get("nudges") or {}
+    print(f"먼저 말 건 줄: 보낸 줄 {nd.get('shown', 0)} · 거짓 경보 {nd.get('false_alarms', 0)}")
 
 
 def press_cell(p: dict | None) -> str:
