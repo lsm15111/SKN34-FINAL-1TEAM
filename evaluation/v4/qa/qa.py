@@ -49,14 +49,15 @@ CARD_KO = {
     "visit_slots": "실측 시간", "quote_compare": "견적 비교", "schedule": "공정표",
     "knowledge": "알아 두기", "answer": "답", "floorplan_links": "도면 찾기", "today": "오늘 정할 일",
     "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트", "extra": "추가 금액",
-    "notice": "이웃 안내문",
+    "notice": "이웃 안내문", "grade_compare": "벽지 견주기", "market_range": "시세 범위",
+    "options": "고르기", "research": "조사",
 }  # fmt: skip
 ACTION_KO = {
     "home_info": "집 정보 고치기", "visit_request": "실측 요청", "visit_slot": "실측 시간 고르기",
     "vendor_confirm": "업체 확정", "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락",
     "date_change": "날짜 바꾸기 요청", "window_answer": "기간 답하기", "decline": "못 받아요",
     "dates": "공사 날짜 보내기", "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인",
-    "visit_again": "한 번 더 요청",
+    "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소",
 }  # fmt: skip
 STATUS_KO = {
     "proposed": "승인 기다림", "approved": "처리 중", "executed": "실행함", "rejected": "거절함",
@@ -533,8 +534,11 @@ def p(*lines: str) -> None:
 
 def action_lines(a: dict, key: str, surface: str) -> list[str]:
     s = a.get("summary") or {}
+    # 말로 거둔 카드는 거절(rejected) + 까닭 withdrawn으로 남아요. 화면처럼 '거둠'으로 보여요
+    withdrawn = a.get("status") == "rejected" and a.get("error_code") == "withdrawn"
+    status = "거둠" if withdrawn else STATUS_KO.get(a.get("status"), a.get("status"))
     head = (f"{id8(a.get('action_id'))} {ACTION_KO.get(a.get('kind'), a.get('kind'))}"
-            f" [{STATUS_KO.get(a.get('status'), a.get('status'))}] {s.get('title', '')}")  # fmt: skip
+            f" [{status}] {s.get('title', '')}")  # fmt: skip
     out = [head]
     bits = []
     if s.get("amount_won") is not None:
@@ -559,7 +563,9 @@ def action_lines(a: dict, key: str, surface: str) -> list[str]:
     if a.get("status") == "proposed":
         tail.append(f"기한 {when(a.get('expires_at'))}")
     if a.get("error_code"):
-        tail.append(f"까닭 {a['error_code']}")
+        why = {"withdrawn": "말로 거둠", "replaced": "새 카드로 바뀜", "due": "기한 지남",
+               "stalled": "처리 멈춤"}.get(a["error_code"], a["error_code"])  # fmt: skip
+        tail.append(f"까닭 {why}")
     if (a.get("result") or {}).get("text"):
         tail.append(f"결과: {a['result']['text']}")
     if a.get("replaced_by"):
