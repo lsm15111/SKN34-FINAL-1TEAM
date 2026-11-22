@@ -451,26 +451,27 @@ def _prompt_tokens(u: dict[str, int]) -> int:
     return sum(u.get(k, 0) for k in ("input", "cache_read", "cache_write_5m", "cache_write_1h"))
 
 
+def _block_out(b: Any) -> dict | None:
+    """응답 블록 하나 → dict(빈 글 블록은 None: 다시 보내면 400이다). 생각 블록은 서명까지 받은 그대로 둔다."""
+    if b.type == "text":
+        if not b.text and not getattr(b, "citations", None):
+            return None
+        d: dict = {"type": "text", "text": b.text}
+        if getattr(b, "citations", None):
+            d["citations"] = [c.to_dict() for c in b.citations]
+        return d
+    if b.type == "thinking":
+        return {"type": "thinking", "thinking": b.thinking, "signature": b.signature}
+    if b.type == "redacted_thinking":
+        return {"type": "redacted_thinking", "data": b.data}
+    if b.type == "tool_use":
+        return {"type": "tool_use", "id": b.id, "name": b.name, "input": b.input}
+    return b.to_dict()  # 서버 도구 블록(server_tool_use · web_search_tool_result 등)은 받은 그대로
+
+
 def _blocks_out(content: Sequence[Any]) -> list[dict]:
-    """응답 블록 → 다음 요청에 붙일 assistant 블록. 생각 블록은 서명까지 받은 그대로 둔다."""
-    out: list[dict] = []
-    for b in content:
-        if b.type == "text":
-            if not b.text and not getattr(b, "citations", None):
-                continue  # 빈 글 블록은 다시 보내면 400이다
-            d: dict = {"type": "text", "text": b.text}
-            if getattr(b, "citations", None):
-                d["citations"] = [c.to_dict() for c in b.citations]
-            out.append(d)
-        elif b.type == "thinking":
-            out.append({"type": "thinking", "thinking": b.thinking, "signature": b.signature})
-        elif b.type == "redacted_thinking":
-            out.append({"type": "redacted_thinking", "data": b.data})
-        elif b.type == "tool_use":
-            out.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
-        else:  # 서버 도구 블록(server_tool_use · web_search_tool_result 등)은 받은 그대로
-            out.append(b.to_dict())
-    return out
+    """응답 블록 → 다음 요청에 붙일 assistant 블록."""
+    return [d for d in (_block_out(b) for b in content) if d is not None]
 
 
 # ── 대본(시험) · 클라이언트 ─────────────────────────────────────
@@ -561,6 +562,7 @@ class _ScriptStream:
             if b.type == "text":
                 for i in range(0, len(b.text), 6):
                     yield SimpleNamespace(type="text", text=b.text[i : i + 6])
+            yield SimpleNamespace(type="content_block_stop", content_block=b)
         if self._fail is not None:
             raise self._fail
 
@@ -771,6 +773,7 @@ async def claude_stream(
     max_tokens: int = 8000,
     container: str | None = None,
     on_block: Callable[[str, str | None], Awaitable[None]] | None = None,
+    on_block_end: Callable[[dict], Awaitable[None]] | None = None,
 ) -> ClaudeReply:
     """Claude 한 번을 스트림으로 부른다(비서 턴의 LLM 1회). 글 조각은 받는 대로 on_text로 넘긴다.
 
@@ -782,7 +785,8 @@ async def claude_stream(
     on_text 오류는 그대로 낸다. 거절 · 잘림이어도 오류를 내지 않고 stop으로 알린다(부르는 쪽이 무료 모드 · 끊긴 문장
     버리기를 정한다).
     container: pause_turn을 이을 때 앞 응답의 코드 실행 컨테이너(웹 도구 동적 거르기). on_block: 블록이 시작될
-    때마다 (블록 종류, 서버 도구 이름)을 넘긴다(조사 진행 단계). on_block 오류도 그대로 낸다.
+    때마다 (블록 종류, 서버 도구 이름)을 넘긴다(조사 진행 단계). on_block_end: 블록이 끝날 때마다 다 모인 블록
+    (dict, 서버 도구 입력 포함)을 넘긴다(조사 진행 기록: 검색어 · 읽은 곳). 두 알림의 오류도 그대로 낸다.
     """
     client = _claude()
     call = await _guard(purpose, "assistant")
@@ -825,6 +829,13 @@ async def claude_stream(
                         await on_block(b.type, getattr(b, "name", None))
                     except Exception as e:
                         raise _CallbackError(e) from e
+                elif ev.type == "content_block_stop" and on_block_end is not None:
+                    done = _block_out(ev.content_block) if hasattr(ev, "content_block") else None
+                    if done is not None:
+                        try:
+                            await on_block_end(done)
+                        except Exception as e:
+                            raise _CallbackError(e) from e
             msg = await stream.get_final_message()
     except _CallbackError as e:
         await _sink(call, name, seen, "callback")

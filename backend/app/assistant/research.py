@@ -7,6 +7,10 @@
 - worker(run): queued → running → Claude 왕복(서버 도구, pause_turn 잇기, 왕복 4번 · $0.15 · 4분 상한) → 결과 저장 +
   종 알림(dedup_key로 한 번) 한 트랜잭션 → commit 뒤 화면 신호. 대화에는 feed_items가 끝난 조사 줄(한 문장 + 결과
   카드)을 끼운다. 고객이 부탁한 결과라 먼저 말 걸기의 하루 수 · 밤 미룸 규칙 밖이다.
+- 진행 기록(trail, 피클 표본처럼 하는 일을 한 줄씩): 스트림에서 블록이 끝날 때 검색어 · 읽은 곳(도메인) · 결과 수 ·
+  조사 담당의 도구 앞 한 줄 말(요약과 같은 검사)을 steps에 더하고, 카드는 steps로 기록 줄을 만든다.
+- 결과 항목(자재 · 일반): 끝 정리의 '- 이름 | 특징 | 주의할 점 | 주소' 줄 → 결과 블록 링크와 맞는 것만, 칸마다 검사.
+  제조사 공식 페이지는 linkimage가 robots를 지키며 대표 그림 주소를 찾는다(저장하지 않음). 믿집 밖 업체는 링크만.
 - 링크는 서버 도구 결과 블록의 url만 코드가 뽑는다(weblinks). 막은 곳 · 실행 파일 꼴은 버리고 전화 · 이메일은
   지운다. 요약 · 메모는 SentenceGate와 같은 검사(숫자 · 주소 · 누출 · 한 일처럼 · 표준 대비 %)를 지난 문장만 쓰고,
   다 빠지면 요약 없이 둔다(지어낸 설명 없음). 허용 숫자는 가져온 글 · 검색 결과(제목 · 인용 · 거르기 코드 출력)와
@@ -35,7 +39,7 @@ from app import queue
 from app.agent import llm
 from app.agent.v3 import check
 from app.agent.v3.schemas import Sentence
-from app.assistant import policy, prompts, weblinks
+from app.assistant import linkimage, policy, prompts, weblinks
 from app.assistant.models import RESEARCH_LIVE, AssistantResearch
 from app.assistant.schemas import AssistantItem, CardOut, CardPart, TextPart
 from app.auth.models import User
@@ -66,6 +70,15 @@ GOAL_MAX = 200
 NOTE_MAX = 200
 MEMO_MAX = 40
 SUMMARY_MAX = 3  # 요약 문장 수
+ITEM_MAX = 6  # 결과 항목 수(이름 · 특징 · 주의할 점 · 링크)
+NAME_MAX = 40  # 항목 이름 글자 수
+CELL_MAX = 60  # 항목 특징 · 주의할 점 글자 수
+TRAIL_MAX = 40  # 진행 기록 줄 수(최근 것만)
+SAY_MAX = 60  # 진행 기록의 조사 담당 한 줄 말 글자 수
+QUERY_MAX = 60  # 진행 기록의 검색어 글자 수
+PAGE_TITLE_MAX = 40  # 진행 기록의 읽은 페이지 제목 글자 수
+TRAIL_HITS = 5  # 진행 기록 검색 줄에 남기는 찾은 페이지 수(펼치면 보임)
+HIT_TITLE_MAX = 50  # 찾은 페이지 제목 글자 수
 DOC_CHARS = 20_000  # 가져온 글 한 쪽에서 숫자 근거로 읽는 글자 수
 FEED_MAX = 10
 JOB_KIND = "assistant_research"
@@ -120,6 +133,8 @@ ENDED_LINE = {
 }
 STOPPED_FOUND = " 그때까지 찾은 것만 정리했어요."
 DONE_PARTIAL = " 찾은 만큼 정리했어요."
+# 자재 결과 카드 뒤 끝 질문(피클 표본처럼 고를 것을 묻고 끝낸다)
+ASK_PICK = "어느 쪽이 끌리세요? 고르시면 그걸로 이어서 알아볼게요."
 NOTIFY_KIND = "assistant_research"
 STEERED = "돌던 조사에 바꾼 조건을 전했어요."
 NO_SUCH = "그 낱말이 든 조사가 없어요. 오늘 조사 목록의 제목 낱말로 다시 읽어요."
@@ -139,6 +154,14 @@ _TITLE_TAIL = re.compile(r"\s+\|{1,2}\s+")  # '이름 | 사이트 소개'의 가
 _HOST_KO = re.compile(r"[a-z0-9.\-가-힣]+")  # 한글 · 영문 소문자 · 숫자만인 도메인
 _MARK = re.compile(r"\*\*|__|^#+\s*|`")
 _SUMMARY_HEAD = re.compile(r"(?:^|\n)\s*(?:\*\*)?요약(?:\*\*)?\s*[:：]\s*")
+_ITEMS_HEAD = re.compile(r"^\s*(?:\*\*)?항목(?:\*\*)?\s*[:：]")  # 끝 정리의 항목 줄 머리
+_HANGUL = re.compile(r"[가-힣]")
+# 가져온 페이지가 막힘 안내뿐인 제목(진행 기록에서 '열지 못했어요')
+_BLOCK_TITLE = re.compile(
+    r"^\s*(?:block(?:ed)? page|access denied|403 forbidden|forbidden|just a moment|attention required)",
+    re.IGNORECASE,
+)
+_NO_CELL = frozenset({"-", "–", "—", "없음", "없어요", "해당 없음"})  # 비워 둔 항목 칸
 SUMMARY_PEEK = 12  # 글 앞 몇 글자로 끝 정리('요약:')인지 본다
 _MONEY = re.compile(r"\d[\d,.]*\s*(?:만\s*원|천\s*원|억\s*원|원)|가격|값이|비용이")
 _RATING = re.compile(r"평점|별점|후기\s*\d|리뷰\s*\d|\d+\s*위\b|1위|순위|추천")
@@ -171,6 +194,48 @@ class ResearchCheck(BaseModel):
     href: str
 
 
+class ResearchItem(BaseModel):
+    """결과 항목 하나(조사 담당이 끝 정리에 적은 줄 + 코드 검사). 링크는 서버 도구 결과 블록의 주소만."""
+
+    name: str = Field(description="제품 · 업체 · 자료 이름")
+    feature: str | None = Field(default=None, description="특징 한 줄(검사를 지난 글)")
+    caution: str | None = Field(default=None, description="주의할 점 한 줄(검사를 지난 글)")
+    href: str = Field(description="서버 도구 결과 블록의 주소(새 탭으로 엶)")
+    source: str = Field(description="출처 도메인")
+    image: str | None = Field(
+        default=None, description="제조사 공식 페이지의 대표 그림 주소(https, 그 사이트 그림만)"
+    )
+
+
+TrailKind = Literal["start", "say", "search", "read", "filter", "write", "steer", "end"]
+
+
+class TrailHit(BaseModel):
+    """검색 줄을 펼치면 보이는 찾은 페이지 하나(Claude 웹 검색 결과 목록처럼). 서버 도구 결과 블록에서만."""
+
+    title: str
+    source: str = Field(description="출처 도메인")
+    href: str = Field(description="결과 블록의 주소(막은 곳 · 실행 파일 꼴은 뺌)")
+
+
+class ResearchTrail(BaseModel):
+    """진행 기록 한 줄(steps에서 만든다). 글은 검색어 · 읽은 곳 · 조사 담당의 한 줄 말(검사를 지난 것)뿐이다."""
+
+    at: datetime
+    kind: TrailKind = Field(
+        description="start 시작 · say 조사 담당 한 줄 말 · search 검색 · read 페이지 읽기 · filter 결과 추리기 · "
+        "write 정리 · steer 바꾼 조건 전함 · end 끝(text: done · stopped · failed)"
+    )
+    text: str | None = Field(
+        default=None, description="검색어 · 읽은 곳(도메인) · 한 줄 말 · 끝 상태"
+    )
+    title: str | None = Field(default=None, description="읽은 페이지 제목")
+    n: int | None = Field(default=None, description="검색: 찾은 페이지 수")
+    ok: bool | None = Field(default=None, description="읽기: 열었는지(null이면 아직 모름)")
+    href: str | None = Field(default=None, description="읽기: 읽은 페이지 주소")
+    hits: list[TrailHit] = Field(default=[], description="검색: 찾은 페이지(앞 5개)")
+
+
 class ResearchData(BaseModel):
     """조사 카드(kind research) · GET /assistant/research/{id}.
 
@@ -190,7 +255,11 @@ class ResearchData(BaseModel):
     summary: str | None = Field(
         default=None, description="검사를 지난 요약. 없으면 null(요약을 만들지 못함)"
     )
+    items: list[ResearchItem] = Field(
+        default=[], description="결과 항목(이름 · 특징 · 주의할 점 · 링크 · 제조사 그림)"
+    )
     links: list[ResearchLink] = []
+    trail: list[ResearchTrail] = Field(default=[], description="진행 기록(최근 40줄)")
     checks: list[ResearchCheck] = Field(default=[], description="직접 확인하는 곳(믿집 밖 업체)")
     outside: bool = Field(
         default=False, description="믿집 밖 업체: 링크마다 '믿집이 확인하지 않은 곳이에요'"
@@ -277,6 +346,66 @@ def _day_of(page_age: str | None, today: date) -> date | None:
 # ---- 카드 · 모델 값 ----
 
 
+def trail_of(steps: list | None) -> list[ResearchTrail]:
+    """steps(진행 단계 · 상태 기록) → 진행 기록 줄. 검색 결과 수 · 읽기 결과는 부름 열쇠(ref)로 앞 줄에 붙인다.
+    찾는 중 · 읽는 중 단계 줄은 자세한 줄(검색 · 읽기)과 겹쳐 빼고, 이어진 '결과 추리기'는 한 줄로 둔다."""
+    out: list[ResearchTrail] = []
+    by_ref: dict[str, ResearchTrail] = {}
+    for s in steps or []:
+        if not isinstance(s, dict):
+            continue
+        ev, ref = s.get("event"), str(s.get("ref") or "")
+        try:
+            at = datetime.fromisoformat(str(s.get("at")))
+        except ValueError:
+            continue
+        row: ResearchTrail | None = None
+        if ev == "running":
+            row = ResearchTrail(at=at, kind="start")
+        elif ev == "say" and s.get("text"):
+            row = ResearchTrail(at=at, kind="say", text=str(s["text"]))
+        elif ev == "search" and s.get("q"):
+            row = ResearchTrail(at=at, kind="search", text=str(s["q"]))
+        elif ev == "read" and s.get("site"):
+            row = ResearchTrail(at=at, kind="read", text=str(s["site"]), href=s.get("u") or None)
+        elif ev == "filter":
+            if out and out[-1].kind == "filter":
+                continue
+            row = ResearchTrail(at=at, kind="filter")
+        elif ev == "step" and s.get("step") == "write":
+            row = ResearchTrail(at=at, kind="write")
+        elif ev == "steer":
+            row = ResearchTrail(at=at, kind="steer")
+        elif ev in ("done", "stopped", "failed"):
+            row = ResearchTrail(at=at, kind="end", text=ev)
+        elif ev == "found" and ref in by_ref:
+            by_ref[ref].n = int(s.get("n") or 0)
+            by_ref[ref].hits = [
+                TrailHit(title=str(h["t"]), source=str(h["s"]), href=str(h["u"]))
+                for h in s.get("hits") or []
+                if isinstance(h, dict) and h.get("t") and h.get("s") and h.get("u")
+            ]
+        elif ev == "got" and ref in by_ref:
+            by_ref[ref].ok, by_ref[ref].title = True, s.get("title") or None
+        elif ev == "miss" and ref in by_ref:
+            by_ref[ref].ok = False
+        if row is not None:
+            out.append(row)
+            if ref and row.kind in ("search", "read"):
+                by_ref[ref] = row
+    # 같은 페이지를 다시 읽은 줄(같은 곳 · 같은 제목 · 열었음)은 처음 한 줄만 둔다(동적 거르기가 다시 가져옴)
+    seen: set[tuple] = set()
+    kept: list[ResearchTrail] = []
+    for row in out:
+        if row.kind == "read" and row.ok and row.title:
+            key = (row.text, row.title)
+            if key in seen:
+                continue
+            seen.add(key)
+        kept.append(row)
+    return kept[-TRAIL_MAX:]
+
+
 def data_of(
     r: AssistantResearch, phase: Literal["progress", "result"] = "progress"
 ) -> ResearchData:
@@ -292,7 +421,9 @@ def data_of(
         started_at=r.started_at,
         ended_at=r.ended_at,
         summary=res.get("summary"),
+        items=[ResearchItem.model_validate(x) for x in res.get("items") or []],
         links=[ResearchLink.model_validate(x) for x in res.get("links") or []],
+        trail=trail_of(r.steps),  # 끝난 뒤 다시 읽는 진행 카드(GET은 result 꼴)도 기록을 보인다
         checks=[ResearchCheck.model_validate(x) for x in res.get("checks") or []],
         outside=bool(res.get("outside", r.kind == "outside_vendors")),
         partial=bool(res.get("partial")),
@@ -338,6 +469,15 @@ def model_of(r: AssistantResearch | None, now: datetime) -> dict:
     out.update(found=len(links), partial=bool(res.get("partial")), note=res.get("note"))
     out[policy.DATA_KEY] = {
         "summary": res.get("summary") or NO_SUMMARY,
+        "items": [
+            {
+                "name": x.get("name"),
+                "feature": x.get("feature"),
+                "caution": x.get("caution"),
+                "source": x.get("source"),
+            }
+            for x in res.get("items") or []
+        ],
         "links": [
             {"title": x.get("title"), "source": x.get("source"), "memo": x.get("memo")}
             for x in links
@@ -502,6 +642,8 @@ async def feed_items(
         res = r.result or {}
         if r.status == "done" or res.get("links"):
             parts.append(CardPart(card=card_of(r, "result")))
+            if r.kind == "materials" and res.get("items"):
+                parts.append(TextPart(text=ASK_PICK, src="guide"))
         out.append(
             AssistantItem(id=f"r-{r.id}", at=r.ended_at, turn_id=None, parts=parts)  # type: ignore[arg-type]
         )
@@ -1159,6 +1301,71 @@ async def run(research_id: uuid.UUID) -> str:
     return await _finish(run_)
 
 
+def narration(text: str, allowed: set[float], prompt: str, kind: str) -> str | None:
+    """조사 담당이 도구 앞에 쓴 말 → 진행 기록 한 줄(첫 문장, 요약과 같은 검사, 한글, 60자 안). 못 넘으면 None."""
+    t = " ".join((text or "").split())
+    first = _SENT.split(t, 1)[0].strip() if t else ""
+    ok = gate(first, allowed, prompt, kind) if first else None
+    if not ok or not _HANGUL.search(ok):
+        return None
+    return clip(ok, SAY_MAX)
+
+
+def clip(text: str, limit: int) -> str:
+    """보여 줄 글을 limit 안으로: 넘으면 낱말 끝에서 자르고 끝 구분 기호를 떼어 '…'를 붙인다."""
+    t = " ".join((text or "").split())
+    if len(t) <= limit:
+        return t
+    cut = t[: limit - 1]
+    if t[limit - 1] != " " and " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" -–—·|/:,(") + "…"
+
+
+def trail_events(b: dict) -> list[tuple[str, dict]]:
+    """끝난 응답 블록 하나 → steps에 더할 진행 기록(event, 칸). 검색어 · 읽은 곳(도메인) · 결과 수 · 읽었는지만 남긴다.
+    막은 곳 · 가져오기를 막은 곳은 남기지 않는다(그 결과 줄도 짝이 없어 버려진다)."""
+    kind, name = b.get("type"), b.get("name")
+    ref = str(b.get("id") or b.get("tool_use_id") or "")[-12:]
+    if kind == "server_tool_use":
+        given = b.get("input") if isinstance(b.get("input"), dict) else {}
+        if name == "web_search":
+            q = clip(clean_goal(str(given.get("query") or "")), QUERY_MAX)
+            return [("search", {"q": q, "ref": ref})] if q else []
+        if name == "web_fetch":
+            url = weblinks.clean_url(str(given.get("url") or ""), (*weblinks.BLOCKED, *NO_FETCH))
+            host = weblinks.host_of(url) if url else ""
+            return [("read", {"site": _source(host), "u": url, "ref": ref})] if host else []
+        if name and "code_execution" in str(name):
+            return [("filter", {})]
+        return []
+    content = b.get("content")
+    if kind == "web_search_tool_result":
+        rows = content if isinstance(content, list) else []
+        hits: list[dict] = []
+        for x in rows:
+            url = weblinks.clean_url(str(x.get("url") or "")) if isinstance(x, dict) else None
+            if url is None:
+                continue
+            host = weblinks.host_of(url)
+            hits.append({"t": clip(_title(str(x.get("title") or ""), host), HIT_TITLE_MAX),
+                         "s": _source(host), "u": url})  # fmt: skip
+        return [("found", {"ref": ref, "n": len(hits), "hits": hits[:TRAIL_HITS]})]
+    if kind == "web_fetch_tool_result":
+        if isinstance(content, dict) and content.get("type") == "web_fetch_result":
+            doc = content.get("content") if isinstance(content.get("content"), dict) else {}
+            raw = str(doc.get("title") or "").strip()
+            src = doc.get("source") if isinstance(doc.get("source"), dict) else {}
+            text = str(src.get("data") or "") if src.get("type") == "text" else None
+            # 막힘 · 닫힌 페이지 안내만 받은 것은 '열지 못했어요'(예: 사이트 'Block Page')
+            if _BLOCK_TITLE.search(raw) or (text is not None and weblinks.closed_page(text)):
+                return [("miss", {"ref": ref})]
+            title = clip(_title(raw, ""), PAGE_TITLE_MAX) if raw else ""
+            return [("got", {"ref": ref, "title": title or None})]
+        return [("miss", {"ref": ref})]
+    return []
+
+
 def _opening(kind: str, goal: str, terms: str, notes: list[str], now: datetime) -> dict:
     """첫 왕복의 user 메시지(조사 종류 · 목표 · 집 조건 · 오늘 · 시작 전에 온 바꾸기 메모)."""
     text = _first_message(kind, goal, terms, notes, now.astimezone(SEOUL).date())
@@ -1182,6 +1389,38 @@ async def _loop(run_: _Run, cc: llm.CallCtx) -> None:
                 steps=_push(AssistantResearch.steps, _log("step", now_utc(), step=step)),
             )
 
+    # 진행 기록(피클 표본처럼 하는 일을 한 줄씩): 도구 앞 말은 다음 서버 도구가 시작될 때 한 줄로 남기고(끝 정리
+    # '요약:' 뒤 글은 남기지 않는다), 검색어 · 읽은 곳 · 결과 수는 블록이 끝날 때 steps에 더한다. 기록이 실패해도
+    # 조사는 이어 간다(보이는 값일 뿐)
+    said = {"buf": "", "final": False}
+    known = guard.numbers(f"{run_.goal}\n{run_.terms}")
+    rules = prompts.rules("researcher")  # 누출 견주기: 큰따옴표 예시 말은 빼고 견준다
+
+    async def log_step(event: str, **extra: Any) -> None:
+        await _mark(
+            run_.research_id,
+            steps=_push(AssistantResearch.steps, _log(event, now_utc(), **extra)),
+        )
+
+    async def flush_say() -> None:
+        text, said["buf"] = said["buf"], ""
+        line = narration(text, known, rules, run_.kind) if text.strip() else None
+        if line:
+            await log_step("say", text=line)
+
+    async def on_block_end(b: dict) -> None:
+        try:
+            if b.get("type") == "text":
+                if not said["final"]:
+                    said["buf"] += str(b.get("text") or "")
+                    if _SUMMARY_HEAD.search(said["buf"]):  # 끝 정리: 진행 기록 말이 아니다
+                        said.update(buf="", final=True)
+                return
+            for event, extra in trail_events(b):
+                await log_step(event, **extra)
+        except Exception as e:  # noqa: BLE001
+            log.warning("조사 진행 기록 실패 (%s)", type(e).__name__)
+
     async def on_block(kind: str, name: str | None) -> None:
         head["armed"] = False
         if kind in WEB_RESULTS:
@@ -1189,6 +1428,10 @@ async def _loop(run_: _Run, cc: llm.CallCtx) -> None:
         elif kind == "text":
             head.update(text="", armed=run_.seen_result)
         elif kind == "server_tool_use":
+            try:
+                await flush_say()
+            except Exception as e:  # noqa: BLE001
+                log.warning("조사 진행 기록 실패 (%s)", type(e).__name__)
             step = {"web_search": "search", "web_fetch": "read"}.get(name or "")
             if step:
                 await mark(step)
@@ -1245,6 +1488,7 @@ async def _loop(run_: _Run, cc: llm.CallCtx) -> None:
         if left <= CALL_FLOOR:
             run_.reason = "time"
             return
+        said.update(buf="", final=False)
         try:
             reply = await asyncio.wait_for(
                 llm.claude_stream(
@@ -1256,6 +1500,7 @@ async def _loop(run_: _Run, cc: llm.CallCtx) -> None:
                     container=run_.container,
                     on_block=on_block,
                     on_text=on_text,
+                    on_block_end=on_block_end,
                 ),
                 timeout=left,
             )
@@ -1338,8 +1583,8 @@ def _summary(final_text: str | None, allowed: set[float], prompt: str, kind: str
         body = body[m.end() :]
     lines = []
     for line in body.split("\n"):
-        if _BULLET.match(line) and _URL_IN.search(line):  # 메모 줄부터는 요약이 아니다
-            break
+        if _ITEMS_HEAD.match(line) or (_BULLET.match(line) and _URL_IN.search(line)):
+            break  # 항목 · 메모 줄부터는 요약이 아니다
         lines.append(line)
     kept: list[str] = []
     for sent in _SENT.split("\n".join(lines)):
@@ -1358,8 +1603,8 @@ def _memos(final_text: str | None, allowed: set[float], prompt: str, kind: str) 
     out: dict[str, str] = {}
     for line in final_text.split("\n"):
         m = _URL_IN.search(line)
-        if not m or not _BULLET.match(line):
-            continue
+        if not m or not _BULLET.match(line) or "|" in line[: m.start()]:
+            continue  # 항목 줄('이름 | 특징 | 주의 | 주소')은 _items가 읽는다
         url = m.group(0).rstrip(".,;:")
         # 메모는 주소 뒤 글(없으면 앞 글). 마크다운 링크 괄호 · 구분 기호는 뗀다
         after = line[m.end() :].lstrip(")>]").strip(" -–—:|·")
@@ -1369,6 +1614,61 @@ def _memos(final_text: str | None, allowed: set[float], prompt: str, kind: str) 
         if ok:
             short = ok if len(ok) <= MEMO_MAX else ok[: MEMO_MAX - 1] + "…"
             out.setdefault(weblinks.key(url), short)
+    return out
+
+
+def _item_name(text: str, kind: str) -> str | None:
+    """항목 이름 칸: 연락처 · 가림 · 주소 · 꾸밈표를 떼고 40자 안. 믿집 밖 업체는 값 · 평점 · 순위 말이 든 이름을 버린다."""
+    t = _MARK.sub("", scrub(text)).strip(" -–—:|·[]<>\"'")  # 괄호는 품번 '(PR002-01)'이라 둔다
+    if not t or _URL_IN.search(t) or check.URL.search(t):
+        return None
+    if kind == "outside_vendors" and (_MONEY.search(t) or _RATING.search(t)):
+        return None
+    return t if len(t) <= NAME_MAX else t[: NAME_MAX - 1] + "…"
+
+
+def _item_cell(text: str, allowed: set[float], prompt: str, kind: str) -> str | None:
+    """항목 특징 · 주의할 점 칸: 비워 둔 칸('-' · 없음)은 None, 아니면 요약과 같은 검사를 지난 글(60자 안)."""
+    t = " ".join((text or "").split()).strip(" |[]")
+    if not t or t in _NO_CELL:
+        return None
+    ok = gate(t, allowed, prompt, kind)
+    if not ok:
+        return None
+    return ok if len(ok) <= CELL_MAX else ok[: CELL_MAX - 1] + "…"
+
+
+def _items(
+    final_text: str | None, every: list[weblinks.Hit], allowed: set[float], prompt: str, kind: str
+) -> list[dict]:
+    """끝 정리의 항목 줄('- 이름 | 특징 | 주의할 점 | 주소') → 결과 항목. 주소는 서버 도구 결과 블록의 링크와 맞을
+    때만 쓰고(모델이 지어낸 주소 · 닫힌 페이지는 버림) 그 블록의 주소 그대로 보인다. 같은 페이지는 한 번만."""
+    hits = {weblinks.key(h.url): h for h in every if not h.dead}
+    out: list[dict] = []
+    seen: set[str] = set()
+    for line in (final_text or "").split("\n"):
+        m = _URL_IN.search(line)
+        if not m or not _BULLET.match(line) or "|" not in line[: m.start()]:
+            continue
+        h = hits.get(weblinks.key(m.group(0).rstrip(".,;:)")))
+        if h is None or weblinks.key(h.url) in seen:
+            continue
+        cells = _BULLET.sub("", line[: m.start()]).split("|")
+        name = _item_name(cells[0], kind)
+        if not name:
+            continue
+        seen.add(weblinks.key(h.url))
+        out.append(
+            ResearchItem(
+                name=name,
+                feature=_item_cell(cells[1], allowed, prompt, kind) if len(cells) > 1 else None,
+                caution=_item_cell(cells[2], allowed, prompt, kind) if len(cells) > 2 else None,
+                href=h.url,
+                source=_source(h.host),
+            ).model_dump(mode="json")
+        )
+        if len(out) == ITEM_MAX:
+            break
     return out
 
 
@@ -1428,6 +1728,9 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
     if run_.kind == "outside_vendors":
         hits = in_region(hits, target_places(run_.goal, notes) or places(run_.terms))
     memos = _memos(run_.final_text, allowed, prompt, run_.kind)
+    # 항목(이름 · 특징 · 주의할 점): 자재 · 일반만. 믿집 밖 업체는 평가 없이 링크만 둔다(항목 줄은 링크 고르기에만)
+    outside = run_.kind == "outside_vendors"
+    items = [] if outside else _items(run_.final_text, every, allowed, prompt, run_.kind)
     links: list[dict] = []
     for h in _order(run_.kind, hits):
         links.append(
@@ -1441,12 +1744,12 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
         )
         if len(links) == LINK_MAX:
             break
-    outside = run_.kind == "outside_vendors"
     # 찾은 만큼(결정 3): 상한 · 멈춤으로 일찍 끝났거나, 웹 도구 상한까지 다 썼거나(max_uses_exceeded) 결과를 거르는
     # 코드가 실패한 조사는 '그때까지 찾은 것만'으로 보인다(QA r3 s3: 요약이 '도구 한도' · '코드 오류'를 말함)
     short = "max_uses_exceeded" in weblinks.tool_errors(blocks) or weblinks.code_failed(blocks)
     return {
         "summary": _summary(run_.final_text, allowed, prompt, run_.kind),
+        "items": items,
         "links": links,
         "checks": [{"label": a, "href": b} for a, b in CHECKS] if outside else [],
         "outside": outside,
@@ -1457,7 +1760,8 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
 
 async def _finish(run_: _Run) -> str:
     """끝 상태 · 결과 저장 + 종 알림(한 트랜잭션) → commit 뒤 화면 신호."""
-    prompt = prompts.text("researcher")
+    # 누출 견주기는 규칙 글로(큰따옴표 예시 말 "찾은 만큼 정리했어요"는 그대로 말해도 된다)
+    prompt = prompts.rules("researcher")
     if run_.step != "write":
         await _mark(
             run_.research_id,
@@ -1470,6 +1774,8 @@ async def _finish(run_: _Run) -> str:
     except Exception as e:  # noqa: BLE001 - 결과를 못 만들면 실패로 끝낸다(지어내지 않음)
         log.warning("조사 결과 만들기 실패 (%s)", type(e).__name__)
         result = None
+    if result and result.get("items"):  # 제조사 대표 그림(트랜잭션 밖, 실패는 그림 없이)
+        await linkimage.add_images(result["items"])
     found = bool(result and result["links"])
     if run_.reason == "stop":
         status, error = "stopped", None

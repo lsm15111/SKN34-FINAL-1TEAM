@@ -7971,10 +7971,22 @@ export interface components {
              */
             summary?: string | null;
             /**
+             * Items
+             * @description 결과 항목(이름 · 특징 · 주의할 점 · 링크 · 제조사 그림)
+             * @default []
+             */
+            items: components["schemas"]["ResearchItem"][];
+            /**
              * Links
              * @default []
              */
             links: components["schemas"]["ResearchLink"][];
+            /**
+             * Trail
+             * @description 진행 기록(최근 40줄)
+             * @default []
+             */
+            trail: components["schemas"]["ResearchTrail"][];
             /**
              * Checks
              * @description 직접 확인하는 곳(믿집 밖 업체)
@@ -7995,6 +8007,42 @@ export interface components {
             partial: boolean;
             /** Note */
             note?: string | null;
+        };
+        /**
+         * ResearchItem
+         * @description 결과 항목 하나(조사 담당이 끝 정리에 적은 줄 + 코드 검사). 링크는 서버 도구 결과 블록의 주소만.
+         */
+        ResearchItem: {
+            /**
+             * Name
+             * @description 제품 · 업체 · 자료 이름
+             */
+            name: string;
+            /**
+             * Feature
+             * @description 특징 한 줄(검사를 지난 글)
+             */
+            feature?: string | null;
+            /**
+             * Caution
+             * @description 주의할 점 한 줄(검사를 지난 글)
+             */
+            caution?: string | null;
+            /**
+             * Href
+             * @description 서버 도구 결과 블록의 주소(새 탭으로 엶)
+             */
+            href: string;
+            /**
+             * Source
+             * @description 출처 도메인
+             */
+            source: string;
+            /**
+             * Image
+             * @description 제조사 공식 페이지의 대표 그림 주소(https, 그 사이트 그림만)
+             */
+            image?: string | null;
         };
         /** ResearchLink */
         ResearchLink: {
@@ -8020,6 +8068,54 @@ export interface components {
              * @description 글 날짜(검색 결과가 알려 줄 때만)
              */
             day?: string | null;
+        };
+        /**
+         * ResearchTrail
+         * @description 진행 기록 한 줄(steps에서 만든다). 글은 검색어 · 읽은 곳 · 조사 담당의 한 줄 말(검사를 지난 것)뿐이다.
+         */
+        ResearchTrail: {
+            /**
+             * At
+             * Format: date-time
+             */
+            at: string;
+            /**
+             * Kind
+             * @description start 시작 · say 조사 담당 한 줄 말 · search 검색 · read 페이지 읽기 · filter 결과 추리기 · write 정리 · steer 바꾼 조건 전함 · end 끝(text: done · stopped · failed)
+             * @enum {string}
+             */
+            kind: "start" | "say" | "search" | "read" | "filter" | "write" | "steer" | "end";
+            /**
+             * Text
+             * @description 검색어 · 읽은 곳(도메인) · 한 줄 말 · 끝 상태
+             */
+            text?: string | null;
+            /**
+             * Title
+             * @description 읽은 페이지 제목
+             */
+            title?: string | null;
+            /**
+             * N
+             * @description 검색: 찾은 페이지 수
+             */
+            n?: number | null;
+            /**
+             * Ok
+             * @description 읽기: 열었는지(null이면 아직 모름)
+             */
+            ok?: boolean | null;
+            /**
+             * Href
+             * @description 읽기: 읽은 페이지 주소
+             */
+            href?: string | null;
+            /**
+             * Hits
+             * @description 검색: 찾은 페이지(앞 5개)
+             * @default []
+             */
+            hits: components["schemas"]["TrailHit"][];
         };
         /**
          * ReselectIn
@@ -9438,6 +9534,24 @@ export interface components {
         TradesOut: {
             dobae?: components["schemas"]["DobaeOut"] | null;
             mokgong?: components["schemas"]["MokgongOut"] | null;
+        };
+        /**
+         * TrailHit
+         * @description 검색 줄을 펼치면 보이는 찾은 페이지 하나(Claude 웹 검색 결과 목록처럼). 서버 도구 결과 블록에서만.
+         */
+        TrailHit: {
+            /** Title */
+            title: string;
+            /**
+             * Source
+             * @description 출처 도메인
+             */
+            source: string;
+            /**
+             * Href
+             * @description 결과 블록의 주소(막은 곳 · 실행 파일 꼴은 뺌)
+             */
+            href: string;
         };
         /**
          * TurnContextIn

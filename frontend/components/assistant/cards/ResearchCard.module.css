@@ -20,3 +20,46 @@
 .memo { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
 .checks { display: grid; gap: 0; padding-top: 4px; border-top: 1px solid var(--mj-line-soft); }
 .checks > span { padding-top: 8px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
+/* 진행 과정(Claude의 웹 검색 · 생각 과정 접기처럼): 머리 줄(지금 하는 일 · 시계 / 걸린 시간 · 셈) · 왼쪽 세로선 타임라인 */
+.steps { display: grid; gap: 6px; min-width: 0; }
+.head { margin: 0; display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: var(--mj-hit-min); padding: 0; border: 0; background: none; font: inherit; font-size: var(--mj-type-label); color: var(--mj-text-sub); text-align: left; }
+button.head { cursor: pointer; }
+.head > svg { width: 16px; height: 16px; flex: none; color: var(--mj-text-mute); }
+.headText { flex: 1; min-width: 0; color: var(--mj-text); font-weight: var(--mj-weight-semibold); overflow-wrap: anywhere; }
+button.head:hover .headText { text-decoration: underline; text-underline-offset: 3px; }
+/* 도는 동안 지금 하는 일: 글자 위로 빛이 지나가요(움직임 줄이기 설정이면 멈춰요) */
+.shine { flex: 1; min-width: 0; overflow-wrap: anywhere; font-weight: var(--mj-weight-semibold); color: var(--mj-text); background: linear-gradient(90deg, var(--mj-text-mute) 0%, var(--mj-text) 40%, var(--mj-text-mute) 80%); background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: shine 2.4s linear infinite; }
+@keyframes shine { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.spin { animation: turn 1s linear infinite; }
+@keyframes turn { to { transform: rotate(360deg); } }
+.side { flex: none; font-size: var(--mj-type-caption); color: var(--mj-text-mute); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chev { width: 16px; height: 16px; flex: none; color: var(--mj-text-mute); }
+.rail { list-style: none; margin: 0 0 4px 7px; padding: 2px 0 2px 15px; border-left: 2px solid var(--mj-line-soft); display: grid; gap: 10px; min-width: 0; }
+.say { font-size: var(--mj-type-label); line-height: 1.5; color: var(--mj-text); overflow-wrap: anywhere; }
+.tool { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; gap: 4px 8px; align-items: start; font-size: var(--mj-type-label); line-height: 1.5; color: var(--mj-text-sub); min-width: 0; }
+.tool > svg { width: 16px; height: 16px; margin-top: 2px; color: var(--mj-text-mute); }
+.toolText { min-width: 0; overflow-wrap: anywhere; color: var(--mj-text-sub); text-decoration: none; }
+a.toolText:hover { text-decoration: underline; text-underline-offset: 3px; }
+.dim { font-size: var(--mj-type-caption); color: var(--mj-text-mute); white-space: nowrap; padding-top: 1px; }
+/* 검색 줄의 'n개 결과' 단추: 줄 높이는 그대로 두고 누르는 넓이만 40px */
+.res { display: inline-flex; align-items: center; gap: 2px; min-height: var(--mj-hit-min); margin: -10px 0; padding: 0 2px; border: 0; background: none; font: inherit; font-size: var(--mj-type-caption); color: var(--mj-link); cursor: pointer; white-space: nowrap; }
+.res svg { width: 14px; height: 14px; }
+.hits { grid-column: 2 / -1; list-style: none; margin: 2px 0 0; padding: 0; display: grid; gap: 6px; min-width: 0; }
+.hits li { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0 8px; min-width: 0; }
+.hits a { min-width: 0; color: var(--mj-link); text-decoration: none; overflow-wrap: anywhere; }
+.hits a:hover { text-decoration: underline; text-underline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) {
+  .shine { animation: none; background: none; -webkit-text-fill-color: currentColor; }
+  .spin { animation: none; }
+}
+/* 결과 항목: 그림(제조사 페이지) · 이름 링크 · 특징 · 주의할 점 · 출처 */
+.items { list-style: none; margin: 0; padding: 0; display: grid; min-width: 0; }
+.item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--mj-line-soft); min-width: 0; }
+.item:first-child { border-top: 0; padding-top: 0; }
+.pic { flex: none; display: block; width: 88px; height: 88px; border-radius: var(--mj-radius-field); overflow: hidden; background: var(--mj-surface-sub); }
+.pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.body { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.feat { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text); overflow-wrap: anywhere; }
+.caution { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
+.caution > span:first-child { font-weight: var(--mj-weight-semibold); margin-right: 6px; }
+.sub { margin: 0; padding-top: 8px; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }

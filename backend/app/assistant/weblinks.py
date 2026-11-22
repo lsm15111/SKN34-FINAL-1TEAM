@@ -91,17 +91,20 @@ def tool_errors(content: list[dict]) -> list[str]:
 
 
 def code_failed(content: list[dict]) -> bool:
-    """동적 거르기 코드 실행 결과 중 실패(오류 결과 · 0이 아닌 종료 코드)가 있는지."""
+    """동적 거르기 코드 실행의 마지막 결과가 실패(오류 결과 · 0이 아닌 종료 코드)인지. 중간에 실패해도 모델이 다시 짜서
+    성공했으면 실패가 아니다(2026-11-22 실제 조사 3건 모두 '거르는 코드 실패'로 '찾은 만큼'이 붙었다)."""
+    last = None
     for b in content:
-        if not isinstance(b, dict) or b.get("type") not in (
+        if isinstance(b, dict) and b.get("type") in (
             "code_execution_tool_result",
             "bash_code_execution_tool_result",
         ):
-            continue
-        c = b.get("content")
-        if _error_code(c) or (isinstance(c, dict) and c.get("return_code") not in (None, 0)):
-            return True
-    return False
+            last = b.get("content")
+    if last is None:
+        return False
+    return bool(
+        _error_code(last) or (isinstance(last, dict) and last.get("return_code") not in (None, 0))
+    )
 
 
 def host_of(url: str) -> str:

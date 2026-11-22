@@ -253,8 +253,16 @@ def test_progress_writes_only_when_the_summary_starts(api, script):
     script([{"blocks": blocks, "stop": "end_turn", "usage": USAGE}])
     assert run(api, research.run, rid) == "done"
     (row,) = [r for r in rows() if r["id"] == rid]
-    steps = [s.get("step") or s.get("event") for s in json.loads(row["steps"])]
+    # 단계 · 상태 줄만(진행 기록 줄 search · found · say · read · got은 test_v4_research_trail이 본다)
+    steps = [
+        s.get("step") or s.get("event")
+        for s in json.loads(row["steps"])
+        if s["event"] in ("queued", "running", "step", "done")
+    ]
     assert steps == ["queued", "running", "read", "write", "done"]
+    # 도구 사이 말은 진행 기록 한 줄이 되고, 끝 정리('요약:')는 기록 말이 아니다
+    says = [s["text"] for s in json.loads(row["steps"]) if s["event"] == "say"]
+    assert says == ["검색 결과를 더 살펴볼게요."]
 
 
 # ---- get_research: 오늘 목록 · 제목 낱말로 읽기 ----
