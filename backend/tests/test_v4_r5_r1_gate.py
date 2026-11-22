@@ -152,6 +152,17 @@ def test_back_pointer_follows_any_content_drop_and_chains():
     assert g.dropped[1:] == ["앞 문장을 가리킴"] * 2
 
 
+def test_back_pointer_after_a_whole_dropped_group_goes_too():
+    """수를 말하는 목록은 한 줄이 빠지면 묶음째 빠진다: 뒤 '그중 …'이 가리킬 목록이 없다. 수를 말하지 않는 목록은 걸린
+    줄만 빠지고 나머지가 남아 '그중 …'도 둔다."""
+    lists = "준비물은 세 가지예요.\n- 사포\n- 젯소 1,234,567원\n- 붓\n"
+    g = gate()
+    assert run(g, f"{lists}그중 사포가 제일 중요해요.") == runtime.CUT_TEXT
+    assert g.dropped[-2:] == ["묶음째 뺌", "앞 문장을 가리킴"]
+    text = "준비물을 챙겨 두세요.\n- 사포\n- 젯소 1,234,567원\n- 붓\n그중 사포가 제일 중요해요."
+    assert run(gate(), text) == "준비물을 챙겨 두세요.\n- 사포\n- 붓\n그중 사포가 제일 중요해요."
+
+
 def test_only_the_very_next_sentence_is_checked():
     """빠진 문장 바로 뒤만 본다: 사이에 보낸 문장이 있으면 '이 값은 …'은 그 문장을 가리킨다. 외국어 속말은 사이로 보지
     않는다."""
