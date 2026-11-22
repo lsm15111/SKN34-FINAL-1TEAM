@@ -58,6 +58,10 @@ KINDS: dict[str, Kind] = {
     ),
     "visit_visited": Kind("vendor", "/vendor/requests/{vid}", "고객이 '실측 받았어요'를 눌렀어요"),
     "visit_cancelled": Kind("vendor", "/vendor/requests/{vid}", "고객이 실측 요청을 취소했어요"),
+    # v4 반셀프: 확정 전 요청의 '업체에 알릴 것'(직접 할 일)이 바뀜(visit.flow.sync_diy)
+    "visit_diy_changed": Kind(
+        "vendor", "/vendor/requests/{vid}", "고객이 직접 할 일을 바꿨어요: 페인트(문틀 · 몰딩)"
+    ),
     "visit_declined": Kind(
         "customer", "/projects/{pid}/visits", "마루와벽이 이번 요청은 못 받아요"
     ),

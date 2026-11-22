@@ -151,7 +151,7 @@ class HomeFields(BaseModel):
     start_date: date | None = None
     demolition: Literal["full", "partial", "none"] | None = None  # 모은 조건(집 정보 칸 아님)
     diy: list[DiyKey] | None = Field(
-        default=None, max_length=6
+        default=None, max_length=len(DIY_LABELS)
     )  # 직접 할 일(모은 조건, 바꾼 뒤 전체 목록)
 
 
@@ -159,17 +159,36 @@ class HomeIn(BaseModel):
     fields: HomeFields
 
 
-def home_note(changes: dict, locked: bool) -> str:
-    """집 정보 승인 카드 메모: 바뀌는 것에 맞춰요. 직접 할 일만 바꾸면 표준견적서는 그대로예요(실행은 칩 저장만)."""
+def home_note(
+    changes: dict,
+    locked: bool,
+    before: list[str] | None = None,
+    *,
+    live: bool = False,
+    dealt: bool = False,
+) -> str:
+    """집 정보 승인 카드 메모: 바뀌는 것에 맞춰요. 직접 할 일만 바꾸면 표준견적서는 그대로예요(실행은 칩 저장만).
+    벽지 직접 구매(paper_buy)를 켜거나 끄면 표준견적서 도배지 줄이 고객 구매로 빠지거나 돌아와요(before: 지금 칩).
+    실측을 요청한 뒤면 확정 전 요청(live)의 '업체에 알릴 것'도 같이 고쳐 업체에 알리고(visit.flow.sync_diy),
+    확정한 업체(dealt)에는 채팅으로 따로 알려야 해요(QA r2 c2)."""
     from app.calc.dobae import DEMOLITION_KEY
 
     if set(changes) == {"diy"}:
-        if locked:  # 요청 때 고정한 '업체에 알릴 것'은 그대로예요(visit.flow.request)
-            return (
-                "저장하면 공정표에 직접 할 일 날짜가 들어가요. "
-                "이미 보낸 요청은 그대로라 업체에는 채팅으로 알려 주세요"
+        buy = project_diy.PAPER_BUY in changes["diy"]
+        paper = buy != (project_diy.PAPER_BUY in (before or ()))
+        std = "표준견적서는 그대로예요"
+        if paper:
+            std = (
+                "표준견적서에서 벽지 값을 빼요(고객 구매)"
+                if buy
+                else "표준견적서에 벽지 값을 다시 넣어요"
             )
-        return "저장하면 공정표에 직접 할 일 날짜가 들어가요. 표준견적서는 그대로예요"
+        tell = [
+            *(["실측을 요청한 업체에도 바뀐 직접 할 일을 알려요"] if locked and live else []),
+            *(["확정한 업체에는 채팅으로 따로 알려 주세요"] if locked and dealt else []),
+        ]
+        said = [std] if paper or not tell else []
+        return ". ".join(["저장하면 공정표에 직접 할 일 날짜가 들어가요", *said, *tell])
     if changes.get(DEMOLITION_KEY) == "full":
         return "저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
     return "저장하면 표준견적서를 새로 계산해요"
@@ -223,8 +242,8 @@ NEED_BASIS = (
                         "type": "array",
                         "items": {"type": "string", "enum": list(DIY_LABELS)},
                         "description": "직접 할 일 전체 목록(바꾼 뒤): paint 페인트(문틀 · 몰딩) · outlet 콘센트 · "
-                        "스위치 커버 · light 조명 · silicone 실리콘 · 줄눈 · handle 손잡이 · clean 입주 청소. "
-                        "없어요는 빈 목록",
+                        "스위치 커버 · light 조명 · silicone 실리콘 · 줄눈 · handle 손잡이 · clean 입주 청소 · "
+                        "paper_buy 벽지 직접 구매(벽지만 고객이 사요, 도배 시공은 업체). 없어요는 빈 목록",
                     },
                 },
                 required=[],
@@ -237,6 +256,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     from app.calc.dobae import DEMOLITION_KEY
     from app.project import service as project_service
     from app.project.schemas import HomeInfoIn, check_home
+    from app.visit import flow as visit_flow
 
     pid = pid_of(tc)
     asked = a.fields.model_dump(exclude_none=True, mode="json")
@@ -252,6 +272,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         p = await project_service.get_for(s, tc.user, pid)
         card, _ = await cards.home(s, tc.user, pid)
         diy_now = await project_diy.diy_for(s, pid)
+        reach = await visit_flow.diy_reach(s, pid)  # 직접 할 일을 바꾸면 닿는 업체(QA r2 c2)
     if p.home is None:
         raise ToolError("no_home", "이 공사는 집 정보 화면에서 고쳐 주세요.")
     now_home = p.home.model_dump(mode="json")  # 철거 범위(모은 조건)도 들어 있다
@@ -290,12 +311,18 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         summary=ActionSummary(
             title="직접 할 일 저장" if set(changes) == {"diy"} else "집 정보 저장",
             rows=rows,
-            note=home_note(changes, p.locked),
+            note=home_note(
+                changes, p.locked, diy_now, live=bool(reach.live), dealt=bool(reach.dealt)
+            ),
             approve_label="맞아요, 저장",
         ),
         expires_at=tc.now + timedelta(days=7),
         project_id=pid,
     )
+    if "diy" in changes and (reach.live or reach.dealt):  # 직접 할 일이 닿는 업체(QA r2 c2)
+        from app.assistant.tools.diy import vendors_of
+
+        out.data["vendors"] = vendors_of(reach)
     if not out.actions:  # 거절한 같은 제안: 카드에 바뀜 · 단추를 달지 않는다
         return out
     card.data = {

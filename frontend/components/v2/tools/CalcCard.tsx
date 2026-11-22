@@ -5,8 +5,10 @@ import { errorText } from "@/lib/backend/client";
 import { CALC7 } from "./calc7";
 
 type Kind = "wall" | "trim" | "paint";
+// 롤 크기는 backend calc.rolls(제조사 공식 규격)와 같아요. 합지는 광폭이 기본이고 소폭은 고를 때만
 const ROLLS: Record<string, { ko: string; w: number; len: number }> = {
-  hapji: { ko: "합지 (폭 0.53m · 길이 12.5m)", w: 0.53, len: 12.5 },
+  hapji: { ko: "광폭 합지 (폭 0.93m · 길이 17.75m)", w: 0.93, len: 17.75 },
+  hapji_narrow: { ko: "소폭 합지 (폭 0.53m · 길이 12.5m)", w: 0.53, len: 12.5 },
   silk: { ko: "실크 (폭 1.06m · 길이 15.6m)", w: 1.06, len: 15.6 },
 };
 const KINDS: [Kind, string][] = [["wall", "벽지 롤"], ["trim", "몰딩 · 걸레받이"], ["paint", "페인트"]];

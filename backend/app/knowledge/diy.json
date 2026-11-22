@@ -1,5 +1,5 @@
 {
-  "version": "diy_know_v1",
+  "version": "diy_know_v2",
   "about": "반셀프(고객이 직접 할 일) 알아 두기: 칩 키마다 언제(도배 · 목공 기준) · 하는 방법 · 준비물 · 주의점 · 출처. 글에 숫자 · 금액을 넣지 않아요(날짜는 계산 엔진 calc.diy가 만들어요). 공공 · 제조사 자료를 먼저 두고, 순서처럼 공공 자료를 못 찾은 것만 블로그 · 언론 자료로 적었어요. why · living · pet 줄은 믿집 안내예요(출처 자료의 말이 아니에요).",
   "sources": {
     "kcc-sup": {
@@ -136,6 +136,33 @@
       "url": "https://miso.kr/blog/thread/줄눈-시공-전-타일-청소-순서",
       "checked": "2026-11-21",
       "verify": "줄눈 · 실리콘을 먼저 하고 입주 청소를 나중에 하는 순서는 블로그 자료예요"
+    },
+    "lx-style-wallpaper": {
+      "title": "벽지 - 인테리어 효과, 가격, 종류, 관리법 및 트렌드(LX Z:IN 스타일 가이드 2024-10-07)",
+      "publisher": "LX하우시스 LX Z:IN",
+      "kind": "maker",
+      "public": true,
+      "url": "https://www.lxzin.com/styling/style-guide/detail/5959",
+      "checked": "2026-11-22",
+      "verify": "조사 담당(K)이 웹으로 읽고 요약(벽 가로 ÷ 벽지 폭으로 폭 수를 셈 · 손상 · 무늬 맞춤에 대비해 1~2롤 더 주문 권장)"
+    },
+    "lx-ceiling-roll": {
+      "title": "실크벽지 베스트 심플 화이트(천장지) 8197-01 제품 쪽",
+      "publisher": "LX하우시스 LX Z:IN",
+      "kind": "maker",
+      "public": true,
+      "url": "https://www.lxzin.com/zin/product/101402",
+      "checked": "2026-11-22",
+      "verify": "조사 담당(K)이 제품 쪽 규격을 읽음(106cm × 31.2m, 보통 실크 롤 15.6m의 2배 길이)"
+    },
+    "gni-faq-amount": {
+      "title": "벽지 소요량을 어떻게 측정하나요?(개나리벽지 FAQ)",
+      "publisher": "개나리벽지",
+      "kind": "maker",
+      "public": true,
+      "url": "https://www.gniwallpaper.com/contact/faq.php",
+      "checked": "2026-11-22",
+      "verify": "조사 담당(K)이 웹으로 읽고 요약(벽 + 천장은 실평수 × 3.3 · 벽만은 × 2.2로 바를 평수, 1롤 5평. 구조마다 달라 정확한 측정은 어렵다고 함)"
     }
   },
   "items": {
@@ -252,6 +279,24 @@
       "living": [],
       "pet": ["세제를 쓴 바닥은 반려동물이 핥지 않게 물걸레로 한 번 더 닦아요."],
       "sources": ["kca-bleach", "seoul-bakeout", "kca-clean", "miso-grout"]
+    },
+    "paper_buy": {
+      "label": "벽지 직접 구매",
+      "when": "도배 시작 전날까지 고른 벽지를 사서 현장에 받아 둬요.",
+      "why": "벽지 값은 표준견적서 합계에서 빠지고 업체에는 시공을 맡겨요. 풀 · 초배지 같은 부자재는 업체 견적에 넣는 게 편해요. 업체 가견적은 벽지 값이 들어간 값이라 실측 때 빼 달라고 말해요.",
+      "how": [
+        "실측 때 벽지는 직접 산다고 말하고 고른 품번과 필요한 롤 수를 업체와 같이 확인해요.",
+        "롤 수는 바를 벽 가로를 벽지 폭으로 나눠 폭 수를 세고, 한 롤에서 나오는 폭 수로 나눠 셈해요.",
+        "집 구조마다 필요한 양이 달라서 정확한 양은 실측으로 정해요."
+      ],
+      "tools": ["고른 벽지 품번", "실측 견적서의 롤 수", "여분 롤"],
+      "cautions": [
+        "찢어지거나 무늬를 맞추다 버리는 양이 있어 여분 롤을 더 준비해요.",
+        "천장지처럼 보통 롤보다 긴 제품도 있어 롤 수는 고른 품번 규격으로 다시 확인해요."
+      ],
+      "living": ["짐이 있는 집이면 벽지 상자를 둘 자리를 미리 비워 둬요."],
+      "pet": [],
+      "sources": ["lx-style-wallpaper", "lx-ceiling-roll", "gni-faq-amount"]
     }
   }
 }

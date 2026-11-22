@@ -329,7 +329,7 @@ function QtyCard({ p, expanded: ex0 = true, next = false }: { p: PlanBrief; expa
           <div className="pp9-tiles">
             {tile("벽지 바를 면적", `${pp9Fmt(t.paper_m2)}㎡`, `벽 ${pp9Fmt(t.wall_m2)} · 천장 ${pp9Fmt(t.ceiling_m2)}㎡`)}
             {tile("벽지 (실크)", `${rollsOf(t, "silk")}롤`, "폭 1.06m · 한 롤 약 16.5㎡")}
-            {tile("벽지 (합지)", `${rollsOf(t, "hapji")}롤`, "폭 0.53m · 한 롤 약 6.6㎡")}
+            {tile("벽지 (합지)", `${rollsOf(t, "hapji")}롤`, "광폭 0.93m · 한 롤 약 16.5㎡")}
             {tile("초배지", `${pp9Fmt(t.primer_m2)}㎡`, "벽지 밑에 바르는 종이")}
             {tile("천장 몰딩", `${pp9Fmt(t.molding_m)}m`, `2.4m짜리 ${t.molding_pcs}개`)}
             {tile("걸레받이", `${pp9Fmt(t.base_m)}m`, `2.4m짜리 ${t.base_pcs}개`)}

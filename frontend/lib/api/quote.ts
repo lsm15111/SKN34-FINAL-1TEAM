@@ -46,5 +46,10 @@ export async function getStandardView(shell: ProjectShell): Promise<StdView | nu
   // 예상 일수는 계산 엔진 값(StandardOut.days). v2로 만든 옛 공사처럼 비어 있으면 예상 공정표의 일하는 날 수를 써요
   const days = q.days ?? (await getPlanView(shell.id).then((p) => (p ? String(p.work_days) : null)).catch(() => null));
   const fit = q.budget_fit ?? (q.budget && q.budget.status !== "open" ? q.budget.status : null);
-  return { scope, lines: toQuoteLines(t.lines, scope), supply: t.supply, vat: t.vat, total: t.total, days, budget: budgetText(fit, shell.budgetWon), condition: cond };
+  // 벽지 직접 구매면 도배지 줄은 '고객 구매'(합계 밖, 계산 엔진)이고 롤 수(계산 엔진)를 같이 보여요
+  const own = t.own_paper ? { rolls: t.rolls?.text ?? null } : undefined;
+  return {
+    scope, lines: toQuoteLines(t.lines, scope, own), supply: t.supply, vat: t.vat, total: t.total, days,
+    budget: budgetText(fit, shell.budgetWon), condition: cond, paperNote: t.paper_note ?? null,
+  };
 }

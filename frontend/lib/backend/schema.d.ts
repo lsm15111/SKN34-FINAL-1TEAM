@@ -4443,7 +4443,7 @@ export interface components {
              * Diy
              * @description 고른 칩 키. 빈 목록이면 '없어요'
              */
-            diy: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean")[];
+            diy: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean" | "paper_buy")[];
         };
         /** DiyOut */
         DiyOut: {
@@ -4451,7 +4451,18 @@ export interface components {
              * Diy
              * @description 고른 칩 키(칩 순서). null이면 아직 묻지 않음, 빈 목록이면 '없어요'
              */
-            diy: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean")[] | null;
+            diy: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean" | "paper_buy")[] | null;
+            /**
+             * Told
+             * @description 바뀐 직접 할 일을 알린 업체 이름(확정 전 실측 요청, 요청 사본도 같이 고쳐요)
+             * @default []
+             */
+            told: string[];
+            /**
+             * Notice
+             * @description 확정한 업체가 있으면 '확정 뒤라 업체에 따로 알려야 해요(업체 이름)'. 업체 채팅으로 알려요
+             */
+            notice?: string | null;
         };
         /** DobaeIn */
         DobaeIn: {
@@ -5283,7 +5294,7 @@ export interface components {
              * Diy
              * @description 직접 할 일(반셀프 칩, project/diy.py 키). 안 보내거나 null이면 묻지 않은 것(고치기에서는 그대로), 빈 목록이면 '없어요'. 공사를 만들 때 같은 트랜잭션에서 모은 조건(diy.<키>)으로 저장해요. 손님 계산(표준견적서)에는 쓰지 않아요
              */
-            diy?: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean")[] | null;
+            diy?: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean" | "paper_buy")[] | null;
         };
         /**
          * HomeInfoOut
@@ -7497,7 +7508,7 @@ export interface components {
             incl_waste?: boolean | null;
             /**
              * Paper Spec
-             * @description 벽지 제조사 · 규격 (LX 베스띠 · 폭 106cm)
+             * @description 벽지 제조사 · 규격 (LX 실크벽지 베스트 · 폭 106cm)
              */
             paper_spec?: string | null;
             /**
@@ -8291,6 +8302,44 @@ export interface components {
             photo_file_ids?: string[];
         };
         /**
+         * RollOut
+         * @description 벽지 롤 수(calc.rolls): 롤 한 개 넓이(제조사 규격)로 나눠 올림. 여분은 셈 밖이에요.
+         */
+        RollOut: {
+            /**
+             * Key
+             * @enum {string}
+             */
+            key: "silk" | "hapji_wide" | "hapji_narrow";
+            /**
+             * Name
+             * @description 실크 · 광폭 합지 · 소폭 합지
+             */
+            name: string;
+            /**
+             * Size
+             * @description 롤 크기(폭 × 길이) '106cm × 15.6m'
+             */
+            size: string;
+            /**
+             * Count
+             * @description 롤 수(올림, 여분 빼고)
+             */
+            count: number;
+            /**
+             * Spare Min
+             * @description 여분 롤(셈 밖, 따로 보이기만)
+             */
+            spare_min: number;
+            /** Spare Max */
+            spare_max: number;
+            /**
+             * Text
+             * @description 화면 말 '실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로'
+             */
+            text: string;
+        };
+        /**
          * RoomBandOut
          * @description 방 개수 기본값 한 칸: 이 면적(㎡) 이상이면 이 방 개수
          */
@@ -8749,6 +8798,19 @@ export interface components {
              * @description 기준 화면 이름: 도배만 하는 공사 기준 · 리모델링 기준
              */
             profile_name?: string | null;
+            /**
+             * Own Paper
+             * @description 도배: 고객이 벽지를 직접 사요(반셀프 '벽지 직접 구매'). 도배지 줄(key paper)은 '안 함' · 고객 구매라 합계 밖이에요(수량 · 금액은 참고)
+             * @default false
+             */
+            own_paper: boolean;
+            /** @description 도배: 도배지 줄 양 → 벽지 롤 수(계산 엔진, 보이기용. 돈은 벽지 평으로 세요). 지식 카드 계산 ref standard.rolls */
+            rolls?: components["schemas"]["RollOut"] | null;
+            /**
+             * Paper Note
+             * @description 벽지 직접 구매일 때 안내 한 줄(틀): 업체 가견적은 벽지 값이 든 값이에요
+             */
+            paper_note?: string | null;
         };
         /** StartOptionOut */
         StartOptionOut: {
@@ -9823,12 +9885,12 @@ export interface components {
             ceiling: boolean;
             /**
              * Rollw
-             * @default 0.53
+             * @default 0.93
              */
             rollW: number;
             /**
              * Rolllen
-             * @default 12.5
+             * @default 17.75
              */
             rollLen: number;
             /**
@@ -11830,6 +11892,11 @@ export interface components {
             nearby_sgg: string[];
             /** @description 담은 수 · 남은 칸 */
             shortlist?: components["schemas"]["ShortlistCountOut"] | null;
+            /**
+             * Paper Note
+             * @description 벽지 직접 구매일 때 가견적 안내 한 줄(틀, quote.service.OWN_PAPER_NOTE)
+             */
+            paper_note?: string | null;
         };
         /** VendorNextOut */
         VendorNextOut: {

@@ -128,6 +128,9 @@ export function VendorList({ projectId, list, shortlist, mock, head, aside }: {
             </section>
           ) : null}
 
+          {/* 벽지 직접 구매: 가견적은 벽지 값이 든 값이라 안내 한 줄(API paper_note, 틀) */}
+          {list.paper_note ? <p className={s.meta}>{list.paper_note}</p> : null}
+
           {zero && list.nearby.length ? <p className={s.metaB}>가까운 구 · {list.nearby_sgg.join(" · ")} {list.nearby.length}곳</p> : null}
           {zero && list.nearby.length ? <div className={s.list}>{nearShown.map((c) => cardOf(c, true))}</div> : null}
           {zero && !list.nearby.length ? (

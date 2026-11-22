@@ -183,13 +183,14 @@ def test_d8_picked_days_with_a_gap_keep_their_own_count(api):
     assert propose(api, did, wish.isoformat(), end.isoformat(), kind="change").status_code == 200
 
 
-# ---- D10 페인트 비울 날 3일 · D5 빠듯함 · 지난 마감 (calc.diy 판 diy_v2) ----
+# ---- D10 페인트 비울 날 3일 · D5 빠듯함 · 지난 마감 (calc.diy 판 diy_v2, diy_v3도 빈 집은 같은 값) ----
 
 DOBAE = {"dobae": (date(2026, 12, 7), date(2026, 12, 9))}  # 월 ~ 수
 
 
 def test_d10_paint_leaves_three_empty_days_before_dobae():
-    assert calc_diy.RULE_VER == "diy_v2" and calc_diy.RULES is calc_diy.RULES_V2
+    # 판은 diy_v3(QA r2 c3 사는 집)로 옮겼어요. 페인트 규칙은 diy_v2와 같아요
+    assert calc_diy.RULE_VER == "diy_v3" and calc_diy.RULES is calc_diy.RULES_V3
     (paint,) = calc_diy.plan(["paint"], DOBAE, date(2026, 12, 1))
     assert (paint.start, paint.end, paint.day) == (
         date(2026, 12, 1),
@@ -198,7 +199,7 @@ def test_d10_paint_leaves_three_empty_days_before_dobae():
     )
     # 목요일까지 칠하면 금 · 토 · 일 사흘(72시간 넘게)을 비우고 월요일에 도배해요
     empty = (DOBAE["dobae"][0] - paint.end).days - 1
-    assert empty == calc_diy.PAINT_DRY_DAYS == 3 and paint.rule_ver == "diy_v2"
+    assert empty == calc_diy.PAINT_DRY_DAYS == 3 and paint.rule_ver == "diy_v3"
 
 
 def test_d5_tight_paint_is_placed_after_mokgong():
@@ -249,6 +250,21 @@ def test_d5_plan_marks_a_late_task(api):
 # ---- P7 · P11 실측 견적서 · 추가 금액 0원 ----
 
 
+MIN_CHECK = "ck_vendor_quotes_entered_amount_min"
+
+
+def old_zero_quote() -> None:
+    """1원 CHECK(0052, NOT VALID) 전에 0원으로 임시 저장한 견적서 행을 만든다."""
+    query(f"alter table vendor_quotes drop constraint {MIN_CHECK}")
+    try:
+        query("update vendor_quotes set entered_amount = 0, supply = 0, vat = 0, total = 0")
+    finally:
+        query(
+            f"alter table vendor_quotes add constraint {MIN_CHECK}"
+            " check (entered_amount >= 1) not valid"
+        )
+
+
 def test_p7_vendor_quote_needs_one_won(api):
     _customer, _p, v = vendor_quote.ready(api)
     f = vendor_quote.doc(api)
@@ -256,8 +272,9 @@ def test_p7_vendor_quote_needs_one_won(api):
     r = api.put(url, json={"file_ids": [f], **vendor_quote.FULL, "entered_amount": 0})
     assert r.status_code == 422 and r.json()["error"]["fields"][0]["loc"] == ["entered_amount"]
     assert api.put(url, json={"file_ids": [f], **vendor_quote.FULL}).status_code == 200
-    # 고치기 전에 0원으로 저장한 임시 견적서도 보내지 않아요(보내기 검사)
-    query("update vendor_quotes set entered_amount = 0, supply = 0, vat = 0, total = 0")
+    # 고치기 전에 0원으로 저장한 임시 견적서도 보내지 않아요(보내기 검사). 그런 옛 행은 1원 CHECK(0052) 앞에
+    # 저장된 것이라, CHECK를 잠깐 빼고 만든 뒤 운영과 같은 꼴(NOT VALID: 옛 행은 그대로)로 되돌려요
+    old_zero_quote()
     r = api.post(f"{url}/send")
     assert r.status_code == 422, r.text
     assert r.json()["error"]["fields"] == [

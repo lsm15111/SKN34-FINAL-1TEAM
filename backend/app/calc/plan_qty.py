@@ -2,6 +2,8 @@
 
 금액은 만들지 않는다. 금액은 이 수량과 기준 단가로 공정 계산이 만든다.
 면적 · 길이는 소수 한 자리(m2), 롤 · 개수는 올림이다.
+롤 크기는 calc.rolls(제조사 공식 규격)와 같다. 합지 롤은 광폭(93cm × 17.75m)이 기본이고 소폭(53cm × 12.5m)은
+고를 때만 센다(판 2026.11.2, 옛 판은 소폭만 세서 합지 롤 수가 실크의 2.5배쯤이었어요).
 """
 
 from dataclasses import dataclass, field
@@ -9,6 +11,7 @@ from decimal import ROUND_CEILING, Decimal
 from typing import Literal
 
 from app.calc.common import m2
+from app.calc.rolls import ROLLS, HapjiWidth
 
 SpaceKind = Literal[
     "room", "living", "kitchen", "entry", "hall", "dress", "bath", "balcony", "utility"
@@ -18,7 +21,7 @@ Paper = Literal["full", "kitchen", "none"]
 # 치수를 읽은 확신: 치수선 그대로 · 치수선 합차 · 그림 비율 추정
 Sure = Literal["high", "mid", "low"]
 WindowType = Literal["full", "half"]  # 바닥까지 큰 창 · 허리 높이 창
-RollKind = Literal["hapji", "silk"]
+RollKind = Literal["hapji", "silk"]  # 결과 칸 이름. 합지는 고른 폭(PlanOptions.hapji)의 롤로 센다
 
 MM = Decimal(1000)
 
@@ -61,6 +64,7 @@ class PlanOptions:
     ceiling: bool = True  # 천장도 도배
     ceiling_h: Decimal = Decimal("2.3")  # 천장 높이 m. 도면에 없어 아파트 흔한 값
     kinds: tuple[SpaceKind, ...] | None = None  # 이 공간 종류만 셈 (없으면 전부)
+    hapji: HapjiWidth = "wide"  # 합지 롤: 광폭(기본) · 소폭(고를 때만)
 
 
 @dataclass(frozen=True)
@@ -72,9 +76,9 @@ class Roll:
 
 @dataclass(frozen=True)
 class PlanRules:
-    """수량 가정값 한 벌. 바뀌면 version을 올린다."""
+    """수량 가정값 한 벌. 바뀌면 version을 올린다(2026.11.2: 합지 롤 광폭 기본)."""
 
-    version: str = "2026.11.1"
+    version: str = "2026.11.2"
     door_w: Decimal = Decimal("0.9")
     door_h: Decimal = Decimal("2.1")
     win_h: dict[str, Decimal] = field(
@@ -87,11 +91,9 @@ class PlanRules:
     primer_ceiling: Decimal = Decimal("0.8")
     casing_per_door: Decimal = Decimal("10.2")  # 문선: 문 하나 양면 m (팀 목공 계산과 같음)
     strip_extra: Decimal = Decimal("0.1")  # 벽지 한 띠 = 천장 높이 + 10cm
+    # 롤 크기(calc.rolls 키): 실크 · 광폭 합지 · 소폭 합지
     rolls: dict[str, Roll] = field(
-        default_factory=lambda: {
-            "hapji": Roll("합지", Decimal("0.53"), Decimal("12.5")),
-            "silk": Roll("실크", Decimal("1.06"), Decimal("15.6")),
-        }
+        default_factory=lambda: {k: Roll(r.name, r.width_m, r.length_m) for k, r in ROLLS.items()}
     )
 
 
@@ -215,8 +217,9 @@ def _space(sp: PlanSpace, plan: Plan, o: PlanOptions, r: PlanRules) -> _Raw:
 
 
 def _rolls(spaces: list[_Raw], kind: RollKind, o: PlanOptions, r: PlanRules) -> RollCount:
-    """벽지 롤 수. 벽은 띠(폭) 단위로 세고, 천장은 짧은 변 방향으로 띠를 놓는다."""
-    roll = r.rolls[kind]
+    """벽지 롤 수. 벽은 띠(폭) 단위로 세고, 천장은 짧은 변 방향으로 띠를 놓는다.
+    합지는 고른 폭의 롤(광폭 기본, 소폭은 고를 때만)이다."""
+    roll = r.rolls["silk" if kind == "silk" else f"hapji_{o.hapji}"]
     h = o.ceiling_h
     per_roll = max(1, int(roll.length // (h + r.strip_extra)))
     raw = Decimal(0)

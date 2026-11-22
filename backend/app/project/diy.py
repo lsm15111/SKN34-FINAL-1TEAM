@@ -4,10 +4,13 @@
 - 모은 조건(project_conditions)에 key `diy.<키>`, value `self`, trade `diy`로 둬요. 칸마다 한 줄이에요.
 - '없어요'를 고르면 `diy.none`만 남겨 '물어봤음'을 표시해요(다시 묻지 않게). 칩을 고르면 `diy.none`은 지워요.
 - 권한 확인 · commit은 부르는 쪽(project.service)이 해요. 저장은 공사 행을 잠가 같은 공사의 저장끼리 줄 세워요.
+- 칩 순서는 칩 지문(diy_ver) 번호라 새 칩은 끝에 더해요(이미 만든 승인 카드 지문이 그대로 맞게).
+- '벽지 직접 구매'(paper_buy, 2026-11-22 리드 결정): 표준견적서 도배지 줄이 '고객 구매'로 빠지고(계산 엔진),
+  다른 칩처럼 공정표 · 업체에 알릴 것에 들어가요. 업체 가견적의 '시공만' 값은 뒤로 미뤘어요.
 """
 
 import uuid
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from typing import Literal
 
 from sqlalchemy import delete, func, select
@@ -17,7 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.project.models import Project, ProjectCondition
 from app.shared.ids import uuid7
 
-DiyKey = Literal["paint", "outlet", "light", "silicone", "handle", "clean"]
+DiyKey = Literal["paint", "outlet", "light", "silicone", "handle", "clean", "paper_buy"]
 DIY: dict[str, str] = {
     "paint": "페인트(문틀 · 몰딩)",
     "outlet": "콘센트 · 스위치 커버",
@@ -25,11 +28,18 @@ DIY: dict[str, str] = {
     "silicone": "실리콘 · 줄눈",
     "handle": "손잡이 · 문고리",
     "clean": "입주 청소",
+    "paper_buy": "벽지 직접 구매",
 }
 TRADE = "diy"
 PREFIX = "diy."
 NONE_KEY = "diy.none"
 SELF = "self"
+PAPER_BUY = "paper_buy"
+
+
+def buys_paper(said: Mapping[str, str]) -> bool:
+    """모은 조건(project.service.conditions)에 '벽지 직접 구매' 칩이 있나(표준견적서 도배지 줄 고객 구매)."""
+    return said.get(f"{PREFIX}{PAPER_BUY}") == SELF
 
 
 def picked_of(keys: Iterable[str]) -> list[str] | None:

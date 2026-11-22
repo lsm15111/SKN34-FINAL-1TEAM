@@ -98,6 +98,10 @@ class VendorListOut(BaseModel):
     )
     nearby_sgg: list[str] = Field(default=[], description="가까운 구 이름")
     shortlist: "ShortlistCountOut | None" = Field(default=None, description="담은 수 · 남은 칸")
+    paper_note: str | None = Field(
+        default=None,
+        description="벽지 직접 구매일 때 가견적 안내 한 줄(틀, quote.service.OWN_PAPER_NOTE)",
+    )
 
 
 class EstimateDetailOut(EstimateOut):

@@ -67,7 +67,7 @@ _SPACE_KINDS_SQL = (
 # 직접 할 일 칸(project/diy.py DIY 키 + 없어요). 칩 키를 더하면 이 줄 · migration도 같이 바꾼다
 _DIY_SQL = (
     "key not like 'diy.%' or (value = 'self' and key in ('diy.paint', 'diy.outlet', 'diy.light',"
-    " 'diy.silicone', 'diy.handle', 'diy.clean', 'diy.none'))"
+    " 'diy.silicone', 'diy.handle', 'diy.clean', 'diy.paper_buy', 'diy.none'))"
 )
 
 

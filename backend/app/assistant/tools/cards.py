@@ -184,6 +184,8 @@ async def standard(
         (one.total, one.supply, one.vat) if one else (out.total, out.supply, out.vat)
     )
     grade = next((GRADE.get(t.grade or "") for t in trades if t.grade), None)
+    # 벽지 직접 구매: 도배지 줄 고객 구매(합계 밖)
+    own = next((t for t in trades if t.own_paper), None)
     label = " · ".join(
         x
         for x in (
@@ -191,6 +193,7 @@ async def standard(
             grade,
             f"{BASIS.get(out.area_basis, out.area_basis)} {_m2(out.area_m2)}",
             "부분 공사" if out.scope == "partial" else None,
+            "벽지 고객 구매" if own else None,
         )
         if x
     )
@@ -219,6 +222,15 @@ async def standard(
         ],
         "version": out.price_ver,
     }
+    # 벽지(칸 이름은 policy.ALLOWED 안): 롤 수(계산 엔진, 보이기용) · 벽지 직접 구매면 합계 밖 도배지 줄 · 가견적 안내(틀)
+    rolled = next((t for t in trades if t.rolls is not None), None)
+    if rolled is not None and rolled.rolls is not None:
+        box: dict = {"count": rolled.rolls.count, "text": rolled.rolls.text}
+        paper = next((ln for ln in rolled.lines if ln.key == "paper"), None)
+        if rolled.own_paper and paper is not None:
+            box |= {"state": "고객 구매(합계 밖)", "line": paper.name, "amount": paper.amount}
+            box["note"] = rolled.paper_note
+        model["paper"] = box
     if trade and one is None:  # 물은 공정이 이 공사 표준견적서에 없다
         asked = TRADE.get(trade, trade)
         model["missing"] = (
@@ -521,8 +533,10 @@ async def vendor_picks(
                 href=href(pid, "/vendors"),
             )
         )
+    # 벽지 직접 구매면 가견적 안내 한 줄(틀)을 기준 줄 끝에 더해요(가견적은 벽지 값이 든 값)
+    basis = [*PICK_BASIS, lst.paper_note] if lst.paper_note else PICK_BASIS
     data = VendorPicksData(
-        area_name=lst.area_name, picks=picks, basis=PICK_BASIS, more_href=href(pid, "/vendors")
+        area_name=lst.area_name, picks=picks, basis=basis, more_href=href(pid, "/vendors")
     )
     card = CardOut(
         card_id=f"picks-{trade}",
@@ -533,7 +547,7 @@ async def vendor_picks(
     model = {
         "area": lst.area_name,
         "trade": trade,
-        "basis": PICK_BASIS,  # 고른 기준(카드 아래 줄과 같은 글)
+        "basis": basis,  # 고른 기준(카드 아래 줄과 같은 글)
         "picks": [
             {
                 "ref": x.ref,

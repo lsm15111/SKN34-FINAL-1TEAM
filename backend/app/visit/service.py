@@ -270,6 +270,7 @@ async def _cards(
     tried = await repo.attempts(s, p.id, trade, vendor_ids)
     live = {v.vendor_id for v in await repo.live(s, p.id, trade)}
     out: dict[uuid.UUID, Card] = {}
+    full = quote_service.compare_total(std, lines)  # 가견적은 벽지 값이 든 값(벽지 직접 구매여도)
     for vid in vendor_ids:
         v3 = v3s.get(vid)
         if v3 is not None:
@@ -278,7 +279,7 @@ async def _cards(
             e = _estimate(trade, std, lines, prices.get(vid), grade) if V2_FALLBACK else None
             total = e.total if e else None
             set_id = prices[vid].set_id if e else None
-            pct = _vs(e.total, std.total)[0] if e else None
+            pct = _vs(e.total, full)[0] if e else None
         if tried.get(vid, 0) >= ATTEMPTS_MAX and vid not in live:
             state = "blocked_retry"
         elif v3 is not None and not v3.paper_ok:
@@ -367,10 +368,11 @@ async def vendors_for(
     prices = await vendor_service.confirmed_prices(s, ids, trade)
     visits = await repo.latest_by_vendor(s, p.id, trade, ids) if ids else {}
     v3 = await _v3_cards(s, p, std, lines, trade)
+    full = quote_service.compare_total(std, lines)  # 가견적은 벽지 값이 든 값(벽지 직접 구매여도)
     rows = []
     for c in cards:
         e = _estimate(trade, std, lines, prices.get(c.vendor_id))
-        pct, way = _vs(e.total, std.total) if e else (None, None)
+        pct, way = _vs(e.total, full) if e else (None, None)
         rows.append(
             VendorRowOut(
                 vendor_id=c.vendor_id,
@@ -400,6 +402,7 @@ async def vendors_for(
         consent_ver=CONSENT_VER,
         vendors=rows,
         **v3,
+        paper_note=quote_service.paper_note(std),
     )
 
 
@@ -473,7 +476,7 @@ async def vendor_detail(
     e = _estimate(trade, std, lines, cp)
     estimate = None
     if e is not None and cp is not None:
-        pct, way = _vs(e.total, std.total)
+        pct, way = _vs(e.total, quote_service.compare_total(std, lines))
         estimate = EstimateDetailOut(
             **e.model_dump(),
             set_id=cp.set_id,

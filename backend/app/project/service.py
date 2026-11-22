@@ -578,13 +578,20 @@ async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> 
 
 async def put_diy(s: AsyncSession, user: User, project_id: uuid.UUID, keys: list[str]) -> DiyOut:
     """직접 할 일 칩 덮어쓰기(만든 고객만, 남의 것 · 없는 것은 같은 404). 고객이 직접 누른 입력이라 승인 카드 없이
-    저장하고, 표준견적서에 쓰지 않아 집 정보 rev는 그대로다. 같은 공사 요청은 프로젝트 행 잠금으로 줄 선다."""
+    저장하고, 집 정보 rev는 그대로다(벽지 직접 구매만 표준견적서 도배지 줄을 바꾸고, 그건 quote.service가 own_paper로
+    새 판을 쌓는다). 같은 공사 요청은 프로젝트 행 잠금으로 줄 선다.
+    확정 전 실측 요청의 '업체에 알릴 것' 사본도 같은 트랜잭션에서 맞추고 업체에 알린다(QA r2 c2 리드 결정).
+    visit은 위층이라 함수 안에서 늦게 import한다(/me의 vendor.repository와 같은 꼴의 예외)."""
+    from app.shared.clock import now_utc
+    from app.visit import flow
+
     p = await repo.get_for_update(s, project_id)
     if p is None or p.owner_id != user.id:
         raise AppError(404, "not_found", "프로젝트를 찾을 수 없어요.")
     picked = await diy.set_diy(s, project_id, keys)
+    synced = await flow.sync_diy(s, project_id, picked, now_utc())
     await s.commit()
-    return DiyOut(diy=picked)
+    return DiyOut(diy=picked, told=synced.told, notice=synced.note)
 
 
 async def save_condition(

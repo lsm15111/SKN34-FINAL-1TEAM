@@ -4,6 +4,11 @@
   찾아요. '없어요'(빈 목록)면 직접 할 일이 없어요. 에이전트 추측은 쓰지 않아요.
 - 날짜는 공정표(schedule.service.plan_for: 확정이 있으면 확정, 없으면 예상) 블록 → schedule.service.diy_tasks(calc.diy)
   값만 써요. 글은 knowledge/diy.json 정해 둔 글(숫자 없음)이고, 날짜 말만 계산 엔진 값으로 적어요.
+- 할 일 날짜(start · end · day)는 공정표 '고객이 직접' 줄과 같은 값이에요(모든 날 any · 사는 집 occupied). 고객이
+  주말 · 공휴일만 된다고 했으면(도구 days · 기억 '주말에만') 주말 · 공휴일만으로 다시 찾은 값(alt)을 근거와 같이
+  더해요: '12월 17일(목) ~ 12월 20일(일) 사이에 해요 · 주말이면 12월 19일(토)도 돼요'(QA r2 c3).
+- 실측을 요청한 뒤 직접 할 일을 바꾸면 확정 전 요청은 믿집이 알리고, 확정한 업체에는 따로 알려야 해요
+  (visit.flow.diy_reach · sync_diy, QA r2 c2). diy_plan 결과의 vendors(requests · deals)가 그 업체 이름이에요.
 - 카드는 knowledge 카드의 체크 칸이에요: 모두 보기는 할 일마다 한 줄('페인트(문틀 · 몰딩) 칠하기 · 12월 4일(금)까지
   해요'), 한 가지를 물으면 그 일의 때 · 방법 · 주의점 줄과 준비물 체크 칸이에요.
 - 챙기기는 확정 공정표(수락한 공사 날짜)가 있을 때만 해요: 7일 안 마감 줄(today_rows) · 공사 1주 전 할 일
@@ -45,6 +50,11 @@ WORDS: dict[str, re.Pattern[str]] = {
     "silicone": re.compile(r"실리콘|줄눈|코킹|메지"),
     "handle": re.compile(r"손잡이|문고리|도어\s{0,2}(?:핸들|레버)"),
     "clean": re.compile(r"청소"),
+    # 벽지를 직접 사는 말만('벽지 직접 구매' · '벽지는 제가 살게요'). 벽지 고르기 · 도배 자체는 아니에요
+    "paper_buy": re.compile(
+        r"벽지[^.?!\n]{0,8}?(?:구매|구입|주문|사\s{0,2}(?:서|고|면|요|려|올|둘|두|다|는|러)|"
+        r"살\s{0,2}(?:게|래|거|까)|샀)"
+    ),
 }
 # 무료 모드: 직접 할 일 모두 · 때 · 방법 · 준비물을 묻는 말
 LIST = re.compile(
@@ -67,6 +77,24 @@ PET = re.compile(
     r"강아지|고양이|반려|애완|펫"
 )  # 이번 말에 반려동물이 나오면 반려동물 주의도 보여요
 PHASE_KO = {"final": "확정", "expected": "예상"}
+# 주말 · 공휴일만 되는 근거(free_src) → 카드 줄 · 모델 값
+WEEKEND_LINE = {
+    "memory": "주말에만 된다고 하셔서 주말 날도 같이 적었어요.",
+    "asked": "주말 · 공휴일에 할 날도 같이 적었어요.",
+}
+DAYS_NOTE = {
+    "memory": "고객이 주말에만 된다고 한 기억이 있어요.",
+    "asked": "고객이 이번에 주말 · 공휴일만 된다고 했어요.",
+}
+DATES_NOTE = (
+    "start · end · day는 공정표 '고객이 직접' 줄과 같은 값이에요. weekend는 주말 · 공휴일만으로 다시 찾은 값이라 "
+    "공정표 날과 다르면 둘 다 알려요(text는 카드에 적은 말)."
+)
+# 직접 할 일을 바꾸면 닿는 업체(diy_plan · propose_home_info 결과 vendors)
+REACH_LIVE = (
+    "실측을 요청한 업체(requests)는 직접 할 일을 바꾸면 믿집이 요청에 고쳐 적고 알림을 보내요."
+)
+REACH_DEALT = "확정한 업체(deals)는 {note}. 업체 채팅으로 알려 달라고 안내해요."
 SRC_NOTE = {
     "chips": "고객이 고른 직접 할 일이에요.",
     "memory": "고객이 대화에서 직접 하겠다고 한 일이에요(칩은 아직 안 골랐어요).",
@@ -108,15 +136,32 @@ def keys_in(text: str) -> list[str]:
     return [k for k in KEYS if WORDS[k].search(t)]
 
 
-def when_text(t: calc_diy.DiyTask) -> str:
-    """'언제부터 · 언제까지' 말(날짜는 계산 엔진 값)."""
+def when_text(t: calc_diy.DiyTask, alt: calc_diy.DiyTask | None = None) -> str:
+    """'언제부터 · 언제까지' 말(날짜는 계산 엔진 값, 공정표와 같은 값). alt(주말 · 공휴일만으로 찾은 값)를 주면
+    공정표 날과 다를 때 '주말이면 …도 돼요'를 붙여요(QA r2 c3)."""
+    said = _when(t)
+    extra = alt_text(t, alt)
+    return f"{said} · {extra}" if extra else said
+
+
+def alt_text(t: calc_diy.DiyTask, alt: calc_diy.DiyTask | None) -> str | None:
+    """주말 · 공휴일만 되는 고객에게 같이 알릴 말: 공정표 날과 다른 주말 날 · 그 사이에 주말 · 공휴일이 없음.
+    공정표 날이 이미 주말 · 공휴일이거나 날이 빠듯 · 지남이면 없어요(그 말은 when_text가 해요)."""
+    if alt is None or t.day is None or t.late or t.why == "short":
+        return None
+    if alt.why == "no_free_day":
+        return "그 사이에 주말 · 공휴일이 없어요"
+    if alt.day is None or alt.day == t.day:
+        return None
+    return f"주말이면 {ko_day(alt.day)}도 돼요"
+
+
+def _when(t: calc_diy.DiyTask) -> str:
     if t.day is None:
         return "공사 날짜가 정해지면 날짜를 알려 드려요"
     if t.late and t.end is not None:
         return f"{ko_day(t.end)}까지였어요"
-    if t.why == "short":
-        if t.kind == "before" and t.end is not None:
-            return f"{ko_day(t.end)}까지 해야 하는데 날이 빠듯해요"
+    if t.why == "short":  # 공정표 줄과 같은 날: 할 수 있는 첫날(calc.diy diy_v2 day, 마감 날 아님)
         return f"{ko_day(t.day)}부터 할 수 있는데 날이 빠듯해요"
     if t.why == "no_free_day" and t.start is not None and t.end is not None:
         return f"{ko_day(t.start)} ~ {ko_day(t.end)} 사이에 주말 · 공휴일이 없어요"
@@ -156,6 +201,16 @@ class Got:
     occupied: bool = False
     pet: bool = False
     trades: list[str] = field(default_factory=list)  # 공정표의 업체 공정(공사 준비물 카드에 써요)
+    free: str = "any"  # 고객이 할 수 있는 날(any · weekend)
+    free_src: str = ""  # weekend 근거: asked(이번 말 · 도구 값) · memory(기억 '주말에만')
+    # 주말 · 공휴일만으로 다시 찾은 값((key, step) → 할 일). 공정표 값(tasks)은 그대로예요(QA r2 c3)
+    alt: dict[tuple[str, str], calc_diy.DiyTask] = field(default_factory=dict)
+
+    def alt_of(self, t: calc_diy.DiyTask) -> calc_diy.DiyTask | None:
+        return self.alt.get((t.key, t.step))
+
+    def when(self, t: calc_diy.DiyTask) -> str:
+        return when_text(t, self.alt_of(t))
 
 
 async def gather(
@@ -168,7 +223,8 @@ async def gather(
     keys: list[str] | None = None,
     final_only: bool = False,
 ) -> Got:
-    """고른 값 + 공정표 기준 날짜. keys를 주면 그 일만(고객이 물은 일). free가 없으면 기억의 편한 요일(주말)을 봐요.
+    """고른 값 + 공정표 기준 날짜. keys를 주면 그 일만(고객이 물은 일). 날짜(tasks)는 공정표와 같은 값(any ·
+    사는 집)이고, 주말 · 공휴일만 되면(free weekend, 비우면 기억의 편한 요일) 그 값(alt)을 더해요.
     final_only면 확정 공정표가 없을 때 날짜를 만들지 않아요(챙기기). 남의 공사면 AppError(404)."""
     from app.assistant import memory
     from app.project import service as project_service
@@ -177,9 +233,18 @@ async def gather(
     p = await project_service.get_for(s, user, pid)
     chosen, src = await keys_for(s, user.id, pid)
     rows = await repo.memories(s, user.id)
+    free_src = "asked" if free == "weekend" else ""
     if free is None:
         free = "weekend" if memory.prefs(rows)[1] == "weekend" else "any"
-    got = Got(keys=chosen, src=src, phase="none", occupied=bool(p.occupied))
+        free_src = "memory" if free == "weekend" else ""
+    got = Got(
+        keys=chosen,
+        src=src,
+        phase="none",
+        occupied=bool(p.occupied),
+        free=free,
+        free_src=free_src,
+    )
     got.pet = any(m.key == "pet" for m in rows)
     want = keys if keys is not None else chosen
     if not want:
@@ -193,9 +258,14 @@ async def gather(
         return got
     got.phase = "final" if plan.kind == "final" else "expected"
     got.trades = [b.trade for b in plan.blocks if b.kind == "work" and b.trade]
-    got.tasks = schedule_service.diy_tasks(
-        plan, want, today, free=free, move_in=schedule_service.move_in_of(p)
-    )
+    move_in, occupied = schedule_service.move_in_of(p), bool(p.occupied)
+    # 공정표 '고객이 직접' 줄과 같은 값(schedule.service._with_diy와 같은 인자)
+    got.tasks = schedule_service.diy_tasks(plan, want, today, move_in=move_in, occupied=occupied)
+    if free == "weekend":
+        alt = schedule_service.diy_tasks(
+            plan, want, today, free="weekend", move_in=move_in, occupied=occupied
+        )
+        got.alt = {(t.key, t.step): t for t in alt}
     return got
 
 
@@ -206,18 +276,38 @@ def _home_lines(item: know.Item, g: Got) -> list[str]:
     return [*(item.living if g.occupied else ()), *(item.pet if g.pet else ())]
 
 
+def _basis_line(g: Got) -> str | None:
+    """'날짜는 확정 공정표 기준이에요.' + 주말 날을 같이 적은 까닭(기억 · 이번 말)."""
+    if g.phase not in PHASE_KO:
+        return None
+    said = f"날짜는 {PHASE_KO[g.phase]} 공정표 기준이에요."
+    if any(alt_text(t, g.alt_of(t)) for t in g.tasks):
+        said += f" {WEEKEND_LINE[g.free_src]}"
+    return said
+
+
+def _tight_lines(g: Got) -> list[str]:
+    """빠듯한 일 · (주말 · 공휴일만 되는 고객) 그 사이에 주말이 없는 일의 까닭 줄."""
+    out = [f"{t.name}: {WHY_NOTE[t.why]}" for t in g.tasks if t.why in ("short", "no_free_day")]
+    for t in g.tasks:
+        a = g.alt_of(t)
+        if a is not None and alt_text(t, a) and a.why == "no_free_day":
+            out.append(f"{t.name}: {WHY_NOTE['no_free_day']}")
+    return out
+
+
 def list_card(pid: uuid.UUID, g: Got, *, tools: bool = False) -> CardOut:
     """고른 일 모두: 체크 칸은 할 일마다 한 줄(때 · 날짜), 줄은 일마다 때(tools면 준비물) · 빠듯함 · 전기 안전."""
     keys = list(dict.fromkeys(t.key for t in g.tasks))
     lines: list[str] = []
-    if g.phase in PHASE_KO:
-        lines.append(f"날짜는 {PHASE_KO[g.phase]} 공정표 기준이에요.")
+    if (basis := _basis_line(g)) is not None:
+        lines.append(basis)
     for k in keys:
         it = know.item(k)
         lines.append(
             f"{it.label}: {' · '.join(it.tools[:3])}" if tools else f"{it.label}: {it.when}"
         )
-    lines += [f"{t.name}: {WHY_NOTE[t.why]}" for t in g.tasks if t.why in ("short", "no_free_day")]
+    lines += _tight_lines(g)
     if any(k in ELECTRIC for k in keys):
         lines.append(SAFETY)
     srcs = list(dict.fromkeys(x.publisher for k in keys for x in know.item(k).sources))
@@ -225,9 +315,7 @@ def list_card(pid: uuid.UUID, g: Got, *, tools: bool = False) -> CardOut:
         title="직접 할 일 준비물" if tools else "직접 할 일",
         lines=lines[:8],
         source=" · ".join([*srcs[:3], "믿집 안내"]),
-        checklist=[
-            CheckItem(key=_item_key(t), label=f"{t.name} · {when_text(t)}") for t in g.tasks
-        ],
+        checklist=[CheckItem(key=_item_key(t), label=f"{t.name} · {g.when(t)}") for t in g.tasks],
         href=cards.href(pid, "/plan"),
     )
     return CardOut(card_id=f"diy-{pid}", kind="knowledge", data=data.model_dump(mode="json"))
@@ -238,9 +326,9 @@ def item_card(pid: uuid.UUID, key: str, g: Got) -> CardOut:
     it = know.item(key)
     mine = [t for t in g.tasks if t.key == key]
     lines = [it.when]
-    lines += [f"{t.name}: {when_text(t)}" for t in mine]
-    if mine and g.phase in PHASE_KO:
-        lines.append(f"날짜는 {PHASE_KO[g.phase]} 공정표 기준이에요.")
+    lines += [f"{t.name}: {g.when(t)}" for t in mine]
+    if mine and (basis := _basis_line(g)) is not None:
+        lines.append(basis)
     lines += [*it.how[:3], *it.cautions[:2], *_home_lines(it, g)]
     data = KnowledgeData(
         title=f"{it.label} · 직접 할 때",
@@ -253,10 +341,12 @@ def item_card(pid: uuid.UUID, key: str, g: Got) -> CardOut:
 
 
 def model_of(g: Got, focus: str | None = None) -> dict:
-    """모델에 보낼 값(허용 칸만): 출처 · 공정표 기준 · 할 일마다 날짜(계산 엔진) · 때 · 준비물 · 주의점."""
+    """모델에 보낼 값(허용 칸만, policy.ALLOWED): 출처 · 공정표 기준 · 할 일마다 날짜(계산 엔진, 공정표와 같은 값) ·
+    카드에 적은 말(text) · 주말 · 공휴일 값(weekend, 그 고객만) · 때 · 준비물 · 주의점."""
     items = []
     for t in g.tasks:
         it = know.item(t.key)
+        a = g.alt_of(t)
         row: dict = {
             "kind": t.key,
             "step": t.step or None,
@@ -266,18 +356,35 @@ def model_of(g: Got, focus: str | None = None) -> dict:
             "day": t.day,
             "fit": t.fit,
             "note": WHY_NOTE.get(t.why),
+            "text": g.when(t),
             "when": it.when,
             "source": it.source_line(),
         }
+        if a is not None:
+            row["weekend"] = {
+                "start": a.start,
+                "end": a.end,
+                "day": a.day,
+                "fit": a.fit,
+                "note": WHY_NOTE.get(a.why),
+            }
         if focus is None or focus == t.key:
             row |= {"prep": list(it.tools), "cautions": [*it.cautions, *_home_lines(it, g)]}
         items.append(row)
-    return {"state": g.src, "phase": g.phase, "note": SRC_NOTE[g.src], "items": items}
+    out: dict = {"state": g.src, "phase": g.phase, "note": SRC_NOTE[g.src], "items": items}
+    basis = [DATES_NOTE] if g.phase in PHASE_KO and g.tasks else []
+    if g.free == "weekend":  # 주말 · 공휴일만 되는 근거(이번 말 · 기억)
+        out["days"] = "weekend"
+        basis.append(DAYS_NOTE[g.free_src])
+    if basis:
+        out["basis"] = basis
+    return out
 
 
 def _overview_all(today: date) -> Got:
-    """아직 고르지 않았을 때 보여 줄 직접 하기 쉬운 일(날짜 없이 순서만)."""
-    keys = [k for k in KEYS if k != "clean"]
+    """아직 고르지 않았을 때 보여 줄 직접 하기 쉬운 일(날짜 없이 순서만). 입주 청소 · 벽지 직접 구매(일이 아니라
+    사는 것)는 빼요."""
+    keys = [k for k in KEYS if k not in ("clean", "paper_buy")]
     return Got(keys=keys, src="not_asked", phase="none", tasks=calc_diy.plan(keys, {}, today))
 
 
@@ -285,7 +392,9 @@ def _overview_all(today: date) -> Got:
 
 
 class DiyIn(BaseModel):
-    item: Literal["all", "paint", "outlet", "light", "silicone", "handle", "clean"] = "all"
+    item: Literal["all", "paint", "outlet", "light", "silicone", "handle", "clean", "paper_buy"] = (
+        "all"
+    )
     days: Literal["any", "weekend"] | None = None
 
 
@@ -295,17 +404,18 @@ class DiyIn(BaseModel):
     kind="read",
     status="직접 할 일을 챙기고 있어요",
     description="고객이 직접 하기로 고른 일(반셀프: 페인트(문틀 · 몰딩) · 콘센트 · 스위치 커버 · 조명 교체 · 실리콘 · "
-    "줄눈 · 손잡이 · 입주 청소)의 언제부터 · 언제까지(믿집 계산, 공정표 기준) · 하는 방법 · 준비물 · 주의점(출처)을 "
-    "읽어요. item을 주면 그 일만(고르지 않은 일도 때 · 방법은 알려 줘요), all이면 고른 일 모두예요. days는 고객이 "
-    "직접 할 수 있는 날이에요(weekend: 주말 · 공휴일만, 비우면 기억한 편한 요일). 고객이 직접 할 일 · 셀프 · "
-    "'페인트 언제 칠해요'를 묻거나 준비물을 물을 때 써요. 콘센트 옮기기 · 배선은 직접 할 일이 아니라 전기 공사업체 "
-    "일이에요.",
+    "줄눈 · 손잡이 · 입주 청소 · 벽지 직접 구매)의 언제부터 · 언제까지(믿집 계산, 공정표 기준) · 하는 방법 · 준비물 · "
+    "주의점(출처)을 읽어요. item을 주면 그 일만(고르지 않은 일도 때 · 방법은 알려 줘요), all이면 고른 일 모두예요. "
+    "days는 고객이 직접 할 수 있는 날이에요(weekend: 주말 · 공휴일만, 비우면 기억한 편한 요일). 날짜(start · end · "
+    "day)는 공정표 값이고, 주말 · 공휴일만 되면 그 값(weekend)도 같이 줘요: 다르면 둘 다 알려요. 고객이 직접 할 일 · "
+    "셀프 · '페인트 언제 칠해요'를 묻거나 준비물을 물을 때 써요. 콘센트 옮기기 · 배선은 직접 할 일이 아니라 전기 "
+    "공사업체 일이에요. 벽지 직접 구매(paper_buy)는 벽지를 고객이 사서 도배 전날까지 현장에 받아 두는 일이에요.",
     model=DiyIn,
     schema=obj(
         {
             "item": {
                 "type": "string",
-                "enum": ["all", "paint", "outlet", "light", "silicone", "handle", "clean"],
+                "enum": ["all", *KEYS],
                 "description": "all 고른 일 모두 · 그 밖은 한 가지",
             },
             "days": {"type": "string", "enum": ["any", "weekend"]},
@@ -314,17 +424,39 @@ class DiyIn(BaseModel):
     ),
 )
 async def diy_plan(tc: ToolCtx, a: DiyIn) -> ToolOut:
+    from app.visit import flow as visit_flow
+
     pid = pid_of(tc)
     focus = None if a.item == "all" else a.item
     async with SessionLocal() as s:
         g = await gather(s, tc.user, pid, tc.today, free=a.days, keys=[focus] if focus else None)
+        reach = await visit_flow.diy_reach(s, pid)
+    data = model_of(g, focus)
+    if reach.live or reach.dealt:  # 직접 할 일을 바꾸면 닿는 업체(QA r2 c2)
+        data["vendors"] = vendors_of(reach)
     if focus is not None:
-        return ToolOut(data=model_of(g, focus), cards=[item_card(pid, focus, g)])
+        return ToolOut(data=data, cards=[item_card(pid, focus, g)])
     if not g.tasks:
         shown = _overview_all(tc.today) if g.src == "not_asked" else g
-        data = model_of(g)
         return ToolOut(data=data, cards=[list_card(pid, shown)] if shown.tasks else [])
-    return ToolOut(data=model_of(g), cards=[list_card(pid, g)])
+    return ToolOut(data=data, cards=[list_card(pid, g)])
+
+
+def vendors_of(reach) -> dict:
+    """직접 할 일을 바꾸면 닿는 업체(visit.flow.DiyReach): 확정 전 요청(requests)은 믿집이 요청 사본을 고치고
+    알리고, 확정한 업체(deals)에는 비서가 업체 채팅으로 따로 알리라고 안내해요(QA r2 c2)."""
+    from app.visit.flow import DIY_DEALT_NOTE
+
+    out: dict = {}
+    notes: list[str] = []
+    if reach.live:
+        out["requests"] = list(reach.live)
+        notes.append(REACH_LIVE)
+    if reach.dealt:
+        out["deals"] = list(reach.dealt)
+        notes.append(REACH_DEALT.format(note=DIY_DEALT_NOTE))
+    out["notes"] = notes
+    return out
 
 
 # ---- 무료 모드(free.answer가 한 줄로 부른다) ----
@@ -377,7 +509,7 @@ def _list_text(g: Got) -> str:
     said = FREE_LIST.format(phase=PHASE_KO[g.phase])
     first = next((t for t in g.tasks if t.day is not None and t.fit), None)
     if first is not None:
-        said += FREE_FIRST.format(name=first.name, when=when_text(first))
+        said += FREE_FIRST.format(name=first.name, when=g.when(first))
     tight = [t.name for t in g.tasks if not t.fit and not t.late]
     if tight:
         said += FREE_TIGHT.format(names=", ".join(tight))
@@ -389,7 +521,7 @@ def _focus_text(key: str, g: Got) -> str:
     mine = [t for t in g.tasks if t.key == key and t.day is not None]
     said = f"{it.label}: {it.when}"
     if mine:
-        dated = " · ".join(f"{t.name} {when_text(t)}" for t in mine)
+        dated = " · ".join(f"{t.name} {g.when(t)}" for t in mine)
         said += f" 이 집 {PHASE_KO.get(g.phase, '')} 공정표로는 {dated}."
     if key in ELECTRIC:
         said += f" {SAFETY}"
@@ -474,7 +606,7 @@ async def prep_part(
         g = await gather(s, user, pid, today, final_only=True)
     except AppError:
         return [], []
-    items = [f"{t.name} · {when_text(t)} · {calc_diy.SELF}" for t in g.tasks if not t.late]
+    items = [f"{t.name} · {g.when(t)} · {calc_diy.SELF}" for t in g.tasks if not t.late]
     lines = [f"{t.name}: {WHY_NOTE[t.why]}" for t in g.tasks if t.why == "short"]
     return lines, items
 
@@ -499,7 +631,7 @@ async def eve_card(
         elif t.kind == "before" and t.end == today:
             extra.append(f"{t.name} · 오늘까지 해요 · {calc_diy.SELF}")
         elif t.kind == "after" and t.day is not None:
-            extra.append(f"{t.name} · {when_text(t)} · {calc_diy.SELF}")
+            extra.append(f"{t.name} · {g.when(t)} · {calc_diy.SELF}")
     if not extra:
         return card
     data = KnowledgeData.model_validate(card.data)

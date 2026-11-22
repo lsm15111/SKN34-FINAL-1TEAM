@@ -26,7 +26,8 @@ export type StartPick = WishKey | "unknown" | "date";
 export const WISH_LABEL: Record<WishKey, string> = { this_month: "이번 달", next_month: "다음 달", in_2_3_months: "2~3달 뒤" };
 export const START_PICKS: readonly StartPick[] = ["this_month", "next_month", "in_2_3_months", "unknown", "date"];
 
-/** 직접 할 일(반셀프 칩). 키 · 이름은 backend project/diy.py DIY와 같아요 */
+/** 직접 할 일(반셀프 칩). 키 · 이름 · 순서는 backend project/diy.py DIY와 같아요(새 칩은 끝에).
+ *  벽지 직접 구매(paper_buy)를 고르면 표준견적서 도배지 줄이 '고객 구매'로 빠져요(계산 엔진) */
 export type DiyKey = NonNullable<HomeInfo["diy"]>[number];
 export const DIY: { key: DiyKey; label: string }[] = [
   { key: "paint", label: "페인트(문틀 · 몰딩)" },
@@ -35,6 +36,7 @@ export const DIY: { key: DiyKey; label: string }[] = [
   { key: "silicone", label: "실리콘 · 줄눈" },
   { key: "handle", label: "손잡이 · 문고리" },
   { key: "clean", label: "입주 청소" },
+  { key: "paper_buy", label: "벽지 직접 구매" },
 ];
 /** 고른 직접 할 일 글(내 말 줄): '페인트(문틀 · 몰딩), 입주 청소' · 빈 목록이면 '없어요' */
 export const diyText = (keys: readonly string[]): string => DIY.filter((x) => keys.includes(x.key)).map((x) => x.label).join(", ") || "없어요";
