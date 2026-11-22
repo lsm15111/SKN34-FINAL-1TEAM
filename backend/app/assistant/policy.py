@@ -63,6 +63,9 @@ ALLOWED = frozenset(
         "survey", "dates_state", "proposal", "proposals", "change", "conflicts", "fits",
         "money", "period", "decided", "days_off", "vendor_note", "diy",
         "missing", "days_for", "basis", "vat_way", "weekend",
+        # 돈 기준 꼬리표(고침 3차 K, 리드 결정 2): 도구 결과의 돈은 부가세 포함이 기본이고, 공급가(부가세 별도)는
+        # 칸 이름에 '공급가'를 붙여요(부가세 몫은 vat). A2도 같은 이름을 더했어요
+        "공급가",
     }
 )  # fmt: skip
 DENY_PREFIX = ("vs_", "contact", "phone", "owner")  # 허용 목록에 잘못 들어와도 버리는 칸
