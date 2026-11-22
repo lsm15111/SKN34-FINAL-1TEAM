@@ -135,6 +135,10 @@ class Hit:
     score: float
     url: str = ""
     official: bool = False  # 출처 등급 0.8 이상 (공공 · 표준 · 제조사 · 협회)
+    # 알아 두기 카드 고르기(on_topic)용: 조각의 공정 갈래, 질문 주제 낱말(무게)이 조각에 든 몫 · 든 낱말 무게 합
+    scope: tuple[str, ...] = ()
+    topic: float = 0.0
+    weight: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -292,22 +296,77 @@ def search(
     ranked.sort(key=lambda p: -p[0])
     ranked = ranked[:k]
     best = max(_coverage(qq, ranked[0][1]) for qq in qs_all) if ranked else 0.0
-    hits = [
-        Hit(
-            ref=x.chunk.ref,
-            source_type=TYPE_KO.get(x.doc.kind, "기타"),
-            title=x.doc.title,
-            publisher=x.doc.pub,
-            date=x.doc.date,
-            section=x.chunk.sec,
-            text=x.chunk.text,
-            score=round(s * 1000, 1),
-            url=x.doc.url,
-            official=TIER.get(x.doc.kind, 0.5) >= 0.8,
+    words = topic_grams(main)
+    hits: list[Hit] = []
+    for s, x in ranked:
+        topic, weight = _topic_fit(ix, words, x)
+        hits.append(
+            Hit(
+                ref=x.chunk.ref,
+                source_type=TYPE_KO.get(x.doc.kind, "기타"),
+                title=x.doc.title,
+                publisher=x.doc.pub,
+                date=x.doc.date,
+                section=x.chunk.sec,
+                text=x.chunk.text,
+                score=round(s * 1000, 1),
+                url=x.doc.url,
+                official=TIER.get(x.doc.kind, 0.5) >= 0.8,
+                scope=x.scope,
+                topic=topic,
+                weight=weight,
+            )
         )
-        for s, x in ranked
-    ]
     return Result(hits, best >= CONF["enough_cov"], kinds)
+
+
+# ---- 알아 두기 카드에 보일 조각 고르기(QA r3: 공사 전날 준비물에 이사 · 철거 차량, 벽지 질문에 행위허가 · 비내력벽) ----
+
+# 질문 꼴 낱말(주제가 아님): 두 글자 묶음과 한 글자 낱말. 이 낱말만 겹친 조각은 주제가 맞지 않아요
+GENERIC_GRAMS = frozenset(
+    {
+        "공사", "준비", "주의", "의점", "방법", "경우", "필요", "알려", "려주", "주세", "세요", "어떻", "떻게",
+        "언제", "어디", "해야", "하나", "나요", "되나", "는지", "있어", "없어", "어요", "아요", "해요", "까요",
+        "하면", "돼요", "되요", "정도", "관련", "내용", "사항", "전에", "후에", "에는", "에서", "으로", "부터",
+        "까지", "해도", "어도", "아도", "할때", "할까", "뭐가", "무엇", "좋아", "좋은", "나은", "있나", "없나",
+        "보통", "요즘", "그냥", "혹시", "이랑", "하고", "같은", "다른", "제가", "저희", "우리", "집에", "드려",
+        "몇", "전", "후", "날", "때", "등", "더", "덜", "잘", "왜", "뭐", "좀", "및", "곳", "것", "수", "다",
+        "꼭", "안", "못", "또", "이", "그", "저", "집",
+    }
+)  # fmt: skip
+TOPIC_MIN = 0.25  # 질문 주제 낱말 무게 중 조각에 든 몫
+# 조각에 든 주제 낱말 무게 합(드문 낱말 하나 · 흔한 낱말 둘쯤). 흔한 낱말 하나만 스친 조각을 뺀다
+TOPIC_WEIGHT = 6.0
+TOPIC_REL = 0.5  # 가장 잘 맞는 조각의 몫에 견준 문턱
+
+
+def topic_grams(q: str) -> list[str]:
+    """질문의 주제 낱말(두 글자 묶음 · 한 글자 낱말에서 질문 꼴 낱말을 뺀 것)."""
+    return [t for t in _uniq(grams(q)) if t not in GENERIC_GRAMS]
+
+
+def _idf(ix: Index, t: str) -> float:
+    m = ix.df.get(t, 0)
+    return math.log(1 + (ix.n - m + 0.5) / (m + 0.5))
+
+
+def _topic_fit(ix: Index, words: list[str], x: Item) -> tuple[float, float]:
+    """(주제 낱말 무게 중 조각에 든 몫, 든 낱말 무게 합). 무게는 BM25와 같은 idf."""
+    total = sum(_idf(ix, t) for t in words)
+    got = sum(_idf(ix, t) for t in words if t in x.tf)
+    return (round(got / total, 3) if total else 0.0), round(got, 2)
+
+
+def on_topic(hits: list[Hit], scopes: tuple[str, ...] | None = None) -> list[Hit]:
+    """알아 두기 카드 · 근거로 보일 조각: 이 공사의 공정 갈래(scopes, 예: ('도배', '공통'))에 들고, 질문 주제 낱말이
+    충분히 든 것만(TOPIC_MIN · TOPIC_WEIGHT · 가장 잘 맞는 조각 대비 TOPIC_REL). 검색 순서는 그대로예요."""
+    keep = [h for h in hits if scopes is None or not h.scope or set(h.scope) & set(scopes)]
+    best = max((h.topic for h in keep), default=0.0)
+    return [
+        h
+        for h in keep
+        if h.topic >= TOPIC_MIN and h.weight >= TOPIC_WEIGHT and h.topic >= best * TOPIC_REL
+    ]
 
 
 def verify_cites(ix: Index, text: str) -> tuple[str, int]:

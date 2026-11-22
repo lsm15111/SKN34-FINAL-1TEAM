@@ -18,7 +18,7 @@ import time
 import uuid
 import weakref
 from collections.abc import Awaitable, Callable, Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field
 from types import SimpleNamespace
@@ -242,26 +242,34 @@ def clear_stubs() -> None:
 
 
 async def embed_texts(texts: list[str]) -> tuple[str, list[list[float]]] | None:
-    """글 여러 개 임베딩 (검색어 · 추천 질문 후보, 한 번에 수백 토큰). 실패하면 None: 부르는 쪽은 임베딩 없이 간다."""
+    """글 여러 개 임베딩 (검색어 · 추천 질문 후보, 한 번에 수백 토큰). 실패하면 None: 부르는 쪽은 임베딩 없이 간다.
+
+    키가 비었으면 부르지 않고 None(openai 2.x는 빈 키로 클라이언트를 만들 때 OpenAIError를 낸다, QA r3).
+    클라이언트 만들기 · 호출 · 닫기의 어떤 실패도 None이다(지식 답은 키워드 검색으로 물러선다)."""
     if not texts:
         return None
     if not settings.llm_live:
         return (_embed_stub[0][0], [_embed_stub[0][1]] * len(texts)) if _embed_stub else None
-    from openai import AsyncOpenAI, OpenAIError
-
+    key = settings.openai_api_key.get_secret_value()
+    if not key:
+        return None
     model = settings.openai_embedding_model
-    client = AsyncOpenAI(
-        api_key=settings.openai_api_key.get_secret_value(), timeout=10, max_retries=1
-    )
-    try:  # 공급자 오류 · 시간 초과는 조용히 임베딩 없이. 입력값은 남기지 않음
+    client = None
+    try:  # 공급자 오류 · 시간 초과 · 클라이언트 오류는 조용히 임베딩 없이. 입력값은 남기지 않음
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=key, timeout=10, max_retries=1)
         r = await client.embeddings.create(
             model=model, input=[t[:300] for t in texts], dimensions=EMBED_DIMENSIONS
         )
         return model, [list(d.embedding) for d in sorted(r.data, key=lambda d: d.index)]
-    except OpenAIError:
+    except Exception as e:  # noqa: BLE001 - 임베딩은 없어도 되는 값(종류 이름만 로그)
+        log.warning("임베딩 실패 (%s)", type(e).__name__)
         return None
     finally:
-        await client.close()
+        if client is not None:
+            with suppress(Exception):  # 닫기 실패는 결과와 상관없음
+                await client.close()
 
 
 async def embed_query(text: str) -> tuple[str, list[float]] | None:

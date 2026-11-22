@@ -208,7 +208,8 @@ def test_start_makes_queued_row_job_and_queue_then_steers_and_refuses(api, scrip
     assert card["data"]["phase"] == "progress"
     # 목표 · 제목은 가린 글(동호수 · 번호 없음), 시작한 턴이 남는다
     assert "1203" not in row["goal"] and "010" not in row["goal"] and "101동" not in row["goal"]
-    assert row["goal"].startswith("노원구 상계동 32평") and row["title"] == research.title_of(
+    # 고침 3차 K 6번: 목표의 평은 집 정보 평형(공급 69.4㎡ → 21평)
+    assert row["goal"].startswith("노원구 상계동 21평") and row["title"] == research.title_of(
         row["goal"]
     )
     assert row["status"] == "queued" and row["turn_id"] == uuid.UUID(ev[0][1]["turn_id"])
@@ -513,7 +514,7 @@ def test_turn_facts_line_and_get_research_tool(api, script):
     ok(ask(api, pid, "조사 어떻게 돼 가요?"))
     facts = log[0]["messages"][-1]
     assert facts["role"] == "system" and "진행 중인 조사: 노원구 상계동" in facts["content"]
-    assert "분째)" in facts["content"]
+    assert "초째)" in facts["content"]  # 고침 3차 K 6번: 1분 안은 초로('0분째' 아님)
     script(
         [{"blocks": [*search_blocks(), *fetch_and_summary()], "stop": "end_turn", "usage": USAGE}]
     )

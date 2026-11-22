@@ -407,6 +407,34 @@ def with_own_paper(lines: Sequence[_AmountLine], vat_rate: Decimal) -> Money:
     return Money(supply, vat, supply + vat)
 
 
+def without_paper(lines: Sequence[_AmountLine], vat_rate: Decimal) -> Money:
+    """도배지 줄을 뺀 공급가 · 부가세 · 합계(벽지 직접 구매로 바꿨을 때의 표준견적서 합계와 같은 반올림)."""
+    supply = sum(
+        ln.amount
+        for ln in lines
+        if ln.state in COUNTED and ln.key != "paper" and ln.amount is not None
+    )
+    vat = won(Decimal(supply) * vat_rate)
+    return Money(supply, vat, supply + vat)
+
+
+@dataclass(frozen=True)
+class PaperSplit:
+    """벽지(도배지 줄)를 넣은 합계 · 뺀 합계 · 그 차(벽지 값의 부가세 포함 몫). 모두 표준견적서와 같은 반올림."""
+
+    with_paper: Money
+    without_paper: Money
+    share: int  # with_paper.total − without_paper.total: 벽지를 고객이 사면 합계에서 빠지는 돈(부가세 포함)
+
+
+def paper_split(lines: Sequence[_AmountLine], vat_rate: Decimal) -> PaperSplit:
+    """표준견적서 줄(벽지 직접 구매든 아니든) → 벽지를 넣은 합계 · 뺀 합계 · 벽지 값(부가세 포함 몫).
+    도배지 줄 금액은 공급가라 부가세 포함 합계에서 그대로 빼면 틀린 값이 나와요(QA r3 s5: 2,952,491 − 913,665).
+    비서 도구는 이 값으로 '벽지를 직접 사면 얼마로 바뀌어요?' · '벽지까지 맡기면 얼마예요?'에 답해요."""
+    a, b = with_own_paper(lines, vat_rate), without_paper(lines, vat_rate)
+    return PaperSplit(a, b, a.total - b.total)
+
+
 class _QtyLine(Protocol):
     key: str
     qty: Decimal | None
