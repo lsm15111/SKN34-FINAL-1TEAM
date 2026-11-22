@@ -3,7 +3,7 @@
 지시문에는 코드 값 · 규칙만 둔다. 업체 · 웹 · 고객 글은 넣지 않는다(턴 사실도 role:system 메시지로 따로 보낸다).
 짧은 일(먼저 말 걸기 판정 · 문장, 기억 뽑기, 업체 브리핑 한 문장)은 Haiku 지시문을 따로 둔다.
 
-- 판 고르기: settings.assistant_prompt_set(ASSISTANT_PROMPT_SET, 기본 v3). v4면 고객 · 업체 비서와 먼저 말 걸기 문장이
+- 판 고르기: settings.assistant_prompt_set(ASSISTANT_PROMPT_SET, 기본 v4). v4면 고객 · 업체 비서와 먼저 말 걸기 문장이
   새 판(customer_v4 · vendor_v4 · nudge_write_v3)이다. 판마다 지시문 글이 달라 프롬프트 캐시(지시문까지의 앞부분)도
   판마다 따로 맞는다. 같은 판이면 글이 같다(이 모듈이 파일마다 한 번 읽어 둔다).
 - 표식: '<!-- 규칙 -->' · '<!-- 예시 -->'만 있는 줄은 코드만 읽고 모델에는 보내지 않는다. 문장 검사의 지시문 누출

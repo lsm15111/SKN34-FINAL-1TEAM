@@ -49,9 +49,9 @@ class Settings(BaseSettings):
     # 'v3'처럼 하나면 모두, 'price=v3,*=v2+v3'처럼
     # 종류=엔진을 쉼표로 적으면 그 종류만(* = 나머지, 없으면 v3). 기본값은 v4 턴 판정(2026-11-21, j-v4route1)으로 골랐다
     assistant_answer_route: str = "period=v3,price=v3,*=v2+v3"
-    # 비서 지시문 판 묶음(assistant/prompts SETS): v3(기본) · v4(customer_v4 · vendor_v4 · nudge_write_v3).
+    # 비서 지시문 판 묶음(assistant/prompts SETS): v4(기본, customer_v4 · vendor_v4 · nudge_write_v3) · v3(옛 판).
     # 판마다 지시문 글이 달라 프롬프트 캐시도 판마다 따로 맞는다
-    assistant_prompt_set: Literal["v3", "v4"] = "v3"
+    assistant_prompt_set: Literal["v3", "v4"] = "v4"
     # 수동 임베딩 CLI와 에이전트 LLM(agent/llm.py)이 쓴다. 키는 repr·오류에 표시하지 않는다.
     openai_api_key: SecretStr = SecretStr("")
     openai_embedding_model: str = "text-embedding-3-small"

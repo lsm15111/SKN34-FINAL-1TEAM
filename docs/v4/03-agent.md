@@ -210,7 +210,7 @@
    - 세션을 닫은 뒤 LLM을 불러요.
 2. 프롬프트 캐시
    - 순서: tools(고정 · 이름순, 끝에 cache_control) → system(판 고정, cache_control) → 지난 턴 글 → 이번 글(가림) → `role:"system"` 턴 사실(지금 · 올해 · 알림 · 단계 · 집 요약 · 업체마다 상태 · 채팅 · 공정표 · 열린 · 처리한 카드 · 기억 · 지난 대화, 코드 값만)
-   - 시각 줄(2026-11-22): `지금: 11월 22일(일) 새벽 2시 5분`(서울, 때 말은 `shared.kdate.PERIODS` 표 하나) · `올해: 2026년` · `알림: 밤 9시~아침 9시엔 아침에 보내요`(`proactive.RULES` 값에서). 지시문 판 묶음은 `ASSISTANT_PROMPT_SET`(v3 기본 · v4)이고 판마다 system이 달라 캐시도 따로 맞아요
+   - 시각 줄(2026-11-22): `지금: 11월 22일(일) 새벽 2시 5분`(서울, 때 말은 `shared.kdate.PERIODS` 표 하나) · `올해: 2026년` · `알림: 밤 9시~아침 9시엔 아침에 보내요`(`proactive.RULES` 값에서). 지시문 판 묶음은 `ASSISTANT_PROMPT_SET`(v4 기본 · v3 옛 판)이고 판마다 system이 달라 캐시도 따로 맞아요
    - 공정표 줄(QA r2 c5 · r3 c2): `공정표: 예상 공정표 · 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일(업체가 공사 날짜를 올리기 전 예상)`, 수락 뒤엔 `공정표: 확정 공정표 · 공사 …(수락한 공사 날짜)`. 공사 판(rev)이 바뀐 낡은 예상은 넣지 않아요(`schedule.service.period_now`, 읽기만). 실측 요청 뒤 비어 있는 시작 희망은 `공사 시작 희망 안 정함(실측 요청 뒤라 업체와 정해요)`으로 넣어요
    - 턴 안에서는 덧붙이기만 하고, 턴 사이에는 글만으로 다시 짜요.
 3. 모델 설정: `claude-sonnet-5-5`, thinking adaptive, effort medium, max_tokens 8000, stream, tool_choice auto + strict. 앱 시작 때 SDK(anthropic · openai)를 작업 스레드로 미리 불러요(`llm.warm`: 첫 LLM 턴의 늦은 import 12~20초 · 이벤트 루프 멈춤, QA r2 c5)

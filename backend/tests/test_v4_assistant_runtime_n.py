@@ -356,9 +356,10 @@ NAMES = ("customer", "vendor", "nudge_write", "nudge_judge", "memory", "brief")
 
 
 def test_prompt_set_picks_files_and_keeps_text_per_set(monkeypatch):
-    assert type(settings).model_fields["assistant_prompt_set"].default == "v3"
+    # 기본 판은 v4(QA 3 · 4차로 확인, 리드 결정 11-22 오후)
+    assert type(settings).model_fields["assistant_prompt_set"].default == "v4"
     env = (ROOT / ".env.example").read_text(encoding="utf-8")
-    assert "\nASSISTANT_PROMPT_SET=v3\n" in env
+    assert "\nASSISTANT_PROMPT_SET=v4\n" in env
     monkeypatch.setattr(settings, "assistant_prompt_set", "v3")
     assert [prompts.version(n) for n in NAMES] == [
         "customer_v3", "vendor_v3", "nudge_write_v2", "nudge_judge_v1", "memory_v3", "brief_v2",
