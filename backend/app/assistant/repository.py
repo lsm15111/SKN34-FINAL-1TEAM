@@ -3,6 +3,7 @@
 상태 바꾸기는 조건부 UPDATE 한 번이고 바뀐 행 수(또는 행)를 돌려준다: 1행이 아니면 부르는 쪽이 409로 바꾼다.
 """
 
+import re
 import uuid
 from collections.abc import Sequence
 from datetime import datetime
@@ -18,10 +19,12 @@ from app.assistant.models import (
     AssistantTurn,
 )
 from app.chat.models import Chat, ChatMessage
+from app.notify.models import Notification
 from app.project.models import Project, ProjectCondition
+from app.quote.models import VendorQuote
 from app.schedule.models import DateProposal
 from app.shared.ids import uuid7
-from app.visit.models import LIVE, Visit
+from app.visit.models import ENDED, LIVE, Visit
 
 # ---- 대화 ----
 
@@ -571,8 +574,10 @@ async def close_lines_of(
 async def settled_events(
     s: AsyncSession, user_id: uuid.UUID, notification_ids: Sequence[uuid.UUID]
 ) -> set[uuid.UUID]:
-    """알림 id 중 그 알림에서 만든 먼저 말 건 줄(dedup_key ev:{알림 id})이 할 일을 끝내 닫힌 것(SETTLED).
-    오늘 정할 일 '새 소식'에서 끝난 일을 다시 보이지 않게 쓴다."""
+    """알림 id 중 끝난 일의 소식: 그 알림에서 만든 먼저 말 건 줄(dedup_key ev:{알림 id})이 할 일을 끝내 닫힌 것
+    (SETTLED)과, 가리키는 실측 요청이 끝났거나(취소 · 못 받음 · 기한 지남 · 안 옴 · 닫힘) 확정된 것(QA r3 s6 B3 ·
+    c4 #37: 취소한 요청의 '실측이 정해졌어요', 다른 업체를 확정해 닫힌 요청의 소식). 오늘 정할 일 '새 소식'에서 끝난
+    일을 다시 보이지 않게 쓴다."""
     if not notification_ids:
         return set()
     keys = {f"ev:{i}": i for i in notification_ids}
@@ -584,7 +589,59 @@ async def settled_events(
             AssistantNudge.reason.in_(SETTLED),
         )
     )
-    return {keys[k] for k in rows.all()}
+    return {keys[k] for k in rows.all()} | await _visit_done_news(s, user_id, notification_ids)
+
+
+# 실측 요청 하나를 가리키는 알림 주소
+NEWS_VISIT = re.compile(r"/projects/[^/?#]+/visits/([0-9a-fA-F-]{36})")
+NEWS_QUOTE = re.compile(r"^quote:([0-9a-fA-F-]{36})$")  # 견적서 알림(dedup_key quote:{견적서 id})
+VISIT_DONE = (*ENDED, "chosen")  # 이 요청의 진행 소식은 끝난 일(끝남 · 닫힘 · 확정)
+
+
+def _uuid(text: str) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(text)
+    except ValueError:
+        return None
+
+
+async def _visit_done_news(
+    s: AsyncSession, user_id: uuid.UUID, notification_ids: Sequence[uuid.UUID]
+) -> set[uuid.UUID]:
+    """알림 중 가리키는 실측 요청(주소 · 견적서)이 끝났거나 확정된 것. 끝남 알림 자체('못 받아요' · '답하지 않았어요')는
+    요청을 가리키지 않아(공사 실측 목록 주소) 남는다."""
+    found = await s.execute(
+        select(Notification.id, Notification.link, Notification.dedup_key).where(
+            Notification.user_id == user_id, Notification.id.in_(list(notification_ids))
+        )
+    )
+    about: dict[uuid.UUID, uuid.UUID] = {}  # 알림 → 실측 요청
+    quotes: dict[uuid.UUID, uuid.UUID] = {}  # 알림 → 견적서
+    for nid, link, key in found.all():
+        m = NEWS_VISIT.search(link or "")
+        q = NEWS_QUOTE.match(key or "")
+        if m and (v := _uuid(m.group(1))):
+            about[nid] = v
+        elif q and (x := _uuid(q.group(1))):
+            quotes[nid] = x
+    if quotes:
+        rows = await s.execute(
+            select(VendorQuote.id, VendorQuote.visit_id).where(
+                VendorQuote.id.in_(list(set(quotes.values())))
+            )
+        )
+        of = dict(rows.all())
+        about |= {n: of[x] for n, x in quotes.items() if x in of}
+    if not about:
+        return set()
+    gone = set(
+        await s.scalars(
+            select(Visit.id).where(
+                Visit.id.in_(list(set(about.values()))), Visit.status.in_(VISIT_DONE)
+            )
+        )
+    )
+    return {n for n, v in about.items() if v in gone}
 
 
 async def shown_all(s: AsyncSession, limit: int) -> list[AssistantNudge]:

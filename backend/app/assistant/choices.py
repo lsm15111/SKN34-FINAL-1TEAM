@@ -48,6 +48,9 @@ MADE = "고른 것으로 승인 카드를 만들었어요. 카드를 확인하�
 SAME = "고른 것과 같은 승인 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
 RELOADED = "카드를 새로 불러왔어요. 다시 골라 주세요."
 GONE = "지금은 고를 수 있는 것이 없어요. 진행 상황을 확인해 주세요."
+# 코드가 답을 정해 턴을 끝낸 고르기(TurnResult.reason): 잠긴 집의 칸 단추(옛 벽지 견주기 카드 [합지로 바꾸기] 등,
+# QA r3 v1 M6). LLM을 부르지 않고 까닭 한 줄(propose_home_info의 locked 글)로 답한다
+ANSWERED = "locked"
 MAX_ACTIONS = 2  # 한 턴에 단추로 만드는 제안 수
 # 카드 id 머리(slots- · dates- · brief- + 대상 id) → 이름표 종류마다 그 id가 든 칸(지난 카드 단추 가려내기)
 CARD_TARGET: dict[str, dict[str, str]] = {
@@ -277,6 +280,7 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
     )
     outs: list[ToolOut] = []
     errors: list[str] = []
+    locked = False  # 칸 단추가 잠긴 집 정보에 막힘
     jobs = [("home", [])] if fields else []
     for kind, args in [*jobs, *acts]:
         try:
@@ -287,8 +291,11 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
                 outs.append(await _run(tc, kind, args))
         except (ToolError, AppError) as e:
             errors.append(e.message)
+            locked = locked or (kind == "home" and e.code == "locked")
     for out in outs:
         await _send(out, emit, res, send_card)
+    if locked and not outs and not acts and not ctx.stale:
+        res.reason = ANSWERED  # 잠긴 집의 칸 단추: 까닭 한 줄로 끝내요(LLM 없음)
     states = {out.data.get("state") for out in outs}
     lines = ([MADE] if "new" in states else [SAME] if "same" in states else []) + errors
     if ctx.stale:

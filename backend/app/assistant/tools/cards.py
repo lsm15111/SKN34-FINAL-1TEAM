@@ -663,9 +663,11 @@ async def visit_slots(
     *,
     prefer: str,
     days: str,
+    skip: frozenset[tuple[date, str]] = frozenset(),
 ) -> tuple[CardOut, dict]:
     """요청 뒤: 날짜 고르기 화면(pick_view)의 열린 반나절 → calc.slots.candidates → s1~s3.
-    업체가 다른 날을 냈으면(proposed) 그 날들이 후보다(고르면 바로 확정)."""
+    업체가 다른 날을 냈으면(proposed) 그 날들이 후보다(고르면 바로 확정). skip(이미 보인 반나절, 비서 '다른 시간')은
+    업체 기간 후보에서 뺀다."""
     from app.calc import slots
     from app.refprice.holidays import days_off
     from app.visit import service as visit_service
@@ -687,7 +689,7 @@ async def visit_slots(
             prefer=prefer,
             day_prefer=days,
             days_off=days_off(opened[0].day, opened[-1].day),
-            taken=taken,
+            taken=taken | skip,
         )
         picks = [(c.day, c.half, list(c.why), "pick") for c in found]
     cands = [
@@ -1144,9 +1146,13 @@ def visit_task(pid: uuid.UUID, o, now: datetime) -> "TaskOut | None":
         )
     quoted = any(v.status in ("quoted", "chosen") for v in o.vendors)
     live = any(r.state in ("need", "waiting") for r in rows)
+    # 취소 · 닫힌 요청은 세지 않아요(QA r3 s6 B3). 모두 끝났으면 끝난 수를 그대로
+    n = sum(r.state != "cancelled" for r in rows)
     return TaskOut(
         task_id="visits",
-        title=f"{'실측 · 견적서' if quoted else '실측 요청'} {len(rows)}곳",
+        title=f"{'실측 · 견적서' if quoted else '실측 요청'} {n}곳"
+        if n
+        else f"끝난 실측 요청 {len(rows)}곳",
         state="waiting" if live else "done",
         at=now,
         rows=rows,

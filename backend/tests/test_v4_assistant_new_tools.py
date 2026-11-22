@@ -398,7 +398,7 @@ def test_visit_cancel_card_waits_for_approval_then_cancels_and_tells_the_vendor(
     assert len(sent) == 1
     again = approve(api, a["action_id"])
     assert again.status_code == 200 and again.json() == r.json()  # 같은 승인 두 번 → 같은 결과
-    # 끝난 요청은 다시 취소 카드를 만들지 않는다
+    # 끝난 요청은 다시 취소 카드를 만들지 않는다(고침 3차 B2: 오류 대신 닫힌 까닭을 값으로)
     ev, log = call(
         script,
         api,
@@ -406,7 +406,9 @@ def test_visit_cancel_card_waits_for_approval_then_cancels_and_tells_the_vendor(
         "취소해 줘",
         ("propose_visit_cancel", {"visit_ref": "m1", "code": "other"}),
     )
-    assert results(log)[0]["error"] == "not_cancellable" and not acts(ev)
+    got = results(log)[0]
+    assert got["state"] == "closed" and got["note"].startswith("이미 취소한 요청이에요")
+    assert not acts(ev)
 
 
 def test_visit_cancel_two_approvals_at_once_cancel_once(api, script, monkeypatch):

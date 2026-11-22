@@ -5,9 +5,10 @@ compare_quotes · get_schedule · today_tasks · show_card · compare_grades(벽
 """
 
 import uuid
+from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.assistant import policy
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
@@ -32,6 +33,50 @@ def dobae_only(trade: str) -> None:
     """업체 연결(추천 · 실측 요청 · 견적 비교 · 확정)은 아직 도배만이다. 목공이면 ToolError(dobae_only)."""
     if trade != "dobae":
         raise ToolError("dobae_only", policy.DOBAE_ONLY)
+
+
+REGION_HINT = (
+    "sgg는 시 · 군 · 구 이름이에요(예 노원구 · 성남시). 같은 이름이 여러 시 · 도에 있으면 '부산 중구'처럼 시 · 도를 "
+    "앞에 붙이고, 동 이름(상계동)은 넣지 않아요"
+)
+
+
+def _sido_id(word: str | None) -> str | None:
+    """'서울' · '서울특별시' · 'seoul' → 'seoul'. 모르면 None."""
+    from app.shared.regions import SIDO
+
+    w = (word or "").strip()
+    return next((k for k, (short, full, _) in SIDO.items() if w in (k, short, full)), None)
+
+
+def region_of(text: str | None, home_sido: str | None) -> tuple[str, str]:
+    """도구가 받은 지역 글('노원구' · '서울 노원구' · '노원') → (시 · 도 id, 시 · 군 · 구). 시 · 도가 앞에 없으면 집
+    시 · 도에서 먼저 찾고, 없으면 그 이름이 하나뿐인 시 · 도. 끝 글자(구 · 시 · 군)가 빠져도 찾고 끝의 동 이름은 뗀다.
+    모르거나 여러 시 · 도에 있으면 ToolError."""
+    from app.shared.regions import SIDO, is_region
+
+    words = (text or "").split()
+    sid = _sido_id(words[0]) if len(words) > 1 else None
+    words = words[1:] if sid else words
+    if words and words[-1].endswith(("동", "읍", "면")) and len(words) > 1:
+        words = words[:-1]  # '노원구 상계동' → 구까지
+    name = "".join(words)
+    if not name:
+        raise ToolError("need_region", "어느 시 · 군 · 구인지 알려 주세요.", hint=REGION_HINT)
+    names = [name, *(name + x for x in ("구", "시", "군") if not name.endswith(x))]
+    for n in names:
+        if sid:
+            if is_region(sid, n):
+                return sid, n
+            continue
+        if home_sido and is_region(home_sido, n):
+            return home_sido, n
+        hits = [k for k in SIDO if is_region(k, n)]
+        if len(hits) == 1:
+            return hits[0], n
+        if hits:
+            raise ToolError("need_sido", "어느 시 · 도의 지역인지 알려 주세요.", hint=REGION_HINT)
+    raise ToolError("bad_region", "지역을 다시 확인해 주세요.", hint=REGION_HINT)
 
 
 class NoArgs(BaseModel):
@@ -111,27 +156,177 @@ async def market_range(tc: ToolCtx, a: TradeIn) -> ToolOut:
     return ToolOut(data=model, cards=[card] if card is not None else [])
 
 
+class RecommendIn(BaseModel):
+    trade: Trade = "dobae"
+    sgg: str | None = Field(default=None, max_length=30)  # 다른 구 업체 읽기만(집 정보는 그대로)
+
+
+# 고객이 고르기를 맡길 때(리드 결정 11-22, QA r3 s4): 코드 점수 1위를 서버가 넣는다(AGENTS.md 4장 '업체 추천은
+# 에이전트가 아니다'). 모델에는 누가 1위인지와 까닭 틀을 준다
+LEFT_NOTE = (
+    "picks는 믿집 점수(별점 · 끝낸 공사 · 가견적) 순이에요. 고객이 골라 달라고 맡기면: {name}(믿집 점수 1위 · {why}). "
+    "그때는 propose_visit_request를 pick=top으로 불러요(믿집이 점수 1위를 넣어요)."
+)
+
+
+def left_to_us(model: dict) -> None:
+    """추천 모델 값에 '맡기시면 이 곳'(점수 1위 · 까닭 틀)을 더한다. picks가 비면 그대로."""
+    if not model.get("picks"):
+        return
+    top = model["picks"][0]
+    why = " · ".join([*top.get("reasons", []), f"가견적 {top['estimate_won']:,}원"])
+    note = LEFT_NOTE.format(name=top["name"], why=why)
+    model["note"] = " ".join(x for x in (model.get("note"), note) if x)
+
+
 @tool(
     "recommend_vendors",
     surface="customer",
     kind="read",
     status="업체를 고르고 있어요",
-    description="이 집 조건에 맞는 업체 3곳(v1~v3)을 믿집 점수(별점 · 끝낸 공사 · 가견적)로 골라요. "
-    "가견적은 업체가 확인한 단가 × 믿집 수량이에요. 업체 연결은 아직 도배(dobae)만이에요.",
-    model=TradeIn,
-    schema=obj({"trade": TRADE}),
+    description="이 집 조건에 맞는 업체 3곳(v1~v3)을 믿집 점수(별점 · 끝낸 공사 · 가견적)로 골라요. picks는 점수 "
+    "순(첫째가 1위)이에요. 가견적은 업체가 확인한 단가 × 믿집 수량이에요. 업체 연결은 아직 도배(dobae)만이에요. "
+    "고객이 집 지역과 다른 구를 말하면 sgg(시 · 군 · 구, 예 노원구)로 그 구 업체를 읽기만으로 볼 수 있어요: 집 "
+    "정보는 그대로이고 그 업체들에는 요청할 수 없어요(실측 요청은 집 지역 업체에만). 믿집 밖 조사보다 먼저 써요.",
+    model=RecommendIn,
+    schema=obj(
+        {
+            "trade": TRADE,
+            "sgg": {
+                "type": "string",
+                "description": "집 지역이 아닌 시 · 군 · 구 업체를 읽기만으로 볼 때 그 이름(예 노원구, 같은 이름이 여러 "
+                "시 · 도에 있으면 '부산 중구'). 비우면 집 지역",
+            },
+        },
+        required=["trade"],
+    ),
 )
-async def recommend_vendors(tc: ToolCtx, a: TradeIn) -> ToolOut:
+async def recommend_vendors(tc: ToolCtx, a: RecommendIn) -> ToolOut:
+    from app.project import service as project_service
+
     dobae_only(a.trade)
+    pid = pid_of(tc)
     async with SessionLocal() as s:
-        card, model = await cards.vendor_picks(s, tc.user, pid_of(tc), a.trade, tc.refs)
+        if a.sgg:
+            p = await project_service.get_for(s, tc.user, pid)
+            region = region_of(a.sgg, p.sido)
+            if region != (p.sido, p.sgg):
+                return await _elsewhere(s, tc, p, a.trade, *region)
+        card, model = await cards.vendor_picks(s, tc.user, pid, a.trade, tc.refs)
+    left_to_us(model)
     return ToolOut(data=model, cards=[card])
+
+
+ELSEWHERE_NOTE = (
+    "집 지역({home})이 아닌 {there} 업체를 읽기만 했어요. 이 업체들에는 지금 실측 요청을 보낼 수 없어요(실측 요청은 집 "
+    "지역 업체에만). 고객이 집 지역을 바꾸려 하면 propose_home_info의 sgg로 승인 카드를 만들어요."
+)
+ELSEWHERE_LOCKED = {
+    "live": " 지금은 실측 요청이 진행 중이라 집 정보가 잠겨 있어요. 보낸 요청을 모두 취소하면 지역을 바꿀 수 있어요.",
+    "quoted": " 업체 견적서가 온 뒤라 집 지역은 바꿀 수 없어요.",
+}
+
+
+async def _elsewhere(s, tc: ToolCtx, p, trade: str, sido: str, sgg: str) -> ToolOut:
+    """다른 구 업체 읽기만(리드 결정 11-22, QA r3 s1 B1 · B5): 그 구 업체를 이 집 조건 · 같은 점수(calc.vendor_pick)로
+    3곳 고른다. 이름표를 주지 않고(요청할 수 없게), 카드는 보기만(카드 id의 '@' = 지난 카드 꼴, 단추 없음)."""
+    from app.assistant.schemas import CardOut, VendorPick, VendorPicksData
+    from app.calc import vendor_pick
+    from app.shared.regions import region_label
+    from app.visit import service as visit_service
+
+    got = await visit_service.vendors_elsewhere(s, tc.user, p.id, trade, sido, sgg)
+    live, quoted = await visit_service.lock_hold(s, p.id) if p.locked else (0, False)
+    by_id = {c.vendor_id: c for c in (*got["local"], *got["nearby"])}
+    cands = [
+        vendor_pick.Candidate(
+            vendor_id=str(c.vendor_id),
+            name=c.name,
+            local=local,
+            estimate_total=c.estimate_total,
+            vs_standard_pct=None if c.vs_standard_pct is None else int(c.vs_standard_pct),
+            rating=None if c.rating is None else float(c.rating),
+            review_count=c.review_count or 0,
+            done_count=c.done_count or 0,
+            instant=bool(c.instant_badge),
+        )
+        for local, rows in ((True, got["local"]), (False, got["nearby"]))
+        for c in rows
+        if c.state == "ok"
+    ]
+    there = region_label(sido, sgg)
+    picks = []
+    for i, x in enumerate(vendor_pick.pick(cands), 1):
+        c = by_id[uuid.UUID(x.c.vendor_id)]
+        picks.append(
+            VendorPick(
+                ref=f"{sgg}-{i}",  # 이 대화 이름표가 아니에요(요청 단추 없음)
+                vendor_id=c.vendor_id,
+                name=c.name,
+                rating=None if c.rating is None else float(c.rating),
+                reviews=c.review_count or 0,
+                done_jobs=c.done_count or 0,
+                estimate_won=c.estimate_total or 0,
+                reasons=[r for r in vendor_pick.reasons(x) if "표준" not in r],
+                badge="바로 확정" if c.instant_badge else None,
+                picked=False,
+                href=cards.href(p.id, "/vendors"),
+            )
+        )
+    basis = [f"{sgg}에서 일하고 이 공정을 해요", *cards.PICK_BASIS[1:]]
+    data = VendorPicksData(
+        area_name=sgg, picks=picks, basis=basis, more_href=cards.href(p.id, "/vendors")
+    )
+    card = CardOut(
+        card_id=f"picks-{trade}@{sgg}",  # '@' 카드는 화면이 보기만(고르기 · 요청 단추 없음)으로 그려요
+        kind="vendor_picks",
+        data=data.model_dump(mode="json"),
+        say=f"{sgg} 업체예요. 집 지역이 아니라서 보기만 할 수 있어요." if picks else None,
+    )
+    lock = "quoted" if quoted else "live" if live else None
+    note = ELSEWHERE_NOTE.format(home=p.region, there=there) + ELSEWHERE_LOCKED.get(lock or "", "")
+    model = {
+        "area": sgg,
+        "region": there,
+        "trade": trade,
+        "state": "보기만 해요",
+        "basis": basis,
+        "picks": [
+            {
+                "name": x.name,
+                "rating": x.rating,
+                "reviews": x.reviews,
+                "done_jobs": x.done_jobs,
+                "estimate_won": x.estimate_won,
+                "reasons": x.reasons,
+                "instant": x.badge is not None,
+            }
+            for x in picks
+        ],
+        "count": len(picks),
+        "note": note,
+    }
+    return ToolOut(data=model, cards=[card] if picks else [])
 
 
 class SlotsIn(BaseModel):
     ref: str  # 업체 이름표(v…, 요청 전) 또는 실측 요청 이름표(m…, 업체가 기간을 답한 뒤)
     prefer: Literal["any", "am", "pm"] = "any"
     days: Literal["any", "weekday", "weekend"] = "any"
+    more: bool = False  # 다른 시간: 이 대화에서 이미 보인 반나절은 빼고 남은 자리에서
+
+
+MORE_NONE = "이 대화에서 이미 보인 후보 말고는 업체 기간에 남은 반나절이 없어요."
+MORE_NOTE = "이 대화에서 이미 보인 반나절은 빼고 남은 자리에서 골랐어요."
+
+
+def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
+    """이 대화에서 이미 보인 그 요청의 반나절 후보(이름표 s…의 날 · 반나절, 먼저 말 걸기 카드 포함)."""
+    return frozenset(
+        (date.fromisoformat(str(it["day"])), str(it["half"]))
+        for it in tc.refs.items.values()
+        if it.get("kind") == "slot" and str(it.get("visit_id")) == visit_id
+    )
 
 
 @tool(
@@ -141,14 +336,20 @@ class SlotsIn(BaseModel):
     status="실측 시간을 찾고 있어요",
     description="실측 시간 후보를 찾아요. ref는 꼭 넣어요: 요청 전에는 업체 이름표(v1…, recommend_vendors 결과)로 "
     "희망 기간 후보(r1~r2), 업체가 기간을 답한 뒤에는 실측 요청 이름표(m1…, today_tasks · compare_quotes 결과)로 "
-    "반나절 후보(s1~s3). prefer는 고객이 말한 편한 반나절, days는 평일 · 주말이에요.",
+    "반나절 후보(s1~s3). prefer는 고객이 말한 편한 반나절, days는 평일 · 주말이에요. 고객이 다른 시간 · 다른 날을 "
+    "더 보고 싶어 하면 more=true: 이 대화에서 이미 보인 반나절은 빼고 업체 기간에 남은 자리(오후 포함)에서 골라요.",
     model=SlotsIn,
     schema=obj(
         {
             "ref": {"type": "string", "description": "업체 이름표 v… 또는 실측 요청 이름표 m…"},
             "prefer": {"type": "string", "enum": ["any", "am", "pm"]},
             "days": {"type": "string", "enum": ["any", "weekday", "weekend"]},
+            "more": {
+                "type": "boolean",
+                "description": "이미 보인 후보 말고 다른 반나절을 볼 때 true(업체가 기간을 답한 뒤)",
+            },
         },
+        required=["ref", "prefer", "days"],
     ),
 )
 async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
@@ -157,9 +358,22 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
     async with SessionLocal() as s:
         if kind == "visit":
             v = tc.refs.get(a.ref, "visit")
+            skip = shown_halves(tc, str(v["id"])) if a.more else frozenset()
             card, model = await cards.visit_slots(
-                s, tc.user, pid, uuid.UUID(v["id"]), tc.now, tc.refs, prefer=a.prefer, days=a.days
+                s,
+                tc.user,
+                pid,
+                uuid.UUID(v["id"]),
+                tc.now,
+                tc.refs,
+                prefer=a.prefer,
+                days=a.days,
+                skip=skip,
             )
+            if skip and model.get("status") == "offered":  # 다른 시간(QA r3 c1 6턴)
+                model["note"] = MORE_NOTE if model["candidates"] else MORE_NONE
+                if not model["candidates"]:  # 빈 카드 대신 사실만
+                    return ToolOut(data=model)
         else:  # 업체 이름표가 아니면 RefTable.get이 모르는 이름표 오류(힌트에 필요한 종류)
             vend = {**tc.refs.get(a.ref, "vendor"), "ref": a.ref}
             card, model = await cards.wishes(
@@ -216,7 +430,13 @@ async def today_tasks(tc: ToolCtx, _: NoArgs) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.today(s, tc.user, pid_of(tc), tc.today, tc.now, tc.refs)
         task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
+    # 빈 카드는 보내지 않아요(QA r3 s6 B3)
+    if not any(card.data.get(k) for k in ("todo", "waiting", "news", "know")):
+        return ToolOut(data={**model, "note": TODAY_EMPTY}, task=task)
     return ToolOut(data=model, cards=[card], task=task)
+
+
+TODAY_EMPTY = "오늘 정할 일 · 기다리는 일 · 새 소식이 없어요(빈 카드는 보이지 않았어요)."
 
 
 ShowKind = Literal[

@@ -1067,9 +1067,11 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
     mode, reason = policy.mode_for(available=True, budget_ok=ok, breaker=breaker)
     # 카드 단추로 고른 것(철거 범위 · 'visit_request:v1,v2' …)은 모드와 상관없이 코드가 승인 카드로 만든다
     note = await choices.apply(ctx, emit, res)
-    if mode == "free" or ctx.stale:
-        # 지난 카드 단추는 카드를 새로 불러와 정해 둔 한 줄로 답한다(LLM 모드도 부르지 않는다)
-        await free_turn(ctx, emit, res, reason if mode == "free" else "reload", note)
+    answered = res.reason == choices.ANSWERED  # 잠긴 집의 칸 단추(QA r3 v1 M6)
+    if mode == "free" or ctx.stale or answered:
+        # 지난 카드 단추는 카드를 새로 불러와, 잠긴 집의 칸 단추는 까닭 한 줄로 답한다(LLM 모드도 부르지 않는다)
+        why = reason if mode == "free" else "reload" if ctx.stale else choices.ANSWERED
+        await free_turn(ctx, emit, res, why, note)
     elif not said(ctx, note):  # 가린 뒤 빈 말 · 고른 것 없음: 빈 글 블록을 보내지 않는다(400)
         await free_turn(ctx, emit, res, "empty", EMPTY_TEXT)
     else:

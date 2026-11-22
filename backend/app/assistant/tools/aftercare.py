@@ -576,9 +576,12 @@ def again_offer(v, today: date, now: datetime) -> dict:
 def request_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
     """고객의 다른 날짜 · 날짜 바꾸기 요청에 답할 공사 날 후보(이름표 days 값 꼴). 고객이 고른 시작일마다
     vendor_tools.date_candidates(같은 업체의 다른 공사로 찬 날 빼기)로 날을 세고, 시작일이 고객이 고른 날인 후보만
-    쓴다. 고른 날이 모두 다른 공사로 찼으면 가장 이른 고른 날부터 가장 가까운 빈 날(다른 날 제안, alt=True)을 쓴다
-    (schedule service가 같은 조건에서만 받아 준다). kind · request_id를 같이 둔다(실행이 넘긴다)."""
+    쓴다. 고른 날이 모두 막혔으면(calc.schedule.wishes_blocked: schedule service가 다른 날 제안을 받는 것과 같은 판정)
+    가장 이른 고른 날부터 가장 가까운 빈 날(다른 날 제안, alt=True)을 쓴다. kind · request_id를 같이 둔다(실행이 넘긴다)."""
     from app.assistant.tools import vendor as vendor_tools
+    from app.calc.schedule import WEEKEND, wishes_blocked
+    from app.refprice.holidays import days_off
+    from app.schedule.service import AHEAD_DAYS
 
     r = job.request
     if r is None:
@@ -591,7 +594,14 @@ def request_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
         for c in vendor_tools.date_candidates(probe, deal_id, today):
             if c["start"] == w.isoformat() and all(x["start"] != c["start"] for x in out):
                 out.append({**c, "kind": kind, "request_id": str(r.id)})
-    if not out:  # 고른 날이 모두 막힘: 다른 날 제안(가장 이른 고른 날부터, 없으면 예상 시작일부터)
+    last = today + timedelta(days=AHEAD_DAYS)
+    count = max(job.quote.days or job.need.days, 1)  # date_candidates와 같은 날 수
+    weekend = () if job.weekend_work else WEEKEND
+    blocked = wishes_blocked(
+        r.wish_dates, count, today, job.busy_days, days_off(today, last), weekend, last
+    )
+    # 고른 날이 모두 막힘: 다른 날 제안(가장 이른 고른 날부터, 없으면 예상 시작일부터)
+    if not out and blocked:
         probe = job.model_copy(update={"plan_start": wishes[0]}) if wishes else job
         out = [
             {**c, "kind": kind, "request_id": str(r.id), "alt": True}

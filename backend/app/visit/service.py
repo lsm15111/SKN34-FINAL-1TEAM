@@ -452,6 +452,17 @@ async def _v3_cards(
     }
 
 
+async def vendors_elsewhere(
+    s: AsyncSession, user: User, project_id: uuid.UUID, trade: str, sido: str, sgg: str
+) -> dict:
+    """다른 구 업체 읽기만(비서 recommend_vendors의 sgg, 리드 결정 11-22): 집 정보는 그대로 두고 그 구 업체
+    (0곳이면 가까운 구)의 v3 칸(local · nearby · nearby_sgg)을 이 집 조건으로 센다(가견적 = 업체 확인 단가 × 이 집
+    수량). 실측 요청 · 담기는 여전히 집 지역 업체에만 된다(choosable)."""
+    p, std, lines = await _standard(s, user, project_id, trade)
+    there = p.model_copy(update={"sido": sido, "sgg": sgg})
+    return await _v3_cards(s, there, std, lines, trade)
+
+
 async def choosable(s: AsyncSession, p: ProjectOut, trade: str, vendor_id: uuid.UUID) -> bool:
     """이 집에서 고를 수 있는 업체인지 (이 구 업체, 0곳이면 가까운 구 업체 · 멈춘 업체 빼고)"""
     local, near, _ = await _listed(s, p, trade)
@@ -1536,13 +1547,16 @@ async def set_contact_until(s: AsyncSession, visit_id: uuid.UUID, until: date) -
 
 
 async def trade_facts(s: AsyncSession, project_id: uuid.UUID) -> dict[str, VisitFactsOut]:
-    """공정마다 이번 고르기의 요청 · 견적서 수와 때 (권한은 부르는 쪽이 먼저 확인한다)"""
-    every = [
+    """공정마다 이번 고르기의 요청 · 견적서 수와 때 (권한은 부르는 쪽이 먼저 확인한다).
+    견적서 없이 끝난 요청(취소 · 못 받음 · 기한 지남 · 안 옴 · 닫힘)은 세지 않는다: 모두 취소하면 단계가 업체
+    고르기로 돌아가요(QA r3 s6 B3). 견적서를 받은 요청은 닫혀도 센다(받은 견적서 수 · 비교)."""
+    shown = [
         v
         for v in await repo.of_project(s, project_id, None)
         if not (v.status == "closed" and v.close_reason == "reselected")
     ]
-    versions = await quote_service.sent_versions(s, [v.id for v in every])
+    versions = await quote_service.sent_versions(s, [v.id for v in shown])
+    every = [v for v in shown if v.status in LIVE or versions.get(v.id)]
     last = await repo.last_events(s, [v.id for v in every])
     out: dict[str, VisitFactsOut] = {}
     for t in {v.trade for v in every}:
@@ -2230,6 +2244,52 @@ async def end_visit(
         await thread_service.set_read_only(
             s, reason=thread_reason, project_id=v.project_id, vendor_id=v.vendor_id
         )
+    await unlock_if_idle(s, v.project_id)
+
+
+async def lock_hold(s: AsyncSession, project_id: uuid.UUID) -> tuple[int, bool]:
+    """집 정보 잠금을 붙잡는 것: (살아 있는 실측 요청 수, 업체 견적서를 받은 적 있는지). 권한은 부르는 쪽이."""
+    return await repo.lock_hold(s, project_id)
+
+
+async def unlock_if_idle(s: AsyncSession, project_id: uuid.UUID) -> bool:
+    """보낸 실측 요청이 모두 끝났고(취소 · 못 받음 · 기한 지남 · 안 옴 · 닫힘) 받은 견적서 · 확정이 없으면 집 정보
+    잠금(locked_at)을 푼다(리드 결정 11-22, QA r3 s1: 취소한 뒤 집 정보를 고칠 수 있게). 요청이 끝날 때마다
+    end_visit이 부른다. 프로젝트 행은 부르는 쪽이 먼저 잠가서 새 요청과 줄 선다. 풀었으면 True. commit은 부르는 쪽이."""
+    live, quoted = await repo.lock_hold(s, project_id)
+    if live or quoted:
+        return False
+    return await project_service.unlock(s, project_id)
+
+
+# 취소할 수 없는 요청의 까닭(비서 실측 요청 취소가 카드 대신 돌려줘요, QA r3 c4 #37). 끝난 요청은 '이미 닫힌 요청'
+ENDED_WHY = {
+    "cancelled": "이미 취소한 요청이에요",
+    "declined": "업체가 못 받는다고 답한 요청이에요",
+    "no_show": "업체가 오지 않아 끝난 요청이에요",
+    "quoted": "견적서가 온 요청이라 취소할 수 없어요(다른 업체를 확정하면 닫혀요)",
+    "chosen": "확정한 업체라 취소할 수 없어요(바꾸려면 견적서 화면에서 다시 골라요)",
+}
+CLOSE_WHY = {
+    "other_chosen": "다른 업체를 확정해서 닫힌 요청이에요",
+    "reselected": "다시 고르기로 닫힌 요청이에요",
+    "vendor_stopped": "업체가 지금 믿집에서 일할 수 없어 닫힌 요청이에요",
+}
+EXPIRE_WHY = {
+    "reply": "업체가 48시간 안에 답하지 않아 끝난 요청이에요",
+    "pick": "날짜를 고르는 기한이 지나 끝난 요청이에요",
+}
+
+
+def ended_why(v: Visit) -> str | None:
+    """취소할 수 없는 요청의 까닭 한 줄(지금 취소할 수 있으면 None)."""
+    if v.status in CANCELLABLE:
+        return None
+    if v.status == "closed":
+        return CLOSE_WHY.get(v.close_reason or "", "이미 닫힌 요청이에요")
+    if v.status == "expired":
+        return EXPIRE_WHY.get(v.expired_reason or "", "기한이 지나 끝난 요청이에요")
+    return ENDED_WHY.get(v.status, "이미 끝난 요청이에요")
 
 
 # commit 뒤에 보낼 신호('인자 없는 async 함수')를 남기는 s.info 칸. 실측 router의 visit_session이
