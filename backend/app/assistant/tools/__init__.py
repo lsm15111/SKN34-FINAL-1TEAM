@@ -46,6 +46,8 @@ class ToolCtx:
     mode: Literal["llm", "free"] = "llm"
     pressed: bool = False  # 사람이 카드 단추로 고른 제안(거절한 제안도 다시 만든다, choices.apply)
     text: str = ""  # 이번 턴 고객 글(가린 것). 고객 말에서만 받는 칸(공사 끝 남은 일)을 견준다
+    # 이 턴에 도구가 남긴 표시(턴마다 새 ToolCtx). 같은 고르기 칩을 한 턴에 되풀이하지 않게(QA r4 s1 C1)
+    marks: set[str] = field(default_factory=set)
 
 
 @dataclass

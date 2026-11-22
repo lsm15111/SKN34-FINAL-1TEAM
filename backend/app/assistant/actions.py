@@ -823,8 +823,11 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
         await _forget_left_out(s, user, picked, now)
         # 실측 요청(확정 전 · 공사 시작 전 확정)의 '업체에 알릴 것'도 맞추고 업체에 알려요(QA r2 c2 · r3 c6)
         synced = await flow.sync_diy(s, pid, picked, now)  # type: ignore[arg-type]
-        if synced.told:
-            done["text"] += f" · 실측을 요청한 업체({' · '.join(synced.told)})에도 알렸어요"
+        if synced.told:  # 확정 뒤면 '확정한 업체'(QA r4 c2)
+            from app.assistant.tools.propose import chosen_names, told_whom
+
+            who = told_whom(synced.told, await chosen_names(s, pid))  # type: ignore[arg-type]
+            done["text"] += f" · {who}({' · '.join(synced.told)})에도 알렸어요"
         if synced.note:
             done["text"] += f" · {synced.note}"
         if await reissue_requests(s, user, pid, picked, now):  # type: ignore[arg-type]

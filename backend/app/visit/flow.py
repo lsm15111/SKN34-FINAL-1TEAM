@@ -1415,11 +1415,13 @@ async def sync_diy(
         if v.vendor_id is None:
             continue
         what = " · ".join(DIY[k] for k in want) or "없어요"
+        # 어느 요청인지 다른 업체 알림처럼 끝에 공사 이름(QA r4 c2: '· 도봉구 도배'가 없었어요)
+        work = _work(await _home(s, v), v)
         await notify_service.add(
             s,
             user_id=v.vendor_id,
             kind="visit_diy_changed",
-            body=f"고객이 직접 할 일을 바꿨어요: {what}",
+            body=f"고객이 직접 할 일을 바꿨어요: {what} · {work}",
             link=link("visit_diy_changed", vid=v.id),
             dedup_key=f"visit_diy_changed:{v.id}:{diy_ver(want)}:{now:%Y%m%d%H%M%S}",
         )

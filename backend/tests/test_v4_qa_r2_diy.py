@@ -71,7 +71,8 @@ def test_chips_before_deal_update_live_requests_and_tell_each_vendor_once(api):
     assert {tuple(x["diy"]) for x in query("select diy from visits")} == {("light", "paper_buy")}
     for email in VENDORS:
         (n,) = notes(email, "visit_diy_changed")
-        assert n["body"] == "고객이 직접 할 일을 바꿨어요: 조명 교체 · 벽지 직접 구매"
+        # 고침 4차 V(QA r4 c2): 다른 업체 알림처럼 끝에 어느 요청인지(공사 이름)
+        assert n["body"] == "고객이 직접 할 일을 바꿨어요: 조명 교체 · 벽지 직접 구매 · 노원구 도배"
         assert n["link"].startswith("/vendor/requests/")
     # 같은 칩을 다시 저장하면 사본이 같아 알림이 더 가지 않아요
     again = api.put(f"/projects/{pid}/diy", json={"diy": ["light", "paper_buy"]}).json()
@@ -81,7 +82,7 @@ def test_chips_before_deal_update_live_requests_and_tell_each_vendor_once(api):
     assert api.put(f"/projects/{pid}/diy", json={"diy": []}).json()["told"]
     assert {tuple(x["diy"]) for x in query("select diy from visits")} == {()}
     bodies = [n["body"] for n in notes(VENDORS[0], "visit_diy_changed")]
-    assert bodies[-1] == "고객이 직접 할 일을 바꿨어요: 없어요" and len(bodies) == 2
+    assert bodies[-1] == "고객이 직접 할 일을 바꿨어요: 없어요 · 노원구 도배" and len(bodies) == 2
     # 업체 브리핑은 바뀐 사본을 봐요
     api.put(f"/projects/{pid}/diy", json={"diy": ["silicone"]})
     login(api, VENDORS[0])
@@ -102,7 +103,7 @@ def test_chips_after_deal_update_the_deal_copy_before_work_starts(api, script):
     rows = {str(x["id"]): x for x in query("select id, status, diy from visits")}
     assert (rows[va]["status"], rows[va]["diy"]) == ("chosen", ["silicone"])  # 확정 사본도 고쳐요
     (n,) = notes(VENDORS[0], "visit_diy_changed")
-    assert n["body"] == "고객이 직접 할 일을 바꿨어요: 실리콘 · 줄눈"
+    assert n["body"] == "고객이 직접 할 일을 바꿨어요: 실리콘 · 줄눈 · 노원구 도배"
     assert all(not notes(e, "visit_diy_changed") for e in VENDORS[1:])  # 닫힌 요청엔 안 가요
     login(api, VENDORS[0])
     assert api.get(f"/vendor/assistant/briefs/{va}").json()["diy"] == ["실리콘 · 줄눈"]
@@ -160,7 +161,7 @@ def test_home_info_card_after_request_tells_live_vendors(api, script):
     )
     assert query("select diy from visits")[0]["diy"] == ["paint"]
     (n,) = notes("maru@mitjip.test", "visit_diy_changed")
-    assert n["body"] == "고객이 직접 할 일을 바꿨어요: 페인트(문틀 · 몰딩)"
+    assert n["body"] == "고객이 직접 할 일을 바꿨어요: 페인트(문틀 · 몰딩) · 노원구 상계동 도배"
 
 
 def test_home_note_follows_where_the_change_reaches():

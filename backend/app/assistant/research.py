@@ -362,14 +362,33 @@ async def _owned(s: AsyncSession, user: User, research_id: uuid.UUID) -> Assista
 
 
 async def latest(
-    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID, kind: Kind | None = None
 ) -> AssistantResearch | None:
+    """이 공사의 가장 최근 조사(kind를 주면 그 종류에서)."""
+    q = select(AssistantResearch).where(
+        AssistantResearch.user_id == user_id, AssistantResearch.project_id == project_id
+    )
+    if kind is not None:
+        q = q.where(AssistantResearch.kind == kind)
     return await s.scalar(
-        select(AssistantResearch)
-        .where(AssistantResearch.user_id == user_id, AssistantResearch.project_id == project_id)
-        .order_by(AssistantResearch.created_at.desc())
+        q.order_by(AssistantResearch.created_at.desc())
         .limit(1)
         .execution_options(populate_existing=True)
+    )
+
+
+async def outside_lately(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID, now: datetime
+) -> bool:
+    """믿집 밖 업체 조사가 도는 중이거나 오늘(서울 날짜) 이미 맡겼거나 방금(RECENT 안) 끝났다. 가장 최근 조사가 다른
+    종류(자재 · 자료)여도 업체 조사만 본다(QA r4 s3: 자재 조사 뒤 '믿집 밖에서 찾아볼까요?'가 다시 나옴)."""
+    r = await latest(s, user_id, project_id, "outside_vendors")
+    if r is None:
+        return False
+    return (
+        r.status in RESEARCH_LIVE
+        or r.created_at >= _day_start(now)
+        or (r.ended_at is not None and now - r.ended_at <= RECENT)
     )
 
 
@@ -401,15 +420,20 @@ def _squash(text: str | None) -> str:
     return re.sub(r"\s+", "", text or "")
 
 
+def note_texts(r: AssistantResearch) -> list[str]:
+    """조사에 붙은 바꾸기 메모 글(붙인 순)."""
+    return [str(n.get("text") or "") for n in r.notes or [] if isinstance(n, dict)]
+
+
 def pick(rows: list[AssistantResearch], about: str) -> AssistantResearch | None:
-    """목록에서 고를 조사: about(제목 낱말, 예: '용인' · '곰팡이')이 제목 · 목표에 든 가장 최근 것, about이 비면 가장
-    최근 것, 맞는 게 없으면 None."""
+    """목록에서 고를 조사: about(제목 낱말, 예: '용인' · '곰팡이')이 제목 · 목표 · 바꾸기 메모에 든 가장 최근 것,
+    about이 비면 가장 최근 것, 맞는 게 없으면 None(QA r4 s3: '성남시 말고 용인시로' 바꾼 조사를 '용인'으로 못 찾음)."""
     if not rows:
         return None
     word = _squash(about)
     if not word:
         return rows[-1]
-    hits = [r for r in rows if word in _squash(r.title) or word in _squash(r.goal)]
+    hits = [r for r in rows if any(word in _squash(x) for x in (r.title, r.goal, *note_texts(r)))]
     return hits[-1] if hits else None
 
 
@@ -508,19 +532,30 @@ async def _live(s: AsyncSession, project_id: uuid.UUID) -> AssistantResearch | N
 
 
 async def _steer(s: AsyncSession, r: AssistantResearch, note: str, now: datetime) -> bool:
-    """도는 조사에 바꾸기 메모를 붙인다(아직 도는 중일 때만). commit은 부르는 쪽."""
+    """도는 조사에 바꾸기 메모를 붙인다(아직 도는 중일 때만). 메모에 지역 · 조건이 있으면 제목도 바꾼다(steered_title:
+    진행 카드 · 턴 사실 · 끝 줄 · 종 알림이 바꾼 조건으로). commit은 부르는 쪽."""
+    from sqlalchemy.orm.attributes import set_committed_value
+
+    title = steered_title(r.goal, [*note_texts(r), note], r.kind)
+    values: dict[str, Any] = {
+        "notes": _push(
+            AssistantResearch.notes, literal([{"text": note, "at": now.isoformat()}], JSONB)
+        ),
+        "steps": _push(AssistantResearch.steps, _log("steer", now)),
+    }
+    if title != r.title:
+        values["title"] = title
     res = await s.execute(
         update(AssistantResearch)
         .where(AssistantResearch.id == r.id, AssistantResearch.status.in_(RESEARCH_LIVE))
-        .values(
-            notes=_push(
-                AssistantResearch.notes, literal([{"text": note, "at": now.isoformat()}], JSONB)
-            ),
-            steps=_push(AssistantResearch.steps, _log("steer", now)),
-        )
+        .values(**values)
         .execution_options(synchronize_session=False)
     )
-    return res.rowcount == 1
+    ok = res.rowcount == 1
+    # 도구 결과 · 진행 카드가 읽는 값도 새 제목으로(다시 쓰지 않게 저장한 값으로 둔다)
+    if ok and title != r.title:
+        set_committed_value(r, "title", title)
+    return ok
 
 
 def _day_start(now: datetime) -> datetime:
@@ -969,6 +1004,69 @@ def target_places(goal: str, notes: list[str] | tuple[str, ...] = ()) -> set[str
         if got:
             return got
     return set()
+
+
+# ---- 바꾼 조사의 제목(QA r4 s3: '성남시 말고 용인시로' 바꿔 찾았는데 제목 · 종 알림 · 끝 줄이 '성남시 …') ----
+
+_EMD_WORD = re.compile(r"^[가-힣0-9]{1,6}[동읍면]$")  # 바꾼 지역 바로 뒤의 옛 동
+_GRADES = ("실크", "합지")
+
+
+def _from_notes(notes: list[str], find) -> Any:
+    """가장 최근 메모부터 '…말고' 앞 말을 뺀 글에서 find가 찾은 첫 값(없으면 None)."""
+    for text in reversed(notes):
+        got = find(_NOT_HERE.sub(" ", text or ""))
+        if got:
+            return got
+    return None
+
+
+def _swap_places(text: str, want: set[str]) -> str:
+    """목표 글의 지역 낱말(시 · 구, 바로 뒤 옛 동까지)을 찾을 지역으로 바꿔요. 지역 낱말이 없으면 앞에 붙여요."""
+    name = " · ".join(sorted(want))
+    out: list[str] = []
+    put = after = False
+    for w in text.split():
+        if after and _EMD_WORD.match(w):
+            after = False
+            continue
+        after = False
+        if places(w):
+            if not put:
+                out.append(name)
+                put = True
+            after = True
+            continue
+        out.append(w)
+    return " ".join(out) if put else f"{name} {text}"
+
+
+def _grade_of(text: str) -> str | None:
+    got = [g for g in _GRADES if g in text]
+    return got[0] if len(got) == 1 else None
+
+
+def steered_title(goal: str, notes: list[str], kind: str = "outside_vendors") -> str:
+    """바꾸기 메모를 반영한 제목: 믿집 밖 업체 조사는 메모에 찾을 지역이 있으면 목표의 지역을 그 지역으로(조사가 찾는
+    지역 target_places와 같은 셈, 자재 · 자료 조사는 지역을 보지 않아요: '수지 코팅'), 벽지(실크 · 합지) · 평형을
+    바꿨으면 그 말로 바꿔요. 바뀐 것이 없으면 목표 제목(title_of) 그대로예요."""
+    text = " ".join((goal or "").split())
+    want = _from_notes(notes, places) if kind == "outside_vendors" else None
+    if want and want != places(_NOT_HERE.sub(" ", text)):
+        text = _swap_places(text, want)
+    grade = _from_notes(notes, _grade_of)
+    other = next((g for g in _GRADES if g != grade), None) if grade else None
+    if grade and other and other in text and grade not in text:
+        text = text.replace(other, grade)
+    py = _from_notes(notes, lambda t: (m := _PYEONG.search(t)) and m.group(0))
+    if py and (m := _PYEONG.search(text)) and abs(_pyeong_num(py) - _pyeong_num(m.group(0))) >= 1:
+        text = f"{text[: m.start()]}{py}{text[m.end() :]}"  # 어림('21평' ← 21.4평)은 그대로
+    return title_of(text)
+
+
+def _pyeong_num(text: str) -> float:
+    m = re.search(r"\d+(?:\.\d+)?", text)
+    return float(m.group(0)) if m else 0.0
 
 
 REGION_TEXT = 3000  # 지역을 볼 가져온 글 앞 글자 수
