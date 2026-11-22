@@ -28,7 +28,7 @@ BASE: dict[str, str] = {
     "nudge_judge": "nudge_judge_v1",
     "memory": "memory_v3",
     "brief": "brief_v2",
-    "researcher": "researcher_v2",  # 조사 담당(worker, 웹 검색 · 가져오기)
+    "researcher": "researcher_v3",  # 조사 담당(worker, 웹 검색 · 가져오기, 진행 말 · 항목 꼴)
 }
 _DIR = Path(__file__).resolve().parent
 MARK = re.compile(r"^<!--\s*(규칙|예시)\s*-->[ \t]*$")
