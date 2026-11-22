@@ -16,6 +16,7 @@
 3. 바꾸기 · 멈추기: 비서가 `change_research(steer | stop, note)`를 불러요. 같은 종류를 다시 맡겨도 바꾸기예요. 화면 [멈추기]는 `POST /assistant/research/{id}/stop`이에요.
    - worker는 API 호출 사이마다 메모 · 멈춤을 봐요. 메모는 끝난 턴 뒤면 user 말로, 서버 도구 결과로 멈춘 턴(pause_turn) 뒤면 글 system 메시지로 다음 왕복에 넣어요. 무엇을 바꿨는지는 비서가 한 줄로 말해요.
    - 멈추면 그때까지 찾은 것으로 끝내요(stopped, 부분 결과).
+   - 메모에 찾을 지역(믿집 밖 업체만) · 벽지(실크 · 합지) · 평형이 있으면 제목도 바꿔요(`research.steered_title`, 2026-11-22 QA r4 s3: 용인으로 바꿔 찾았는데 제목 · 종 알림 · 끝 줄이 '성남시 …'). `get_research`의 `about`은 바꾸기 메모 낱말로도 찾아요.
 4. 끝나면 한 트랜잭션에: 결과 저장 · 종 알림(`assistant_research`, dedup_key `research:{id}`로 한 번). commit 뒤 화면 신호(state)를 보내요.
    - 대화에는 끝난 조사 줄(정해 둔 한 문장 + 결과 카드, `r-{id}`)이 끝난 때 자리에 끼워져요(`research.feed_items`). 고객이 부탁한 결과라 먼저 말 걸기의 하루 수 · 밤 미룸 밖이에요.
 5. 비서가 알게: 턴 사실 한 줄 '진행 중인 조사: 제목(n초째 · n분째)' · '방금 끝난 조사: 제목'(12시간 안), 도구 `get_research`(가장 최근 하나 + 오늘 조사 목록, `about`에 제목 낱말을 넣으면 앞 조사를 읽어요).

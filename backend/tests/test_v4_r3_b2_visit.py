@@ -216,7 +216,8 @@ def test_cancel_without_target_asks_with_chips_and_a_closed_request_gets_no_card
     (pick,) = cards_of(ev, "options")
     assert pick["card_id"] == "cancel-pick"
     options = {o["label"]: o for o in pick["data"]["options"]}
-    assert set(options) == {"결도배에 보낸 실측 요청", "마루와벽에 보낸 실측 요청"}
+    # 고침 4차 V(QA r4 s1): 모두 취소하려는 고객에게 '둘 다 취소' 칩도 있어요
+    assert set(options) == {"결도배에 보낸 실측 요청", "마루와벽에 보낸 실측 요청", "둘 다 취소"}
     assert options["마루와벽에 보낸 실측 요청"]["say"] == "마루와벽에 보낸 실측 요청 취소해 줘"
     maru = next(x["ref"] for x in got["requests"] if x["vendor_name"] == "마루와벽")
     cancel(api, pid, w["visits"]["마루와벽"])

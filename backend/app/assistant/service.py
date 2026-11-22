@@ -225,16 +225,19 @@ START_LOCKED = "공사 시작 희망 안 정함(실측 요청 뒤라 업체와 �
 # 집 카드 사실의 평('32평', 표준견적서에 저장한 공급 기준 평). 전용 ㎡로 넣은 집은 환산 비율로 어림한 평이라 턴 사실에
 # 넣지 않는다(QA r3 c4b: 전용 59㎡ 집을 '21평'이라고 말함). 공급 기준이면 평형이라고 밝힌다
 PYEONG_FACT = re.compile(r"^(\d+(?:\.\d+)?)평$")
+DIY_FACT = "직접 할 일 "  # 집 카드 사실의 직접 할 일(cards.home)
 
 
-def home_facts(home: dict) -> list[str]:
+def home_facts(home: dict, *, diy: bool = True) -> list[str]:
     """턴 사실 '집:' 줄의 사실(집 카드와 같은 글). 잠긴 뒤 비어 있는 시작 희망을 바꾸고, 평은 공급 기준 평형으로만
-    둔다(전용 면적 집은 ㎡만)."""
+    둔다(전용 면적 집은 ㎡만). diy=False면 직접 할 일 사실을 뺀다('직접 할 일:' 줄이 날짜 · 사본과 같이 말해요)."""
     facts = list(home["facts"])
     if home["locked"] and home.get("start_date") is None:
         facts = [START_LOCKED if f.startswith(START_WISH) else f for f in facts]
     out = []
     for f in facts:
+        if not diy and f.startswith(DIY_FACT):
+            continue
         if m := PYEONG_FACT.match(f):
             if home.get("area_basis") == "exclusive":
                 continue
@@ -263,16 +266,18 @@ def period_line(period, today) -> str | None:
 # 왔어요'라고 알린 1분 뒤에 '견적서가 오면'이라고 답하고, 확정 때 닫힌 실측을 '잡혀 있었어요'라고 답함) ----
 
 HALF_KO = {"am": "오전", "pm": "오후"}
-# 실측 요청 상태 → 고객 화면 말(날짜 · 견적서가 붙는 상태는 visit_words가 만든다)
+# 실측 요청 상태 → 고객 화면 말(날짜 · 견적서가 붙는 상태는 visit_words가 만든다). 고르면 업체 수락 없이 정해지는
+# 것(바로 확정 기간 · 업체가 낸 다른 날)은 그렇다고 적는다(QA r4 s4 7턴: 바로 확정 업체에 '업체가 수락해야 정해져요')
 VISIT_WORDS = {
     "requested": "실측 요청함(업체 답 기다림)",
     "offered": "실측 기간 답 옴(반나절 고를 차례)",
     "picked": "실측 시간 고름(업체 수락 기다림)",
-    "proposed": "업체가 다른 실측 시간을 냄(고를 차례)",
+    "proposed": "업체가 다른 실측 시간을 냄(고를 차례 · 고르면 바로 정해짐)",
     "booked": "실측 날짜 정해짐",
     "visited": "실측 받음(견적서 기다림)",
     "quoted": "견적서 옴",
 }
+OFFERED_INSTANT = "실측 기간 답 옴(반나절 고를 차례 · 바로 확정: 고르면 업체 수락 없이 정해짐)"
 ENDED_WHY = {"declined": "업체가 못 받음", "no_show": "업체가 실측에 안 옴"}
 EXPIRED_WHY = {"reply": "업체 답 기한 지남", "pick": "반나절 고르기 기한 지남"}
 # 확정한 업체의 공사 날짜 상태(schedule.service.dates_states) → 화면 말. scheduled는 업체 공사 날로 쓴다
@@ -285,14 +290,28 @@ DATES_WORDS = {
 }
 BEFORE_CHAT = ("requested", "offered", "picked", "proposed")  # 채팅이 열리기 전(업체 수락 전)
 CHAT_WAIT = "업체가 실측 시간을 수락하면 열려요"
+CHAT_PICK = "실측 시간을 고르면 바로 열려요"  # 바로 확정 기간 · 업체가 낸 다른 날(고르면 정해진다)
 LIVE_VISITS = ("requested", "offered", "picked", "proposed", "booked", "visited", "quoted")
 NO_DOBAE = "표준견적서 · 상담(업체 연결은 도배만이라 이 공사는 업체 단계가 없어요)"
 UNKNOWN_STAGE = "지금 단계를 읽지 못했어요(도구로 확인해요)"
 
 
+def instant(r) -> bool:
+    """업체가 바로 확정으로 기간을 답했다(고르면 업체 수락 없이 정해진다). 상태판 줄의 기간 답(window)에서 읽는다."""
+    w = getattr(r, "window", None)
+    return bool(w is not None and getattr(w, "instant", False))
+
+
+def picks_now(r) -> bool:
+    """고객이 고르면 바로 정해지는 차례(바로 확정 기간 · 업체가 낸 다른 날)."""
+    return (r.status == "offered" and instant(r)) or r.status == "proposed"
+
+
 def visit_words(r, chosen: bool, today) -> str:
     """실측 일정 상태판 줄(visit.service.board_now) → 고객 화면 말. chosen: 이 공정에서 확정한 업체가 있다."""
     st, b = r.status, r.booked
+    if st == "offered" and instant(r):
+        return OFFERED_INSTANT
     slot = f"{kdate.md_long(b.day, today)} {HALF_KO[b.half]}" if b is not None else None
     if st == "picked" and slot:
         return f"실측 시간 고름({slot} · 업체 수락 기다림)"
@@ -335,29 +354,50 @@ def deal_words(d, dates: str | None, today) -> str:
     return " · ".join(parts)
 
 
-def vendors_line(rows: list, deal, dates: str | None, today) -> str | None:
-    """턴 사실 '업체:' 줄: 이 공사에 걸린 업체마다 지금 상태(요청한 순). 없으면 None."""
+def live_refs(rows: list, deal, refs: RefTable) -> dict[uuid.UUID, str]:
+    """살아 있는 실측 요청(닫히지 않은 것, 확정한 요청은 빼요)마다 대화 이름표 m…(이미 있으면 같은 이름표). 도구
+    결과의 이름표(propose.requests_model)와 같은 값이라 다음 턴 모델이 취소 · 반나절 · 견적서 도구에 바로 써요(QA r4
+    s1 · s6: 지난 턴 고르기 결과의 m1 · m2가 다음 턴 기록에 없어 이름표 없이 6번 부름, s4 3턴: 승인 직후 표에 m이 없어
+    반나절 도구가 모르는 이름표로 실패). 표 상한(RefTable.MAX) 안에서 같은 대상은 같은 이름이라 턴마다 늘지 않아요."""
+    return {
+        r.visit_id: refs.put(
+            "visit", {"id": str(r.visit_id), "vendor_name": r.vendor_name, "trade": "dobae"}
+        )
+        for r in rows
+        if r.status in LIVE_VISITS and (deal is None or r.visit_id != deal.visit_id)
+    }
+
+
+def vendors_line(
+    rows: list, deal, dates: str | None, today, refs: dict | None = None
+) -> str | None:
+    """턴 사실 '업체:' 줄: 이 공사에 걸린 업체마다 지금 상태(요청한 순). 없으면 None. refs(요청 id → 이름표)가 있으면
+    살아 있는 요청의 업체 이름 뒤에 붙인다('결도배(m1) 실측 요청함 …')."""
+    refs = refs or {}
     items = []
     for r in rows:
         if deal is not None and r.visit_id == deal.visit_id:
             items.append(f"{r.vendor_name} {deal_words(deal, dates, today)}")
         else:
-            items.append(f"{r.vendor_name} {visit_words(r, deal is not None, today)}")
+            tag = f"({refs[r.visit_id]})" if r.visit_id in refs else ""
+            items.append(f"{r.vendor_name}{tag} {visit_words(r, deal is not None, today)}")
     if deal is not None and all(r.visit_id != deal.visit_id for r in rows):
         items.append(f"{deal.vendor_name} {deal_words(deal, dates, today)}")
     return "업체: " + " / ".join(items) if items else None
 
 
 def chat_line(rows: list, deal, opened: set) -> str:
-    """턴 사실 '채팅:' 줄: 믿집 채팅이 열린 업체 · 아직 안 열린 업체(업체가 실측 시간을 수락하면 열려요)."""
-    names = [(r.vendor_id, r.vendor_name, r.status) for r in rows]
-    if deal is not None and all(v != deal.vendor_id for v, _, _ in names):
-        names.append((deal.vendor_id, deal.vendor_name, "chosen"))
-    on = [n for v, n, _ in names if v in opened]
-    wait = [n for v, n, st in names if v not in opened and st in BEFORE_CHAT]
+    """턴 사실 '채팅:' 줄: 믿집 채팅이 열린 업체 · 아직 안 열린 업체(업체가 실측 시간을 수락하면 열려요, 고르면 바로
+    정해지는 차례면 고르면 열려요)."""
+    names = [(r.vendor_id, r.vendor_name, r.status, picks_now(r)) for r in rows]
+    if deal is not None and all(v != deal.vendor_id for v, _, _, _ in names):
+        names.append((deal.vendor_id, deal.vendor_name, "chosen", False))
+    on = [n for v, n, _, _ in names if v in opened]
+    wait = [(n, now) for v, n, st, now in names if v not in opened and st in BEFORE_CHAT]
     parts = [f"{' · '.join(on)} 열림"] if on else []
-    if wait:
-        parts.append(f"{' · '.join(wait)} 아직 안 열림({CHAT_WAIT})")
+    for why, now in ((CHAT_WAIT, False), (CHAT_PICK, True)):
+        if got := [n for n, x in wait if x is now]:
+            parts.append(f"{' · '.join(got)} 아직 안 열림({why})")
     return "채팅: " + (" / ".join(parts) if parts else f"열린 채팅 없음({CHAT_WAIT})")
 
 
@@ -402,9 +442,10 @@ class WorkNow:
     chat: str | None = None
 
 
-async def work_now(s, user: User, p, today, now: datetime) -> WorkNow:
+async def work_now(s, user: User, p, today, now: datetime, refs: RefTable | None = None) -> WorkNow:
     """업체마다 지금 상태(visit.service.board_now) · 확정(schedule.service.deals_for · dates_states) · 열린 채팅
-    (cards.chat_links). 모두 읽기만 한다(턴 시작 트랜잭션 중간에 부른다)."""
+    (cards.chat_links). 모두 읽기만 한다(턴 시작 트랜잭션 중간에 부른다). refs(턴의 이름표 표)를 주면 살아 있는
+    요청마다 이름표 m…을 넣고 업체 줄에 붙인다."""
     from app.assistant.tools import cards
     from app.schedule import service as schedule_service
     from app.visit import service as visit_service
@@ -418,15 +459,27 @@ async def work_now(s, user: User, p, today, now: datetime) -> WorkNow:
     ids = [r.vendor_id for r in rows] + ([deal.vendor_id] if deal else [])
     opened = set(await cards.chat_links(s, p.id, ids))
     stage, key = stage_of(rows, deal, dates, today)
+    tags = live_refs(rows, deal, refs) if refs is not None else {}
     return WorkNow(
         stage,
         key,
-        vendors_line(rows, deal, dates, today),
+        vendors_line(rows, deal, dates, today, tags),
         chat_line(rows, deal, opened) if rows or deal else f"채팅: 열린 채팅 없음({CHAT_WAIT})",
     )
 
 
-async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided: list) -> str:
+async def _customer_facts(
+    s,
+    user: User,
+    p,
+    now: datetime,
+    opened: list,
+    decided: list,
+    refs: RefTable | None = None,
+    diy: str | None = None,
+) -> str:
+    """고객 턴 사실. refs(턴의 이름표 표)를 주면 업체 줄에 살아 있는 요청 이름표를, diy('직접 할 일:' 줄, diy_facts)를
+    주면 집 줄 다음에 넣는다."""
     from app.assistant import memory
     from app.assistant.tools import cards
     from app.schedule import service as schedule_service
@@ -435,7 +488,7 @@ async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided
     _, home = await cards.home(s, user, p.id)
     try:  # 업체 상태를 못 읽어도 턴은 돈다(세이브포인트: 턴 행을 넣은 트랜잭션을 지킨다)
         async with s.begin_nested():
-            w = await work_now(s, user, p, today, now)
+            w = await work_now(s, user, p, today, now, refs)
     except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 옛 단계 말로
         log.warning("턴 사실 업체 상태 읽기 실패 (%s)", type(e).__name__)
         w = WorkNow(UNKNOWN_STAGE, None)
@@ -443,7 +496,8 @@ async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided
         *time_lines(now),
         "화면: 고객 비서",
         "단계: " + w.stage + (" · 집 정보 잠김(실측 요청 뒤)" if home["locked"] else ""),
-        "집: " + " · ".join(home_facts(home)),
+        "집: " + " · ".join(home_facts(home, diy=diy is None)),
+        *([diy] if diy else []),
         *(x for x in (w.vendors, w.chat) if x),
     ]
     period = period_line(await schedule_service.period_now(s, p), today)
@@ -465,6 +519,61 @@ async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided
     if looked := await research.facts_line(s, user.id, p.id, now):
         lines.append(looked)
     return "\n".join(lines)
+
+
+# ---- 턴 사실: 직접 할 일 날짜 · 업체 사본(QA r4 c2 12 · 15턴: 도구 없이 답한 턴은 날짜를 몰라 날짜 문장이 숫자 검사에
+# 빠지고, 업체 요청 사본에 이미 들어간 것을 몰라 '채팅으로 알려 주세요'라고 함) ----
+
+COPY_IN = "업체 사본: 들어감({names})"
+COPY_OFF = "업체 사본: 지금 직접 할 일과 다름({names})"
+COPY_NONE = "업체 사본: 아직 없음(실측 요청을 보내면 '업체에 알릴 것'으로 같이 가요)"
+COPY_TELL = "따로 알릴 업체: {names}({why})"
+
+
+def diy_line(g, reach) -> str | None:
+    """턴 사실 '직접 할 일:' 줄: 고른 일마다 언제(계산 엔진, 공정표 '고객이 직접' 줄 · diy_plan 카드와 같은 말) · 공정표
+    기준 · 업체 사본(요청 · 공사 시작 전 확정 사본에 들어감, 공사가 시작된 확정은 따로 알릴 업체). g는
+    assistant.tools.diy.gather, reach는 visit.flow.diy_reach 값이에요. 고른 일이 없으면 None."""
+    from app.assistant.tools import diy as diy_tools
+    from app.visit.flow import DIY_DEALT_NOTE
+
+    if not g.tasks:
+        return None
+    phase = diy_tools.PHASE_KO.get(g.phase)
+    parts = [f"{t.name} {g.when(t)}" for t in g.tasks]
+    if reach.live and not reach.synced:
+        parts.append(COPY_OFF.format(names=" · ".join(reach.live)))
+    same = [n for n in reach.dealt if n not in reach.missing]
+    if got := [*(reach.live if reach.synced else []), *same]:
+        parts.append(COPY_IN.format(names=" · ".join(got)))
+    if reach.missing:
+        parts.append(COPY_TELL.format(names=" · ".join(reach.missing), why=DIY_DEALT_NOTE))
+    if not reach.live and not reach.dealt:
+        parts.append(COPY_NONE)
+    head = f"직접 할 일({phase} 공정표 기준)" if phase else "직접 할 일"
+    return f"{head}: " + " / ".join(parts)
+
+
+async def diy_facts(user: User, project_id: uuid.UUID, today) -> str | None:
+    """'직접 할 일:' 줄을 따로 짧은 세션으로 읽는다(assistant.tools.diy.gather · visit.flow.diy_reach). 공정표 읽기
+    (schedule.service.plan_for)가 예상 공정표를 다시 만들어 commit할 수 있어서 공사 행을 잠그는 턴 시작 트랜잭션 앞에서
+    부른다(트랜잭션 안에서 읽으면 중간 commit, 다른 세션이면 잠근 행을 기다려 멈춰요). 못 읽으면 None(집 줄의 '직접 할
+    일'만 남아요)."""
+    from app.assistant.tools import diy as diy_tools
+    from app.visit import flow as visit_flow
+
+    try:
+        async with SessionLocal() as s:
+            g = await diy_tools.gather(s, user, project_id, today)
+            if not g.tasks:
+                return None
+            reach = await visit_flow.diy_reach(s, project_id, today)
+    except AppError:
+        return None  # 남의 · 없는 공사: 턴 시작이 같은 404를 낸다
+    except Exception as e:  # noqa: BLE001 - 직접 할 일 줄 없이 턴은 돈다(종류 이름만 로그)
+        log.warning("턴 사실 직접 할 일 읽기 실패 (%s)", type(e).__name__)
+        return None
+    return diy_line(g, reach)
 
 
 # ---- 업체 턴 사실: 요청 · 공사마다 지금 상태와 카드가 어느 요청 것인지(QA r3 c6 T3: '세 건'이라 하고 한 건만 말함 ·
@@ -623,6 +732,12 @@ async def start_turn(
     # 공백 · 제어 문자만: LLM에 빈 글 블록을 보내지 않는다(리뷰 R1 · QA P1, 차단기를 걸지 않게)
     if not masked:
         raise AppError(422, "invalid", "보낼 말을 적어 주세요.")
+    # 직접 할 일 날짜 · 업체 사본(턴 사실): 공사 행을 잠그는 아래 트랜잭션 앞에서 따로 읽는다(diy_facts)
+    diy = (
+        await diy_facts(user, project_id, today)
+        if surface == "customer" and project_id is not None
+        else None
+    )
     async with SessionLocal() as s:
         old = await repo.turn_by_key(s, user.id, client_key)
         if old is not None:
@@ -682,7 +797,7 @@ async def start_turn(
             refs.put("visit", {"id": str(visit_id)}) if surface == "vendor" and visit_id else None
         )
         facts = (
-            await _customer_facts(s, user, project, now, opened, decided)
+            await _customer_facts(s, user, project, now, opened, decided, refs, diy)
             if project is not None
             else await _vendor_facts(s, user, now, visit_id, visit_ref, opened, decided)
         )
@@ -1661,16 +1776,12 @@ async def _pickable(s, user: User, project_id: uuid.UUID) -> int:
 
 
 async def _looking(s, user_id: uuid.UUID, project_id: uuid.UUID, now: datetime) -> bool:
-    """믿집 밖 업체 조사가 도는 중이거나 방금(12시간 안) 끝났다(같은 제안을 다시 하지 않게)."""
+    """믿집 밖 업체 조사가 도는 중이거나 오늘 이미 맡겼거나 방금(12시간 안) 끝났다(같은 제안을 다시 하지 않게).
+    가장 최근 조사가 자재 · 자료 조사여도 업체 조사를 본다(QA r4 s3: 자재 조사 뒤 '믿집 밖에서 찾아볼까요?'가 다시
+    나와 누르면 업체 조사를 또 맡김)."""
     from app.assistant import research
-    from app.assistant.models import RESEARCH_LIVE
 
-    r = await research.latest(s, user_id, project_id)
-    if r is None or r.kind != "outside_vendors":
-        return False
-    return r.status in RESEARCH_LIVE or (
-        r.ended_at is not None and now - r.ended_at <= research.RECENT
-    )
+    return await research.outside_lately(s, user_id, project_id, now)
 
 
 # ---- 업체 ----

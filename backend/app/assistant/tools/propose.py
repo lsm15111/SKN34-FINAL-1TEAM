@@ -183,6 +183,28 @@ class HomeIn(BaseModel):
     fields: HomeFields
 
 
+REQUESTED = "실측을 요청한 업체"
+CHOSEN = "확정한 업체"
+
+
+async def chosen_names(s, pid: uuid.UUID) -> set[str]:
+    """이 공사에서 확정한 업체 이름(실측 요청 상태 chosen, 읽기 조인)."""
+    from sqlalchemy import select
+
+    from app.visit.models import Visit
+
+    rows = await s.scalars(
+        select(Visit.vendor_name).where(Visit.project_id == pid, Visit.status == "chosen")
+    )
+    return set(rows.all())
+
+
+def told_whom(names: list[str], chosen: set[str]) -> str:
+    """직접 할 일 사본을 고쳐 알리는 업체를 부르는 말: 모두 확정한 업체면 '확정한 업체', 아니면 '실측을 요청한 업체'
+    (QA r4 c2: 확정 뒤 직접 할 일 승인 카드의 메모 · 결과가 '실측을 요청한 업체')."""
+    return CHOSEN if names and set(names) <= chosen else REQUESTED
+
+
 def home_note(
     changes: dict,
     locked: bool,
@@ -190,11 +212,12 @@ def home_note(
     *,
     live: bool = False,
     dealt: bool = False,
+    who: str = REQUESTED,
 ) -> str:
     """집 정보 승인 카드 메모: 바뀌는 것에 맞춰요. 직접 할 일만 바꾸면 표준견적서는 그대로예요(실행은 칩 저장만).
     벽지 직접 구매(paper_buy)를 켜거나 끄면 표준견적서 도배지 줄이 고객 구매로 빠지거나 돌아와요(before: 지금 칩).
-    실측을 요청한 뒤면 확정 전 요청(live)의 '업체에 알릴 것'도 같이 고쳐 업체에 알리고(visit.flow.sync_diy),
-    확정한 업체(dealt)에는 채팅으로 따로 알려야 해요(QA r2 c2)."""
+    실측을 요청한 뒤면 확정 전 요청 · 공사 시작 전 확정(live, who: 그 업체를 부르는 말 told_whom)의 '업체에 알릴 것'도
+    같이 고쳐 업체에 알리고(visit.flow.sync_diy), 공사가 시작된 확정 업체(dealt)에는 채팅으로 따로 알려야 해요(QA r2 c2)."""
     from app.calc.dobae import DEMOLITION_KEY
 
     if set(changes) == {"diy"}:
@@ -208,7 +231,7 @@ def home_note(
                 else "표준견적서에 벽지 값을 다시 넣어요"
             )
         tell = [
-            *(["실측을 요청한 업체에도 바뀐 직접 할 일을 알려요"] if locked and live else []),
+            *([f"{who}에도 바뀐 직접 할 일을 알려요"] if locked and live else []),
             *(["확정한 업체에는 채팅으로 따로 알려 주세요"] if locked and dealt else []),
         ]
         said = [std] if paper or not tell else []
@@ -328,6 +351,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         card, _ = await cards.home(s, tc.user, pid)
         diy_now = await project_diy.diy_for(s, pid)
         reach = await visit_flow.diy_reach(s, pid)  # 직접 할 일을 바꾸면 닿는 업체(QA r2 c2)
+        who = told_whom(reach.live, await chosen_names(s, pid)) if reach.live else REQUESTED
         hold = await visit_service.lock_hold(s, pid) if p.locked else (0, False)
     if p.home is None:
         raise ToolError("no_home", "이 공사는 집 정보 화면에서 고쳐 주세요.")
@@ -382,7 +406,12 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
             title="직접 할 일 저장" if set(changes) == {"diy"} else "집 정보 저장",
             rows=rows,
             note=home_note(
-                changes, p.locked, diy_now, live=bool(reach.live), dealt=bool(reach.dealt)
+                changes,
+                p.locked,
+                diy_now,
+                live=bool(reach.live),
+                dealt=bool(reach.dealt),
+                who=who,
             ),
             approve_label="맞아요, 저장",
         ),
@@ -1143,30 +1172,132 @@ async def withdraw_proposal(tc: ToolCtx, a: WithdrawIn) -> ToolOut:
 
 
 class VisitCancelIn(BaseModel):
-    visit_ref: str | None = None  # 비우면: 살아 있는 요청이 하나면 그것, 여럿이면 고르기 카드
+    # 비우면: 하나면 그것, 여럿이면 고객 말(업체 이름 · '둘 다')로 풀고, 못 풀면 고르기 카드
+    visit_ref: str | None = None
     code: Literal["changed", "other_vendor", "other"] = "other"
 
 
 CANCEL_CHOOSE_NOTE = (
-    "보낸 실측 요청이 여럿이에요. 어느 업체 요청을 취소할지 고객에게 물어요(카드의 단추로 고를 수 있어요). 모두 "
-    "취소하려면 요청마다 visit_ref로 불러요."
+    "보낸 실측 요청이 여럿인데 고객 말에 어느 업체인지 없어요. 고르기 칩을 보였으니 이 턴에는 다시 부르지 말고 어느 "
+    "업체 요청을 취소할지 고객에게 물어요. 모두 취소하려면 요청마다 visit_ref(requests의 ref)로 불러요."
+)
+CANCEL_AGAIN = "고르기 칩을 이미 보였어요. 고객이 고를 때까지 기다려 주세요."
+CANCEL_AGAIN_HINT = (
+    "고르기 칩을 이미 보였어요. 고객이 고를 때까지 기다리거나, 고객이 말한 업체의 이름표(m…)로 visit_ref를 넣어 "
+    "불러요(이름표: {refs})."
+)
+CANCEL_MANY_NOTE = (
+    "요청마다 취소 승인 카드를 만들었어요(items). 카드마다 사람이 눌러야 그 요청이 취소돼요."
 )
 CANCEL_NONE_NOTE = "지금 취소할 수 있는 실측 요청이 없어요."
+CHOSE = "cancel_choose"  # 이 턴에 취소 고르기 칩을 보였다(ToolCtx.marks)
+# 보낸 요청 모두를 가리키는 말('둘 다' · '두 곳 다' · '모두' · '전부' · '다 취소'). '다른' · '다시' · '다음'은 아니다
+ALL_SAID = re.compile(
+    r"(?:둘|셋|두\s{0,2}(?:곳|군데|업체|개|건)|세\s{0,2}(?:곳|군데|업체|개|건))\s{0,2}(?:다|모두)(?![른시음])"
+    r"|모두|전부|(?<![가-힣])다\s{0,2}(?:취소|빼|없애|거둬|거두)"
+)
+# 업체 이름 바로 뒤(띄움을 뺀 글)에 오면 그 요청은 남기는 말('결도배는 남기고 …' · '결도배 요청은 그대로 두고' ·
+# '결도배 빼고 다')
+KEEP_SAID = re.compile(
+    r"^(?:에보낸요청|요청|업체|쪽|거|건)?(?:은|는|이|가|도|만)?(?:그대로|그냥|계속|일단)?"
+    r"(?:남기|남겨|두고|놔두|놓고|말고|빼고|제외|유지|살리|살려)"
+)
+
+
+def cancel_targets(live: list, text: str) -> list:
+    """visit_ref 없이 불렀을 때 이번 턴 고객 말(가린 글)로 취소할 요청을 푼다(QA r4 s1 C1 · s6 12 · 13턴: 고르기 칩
+    글 '마루와벽에 보낸 실측 요청 취소해 줘' · '둘 다 취소해 주세요'에도 고르기 칩만 6번). 업체 이름이 나오면 그
+    요청(들), '…는 남기고'면 남긴 업체 말고 남은 하나(또는 '나머지 · 모두'면 남은 것 모두), '둘 다 · 모두 · 전부 · 다
+    취소'면 살아 있는 요청 모두. 못 풀면 빈 목록(고르기 칩으로 물어요)."""
+    said = plain(text)
+    named, kept = [], []
+    for v in live:
+        name = plain(v.vendor_name)
+        at = said.find(name) if name else -1
+        if at >= 0:
+            (kept if KEEP_SAID.match(said[at + len(name) :]) else named).append(v)
+    # 다른 업체 이름에 든 짧은 이름은 뺀다('한결도배'라고 하면 '한결'은 아니에요)
+    names = [plain(v.vendor_name) for v in named]
+    named = [
+        v for v, n in zip(named, names, strict=True) if not any(n != m and n in m for m in names)
+    ]
+    every = bool(ALL_SAID.search(text))
+    if named:
+        return named
+    if kept:
+        rest = [v for v in live if v not in kept]
+        return rest if len(rest) == 1 or every or "나머지" in said else []
+    return list(live) if every else []
 
 
 def cancel_options(visits: list) -> CardOut:
-    """살아 있는 요청이 여럿일 때 '무엇을 취소할까요?' 고르기 칩(무료 모드 '취소해 줘'와 같은 꼴)."""
-    return cards.options_card(
-        "cancel-pick",
-        "무엇을 취소할까요?",
-        [
-            (
-                f"{v.vendor_name}에 보낸 실측 요청",
-                f"{v.vendor_name}에 보낸 실측 요청 취소해 줘",
-                cards.SENT_STATE.get(v.status),
-            )
-            for v in visits
+    """살아 있는 요청이 여럿일 때 '무엇을 취소할까요?' 고르기 칩(무료 모드 '취소해 줘'와 같은 꼴) + '둘 다 · 모두
+    취소' 칩(QA r4 s1: 모두 취소하려는 고객에게 칩이 없었어요)."""
+    options: list[tuple[str, str, str | None]] = [
+        (
+            f"{v.vendor_name}에 보낸 실측 요청",
+            f"{v.vendor_name}에 보낸 실측 요청 취소해 줘",
+            cards.SENT_STATE.get(v.status),
+        )
+        for v in visits
+    ]
+    if len(visits) > 1:
+        word = "둘 다" if len(visits) == 2 else "모두"
+        options.append((f"{word} 취소", f"보낸 실측 요청 {word} 취소해 줘", None))
+    return cards.options_card("cancel-pick", "무엇을 취소할까요?", options)
+
+
+def cancel_choose(tc: ToolCtx, live: list) -> ToolOut:
+    """고르기 칩(state choose). 같은 턴에 이미 보였으면 또 내지 않고 오류로 돌려준다(QA r4 s1 C1: 이름표 없이 6번)."""
+    if CHOSE in tc.marks:
+        refs = " · ".join(f"{r['ref']} {r['vendor_name']}" for r in requests_model(tc, live))
+        raise ToolError("choose_shown", CANCEL_AGAIN, hint=CANCEL_AGAIN_HINT.format(refs=refs))
+    tc.marks.add(CHOSE)
+    data = {"state": "choose", "requests": requests_model(tc, live), "note": CANCEL_CHOOSE_NOTE}
+    return ToolOut(data=data, cards=[cancel_options(live)])
+
+
+async def cancel_one(tc: ToolCtx, v, code: str, pid: uuid.UUID) -> ToolOut:
+    """요청 하나의 취소 승인 카드."""
+    summary = ActionSummary(
+        title=f"{v.vendor_name}에 보낸 실측 요청 취소",
+        rows=[
+            SummaryRow(label="업체", value=v.vendor_name),
+            SummaryRow(label="지금", value=cards.SENT_STATE.get(v.status, "진행 중")),
+            SummaryRow(label="까닭", value=actions.CANCEL_REASONS[code]),
         ],
+        note="취소하면 업체에 알림이 가고 이 업체의 담기 칸이 비어요. 잡아 둔 실측 날짜도 풀려요",
+        approve_label="실측 요청 취소하기",
+    )
+    out, _ = await _offer(
+        tc,
+        kind="visit_cancel",
+        target_kind="visit",
+        target_id=v.id,
+        target_ver=v.status,
+        payload={"visit_id": str(v.id), "code": code, "vendor_name": v.vendor_name},
+        summary=summary,
+        expires_at=tc.now + timedelta(days=2),
+        project_id=pid,
+    )
+    return out
+
+
+async def cancel_many(tc: ToolCtx, visits: list, code: str, pid: uuid.UUID) -> ToolOut:
+    """요청마다 취소 승인 카드('둘 다 취소해 주세요'). 모델 값은 요청마다 결과(items)예요."""
+    outs = [await cancel_one(tc, v, code, pid) for v in visits]
+    states = [o.data.get("state") for o in outs]
+    items = [{"vendor_name": v.vendor_name, **o.data} for v, o in zip(visits, outs, strict=True)]
+    data = {
+        "state": "new" if "new" in states else states[0],
+        "count": len(items),
+        "items": items,
+        "note": CANCEL_MANY_NOTE,
+    }
+    return ToolOut(
+        data=data,
+        actions=[x for o in outs for x in o.actions],
+        closed=[x for o in outs for x in o.closed],
     )
 
 
@@ -1177,9 +1308,11 @@ def cancel_options(visits: list) -> CardOut:
     status="실측 요청 취소를 준비하고 있어요",
     description="이미 보낸 실측 요청(m1…)을 취소하는 승인 카드를 만들어요. code는 고객이 말한 까닭: changed 일정이 "
     "바뀜 · other_vendor 다른 업체로 할래요, 까닭을 말하지 않았으면 other. 고객이 카드를 눌러야 취소되고 업체에도 "
-    "알림이 가요(잡은 실측 날짜도 풀려요). 고객이 어느 요청인지 말하지 않았으면 visit_ref를 비워요: 보낸 요청이 "
-    "하나면 그 요청 카드, 여럿이면 카드 대신 고르기 칩(state choose)을 돌려줘요. 견적서가 온 뒤 · 확정 · 이미 닫힌 "
-    "요청은 카드 없이 까닭(state closed)을 돌려줘요. 아직 보내지 않은 실측 요청 카드는 withdraw_proposal로 거둬요.",
+    "알림이 가요(잡은 실측 날짜도 풀려요). visit_ref는 턴 사실 '업체:' 줄이나 requests의 이름표예요. 비우면 보낸 "
+    "요청이 하나면 그 요청 카드, 여럿이면 이번 고객 말로 풀어요: 업체 이름이 나오면 그 요청 카드, '둘 다 · 모두'면 "
+    "요청마다 카드(items), 못 풀면 카드 대신 고르기 칩(state choose, 한 턴에 한 번)이에요. 견적서가 온 뒤 · 확정 · "
+    "이미 닫힌 요청은 카드 없이 까닭(state closed)을 돌려줘요. 아직 보내지 않은 실측 요청 카드는 withdraw_proposal로 "
+    "거둬요.",
     model=VisitCancelIn,
     schema=obj(
         {
@@ -1217,38 +1350,19 @@ async def propose_visit_cancel(tc: ToolCtx, a: VisitCancelIn) -> ToolOut:
     if visit_id is None:
         if not live:
             return ToolOut(data={"state": "none", "note": CANCEL_NONE_NOTE})
-        if len(live) > 1:  # 어느 요청인지 물어요(QA r3 s6 B2)
-            data = {
-                "state": "choose",
-                "requests": requests_model(tc, live),
-                "note": CANCEL_CHOOSE_NOTE,
-            }
-            return ToolOut(data=data, cards=[cancel_options(live)])
-        v = live[0]
+        # 여럿이면 고객 말로 풀고(QA r4 s1 · s6), 못 풀면 어느 요청인지 물어요(QA r3 s6 B2)
+        if len(live) > 1:
+            picked = cancel_targets(live, tc.text)
+            if not picked:
+                return cancel_choose(tc, live)
+            if len(picked) > 1:
+                return await cancel_many(tc, picked, a.code, pid)
+            v = picked[0]
+        else:
+            v = live[0]
     if v is None:  # 위에서 하나로 정해졌다(타입 검사용)
         raise ToolError("not_cancellable", "지금 취소할 수 있는 실측 요청이 없어요.")
-    summary = ActionSummary(
-        title=f"{v.vendor_name}에 보낸 실측 요청 취소",
-        rows=[
-            SummaryRow(label="업체", value=v.vendor_name),
-            SummaryRow(label="지금", value=cards.SENT_STATE.get(v.status, "진행 중")),
-            SummaryRow(label="까닭", value=actions.CANCEL_REASONS[a.code]),
-        ],
-        note="취소하면 업체에 알림이 가고 이 업체의 담기 칸이 비어요. 잡아 둔 실측 날짜도 풀려요",
-        approve_label="실측 요청 취소하기",
-    )
-    out, _ = await _offer(
-        tc,
-        kind="visit_cancel",
-        target_kind="visit",
-        target_id=v.id,
-        target_ver=v.status,
-        payload={"visit_id": str(v.id), "code": a.code, "vendor_name": v.vendor_name},
-        summary=summary,
-        expires_at=tc.now + timedelta(days=2),
-        project_id=pid,
-    )
-    return out
+    return await cancel_one(tc, v, a.code, pid)
 
 
 # ---- 업체 ----

@@ -276,7 +276,11 @@ def test_turn_facts_follow_each_vendor_from_booked_to_deal(api, script):
     assert ask_visits(api, f["pid"], [gyeol]).status_code == 201
     slot = f"{kdate.md_long(day(6), today_seoul())} 오전"
     facts = turn_facts(api, script, f["pid"])
-    assert f"업체: 마루와벽 실측 날짜 정해짐({slot}) / 결도배 실측 요청함(업체 답 기다림)" in facts
+    # 고침 4차 V(QA r4 s1 · s6): 살아 있는 요청 업체 이름 뒤에 대화 이름표(m…)가 붙어요(요청한 순으로 m1 · m2)
+    assert (
+        f"업체: 마루와벽(m1) 실측 날짜 정해짐({slot}) / 결도배(m2) 실측 요청함(업체 답 기다림)"
+        in facts
+    )
     assert "채팅: 마루와벽 열림 / 결도배 아직 안 열림(업체가 실측 시간을 수락하면 열려요)" in facts
     assert "단계: 실측(요청한 업체 2곳 · 견적서 전)" in facts
     # 견적서가 오면 판 · 금액(부가세 포함)과 견적 견주기 단계
@@ -284,7 +288,7 @@ def test_turn_facts_follow_each_vendor_from_booked_to_deal(api, script):
     total = quote(api, f["visit"], 2_300_000)["sent"][0]["total"]
     use(api, f["token"])
     facts = turn_facts(api, script, f["pid"], "견적서 왔어요?")
-    assert f"마루와벽 견적서 옴(1판 · 부가세 포함 {total:,}원)" in facts
+    assert f"마루와벽(m1) 견적서 옴(1판 · 부가세 포함 {total:,}원)" in facts
     assert "단계: 견적 견주기(받은 견적서 1곳 · 견적서 기다리는 업체 1곳)" in facts
     # 확정하면 다른 업체 요청은 확정 때 닫힘(c4 #37 '잡혀 있었어요' 오답)
     assert confirm(api, f["pid"], f["visit"]).status_code == 200
