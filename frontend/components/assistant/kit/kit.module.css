@@ -84,9 +84,11 @@
 .amt { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .amt b { font-size: var(--mj-size-28); font-weight: var(--mj-weight-heavy); letter-spacing: var(--mj-track-amount); line-height: var(--mj-lh-tight); }
 .amt span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
-.rows { display: grid; margin: 0; border-top: 1px solid var(--mj-line-soft); }
-.rows > div { display: grid; grid-template-columns: 84px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
-.rows dt { color: var(--mj-text-mute); }
+/* 칸 이름 열은 모든 줄이 같이 써요(subgrid): 가장 긴 이름에 맞추고(84px 이상 · 112px까지), 넘치면 두 줄을 고르게 나눠요
+   (QA r3 v1 L5: 76px 칸에서 '업체에 알릴 / 것'처럼 한 글자만 내려갔어요) */
+.rows { display: grid; grid-template-columns: minmax(84px, max-content) minmax(0, 1fr); column-gap: 12px; margin: 0; border-top: 1px solid var(--mj-line-soft); }
+.rows > div { grid-column: 1 / -1; display: grid; grid-template-columns: subgrid; padding: 10px 0; border-bottom: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
+.rows dt { color: var(--mj-text-mute); max-width: 112px; text-wrap: balance; }
 .rows dd { margin: 0; color: var(--mj-text); min-width: 0; }
 .rows dd :is(a, button) { white-space: normal; justify-content: flex-start; text-align: left; min-width: 0; max-width: 100%; }
 .rows small { display: block; color: var(--mj-text-mute); font-size: var(--mj-type-caption); }
@@ -141,7 +143,8 @@
 @media (max-width: 520px) {
   .card { padding: 16px; gap: 14px; }
   .acts .pri { flex: 1 1 200px; min-width: 0; }
-  .rows > div { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+  .rows { grid-template-columns: minmax(76px, max-content) minmax(0, 1fr); column-gap: 10px; }
+  .rows dt { max-width: 96px; }
   .tlist li { grid-template-columns: 36px minmax(0, 1fr); }
   .tic { width: 36px; height: 36px; }
   .tlist li > :is(a, button):last-child { grid-column: 2; justify-self: start; }
