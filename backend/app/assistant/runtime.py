@@ -9,8 +9,9 @@
   무료 모드 + 5분 차단기. 요청 자체가 틀린 거절(400 · 413 · 422, llm.LLMRejected)은 다시 보내지 않고 이 턴만
   무료 모드다(차단기에 세지 않는다). 빈 말은 LLM에 보내지 않는다(빈 글 블록은 400).
 - 모델 글은 문장마다 check.sentence_ok(허용 숫자 = 이번 턴 도구 결과 · 이 턴에 만든 · 보인 카드 값 · 사실 · 고객
-  글)를 지난 것만 token으로 보낸다. 숫자는 근거 값 그대로에 더해 어림 · 차액 · 합계 · 평당 · 날짜 꼴을 읽고
-  (guard.loose, 합 · 차는 같은 금액 기준끼리만), 누출은 지시문의 규칙 절과만 견준다(prompts.rules). 말투 · 길이는
+  글 · 지난 비서 말 두 개)를 지난 것만 token으로 보낸다. 숫자는 근거 값 그대로에 더해 어림 · 차액 · 합계 · 평당 · 날짜
+  꼴을 읽고(guard.loose, 합 · 차는 같은 금액 기준끼리만), 누출은 지시문의 규칙 절과만 견준다(prompts.rules). 내용
+  까닭(숫자 · 한 일처럼 말함 …)으로 뺀 문장 바로 뒤의 되가리키는 문장('이 값은 …')도 뺀다. 말투 · 길이는
   모델에 맡기고(docs/v4/08-rules.md) 아주 긴 답만 줄인다: 앞 문장부터 상한까지 보내고 넘친 문장은 마지막 묻는 말
   하나만 턴 끝에 보낸다. 앞으로 가리키는 문장과 뒤 목록은 묶음째 보내거나 뺀다(안 문장이 검사로 빠지면 가리키는 말이
   수를 말할 때만 묶음째, 아니면 그 문장만). 지난 세 비서 턴의 안내 · 권유 · 묻는 말 · 약속과 거의 같은 문장, 같은
@@ -55,6 +56,18 @@ FAIL_TEXT = "설명을 만들지 못했어요. 카드와 버튼으로 이어서 
 CUT_TEXT = "이번에는 답을 다 만들지 못했어요. 다시 말씀해 주시겠어요?"
 # 버린 까닭 중 답의 본문이 빠진 것이 아닌 것(외국어 속말 · 한자): 남은 글을 보고 정직한 한 줄을 붙이지 않는다
 NOISE = frozenset({"외국어 속말", "한글 없는 외국어 글", "한자 섞인 글"})
+# 숫자 근거로 쓰는 지난 비서 말 수(가장 가까운 것부터, 이미 검사를 지나 보낸 글, 고침 5차 R1 · QA r5 C s5-4)
+TOLD_TURNS = 2
+# 앞 문장을 되가리키며 여는 말('이 값은 …' · '그 금액에 …' · '둘 다 …' · '그건 …' · '그중 …'). 내용 까닭으로 뺀 문장
+# 바로 뒤에 오면 가리킬 말이 없어 같이 뺀다(고침 5차 R1, QA r5 C s5-4: 숫자 문장이 빠지고 '이 값은 벽지 값이 들어간
+# 값이라, …'만 남음). '이중 도배' · '그 중간' · '둘 다른'은 아니다
+BACK_REF = re.compile(
+    r"(?:이|그)\s*(?:값|금액|범위)(?!어치)"
+    r"|둘\s*다(?:요|(?![가-힣]))"
+    r"|(?:이|그)(?:건|것은|것이|것도)(?:요|(?![가-힣]))"
+    r"|그\s*중(?!간|요|심|순|대)|이\s+중(?!간|요|심|순|대)"
+)
+BACK_WHY = "앞 문장을 가리킴"
 NUM_MARK = re.compile(r"^(\d{1,2})([.)])\s")  # 번호 목록 줄 머리('1. ')
 TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
 EMPTY_TEXT = "말씀이 비어 있어요. 궁금한 것을 적어 주세요."
@@ -355,6 +368,21 @@ def recent_said(history: list[dict], turns: int = policy.REPEAT_TURNS) -> list[s
     return out
 
 
+def told_before(history: list[dict], turns: int = TOLD_TURNS) -> str:
+    """지난 비서 말 turns개(가장 가까운 것부터 셈)의 글: 이미 검사를 지나 보낸 글이라 숫자 근거다(앞 턴에 말한 가견적을
+    '만 원 단위로'처럼 다시 말할 수 있게, QA r5 C s5-4). 카드만 보낸 턴의 기록 글은 세기만 한다. 대화 기록은 최근
+    service.HISTORY_FULL줄을 자르지 않아 이 글은 앞부분만 남긴 옛 비서 말(HISTORY_CUT자)이 아니다."""
+    said = [m.get("content") for m in history if m.get("role") == "assistant"][-turns:]
+    return "\n".join(
+        t for t in said if isinstance(t, str) and t.strip() and not t.startswith(CARDS_ONLY)
+    )
+
+
+def back_ref(text: str) -> bool:
+    """앞 문장을 되가리키며 여는 문장인지(BACK_REF, 첫머리 접속 말 '다만 · 그래서 …'은 떼고 본다)."""
+    return bool(BACK_REF.match(policy.strip_lead((text or "").strip())))
+
+
 def ref_names(refs: RefTable) -> set[str]:
     """이 대화 이름표 표의 업체 이름(업체 · 실측 요청 이름표에 든 것). 같은 카드 · 채팅을 가리키는지 가릴 때 쓴다."""
     out = set()
@@ -505,7 +533,9 @@ class SentenceGate:
     보낸다(이미 물었으면 없음). 앞으로 가리키는 문장과 뒤 목록 줄은 한 묶음(_Group): 상한 안이면 같이 보내고 넘으면
     통째로 뺀다. 묶음이 답의 첫 문장이면(답 자체가 목록) 목록 줄 LIST_FIRST개까지 보낸다. 묶음 안 문장이 검사로 빠지면
     가리키는 말이 수를 말할 때만 묶음째 빼고, 아니면 그 문장만 뺀다(줄 머리 기호 · 따옴표는 이웃 문장이 이어받고 번호는
-    다시 매긴다). 가리킨 말이 없는 머리는 뺀다. 앞 문장이 빠져 첫 문장이 되면 첫머리 접속 말을 뗀다.
+    다시 매긴다). 가리킨 말이 없는 머리는 뺀다. 앞 문장이 빠져 첫 문장이 되면 첫머리 접속 말을 뗀다. 내용 까닭으로 뺀
+    문장 · 묶음째 뺀 목록 바로 뒤의 되가리키는 문장(back_ref, '이 값은 …' · '그중 …')도 뺀다(외국어 속말 · 한자로 뺀
+    문장은 사이로 보지 않는다).
     되풀이: 이 턴에 보낸 문장과 같은 문장은 빼고, 지난 비서 턴(said, REPEAT_TURNS)에 보낸 문장과 거의 같은 안내 ·
     권유 · 묻는 말 · 약속(policy.guide · near_same), 같은 카드 · 채팅 · 약속을 새 대상 없이 다시 가리키는 안내
     (policy.same_aim, 대상 이름은 names)는 뺀다. 첫 문장 · 이 턴에 만든 카드와 보인 카드 단추를 가리키는 말 · 지난 일 ·
@@ -554,13 +584,14 @@ class SentenceGate:
         self.names: set[str] = {n for n in names if n}
         self.asked = frozenset(asked)  # 이 턴 고객 말이 묻는 것(policy.asked: fact · how)
         self._gone = 0  # 검사 · 묶음으로 빠진 본문 문장 수(외국어 속말 · 한자는 세지 않는다)
+        self._back = False  # 바로 앞 문장이 내용 까닭으로 빠졌다(되가리키는 다음 문장도 뺀다)
 
     @property
     def text(self) -> str:
         return "".join(self._out).strip()
 
     def allow(self, text: str) -> None:
-        """이번 턴 숫자 근거 글(도구 결과 · 이 턴에 만든 · 보인 카드 값)."""
+        """숫자 근거 글을 더한다(도구 결과 · 이 턴에 만든 · 보인 카드 값 · 지난 비서 말)."""
         self._allowed.append(text)
         self._ground = None
 
@@ -617,6 +648,7 @@ class SentenceGate:
             self._row,
             self._last_row,
             self._gone,
+            self._back,
         )
         return len(self._out), keep, len(self.dropped), self.cut
 
@@ -638,6 +670,7 @@ class SentenceGate:
             self._row,
             self._last_row,
             self._gone,
+            self._back,
         ) = keep
         del self.dropped[dropped:]
         self.cut = cut
@@ -692,16 +725,20 @@ class SentenceGate:
             counted = bool(self.sent) and policy.counted(self.sent[-1])
             g = self._group = _Group(head=False, counted=counted)
         ok, why = self._check(raw)
+        if ok is not None and self._back and back_ref(ok):  # 가리킬 앞 문장이 빠졌다(고침 5차 R1)
+            ok, why = None, BACK_WHY
         if ok is None:
             if why:
                 self.dropped.append(why)
             if why not in NOISE:
                 self._gone += 1
+                self._back = True
             if g is not None:
                 g.lose(raw, sep, newline, row)
             if not self._out:
                 self._lost = True
             return
+        self._back = False
         p = _Piece(sep, ok, policy.card_claim(ok), item=self._row, row=row)
         if g is not None:
             g.add(p, newline)
@@ -755,6 +792,7 @@ class SentenceGate:
         if g.bad and g.counted:  # '세 가지예요' 뒤 한 줄이 빠지면 수가 틀린다
             self._gone += len(g.members)
             self._cut(g.members, "묶음째 뺌")
+            self._back = True  # 뒤 '그중 …'이 가리킬 목록이 빠졌다(고침 5차 R1)
             return
         if g.bad:
             renumber(g.members)
@@ -1080,6 +1118,10 @@ class _Turn:
             names=fact_names(ctx.facts) | ref_names(ctx.refs),
             asked=policy.asked(ctx.text),
         )
+        # 지난 비서 말 두 개(이미 검사를 지나 보낸 글)도 숫자 근거다: 앞 턴에 말한 가견적을 '만 원 단위로'처럼 다시 말할
+        # 수 있게(고침 5차 R1, QA r5 C s5-4). 그 말에 없는 숫자 · 반올림 단위의 반을 넘는 어림은 지금처럼 뺀다
+        if told := told_before(ctx.history):
+            self.gate.allow(told)
         # 카드 단추 고르기(choices)가 이 턴에 보낸 카드 · 승인 카드: 숫자 근거 · 누를 단추 · 길게 둘 카드
         if note:
             self.gate.allow(note)
