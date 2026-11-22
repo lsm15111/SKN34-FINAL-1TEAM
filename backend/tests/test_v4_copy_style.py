@@ -217,6 +217,7 @@ CONSTS = {
     },
     "runtime.py": {
         "FAIL_TEXT": ("틀 · 실패 · 상한 글", "answer"),
+        "CUT_TEXT": ("틀 · 실패 · 상한 글", "answer"),
         "TOOL_FAIL": ("틀 · 실패 · 상한 글", "answer"),
         "CHIPS": ("틀 · 빠른 답 칩", "user"),
     },
