@@ -5,7 +5,7 @@
 // 판이 바뀌면(409) 서버가 새 판 + 차액으로 만든 행동이 이 자리에 와요.
 // 되돌릴 수 없는 일은 이 카드의 단추로만 실행돼요. 누르면 바로 단추를 끄고(aria-busy) 결과를 카드 안에서 보여요(따로 확인 창 없음).
 import Link from "next/link";
-import type { ActionOut } from "@/lib/api/assistant";
+import { canRemake, type ActionOut } from "@/lib/api/assistant";
 import { dueText, timeSeoul, listStamp, dateSeoul, won, wonDelta } from "@/lib/format";
 import { I } from "./icons";
 import { StatusTag } from "./StatusTag";
@@ -36,7 +36,7 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, ha
   error?: string | null;
   onApprove: () => void;
   onReject: () => void;
-  /** 거절 · 만료 뒤 비서에게 다시 만들어 달라고 해요 */
+  /** 거절 · 만료 뒤 비서에게 다시 만들어 달라고 해요(말로 거둔 카드 · 새 카드가 따로 있는 카드는 빼요: canRemake) */
   onRemake?: () => void;
 }) {
   const s = a.summary;
@@ -74,7 +74,7 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, ha
           <b>{s.title}</b>
         </span>
         {error && a.status === "failed" ? <span className={k.err}>{error}</span> : null}
-        {onRemake && !["replaced", "quote_changed", "handled_elsewhere"].includes(a.error_code ?? "") ? <button type="button" className={k.text} onClick={onRemake}>다시 만들기</button> : null}
+        {onRemake && canRemake(a) ? <button type="button" className={k.text} onClick={onRemake}>다시 만들기</button> : null}
       </section>
     );
   }

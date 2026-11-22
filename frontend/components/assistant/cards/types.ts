@@ -7,6 +7,8 @@ export type CardCtx = {
   now: string;
   /** 턴이 도는 중(새 턴은 기다려요) */
   busy: boolean;
+  /** 지금 집 정보가 잠겼어요(실측 요청 뒤, lockedNow). 카드 때 값이 아니라 지금 값이라 옛 카드의 고치기 단추도 숨겨요 */
+  locked: boolean;
   send: (text: string, context?: TurnIn["context"]) => void;
   /** 제안 행동 승인(home_info 카드의 [맞아요] 등 카드 안 단추) */
   approve: (actionId: string) => void;

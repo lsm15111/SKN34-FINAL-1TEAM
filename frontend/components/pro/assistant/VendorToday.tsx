@@ -4,8 +4,12 @@
 // 승인 카드는 아래 '비서 소식'에 붙고, 날짜는 그 카드를 승인할 때 보내져요.
 // 턴이 끝나기 전에 끊기면 같은 client_key로 다시 이어요(서버가 저장한 것을 다시 보내거나, 아직 돌면 409라 기다려요).
 // 끝내 못 이으면 알리고 잠시 뒤 '비서 소식'을 다시 읽어요(그새 저장된 승인 카드가 보이게).
+// 넘치면(503) Retry-After만큼 기다렸다 한 번 더 보내고, 또 넘치면 잠시 뒤 다시 눌러 달라고 안내해요(고객 비서 화면과 같아요).
 import { useCallback, useEffect, useState } from "react";
-import { getVendorToday, newClientKey, streamVendorTurn, TURN_RETRY_MS, VENDOR_ASSISTANT_EVENT, type TodayIcon, type TodayRow, type VendorTodayData } from "@/lib/api/assistant";
+import {
+  busyOnce, getVendorToday, newClientKey, streamVendorTurn, BUSY_TEXT, TURN_RETRY_MS, TurnBusy, VENDOR_ASSISTANT_EVENT,
+  type TodayIcon, type TodayRow, type VendorTodayData,
+} from "@/lib/api/assistant";
 import { ApiError, errorText } from "@/lib/backend/client";
 import { dateLong } from "@/lib/format";
 import { I, type IconName } from "@/components/assistant/kit/icons";
@@ -43,7 +47,8 @@ export function VendorToday() {
       let ended = false;
       for (let tries = 0; ; tries++) {
         try {
-          ended = await streamVendorTurn(body, (e) => { if (e.type === "error") setErr(e.data.message); });
+          // 넘침(503 busy · unavailable, 턴을 만들기 전): Retry-After만큼 기다렸다 같은 client_key로 한 번 더(고객 턴과 같아요)
+          ended = await busyOnce(() => streamVendorTurn(body, (e) => { if (e.type === "error") setErr(e.data.message); }));
         } catch (e) {
           // 같은 키로 다시 잇는 중의 409(앞 연결의 턴이 아직 돌아요) · 연결 실패만 기다렸다 다시 해요
           const again = e instanceof ApiError && (e.code === "network" || (e.code === "turn_running" && tries > 0));
@@ -58,7 +63,8 @@ export function VendorToday() {
       }
       await refresh();
     } catch (e) {
-      setErr(errorText(e));
+      // 다시 보내도 넘쳤어요: 서버가 받지 않은 말이라 잠시 뒤 다시 누르게 안내해요
+      setErr(e instanceof TurnBusy ? BUSY_TEXT : errorText(e));
     } finally {
       setBusy(null);
     }
