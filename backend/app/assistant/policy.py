@@ -206,6 +206,8 @@ BUTTONS: dict[str, frozenset[str]] = {
     "vendor_brief": frozenset({"window_answer", "decline"}),
     # [합지로 바꾸기] · [실크로 바꾸기] → 집 정보(벽지) 승인 카드
     "grade_compare": frozenset({"home_info"}),
+    # 고르기 칩(누르면 그 말을 보내요): 칩을 눌러 달라는 말이 '누를 승인 카드는 없어요'로 바뀌지 않게(고침 5차 R1)
+    "options": frozenset({"choice"}),
 }
 
 
