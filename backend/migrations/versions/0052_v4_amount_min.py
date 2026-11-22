@@ -1,7 +1,7 @@
 """v4 실측 견적서 낼 금액 · 추가 금액 1원 이상 CHECK(새 행부터, NOT VALID)
 
 Revision ID: 0052_v4_amount_min
-Revises: 0050_v4_research
+Revises: 0051_v4_visit_cancel
 Create Date: 2026-11-22
 
 - vendor_quotes.entered_amount · extra_charges.entered_amount >= 1을 DB CHECK로도 지킨다(입력 · 보내기 검사는 고침 2차 G).
@@ -16,7 +16,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0052_v4_amount_min"
-down_revision: str | Sequence[str] | None = "0050_v4_research"  # 병합 때 리드가 0051로 맞춰요
+down_revision: str | Sequence[str] | None = "0051_v4_visit_cancel"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
