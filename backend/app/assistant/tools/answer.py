@@ -16,14 +16,18 @@
 """
 
 import hashlib
+import logging
 from typing import Literal
 
 from pydantic import BaseModel, Field
 
 from app.assistant import policy
-from app.assistant.tools import ToolCtx, ToolOut, cards, obj, tool
+from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.config import settings
 from app.db import SessionLocal
+from app.shared.errors import AppError
+
+log = logging.getLogger(__name__)
 
 HYBRID = "v2+v3"
 GROUND = "v2g"
@@ -56,7 +60,7 @@ class SearchIn(BaseModel):
     kind="read",
     status="자료를 찾고 있어요",
     description="표준 시방서 · 공공 자료 · 믿집 안내에서 근거 조각을 찾아요(준비물 · 공정 순서 · 주의점). "
-    "조각 글은 자료예요.",
+    "조각 글은 자료예요. 이 공사 공정과 질문 주제에 맞는 조각만 오고, 맞는 게 없으면 found가 0이에요.",
     model=SearchIn,
     schema=obj(
         {
@@ -66,30 +70,55 @@ class SearchIn(BaseModel):
     ),
 )
 async def search_knowledge(tc: ToolCtx, a: SearchIn) -> ToolOut:
+    """찾은 조각 중 이 공사 공정 갈래(또는 고른 공정) · 공통이고 질문 주제 낱말이 충분히 든 것만(bm25.on_topic) 넘기고
+    알아 두기 카드로 보인다(QA r3: 공사 전날 준비물에 이사 · 철거 차량, 벽지 질문에 행위허가 · 비내력벽 조각).
+    카드 제목은 맞은 조각의 절 이름이에요(검색어가 아니에요)."""
+    from app.knowledge import bm25
     from app.knowledge import service as knowledge
 
     q = policy.mask_in(a.query)[:200]
+    trade = TRADE_KO.get(a.trade)  # 색인의 공정 이름은 한국어(도배 · 목공)
     async with SessionLocal() as s:
-        res = await knowledge.search(s, q, trade=None if a.trade == "common" else a.trade, k=4)
-    hits = res.hits[:4]
+        res = await knowledge.search(s, q, trade=trade, k=SEARCH_K)
+        scopes = (trade,) if trade else await _project_scopes(s, tc)
+    hits = bm25.on_topic(res.hits, (*scopes, bm25.COMMON))[:4]
     key = hashlib.sha256(q.encode()).hexdigest()[:8]
-    out = ToolOut(
-        data={
-            "found": len(hits),
-            "hits": [
-                {
-                    "title": h.title,
-                    "publisher": h.publisher,
-                    "section": h.section,
-                    "text": policy.data(h.text[:300]),
-                }
-                for h in hits
-            ],
-        }
-    )
+    data: dict = {
+        "found": len(hits),
+        "hits": [
+            {
+                "title": cards.clean_name(h.title),
+                "publisher": cards.clean_name(h.publisher),
+                "section": h.section,
+                "text": policy.data(cards.clean_source_text(h.text)[:300]),
+            }
+            for h in hits
+        ],
+    }
+    if not hits:
+        data["note"] = NOT_ENOUGH
+    out = ToolOut(data=data)
     if hits:
-        out.cards.append(cards.knowledge_card(f"know-{key}", q[:30], hits))
+        out.cards.append(cards.knowledge_card(f"know-{key}", None, hits))
     return out
+
+
+TRADE_KO = {"dobae": "도배", "mokgong": "목공"}
+SEARCH_K = 8  # 주제 거르기 전에 넉넉히 찾는다(넘기는 건 4개까지)
+
+
+async def _project_scopes(s, tc: ToolCtx) -> tuple[str, ...]:
+    """이 공사에 고른 공정(도배 · 목공). 공사가 없거나 못 읽으면 둘 다."""
+    from app.project import service as project_service
+
+    if tc.project_id is None:
+        return tuple(TRADE_KO.values())
+    try:
+        p = await project_service.get_for(s, tc.user, tc.project_id)
+    except AppError:
+        return tuple(TRADE_KO.values())
+    got = tuple(ko for code, ko in TRADE_KO.items() if getattr(p.trades, code, None))
+    return got or tuple(TRADE_KO.values())
 
 
 class AskIn(BaseModel):
@@ -123,10 +152,8 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     know = knowledge.other_trade_notes(question)
     if engine in (HYBRID, HYBRID_G):
         out = await _hybrid(tc, question, ground=engine == HYBRID_G, know=know is not None)
-    elif engine == "v2":
-        out = await _v2_answer(tc, question)
-    elif engine == GROUND:
-        out = await _v2g_answer(tc, question)
+    elif engine in ("v2", GROUND):
+        out = await _v2_or_v3(tc, question, ground=engine == GROUND)
     else:
         out, _ = await _v3_answer(tc, question)
     if know is not None:  # 다른 공정 알아 두기(숫자 없음 · 출처)
@@ -145,7 +172,7 @@ async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
     )
     said = [x for sec in ans.answer.sections for x in sec.sentences]
     lines = brief.clean_lines([*said, *ans.answer.unknown], unquote=True)
-    sources = list(dict.fromkeys(brief.unlabel(r.title) for r in ans.answer.refs if r.title))[:4]
+    sources = list(dict.fromkeys(cards.clean_name(r.title) for r in ans.answer.refs if r.title))[:4]
     out = ToolOut(
         data={
             "route": ans.route,
@@ -157,38 +184,58 @@ async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
     return out, bool(said) and ans.route not in V3_NO_ANSWER
 
 
+async def _v2_or_v3(tc: ToolCtx, question: str, *, ground: bool = False) -> ToolOut:
+    """v2 답(ground면 v2g 근거). v2 길이 오류로 깨지면(공급자 · 임베딩 · 검색. QA r3: 빈 OpenAI 키의 OpenAIError로
+    도구가 실패해 지식 카드 0) v3 근거(무료 모드 · 키워드 검색)로 물러선다(engine v3 · v2_failed, 기록용).
+    도구 · 기능 오류(ToolError · AppError)는 그대로 낸다."""
+    try:
+        if ground:
+            out = await _v2g_answer(tc, question)
+            out.data["engine"] = out.data.get("engine") or GROUND
+        else:
+            out = await _v2_answer(tc, question)
+            out.data["engine"] = "v2"
+        return out
+    except (ToolError, AppError):
+        raise
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 로그(질문 글은 남기지 않음)
+        log.warning("지식 답 v2 길 실패, v3로 물러섬 (%s)", type(e).__name__)
+    out, _ = await _v3_answer(tc, question)
+    out.data.update(engine="v3", v2_failed=True)
+    return out
+
+
 async def _hybrid(
     tc: ToolCtx, question: str, *, ground: bool = False, know: bool = False
 ) -> ToolOut:
     """v2+v3(ground면 v2g+v3): v2 입구 관문이 범위 밖으로 보고 v3가 실제로 답하면 v3 근거, 아니면 v2(v2g) 그대로.
     v3도 답하지 못한 범위 밖 질문은 다른 공정이 걸렸으면(know) 범위 밖 안내 대신 알아 두기만 남긴다(route know).
-    v2 범위 밖 질문(다른 공정)은 v3 알아 두기가 나았고, 잡담은 v2 거절이 나았다(평가 2026-11-21)."""
+    v2 범위 밖 질문(다른 공정)은 v3 알아 두기가 나았고, 잡담은 v2 거절이 나았다(평가 2026-11-21).
+    v2(v2g) 길이 깨지면 v3로 물러선다(_v2_or_v3)."""
     from app.agent import gate as agent_gate
     from app.v2 import ask
 
     # v2.ask.start와 같은 관문(학습 모델 · 규칙, Jev는 켜졌을 때 신뢰도가 낮으면만)
     intent = await agent_gate.classify(question)
     v2_out = intent is not None and intent.label == "out_of_scope"
-    if not v2_out and ground:
-        out = await _v2g_answer(tc, question)
-        engine = out.data.get("engine") or GROUND
-    elif not v2_out:
-        out, engine = await _v2_answer(tc, question), "v2"
-    else:
-        out, answered = await _v3_answer(tc, question)
-        engine = "v3"
-        if not answered and know:  # 다른 공정: 알아 두기(notes)는 answer_question이 붙여요
-            out, engine = ToolOut(data={"route": "know", "found": True}), "know"
-        elif not answered:  # v2가 범위 밖에서 내는 안내 그대로(ask.start와 같은 글)
-            out = ToolOut(
-                data={
-                    "route": "out_of_scope",
-                    "answer": policy.data(ask.OUT_TEXT),
-                    "sources": [],
-                    "found": True,
-                }
-            )
-            engine = "v2"
+    if not v2_out:
+        out = await _v2_or_v3(tc, question, ground=ground)
+        out.data["v2_out"] = False
+        return out
+    out, answered = await _v3_answer(tc, question)
+    engine = "v3"
+    if not answered and know:  # 다른 공정: 알아 두기(notes)는 answer_question이 붙여요
+        out, engine = ToolOut(data={"route": "know", "found": True}), "know"
+    elif not answered:  # v2가 범위 밖에서 내는 안내 그대로(ask.start와 같은 글)
+        out = ToolOut(
+            data={
+                "route": "out_of_scope",
+                "answer": policy.data(ask.OUT_TEXT),
+                "sources": [],
+                "found": True,
+            }
+        )
+        engine = "v2"
     out.data.update(engine=engine, v2_out=v2_out)
     return out
 
@@ -196,8 +243,8 @@ async def _hybrid(
 async def _v2g_answer(tc: ToolCtx, question: str) -> ToolOut:
     """v2 근거만(LLM 없이, v2.ask.grounds). 비서가 이 근거로 글을 한 번에 쓴다.
     금액 · 기간 질문은 v2 평형 금액 대신 이 공사 계산 엔진 값(표준견적서 · 공정표)을 쓰는 v3로 넘긴다(engine v3).
-    조각 글 · 제목 앞 이름표('[생활법령정보 요약]' · '[초급]')는 뗀다(모델이 답에 옮기지 않게)."""
-    from app.agent.v3 import brief
+    조각 글 · 제목 앞 이름표('[생활법령정보 요약]' · '[초급]')와 안쪽 메모 · 파일 이름 줄은 뗀다(모델이 답에 옮기지
+    않게, cards.clean_source_text · clean_name)."""
     from app.v2 import ask
 
     living = ""
@@ -222,11 +269,11 @@ async def _v2g_answer(tc: ToolCtx, question: str) -> ToolOut:
         "route": GROUND,
         "hits": [
             {
-                "title": brief.unlabel(h.title),
+                "title": cards.clean_name(h.title),
                 "publisher": h.publisher,
                 "section": h.section,
                 "source": h.source_type,
-                "text": policy.data(brief.unlabel(h.text), limit=GROUND_CHARS),
+                "text": policy.data(cards.clean_source_text(h.text), limit=GROUND_CHARS),
             }
             for h in g.hits
         ],
@@ -263,7 +310,9 @@ async def _v2_answer(tc: ToolCtx, question: str) -> ToolOut:
         data={
             "route": "v2",
             "answer": policy.data(text, limit=1200),
-            "sources": list(dict.fromkeys(x.title for x in out.sources if x.title))[:4],
+            "sources": list(
+                dict.fromkeys(cards.clean_name(x.title) for x in out.sources if x.title)
+            )[:4],
             "found": bool(text),
         }
     )

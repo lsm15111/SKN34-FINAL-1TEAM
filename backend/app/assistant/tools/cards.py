@@ -11,7 +11,7 @@
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -81,12 +81,16 @@ def href(pid: uuid.UUID, tail: str = "") -> str:
 
 def seoul_text(at: datetime | None) -> str | None:
     """시각 → 모델에 줄 서울 시각 글 '11월 23일(월) 오후 6시'. 시각(UTC)을 그대로 넘기면 모델이 09:00Z를 '오전
-    9시'로 읽어요(QA r1 c6). 말하는 꼴 그대로라 문장 숫자 검사에도 그 숫자가 들어가요."""
+    9시'로 읽어요(QA r1 c6). 말하는 꼴 그대로라 문장 숫자 검사에도 그 숫자가 들어가요.
+    자정(0시대)은 '12월 7일(월) 오전 12시'가 낮 12시로 읽혀서(QA r3 c3) 전날 밤으로 써요: '12월 6일(일) 밤 12시'."""
     if at is None:
         return None
     x = at.astimezone(SEOUL)
-    hour = x.hour % 12 or 12
     minute = f" {x.minute}분" if x.minute else ""
+    if x.hour == 0:
+        d = x - timedelta(days=1)
+        return f"{d.month}월 {d.day}일({'월화수목금토일'[d.weekday()]}) 밤 12시{minute}"
+    hour = x.hour % 12 or 12
     half = "오전" if x.hour < 12 else "오후"
     return f"{x.month}월 {x.day}일({'월화수목금토일'[x.weekday()]}) {half} {hour}시{minute}"
 
@@ -206,10 +210,12 @@ async def standard(
         href=href(pid, "/standard"),
     )
     card = CardOut(card_id="standard", kind="standard_quote", data=data.model_dump(mode="json"))
+    # 돈 기준(리드 결정 2): 합계는 부가세 포함. 줄 금액은 공급가(부가세 별도)라 칸 이름에 '공급가'를 붙인다
+    # (QA r3 s5: 공급가 줄 913,665원을 부가세 포함 합계에 더하고 빼 틀린 금액이 나왔다)
     model = {
         "trades": [TRADE.get(t.trade, t.trade) for t in trades],
-        "total": total,
-        "supply": supply,
+        "total": total,  # 고객이 낼 금액(부가세 포함)
+        "공급가": supply,  # 합계 칸 나눔: 공급가 + vat(부가세 몫) = total
         "vat": vat,
         "days": out.days,
         "days_for": [TRADE.get(t.trade, t.trade) for t in out.trades],  # 예상 일수는 이 공정들의 합
@@ -217,20 +223,19 @@ async def standard(
         "area_basis": out.area_basis,
         "pyeong": out.pyeong,
         "lines": [
-            {"name": ln.name, "amount": ln.amount, "state": ln.state, "trade": t}
+            {"name": ln.name, "공급가": ln.amount, "state": ln.state, "trade": t}
             for t, ln in counted
         ],
         "version": out.price_ver,
     }
-    # 벽지(칸 이름은 policy.ALLOWED 안): 롤 수(계산 엔진, 보이기용) · 벽지 직접 구매면 합계 밖 도배지 줄 · 가견적 안내(틀)
+    # 벽지(칸 이름은 policy.ALLOWED 안): 롤 수(계산 엔진, 보이기용) · 벽지 값(부가세 포함 몫) · 넣은 합계 · 뺀 합계 ·
+    # 벽지 직접 구매면 합계 밖 도배지 줄 · 가견적 안내(틀)
     rolled = next((t for t in trades if t.rolls is not None), None)
     if rolled is not None and rolled.rolls is not None:
-        box: dict = {"count": rolled.rolls.count, "text": rolled.rolls.text}
-        paper = next((ln for ln in rolled.lines if ln.key == "paper"), None)
-        if rolled.own_paper and paper is not None:
-            box |= {"state": "고객 구매(합계 밖)", "line": paper.name, "amount": paper.amount}
-            box["note"] = rolled.paper_note
-        model["paper"] = box
+        others = [
+            t.total for t in trades if t is not rolled
+        ]  # total이 여러 공정 합계면 다른 공정 합계
+        model["paper"] = await _paper_box(s, pid, rolled, others)
     if trade and one is None:  # 물은 공정이 이 공사 표준견적서에 없다
         asked = TRADE.get(trade, trade)
         model["missing"] = (
@@ -240,12 +245,76 @@ async def standard(
     return card, model
 
 
+# 벽지 칸 rows 이름(모델 값). 금액은 모두 부가세 포함(계산 엔진 calc.dobae.paper_split · 공정 합계 더하기)
+PAPER_OWN_ROWS = (
+    "합계에서 뺀 벽지 값(부가세 포함)",
+    "벽지까지 넣은 합계(부가세 포함) · 업체 가견적과 견줄 값",
+)
+PAPER_ROWS = (
+    "벽지 값(부가세 포함) · 벽지를 직접 사면 합계에서 빠지는 돈",
+    "벽지를 직접 사면 바뀔 합계(부가세 포함)",
+)
+# total이 여러 공정 합계일 때: 바뀔 합계는 전체로, 업체 가견적과 견줄 값은 도배만
+PAPER_ALL_ROW = {
+    True: "벽지까지 넣은 전체 합계(부가세 포함)",
+    False: "벽지를 직접 사면 바뀔 전체 합계(부가세 포함)",
+}
+PAPER_DOBAE_ROW = "벽지까지 넣은 도배 합계(부가세 포함) · 도배 업체 가견적과 견줄 값"
+
+
+def paper_rows(split, own: bool, others: list[int]) -> list[dict]:
+    """벽지 칸 rows: 벽지 값(부가세 포함 몫)과, 모델 값 total과 같은 범위의 바뀔(벽지 직접 구매면 벽지까지 넣은) 합계.
+    total이 여러 공정 합계면(others) 다른 공정 합계를 더하고(계산 엔진 sum_won), 벽지 직접 구매면 도배 업체 가견적과
+    견줄 도배 합계를 따로 둔다."""
+    from app.calc.common import sum_won
+
+    share_label, total_label = PAPER_OWN_ROWS if own else PAPER_ROWS
+    dobae_total = split.with_paper.total if own else split.without_paper.total
+    rows = [(share_label, split.share)]
+    if others:
+        rows.append((PAPER_ALL_ROW[own], sum_won([*others, dobae_total])))
+        if own:
+            rows.append((PAPER_DOBAE_ROW, dobae_total))
+    else:
+        rows.append((total_label, dobae_total))
+    return [{"label": label, "won": won} for label, won in rows]
+
+
+async def _paper_box(s: AsyncSession, pid: uuid.UUID, t, others: list[int]) -> dict:
+    """표준견적서 도배 벽지 칸(모델 값): 롤 수(계산 엔진, 보이기용) · 도배지 줄 이름과 공급가 · 벽지 값(부가세 포함 몫)과
+    벽지를 넣은 · 뺀 합계(calc.dobae.paper_split, paper_rows). 벽지 직접 구매면 도배지 줄은 합계 밖(고객 구매)이고
+    가견적 안내 한 줄(틀)을 같이 준다. 모델이 공급가 줄을 부가세 포함 합계에 더하거나 빼지 않아도 답할 수 있게 한다."""
+    from app.calc import dobae
+    from app.quote import service as quote_service
+    from app.refprice.book import dobae_prices_of
+
+    box: dict = {"count": t.rolls.count, "text": t.rolls.text}
+    paper = next((ln for ln in t.lines if ln.key == "paper"), None)
+    if paper is None or paper.amount is None:
+        return box
+    row = (await quote_service.latest_of(s, [pid])).get((pid, "dobae"))
+    split = dobae.paper_split(t.lines, dobae_prices_of(row.price_ver if row else None).vat_rate)
+    box |= {"line": paper.name, "공급가": paper.amount}
+    if t.own_paper:
+        box["state"] = "고객 구매(합계 밖)"
+    box["rows"] = paper_rows(split, t.own_paper, others)
+    if t.own_paper:
+        box["note"] = t.paper_note
+    return box
+
+
 # ---- 벽지 두 종류 견주기 · 시세 범위 ----
 
 PAPER_ROW = "벽지 값"  # 두 벽지의 도배지 줄(이름이 벽지마다 달라 한 이름으로 맞춰요)
+PAPER_OWN_ROW = "벽지 값(고객 구매 · 합계 밖)"  # 벽지 직접 구매: 값은 보이되 두 합계에는 없어요
+OWN_LABEL = "벽지 고객 구매"
 GRADE_NOTE = (
     "저장하지 않은 계산이에요. 지금 표준견적서와 고른 벽지는 그대로예요. 벽지를 바꾸려면 고객이 원할 때 집 정보 "
     "승인 카드(벽지)를 만들어요(실측 요청 전만)."
+)
+GRADE_OWN_NOTE = (
+    "벽지 직접 구매라 위 두 합계는 벽지 값을 뺀 값이에요(지금 표준견적서와 같은 기준). 여기 두 합계는 업체에 "
+    "벽지까지 맡길 때 값이에요."
 )
 
 
@@ -260,12 +329,32 @@ def _home_label(h, *extra: str) -> str:
     return " · ".join(x for x in parts if x)
 
 
+def _rolls_of(ln, grade: str) -> dict | None:
+    """견주기 한 벽지의 도배지 줄 양 → 롤 수(계산 엔진 calc.rolls, 보이기용). 합지는 광폭 롤(기본)이에요."""
+    from app.calc import rolls
+
+    if ln is None or ln.qty is None:
+        return None
+    key = rolls.roll_key(grade)
+    n = (
+        rolls.need(key, paper_py=ln.qty)
+        if ln.unit == "벽지 평"
+        else rolls.need(key, paper_m2=ln.qty)
+    )
+    return {"count": n.count, "text": n.text}
+
+
 async def grade_compare(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, dict]:
     """지금 집 조건으로 도배 표준견적서를 합지 · 실크로 함께 센다(계산 엔진, 저장하지 않음). 기준(도배만 · 리모델링)은
     표준견적서와 같은 고르기(모은 조건)를 쓰고, 차액은 계산 엔진(calc.visit_view.grade_diff)이 낸다. 달라지는 줄은
-    두 벽지로 금액이 다른 줄(벽지 줄 먼저)이다. 도배가 없거나 계산할 수 없으면 ValueError."""
+    두 벽지로 금액이 다른 줄(벽지 줄 먼저, 금액은 공급가)이다. 도배가 없거나 계산할 수 없으면 ValueError.
+
+    벽지 직접 구매(칩)면 두 합계 모두 벽지 값을 뺀 값이다(카드 · 다음 턴 답 · 보드 · 표준견적서가 같은 합계, QA r3 v1 H1).
+    벽지 줄은 '고객 구매 · 합계 밖' 이름으로 값만 보이고, 모델 값에는 업체에 벽지까지 맡길 때의 두 합계 · 차액을 같이
+    준다. 두 벽지의 롤 수(계산 엔진)도 모델 값에 늘 넣는다(합지 롤 수를 셀 근거, QA r3 s5)."""
     from app.calc import dobae as dobae_calc
     from app.calc.visit_view import grade_diff
+    from app.project import diy as project_diy
     from app.project import service as project_service
     from app.quote import service as quote_service
 
@@ -274,26 +363,36 @@ async def grade_compare(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[Ca
         raise ValueError("도배 없음")
     said = await project_service.conditions(s, p.id)
     pick = dobae_calc.pick_profile(quote_service.work_facts(p, said))
+    own = project_diy.buys_paper(said)
     homes = {g: quote_service.home_v3(p, g) for g in ("economy", "basic")}
-    got = {g: quote_service.standard_v3(h, None, pick).quote for g, h in homes.items()}
+    got = {
+        g: quote_service.standard_v3(h, None, pick, own_paper=own).quote for g, h in homes.items()
+    }
     by = {g: {ln.key: ln for ln in q.lines} for g, q in got.items()}
 
     def amount(g: str, key: str) -> int | None:
+        """줄 금액(공급가). 고객 구매로 합계에서 뺀 도배지 줄도 값은 보여요(이름에 '합계 밖')."""
         ln = by[g].get(key)
-        return ln.amount if ln is not None and ln.state in COUNTED else None
+        if ln is None or not (ln.state in COUNTED or dobae_calc.own_paper_line(ln.key, ln.state)):
+            return None
+        return ln.amount
 
     rows: list[GradeRow] = []
     for key in sorted(dict.fromkeys([*by["economy"], *by["basic"]]), key=lambda k: k != "paper"):
         e, b = amount("economy", key), amount("basic", key)
         if e == b:
             continue
-        name = PAPER_ROW if key == "paper" else (by["basic"].get(key) or by["economy"][key]).name
+        if key == "paper":
+            name = PAPER_OWN_ROW if own else PAPER_ROW
+        else:
+            name = (by["basic"].get(key) or by["economy"][key]).name
         rows.append(GradeRow(name=name, economy_won=e, basic_won=b))
     current = (p.home.grade if p.home else None) or p.trades.dobae.grade
     total = {g: q.total for g, q in got.items()}
     diff = grade_diff(total["basic"], total["economy"])
+    label = _home_label(homes["basic"], "도배") + (f" · {OWN_LABEL}" if own else "")
     data = GradeCompareData(
-        label=_home_label(homes["basic"], "도배"),
+        label=label,
         economy_won=total["economy"],
         basic_won=total["basic"],
         diff_won=diff,
@@ -305,19 +404,24 @@ async def grade_compare(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[Ca
     card = CardOut(card_id="grades", kind="grade_compare", data=data.model_dump(mode="json"))
 
     def item(g: str) -> dict:
-        return {"grade": GRADE[g], "total": total[g], "picked": current == g}
+        out: dict = {"grade": GRADE[g], "total": total[g], "picked": current == g}
+        roll = _rolls_of(by[g].get("paper"), g)
+        if roll is not None:
+            out["paper"] = roll  # 이 벽지로 하면 몇 롤(계산 엔진, 여분은 따로)
+        return out
 
-    model = {
+    model: dict = {
         "trade": "도배",
         "label": data.label,
         "items": [item("economy"), item("basic")],
         "diff_won": diff,  # 실크 합계 − 합지 합계(부가세 포함, 계산 엔진)
+        # 달라지는 줄 금액은 공급가(부가세 별도): 위 합계(부가세 포함)와 더하거나 빼지 않아요
         "lines": [
             {
                 "name": r.name,
                 "items": [
-                    {"grade": GRADE["economy"], "amount": r.economy_won},
-                    {"grade": GRADE["basic"], "amount": r.basic_won},
+                    {"grade": GRADE["economy"], "공급가": r.economy_won},
+                    {"grade": GRADE["basic"], "공급가": r.basic_won},
                 ],
             }
             for r in rows
@@ -325,6 +429,14 @@ async def grade_compare(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[Ca
         "locked": p.locked,
         "note": GRADE_NOTE,
     }
+    if own:  # 업체에 벽지까지 맡길 때(벽지 직접 구매를 끄면)의 두 합계 · 차액(계산 엔진)
+        full = {g: quote_service.standard_v3(h, None, pick).quote.total for g, h in homes.items()}
+        model["paper"] = {
+            "state": "고객 구매(합계 밖)",
+            "note": GRADE_OWN_NOTE,
+            "items": [{"grade": GRADE[g], "total": full[g]} for g in ("economy", "basic")],
+            "diff_won": grade_diff(full["basic"], full["economy"]),
+        }
     return card, model
 
 
@@ -823,7 +935,8 @@ async def compare(
                 "version": col.version,
                 "total": col.total_won,  # 고객이 낼 금액(부가세 포함)
                 "vat_way": VAT_WAY.get(q.vat_mode or "") if q else None,
-                "supply": q.supply if q else None,
+                # 합계 칸 나눔(공급가 + vat = total). 공급가는 칸 이름에 '공급가'(리드 결정 2)
+                "공급가": q.supply if q else None,
                 "vat": q.vat if q else None,
                 "changed": changed.model_dump() if changed else None,
                 "diff_vs_estimate": col.diff_vs_estimate_won,
@@ -1298,16 +1411,78 @@ def excerpt(text: str, n: int = EXCERPT_MAX) -> str:
 
 def public_source(h) -> str:
     """카드에 보일 출처 이름: 공공 · 표준 · 제조사 · 협회(official)는 펴낸 곳 · 제목, 그 밖(안내서 · 후기 …)은 자료
-    종류 이름만(내부 참고 자료 이름은 보이지 않는다)."""
+    종류 이름만(내부 참고 자료 이름은 보이지 않는다). 제목의 안쪽 메모('저장소 전처리본' 같은 괄호)는 뗀다."""
     if getattr(h, "official", False):
-        return h.publisher or h.title or "믿집 자료"
+        return clean_name(h.publisher or h.title) or "믿집 자료"
     return getattr(h, "source_type", "") or "믿집 자료"
 
 
-def knowledge_card(card_id: str, title: str, hits: list, source: str = "") -> CardOut:
-    lines = [x for x in (excerpt(h.text) for h in hits[:3]) if x]
+# 발췌 · 출처 · 제목에서 빼는 안쪽 말(QA r3 · r2 c3): 이름표만 있는 줄 · PDF 파일 이름 줄 · '저장소 전처리본' 같은 괄호 메모
+_INNER_LINE = re.compile(r"^\s*(?:\[[^\]\n]*\]\s*)*(?:[^\n]*\.pdf)?\s*$", re.IGNORECASE)
+_INNER_PAREN = re.compile(
+    r"\s*[(（][^()（）\n]*(?:전처리|저장소|정오표|팀\s*내부)[^()（）\n]*[)）]"
+)
+# 원문 '-다'체 문장(평서 '…한다.' · '…이다.'). 이런 발췌는 고쳐 쓰지 않고 '자료에서 “…”' 꼴로 원문임을 보인다
+_PLAIN_END = re.compile(r"[가-힣]다(?:[.!…]+(?=\s|$)|$)")
+QUOTE_HEAD = "자료에서"
+_PAREN = re.compile(r"\s*\([^()\n]*\)")
+_PAGE = re.compile(r"^\d+\s*쪽$")
+_NUMBERING = re.compile(r"^(?:\d+(?:[-.]\d+)*[.)]?\s*)+")  # '1-1. ' · '3) ' · '1.1 '
+_CODE_LIKE = re.compile(r"^(?:제\s*\d+\s*[조항호]|[\d.\s]+)$")
+VAGUE_TITLES = frozenset({"준비사항", "개요", "일반사항", "목차", "기타", "참고", "요약"})
+KNOW_TITLE_MAX = 30
+
+
+def clean_name(text: str | None) -> str:
+    """자료 이름(제목 · 펴낸 곳) → 보일 이름: 앞 이름표('[초급]')와 안쪽 괄호 메모('…전처리본')를 뗀다."""
+    from app.agent.v3 import brief
+
+    return _INNER_PAREN.sub("", brief.unlabel(text or "")).strip()
+
+
+def clean_source_text(text: str | None) -> str:
+    """조각 글 → 보일 글: 이름표만 있는 줄 · PDF 파일 이름 줄을 빼고, 줄 앞 이름표와 안쪽 괄호 메모를 뗀다."""
+    from app.agent.v3 import brief
+
+    lines = [brief.unlabel(x) for x in (text or "").split("\n") if not _INNER_LINE.match(x)]
+    return _INNER_PAREN.sub("", "\n".join(lines)).strip()
+
+
+def quoted(line: str) -> str:
+    """원문 '-다'체 발췌면 '자료에서 “…”'(원문 그대로임을 보임), '-요'체 요약이면 그대로."""
+    return f"{QUOTE_HEAD} “{line}”" if _PLAIN_END.search(line) else line
+
+
+def short_title(text: str, n: int = KNOW_TITLE_MAX) -> str:
+    """제목 n자 안(낱말 끝에서 자름)."""
+    t = " ".join(text.split())
+    if len(t) <= n:
+        return t
+    cut = t[:n]
+    if t[n] != " " and " " in cut:  # 낱말 가운데서 잘렸다: 앞 낱말 끝까지
+        cut = cut.rsplit(" ", 1)[0]
+    return cut.rstrip(" ,·-:")
+
+
+def topic_title(h) -> str:
+    """알아 두기 카드 제목: 맞은 조각의 절 이름(첫 절, 흐리면 끝 절), 없으면 자료 제목. 검색어를 제목으로 쓰지 않는다
+    (QA r3 c4 · v1 M2: '추가 금액 추가금 실측 견적서 승인' 같은 검색어가 제목에 그대로)."""
+    segs = [x.strip() for x in (h.section or "").split(" · ") if x.strip()]
+    segs = [x for x in segs if not _PAGE.match(x)]
+    for seg in [*segs[:1], *segs[-1:]]:
+        t = _NUMBERING.sub("", _PAREN.sub("", seg)).strip(" -·:")
+        if len(t) >= 2 and not _CODE_LIKE.match(t) and t not in VAGUE_TITLES:
+            return short_title(t)
+    return short_title(clean_name(h.title) or "알아 두기")
+
+
+def knowledge_card(card_id: str, title: str | None, hits: list, source: str = "") -> CardOut:
+    """알아 두기 카드(근거 조각 3개까지의 발췌 · 출처). title이 None이면 첫 조각으로 정한다(topic_title).
+    발췌는 안쪽 말을 떼고(clean_source_text), 원문 '-다'체는 '자료에서 “…”' 꼴로 둔다."""
+    lines = [quoted(x) for x in (excerpt(clean_source_text(h.text)) for h in hits[:3]) if x]
     src = source or " · ".join(dict.fromkeys(public_source(h) for h in hits[:3]))
-    data = KnowledgeData(title=title, lines=lines, source=src or "믿집 자료")
+    name = title or (topic_title(hits[0]) if hits else "알아 두기")
+    data = KnowledgeData(title=name, lines=lines, source=src or "믿집 자료")
     return CardOut(card_id=card_id, kind="knowledge", data=data.model_dump(mode="json"))
 
 

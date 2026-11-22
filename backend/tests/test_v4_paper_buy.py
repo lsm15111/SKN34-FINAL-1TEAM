@@ -82,12 +82,17 @@ def test_paper_buy_chip_takes_paper_out_of_the_standard_total(api):
         return (await card_tools.standard(s, u, uuid.UUID(pid)))[1]
 
     model = policy.to_model(as_owner(api, pid, std))
+    # 고침 3차 K 3번: 벽지 줄 금액은 '공급가' 꼬리표, 부가세 포함 몫 · 벽지까지 맡길 때 합계는 계산 엔진 값으로 같이
     assert model["paper"] == {
         "count": need.count,
         "text": need.text,
         "state": "고객 구매(합계 밖)",
         "line": paper["name"],
-        "amount": paper["amount"],
+        "공급가": paper["amount"],
+        "rows": [
+            {"label": card_tools.PAPER_OWN_ROWS[0], "won": first["total"] - on["total"]},
+            {"label": card_tools.PAPER_OWN_ROWS[1], "won": first["total"]},
+        ],
         "note": OWN_PAPER_NOTE,
     }
     assert all(ln["name"] != paper["name"] for ln in model["lines"])  # 합계 줄에는 없어요
