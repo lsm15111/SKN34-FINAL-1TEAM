@@ -22,8 +22,8 @@ export default async function ProjectLayout({ children, params }: { children: Re
   if (!shell) notFound();
   if ((await uiMode()) === "v4") {
     const { session, unread } = await getShellData();
-    // 비서 글의 '고객님'을 그릴 때만 이 이름으로 바꿔요(이름은 LLM에 보내지 않아요)
-    return <Shell projectId={shell.id} name={shell.name} me={session?.name ?? null} unread={unread}>{children}</Shell>;
+    // 비서 글의 '고객님'을 그릴 때만 이 이름으로 바꿔요(이름은 LLM에 보내지 않아요). locked: 처음 연 때 집 정보 잠김(실측 요청 뒤)
+    return <Shell projectId={shell.id} name={shell.name} me={session?.name ?? null} unread={unread} locked={shell.locked}>{children}</Shell>;
   }
   const links = stepLinks(shell.id);
   const steps = PROJECT_STEPS.map((st, i) => ({ ...st, href: links[i] }));

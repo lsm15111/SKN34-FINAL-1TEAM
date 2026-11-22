@@ -5,7 +5,7 @@
 // 알림 링크에 ?nudge={id}가 붙어 오면 먼저 말 건 제안을 '열었어요'로 알리고 주소에서 떼요.
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { lastActionIn, lastCardIn, mockScriptOf, type ActionOut } from "@/lib/api/assistant";
+import { lastActionIn, lastCardIn, lockedNow, mockScriptOf, type ActionOut } from "@/lib/api/assistant";
 import type { MockScript } from "@/lib/mock/assistant/mode";
 import { Board } from "./Board";
 import { CardSlot } from "./CardSlot";
@@ -18,8 +18,10 @@ import { MyName, type ActionHandlers } from "./Message";
 import { StepBar } from "./StepBar";
 import s from "./assistant.module.css";
 
-/** me: 로그인한 고객 이름(비서 글의 '고객님'을 그릴 때만 바꿔요, 없으면 null) */
-export function Shell({ projectId, name, me, unread, children }: { projectId: string; name: string; me: string | null; unread: number; children: ReactNode }) {
+/** me: 로그인한 고객 이름(비서 글의 '고객님'을 그릴 때만 바꿔요, 없으면 null). locked: 처음 연 때 집 정보 잠김(실측 요청 뒤) */
+export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = false, children }: {
+  projectId: string; name: string; me: string | null; unread: number; locked?: boolean; children: ReactNode;
+}) {
   const a = useAssistant(projectId);
   const router = useRouter();
   const path = usePathname();
@@ -76,10 +78,13 @@ export function Shell({ projectId, name, me, unread, children }: { projectId: st
   const tick = a.items.length + (tail?.role === "assistant" && tail.done ? 1000 : 0);
 
   const { approve: approveFn, actionOf, send, pending, handled, dismissNudge, items, reload } = a;
+  // 지금 잠김: 처음 연 때 값 + 보드 단계 + 이 대화에서 실행한 실측 요청(카드 때 값 can_change는 그때 모습이에요)
+  const locked = lockedNow(lockedAtOpen, a.board, items);
   const ctx: CardCtx = useMemo(() => ({
     projectId,
     now: a.now,
     busy: a.running,
+    locked,
     send: (text, context) => { void send(text, context); },
     approve: (id) => { void approveFn(actionOf(id) ?? id); },
     actionOf,
@@ -91,7 +96,7 @@ export function Shell({ projectId, name, me, unread, children }: { projectId: st
     lastCard: (kind, test) => lastCardIn(items, kind, test),
     lastAction: (kind, test) => lastActionIn(items, kind, test),
     reload: () => { void reload(); },
-  }), [projectId, a.now, a.running, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items, reload]);
+  }), [projectId, a.now, a.running, locked, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items, reload]);
 
   const act: ActionHandlers = {
     approve: (x) => { void a.approve(x); },

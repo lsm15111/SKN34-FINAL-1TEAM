@@ -237,7 +237,7 @@ class HomeInfoIn(BaseModel):
         max_length=len(DIY),
         description="직접 할 일(반셀프 칩, project/diy.py 키). 안 보내거나 null이면 묻지 않은 것(고치기에서는 "
         "그대로), 빈 목록이면 '없어요'. 공사를 만들 때 같은 트랜잭션에서 모은 조건(diy.<키>)으로 저장해요. "
-        "손님 계산(표준견적서)에는 쓰지 않아요",
+        "손님 계산(표준견적서)은 '벽지 직접 구매'(paper_buy)만 봐요(도배지 줄 고객 구매, 가입 뒤와 같은 계산)",
     )
 
     @field_validator("emd")

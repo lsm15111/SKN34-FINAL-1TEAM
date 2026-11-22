@@ -34,6 +34,7 @@ export const SAMPLE_STANDARD: GuestStandard = {
   man_day: "4.0",
   budget_fit: "within",
   assumptions: ["도배 면적은 공급면적으로 어림했어요. 실측 때 방마다 다시 재요."],
+  own_paper: false,
 };
 
 /** 부분 공사 예시(C60): 하계동 공급 69.4㎡ · 거실 · 주방 · 벽만 · 실크 */
@@ -63,6 +64,7 @@ export const PART_STANDARD: GuestStandard = {
   man_day: "1.5",
   budget_fit: "within",
   assumptions: ["부분 공사는 고른 공간의 넓이를 어림했어요."],
+  own_paper: false,
 };
 
 /** 예시 켜짐: 넣은 답의 범위에 맞는 예시를 돌려줘요(계산하지 않아요 · 개발 미리 보기만) */

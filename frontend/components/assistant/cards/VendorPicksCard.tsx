@@ -42,9 +42,10 @@ export function VendorPicksCard({ card, ctx, old }: CardProps<"vendor_picks">) {
         {d.picks.map((p) => {
           const on = now.includes(p.ref);
           return (
-            <li key={p.ref} className={c.vc} data-on={on}>
+            <li key={p.ref} className={p.photo ? c.vc : `${c.vc} ${c.vcBare}`} data-on={on}>
+              {/* 사진이 없으면 큰 회색 빈 칸 대신 이름 머리글자 작은 칸(배지 · 고르기 ✓는 같은 줄, QA r3 v1 L6) */}
               <div className={c.ph}>
-                {p.photo ? <img src={p.photo} alt={p.photo_alt} loading="lazy" /> : null}
+                {p.photo ? <img src={p.photo} alt={p.photo_alt} loading="lazy" /> : <span className={c.ini} aria-hidden="true">{Array.from(p.name)[0]}</span>}
                 {p.badge ? <span className={c.phBadge}>{p.badge}</span> : null}
                 {old ? null : <button type="button" className={c.pick} aria-pressed={on} aria-label={`${p.name} 고르기`} onClick={() => toggle(p.ref)}><span><I n="check" /></span></button>}
               </div>

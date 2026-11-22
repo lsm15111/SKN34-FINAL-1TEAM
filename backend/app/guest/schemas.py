@@ -85,3 +85,13 @@ class GuestStandardOut(BaseModel):
         description="도배 금액 기준(계산 엔진이 고름). 손님은 도배만 넣어 paper_only(도배만 하는 공사)",
     )
     profile_name: str | None = Field(default=None, description="기준 화면 이름")
+    own_paper: bool = Field(
+        default=False,
+        description="직접 할 일 '벽지 직접 구매'(diy paper_buy)를 넣어 도배지 줄(key paper)을 '안 함' · "
+        "고객 구매로 합계에서 뺐어요(가입 뒤 표준견적서와 같은 계산)",
+    )
+    rolls_text: str | None = Field(
+        default=None,
+        description="벽지 직접 구매일 때 사야 할 롤 수 글(계산 엔진 calc.rolls, 보이기용) "
+        "'실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로'. 아니면 비움",
+    )

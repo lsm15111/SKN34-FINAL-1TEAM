@@ -16,9 +16,11 @@
 
 /* ───── C2 표준견적서 ───── */
 .lines { list-style: none; margin: 0; padding: 0; display: grid; font-size: var(--mj-type-label); }
-.lines li { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-top: 1px solid var(--mj-line-soft); }
+.lines li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--mj-line-soft); }
 .lines li:first-child { border-top: 0; }
-.lines span { color: var(--mj-text-sub); }
+.lines span { color: var(--mj-text-sub); min-width: 0; text-wrap: pretty; }
+/* 금액은 한 줄로(폰 360에서 '22만 / 800원'으로 갈리지 않게), 긴 줄 이름 쪽이 줄을 바꿔요 */
+.lines b { flex: none; white-space: nowrap; }
 
 /* ───── C3 추천 업체 ───── */
 .reco { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
@@ -44,6 +46,11 @@
 .why svg { width: 16px; height: 16px; color: var(--mj-st-ok); margin-top: 2px; flex: none; }
 .vcFoot { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 0 10px 4px 14px; }
 .vcFoot span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+/* 사진이 없는 업체: 큰 회색 빈 칸 대신 머리글자 작은 칸 한 줄(배지 · 고르기 ✓도 그 줄에) */
+.vcBare .ph { aspect-ratio: auto; background: none; display: flex; align-items: center; gap: 8px; padding: 10px 56px 0 14px; }
+.ini { width: 40px; height: 40px; flex: none; border-radius: 12px; display: grid; place-items: center; background: var(--mj-fill); color: var(--mj-text-sub); font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.vcBare .phBadge { position: static; }
+.vcBare .pick { top: 8px; }
 .basisList { margin: 0; padding: 12px 14px 12px 32px; border-radius: var(--mj-radius-field); background: var(--mj-surface-sub); display: grid; gap: 4px; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
 .redo { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 10px 12px; border-radius: var(--mj-radius-field); background: var(--mj-primary-weak); font-size: var(--mj-type-label); color: var(--mj-on-primary-weak); }
 
@@ -132,6 +139,10 @@
   .pick { top: auto; bottom: 2px; right: auto; left: 2px; }
   .vcIn { padding: 10px 12px 0; }
   .vcFoot { padding: 0 6px 2px 12px; }
+  /* 사진이 없으면 왼쪽 104px 사진 칸 없이 한 열(머리글자 줄 → 이름 · 금액) */
+  .vc.vcBare { display: flex; }
+  .vcBare .ph { height: auto; min-height: 0; grid-row: auto; padding: 10px 52px 0 12px; }
+  .vcBare .pick { top: 8px; bottom: auto; left: auto; right: 4px; }
 }
 @media (max-width: 520px) {
   .cmp th, .cmp td { padding: 8px; }

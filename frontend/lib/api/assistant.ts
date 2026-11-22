@@ -584,6 +584,38 @@ export function lastActionIn(items: FeedItem[], kind: ActionKind, test?: (a: Act
   return null;
 }
 
+/** 단계 띠 '실측' 칸(BoardOut.step 3): 업체에 실측을 요청한 뒤예요 */
+export const STEP_VISIT = 3;
+
+/**
+ * 지금 집 정보가 잠겼는지(실측을 요청해 집 정보 · 벽지를 더 고칠 수 없어요, 서버 projects.locked와 같은 뜻).
+ * 카드 때 값(벽지 견주기 can_change 등)은 그때 모습이라, 그 뒤에 실측을 요청했으면 옛 카드의 단추도 숨겨요(QA r3 v1 M6).
+ * 처음 연 때 공사 값 · 보드 단계(실측 칸 이상) · 이 대화에서 실행한 실측 요청 중 하나면 잠김이에요(잠김은 풀리지 않아요).
+ */
+export function lockedNow(initial: boolean, board: Pick<BoardOut, "step"> | null, items: FeedItem[]): boolean {
+  return initial || (board?.step ?? 0) >= STEP_VISIT || !!lastActionIn(items, "visit_request", (a) => a.status === "executed");
+}
+
+/**
+ * 화면이 만든 오늘 정할 일(card_id 'today')을 이 화면에서 이미 보였을 때: 같은 날 오늘 정할 일 카드가 턴으로 다시 오면(첫 인사 등)
+ * 처음 보인 자리에 마지막 값으로 하나만 둬요(같은 card_id는 처음 나온 자리에 마지막 값: foldCards와 같은 규칙, QA r3 v1 L2).
+ * 턴 쪽 카드는 빼고(보낸 말 위 카드가 아래로 옮겨 가 화면이 튀지 않게) 그 마지막 값을 돌려줘요. 화면이 만든 말(local)은 보지 않아요.
+ */
+export function takeToday(items: FeedItem[], date: string): { items: FeedItem[]; last: TodayData | null } {
+  let last: TodayData | null = null;
+  const out: FeedItem[] = [];
+  for (const it of items) {
+    if (it.role !== "assistant" || it.local) { out.push(it); continue; }
+    const parts: FeedPart[] = [];
+    for (const p of it.parts) {
+      if (p.t === "card" && p.card.kind === "today" && (p.card.data as TodayData).date === date) last = p.card.data as TodayData;
+      else parts.push(p);
+    }
+    out.push(parts.length === it.parts.length ? it : { ...it, parts });
+  }
+  return last ? { items: out, last } : { items, last: null };
+}
+
 /**
  * 화면이 만든 말(오늘 정할 일 · 기록 밖 열린 승인 카드)을 끼울 자리: 처음 열 때 마지막 말(anchor) 바로 뒤.
  * 그 뒤에 보낸 말 · 답은 늘 그 아래에 붙어요. 그 말이 기록에서 빠졌으면(실패 턴 등) 그 말 시각까지의 말 뒤, 처음에 대화가 비었으면 맨 앞이에요.
@@ -611,6 +643,15 @@ export function handledByWrite(kinds: ActionKind[], actions: ActionOut[], target
   if (target && live.some((a) => a.target_id)) return ids(live.filter((a) => a.target_id === target));
   const open = ids(live);
   return open.length === 1 ? open : [];
+}
+
+/**
+ * 닫힌 승인 카드에 [다시 만들기]를 둘지. 새 카드로 바뀜 · 견적서 판이 바뀜 · 비서 밖에서 처리됨은 새 카드가 따로 있거나 할 일이 없고,
+ * 고객이 말로 거둔 카드(withdrawn, "취소 안 할래요")는 바로 뒤에 잘못 누르기 쉬워서 두지 않아요(QA r3 v1 L7). 거절 · 기한 지남 · 실패는 둬요.
+ */
+const NO_REMAKE: ReadonlySet<string> = new Set(["replaced", "quote_changed", "handled_elsewhere", "withdrawn"]);
+export function canRemake(a: ActionOut): boolean {
+  return !NO_REMAKE.has(a.error_code ?? "");
 }
 
 /** 대상을 끝내는 행동: 실행되면 같은 대상의 다른 열린 카드(반나절 고르기 · 확정 …)는 쓸 데가 없어요 */
@@ -737,6 +778,18 @@ export const BUSY_TEXT = "지금 이야기하는 분이 많아요. 잠시 뒤에
 export function busyWaitMs(header: string | null): number {
   const sec = Number(header);
   return header && Number.isFinite(sec) && sec > 0 ? Math.min(sec, 10) * 1000 : 2000;
+}
+
+/** 넘침(503 TurnBusy)이면 Retry-After만큼 기다렸다 같은 몸통(같은 client_key)으로 한 번만 다시 불러요. 또 넘치면 그 TurnBusy를 던져요.
+ *  업체 작업함 턴(VendorToday)이 고객 턴(useAssistant send)과 같은 규칙을 써요. 다른 오류는 바로 던져요 */
+export async function busyOnce<T>(go: () => Promise<T>, pause: (ms: number) => Promise<unknown> = (ms) => new Promise((r) => setTimeout(r, ms))): Promise<T> {
+  try {
+    return await go();
+  } catch (e) {
+    if (!(e instanceof TurnBusy)) throw e;
+    await pause(e.waitMs);
+    return go();
+  }
 }
 
 /** 한 턴(SSE). 스트림을 열기 전 오류(404 · 409 turn_running · 429 · 422)는 ApiError로 던져요. 끝(done · error)을 받았으면 true */

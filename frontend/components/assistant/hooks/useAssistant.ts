@@ -6,12 +6,13 @@
 // 그대로라 번호표만 보면 문장 · 카드를 놓쳐요. 턴이 도는 중에 온 소식은 턴이 끝난 뒤 읽어요.
 // 턴을 시작하면 그 전에 시작한 기록 읽기 결과는 버리고 턴이 끝난 뒤 다시 읽어요(보낸 말 · 흘러오는 답을 덮지 않게).
 // 화면이 만든 말(오늘 정할 일 · 기록 밖 열린 승인 카드)은 처음 열 때 마지막 말 뒤에 두고, 새 말은 그 아래에 붙어요.
+// 그 자리에 보인 오늘 정할 일 · 첫 인사는 첫 말을 보낸 뒤에도 그 자리에 그대로 둬요(같은 날 카드가 턴으로 와도 값만 바꿔요).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth,
   getLatestThread, getMemory, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
-  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, targetOfWrite, BUSY_TEXT, TURN_RETRY_MS,
-  TurnBusy,
+  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, takeToday, targetOfWrite, BUSY_TEXT,
+  TURN_RETRY_MS, TurnBusy,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -35,7 +36,8 @@ export function useAssistant(projectId: string) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [before, setBefore] = useState<number | null>(null);
   const [olderBusy, setOlderBusy] = useState(false);
-  const [fresh, setFresh] = useState(false);
+  /** 처음 열 때 대화가 비어 첫 인사를 보였어요. 이 화면에서는 첫 말을 보낸 뒤에도 그대로 둬요(인사 줄이 사라지며 튀지 않게, QA r3 v1 L2) */
+  const [greet, setGreet] = useState(false);
   const [chips, setChips] = useState<string[]>([]);
   const [now, setNow] = useState<string>("");
   const [loaded, setLoaded] = useState(false);
@@ -61,6 +63,8 @@ export function useAssistant(projectId: string) {
   const [anchor, setAnchor] = useState<{ id: string; at: string } | null>(null);
   /** 처음 열었을 때 오늘 말이 없었어요: 오늘 정할 일을 그 자리(그날 첫 비서 말)에 보여요 */
   const [todayFirst, setTodayFirst] = useState(false);
+  /** 그 자리에 오늘 정할 일을 보인 날짜: 그날 오늘 정할 일 카드가 턴으로 다시 와도 그 자리에 두고 값만 바꿔요(takeToday, QA r3 v1 L2) */
+  const [pin, setPin] = useState<string | null>(null);
   const anchored = useRef(false);
   /** '앞 대화 더 보기'로 앞 쪽을 붙였어요(첫 쪽을 다시 읽을 때 그대로 둬요) */
   const olderRef = useRef(false);
@@ -138,11 +142,11 @@ export function useAssistant(projectId: string) {
       setBefore(page.before);
     }
     setNow(page.now);
-    setFresh(!thread && !page.items.length);
     setChips(page.items.length ? page.chips : FIRST_CHIPS);
     revRef.current = thread ? thread.rev : 0;
     if (!anchored.current) {
       anchored.current = true;
+      setGreet(!thread && !page.items.length);
       const last = page.items[page.items.length - 1];
       setAnchor(last ? { id: last.id, at: last.at } : null);
       const day = dateSeoul(page.now);
@@ -189,7 +193,6 @@ export function useAssistant(projectId: string) {
     if (ev.type === "done") {
       if (ev.data.chips?.length) setChips(ev.data.chips);
       if (typeof ev.data.rev === "number") revRef.current = ev.data.rev;
-      setFresh(false);
       void refreshSide();
     }
   }, [refreshSide]);
@@ -467,7 +470,8 @@ export function useAssistant(projectId: string) {
   const reset = useCallback(async (script: "f1" | "today") => {
     abortRef.current?.abort();
     await resetMock(projectId, script);
-    anchored.current = false; // 대본이 바뀌면 화면이 만든 말 자리도 다시 정해요
+    anchored.current = false; // 대본이 바뀌면 화면이 만든 말 자리 · 첫 인사 · 오늘 정할 일 자리도 다시 정해요
+    setPin(null);
     setKept({});
     await load();
   }, [projectId, load]);
@@ -490,13 +494,25 @@ export function useAssistant(projectId: string) {
   /** 제안을 숨길 줄: 고객이 닫은 것 + 할 일이 끝난 것 */
   const shut = useMemo<Record<string, true>>(() => ({ ...gone, ...settled }), [gone, settled]);
 
-  /** 보이는 대화: 기록 + 화면이 만든 말(오늘 정할 일: 그날 카드가 기록에 없을 때 · 기록에 없는 열린 승인 카드 묶음)을 처음 열 때 마지막 말 뒤에 */
+  /** 오늘 정할 일을 그 자리에 처음 보일 때: 그날 카드가 기록에 없고 보일 줄이 있어요 */
+  const todayDate = today?.date ?? null;
+  const firstToday = useMemo(() => {
+    if (!todayFirst || !today) return false;
+    const rows = today.todo.length + today.waiting.length + today.news.length;
+    const hasToday = items.some((it) => it.role === "assistant" && it.parts.some((p) => p.t === "card" && p.card.kind === "today" && (p.card.data as TodayData).date === today.date));
+    return rows > 0 && !hasToday;
+  }, [items, today, todayFirst]);
+  useEffect(() => { if (firstToday && todayDate) setPin(todayDate); }, [firstToday, todayDate]);
+
+  /** 보이는 대화: 기록 + 화면이 만든 말(오늘 정할 일: 그날 카드가 기록에 없을 때 · 기록에 없는 열린 승인 카드 묶음)을 처음 열 때 마지막 말 뒤에.
+   *  오늘 정할 일을 그 자리에 보인 뒤 같은 날 카드가 턴으로 오면(첫 인사 등) 그 자리에서 값만 바꾸고 턴 쪽 카드는 빼요(보낸 말 위 카드가 아래로 옮겨 가지 않게) */
   const view = useMemo<FeedItem[]>(() => {
     const local: AssistantItem[] = [];
-    const hasToday = items.some((it) => it.role === "assistant" && it.parts.some((p) => p.t === "card" && p.card.kind === "today" && (p.card.data as TodayData).date === today?.date));
-    const rows = today ? today.todo.length + today.waiting.length + today.news.length : 0;
-    if (todayFirst && today && rows && !hasToday) {
-      local.push({ id: `today-${today.date}`, role: "assistant", at: now, turn_id: null, done: true, local: true, parts: [{ t: "card", card: { card_id: "today", kind: "today", data: today } }] });
+    let base = items;
+    if (todayFirst && today && (firstToday || pin === today.date)) {
+      const got = takeToday(items, today.date);
+      base = got.items;
+      local.push({ id: `today-${today.date}`, role: "assistant", at: now, turn_id: null, done: true, local: true, parts: [{ t: "card", card: { card_id: "today", kind: "today", data: got.last ?? today } }] });
     }
     const inFeed = new Set(actionsIn(items).map((a) => a.action_id));
     const shown = new Map<string, ActionOut>();
@@ -506,16 +522,16 @@ export function useAssistant(projectId: string) {
     if (orphans.length) {
       local.push({ id: "open-actions", role: "assistant", at: now, turn_id: null, done: true, local: true, parts: orphans.map((action) => ({ t: "action" as const, action })) });
     }
-    if (!local.length) return items;
-    const at = anchorIndex(items, anchor);
-    return [...items.slice(0, at), ...local, ...items.slice(at)];
-  }, [items, open, kept, today, todayFirst, anchor, now]);
+    if (!local.length) return base;
+    const at = anchorIndex(base, anchor);
+    return [...base.slice(0, at), ...local, ...base.slice(at)];
+  }, [items, open, kept, today, todayFirst, firstToday, pin, anchor, now]);
 
   return {
     projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled: handledAll, ended, health, memory,
     gone: shut, settled,
-    /** 대화가 아직 없어요(첫 인사). 화면이 만든 말은 세지 않아요 */
-    fresh: fresh && !items.length,
+    /** 처음 열 때 대화가 비었어요(첫 인사). 이 화면에서는 첫 말을 보낸 뒤에도 그대로 보여요 */
+    fresh: greet,
     /** 기록의 마지막 말(화면이 만든 말 빼고): 입력 중 표시 · 답 기다림 줄은 이 말로 정해요 */
     tail: items[items.length - 1] ?? null,
     hasOlder: !!before, olderBusy, loadOlder,

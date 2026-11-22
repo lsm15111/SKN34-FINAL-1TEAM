@@ -1,7 +1,7 @@
 "use client";
 // 대화 목록(role=log): 날짜가 바뀌면 날짜 줄, 새 말이 오면 그 말 머리로 부드럽게 내려가요.
 // 위를 보고 있으면(사용자가 올려 본 뒤) 끌어내리지 않고 '새 소식 ↓' 단추만 띄워요.
-// 맨 위 '앞 대화 더 보기'는 서버 feed의 앞 쪽(턴 번호 커서)을 읽어 붙여요(보던 자리는 그대로). 대화가 처음이면 인사 한 줄만.
+// 맨 위 '앞 대화 더 보기'는 서버 feed의 앞 쪽(턴 번호 커서)을 읽어 붙여요(보던 자리는 그대로). 대화가 처음이면 인사 한 줄(첫 말 뒤에도 그대로).
 import { useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 import type { FeedItem } from "@/lib/api/assistant";
 import { dateSeoul, dateSpoken } from "@/lib/format";
@@ -25,7 +25,7 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
   /** 단계 띠 높이(말 머리를 그 아래에 맞춰요) */
   headroom: () => number;
   onRetry: () => void;
-  /** 이 공사의 비서 대화가 아직 없어요(첫 인사를 보여요. 화면이 만든 말 · 오늘 정할 일이 있어도) */
+  /** 처음 열 때 이 공사의 비서 대화가 없었어요(첫 인사를 보여요. 화면이 만든 말 · 오늘 정할 일이 있어도, 첫 말을 보낸 뒤에도) */
   fresh: boolean;
   hasOlder: boolean;
   olderBusy: boolean;
