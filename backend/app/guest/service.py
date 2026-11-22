@@ -2,11 +2,12 @@
 
 DB에 쓰지 않고 입력을 로그에 남기지 않는다. 숫자는 가입 뒤 표준견적서와 같은 계산 엔진(calc.dobae.standard_v3)이
 만든다(화면이 보낸 금액은 믿지 않음). 지역 · 동 · 희망일 검사는 공사 만들기와 같은 project.schemas.check_home.
+직접 할 일에 '벽지 직접 구매'가 있으면 가입 뒤처럼 도배지 줄을 고객 구매로 합계에서 뺀다(QA 3차 v1 L8).
 """
 
 from datetime import date
 
-from app.calc import dobae
+from app.calc import dobae, rolls
 from app.calc.common import FORMULA_VERSION
 from app.calc.quote_diff import budget_fit
 from app.calc.space_share import ROOM_KINDS, ROOMS_MAX, ROOMS_MIN, SPACE_SHARE_ROOMS_2026_11
@@ -18,6 +19,7 @@ from app.guest.schemas import (
     RoomRuleOut,
     StartWishOut,
 )
+from app.project import diy as project_diy
 from app.project.schemas import HomeInfoIn, check_home
 from app.refprice.book import DOBAE_DEFAULT, DOBAE_PROFILES
 from app.refprice.house import HOUSE_2026H2
@@ -61,10 +63,24 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
     said = {dobae.DEMOLITION_KEY: data.demolition} if data.demolition else {}
     pick = dobae.pick_profile(dobae.WorkFacts((), said))
     p = DOBAE_PROFILES[pick.profile]
+    # 직접 할 일 '벽지 직접 구매': 가입 뒤 표준견적서(quote.service)처럼 도배지 줄 고객 구매(합계 밖)
+    own = project_diy.PAPER_BUY in (data.diy or [])
     v = dobae.standard_v3(
-        h, p, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2, pick.why
+        h,
+        p,
+        paper_market(h.grade),
+        SPACE_SHARE_ROOMS_2026_11,
+        HOUSE_2026H2,
+        pick.why,
+        own_paper=own,
     )
     q = v.quote
+    paper = next((ln for ln in q.lines if ln.key == "paper"), None)
+    roll = (
+        rolls.need(rolls.roll_key(h.grade), paper_py=paper.qty)
+        if own and paper is not None and paper.qty is not None
+        else None
+    )
     return GuestStandardOut(
         formula_ver=FORMULA_VERSION,
         price_ver=q.version,
@@ -98,4 +114,6 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         assumptions=list(q.assumptions),
         profile=p.profile.key if p.profile else None,
         profile_name=p.profile.name if p.profile else None,
+        own_paper=own,
+        rolls_text=roll.text if roll is not None else None,
     )

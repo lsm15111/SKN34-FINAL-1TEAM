@@ -8,6 +8,7 @@
 // - 주소 찾기 API는 범위 밖이라 적은 글에서 시 · 군 · 구 · 평형 · 방 개수 · 공사할 때 집 · 시기만 찾아 채워요(lib/guest/guess, 못 찾으면 골라요).
 //   적은 글 · 단지 이름 · 동 · 호는 저장하지 않아요.
 // - 손님: 답은 이 기기에만(mj_guest_v3) → 표준견적서 요약 · 직접 할 일 → 가입 카드. 가입하면 같은 답으로 내 공사가 만들어져요(auth/after).
+//   직접 할 일로 '벽지 직접 구매'를 고르거나 빼면 표준견적서를 다시 세어(서버 계산 엔진) 가입 뒤 공사와 같은 금액을 보여요.
 // - 로그인한 고객: 직접 할 일까지 고르면 POST /projects(Idempotency-Key = 기기 답 key, 직접 할 일도 한 번에) → /projects/{id}/standard.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -66,9 +67,15 @@ function summaryOf(g: GuestStandard, d: InfoDraft, href: string): StandardQuoteD
     .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
     .slice(0, 3)
     .map((l) => ({ name: l.name, won: l.amount ?? 0 }));
-  const label = ["도배", d.grade ? GRADE_WORD[d.grade] : null, `${g.area_basis === "exclusive" ? "전용" : "공급"} ${decText(g.area_m2)}㎡`].filter(Boolean).join(" · ");
+  // 벽지 직접 구매면 비서 표준견적서 카드처럼 '벽지 고객 구매'를 붙여요(도배지 줄은 합계 밖, 계산 엔진)
+  const label = [
+    "도배", d.grade ? GRADE_WORD[d.grade] : null, `${g.area_basis === "exclusive" ? "전용" : "공급"} ${decText(g.area_m2)}㎡`, g.own_paper ? "벽지 고객 구매" : null,
+  ].filter(Boolean).join(" · ");
   return { total_won: g.total, label, lines, days: g.days, partial: g.scope === "partial", href };
 }
+
+/** 고른 직접 할 일에 '벽지 직접 구매'가 있나(표준견적서 도배지 줄이 고객 구매로 빠져요, 계산은 서버) */
+const buysPaper = (diy: readonly string[] | null | undefined) => !!diy?.includes("paper_buy");
 
 /** 보이는 방 개수: 고른 값, 없으면 면적 기본값. 방 개수 표를 못 읽었으면(기본값 표 없음) 미리 고르지 않아요(null) */
 const shownRooms = (d: InfoDraft, rule: RoomRule): number | null => d.rooms ?? (rule.bands.length ? roomsOf(d, rule) : null);
@@ -114,6 +121,8 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
   const [dateOpen, setDateOpen] = useState(false);
   const [pick, setPick] = useState<DiyPick[]>([]);
   const [answered, setAnswered] = useState(false);
+  /** 직접 할 일로 벽지 직접 구매가 바뀌어 다시 센 표준견적서(손님, 가입 뒤 공사와 같은 값) · 다시 세는 중 · 실패 글 */
+  const [again, setAgain] = useState<{ std: GuestStandard | null; busy: boolean; err: string | null } | null>(null);
   const log = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
 
@@ -145,7 +154,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
   // 고칠 때마다 이 기기에 저장해요(손님 답 옮기기와 같은 저장소). 방 개수는 보이는 값으로 둬요
   useEffect(() => { if (dirty) writeGuest(withRooms(d, roomRule)); }, [d, dirty, roomRule]);
   // 새 말이 붙으면 아래로
-  useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [phase, said, answered]);
+  useEffect(() => { log.current?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" }); }, [phase, said, answered, again]);
 
   const set = (patch: Partial<InfoDraft>) => { setD((p) => ({ ...p, ...patch })); setDirty(true); setErr(null); };
   const errors = tried ? errorsOf(d, today) : {};
@@ -197,13 +206,28 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
   // 직접 할 일: '없어요'는 다른 칩과 같이 고르지 않아요
   const toggle = (x: DiyPick) => setPick((p) => (p.includes(x) ? p.filter((y) => y !== x) : x === "none" ? ["none"] : [...p.filter((y) => y !== "none"), x]));
 
+  /** 손님: 직접 할 일 답으로 표준견적서를 다시 세요(벽지 직접 구매면 도배지 줄 고객 구매). 가입 창 '표준견적서가 그대로 이어져요'가
+   *  맞게, 가입 뒤 만드는 공사와 같은 답 · 같은 계산 엔진 값이에요(QA r3 v1 L8) */
+  async function recount(next: InfoDraft) {
+    setAgain({ std: null, busy: true, err: null });
+    try {
+      setAgain({ std: await calcGuest(toHomeInfo(withRooms(next, roomRule)), mock), busy: false, err: null });
+    } catch (e) {
+      setAgain({ std: null, busy: false, err: errorText(e) });
+    }
+  }
+
   async function answerDiy() {
     if (!pick.length || phase !== "done") return;
     const next: InfoDraft = { ...d, diy: DIY.map((x) => x.key).filter((key) => pick.includes(key)) };
     setD(next);
     const g = writeGuest(withRooms(next, roomRule));
     setAnswered(true);
-    if (mode === "guest") return;
+    if (mode === "guest") {
+      // 예시(mock)는 직접 할 일을 계산하지 않아요
+      if (!mock && std && buysPaper(next.diy) !== !!std.own_paper) void recount(next);
+      return;
+    }
     setPhase("creating");
     setErr(null);
     try {
@@ -225,6 +249,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
   function back() {
     setPhase("confirm");
     setStd(null);
+    setAgain(null);
     setAnswered(false);
     setErr(null);
   }
@@ -366,7 +391,24 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
                     </section>
                   </Bot>
                   {answered && d.diy ? <Me>{diyText(d.diy)}</Me> : null}
-                  {answered && mode === "guest" ? (
+                  {answered && mode === "guest" && again ? (
+                    <Bot>
+                      {again.std ? (
+                        <>
+                          <p className={`${s.bubble} ${s.say}`}>{again.std.own_paper ? "벽지를 직접 사시니 벽지 값을 빼고 다시 셌어요." : "벽지 값을 넣어 다시 셌어요."}</p>
+                          <StandardSummary id="st-std2" data={summaryOf(again.std, d, "/start/standard")} />
+                        </>
+                      ) : again.busy ? (
+                        <p className={`${s.bubble} ${s.say}`} role="status">표준견적서를 다시 계산하고 있어요.</p>
+                      ) : (
+                        <div className={k.row}>
+                          <p className={k.err} role="alert">{again.err}</p>
+                          <button type="button" className={`${k.btn} ${k.sm}`} onClick={() => { void recount(d); }}>다시 해 보기</button>
+                        </div>
+                      )}
+                    </Bot>
+                  ) : null}
+                  {answered && mode === "guest" && !again?.busy ? (
                     <Bot>
                       <section className={k.card} aria-labelledby="st-join-t">
                         <div className={k.top}><h3 id="st-join-t">가입하고 이어서 해요</h3></div>

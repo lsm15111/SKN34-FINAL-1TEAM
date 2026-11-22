@@ -5167,6 +5167,17 @@ export interface components {
              * @description 기준 화면 이름
              */
             profile_name?: string | null;
+            /**
+             * Own Paper
+             * @description 직접 할 일 '벽지 직접 구매'(diy paper_buy)를 넣어 도배지 줄(key paper)을 '안 함' · 고객 구매로 합계에서 뺐어요(가입 뒤 표준견적서와 같은 계산)
+             * @default false
+             */
+            own_paper: boolean;
+            /**
+             * Rolls Text
+             * @description 벽지 직접 구매일 때 사야 할 롤 수 글(계산 엔진 calc.rolls, 보이기용) '실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로'. 아니면 비움
+             */
+            rolls_text?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -5292,7 +5303,7 @@ export interface components {
             demolition?: ("full" | "partial" | "none") | null;
             /**
              * Diy
-             * @description 직접 할 일(반셀프 칩, project/diy.py 키). 안 보내거나 null이면 묻지 않은 것(고치기에서는 그대로), 빈 목록이면 '없어요'. 공사를 만들 때 같은 트랜잭션에서 모은 조건(diy.<키>)으로 저장해요. 손님 계산(표준견적서)에는 쓰지 않아요
+             * @description 직접 할 일(반셀프 칩, project/diy.py 키). 안 보내거나 null이면 묻지 않은 것(고치기에서는 그대로), 빈 목록이면 '없어요'. 공사를 만들 때 같은 트랜잭션에서 모은 조건(diy.<키>)으로 저장해요. 손님 계산(표준견적서)은 '벽지 직접 구매'(paper_buy)만 봐요(도배지 줄 고객 구매, 가입 뒤와 같은 계산)
              */
             diy?: ("paint" | "outlet" | "light" | "silicone" | "handle" | "clean" | "paper_buy")[] | null;
         };

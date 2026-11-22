@@ -34,10 +34,12 @@ export function GuestStandard({ mock }: { mock: boolean }) {
     const info = toHomeInfo(d);
     try {
       const r = await calcGuest(info, mock);
+      // 직접 할 일 '벽지 직접 구매'면 도배지 줄은 '고객 구매'(합계 밖, 계산 엔진)이고 롤 수를 보여요(가입 뒤 표준견적서와 같은 모양)
+      const own = r.own_paper ? { rolls: r.rolls_text ?? null } : undefined;
       setSt({
         kind: "ok",
         view: {
-          scope: r.scope, lines: toQuoteLines(r.lines, r.scope), supply: r.supply, vat: r.vat, total: r.total, days: r.days,
+          scope: r.scope, lines: toQuoteLines(r.lines, r.scope, own), supply: r.supply, vat: r.vat, total: r.total, days: r.days,
           budget: budgetText(r.budget_fit, info.budget_won),
           condition: conditionText({ ...info, area_m2: r.area_m2, area_basis: r.area_basis, rooms: r.rooms }),
         },
