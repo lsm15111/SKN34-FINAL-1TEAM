@@ -1446,7 +1446,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         if o.period.start
         else None,
         docs=docs,
-        plan_example=not final,
+        plan_example=False,  # 도면은 기본 정보 받기에서 뺌(11-22 사용자): 보드의 '대표 평면 · 예시'를 보이지 않아요
         memory=[memory_out(x) for x in remembered],
         today_pin=opened,
     )

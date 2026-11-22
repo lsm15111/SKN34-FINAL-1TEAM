@@ -110,6 +110,10 @@ def obj(props: dict[str, dict], required: list[str] | None = None) -> dict:
 # 승인 카드를 만드는 제안 도구만 엄격으로 두고, 읽기 도구는 엄격을 끈다(입력은 run이 pydantic으로 검사).
 STRICT_MAX = 20
 
+# 꺼 둔 도구: 모델에 보이지 않고 불러도 '쓸 수 없는 도구'예요(코드는 다시 켤 때를 위해 둬요).
+# - find_floorplan_docs: 도면은 기본 정보 받기에서 뺌(11-22 사용자 '도면은 받는 거에서 빼 줘')
+OFF = frozenset({"find_floorplan_docs"})
+
 
 def defs(surface: Surface) -> list[dict]:
     """그 화면의 도구 정의(이름순). llm.to_claude_tools가 strict(제안 도구만) · cache_control을 붙인다."""
@@ -121,13 +125,13 @@ def defs(surface: Surface) -> list[dict]:
             "strict": t.kind == "propose",
         }
         for t in sorted(REGISTRY.values(), key=lambda t: t.name)
-        if t.surface == surface
+        if t.surface == surface and t.name not in OFF
     ]
 
 
 def get(name: str, surface: Surface) -> Tool:
     t = REGISTRY.get(name)
-    if t is None or t.surface != surface:
+    if t is None or t.surface != surface or name in OFF:
         raise ToolError("unknown_tool", "쓸 수 없는 도구예요.")
     return t
 
