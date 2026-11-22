@@ -17,7 +17,7 @@ unset LLM_CAP_USER_DAY_USD LLM_CAP_SERVICE_DAY_USD LLM_CAP_TOTAL_USD LLM_CAP_TUR
 if [ "$QA_PROFILE" = qa ]; then
   # run-api.sh live 갈래와 같은 방법: Anthropic 키만 살려요(OpenAI · 다른 키는 비운 그대로). 상한은 올리지 않아요
   ANTHROPIC_API_KEY="$(sed -n 's/^ANTHROPIC_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
-  export ANTHROPIC_API_KEY LLM_LIVE=true
+  export ANTHROPIC_API_KEY LLM_LIVE=true ASSISTANT_PROMPT_SET="${QA_PROMPT_SET:-v4}"  # 지시문 판(QA 3차부터 v4, QA_PROMPT_SET=v3으로 되돌림)
   # 새 계정 몫: QA_*를 하나라도 넘기면 켜요(안 넘긴 값은 운영 기본값), 아니면 꺼요
   if [ -n "${QA_NEW_USER_DAYS:-}${QA_CAP_NEW_USER_DAY_USD:-}${QA_CAP_NEW_POOL_DAY_USD:-}" ]; then
     if [ -n "${QA_NEW_USER_DAYS:-}" ]; then export LLM_NEW_USER_DAYS="$QA_NEW_USER_DAYS"; fi
