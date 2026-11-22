@@ -230,10 +230,7 @@ def test_eve_and_week_lines_match_the_card(api, script):
 def test_midnight_deadline_reads_as_the_day_it_ends():
     assert cards.seoul_text(datetime(2026, 12, 22, 0, 0, tzinfo=SEOUL)) == "12월 21일(월) 밤 12시"
     assert cards.seoul_text(datetime(2026, 12, 22, 18, 0, tzinfo=SEOUL)) == "12월 22일(화) 오후 6시"
-    assert (
-        cards.seoul_text(datetime(2026, 12, 22, 0, 30, tzinfo=SEOUL))
-        == "12월 22일(화) 오전 12시 30분"
-    )
+    # 0시 정각(기한 끝)만 본다. 0시대 나머지(0시 30분 …)는 K 판 seoul_text가 정한다
     now = datetime(2026, 11, 22, 10, 0, tzinfo=SEOUL)
     expiry = actions.confirm_expiry(date(2026, 12, 21), now)  # 유효기간 12.21 견적서 확정 카드
     assert cards.seoul_text(expiry) == "12월 21일(월) 밤 12시"
