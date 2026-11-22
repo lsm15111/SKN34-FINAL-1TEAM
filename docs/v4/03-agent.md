@@ -227,7 +227,7 @@
 6. 실패
    - 도구 오류는 is_error로 돌려줘요. 같은 (도구, 오류 코드)가 두 번이면 멈추고 실패 카드를 보여요.
    - Claude 호출이 두 번 실패하면 무료 모드로 바꾸고 5분 차단기를 걸어요.
-7. `SentenceGate`: 문장마다 `check.sentence_ok`(허용 숫자 = 이번 턴 도구 결과)를 지난 것만 `token`으로 보내요.
+7. `SentenceGate`: 문장마다 `check.sentence_ok`(허용 숫자 = 이번 턴 도구 결과 · 카드 값 · 턴 사실 · 고객 말 · 지난 비서 말 두 개, 내용 까닭으로 뺀 문장 · 묶음째 뺀 목록 바로 뒤의 되가리키는 문장도 뺌)를 지난 것만 `token`으로 보내요.
 8. `finish_turn`(한 트랜잭션): bump_rev → add_turn(가린 질문 · 검사한 답) → 턴 done → 기억할 말이 있으면 jobs(kind="assistant_memory") → commit → `done`
    - '기억할 말'은 `memory.wants`(낱말 규칙: 요일 · 오전 · 살면서 · 스타일 · 친환경 · 반려 · 셀프 등)가 정해요. 고객 턴만이고, ref_id는 그 턴의 고객 메시지, dedup_key `assistant_memory:{메시지 id}`예요.
    - `done` 앞에 `suggest_for`가 다음에 물을 말을 골라요(실패하면 비움).
