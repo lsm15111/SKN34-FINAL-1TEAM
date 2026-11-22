@@ -256,7 +256,7 @@ def test_no_job_without_memory_words_or_for_vendor_and_off_is_skipped(api, scrip
     ok(ask(api, pid, "견적서 비교해 줘"))
     assert query("select id from jobs where kind = 'assistant_memory'") == []
     ok(ask(api, pid, SAID))
-    llm.clear_stubs()  # 꺼짐: 기억을 만들지 않고 끝낸다(다시 하지 않음)
+    llm.clear_stubs()  # 꺼짐: 기억 없이 끝내고 뒤로 미뤄요(미룬 일은 test_v4_r3_b1_memory가 봐요)
     tally = run(api, worker.sweep, datetime.now(UTC))
     assert tally == {("assistant_memory", "skipped"): 1}
     assert query("select id from assistant_memory") == []

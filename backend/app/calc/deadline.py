@@ -115,3 +115,28 @@ def is_soon(now: datetime, due: datetime | None, hours: int = SOON_HOURS) -> boo
 def visited_ok(now: datetime, day: date, half: Half) -> bool:
     """'실측 받았어요'를 누를 수 있는지: 그 반나절이 끝난 뒤(L09)"""
     return is_over(now, half_end(day, half))
+
+
+# v4 비서 기억 뽑기 미루기(LLM 꺼짐 · 비용 상한, 리드 결정 11-22 · QA r3 f1): 같은 말을 다시 볼 간격(차례마다),
+# 하루 비용 상한이면 다음 서울 날 이 시각(상한이 다시 차요), 말한 때부터 이 날수를 넘으면 더 미루지 않아요
+MEMORY_LATER = (timedelta(minutes=30), timedelta(hours=2), timedelta(hours=6), timedelta(hours=12))
+MEMORY_NEXT_DAY_AT = time(0, 10)
+MEMORY_LATER_DAYS = 3
+
+
+def memory_later_at(
+    now: datetime, said_at: datetime, tries: int, *, next_day: bool, spread_minutes: int = 0
+) -> datetime | None:
+    """기억 뽑기를 미룰 다음 시각. tries = 이 말로 이미 돈 일 수(1부터). 하루 비용 상한이면(next_day) 다음 서울 날
+    0시 10분, 아니면 MEMORY_LATER 간격(다 쓰면 None). spread_minutes만큼 늦춰 한꺼번에 몰리지 않게 해요. 말한 때부터
+    MEMORY_LATER_DAYS일을 넘으면 None(옛 말로 새 조건을 덮지 않게)."""
+    now, said_at = _aware(now), _aware(said_at)
+    if next_day:
+        day = now.astimezone(SEOUL).date() + timedelta(days=1)
+        at = datetime.combine(day, MEMORY_NEXT_DAY_AT, SEOUL)
+    elif 1 <= tries <= len(MEMORY_LATER):
+        at = now + MEMORY_LATER[tries - 1]
+    else:
+        return None
+    at += timedelta(minutes=spread_minutes)
+    return at if at - said_at <= timedelta(days=MEMORY_LATER_DAYS) else None
