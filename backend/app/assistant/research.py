@@ -22,6 +22,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
+from decimal import Decimal, InvalidOperation
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field
@@ -95,6 +96,7 @@ FETCH_TOOL = {
     "blocked_domains": [*weblinks.BLOCKED, *NO_FETCH],
 }
 TOOLS = (SEARCH_TOOL, FETCH_TOOL)
+WEB_RESULTS = frozenset({"web_search_tool_result", "web_fetch_tool_result"})
 # 자재: 제조사 공식 페이지를 먼저(조사 08 카탈로그에서 확인한 곳)
 OFFICIAL = (
     "lxzin.com",
@@ -117,8 +119,12 @@ ENDED_LINE = {
     "failed": "{title} 조사를 끝까지 하지 못했어요. 잠시 뒤 다시 부탁해 주세요.",
 }
 STOPPED_FOUND = " 그때까지 찾은 것만 정리했어요."
+DONE_PARTIAL = " 찾은 만큼 정리했어요."
 NOTIFY_KIND = "assistant_research"
 STEERED = "돌던 조사에 바꾼 조건을 전했어요."
+NO_SUCH = "그 낱말이 든 조사가 없어요. 오늘 조사 목록의 제목 낱말로 다시 읽어요."
+# 걸리는 시간 말(QA r3 s3 · v1: 실제 16~56초인데 '몇 분 걸려요'). 비서가 고객에게 이 말 그대로 알려요
+STARTED = "잠깐(1분 안팎) 걸려요. 끝나면 대화와 알림으로 알려 드려요."
 BUSY = "다른 조사가 도는 중이에요. 끝나거나 멈춘 뒤에 새로 할 수 있어요."
 
 # 고객 목표 · 메모에서 떼는 것: 가린 자리 · 동 · 호 · 층 · 번지 숫자 · 주소
@@ -133,8 +139,17 @@ _TITLE_TAIL = re.compile(r"\s+\|{1,2}\s+")  # '이름 | 사이트 소개'의 가
 _HOST_KO = re.compile(r"[a-z0-9.\-가-힣]+")  # 한글 · 영문 소문자 · 숫자만인 도메인
 _MARK = re.compile(r"\*\*|__|^#+\s*|`")
 _SUMMARY_HEAD = re.compile(r"(?:^|\n)\s*(?:\*\*)?요약(?:\*\*)?\s*[:：]\s*")
+SUMMARY_PEEK = 12  # 글 앞 몇 글자로 끝 정리('요약:')인지 본다
 _MONEY = re.compile(r"\d[\d,.]*\s*(?:만\s*원|천\s*원|억\s*원|원)|가격|값이|비용이")
 _RATING = re.compile(r"평점|별점|후기\s*\d|리뷰\s*\d|\d+\s*위\b|1위|순위|추천")
+# 요약 · 메모의 안쪽 사정(QA r3 s3: '도구 사용 한도가 차서 멈췄어요' · '결과를 읽는 코드에 오류가 나서'): 도구 · 검색 횟수
+# 상한, 코드 · 프로그램 오류, 도구 이름. 조사 결과는 고객에게 그대로 보여 이런 문장은 뺀다(덜 찾았으면 partial로 보인다)
+_INSIDE = re.compile(
+    r"(?:도구|검색|가져오기|읽기)[^.!?\n]{0,15}(?:한도|횟수|상한|다\s*(?:써|썼|쓴|쓰))|"
+    r"(?:코드|프로그램|스크립트)[^.!?\n]{0,15}(?:오류|에러|실패)|오류가\s*나|에러가\s*나|"
+    r"\bAPI\b|max_uses|web_(?:search|fetch)|code_execution"
+)
+_PYEONG = re.compile(r"(?<![\d.])\d+(?:\.\d+)?\s*평(?:형)?(?![가-힣]*대)")
 _PAGE_AGE = ("%B %d, %Y", "%b %d, %Y", "%Y-%m-%d", "%Y.%m.%d", "%Y년 %m월 %d일", "%d %B %Y")
 _AGO = re.compile(r"^(\d{1,5}) (minute|hour|day|week)s? ago$", re.IGNORECASE)  # 실제 검색 결과 꼴
 _AGO_DAYS = {"minute": 0, "hour": 0, "day": 1, "week": 7}
@@ -209,12 +224,35 @@ def clean_goal(text: str | None, limit: int = GOAL_MAX) -> str:
     return " ".join(t.split())[:limit].strip()
 
 
+_ITEM_SEP = re.compile(r"[,·/]")
+
+
 def title_of(goal: str) -> str:
-    """카드 · 턴 사실 제목: 목표 앞 30자(낱말 경계)."""
-    if len(goal) <= TITLE_MAX:
-        return goal
-    cut = goal[:TITLE_MAX].rsplit(" ", 1)[0]
-    return (cut or goal[:TITLE_MAX]).strip()
+    """카드 · 턴 사실 제목: 목표 앞 30자(낱말 끝에서). 괄호 안에서 잘리면 괄호 안의 끝난 항목까지만 두고 닫는다
+    (QA r3 v1 M1: '노원구 32평 아파트 도배 업체 (실크벽지, 벽지' → '… 도배 업체 (실크벽지)'). 끝난 항목이 없으면
+    괄호째 뺀다."""
+    g = " ".join((goal or "").split())
+    if len(g) <= TITLE_MAX:
+        return g
+    cut = g[:TITLE_MAX]
+    if g[TITLE_MAX] != " " and " " in cut:  # 낱말 가운데서 잘렸다: 앞 낱말 끝까지
+        cut = cut.rsplit(" ", 1)[0]
+    cut = cut.rstrip(" ,·/")
+    open_ = cut.rfind("(")
+    if open_ > cut.rfind(")"):  # 열린 괄호 안에서 잘렸다
+        inner = cut[open_ + 1 :]
+        done = [m.start() for m in _ITEM_SEP.finditer(inner)]  # 구분 기호 앞까지는 끝난 항목
+        kept = inner[: done[-1]].strip(" ,·/") if done else ""
+        head = cut[:open_].rstrip()
+        cut = f"{head} ({kept})" if kept else head
+    return cut.strip() or g[:TITLE_MAX]
+
+
+def fit_pyeong(goal: str, pyeong: object | None) -> str:
+    """조사 목표의 평을 집 정보의 공급 평형 그대로로(QA r3 c4b: 전용 59㎡ 집을 모델이 '21평'으로 적음, 집 정보는
+    21.4평). 평형대('30평대')는 그대로 둔다. 집 평형을 모르면 그대로."""
+    text = pyeong_text(pyeong)
+    return _PYEONG.sub(text, goal) if text else goal
 
 
 def _day_of(page_age: str | None, today: date) -> date | None:
@@ -269,16 +307,22 @@ def card_of(r: AssistantResearch, phase: Literal["progress", "result"] = "progre
 
 
 def ended_line(r: AssistantResearch) -> str:
-    """대화에 올리는 정해 둔 한 문장(멈춤은 찾은 게 있으면 그것만 정리했다고 덧붙인다)."""
+    """대화에 올리는 정해 둔 한 문장(멈춤은 찾은 게 있으면 그것만 정리했다고, 덜 찾고 마쳤으면 찾은 만큼이라고
+    덧붙인다. 안쪽 사정(도구 상한 · 오류)은 말하지 않는다)."""
+    res = r.result or {}
     line = ENDED_LINE.get(r.status, ENDED_LINE["done"]).format(title=r.title)
-    if r.status == "stopped" and (r.result or {}).get("links"):
+    if r.status == "stopped" and res.get("links"):
         line += STOPPED_FOUND
+    elif r.status == "done" and res.get("partial"):
+        line += DONE_PARTIAL
     return line
 
 
-def _minutes(r: AssistantResearch, now: datetime) -> int:
+def _elapsed(r: AssistantResearch, now: datetime) -> str:
+    """도는 조사의 지난 시간 말: 1분 안이면 '40초째', 넘으면 'n분째'(조사는 보통 1분 안팎이라 '0분째'를 쓰지 않는다)."""
     since = r.started_at or r.created_at
-    return max(int((now - since).total_seconds() // 60), 0) if since else 0
+    sec = max(int((now - since).total_seconds()), 0) if since else 0
+    return f"{sec}초째" if sec < 60 else f"{sec // 60}분째"
 
 
 def model_of(r: AssistantResearch | None, now: datetime) -> dict:
@@ -287,7 +331,7 @@ def model_of(r: AssistantResearch | None, now: datetime) -> dict:
         return {"state": "none", "message": "이 공사로 맡긴 조사가 없어요."}
     out: dict[str, Any] = {"state": r.status, "title": r.title, "kind": r.kind}
     if r.status in RESEARCH_LIVE:
-        out.update(step=r.step, when=f"{_minutes(r, now)}분째")
+        out.update(step=r.step, when=_elapsed(r, now))
         return out
     res = r.result or {}
     links = res.get("links") or []
@@ -329,6 +373,63 @@ async def latest(
     )
 
 
+async def of_today(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID, now: datetime
+) -> list[AssistantResearch]:
+    """이 공사의 오늘(서울 날짜) 조사, 맡긴 순서대로. 오늘 것이 없으면 가장 최근 하나(어제 맡긴 조사도 읽게)."""
+    rows = list(
+        (
+            await s.scalars(
+                select(AssistantResearch)
+                .where(
+                    AssistantResearch.user_id == user_id,
+                    AssistantResearch.project_id == project_id,
+                    AssistantResearch.created_at >= _day_start(now),
+                )
+                .order_by(AssistantResearch.created_at, AssistantResearch.id)
+                .execution_options(populate_existing=True)
+            )
+        ).all()
+    )
+    if rows:
+        return rows
+    last = await latest(s, user_id, project_id)
+    return [last] if last is not None else []
+
+
+def _squash(text: str | None) -> str:
+    return re.sub(r"\s+", "", text or "")
+
+
+def pick(rows: list[AssistantResearch], about: str) -> AssistantResearch | None:
+    """목록에서 고를 조사: about(제목 낱말, 예: '용인' · '곰팡이')이 제목 · 목표에 든 가장 최근 것, about이 비면 가장
+    최근 것, 맞는 게 없으면 None."""
+    if not rows:
+        return None
+    word = _squash(about)
+    if not word:
+        return rows[-1]
+    hits = [r for r in rows if word in _squash(r.title) or word in _squash(r.goal)]
+    return hits[-1] if hits else None
+
+
+def list_model(
+    rows: list[AssistantResearch], picked: AssistantResearch | None, now: datetime
+) -> dict:
+    """get_research 도구 결과: 고른 조사 하나의 결과(model_of) + 오늘 조사 목록(제목 · 종류 · 상태, 맡긴 순서).
+    예전에는 가장 최근 하나만 읽어 앞 조사를 '다시 열어 볼 수 없어요'라고 했다(QA r3 s3)."""
+    out = model_of(picked, now)
+    if rows and picked is None:
+        out["message"] = NO_SUCH
+    if len(rows) > 1 or (rows and picked is None):
+        out["items"] = [
+            {"title": r.title, "kind": r.kind, "state": r.status, "picked": r is picked}
+            for r in rows
+        ]
+        out["count"] = len(rows)
+    return out
+
+
 async def get_out(user: User, research_id: uuid.UUID) -> ResearchData:
     """GET /assistant/research/{id}: 진행 · 결과(남의 것 · 없는 것 404)."""
     async with SessionLocal() as s:
@@ -344,7 +445,7 @@ async def facts_line(
     if r is None:
         return None
     if r.status in RESEARCH_LIVE:
-        return f"진행 중인 조사: {r.title}({_minutes(r, now)}분째)"
+        return f"진행 중인 조사: {r.title}({_elapsed(r, now)})"
     if r.ended_at is not None and now - r.ended_at <= RECENT:
         tail = {"stopped": "(멈춤)", "failed": "(못 끝냄)"}.get(r.status, "")
         return f"방금 끝난 조사: {r.title}{tail}"
@@ -512,7 +613,7 @@ async def start(
             )
             await s.commit()
         return Started("failed", None, "지금은 조사를 시작하지 못했어요. 잠시 뒤 다시 해 주세요.")
-    return Started("started", r, "몇 분 걸려요. 끝나면 대화와 알림으로 알려 드려요.")
+    return Started("started", r, STARTED)
 
 
 async def enqueue(research_id: uuid.UUID) -> bool:
@@ -728,11 +829,35 @@ async def _home_terms(s: AsyncSession, user: User, project_id: uuid.UUID) -> str
     except Exception as e:  # noqa: BLE001 - 평형 · 벽지는 없어도 조사는 한다
         log.warning("조사 집 조건 읽기 실패 (%s)", type(e).__name__)
         home = {}
-    if home.get("pyeong"):
-        parts.append(f"{float(home['pyeong']):g}평")
+    pyeong = pyeong_text(home.get("pyeong") or await home_pyeong(s, user, project_id))
+    if pyeong:
+        parts.append(pyeong)
     if home.get("grade") in cards.GRADE:
         parts.append(cards.GRADE[home["grade"]])
     return " · ".join(x for x in parts if x)
+
+
+async def home_pyeong(s: AsyncSession, user: User, project_id: uuid.UUID) -> Decimal | None:
+    """집 정보의 공급 평형(계산 엔진, 표준견적서 · 집 정보 카드와 같은 값). 셀 수 없으면 None."""
+    from app.calc.standard_quote import house_pyeong
+    from app.project import service as project_service
+    from app.refprice.house import HOUSE_2026H2
+
+    p = await project_service.get_for(s, user, project_id)
+    try:
+        return house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    except (ValueError, AttributeError):
+        return None
+
+
+def pyeong_text(pyeong: object | None) -> str | None:
+    """평형 → '21.4평'(집 정보 줄과 같은 꼴). 모르면 None."""
+    if pyeong is None:
+        return None
+    try:
+        return f"{Decimal(str(pyeong)).normalize():f}평"
+    except (InvalidOperation, ValueError):
+        return None
 
 
 @dataclass
@@ -767,15 +892,104 @@ def _steer_text(note: str) -> str:
 
 
 def _first_message(kind: str, goal: str, terms: str, notes: list[str], today: date) -> str:
+    """첫 왕복 user 글. 고객이 집과 다른 지역을 찾아 달라고 했으면(믿집 밖 업체) 집 조건에서 집 지역 · 동을 빼고 '찾을
+    지역' 줄을 둔다(QA r3 s3: '성남시 말고 용인시로' 조사에 집 조건 성남시가 같이 들어가 성남 · 분당 링크 3/5)."""
+    want = target_places(goal, notes)
+    home = places(terms)
+    other = kind == "outside_vendors" and bool(want) and not (want & home)
+    shown = " · ".join(p for p in terms.split(" · ") if not _is_place(p)) if other else terms
     lines = [
         f"조사 종류: {kind}({KIND_LABEL.get(kind, kind)})",
         f"찾을 것(고객 부탁, 가린 글): {goal}",
-        f"집 조건: {terms or '모름'}",
-        f"오늘: {today.isoformat()}",
+        f"집 조건: {shown or '모름'}",
     ]
+    if other:
+        lines.append(
+            f"찾을 지역: {' · '.join(sorted(want))}(집과 다른 지역이에요. 이 지역 페이지만 골라 주세요)"
+        )
+    lines.append(f"오늘: {today.isoformat()}")
     if notes:
         lines.append("바꾼 조건(고객 말): " + " / ".join(notes))
     return "\n".join(lines)
+
+
+# ---- 지역(믿집 밖 업체 조사: 찾을 지역 · 다른 지역 링크 빼기) ----
+
+_PLACE_SIDO = ("seoul", "gyeonggi", "incheon")  # 업체를 받는 수도권
+# 흔한 낱말과 겹치는 줄기는 이름 전체로만 찾아요(동작 · 연수 · 강화 · 고양이 · 이천만 …)
+_FULL_ONLY = frozenset(
+    {"동작구", "연수구", "남동구", "서해구", "중구", "강화군", "고양시", "광주시", "구리시", "이천시"}
+)  # fmt: skip
+# 큰 시의 구 · 신도시 이름 → 시(제목에 '분당도배' · '수지 도배'처럼 써요)
+_SUB_PLACES = {
+    "분당": "성남시", "판교": "성남시", "수정구": "성남시", "중원구": "성남시",
+    "수지": "용인시", "기흥": "용인시", "처인": "용인시",
+    "영통": "수원시", "장안구": "수원시", "권선": "수원시", "팔달": "수원시",
+    "일산": "고양시", "덕양": "고양시", "동탄": "화성시", "평촌": "안양시", "만안": "안양시",
+    "산본": "군포시", "상록구": "안산시", "단원구": "안산시",
+}  # fmt: skip
+_EMD = re.compile(r"^[가-힣0-9]{1,6}[동읍면리]$")
+
+
+def _place_names() -> dict[str, str]:
+    """지역 이름(전체 · 줄기) → 지역 열쇠(서울은 구, 경기 · 인천은 시 · 군 · 구 이름 전체)."""
+    from app.shared.regions import SIDO
+
+    out: dict[str, str] = {}
+    for sido in _PLACE_SIDO:
+        for _group, _pre, names in SIDO[sido][2]:
+            for n in names:
+                out[n] = n
+                if n not in _FULL_ONLY and len(n) >= 3 and n[-1] in "시구군":
+                    out.setdefault(n[:-1], n)
+    for sub, city in _SUB_PLACES.items():
+        out.setdefault(sub, city)
+    return out
+
+
+_PLACES = _place_names()
+_PLACE_RE = re.compile("|".join(sorted(map(re.escape, _PLACES), key=len, reverse=True)))
+
+
+def places(text: str | None) -> set[str]:
+    """글에 나온 수도권 지역 열쇠들(긴 이름 먼저: '남양주'는 양주가 아니에요)."""
+    return {_PLACES[m.group(0)] for m in _PLACE_RE.finditer(text or "")}
+
+
+# '성남시 말고 용인시로' · '분당 빼고'의 앞 지역은 찾을 지역이 아니에요
+_NOT_HERE = re.compile(
+    r"[가-힣0-9]+\s*(?:은|는|이|가)?\s*(?:말고|빼고|아니고|아니라|제외하고|제외)"
+)
+
+
+def target_places(goal: str, notes: list[str] | tuple[str, ...] = ()) -> set[str]:
+    """찾을 지역: 가장 최근 바꾸기 메모에 지역이 있으면 그것, 없으면 목표의 지역('…말고' 앞 지역은 뺀다)."""
+    for text in [*reversed(list(notes)), goal]:
+        got = places(_NOT_HERE.sub(" ", text or ""))
+        if got:
+            return got
+    return set()
+
+
+REGION_TEXT = 3000  # 지역을 볼 가져온 글 앞 글자 수
+
+
+def in_region(hits: list, want: set[str]) -> list:
+    """찾을 지역과 겹치지 않는 지역만 나온 페이지를 뺀다(제목 · 가져온 글 앞쪽). 지역이 안 나온 페이지는 둔다."""
+    if not want:
+        return hits
+    out = []
+    for h in hits:
+        got = places(f"{h.title} {h.text[:REGION_TEXT]}")
+        if not got or got & want:
+            out.append(h)
+    return out
+
+
+def _is_place(part: str) -> bool:
+    """집 조건 한 토막이 지역(시 · 구 · 동)인지."""
+    p = part.strip()
+    return bool(places(p)) or bool(_EMD.match(p))
 
 
 def _ends_with_result(content: list[dict]) -> bool:
@@ -857,21 +1071,39 @@ async def _loop(run_: _Run, cc: llm.CallCtx) -> None:
     t0 = time.monotonic()
     system = prompts.text("researcher")
 
-    async def on_block(kind: str, name: str | None) -> None:
-        if kind.endswith("_tool_result"):
-            run_.seen_result = True
-            return
-        if kind == "server_tool_use":
-            step = {"web_search": "search", "web_fetch": "read"}.get(name or "")
-        else:
-            step = "write" if kind == "text" and run_.seen_result else None
-        if step and step != run_.step:
+    # 진행 단계(QA r3 s3: 도구 사이 짧은 글이 '정리하는 중'을 찍고 다시 '찾는 중'으로 돌아갔다): 찾는 중 · 자료 읽는 중은
+    # 웹 도구 부름으로, 정리하는 중은 웹 결과를 본 뒤 끝 정리('요약:'으로 시작하는 글)가 시작될 때만 찍는다
+    head = {"text": "", "armed": False}
+
+    async def mark(step: str) -> None:
+        if step != run_.step:
             run_.step = step
             await _mark(
                 run_.research_id,
                 step=step,
                 steps=_push(AssistantResearch.steps, _log("step", now_utc(), step=step)),
             )
+
+    async def on_block(kind: str, name: str | None) -> None:
+        head["armed"] = False
+        if kind in WEB_RESULTS:
+            run_.seen_result = True
+        elif kind == "text":
+            head.update(text="", armed=run_.seen_result)
+        elif kind == "server_tool_use":
+            step = {"web_search": "search", "web_fetch": "read"}.get(name or "")
+            if step:
+                await mark(step)
+
+    async def on_text(t: str) -> None:
+        if not head["armed"]:
+            return
+        head["text"] += t
+        if _SUMMARY_HEAD.match(head["text"].lstrip()):
+            head["armed"] = False
+            await mark("write")
+        elif len(head["text"].strip()) >= SUMMARY_PEEK:
+            head["armed"] = False  # 끝 정리가 아닌 글(도구 사이 말)
 
     while True:
         ctl = await _control(run_.research_id)
@@ -925,6 +1157,7 @@ async def _loop(run_: _Run, cc: llm.CallCtx) -> None:
                     max_tokens=MAX_TOKENS,
                     container=run_.container,
                     on_block=on_block,
+                    on_text=on_text,
                 ),
                 timeout=left,
             )
@@ -984,7 +1217,7 @@ def gate(text: str, allowed: set[float], prompt: str, kind: str) -> str | None:
     from app.assistant import runtime  # 늦게: runtime → tools → 조사 도구 → 이 파일 순환을 피한다
 
     t = _MARK.sub("", _BULLET.sub("", text)).strip()
-    if not t:
+    if not t or _INSIDE.search(t):  # 안쪽 사정(도구 상한 · 코드 오류)은 고객 쪽 말이 아니다(결정 3)
         return None
     if check.mask(t) != t or _PHONE.search(t):
         return None
@@ -1087,9 +1320,15 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
     blocks = [b for _, b in run_.blocks]
     newest = [b for g, b in run_.blocks if g == run_.gen]  # 바꾼 조건 뒤에 찾은 것을 먼저 본다
     allowed = guard.numbers(_source_text(blocks, [run_.goal, run_.terms, *notes]))
+    every = weblinks.hits(blocks)
+    dead = {weblinks.key(h.url) for h in every if h.dead}  # 열리지 않는 · 닫힌 페이지
     picked = _picked(run_.final_text)
-    chosen = [h for h in weblinks.hits(blocks) if weblinks.key(h.url) in picked]
-    hits = chosen or weblinks.hits(newest) or weblinks.hits(blocks)
+    chosen = [h for h in every if weblinks.key(h.url) in picked]
+    hits = chosen or weblinks.hits(newest) or every
+    hits = [h for h in hits if weblinks.key(h.url) not in dead]
+    # 믿집 밖 업체: 찾을 지역(바꾼 조건 · 목표, 없으면 집 지역)과 다른 지역만 나온 링크는 뺀다
+    if run_.kind == "outside_vendors":
+        hits = in_region(hits, target_places(run_.goal, notes) or places(run_.terms))
     memos = _memos(run_.final_text, allowed, prompt, run_.kind)
     links: list[dict] = []
     for h in _order(run_.kind, hits):
@@ -1105,12 +1344,15 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
         if len(links) == LINK_MAX:
             break
     outside = run_.kind == "outside_vendors"
+    # 찾은 만큼(결정 3): 상한 · 멈춤으로 일찍 끝났거나, 웹 도구 상한까지 다 썼거나(max_uses_exceeded) 결과를 거르는
+    # 코드가 실패한 조사는 '그때까지 찾은 것만'으로 보인다(QA r3 s3: 요약이 '도구 한도' · '코드 오류'를 말함)
+    short = "max_uses_exceeded" in weblinks.tool_errors(blocks) or weblinks.code_failed(blocks)
     return {
         "summary": _summary(run_.final_text, allowed, prompt, run_.kind),
         "links": links,
         "checks": [{"label": a, "href": b} for a, b in CHECKS] if outside else [],
         "outside": outside,
-        "partial": run_.reason is not None,
+        "partial": run_.reason is not None or short,
         "note": OUTSIDE_NOTE if outside else None,
     }
 
