@@ -1,6 +1,7 @@
 """고침 3차 A1(QA r3): 고객 · 업체 지시문(customer_v4 · vendor_v4)이 리드 결정 1~4를 지키는지 본다. LLM 없음.
 
-- 결정 1 · 4: 답은 보통 두세 문장 · 150자 안팎, 예시 답도 그 길이(모델은 예시 길이를 따라 해요). '길어도 돼' 예외 없음.
+- 결정 1 · 4: 답은 짧게, 예시 답도 그 길이(모델은 예시 길이를 따라 해요). '길어도 돼' 예외 없음. 11-22 말풍선(사용자)부터
+  규칙은 '말풍선 둘(많아야 셋) · 모두 합쳐 많아야 다섯 문장 · 문장은 50자 안팎'이고, 예시 답 전체는 그대로 160자 안이에요.
 - 결정 2: 목록(-, 1.) · 굵은 글씨 · 제목 없음. 결정 3: 한국어로만.
 - 할 일 2: 이름 부르기 원리 · '반갑습니다' · 지키지 못할 약속 · 취소 까닭 · 조사는 부탁했을 때만 · 채팅이 열린 업체만.
 """
@@ -12,8 +13,11 @@ import pytest
 from app.assistant import prompts
 from tests.test_v4_prompt_examples import PROMPTS, answers, sl
 
-EXAMPLE_SENTS = 3
-EXAMPLE_CHARS = 160  # '150자 안팎'
+EXAMPLE_BUBBLES = 3  # '말풍선 둘(많아야 셋)'
+EXAMPLE_SENTS = 5  # '모두 합쳐 많아야 다섯 문장'
+SENT_CHARS = 60  # '문장은 50자 안팎'
+EXAMPLE_CHARS = 160  # 예시 답 전체(모델이 예시 길이를 따라 해요)
+BUBBLE = re.compile(r"\n[ \t]*\n")
 LIST = re.compile(r"(?m)^\s*(?:[-*•]|\d{1,2}[.)])\s|\s(?:[-*•]|\d{1,2}[.)])\s(?=\S)")
 
 
@@ -28,9 +32,14 @@ def test_example_answers_are_short_and_plain(name):
     bad = {}
     for a in got:
         text, sents = a["text"], sl.sentences(a["text"])
+        bubbles = [b for b in BUBBLE.split(text) if b.strip()]
         why = []
+        if len(bubbles) > EXAMPLE_BUBBLES:
+            why.append(f"말풍선 {len(bubbles)}개")
         if len(sents) > EXAMPLE_SENTS:
             why.append(f"{len(sents)}문장")
+        if any(len(x) > SENT_CHARS for x in sents):
+            why.append(f"{SENT_CHARS}자 넘는 문장")
         if len(text) > EXAMPLE_CHARS:
             why.append(f"{len(text)}자")
         if "**" in text or LIST.search(text) or "#" in text:
@@ -45,7 +54,8 @@ def test_example_answers_are_short_and_plain(name):
 @pytest.mark.parametrize("name", ["customer_v4", "vendor_v4"])
 def test_rules_set_length_format_and_korean_only(name):
     r = rules(name)
-    assert "두세 문장, 150자 안팎" in r and "많아야 다섯 문장" in r
+    assert "말풍선 둘(많아야 셋)" in r and "많아야 다섯 문장" in r
+    assert ("문장은 50자 안팎으로 짧게" if name == "customer_v4" else "문장은 짧게 끊고") in r
     assert "목록(-, 1.) · 굵은 글씨 · 제목을 쓰지 마" in r
     assert "한국어로만 답해" in r and "지금은 한국어로만 답할 수 있어요" in r
     assert "길어도 돼" not in prompts._model_text(name)

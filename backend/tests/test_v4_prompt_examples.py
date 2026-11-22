@@ -39,6 +39,8 @@ sl = _lint()
 STYLE = frozenset({"R3", "R4", "R6", "R11", "R13", "R14"})
 HEAD = re.compile(r"^### (\d+)\. (.+)$")
 LINE = re.compile(r"^- (고객|업체|사실|도구|비서)(?:\(([^)]+)\))?: (.*)$")
+# 말풍선 꼴 비서 글(11-22): '- 비서:'만 있는 줄 다음 줄들이 글이에요(빈 줄로 말풍선을 나눔)
+OPEN = re.compile(r"^- (비서)(?:\(([^)]+)\))?:\s*$")
 TOOL = re.compile(r"\b[a-z]+(?:_[a-z]+)+\b")
 # 화면 카드를 보이는 읽기 도구 → 카드 kind(그 카드 단추가 만드는 행동은 policy.BUTTONS)
 READ_CARD = {
@@ -66,11 +68,26 @@ def answers(name: str) -> list[dict]:
     """좋은 예시의 비서 글마다 같은 갈래(괄호)의 사실 · 도구 줄, 예시의 사람 말."""
     body = (PROMPTS / f"{name}.md").read_text(encoding="utf-8").split("## 좋은 예시", 1)[1]
     blocks: list[dict] = []
+    bubble: list | None = None  # 모으는 중인 말풍선 꼴 비서 글 [이름, 갈래, 줄들]
     for ln in body.splitlines():
+        if ln.startswith("## "):
+            break
         if h := HEAD.match(ln):
+            bubble = None
             blocks.append({"no": h.group(1), "title": h.group(2), "lines": []})
+        elif (o := OPEN.match(ln)) and blocks:
+            bubble = [o.group(1), o.group(2) or "", []]
+            blocks[-1]["lines"].append(bubble)
         elif (m := LINE.match(ln)) and blocks:
+            bubble = None
             blocks[-1]["lines"].append((m.group(1), m.group(2) or "", m.group(3)))
+        elif bubble is not None:
+            bubble[2].append(ln)
+    for b in blocks:  # 말풍선 꼴 글은 줄을 이어 하나로(빈 줄은 말풍선 나눔 그대로)
+        b["lines"] = [
+            (k, t, "\n".join(v).strip()) if isinstance(v, list) else (k, t, v)
+            for k, t, v in b["lines"]
+        ]
     out = []
     for b in blocks:
         said = " ".join(v for k, _, v in b["lines"] if k in ("고객", "업체"))
