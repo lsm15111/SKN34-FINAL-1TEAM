@@ -35,6 +35,12 @@
 - 업체 추천은 실측을 요청한 업체를 빼고 보여 준다(다 요청했으면 작업 카드, 확정했으면 확정한 업체).
 - '취소해 줘' · '그 카드 거둬 줘'(_cancel, 피클 표본 7): 열린 승인 카드가 하나면 바로 거두고(실행 전이라 고객 말로
   된다, 거절과 같게 남음), 보낸 실측 요청이면 취소 승인 카드, 여럿이면 고르기 칩 카드. 묻는 말 · 가정은 빼요.
+  보낸 요청이 여럿이면 LLM 길과 같은 풀기(propose.cancel_targets: 업체 이름 · '둘 다 · 모두' · '…는 남기고')로 요청마다
+  카드, 못 풀면 고르기 칩에 '둘 다 · 모두 취소'(QA r5 D 3).
+- '업체 답 오면 알려 줘'(알림 부탁, QA r5 D 2): 업체 추천 · 날짜 바꾸기 앞에서 받아 믿집이 먼저 알리는 일만 약속하고,
+  밤(먼저 말 걸기 규칙의 밤 때)이면 아침에 간다는 말을 붙여요. 바로 앞 답과 같은 글이면 짧게.
+- 받은 견적서가 없을 때 '빠진 거 없어요?'(QA r5 D 1): 표준견적서에서 합계에 안 들어간 줄(실측 후 · 선택 · 안 함,
+  계산 엔진이 저장한 상태)을 말해요. 금액은 말하지 않아요.
 """
 
 import re
@@ -426,8 +432,13 @@ WHY_PRICE = re.compile(
     r"왜\s{0,2}(?:이렇게|이리|그렇게|케|캐|이\s{0,2}정도로?)?\s{0,2}(?:비싸|비쌈|많이)"
 )
 STRONG_PRICE = re.compile(r"바가지|덤터기|덤탱이|터무니|너무\s{0,2}비싸|과하")
-# 견적서에서 무엇이 빠졌는지 묻는 말('뭐가 빠진 거 아니에요?' · '뭔가 빠졌나요?'). 할 일 · 준비물 · 짐에서 빠진 것은 아님
-MISSING = re.compile(r"(?:뭐|뭔가|무엇|어떤\s{0,2}(?:게|것|항목))\S{0,2}\s{0,2}빠(?:진|졌|지|뜨)")
+# 견적서에서 무엇이 빠졌는지 묻는 말('뭐가 빠진 거 아니에요?' · '뭔가 빠졌나요?' · '빠진 거 없어요?' · '누락된 거
+# 있어요?', QA r5 D 1). 할 일 · 준비물 · 짐에서 빠진 것은 아님('빠진 업체'도 아님)
+MISSING = re.compile(
+    r"(?:뭐|뭔가|무엇|어떤\s{0,2}(?:게|것|항목))\S{0,2}\s{0,2}빠(?:진|졌|지|뜨)|"
+    r"(?:빠진|빠뜨린|빠트린|누락된)\s{0,2}(?:거|것|건|게|걸|항목|줄|내용)\S?\s{0,2}(?:없|있|아니)|"
+    r"누락\S{0,2}\s{0,2}(?:없|있)"
+)
 NOT_QUOTE = re.compile(r"할\s{0,2}일|직접|준비물|점검표|짐|안내문")
 # 사람이 할 일을 대신 해 달라는 말('네가 알아서 확정해')
 DELEGATE = re.compile(
@@ -1070,6 +1081,56 @@ async def _missing(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     return said, ToolOut(data={}, cards=[card], task=task)  # type: ignore[list-item]
 
 
+# 받은 견적서가 없을 때 '빠진 거 없어요?'(QA r5 D 1): 표준견적서 줄 포함 상태(AGENTS.md 3장) 중 합계에 안 들어가는
+# 것만 화면 말로(묶음 포함은 다른 줄에 들어 있어 빼요). 상태마다 줄 이름 MISSING_MAX개까지, 금액은 말하지 않아요
+OUT_STATES = (
+    ("after_visit", "'실측 후'로 둔"),
+    ("optional", "'선택'인"),
+    ("excluded", "'안 함'인"),
+)
+MISSING_MAX = 3
+MISSING_STD = "표준견적서에서 {parts} 합계에 없어요."
+MISSING_ALL = "표준견적서 줄은 모두 합계에 들어 있어요."
+MISSING_NEXT = "업체 실측 견적서가 오면 포함 항목을 견줘 볼 수 있어요."
+
+
+def out_lines(std) -> list[tuple[str, list[str]]]:
+    """표준견적서(quote.service.standard_for 값) → 합계에 안 들어간 줄 이름(괄호 풀이 뗌)을 상태 차례로."""
+    rows = [ln for t in std.trades for ln in t.lines]
+    got = []
+    for state, head in OUT_STATES:
+        names = dict.fromkeys(line_name(ln.name) for ln in rows if ln.state == state)
+        names.pop("", None)
+        if names:
+            got.append((head, list(names)[:MISSING_MAX]))
+    return got
+
+
+def missing_said(groups: list[tuple[str, list[str]]]) -> str:
+    """'표준견적서에서 '실측 후'로 둔 A · B와 '안 함'인 C는 합계에 없어요.' + 견적서가 오면 견줄 수 있다는 말."""
+    if not groups:
+        return join(MISSING_ALL, MISSING_NEXT)
+    parts = []
+    for i, (head, names) in enumerate(groups):
+        what = " · ".join(names)
+        parts.append(f"{head} {eun(what) if i == len(groups) - 1 else josa(what, '과/와')}")
+    return join(MISSING_STD.format(parts=" ".join(parts)), MISSING_NEXT)
+
+
+async def _missing_standard(tc: ToolCtx) -> tuple[str, ToolOut] | None:
+    """받은 견적서가 없을 때 빠진 것: 표준견적서에서 합계에 안 들어간 줄(계산 엔진이 저장한 상태) + 표준견적서 카드.
+    표준견적서를 못 읽으면 None(의도 모델로)."""
+    from app.quote import service as quote_service
+
+    try:
+        async with SessionLocal() as s:
+            std = await quote_service.standard_for(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+            card, _ = await cards.standard(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+    except AppError:
+        return None
+    return missing_said(out_lines(std)), ToolOut(data={}, cards=[card])
+
+
 async def _pricey(tc: ToolCtx, text: str) -> tuple[str, ToolOut]:
     """'왜 이렇게 비싸요 장난해요?' · '바가지예요?'(리드 결정 2, QA 3차 f1 8 · f1x 9): 화났거나 왜 비싼지 물으면 공감
     한마디, 받은 견적서가 있으면 견적서끼리 다른 포함 칸(빠진 줄), 없으면 표준견적서에서 금액이 큰 줄 이름(할증 줄이
@@ -1319,7 +1380,7 @@ def route_of(text: str) -> str | None:
         return "waste"
     if PRICEY.search(t) and (ANGRY.search(t) or WHY_PRICE.search(t) or STRONG_PRICE.search(t)):
         return "pricey"
-    # '뭐가 빠진 거 아니에요?'(받은 견적서가 없으면 의도 모델로)
+    # '뭐가 빠진 거 아니에요?' · '빠진 거 없어요?'(받은 견적서가 없으면 표준견적서 포함 상태로)
     if MISSING.search(t) and not NOT_QUOTE.search(t):
         return "missing"
     if EXTRA_ASK.search(t):
@@ -1354,8 +1415,8 @@ async def route(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
         return await _compare(tc, text, [])
     if name == "pricey":
         return await _pricey(tc, text)
-    if name == "missing":
-        return await _missing(tc, text)
+    if name == "missing":  # 받은 견적서가 없으면 표준견적서에서 합계에 안 들어간 줄(QA r5 D 1)
+        return await _missing(tc, text) or await _missing_standard(tc)
     if name == "extra":
         return _extra(text)
     if name == "slots":
@@ -1663,6 +1724,12 @@ CANCEL_REJECTED = (
 CANCEL_PICK = "무엇을 취소할까요? 아래에서 골라 주세요."
 CANCEL_NONE = "지금 거둘 승인 카드나 취소할 실측 요청이 없어요."
 CANCEL_CLOSED = "그 카드는 이미 처리됐어요."
+# 말로 고른 보낸 요청이 여럿('둘 다 취소해 줘', QA r5 D 3): 요청마다 취소 승인 카드(propose.cancel_many)
+CANCEL_MANY_MADE = (
+    "{names}에 보낸 실측 요청을 하나씩 취소하는 카드를 만들었어요. 카드마다 누르시면 그 요청이 취소되고 업체에도 "
+    "알림이 가요."
+)
+CANCEL_MANY_SAME = "같은 실측 요청 취소 카드가 이미 있어요. 카드마다 확인하고 눌러 주세요."
 
 
 def cancel_said(text: str) -> bool:
@@ -1672,9 +1739,12 @@ def cancel_said(text: str) -> bool:
 
 async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     """'취소해 줘': 후보(열린 승인 카드 · 보낸 실측 요청)를 말로 좁힌다. '카드'면 카드만, '보낸 · 이미'면 보낸 요청만,
-    카드 제목(고르기 칩이 보낸 말) · 업체 이름 · 카드 종류 낱말이 있으면 그것만. 하나면 카드는 바로 거두고(실행 전이라
-    고객 말로 된다) 보낸 요청은 취소 승인 카드(업체에 알림이 가니 한 번 누름을 남긴다), 여럿이면 고르기 칩. 추가 금액
-    말인데 거둘 카드가 없으면 None(추가 금액 길로)."""
+    카드 제목(고르기 칩이 보낸 말) · 업체 이름 · 카드 종류 낱말이 있으면 그것만. 보낸 요청은 LLM 길과 같은 풀기
+    (propose.cancel_targets: 업체 이름 · '둘 다 · 모두' · '…는 남기고 · … 빼고', QA r5 D 3)로 좁히고, 이미 열린 그
+    요청의 취소 카드는 따로 세지 않는다(같은 말이 또 오면 같은 카드). 하나면 카드는 바로 거두고(실행 전이라 고객 말로
+    된다) 보낸 요청은 취소 승인 카드(업체에 알림이 가니 한 번 누름을 남긴다), 말로 고른 요청이 여럿이면 요청마다 취소
+    승인 카드, 못 풀면 고르기 칩(보낸 요청이 둘 이상이면 '둘 다 · 모두 취소', propose.cancel_options와 같은 말). 추가
+    금액 말인데 거둘 카드가 없으면 None(추가 금액 길로)."""
     from app.assistant.tools import propose
 
     pid = tc.project_id
@@ -1687,15 +1757,16 @@ async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
         side = "card" if card_only else "visit"
         cands = [c for c in cands if c[0] == side] or cands
     said = propose.plain(text)
-
-    def hay(c) -> str:
-        return propose.haystack(c[1]) if c[0] == "card" else propose.plain(c[1].vendor_name)  # type: ignore[attr-defined]
-
     titled = [c for c in cands if c[0] == "card" and propose.plain(propose.title_of(c[1])) in said]
     cands = titled or cands
     names = [n for n in await vendor_names(tc) if propose.plain(n) and propose.plain(n) in said]
+    # 카드는 업체 이름이 든 것만(보낸 요청은 아래 풀기로: '결도배 빼고 다'는 결도배가 아니에요)
     if names:
-        cands = [c for c in cands if any(propose.plain(n) in hay(c) for n in names)]
+        cands = [
+            c
+            for c in cands
+            if c[0] == "visit" or any(propose.plain(n) in propose.haystack(c[1]) for n in names)
+        ]
     kinds = {k for k, rx in CANCEL_KIND if rx.search(text)}
     if kinds and not titled:
         cands = [
@@ -1704,25 +1775,37 @@ async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
             if (c[0] == "card" and c[1].kind in kinds)  # type: ignore[attr-defined]
             or (c[0] == "visit" and "visit_request" in kinds)
         ]
+    vis = [v for k, v in cands if k == "visit"]
+    picked = propose.cancel_targets(vis, text) if vis else []
+    if picked:
+        vis = picked
+    elif names:
+        # 못 풂: 말한 업체는 남기는 쪽('…는 남기고')이고, 말한 업체에 살아 있는 요청이 없으면 비워요
+        named = [v for v in vis if propose.plain(v.vendor_name) in said]  # type: ignore[attr-defined]
+        vis = [v for v in vis if v not in named] if named else []
+    ids = {v.id for v in vis}  # type: ignore[attr-defined]
+    opened = [
+        a
+        for k, a in cands
+        if k == "card" and not (a.kind == "visit_cancel" and a.target_id in ids)  # type: ignore[attr-defined]
+    ]
+    cands = [("card", a) for a in opened] + [("visit", v) for v in vis]
     if not cands:
         return (
             None
             if EXTRA_WORD.search(text)
             else (join(CANCEL_NONE, await now_tail(tc)), ToolOut(data={}))
         )
+    if len(vis) > 1 and picked and not opened:  # '둘 다 취소해 줘': 요청마다 취소 승인 카드
+        return await _cancel_many(tc, text, vis)
     if len(cands) > 1:
-        options = [
-            *propose.unique_say([a for k, a in cands if k == "card"]),
-            *(
-                (
-                    f"{v.vendor_name}에 보낸 실측 요청",  # type: ignore[attr-defined]
-                    f"{v.vendor_name}에 보낸 실측 요청 취소해 줘",  # type: ignore[attr-defined]
-                    cards.SENT_STATE.get(v.status),  # type: ignore[attr-defined]
-                )
-                for k, v in cands
-                if k == "visit"
-            ),
-        ]
+        options = propose.unique_say(opened)
+        if vis:  # 보낸 요청 칩은 LLM 길과 같은 말 · 보내는 말('둘 다 · 모두 취소' 칩 포함)
+            got = propose.cancel_options(vis).data["options"]
+            # 일부만 남았으면 '둘 다 · 모두' 칩은 빼요(그 칩 말은 살아 있는 요청 모두예요)
+            if len(vis) < len(visits):
+                got = got[: len(vis)]
+            options += [(o["label"], o["say"], o.get("sub")) for o in got]
         card = cards.options_card("cancel-pick", "무엇을 취소할까요?", options)
         return CANCEL_PICK, ToolOut(data={}, cards=[card])
     kind, it = cands[0]
@@ -1748,6 +1831,134 @@ async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     return said_by.get(str(got.data.get("state")), CANCEL_CLOSED), got
 
 
+async def _cancel_many(tc: ToolCtx, text: str, visits: list) -> tuple[str, ToolOut]:
+    """말로 고른 보낸 요청 여럿 → 요청마다 취소 승인 카드(propose.cancel_many, LLM 길과 같은 카드). 열린 같은 카드는
+    다시 보이고, 앞에서 거절한 카드는 말로 다시 만들지 않아요."""
+    from app.assistant.tools import propose
+
+    code = next((c for c, rx in CANCEL_WHY if rx.search(text)), "other")
+    try:
+        got = await propose.cancel_many(tc, visits, code, tc.project_id)  # type: ignore[arg-type]
+    except ToolError as e:
+        return e.message, ToolOut(data={})
+    items = got.data.get("items") or []
+    live = [x for x in items if x.get("state") in ("new", "same")]
+    if not live:
+        rejected = any(x.get("state") == "rejected" for x in items)
+        return (CANCEL_REJECTED if rejected else CANCEL_CLOSED), got
+    if all(x.get("state") == "same" for x in live):
+        return CANCEL_MANY_SAME, got
+    return CANCEL_MANY_MADE.format(names=" · ".join(x["vendor_name"] for x in live)), got
+
+
+# ---- 알림 부탁(QA r5 D 2: '업체 답 오면 알려 줘'가 업체 추천 길로 가 같은 글 두 번) ----
+
+# 무엇이 오면(-면 · -거든 · -는 대로) 알려 · 말해 달라는 말. 업체가 연락하는지 묻는 말('실측 끝나면 연락해 줘요?')과
+# 알리지 말라는 말은 아니에요. '공사가 미뤄지면 알려 주세요'도 여기(날짜 바꾸기 요청 카드로 가지 않게)
+NOTIFY_ASK = re.compile(
+    r"(?:오|나오|올라오|들어오|생기|되|남|끝나|정해지|잡히|바뀌|미뤄지|늦어지|당겨지|떨어지|내려가|답하|보내|"
+    r"올리|끝내|도착하)"
+    r"으?시?(?:면|거든|는\s{0,2}대로)\s{0,2}"
+    r"(?:(?:바로|꼭|좀|곧|곧바로|먼저|빨리|저한테|나한테|제게|저에게|(?:문자|메일|카톡|전화|알림)으?로)\s{0,2})*"
+    r"(?:알려|알림|말해|말씀해|얘기해|이야기해|귀띔)"
+)
+NOT_NOTIFY = re.compile(
+    r"(?:알려|말해|알림)\S{0,2}\s{0,2}주지\s{0,2}(?:마|말)|알림\S{0,2}\s{0,2}(?:끄|꺼|싫|그만|말고|빼)"
+)
+# 믿집이 먼저 알리는 일(먼저 말 걸기 트리거 · 조사 알림, docs/v4/07-automation.md): 말에서 위에서부터 처음 맞는 것
+NOTIFY_KINDS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("extra", re.compile(r"추가\s{0,2}(?:금액|금|비용|공사비|요금)")),
+    ("research", re.compile(r"조사")),
+    ("quote", re.compile(r"(?<!가)견적|실측\S{0,3}\s{0,2}(?:다\s{0,2})?(?:끝|마치|마무리)")),
+    ("done", re.compile(r"(?:공사|시공|도배|목공)\S{0,3}\s{0,2}(?:다\s{0,2})?(?:끝|마치|마무리|완료)")),
+    ("week", re.compile(r"일주일|한\s{0,2}주\s{0,2}(?:전|남)")),
+    ("eve", re.compile(r"전날|하루\s{0,2}전")),
+    ("reply", re.compile(r"답|연락|회신|수락|기간|실측")),
+    ("dates", re.compile(r"날짜|일정|미뤄|늦어|연기|당겨")),
+)  # fmt: skip
+# 일마다 (약속 글의 때, 바로 앞과 같을 때 짧은 글의 때). {who}는 답 기다리는 업체('결도배 · 마루와벽이')
+NOTIFY_WHEN: dict[str, tuple[str, str]] = {
+    "reply": ("{who} 답하면", "답이 오면"),
+    "quote": ("실측 견적서가 오면", "견적서가 오면"),
+    "dates": ("업체가 공사 날짜를 올리거나 바꾸자고 하면", "공사 날짜 소식이 오면"),
+    "extra": ("업체가 추가 금액을 올리면", "추가 금액이 올라오면"),
+    "research": ("맡기신 조사가 끝나면", "조사가 끝나면"),
+    "done": ("업체가 공사를 끝냈다고 올리면", "공사가 끝나면"),
+    "week": ("공사 일주일 전에", "일주일 전에"),
+    "eve": ("공사 전날에", "전날에"),
+}
+NOTIFY_SAID = "{when} 먼저 알려 드려요."
+NOTIFY_AGAIN = "네, {when} 알려 드릴게요."
+# 믿집이 먼저 알리지 않는 일('가격 떨어지면 알려 줘'): 약속하지 않고 먼저 알리는 일을 말해요
+NOTIFY_LIST = (
+    "믿집은 업체 답 · 견적서 · 공사 날짜 · 추가 금액 · 조사 결과 · 공사 끝 소식과 공사 일주일 전 · 전날 할 일을 "
+    "먼저 알려 드려요."
+)
+NOTIFY_LIST_AGAIN = "업체 답 · 견적서 · 공사 날짜 같은 공사 소식만 먼저 알려 드려요."
+NOTIFY_APP = "문자 · 메일 · 전화가 아니라 믿집 알림으로 가요."
+NOTIFY_NIGHT = "밤 알림은 {at}에 가요."  # {at}: 먼저 말 걸기 규칙의 아침 시각('아침 9시')
+CHANNEL_WORD = re.compile(r"문자|메일|카톡|카카오|전화")
+WAIT_REPLY = ("requested", "picked")  # 업체 답을 기다리는 요청(기간 답하기 · 고른 시간 수락)
+
+
+def notify_asked(text: str) -> bool:
+    """소식이 오면 알려 달라는 말인지('업체 답 오면 알려 줘' · '연락 오면 말해 줘')."""
+    t = text or ""
+    return bool(NOTIFY_ASK.search(t)) and not NOT_NOTIFY.search(t)
+
+
+def notify_kind(text: str) -> str | None:
+    """알려 달라는 일(NOTIFY_KINDS 이름). 믿집이 먼저 알리는 일이 아니면 None."""
+    return next((k for k, rx in NOTIFY_KINDS if rx.search(text or "")), None)
+
+
+def is_night(now: datetime) -> bool:
+    """먼저 말 걸기 규칙(proactive.RULES)의 밤 때인지(알림을 아침으로 미루는 때)."""
+    from app.assistant import proactive
+
+    return proactive.RULES.night(now)
+
+
+def morning_at() -> str:
+    """밤 알림이 가는 아침 시각 글(먼저 말 걸기 규칙 값, '아침 9시')."""
+    from app.assistant import proactive
+    from app.shared import kdate
+
+    return kdate.hour_text(proactive.RULES.night_to)
+
+
+def notify_lines(kind: str | None, who: str) -> tuple[str, str]:
+    """(약속 글, 바로 앞 답과 같을 때 짧은 글). 믿집이 먼저 알리지 않는 일이면 먼저 알리는 일을 말해요."""
+    if kind is None:
+        return NOTIFY_LIST, NOTIFY_LIST_AGAIN
+    when, short = NOTIFY_WHEN[kind]
+    return NOTIFY_SAID.format(when=when.format(who=who)), NOTIFY_AGAIN.format(when=short)
+
+
+async def _notify(tc: ToolCtx, text: str) -> tuple[str, ToolOut]:
+    """알림 부탁: 믿집이 먼저 알리는 일만 약속(업체 답이면 답 기다리는 업체 이름, 계산 · 저장 값만). 문자 · 전화로
+    알려 달라면 믿집 알림으로 간다는 말, 밤이면 아침에 간다는 말을 붙이고(낮에는 밤 얘기를 하지 않아요), 바로 앞 답과
+    같은 글이면 짧게."""
+    kind = notify_kind(text)
+    who = "업체가"
+    if kind == "reply":
+        o = await _overview(tc)
+        names = dict.fromkeys(
+            v.vendor_name for v in (o.vendors if o else []) if v.status in WAIT_REPLY
+        )
+        if names:
+            who = i_ga(" · ".join(names))
+    full, short = notify_lines(kind, who)
+    tail = (
+        NOTIFY_APP if CHANNEL_WORD.search(text) else "",
+        NOTIFY_NIGHT.format(at=morning_at()) if is_night(tc.now) else "",
+    )
+    said = join(full, *tail)
+    if await said_last(tc, said):
+        said = join(short, *tail)
+    return said, ToolOut(data={})
+
+
 # ---- 한 턴 ----
 
 
@@ -1768,15 +1979,21 @@ AGAIN: dict[str, str] = {
     CHANGE_HOW: "'2주 미뤄 주세요'처럼 말해 주시면 날짜 바꾸기 요청 카드를 만들어 드릴게요.",
     CONTACT_SAID: "그것도 제가 업체에 전하지 않아요. 업체와는 믿집 채팅으로 이야기해 주세요.",
     QUOTES: "카드에서 견줘 보고 확정할 업체를 골라 주세요.",
+    CANCEL_PICK: "취소할 것을 아래 칩에서 골라 주세요.",  # QA r5 D 3: 같은 고르기 글 되풀이
 }
+
+
+async def said_last(tc: ToolCtx, said: str) -> bool:
+    """바로 앞 비서 답이 이 글과 글자까지 같은지(대화가 없으면 아니에요)."""
+    return tc.chat_id is not None and said in (await recent_said(tc, 4))[-1:]
 
 
 async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, ToolOut]:
     """무료 모드 답 한 번(글, 카드 · 행동 · 작업 카드). 글이 비면 부르는 쪽이 실패 문구를 쓴다. 지난 턴 답과 글자까지
-    같은 정해 둔 글이면 짧은 글(AGAIN)로 바꾼다."""
+    같은 정해 둔 글이면 짧은 글(AGAIN)로 바꾼다(알림 부탁 답은 _notify가 같은 꼴로 줄인다)."""
     said, out = await _answer(tc, text, card_id)
     short = AGAIN.get(said)
-    if short and tc.chat_id is not None and said in (await recent_said(tc, 4))[-1:]:
+    if short and await said_last(tc, said):
         said = short
     return said, out
 
@@ -1818,6 +2035,9 @@ async def _answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Too
     found = trades_in(plain)
     if tc.project_id is None:
         return await _knowledge(tc, text, found, card_id, plain=plain)
+    # '업체 답 오면 알려 줘': 먼저 알리는 일만 약속(업체 추천 · 날짜 바꾸기 앞, QA r5 D 2)
+    if notify_asked(text):
+        return await _notify(tc, text)
     if CHANGE.search(text) and not NOT_CHANGE.search(text):  # 공사 날짜 바꾸기 요청 승인 카드로
         return await _change(tc, text, found)
     if (got := await route(tc, text)) is not None:  # 칩 · 돈 · 생활 질문(의도 모델 앞)

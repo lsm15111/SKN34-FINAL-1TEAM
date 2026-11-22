@@ -510,7 +510,8 @@ def test_free_cancel_with_several_targets_shows_chips_then_the_chip_picks_one(ap
     assert not acts(ev)
     (pick,) = cards_of(ev, "options")
     options = {o["label"]: o for o in pick["data"]["options"]}
-    assert set(options) == {"결도배에 보낸 실측 요청", "마루와벽에 보낸 실측 요청"}
+    # 고침 5차 R2(QA r5 D 3): 무료 모드도 LLM 길처럼 '둘 다 취소' 칩이 있어요
+    assert set(options) == {"결도배에 보낸 실측 요청", "마루와벽에 보낸 실측 요청", "둘 다 취소"}
     assert options["마루와벽에 보낸 실측 요청"]["sub"] == "업체 답 기다림"
     assert said(ev) == "무엇을 취소할까요? 아래에서 골라 주세요."
     ev = ok(ask(api, w["pid"], options["마루와벽에 보낸 실측 요청"]["say"]))  # 칩을 누름
