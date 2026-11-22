@@ -1360,7 +1360,8 @@ class HomeCtx:
     diy: tuple[str, ...] = ()  # 고른 직접 할 일 칩 키
 
 
-FURNITURE = re.compile(r"가구|짐")
+# 사는 집에만 맞는 준비 줄(가구 · 짐 · 벽에 건 것). 빈 집이면 뺀다(QA r5 c1: 빈 집에 '벽에 건 액자 · 선반 떼기')
+FURNITURE = re.compile(r"가구|짐|액자|선반")
 ENTRY_ITEM = "공사 날 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정하기"
 PET_ITEM = "공사 날 반려동물이 지낼 곳 정하기"
 AWAY_LINE = (
@@ -1370,7 +1371,7 @@ PET_LINE = "반려동물은 풀 냄새 · 먼지 · 소음을 피해 공사 날 
 
 
 def fit_items(items, h: "HomeCtx | None") -> list[str]:
-    """빈 집이면 가구 · 짐 줄을 뺀다(정해 둔 글은 그대로)."""
+    """빈 집이면 가구 · 짐 · 액자 · 선반 줄을 뺀다(정해 둔 글은 그대로)."""
     return [x for x in items if h is None or h.occupied or not FURNITURE.search(x)]
 
 
