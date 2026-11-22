@@ -9,6 +9,7 @@ import uuid
 from datetime import date
 
 from sqlalchemy import delete, func, select
+from sqlalchemy import update as sql_update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -341,6 +342,18 @@ async def lock_for_visit(
     if unit is not None:
         p.apt_name, p.dong, p.ho = unit
     return p
+
+
+async def unlock(s: AsyncSession, project_id: uuid.UUID) -> bool:
+    """집 정보 잠금(locked_at)을 푼다. 보낸 실측 요청이 모두 끝났고(취소 · 못 받음 · 기한 지남 · 닫힘) 받은 견적서 ·
+    확정이 없을 때 visit.service가 판정하고 부른다(QA r3 s1: 취소하면 집 정보를 다시 고칠 수 있어요). 풀었으면 True.
+    rev는 그대로다(집 정보가 바뀐 것이 아니다). commit은 부르는 쪽이."""
+    res = await s.execute(  # 같은 세션의 공사 객체도 맞춘다(기본 synchronize_session)
+        sql_update(Project)
+        .where(Project.id == project_id, Project.locked_at.is_not(None))
+        .values(locked_at=None)
+    )
+    return res.rowcount == 1
 
 
 def _size(p: Project) -> SizeIn:

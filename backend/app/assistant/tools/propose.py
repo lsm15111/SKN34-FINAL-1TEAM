@@ -18,9 +18,9 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.assistant import actions
-from app.assistant.schemas import ActionSummary, AmountRow, LinkOut, SummaryRow
+from app.assistant.schemas import ActionSummary, AmountRow, CardOut, LinkOut, SummaryRow
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
-from app.assistant.tools.customer import TRADE, dobae_only, pid_of
+from app.assistant.tools.customer import TRADE, dobae_only, pid_of, region_of
 from app.db import SessionLocal
 from app.project import diy as project_diy
 from app.project.diy import DIY as DIY_LABELS
@@ -32,6 +32,7 @@ from app.shared.korean import euro
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 HALF = {"am": "오전", "pm": "오후"}
 FIELD_LABEL = {
+    "sgg": "지역",
     "area_m2": "면적(㎡)",
     "area_basis": "면적 기준",
     "occupied": "사는 중",
@@ -47,6 +48,21 @@ OFFER_NOTE = {
     "same": "같은 승인 카드가 이미 열려 있어요(새로 만들지 않았어요). 그 카드를 확인하고 눌러 달라고 안내해요.",
 }
 CLOSED_NOTE = "이미 닫힌 제안이에요(새로 만들지 않았어요)."
+REPLACED_NOTE = (
+    "앞에 열려 있던 '{titles}' 카드는 닫고 이 카드로 바꿨어요(그 카드는 거둘 것이 없어요)."
+)
+
+
+def summary_rows(sm: ActionSummary) -> list[dict]:
+    """승인 카드 요약 → 모델 값 줄: 칸(이름 · 값 · 덧말) · 업체별 금액 · 합계 금액(계산 엔진 값 그대로)."""
+    rows: list[dict] = [
+        {"label": r.label, "value": r.value, **({"sub": r.sub} if r.sub else {})} for r in sm.rows
+    ]
+    rows += [{"label": x.label, "won": x.won} for x in sm.amounts]
+    if sm.amount_won is not None:
+        rows.append({"label": "금액", "won": sm.amount_won})
+    return rows
+
 
 # 이번 턴에 사람이 분명히 해 달라고 한 말: 하는 말(저장 · 바꿔 · 요청 · 수락 …) 뒤에 부탁 · 다짐 끝말(주세요 · 줘 ·
 # 부탁 · 할게요 …), 또는 '…로 해 주세요'. 하지 말라는 말은 빼요. 거절한 제안을 다시 만들 새 결정으로 본다
@@ -130,6 +146,13 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
     }
     if got.live:
         model["expires_at"] = cards.seoul_text(a.expires_at)  # 서울 시각 글(UTC를 그대로 읽지 않게)
+        # 카드에 보이는 줄(직접 할 일 · 지역 · 날짜 · 금액): 모델이 카드와 다른 목록을 말하지 않게(QA r3 s6 B1)
+        model["summary"]["rows"] = summary_rows(a.summary)
+    # 같은 대상의 열린 카드를 새 카드로 바꿔 닫았다(QA r3 s4: 이미 닫힌 카드를 '거둘까요?'라고 물음)
+    if got.closed:
+        titles = [title_of(c) for c in got.closed]
+        model["replaced"] = titles
+        model["note"] = f"{note} {REPLACED_NOTE.format(titles=' · '.join(titles))}"
     out = ToolOut(
         data=model,
         actions=[a] if got.live else [],
@@ -142,6 +165,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
 
 
 class HomeFields(BaseModel):
+    sgg: str | None = Field(default=None, max_length=30)  # 지역 바꾸기: '노원구' · '부산 중구'
     area_m2: Decimal | None = Field(default=None, gt=10, lt=400, decimal_places=1)
     area_basis: Literal["supply", "exclusive"] | None = None
     pyeong: Decimal | None = Field(default=None, gt=3, lt=121, decimal_places=1)  # 공급 기준 평형
@@ -189,15 +213,36 @@ def home_note(
         ]
         said = [std] if paper or not tell else []
         return ". ".join(["저장하면 공정표에 직접 할 일 날짜가 들어가요", *said, *tell])
-    if changes.get(DEMOLITION_KEY) == "full":
-        return "저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
-    return "저장하면 표준견적서를 새로 계산해요"
+    std = (
+        "저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
+        if changes.get(DEMOLITION_KEY) == "full"
+        else "저장하면 표준견적서를 새로 계산해요"
+    )
+    # 지역 바꾸기(QA r3 s1): 업체 추천 · 실측 요청이 그 지역으로
+    if "sgg" in changes or "sido" in changes:
+        return f"{std}. 업체 추천도 바뀐 지역 업체로 바뀌어요"
+    return std
 
 
 NEED_BASIS = (
     "면적(㎡)을 바꿀 때는 기준(area_basis: supply 공급 · exclusive 전용)을 같이 넣어요. "
     "계약서 · 등기 · 'nn 타입'의 ㎡는 전용, 평형은 pyeong에 넣어요."
 )
+# 잠긴 집 정보(실측 요청 뒤)를 고치려 할 때 까닭: 보낸 요청이 모두 끝나고 견적서가 없으면 잠금이 풀린다
+# (visit.service.unlock_if_idle, 리드 결정 11-22). 견적서가 온 뒤에는 취소로도 풀리지 않는다
+LOCKED_QUOTED = "업체 견적서가 온 뒤라 집 정보를 고칠 수 없어요."
+LOCKED_LIVE = "실측 요청이 진행 중이라 집 정보를 고칠 수 없어요. 보낸 요청을 모두 취소하면 다시 고칠 수 있어요."
+LOCKED_HINT = (
+    "보낸 요청은 propose_visit_cancel(요청마다)로 취소 승인 카드를 만들 수 있어요. 고객이 눌러 모두 취소되면 "
+    "잠금이 풀리고, 그 뒤 다시 부르면 돼요."
+)
+
+
+def locked_text(live: int, quoted: bool) -> str:
+    """잠긴 집 정보를 고칠 수 없는 까닭(견적서가 왔는지 · 살아 있는 요청이 있는지)."""
+    if quoted:
+        return LOCKED_QUOTED
+    return LOCKED_LIVE if live else "실측을 요청한 뒤라 집 정보를 고칠 수 없어요."
 
 
 @tool(
@@ -205,9 +250,11 @@ NEED_BASIS = (
     surface="customer",
     kind="propose",
     status="집 정보 저장을 준비하고 있어요",
-    description="고객이 말한 집 정보(면적 · 평형 · 면적 기준 · 사는 중 · 벽지 · 방 개수 · 공사 시작 희망 · 철거 범위) "
-    "바뀜을 승인 카드로 만들어요. 고객이 말한 값을 넣으면 카드에서 고객이 확인하고 눌러야 저장돼요(실측을 요청한 "
-    "뒤에는 고칠 수 없어요). 기준을 되묻기만 하지 말고 고객이 말한 값으로 카드를 만들어요. "
+    description="고객이 말한 집 정보(지역 · 면적 · 평형 · 면적 기준 · 사는 중 · 벽지 · 방 개수 · 공사 시작 희망 · 철거 "
+    "범위) 바뀜을 승인 카드로 만들어요. 고객이 말한 값을 넣으면 카드에서 고객이 확인하고 눌러야 저장돼요. 실측 요청이 "
+    "진행 중이거나 업체 견적서가 온 뒤에는 고칠 수 없어요(보낸 요청을 모두 취소하면 견적서가 오기 전까지는 다시 고칠 수 "
+    "있어요). 기준을 되묻기만 하지 말고 고객이 말한 값으로 카드를 만들어요. 지역이 틀렸거나 다른 구로 바꾸면 "
+    "sgg(시 · 군 · 구, 예 노원구)를 넣어요(같은 이름이 여러 시 · 도에 있으면 '부산 중구'처럼). "
     "평형('34평')은 pyeong에 넣으면 믿집이 공급 ㎡로 바꿔요. ㎡를 area_m2에 넣을 때는 area_basis를 같이 넣어요: "
     "계약서 · 등기 · 'nn 타입'('84 타입' = 전용 84㎡)의 ㎡는 exclusive, 분양 면적이라고 한 ㎡는 supply예요. "
     "평형과 타입을 같이 말하면 타입(전용 ㎡)을 넣어요. "
@@ -219,6 +266,11 @@ NEED_BASIS = (
         {
             "fields": obj(
                 {
+                    "sgg": {
+                        "type": "string",
+                        "description": "바꿀 지역의 시 · 군 · 구(예 노원구 · 성남시 · 부산 중구). 지역을 "
+                        "바꿀 때만",
+                    },
                     "area_m2": {"type": "number", "description": "㎡, 소수 한 자리(기준과 같이)"},
                     "area_basis": {
                         "type": "string",
@@ -256,10 +308,13 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     from app.calc.dobae import DEMOLITION_KEY
     from app.project import service as project_service
     from app.project.schemas import HomeInfoIn, check_home
+    from app.shared.regions import region_label
     from app.visit import flow as visit_flow
+    from app.visit import service as visit_service
 
     pid = pid_of(tc)
     asked = a.fields.model_dump(exclude_none=True, mode="json")
+    want_region = asked.pop("sgg", None)  # 지역은 아래에서 시 · 도와 함께 푼다
     py = asked.pop("pyeong", None)
     if "area_m2" in asked and "area_basis" not in asked:
         raise ToolError("need_basis", NEED_BASIS)
@@ -273,6 +328,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         card, _ = await cards.home(s, tc.user, pid)
         diy_now = await project_diy.diy_for(s, pid)
         reach = await visit_flow.diy_reach(s, pid)  # 직접 할 일을 바꾸면 닿는 업체(QA r2 c2)
+        hold = await visit_service.lock_hold(s, pid) if p.locked else (0, False)
     if p.home is None:
         raise ToolError("no_home", "이 공사는 집 정보 화면에서 고쳐 주세요.")
     now_home = p.home.model_dump(mode="json")  # 철거 범위(모은 조건)도 들어 있다
@@ -281,10 +337,15 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     if "diy" in asked:  # 칩 순서로 맞춰 견준다
         asked["diy"] = [k for k in tuple(DIY_LABELS) if k in set(asked["diy"])]
     changes = {k: v for k, v in asked.items() if str(now_home.get(k)) != str(v)}
+    if want_region is not None:  # 지역 바꾸기(리드 결정 11-22, QA r3 s1)
+        region = region_of(want_region, now_home["sido"])
+        if region != (now_home["sido"], now_home["sgg"]):  # 시 · 도와 구를 같이, 옛 동은 지운다
+            dong = {"emd": None} if now_home.get("emd") else {}
+            changes = {"sido": region[0], "sgg": region[1], **dong, **changes}
     if not changes:
         raise ToolError("no_change", "바뀐 칸이 없어요.")
     if p.locked and set(changes) != {"diy"}:  # 직접 할 일만 바꾸는 건 요청 뒤에도 된다
-        raise ToolError("locked", "실측을 요청한 뒤라 집 정보를 고칠 수 없어요.")
+        raise ToolError("locked", locked_text(*hold), hint=LOCKED_HINT if hold[0] else None)
     home_changes = {k: v for k, v in changes.items() if k not in (DEMOLITION_KEY, "diy")}
     if home_changes:  # 철거 범위만 바꾸면 집 정보는 그대로라 다시 검사하지 않는다
         try:
@@ -297,10 +358,19 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         got = _show(k, v)
         return f"{got} ({Decimal(str(py)).normalize():f}평)" if k == "area_m2" and py else got
 
-    rows = [
-        SummaryRow(label=FIELD_LABEL[k], value=after(k, v), sub=f"지금 {_show(k, now_home.get(k))}")
+    # (칸 이름, 바꾼 뒤, 지금): 지역은 시 · 도 · 구 · 동을 한 줄 '서울 노원구'로 보인다
+    shown = [
+        (FIELD_LABEL[k], after(k, v), _show(k, now_home.get(k)))
+        if k != "sgg"
+        else (
+            FIELD_LABEL[k],
+            region_label(changes["sido"], v),
+            region_label(now_home["sido"], now_home["sgg"]),
+        )
         for k, v in changes.items()
+        if k not in ("sido", "emd")
     ]
+    rows = [SummaryRow(label=k, value=v, sub=f"지금 {b}") for k, v, b in shown]
     out, _ = await _offer(
         tc,
         kind="home_info",
@@ -327,10 +397,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         return out
     card.data = {
         **card.data,
-        "changes": [
-            {"label": FIELD_LABEL[k], "before": _show(k, now_home.get(k)), "after": after(k, v)}
-            for k, v in changes.items()
-        ],
+        "changes": [{"label": k, "before": b, "after": v} for k, v, b in shown],
         "action_id": str(out.actions[0].action_id),
     }
     card.say = "이 집 정보가 맞는지 확인해 주세요."
@@ -340,8 +407,18 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
 
 class VisitReqIn(BaseModel):
     trade: Literal["dobae", "mokgong"] = "dobae"
-    vendor_refs: list[str] = Field(min_length=1, max_length=3)
+    vendor_refs: list[str] = Field(default_factory=list, max_length=3)
     wish_ref: str | None = None
+    pick: Literal["top"] | None = None  # 고객이 맡김: 믿집 점수 1위를 서버가 넣는다
+
+    @model_validator(mode="after")
+    def _who(self) -> "VisitReqIn":
+        if self.pick is None and not self.vendor_refs:
+            raise ValueError("vendor_refs(업체 이름표 1~3개) 또는 pick=top")
+        return self
+
+
+TOP_WHY = "고객이 맡겨서 믿집 점수 1위(별점 · 끝낸 공사 · 가견적을 합친 점수)를 넣었어요"
 
 
 @tool(
@@ -350,13 +427,24 @@ class VisitReqIn(BaseModel):
     kind="propose",
     status="실측 요청을 준비하고 있어요",
     description="고른 업체(v1…, 1~3곳)에 보낼 실측 요청을 승인 카드로 만들어요. 희망 기간은 wish_ref(r1…)이고, "
-    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요.",
+    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
+    "빈 목록으로 두고 pick=top으로 불러요: 믿집 점수 1위 업체를 믿집이 넣고, 결과의 why가 까닭이에요(따로 고르지 "
+    "않아요). 요청은 집 지역 업체에만 보낼 수 있어요.",
     model=VisitReqIn,
     schema=obj(
         {
             "trade": TRADE,
-            "vendor_refs": {"type": "array", "items": REF, "description": "업체 이름표 1~3개"},
+            "vendor_refs": {
+                "type": "array",
+                "items": REF,
+                "description": "업체 이름표 1~3개(pick=top이면 빈 목록)",
+            },
             "wish_ref": REF,
+            "pick": {
+                "type": "string",
+                "enum": ["top"],
+                "description": "고객이 고르기를 맡김: 믿집 점수 1위를 믿집이 넣어요",
+            },
         },
         required=["trade", "vendor_refs"],
     ),
@@ -369,7 +457,15 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
 
     dobae_only(a.trade)
     pid = pid_of(tc)
-    picked = {tc.refs.get(r, "vendor")["id"]: r for r in a.vendor_refs}
+    top = None
+    if a.pick == "top":  # 맡긴 고르기는 코드 점수 1위(리드 결정 11-22, QA r3 s4)
+        async with SessionLocal() as s:
+            _card, pm = await cards.vendor_picks(s, tc.user, pid, a.trade, tc.refs)
+        if not pm["picks"]:
+            raise ToolError("no_vendor", "지금 요청할 수 있는 업체가 없어요.")
+        top = pm["picks"][0]
+    refs = [top["ref"]] if top else a.vendor_refs
+    picked = {tc.refs.get(r, "vendor")["id"]: r for r in refs}
     async with SessionLocal() as s:
         p = await project_service.get_for(s, tc.user, pid)
         lst = await visit_service.vendors_for(s, tc.user, pid, a.trade)
@@ -395,6 +491,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         title=f"{' · '.join(c.name for c in rows)}에 실측 요청 보내기",  # 턴 사실에 업체가 보이게
         amounts=[AmountRow(label=c.name, won=c.estimate_total) for c in rows],
         rows=[
+            SummaryRow(label="지역", value=p.region),  # 어느 집 지역으로 가는 요청인지(QA r3 s1)
             SummaryRow(label="희망 기간", value=cards.md_range(start, end)),
             SummaryRow(label="가견적", value="업체가 확인한 단가로 고정돼요"),
             *([told] if told else []),
@@ -419,11 +516,22 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         expires_at=tc.now + timedelta(days=3),
         project_id=pid,
     )
+    if top is not None:  # 맡긴 고르기: 누구를 왜 넣었는지(까닭 틀)
+        out.data["vendor"] = top["name"]
+        out.data["why"] = [TOP_WHY, *top.get("reasons", [])]
     return out
 
 
 class SlotIn(BaseModel):
     slot_ref: str
+
+
+# 반나절 승인 카드를 누른 뒤 일(모델 값 note): 업체 수락 전에는 실측이 정해진 게 아니에요
+SLOT_ACCEPT = (
+    "고객이 카드를 누르면 고른 반나절이 업체에 가고, 업체가 수락하면 정해져요. 누르기 전이나 업체 수락 전에는 "
+    "정해진 게 아니에요."
+)
+SLOT_INSTANT = "고객이 카드를 누르면 바로 정해져요. 누르기 전에는 정해진 게 아니에요."
 
 
 def slot_offer(v, slot: dict) -> dict:
@@ -487,7 +595,11 @@ async def propose_visit_slot(tc: ToolCtx, a: SlotIn) -> ToolOut:
     visit_id = uuid.UUID(slot["visit_id"])
     async with SessionLocal() as s:
         v = await visit_service.pick_view(s, tc.user, pid, visit_id, tc.now)
-    out, _ = await _offer(tc, project_id=pid, **slot_offer(v, slot))
+    got = slot_offer(v, slot)
+    out, _ = await _offer(tc, project_id=pid, **got)
+    if out.actions:  # 누른 뒤 일: 바로 확정인지 업체 수락을 기다리는지(QA r3 s4 6턴 '정해졌어요')
+        then = SLOT_INSTANT if got["payload"]["instant"] else SLOT_ACCEPT
+        out.data["note"] = f"{out.data['note']} {then}"
     return out
 
 
@@ -875,7 +987,10 @@ WITHDRAWN_NOTE = (
 CHOOSE_NOTE = "거둘 카드가 여럿이에요. 어느 카드인지 고객에게 물어요(카드의 단추로 고를 수 있어요)."
 NONE_NOTE = "지금 거둘 승인 카드가 없어요."
 EXECUTED_NOTE = "이미 실행된 카드라 거둘 수 없어요."
-SENT_NOTE = "보낸 실측 요청은 취소 승인 카드(propose_visit_cancel, requests의 이름표)로 취소해요. 고객이 눌러야 취소돼요."
+SENT_NOTE = (
+    "보낸 실측 요청은 취소 승인 카드(propose_visit_cancel)로 취소해요. 고객이 어느 업체 요청인지 말했으면 requests의 "
+    "이름표로, 요청이 여럿인데 말하지 않았으면 visit_ref 없이 불러 고르기 카드를 내요. 고객이 눌러야 취소돼요."
+)
 
 
 def plain(text: str | None) -> str:
@@ -1028,8 +1143,31 @@ async def withdraw_proposal(tc: ToolCtx, a: WithdrawIn) -> ToolOut:
 
 
 class VisitCancelIn(BaseModel):
-    visit_ref: str
-    code: Literal["changed", "other_vendor", "other"]
+    visit_ref: str | None = None  # 비우면: 살아 있는 요청이 하나면 그것, 여럿이면 고르기 카드
+    code: Literal["changed", "other_vendor", "other"] = "other"
+
+
+CANCEL_CHOOSE_NOTE = (
+    "보낸 실측 요청이 여럿이에요. 어느 업체 요청을 취소할지 고객에게 물어요(카드의 단추로 고를 수 있어요). 모두 "
+    "취소하려면 요청마다 visit_ref로 불러요."
+)
+CANCEL_NONE_NOTE = "지금 취소할 수 있는 실측 요청이 없어요."
+
+
+def cancel_options(visits: list) -> CardOut:
+    """살아 있는 요청이 여럿일 때 '무엇을 취소할까요?' 고르기 칩(무료 모드 '취소해 줘'와 같은 꼴)."""
+    return cards.options_card(
+        "cancel-pick",
+        "무엇을 취소할까요?",
+        [
+            (
+                f"{v.vendor_name}에 보낸 실측 요청",
+                f"{v.vendor_name}에 보낸 실측 요청 취소해 줘",
+                cards.SENT_STATE.get(v.status),
+            )
+            for v in visits
+        ],
+    )
 
 
 @tool(
@@ -1037,29 +1175,58 @@ class VisitCancelIn(BaseModel):
     surface="customer",
     kind="propose",
     status="실측 요청 취소를 준비하고 있어요",
-    description="이미 보낸 실측 요청(m1…)을 취소하는 승인 카드를 만들어요. code: changed 일정이 바뀜 · "
-    "other_vendor 다른 업체로 할래요 · other 그 밖. 고객이 카드를 눌러야 취소되고 업체에도 알림이 가요(잡은 실측 "
-    "날짜도 풀려요). 견적서가 온 뒤 · 확정 · 이미 닫힌 요청은 취소할 수 없어요. 아직 보내지 않은 실측 요청 카드는 "
-    "withdraw_proposal로 거둬요.",
+    description="이미 보낸 실측 요청(m1…)을 취소하는 승인 카드를 만들어요. code는 고객이 말한 까닭: changed 일정이 "
+    "바뀜 · other_vendor 다른 업체로 할래요, 까닭을 말하지 않았으면 other. 고객이 카드를 눌러야 취소되고 업체에도 "
+    "알림이 가요(잡은 실측 날짜도 풀려요). 고객이 어느 요청인지 말하지 않았으면 visit_ref를 비워요: 보낸 요청이 "
+    "하나면 그 요청 카드, 여럿이면 카드 대신 고르기 칩(state choose)을 돌려줘요. 견적서가 온 뒤 · 확정 · 이미 닫힌 "
+    "요청은 카드 없이 까닭(state closed)을 돌려줘요. 아직 보내지 않은 실측 요청 카드는 withdraw_proposal로 거둬요.",
     model=VisitCancelIn,
     schema=obj(
         {
-            "visit_ref": {"type": "string", "description": "실측 요청 이름표 m…"},
+            "visit_ref": {
+                "type": "string",
+                "description": "실측 요청 이름표 m…(고객이 어느 요청인지 말하지 않았으면 비워요)",
+            },
             "code": {"type": "string", "enum": list(actions.CANCEL_REASONS)},
-        }
+        },
+        required=["code"],
     ),
 )
 async def propose_visit_cancel(tc: ToolCtx, a: VisitCancelIn) -> ToolOut:
+    from app.visit import service as visit_service
+
     pid = pid_of(tc)
-    visit_id = uuid.UUID(tc.refs.get(a.visit_ref, "visit")["id"])
+    visit_id = uuid.UUID(tc.refs.get(a.visit_ref, "visit")["id"]) if a.visit_ref else None
     async with SessionLocal() as s:
-        v = next((x for x in await cards.sent_visits(s, tc.user, pid) if x.id == visit_id), None)
-    if v is None:
-        raise ToolError(
-            "not_cancellable",
-            "견적서가 왔거나 이미 끝난 요청이라 취소할 수 없어요.",
-            hint="today_tasks로 지금 진행 중인 요청(m…)을 다시 봐요",
+        live = await cards.sent_visits(s, tc.user, pid)
+        v = next((x for x in live if x.id == visit_id), None) if visit_id else None
+        gone = (
+            await visit_service.in_project(s, pid, visit_id)
+            if visit_id is not None and v is None
+            else None
         )
+    if gone is not None:  # 닫힌 요청에는 카드를 만들지 않아요(QA r3 c4 #37)
+        why = visit_service.ended_why(gone) or "지금 취소할 수 없는 요청이에요"
+        return ToolOut(
+            data={
+                "state": "closed",
+                "vendor_name": gone.vendor_name,
+                "note": f"{why}. 카드를 만들지 않았어요.",
+            }
+        )
+    if visit_id is None:
+        if not live:
+            return ToolOut(data={"state": "none", "note": CANCEL_NONE_NOTE})
+        if len(live) > 1:  # 어느 요청인지 물어요(QA r3 s6 B2)
+            data = {
+                "state": "choose",
+                "requests": requests_model(tc, live),
+                "note": CANCEL_CHOOSE_NOTE,
+            }
+            return ToolOut(data=data, cards=[cancel_options(live)])
+        v = live[0]
+    if v is None:  # 위에서 하나로 정해졌다(타입 검사용)
+        raise ToolError("not_cancellable", "지금 취소할 수 있는 실측 요청이 없어요.")
     summary = ActionSummary(
         title=f"{v.vendor_name}에 보낸 실측 요청 취소",
         rows=[
@@ -1074,9 +1241,9 @@ async def propose_visit_cancel(tc: ToolCtx, a: VisitCancelIn) -> ToolOut:
         tc,
         kind="visit_cancel",
         target_kind="visit",
-        target_id=visit_id,
+        target_id=v.id,
         target_ver=v.status,
-        payload={"visit_id": str(visit_id), "code": a.code, "vendor_name": v.vendor_name},
+        payload={"visit_id": str(v.id), "code": a.code, "vendor_name": v.vendor_name},
         summary=summary,
         expires_at=tc.now + timedelta(days=2),
         project_id=pid,

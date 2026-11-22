@@ -1297,9 +1297,11 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
         await emit(name, data)
 
     note = await choices.apply(ctx, tap, res)
-    if mode == "free" or ctx.stale:
-        # 지난 카드 단추는 카드를 새로 불러와 정해 둔 한 줄로 답한다(LLM 모드도 부르지 않는다)
-        await free_turn(ctx, emit, res, reason if mode == "free" else "reload", note)
+    answered = res.reason == choices.ANSWERED  # 잠긴 집의 칸 단추(QA r3 v1 M6)
+    if mode == "free" or ctx.stale or answered:
+        # 지난 카드 단추는 카드를 새로 불러와, 잠긴 집의 칸 단추는 까닭 한 줄로 답한다(LLM 모드도 부르지 않는다)
+        why = reason if mode == "free" else "reload" if ctx.stale else choices.ANSWERED
+        await free_turn(ctx, emit, res, why, note)
     elif not said(ctx, note):  # 가린 뒤 빈 말 · 고른 것 없음: 빈 글 블록을 보내지 않는다(400)
         await free_turn(ctx, emit, res, "empty", EMPTY_TEXT)
     else:

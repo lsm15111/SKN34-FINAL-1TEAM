@@ -3,12 +3,13 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from sqlalchemy import func, select, update
+from sqlalchemy import exists, func, select, update
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.notify.models import Notification
 from app.project.models import Project, ProjectTrade
+from app.quote.models import VendorQuote
 from app.review.models import Review
 from app.schedule.models import DateProposal, Deal
 from app.thread.models import Thread
@@ -34,6 +35,26 @@ async def of_project(s: AsyncSession, project_id: uuid.UUID, trade: str | None) 
         q = q.where(Visit.trade == trade)
     q = q.order_by(Visit.created_at.desc(), Visit.id.desc())
     return list((await s.execute(q)).scalars().all())
+
+
+async def lock_hold(s: AsyncSession, project_id: uuid.UUID) -> tuple[int, bool]:
+    """집 정보 잠금을 붙잡는 것: (살아 있는 요청 수(공정 모두), 업체가 보낸 견적서가 있는지(닫힌 요청 포함)).
+    열 값으로 센다(set_status는 같은 세션의 옛 객체 값을 고치지 않는다)."""
+    live = await s.scalar(
+        select(func.count())
+        .select_from(Visit)
+        .where(Visit.project_id == project_id, Visit.status.in_(LIVE))
+    )
+    quoted = await s.scalar(
+        select(
+            exists().where(
+                VendorQuote.visit_id == Visit.id,
+                Visit.project_id == project_id,
+                VendorQuote.sent_at.is_not(None),
+            )
+        )
+    )
+    return int(live or 0), bool(quoted)
 
 
 async def live(s: AsyncSession, project_id: uuid.UUID, trade: str) -> list[Visit]:

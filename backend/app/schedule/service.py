@@ -39,6 +39,7 @@ from app.calc.schedule import (
     overlap_days,
     start_choices,
     trade_days,
+    wishes_blocked,
     workdays,
 )
 from app.files import service as files_service
@@ -1781,10 +1782,16 @@ def _request_options(
     ]
 
 
-async def _wishes_taken(s: AsyncSession, d: Deal, r: DateRequest, today: date) -> bool:
-    """고객이 고른 시작일이 모두 지났거나 같은 업체의 다른 공사로 팀이 모두 나간 날이다(계산 엔진 busy_days)."""
-    busy = set(await _busy(s, d, today))
-    return all(w <= today or w in busy for w in r.wish_dates)
+async def _wishes_taken(
+    s: AsyncSession, d: Deal, r: DateRequest, today: date, count: int, weekend: tuple[int, ...]
+) -> bool:
+    """고객이 고른 시작일이 모두 막혔다: 지났거나, 그날부터 일하는 날 count개(업체가 낸 날 수)를 이으면 같은 업체의
+    다른 공사로 팀이 모두 나간 날(계산 엔진 busy_days)에 걸린다. 비서 공사 날 후보(request_candidates)와 같은 판정
+    (calc.schedule.wishes_blocked, QA r2 c6 리드 결정 5)이라 비서가 낸 다른 날 제안을 실행이 막지 않는다."""
+    busy = await _busy(s, d, today)
+    off = _off(today)
+    until = today + timedelta(days=AHEAD_DAYS)
+    return wishes_blocked(r.wish_dates, max(count, 1), today, busy, off, weekend, until)
 
 
 async def _vendor_deal(s: AsyncSession, vendor: User, deal_id: uuid.UUID) -> Deal:
@@ -1956,7 +1963,9 @@ async def propose_dates(
                 raise AppError(
                     422, "request_dates", "고객이 고른 시작일 중에서 같은 기간으로 골라 주세요."
                 )
-        elif start not in set(r.wish_dates) and not await _wishes_taken(s, d, r, today):
+        elif start not in set(r.wish_dates) and not await _wishes_taken(
+            s, d, r, today, len(picked), weekend
+        ):
             # 고른 날이 모두 지났거나 우리 업체의 다른 공사로 찼으면 다른 날로 답할 수 있다(고객이 수락해야 바뀐다)
             raise _field("days", "고객이 고른 시작일 중 하루에 시작해 주세요.")
     if change and r is None and data.reason is None:

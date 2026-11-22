@@ -340,6 +340,42 @@ def free_block(
     return None
 
 
+def wish_open(
+    start: date,
+    count: int,
+    busy: Collection[date] = (),
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = WEEKEND,
+    until: date | None = None,
+) -> bool:
+    """고객이 고른 시작일 start에 공사(일하는 날 count개)를 잡을 수 있는지: start가 일하는 날이고, 이어지는 일하는 날에
+    다른 공사로 찬 날(busy)이 없고, 끝날이 until(있으면)을 넘지 않는다(free_block이 start 그날로 시작하는 것과 같다)."""
+    if count < 1:
+        raise ValueError("일하는 날 수는 1 이상이어야 해요")
+    got = workdays(start, count, days_off, weekend)
+    if got[0] != start or (until is not None and got[-1] > until):
+        return False
+    taken = set(busy)
+    return not any(d in taken for d in got)
+
+
+def wishes_blocked(
+    wishes: Collection[date],
+    count: int,
+    today: date,
+    busy: Collection[date] = (),
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = WEEKEND,
+    until: date | None = None,
+) -> bool:
+    """고객이 고른 시작일이 모두 막혔는지(지났거나 wish_open이 아님). 막혔을 때만 업체가 고른 날 밖의 '다른 날'을
+    제안할 수 있다. 비서 공사 날 후보(tools.aftercare.request_candidates)와 실행(schedule.service.propose_dates)이 같은
+    판정을 쓴다(QA r2 c6: 시작일만 보던 실행이 비서가 낸 다른 날 제안을 막음)."""
+    return all(
+        w <= today or not wish_open(w, count, busy, days_off, weekend, until) for w in wishes
+    )
+
+
 def free_blocks(
     start: date,
     count: int,

@@ -273,8 +273,8 @@
 | --- | --- |
 | `get_home`() | `project.service.get_for` |
 | `get_standard_quote`(trade) | `quote.service.standard_for` |
-| `recommend_vendors`(trade) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3 |
-| `vendor_free_slots`(ref, prefer, days) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3 |
+| `recommend_vendors`(trade, sgg?) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3(점수 순). 모델 값 note에 '맡기시면: 점수 1위 · 까닭 틀'. sgg가 집 지역과 다르면 `visit.service.vendors_elsewhere`로 그 구 업체를 읽기만(이름표 없음 · 카드 id `picks-dobae@구` = 단추 없는 카드, 실측 요청은 집 지역 업체에만) |
+| `vendor_free_slots`(ref, prefer, days, more?) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3. more면 이 대화에서 이미 보인 반나절(이름표 s…)을 빼고 남은 자리(오후 포함)에서 골라요 |
 | `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요. 받은 견적서가 없으면 카드 없이 `note`('아직 받은 견적서가 없어요 · 기다리는 업체 n곳') · `count` 0 · `waiting`, 한 곳이면 비교가 아니라 그 견적서 카드(`quote_compare.single`, 열 하나)예요(`show_card(quote_compare)`도 같아요) |
 | `get_schedule`() | `schedule.service.schedule_for` |
 | `today_tasks`() | `service.feed_for`(`schedule.service.overview_for` + 열린 행동) |
@@ -292,8 +292,8 @@
 ### 제안(행동 행만 만들어요)
 | 도구(입력) | 승인 뒤 실행 |
 | --- | --- |
-| `propose_home_info`(칸) | `project.service.update` |
-| `propose_visit_request`(trade, vendor_refs, wish_ref) | `visit.flow.add_shortlist`(안 담은 업체만) → `visit.flow.request` |
+| `propose_home_info`(칸, 지역 sgg 포함) | `project.service.update`. 지역은 잠기기 전만(시 · 도와 구를 같이, 옛 동은 지움) |
+| `propose_visit_request`(trade, vendor_refs, wish_ref, pick?) | `visit.flow.add_shortlist`(안 담은 업체만) → `visit.flow.request`. pick=top(고객이 맡김)이면 서버가 추천 점수 1위를 넣어요. 요약에 지역 줄 |
 | `propose_visit_slot`(slot_ref) | `visit.flow.pick` · `pick_proposal` |
 | `propose_vendor_confirm`(visit_ref) | `schedule.service.confirm`(seen_ver) |
 | `propose_dates_accept` · `propose_delay_accept`(proposal_ref) | `schedule.service.accept_dates`(seen_version) |
@@ -301,7 +301,7 @@
 | 업체 `propose_window_answer`(visit_ref, window_ref) | `visit.flow.answer_window` |
 | 업체 `propose_decline`(visit_ref, code) | `visit.service.decline` |
 | 업체 `propose_dates`(deal_ref, days_ref) | `schedule.service.propose_dates` |
-| `propose_visit_cancel`(visit_ref, code) | `visit.service.cancel`(CancelIn 이유 코드 changed · other_vendor · other, 메모 없음) |
+| `propose_visit_cancel`(visit_ref?, code) | `visit.service.cancel`(CancelIn 이유 코드 changed · other_vendor · other, 메모 없음). visit_ref가 비면 살아 있는 요청이 하나일 때 그 요청, 여럿이면 고르기 칩(state choose). 끝난 요청은 카드 없이 까닭(state closed, `visit.service.ended_why`) |
 | `withdraw_proposal`(kind, about) | 행동 행을 거둠(proposed → rejected · withdrawn). 하나면 바로, 여럿이면 고르기 칩 카드(state choose), 없으면 보낸 실측 요청(requests m…) |
 
 ### `actions.execute`
@@ -335,6 +335,8 @@
 - `vendor_free_slots`(요청 전) · `request_brief` · `my_free_slots`의 업체 빈 반나절은 도메인 갈래의 `visit.service.open_halves_for`(실제 함수, 공사 날 · 잡기 반영)를 불러요. 가견적은 요청 때 고정한 값(`vendor_visit.estimate_total`)이에요.
 - `propose_dates`의 날 후보(n1~)는 `my_jobs`가 견적서 공사 기간 · 예상 공정표 시작일로 `calc.schedule.workdays`에서 만들어요.
   - 고객의 날짜 요청이 열려 있으면(dates_state requested · change_requested) 후보는 고객이 고른 시작일(`aftercare.request_candidates`)이고, 카드는 먼저 말 걸기 `dates_requested`와 같은 `request_dates_offer`(payload kind · request_id)예요.
+  - 고른 시작일이 모두 막혔는지(지났거나 그날부터 공사 날 수만큼 이으면 같은 업체의 다른 공사와 겹침)는 비서 후보와 실행(`schedule.service.propose_dates`)이 같은 판정 `calc.schedule.wishes_blocked`를 써요. 막혔을 때만 가까운 빈 날(다른 날 제안)을 내고 받아요(QA r2 c6, 고침 3차 B2).
+- 집 정보 잠금(`projects.locked_at`)은 첫 실측 요청 때 찍고, 보낸 요청이 모두 끝나고(취소 · 못 받음 · 기한 지남 · 안 옴 · 닫힘) 받은 견적서 · 확정이 없으면 풀려요(`visit.service.unlock_if_idle`, 요청이 끝날 때 `end_visit`이 불러요. 리드 결정 11-22). 단계 판정(`trade_facts`)도 견적서 없이 끝난 요청은 세지 않아요.
 - `assistant_actions`에는 turn_id 칸을 두지 않았어요. 턴의 행동 id는 `assistant_turns.trace.actions`에 있어요.
 
 ### 구현 메모(2026-11-21, 카드 갈래)
