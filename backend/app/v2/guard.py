@@ -148,7 +148,9 @@ def check(text: str, allowed_text: str, calc_text: str | None = None) -> Checked
 # ---- v4 대화 숫자(runtime.SentenceGate 길만, docs/v4/08-rules.md 숫자 절) ----
 # 근거(허용 글: 이번 턴 도구 결과 · 턴 사실 · 고객 말)에서 다시 만들어지는 숫자만 보낸다. 옛 검사(numbers ·
 # _small_count)를 지나는 숫자는 그대로 지나고, 그 밖에 아래만 더 읽는다.
-# - 어림: 근거 금액 V(10만 이상)와 3% 안의 더 둥근 수 R(문장에 약 · 쯤 · 정도 · 안팎 · 가량), 'R만 원대'(R ≤ V < 다음 자리)
+# - 어림: 근거 금액 V(10만 이상)와 3% 안의 더 둥근 수 R(문장에 약 · 쯤 · 정도 · 안팎 · 가량), 'R만 원대'(R ≤ V < 다음 자리).
+#   R은 V를 그 자리에서 반올림한 수여야 한다: R의 반올림 단위의 반 안(만 원 단위 ±5,000원 · 10만 원 단위 ±50,000원,
+#   백만 자리 이상 '약 300만 원'은 3%만 본다, 고침 4차 G · QA r4 s5 7번). 범위의 아래 · 위 끝도 숫자마다 같은 규칙
 # - 파생: 근거 금액(1만 이상) 둘의 합 · 차, 근거 금액(10만 이상) ÷ 근거 면적(평 · ㎡). 조합은 둘까지. 파생 값은 그대로
 #   (원 단위 올림 · 내림) · 만 원 반올림 · 버림(10만 이상)으로 지나고, 1만 이상이면 위 어림 · 원대로도 지난다
 # - 금액 묶음: '301만 6,000원' · '1억 2,000만 원'은 한 금액으로 본다(묶음으로 안 맞으면 옛 검사처럼 나눠서)
@@ -172,6 +174,8 @@ PART_MIN = 10_000  # 합 · 차에 쓰는 근거 금액, 어림 · 원대에 쓰
 MONEY_MAX = 60  # 합 · 차에 쓰는 근거 금액 수(글에 나온 차례로)
 AREA_MAX = 1000  # 나누는 면적(평 · ㎡)의 위 한도
 APPROX_RATE = 0.03
+# 끝 0이 이만큼(백만 자리) 넘는 어림은 반올림 단위를 보지 않고 3%만 본다('약 300만 원')
+ROUND_FREE = 6
 _WD = r"\s?\([월화수목금토일]\)"
 _MO = r"1[0-2]|0?[1-9]"
 _DA = r"3[01]|[12]\d|0?[1-9]"
@@ -363,8 +367,15 @@ def _tz(n: int) -> int:
     return k
 
 
+def _rounded(k: int, v: float, tz: int) -> bool:
+    """어림 k(끝 0이 tz개)가 v를 그 자리에서 반올림한 수인지: 반올림 단위의 반 안(만 원 단위 ±5,000원). 백만 자리
+    이상(ROUND_FREE)은 보지 않는다(3%만, QA r4 s5 7번: 3,045,900원을 '약 307만'으로)."""
+    return tz >= ROUND_FREE or abs(k - v) * 2 <= 10**tz
+
+
 def _money_ok(n: float, rest: str, approx: bool, g: Ground) -> bool:
-    """문장 금액 n(원)이 근거에서 다시 만들어지는지: 옛 값 · 파생 값 그대로, 'n만 원대', 어림(더 둥근 수 · 3% 안)."""
+    """문장 금액 n(원)이 근거에서 다시 만들어지는지: 옛 값 · 파생 값 그대로, 'n만 원대', 어림(더 둥근 수 · 3% 안 ·
+    반올림 단위의 반 안)."""
     k = round(n)
     if round(n, 4) in g.nums or k in g.exact:
         return True
@@ -380,7 +391,7 @@ def _money_ok(n: float, rest: str, approx: bool, g: Ground) -> bool:
         for v in g.bases[i:]:
             if v > k / (1 - APPROX_RATE):
                 break
-            if abs(k - v) <= APPROX_RATE * v and tz > _tz(round(v)):
+            if abs(k - v) <= APPROX_RATE * v and tz > _tz(round(v)) and _rounded(k, v, tz):
                 return True
     return False
 

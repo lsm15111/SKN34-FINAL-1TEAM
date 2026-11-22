@@ -9,13 +9,16 @@
   만들어 뒀다(made) · 카드를 눌러 달라(press)고 하면 runtime.SentenceGate가 그 말이 확실히 틀릴 때만 바꾼다: 만들었다는
   말은 이 턴에 만든 카드가 하나도 없을 때, 눌러 달라는 말은 누를 것(이 턴에 만든 · 열린 승인 카드, 이 턴에 보인 화면
   카드 단추)이 하나도 없을 때. 첫 문장은 정직한 한 줄(honest)로, 나머지는 뺀다. 앞으로 하겠다는 말('만들어 드릴게요'
-  · 조건 · 물음 · 제안 · 할 수 있는 일 소개)과 지난 일('눌러 주셨어요') · 채팅 · 링크를 누르라는 말은 걸지 않는다.
+  · 조건 · 물음 · 제안 · 할 수 있는 일 소개)과 지난 일('눌러 주셨어요') · 채팅 · 링크를 누르라는 말, 앞날 · 조건에 맞춰
+  누르라는 말('견적서가 오면 … 눌러 주세요', later)은 걸지 않는다.
 - 말 길이 · 되풀이(TALK_*): 말투 · 길이는 모델에 맡기고 코드는 아주 긴 답만 줄인다. 보통 턴은 TALK_LEAD 문장
   (TALK_CHARS 자), 대화 첫 답 · 업체 소개 · 견적 비교 카드(LONG_CARDS)를 보인 턴은 LONG_LEAD 문장(LONG_CHARS 자)까지
   보낸다. 넘친 문장은 마지막 묻는 말(asks) 하나만 턴 끝에 보낸다(이미 물었으면 없음). 앞으로 가리키는 문장(pointer)과
-  뒤 목록 줄은 한 묶음이라 통째로 보내거나 뺀다(답 자체가 목록이면 목록 줄 LIST_FIRST개까지). 목록 번호 · 기호는
-  문장으로 세지 않는다. 지난 비서 턴 REPEAT_TURNS개에 보낸 안내 · 권유 · 묻는 말(guide)과 거의 같은(near_same)
-  문장은 뺀다(첫 문장 · 숫자가 든 사실 답 · 이 턴 카드를 가리키는 말은 둔다).
+  뒤 목록 줄은 한 묶음이라 통째로 보내거나 뺀다(답 자체가 목록이면 목록 줄 LIST_FIRST개까지). 묶음 안 한 줄이 검사로
+  빠지면 가리키는 문장이 수를 말할 때(counted)만 묶음째 빼고, 아니면 그 줄만 뺀다. 목록 번호 · 기호는 문장으로 세지
+  않는다. 지난 비서 턴 REPEAT_TURNS개에 보낸 안내 · 권유 · 묻는 말 · 약속(guide)과 거의 같은(near_same) 문장, 같은
+  카드 · 채팅 · 약속을 새 대상 없이 다시 가리키는(same_aim) 안내는 뺀다(첫 문장 · 이 턴 카드를 가리키는 말 · 지난 일 ·
+  새 소식은 둔다. 고객이 금액 · 날짜를 물은 턴은 숫자가 든 사실 답을, 카드 · 할 일을 물은 턴은 그 안내를 둔다, asked).
 - NudgeRules(계약서 6장): 먼저 말 걸기 규칙. 하루 알림 상한(고객 2 · 업체 3) · 밤(21~9시) 알림은 9시로 ·
   닫으면 같은 trigger 3일 쉬기 · 7일 안에 2번 닫으면 알림 7일 멈춤. 시각은 부르는 쪽이 넣는다(고정 시계로 시험).
 """
@@ -141,6 +144,38 @@ _PRESS = re.compile(
 )
 # 승인 카드가 아닌 것을 누르라는 말(채팅 열기 · 조사 링크 · 사진)은 카드 말이 아니다
 _NOT_CARD = re.compile(r"채팅\s*열기|링크|사진|파일|지도")
+# 앞날 · 조건에 맞춰 누르라는 말('견적서가 오면 … 눌러 주세요' · '실측이 끝나고 …' · '나중에' · '그때')은 지금 누를 카드가
+# 없어도 틀린 말이 아니다(고침 4차 G, QA r4 s4 8턴: 정직한 한 줄이 끼어 다음 문장 '그때'가 가리킬 말이 사라짐). 누르라는
+# 말 앞의 조건 · 때 말만 본다('누르시면'은 누르라는 말 자체다)
+_LATER = re.compile(
+    r"(?P<w>[가-힣]+)면(?=[\s,，]|$)|뒤(?:에|엔)?(?=[\s,，])|후(?:에|엔)?(?=[\s,，])|이후|나중에"
+    r"|때(?:에|엔)?(?=[\s,，])|다음에|끝나고|고\s*나서"
+)
+# 지금 마음 · 뜻을 묻는 조건('괜찮으시면 · 원하시면 · 맞으면 · 주말이면 · 하시려면')은 앞날 조건이 아니다
+_NOW_IF = re.compile(
+    r"(?:괜찮|좋|원하|원한|필요하|맞|편하|드|그러|그렇|가능하|동의하)(?:으)?(?:시)?(?:다)?면$"
+    r"|려면$|(?:이|이라|라)면$"
+)
+# '면'으로 끝나는 이름 낱말(화면 · 벽면)은 조건이 아니다
+_MYEON_NOUN = re.compile(r"(?:화|벽|측|전|앞|뒷|표|정|양|단|장|바닥|천장|윗|아랫|옆)면$")
+# 카드를 보고 누르라는 말('확인하신 뒤에 눌러 주세요')은 지금 일이다
+_NOW_AFTER = re.compile(r"(?:확인(?:하신|한|하시고)?|보신|본|읽으신|살펴보신)\s*$")
+
+
+def later(before: str) -> bool:
+    """누르라는 말 앞(before)에 앞날 · 조건 말이 있는지('견적서가 오면' · '끝나고' · '나중에' · '그때'). 지금 마음을
+    묻는 조건 · 카드를 보고 누르라는 말 · '화면'은 아니다."""
+    t = before or ""
+    for m in _LATER.finditer(t):
+        if m.group("w") is not None:
+            head = t[: m.end()]
+            if not (_NOW_IF.search(head) or _MYEON_NOUN.search(head)):
+                return True
+        elif not _NOW_AFTER.search(t[: m.start()]):
+            return True
+    return False
+
+
 _LABEL = re.compile(r"\[[^\]]{1,20}\]")  # 단추 이름('[맞아요, 저장]')
 # 말이 가리키는 행동 종류(카드 이름 낱말). 없으면 종류를 가리지 않는다
 KIND_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -185,16 +220,18 @@ def buttons_of(kind: str, data: dict) -> frozenset[str]:
 
 def card_claim(text: str) -> tuple[str, set[str]] | None:
     """승인 카드를 두고 한 말인지: ("made" · "press", 말이 가리키는 행동 종류) 또는 None. 이 턴에 만들었다 · 만들어
-    뒀다(made)와 카드 · 단추를 눌러 달라(press)는 말만 본다(고정 선 5: 하지 않은 일을 한 것처럼, 없는 카드를 있는
-    것처럼). 채팅 열기 · 링크 · 사진을 누르라는 말은 승인 카드 말이 아니다."""
+    뒀다(made)와 카드 · 단추를 지금 눌러 달라(press)는 말만 본다(고정 선 5: 하지 않은 일을 한 것처럼, 없는 카드를 있는
+    것처럼). 채팅 열기 · 링크 · 사진을 누르라는 말, 앞날 · 조건에 맞춰 누르라는 말(later)은 승인 카드 말이 아니다."""
     t = (text or "").strip()
     kinds = {k for k, rx in KIND_WORDS if rx.search(t)}
     if _MADE.search(t) and _CARD.search(t):
         return "made", kinds
+    press = _PRESS.search(t)
     if (
-        _PRESS.search(t)
+        press
         and (_CARD.search(t) or _LABEL.search(t) or kinds)
         and not _NOT_CARD.search(t)
+        and not later(t[: press.start()])
     ):
         return "press", kinds
     return None
@@ -260,12 +297,52 @@ POINTER = re.compile(
 )
 # 수를 말하는 가리킴('이유는 두 가지예요.'): 뒤와 한 묶음이지만, 뒤에 아무것도 없으면 앞 말을 줄인 끝 문장일 수 있어 둔다
 COUNTED = re.compile(r"(?:가지|단계)(?:예요|이에요|가\s*있어요|입니다)[.!]?\s*$")
+# 가리키는 말 안의 센 수('세 가지' · '3개' · '다섯 줄'): 묶음 안 한 줄이 빠지면 수가 틀리니 묶음째 뺀다(고침 4차 G)
+COUNT_SAID = re.compile(
+    r"(?:\d{1,2}|한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:가지|단계|개|곳|군데|줄|항목)"
+)
 
 
 def pointer(text: str) -> bool:
     """앞으로 가리키는 문장인지(뒤 목록 · 문장과 한 묶음)."""
     t = (text or "").strip()
     return bool(POINTER.search(t) or COUNTED.search(t))
+
+
+def counted(text: str) -> bool:
+    """가리키는 말이 뒤 줄의 수를 말하는지('세 가지예요' · '두 곳에 이렇게'). 그러면 한 줄만 빠져도 묶음째 뺀다."""
+    t = (text or "").strip()
+    return bool(COUNTED.search(t) or COUNT_SAID.search(t))
+
+
+# 화면을 가리키는 말(카드 · 단추 · 채팅 · 메뉴 · 단추 이름 · 누르라는 말)
+UI_POINT = re.compile(r"카드|단추|버튼|채팅|메뉴|눌러|누르|\[[^\]]{1,20}\]")
+
+
+# 목록 줄 머리 · 문장 끝의 따옴표(묶음 안 한 줄만 뺄 때 여는 · 닫는 따옴표를 이웃 문장이 이어받는다)
+QUOTES = {'"': '"', "'": "'", "“": "”", "‘": "’"}
+
+
+def quote_left(text: str) -> str | None:
+    """따옴표를 열고 닫지 않은 글이면 그 여는 따옴표('"사장님, 안녕하세요.')."""
+    t = (text or "").strip()
+    if not t or t[0] not in QUOTES:
+        return None
+    o, c = t[0], QUOTES[t[0]]
+    left = t.count(o) % 2 == 1 if o == c else t.count(o) > t.count(c)
+    return o if left else None
+
+
+def quote_right(text: str) -> str | None:
+    """앞 문장에서 연 따옴표를 닫는 글이면 그 닫는 따옴표('감사합니다."')."""
+    t = (text or "").strip()
+    for o, c in QUOTES.items():
+        if o == c:
+            if t.endswith(c) and not t.startswith(o) and t.count(c) % 2 == 1:
+                return c
+        elif t.count(c) > t.count(o):
+            return c
+    return None
 
 
 # 목록 줄의 머리(기호 · 번호 · 따옴표 예문). 이 머리는 문장으로 세지 않는다(runtime.SENT_END가 '1. '에서 자르지 않음)
@@ -287,10 +364,119 @@ def asks(text: str) -> bool:
     return bool(ASKS.search((text or "").strip()))
 
 
-def guide(text: str) -> bool:
-    """되풀이를 볼 안내 · 권유 · 묻는 말인지(다음 할 일 · 물음 · 해 보라는 말). 숫자가 든 문장은 사실 답이라 아니다."""
+def points(text: str) -> bool:
+    """가리키는 말인지: 앞으로 가리키는 문장, 화면(카드 · 단추 · 채팅)에 가서 하라는 말('메뉴의 [채팅]에서 직접 보내
+    주세요' · '카드를 눌러 주세요'). 남은 글이 이런 말뿐이면 답의 본문이 없다. 카드 내용을 말하는 문장('비교 카드를 보면
+    결도배가 더 싸요')은 본문이다."""
     t = (text or "").strip()
-    return bool(t) and not _DIGIT.search(t) and (next_step(t) or asks(t) or bool(SUGGEST.search(t)))
+    if pointer(t):
+        return True
+    return bool(UI_POINT.search(t)) and bool(SUGGEST.search(t) or asks(t) or _PRESS.search(t))
+
+
+# '…오면 알려 드릴게요' 꼴 약속(업체 답 · 견적서가 오면 알린다): 숫자가 있어도 되풀이를 본다(고침 4차 G, QA r4 c5 3 · 5 · 7턴)
+PROMISE = re.compile(
+    r"알려\s*드릴(?:게요|께요|\s*거예요)|알려\s*드리겠|(?:면|때|대로)\s+(?:\S+\s+){0,2}알려\s*드려요"
+)
+# 고객이 금액 · 날짜를 묻는 말(이 턴): 그 답의 숫자 든 사실 문장은 지난 턴과 같아도 둔다
+ASK_FACT = re.compile(r"얼마|금액|가격|비용|값|견적|언제|날짜|며칠|몇|요일|기간|일정")
+# 고객이 카드 · 단추 · 채팅 · 할 일을 묻는 말(이 턴): 그 답의 안내는 지난 턴과 같은 카드를 가리켜도 둔다
+ASK_HOW = re.compile(r"카드|단추|버튼|채팅|어떻게|어디서|뭘|뭐\s*(?:눌|해|하)|다음")
+
+
+def asked(text: str) -> frozenset[str]:
+    """이 턴 고객 말이 무엇을 묻는지: 'fact'(금액 · 날짜) · 'how'(카드 · 할 일). 되풀이 거름을 그만큼 좁힌다."""
+    t = text or ""
+    return frozenset(k for k, rx in (("fact", ASK_FACT), ("how", ASK_HOW)) if rx.search(t))
+
+
+def guide(text: str, numbers: bool = False) -> bool:
+    """되풀이를 볼 안내 · 권유 · 묻는 말 · 약속인지(다음 할 일 · 물음 · 해 보라는 말 · '오면 알려 드릴게요'). 숫자가 든
+    문장은 사실 답이라 아니고, numbers면(고객이 금액 · 날짜를 묻지 않은 턴, 고침 4차 G) 카드 · 단추 · 채팅을 가리키는
+    말과 약속은 숫자가 있어도 본다."""
+    t = (text or "").strip()
+    if not t:
+        return False
+    if _DIGIT.search(t):
+        return numbers and bool(UI_POINT.search(t) or PROMISE.search(t))
+    return next_step(t) or asks(t) or bool(SUGGEST.search(t) or PROMISE.search(t))
+
+
+def aims(text: str) -> frozenset[str]:
+    """문장이 가리키는 것: 승인 카드 종류(KIND_WORDS, 카드 · 단추 · 단추 이름 · 누르라는 말이 있을 때. 종류 낱말 없이
+    '카드'만 말하면 무엇인지 몰라 넣지 않는다) · 채팅('chat') · 알림 약속('promise')."""
+    t = text or ""
+    out: set[str] = set()
+    if _CARD.search(t) or _LABEL.search(t) or _PRESS.search(t):
+        out |= {k for k, rx in KIND_WORDS if rx.search(t)}
+    if "채팅" in t:
+        out.add("chat")
+    if PROMISE.search(t):
+        out.add("promise")
+    return frozenset(out)
+
+
+_HALF = re.compile(r"오전|오후")
+_NUMS = re.compile(r"\d+")
+
+
+def targets(text: str, names: Collection[str] = ()) -> tuple[frozenset[str], ...]:
+    """문장이 가리키는 대상: (숫자들(날짜 · 금액), 오전 · 오후, 업체 이름들)."""
+    t = text or ""
+    return (
+        frozenset(_NUMS.findall(t)),
+        frozenset(_HALF.findall(t)),
+        frozenset(n for n in names if n and n in t),
+    )
+
+
+# 약속의 '무엇이 오면'을 읽을 때 빼는 낱말(조건 · 알림 말 · 꾸밈말)과 낱말 끝 조사
+_EVENT_SKIP = frozenset(
+    {"바로", "꼭", "다시", "곧", "얼른", "먼저", "그때", "제가", "저", "믿집", "오면", "올", "때", "오는",
+     "대로", "되면", "하면", "알려", "알림", "드릴게요", "드릴께요", "드려요", "드리겠어요", "드릴", "거예요"}
+)  # fmt: skip
+_JOSA = (
+    "에서는", "에서도", "으로는", "께서는", "에서", "에게", "께서", "으로", "이랑", "까지", "부터",
+    "이나", "은", "는", "이", "가", "을", "를", "의", "에", "도", "만", "로", "와", "과", "랑",
+)  # fmt: skip
+
+
+def _stem(word: str) -> str:
+    for j in _JOSA:
+        if len(word) > len(j) and word.endswith(j):
+            return word[: -len(j)]
+    return word
+
+
+def _events(text: str) -> frozenset[str]:
+    """약속 말의 일 낱말('업체 답이 오면' → 업체 · 답). 같은 약속인지 견줄 때 쓴다('바로'는 조사를 떼기 전에 뺀다)."""
+    words = (_stem(w) for w in _WORD.findall(text or "") if w not in _EVENT_SKIP)
+    return frozenset(w for w in words if w not in _EVENT_SKIP and not _DIGIT.search(w))
+
+
+def same_aim(a: str, b: str, names: Collection[str] = ()) -> bool:
+    """a가 b와 같은 카드 · 채팅 · 약속을 가리키고 새 대상(숫자 · 오전 오후 · 업체 이름, 약속이면 일 낱말)을 더하지 않는지
+    (고침 4차 G, QA r4 c5 9~12턴: 열린 실측 시간 카드 안내가 말만 바꿔 네 턴 연속, c1 '업체 채팅으로 물어보세요')."""
+    both = aims(a) & aims(b)
+    if not both:
+        return False
+    if both == {"promise"} and not _events(a) <= _events(b):
+        return False
+    return all(x <= y for x, y in zip(targets(a, names), targets(b, names), strict=True))
+
+
+# 지난 일(…았 · 었 · 했 + 어요 · 고 · 는데 …): 새 소식 · 상태 바뀜이라 되풀이로 보지 않는다('채팅이 열렸어요' · '보냈고')
+_PAST = re.compile(r"([가-힣])(?=(?:어요|습니다|고|는데|지만|으니|으며|어서|다)(?:[\s,.!?~]|$))")
+_NOT_PAST = frozenset("있겠")  # '있어요' · '드리겠어요'는 지난 일이 아니다
+
+
+def past(text: str) -> bool:
+    """지난 일을 알리는 말이 들어 있는지(ㅆ 받침 + 어요 · 고 · 는데 …, '있' · '겠'은 아님)."""
+    for m in _PAST.finditer(text or ""):
+        ch = m.group(1)
+        if ch not in _NOT_PAST and (ord(ch) - 0xAC00) % 28 == 20:
+            return True
+    return False
 
 
 def same_line(a: str, b: str) -> bool:
