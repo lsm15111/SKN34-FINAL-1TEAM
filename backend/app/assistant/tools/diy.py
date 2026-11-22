@@ -706,6 +706,23 @@ async def forget(
     return await memory.drop_parts(s, user_id, "diy", keep, now)
 
 
+async def settle_memory(s: AsyncSession, user: User, now: datetime) -> int:
+    """화면(PUT /diy)에서 칩을 줄이거나 '없어요'로 저장한 뒤 남은 직접 할 일 기억 조각을 늦게 맞춘다(리드 결정
+    11-22: 층 규칙 예외를 더하지 않고 비서 쪽에서, 턴 시작 · 기억 화면 · 보드). 기억은 사람마다라 이 고객 공사 중
+    칩을 저장한 공사의 칩(합)에 없는 칩 일 조각만 조용히 지운다. 칩을 한 번도 저장하지 않았으면('아직 안 물음',
+    '없어요' 저장과 다름) 그대로예요. 바꾼 줄 수. commit은 부르는 쪽."""
+    from app.project import service as project_service
+
+    saved: set[str] | None = None
+    for p in await project_service.list_mine(s, user):
+        chips = await diy_for(s, p.id)
+        if chips is not None:
+            saved = (saved or set()) | set(chips)
+    if saved is None:
+        return 0
+    return await forget(s, user.id, [k for k in KEYS if k not in saved], now)
+
+
 async def told_labels(s: AsyncSession, visit_id: uuid.UUID) -> list[str]:
     """요청 때 고정한 '고객이 직접 할 일'(visits.diy) 화면 말. 업체 브리핑이 자료로 보여요."""
     from app.visit.models import Visit

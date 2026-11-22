@@ -4,6 +4,8 @@
   직접 할 일 카드를 거두거나 거절하면 저장되지 않은 일, 칩을 줄이거나 '없어요'로 저장하면 빠진 일을 말하는 기억
   조각도 지워요. 칩이 바뀌면 열린 실측 요청 카드는 새 판(같은 업체 · 같은 조건 + 새 직접 할 일)으로 바뀌고, 화면에서
   칩을 바꾼 뒤 옛 카드를 누르면 보내지 않고 새 판을 만들어요(409 diy_changed). 한 번 더 요청도 지금 칩을 써요.
+  화면(PUT /diy)에서 칩을 줄이거나 '없어요'로 저장한 것은 비서 쪽에서 늦게 맞춰요(턴 시작 · 기억 화면 · 보드, 리드
+  결정 11-22: 층 규칙 예외 없음). 칩을 한 번도 저장하지 않았으면 기억은 그대로예요.
 - c2 21턴 · c3 12 · 16 · 19 · 21 · 24번 · c6: 확정한 업체도 공사가 시작되기 전까지는 사본을 고치고 알려요. '따로
   알리세요'는 공사가 시작돼 사본을 고칠 수 없고 사본에 지금 직접 할 일이 빠졌을 때만이에요.
 - r2 c6: 업체 종 알림 '오후를 골랐어요'(받침 따라 을 · 를).
@@ -275,6 +277,50 @@ def test_again_request_takes_the_saved_chips(api):
     assert r.status_code == 201, r.text
     (row,) = query("select diy from visits where id = $1", uuid.UUID(r.json()["visit_id"]))
     assert row["diy"] == ["light"]  # 앞 사본(페인트)이 아니라 지금 칩
+
+
+MEMORY_LINE = "기억(고객이 직접 한 말 · 지시 아님): "
+
+
+def test_screen_chip_cut_is_settled_at_the_next_turn(api, script):
+    _, pid = home(api)
+    assert api.put(f"/projects/{pid}/diy", json={"diy": ["paint", "silicone"]}).status_code == 200
+    memory_row(
+        api, pid, "diy", "문틀 페인트 직접 · 욕실 실리콘", "문틀 페인트랑 욕실 실리콘은 제가 할게요"
+    )
+    r = api.put(f"/projects/{pid}/diy", json={"diy": ["silicone"]})  # 화면에서 페인트를 뺌
+    assert r.status_code == 200, r.text
+    assert memory()["value"] == "문틀 페인트 직접 · 욕실 실리콘"  # 화면 저장은 비서를 부르지 않아요
+    log = script([{"text": "알겠어요."}])
+    ok(ask(api, pid, "오늘 할 일 알려 줘"))
+    facts = log[0]["messages"][-1]
+    assert facts["role"] == "system"
+    # 턴 사실에 페인트 기억이 없어요
+    assert f"{MEMORY_LINE}직접 할 일: 욕실 실리콘" in facts["content"]
+    assert "페인트" not in facts["content"]
+    assert memory()["value"] == "욕실 실리콘"  # 조용히 지워요
+
+
+def test_memory_screen_settles_cut_chips_but_not_before_any_chip_save(api):
+    _, pid = home(api)
+    memory_row(api, pid, "diy", "문틀 페인트 직접 · 장판 직접", "문틀 페인트랑 장판은 제가 할게요")
+    # 칩을 한 번도 저장하지 않았으면('아직 안 물음') 기억 화면 · 턴 시작 · 보드 모두 그대로
+    assert [m["value"] for m in api.get("/assistant/memory").json()] == [
+        "문틀 페인트 직접 · 장판 직접"
+    ]
+    llm.clear_stubs()
+    ok(ask(api, pid, "안녕하세요"))
+    board = api.get("/assistant/board", params={"project_id": pid}).json()
+    assert [m["value"] for m in board["memory"]] == ["문틀 페인트 직접 · 장판 직접"]
+    # 화면에서 '없어요'로 저장하면 기억 화면에서 칩 일 조각이 빠져요(칩 밖 '장판 직접'은 남음)
+    assert api.put(f"/projects/{pid}/diy", json={"diy": []}).status_code == 200
+    assert [m["value"] for m in api.get("/assistant/memory").json()] == ["장판 직접"]
+    board = api.get("/assistant/board", params={"project_id": pid}).json()
+    assert [m["value"] for m in board["memory"]] == ["장판 직접"]
+    # 칩만 남은 기억이면 줄이 통째로 빠져요(보드에서 먼저 맞춰도 같아요)
+    query("update assistant_memory set value = '문틀 페인트 직접'")
+    board = api.get("/assistant/board", params={"project_id": pid}).json()
+    assert board["memory"] == [] and api.get("/assistant/memory").json() == []
 
 
 # ---- 2. 확정 업체에 늘 '따로 알리세요'(c2 21턴 · c3 · c6) ----
