@@ -192,6 +192,10 @@ async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided
         lines.append("승인 기다리는 카드: " + " · ".join(a.summary["title"] for a in opened))
     if done := decided_line(decided):
         lines.append(done)
+    from app.assistant.tools import diy as diy_tools
+
+    # 화면에서 뺀 직접 할 일 기억 조각을 맞춰요(commit은 start_turn이 해요)
+    await diy_tools.settle_memory(s, user, now)
     remembered = memory.facts_line(await repo.memories(s, user.id))
     if remembered:
         lines.append(remembered)
@@ -910,6 +914,7 @@ def memory_out(m) -> MemoryOut:
 async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     """내 공사 보드(우리 집 · 지금 단계 · 낼 금액(범위) · 업체 · 기간 · 서류 · 기억). 값은 기능 service 그대로."""
     from app.assistant.tools import cards
+    from app.assistant.tools import diy as diy_tools
     from app.project import service as project_service
     from app.schedule import service as schedule_service
 
@@ -921,6 +926,8 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         works = {w.trade: w for w in await schedule_service.work_money(s, user, project_id)}
         opened = await repo.open_count(s, user.id, project_id)
         estimates = await _estimates(s, project_id)
+        if await diy_tools.settle_memory(s, user, now_utc()):  # 화면에서 뺀 직접 할 일 기억 조각
+            await s.commit()
         remembered = await repo.memories(s, user.id)
     tr = next((t for t in o.trades if t.trade == "dobae"), o.trades[0] if o.trades else None)
     now_key = next((x.key for x in tr.steps if x.state == "now"), "house") if tr else "house"
@@ -1043,7 +1050,11 @@ async def nudge_act(user: User, nudge_id: uuid.UUID, surface: str, to: str) -> N
 
 
 async def memory_for(user: User) -> list[MemoryOut]:
+    from app.assistant.tools import diy as diy_tools
+
     async with SessionLocal() as s:
+        if await diy_tools.settle_memory(s, user, now_utc()):  # 화면에서 뺀 직접 할 일 기억 조각
+            await s.commit()
         return [memory_out(m) for m in await repo.memories(s, user.id)]
 
 
