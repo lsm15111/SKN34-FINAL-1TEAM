@@ -1177,10 +1177,22 @@ class VisitCancelIn(BaseModel):
     code: Literal["changed", "other_vendor", "other"] = "other"
 
 
-CANCEL_CHOOSE_NOTE = (
-    "보낸 실측 요청이 여럿인데 고객 말에 어느 업체인지 없어요. 고르기 칩을 보였으니 이 턴에는 다시 부르지 말고 어느 "
-    "업체 요청을 취소할지 고객에게 물어요. 모두 취소하려면 요청마다 visit_ref(requests의 ref)로 불러요."
-)
+def every_word(n: int) -> str:
+    """보낸 요청 n개 모두를 가리키는 말(고르기 칩 · 메모 글): 둘이면 '둘 다', 셋 이상이면 '모두'."""
+    return "둘 다" if n == 2 else "모두"
+
+
+def choose_note(every: str) -> str:
+    """취소 고르기 결과의 메모 글: 칩을 가리켜 묻게 한다(QA r5 A s1-3 · s6-2: '둘 다 취소' 칩이 있는데 '"둘 다"라고
+    말씀해 주세요'라고 말로 하라고 함). every는 요청 모두를 고르는 칩 글('둘 다 취소' · '모두 취소')."""
+    return (
+        "보낸 실측 요청이 여럿인데 고객 말에 어느 업체인지 없어요. 고르기 칩을 보였으니 이 턴에는 다시 부르지 말고 어느 "
+        f"업체 요청을 취소할지 고객에게 물어요. 말로 적어 달라고 하지 말고 '아래 칩에서 업체나 [{every}]를 고르면 "
+        "돼요'처럼 칩을 가리켜요. 모두 취소하려면 요청마다 visit_ref(requests의 ref)로 불러요."
+    )
+
+
+CANCEL_CHOOSE_NOTE = choose_note(f"{every_word(2)} 취소")  # 요청이 둘일 때(셋 이상은 '모두 취소')
 CANCEL_AGAIN = "고르기 칩을 이미 보였어요. 고객이 고를 때까지 기다려 주세요."
 CANCEL_AGAIN_HINT = (
     "고르기 칩을 이미 보였어요. 고객이 고를 때까지 기다리거나, 고객이 말한 업체의 이름표(m…)로 visit_ref를 넣어 "
@@ -1242,7 +1254,7 @@ def cancel_options(visits: list) -> CardOut:
         for v in visits
     ]
     if len(visits) > 1:
-        word = "둘 다" if len(visits) == 2 else "모두"
+        word = every_word(len(visits))
         options.append((f"{word} 취소", f"보낸 실측 요청 {word} 취소해 줘", None))
     return cards.options_card("cancel-pick", "무엇을 취소할까요?", options)
 
@@ -1253,7 +1265,8 @@ def cancel_choose(tc: ToolCtx, live: list) -> ToolOut:
         refs = " · ".join(f"{r['ref']} {r['vendor_name']}" for r in requests_model(tc, live))
         raise ToolError("choose_shown", CANCEL_AGAIN, hint=CANCEL_AGAIN_HINT.format(refs=refs))
     tc.marks.add(CHOSE)
-    data = {"state": "choose", "requests": requests_model(tc, live), "note": CANCEL_CHOOSE_NOTE}
+    note = choose_note(f"{every_word(len(live))} 취소")  # 칩 글과 같은 말(둘 다 · 모두 취소)
+    data = {"state": "choose", "requests": requests_model(tc, live), "note": note}
     return ToolOut(data=data, cards=[cancel_options(live)])
 
 
