@@ -1044,8 +1044,11 @@ def line_name(name: str) -> str:
 
 
 def top_names(model: dict, n: int = 2) -> list[str]:
-    """표준견적서에서 금액이 큰 줄 이름(계산 엔진 값 순, 숫자 없이)."""
-    lines = sorted(model.get("lines") or [], key=lambda x: -(x.get("amount") or 0))
+    """표준견적서에서 금액이 큰 줄 이름(계산 엔진 값 순, 숫자 없이). 줄 금액 칸은 'amount' 또는 '공급가'(같은 기준이라
+    순서만 본다)."""
+    lines = sorted(
+        model.get("lines") or [], key=lambda x: -(x.get("amount") or x.get("공급가") or 0)
+    )
     return list(dict.fromkeys(x for x in (line_name(ln.get("name")) for ln in lines) if x))[:n]
 
 

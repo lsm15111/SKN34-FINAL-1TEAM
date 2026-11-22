@@ -83,6 +83,17 @@ def test_pricey_names_the_surcharge_line_of_a_lived_in_home(api):
     assert said.endswith(free.PRICEY_REF) and kinds == ["standard_quote"]
 
 
+def test_top_names_read_either_line_amount_key():
+    """줄 금액 칸 이름이 'amount'든 '공급가'(K 판 표준견적서 모델)든 금액 순으로 고른다."""
+    for key in ("amount", "공급가"):
+        lines = [
+            {"name": "몰딩 (MDF)", key: 90_000},
+            {"name": "벽 도배 시공 (풀 포함)", key: 1_200_000},
+            {"name": "도배지 (실크)", key: 800_000},
+        ]
+        assert free.top_names({"lines": lines}) == ["벽 도배 시공", "도배지"], key
+
+
 def test_rip_off_and_missing_with_quotes_say_the_missing_line(api):
     pid = two_quotes(api)  # 마루와벽 폐기물 포함 · 결도배 폐기물 빠짐
     waste = "마루와벽은 폐기물 처리가 포함이고, 결도배는 포함 항목에 없어요."
