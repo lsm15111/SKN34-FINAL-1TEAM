@@ -12,10 +12,10 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, BeforeValidator, Field
+from pydantic import BaseModel, BeforeValidator, Field
 
 from app.agent.v3.schemas import TEXT_MAX
-from app.shared.text import clean_input
+from app.shared.text import clean_input, visible
 
 Surface = Literal["customer", "vendor"]
 Mode = Literal["llm", "free"]
@@ -58,19 +58,16 @@ class TurnContextIn(BaseModel):
     )
 
 
-def _said(v: str) -> str:
-    """턴 글: 제어 문자를 뺀 뒤 공백만 남으면 422(LLM에 빈 글을 보내지 않게, 리뷰 R1 · 보안 L1)."""
-    if not v.strip():
+def _said(v: object) -> object:
+    """턴 글: 제어 문자를 뺀 뒤 공백 · 보이지 않는 글자(U+200B · U+3164 · U+FEFF 등)만 남으면 422(LLM에 빈 글을
+    보내지 않게, 리뷰 R1 · 보안 L1 · QA r2 N4). 길이 검사보다 먼저 돌아 NUL만 보낸 글도 같은 말로 막는다."""
+    v = clean_input(v)
+    if isinstance(v, str) and not visible(v):
         raise ValueError("보낼 말을 적어 주세요.")
     return v
 
 
-TurnText = Annotated[
-    str,
-    Field(min_length=1, max_length=TEXT_MAX),
-    AfterValidator(_said),
-    BeforeValidator(clean_input),
-]
+TurnText = Annotated[str, Field(min_length=1, max_length=TEXT_MAX), BeforeValidator(_said)]
 
 
 class TurnIn(BaseModel):

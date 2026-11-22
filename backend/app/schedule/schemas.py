@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field, StringConstraints, model_validator
 from app.project.schemas import ProjectCheckOut, ProjectListItem
 from app.quote.schemas import BudgetOut, QuoteBriefOut, QuoteFileOut
 from app.schedule.models import CREW_MAX, EXTRA_AMOUNT_MAX, EXTRA_PHOTOS_MAX, WISH_MAX
+from app.shared.text import Tidy
 from app.vendor.schemas import ContactOut
 from app.visit.schemas import (
     CompareOut,
@@ -18,7 +19,9 @@ from app.visit.schemas import (
     VisitStatus,
 )
 
-Reason = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
+Reason = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300), Tidy
+]
 # 공사 날짜 상태: 아직 안 냄 · 냄(수락 기다림) · 다른 날짜 요청 열림 · 수락함 · 다시 고름
 # 수락한 뒤 날짜 바꾸기: 고객이 바꾸기 요청(change_requested) · 새 날짜 수락 기다림(change_proposed)
 DatesState = Literal[
@@ -458,9 +461,9 @@ class PlanChangeOut(BaseModel):
 class ExtraIn(BaseModel):
     """업체가 추가 금액 알리기. 한 번 올리면 고치지 않는다(잘못 올렸으면 새로 올린다)."""
 
-    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40)] = (
-        Field(description="한 일")
-    )
+    title: Annotated[
+        str, StringConstraints(strip_whitespace=True, min_length=1, max_length=40), Tidy
+    ] = Field(description="한 일")
     reason: Reason = Field(description="이유 (고객에게 보여요)")
     # 0원은 받지 않아요(0원 추가 금액 승인 카드가 생기던 것, QA P11)
     entered_amount: int = Field(ge=1, le=EXTRA_AMOUNT_MAX, description="업체가 적은 금액 (원)")
