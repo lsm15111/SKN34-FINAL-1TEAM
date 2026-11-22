@@ -1007,9 +1007,8 @@ def press_plan(st: State, choice: str) -> tuple[str | None, str]:
         hit = find_card(st, ("visit_slots",), args[0])
         if hit:
             s = next(x for x in hit[1]["data"].get("candidates") or [] if x.get("ref") == args[0])
-            return hit[
-                0
-            ], f"{day(s['day'])} {HALF.get(s.get('half'), '')}로 할래요"  # 화면 글 그대로
+            half = euro(HALF.get(s.get("half"), "") or "그 시간")
+            return hit[0], f"{day(s['day'])} {half} 할래요"  # 화면처럼 받침 보고 로/으로
         return None, "이 시간으로 할래요"
     if kind == "vendor_confirm" and args:
         hit = find_card(st, ("quote_compare",), args[0])
