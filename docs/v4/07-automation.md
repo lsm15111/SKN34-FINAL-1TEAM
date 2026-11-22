@@ -64,7 +64,7 @@
 - `prep_week`는 같은 확정 · 같은 시작일에 한 번(`prep_week:{확정 id}:{시작일}`)이에요. 날짜가 바뀌면 새 줄이에요.
 - 문장 틀(검사에 걸리면 쓰는 글)
   - vendor_out feed: "{vendor_i_ga} 이번 요청을 받지 못해요. 맞는 업체를 더 골라 뒀어요."(무응답 · 늦음은 까닭만 바꿈)
-  - extra_added feed: "{vendor_i_ga} 추가 금액을 올렸어요. 금액을 확인해 주세요."
+  - extra_added feed: "{vendor_i_ga} 추가 금액 {won}원을 올렸어요. 금액을 확인해 주세요."(2026-11-22: 같은 업체 추가 금액 여럿이 구분되게 금액(계산 엔진 합계)을 넣어요. 업체가 적은 '한 일'은 카드 칸에만)
   - work_done feed: "{vendor_i_ga} 공사를 끝냈다고 했어요. 점검표로 확인해 주세요."
   - prep_week notify: "{trade} 공사가 일주일 남았어요. 미리 할 일을 챙겨 볼까요?"
   - dates_requested feed: "고객이 공사 날짜를 바꾸고 싶어 해요 · {area}. 새 날짜 후보를 골라 뒀어요."

@@ -13,6 +13,7 @@ sweep이 한다(Outcome의 states · unread). 개발용 기한 당기기는 app/
 B5의 일 함수는 agent/jobs.py의 FUNCTIONS 목록을 WorkerSettings.functions에 붙인다(아직 없음).
 """
 
+import asyncio
 import logging
 from collections import Counter
 from datetime import datetime
@@ -23,6 +24,7 @@ from arq.connections import RedisSettings
 from arq.worker import func
 
 from app import demo
+from app.agent import llm
 from app.assistant import jobs as assistant_jobs
 from app.assistant import research as assistant_research
 from app.assistant import service as assistant_service
@@ -141,7 +143,18 @@ def demo_on() -> bool:
     return settings.demo_auto and settings.app_env != "production"
 
 
+async def startup(ctx: dict) -> None:
+    """worker 시작 때 준비: LLM SDK를 작업 스레드에서 미리 불러온다(llm.warm, LLM이 꺼져 있으면 아무것도 안 함).
+    첫 먼저 말 걸기 판정 · 문장(Haiku, 10초 제한)이 늦은 SDK import(Windows 12~14초)로 이벤트 루프를 멈추고 제한에
+    걸리지 않게 한다. 실패해도 시작은 막지 않는다(실호출 때 같은 오류가 난다)."""
+    try:
+        await asyncio.to_thread(llm.warm)
+    except Exception as exc:  # noqa: BLE001 - 준비 실패로 worker가 안 뜨면 안 된다(종류 이름만)
+        log.warning("LLM SDK 미리 불러오기 실패 (%s)", type(exc).__name__)
+
+
 class WorkerSettings:
+    on_startup = startup
     functions: ClassVar[list] = [
         ping,
         # 조사 담당(09): 비서가 맡긴 웹 조사 하나(4분 상한 + 여유, 다시 하지 않음 · 멈춘 조사는 jobs 감시가 닫음)

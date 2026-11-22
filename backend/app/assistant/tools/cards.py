@@ -11,7 +11,7 @@
 import re
 import uuid
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
@@ -85,6 +85,11 @@ def seoul_text(at: datetime | None) -> str | None:
     if at is None:
         return None
     x = at.astimezone(SEOUL)
+    if (x.hour, x.minute, x.second) == (0, 0, 0):
+        # 그날 0시에 끝나는 기한은 앞날이 끝나는 날이다('12월 22일 오전 12시' → '12월 21일(월) 밤 12시', QA 3차 c4 #16:
+        # 유효기간 12.21 확정 카드를 '12월 22일까지'라고 함)
+        x -= timedelta(days=1)
+        return f"{x.month}월 {x.day}일({'월화수목금토일'[x.weekday()]}) 밤 12시"
     hour = x.hour % 12 or 12
     minute = f" {x.minute}분" if x.minute else ""
     half = "오전" if x.hour < 12 else "오후"

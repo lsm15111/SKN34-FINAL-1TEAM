@@ -43,9 +43,9 @@ def free_mode(monkeypatch):
         ("라면 끓여 줘", ("food", "라면")),
         ("오늘 날씨 어때?", ("chat", "날씨")),
         ("미세 먼지 심해?", ("chat", "미세먼지")),
-        ("심심하다", ("chat", "말동무")),
-        ("노래 하나 불러 줘", ("chat", "노래")),
-        ("영화 추천해 줘", ("chat", "영화")),
+        ("심심하다", ("play", "말동무")),  # F: 같이 하자는 말은 놀이 갈래
+        ("노래 하나 불러 줘", ("play", "노래")),
+        ("영화 추천해 줘", ("play", "영화")),
         ("주식 뭐 사면 좋을까요", ("money", "주식")),
         ("집값 오를까 내릴까", ("money", "집값")),
         ("택시 불러 줘", ("app", "택시")),
@@ -96,8 +96,9 @@ def test_josa_follows_the_last_syllable():
     assert free.josa("전기 · 조명", "이/가") == "전기 · 조명이"
     assert free.off_said("food", "치킨", "새벽", NOW, []).startswith("오, 새벽 치킨이군요!")
     assert free.off_said("food", "피자", "밤", NOW, []).startswith("오, 밤 피자군요!")
-    assert free.off_said("chat", "날씨", "밤", NOW, []).startswith("밤에 날씨가 생각나셨군요!")
-    assert free.off_said("chat", "게임", "밤", NOW, []).startswith("밤에 게임이 생각나셨군요!")
+    # 소식(날씨)은 물은 것을 되받아요(F: QA 3차 f1 '날씨가 생각나셨군요'), 놀이(게임)는 생각났다고
+    assert free.off_said("chat", "날씨", "밤", NOW, []).startswith("밤에 날씨를 물으셨군요!")
+    assert free.off_said("play", "게임", "밤", NOW, []).startswith("밤에 게임이 생각나셨군요!")
     used = [free.off_said("money", "주식", "밤", NOW, [])]
     used.append(free.off_said("money", "주식", "밤", NOW, used))
     assert free.off_said("money", "주식", "밤", NOW, used).startswith("밤에 주식을 챙기시는군요!")
@@ -130,6 +131,7 @@ def test_templates_rotate_without_repeating():
     for kind, word in (
         ("food", "치킨"),
         ("chat", "날씨"),
+        ("play", "게임"),
         ("money", "주식"),
         ("app", "택시"),
         ("call", "전화"),
@@ -137,9 +139,9 @@ def test_templates_rotate_without_repeating():
         ("other", ""),
     ):
         said: list[str] = []
-        for _ in range(6):
-            said.append(free.off_said(kind, word, "밤", NOW, said))
-        honest = [free.sents(x)[-2] for x in said]  # 지금 할 일 앞 문장(솔직)
+        for _ in range(6):  # 지금 할 일 줄 없이(F: 그 줄은 상태가 바뀌었거나 처음일 때만 붙어요)
+            said.append(free.off_said(kind, word, "밤", "", said))
+        honest = [free.sents(x)[-1] for x in said]  # 솔직(마지막 문장)
         assert len(set(said[:3])) == 3, kind  # 틀 셋을 다 쓰고
         assert all(a != b for a, b in pairwise(said)), kind  # 이어서 같은 말 없음
         assert all(a != b for a, b in pairwise(honest)), kind
@@ -184,7 +186,8 @@ def test_echo_ok_for_plain_requests():
 
 WORDS = {
     "food": ("치킨", "피자", "짜장면", "배달"),
-    "chat": ("날씨", "말동무", "게임", "미세먼지"),
+    "chat": ("날씨", "미세먼지", "운세", "야구"),
+    "play": ("말동무", "게임", "노래", "영화"),
     "money": ("주식", "로또", "집값", "비트코인"),
     "app": ("택시", "식당 예약", "주문", "대리운전"),
     "call": ("전화", "문자", "연락"),
@@ -252,10 +255,10 @@ def test_free_off_turns_answer_with_the_frame(api, monkeypatch):
     assert ask_off("택시 불러 줘").startswith("밤에 택시 부탁이군요!")
     # 전에는 업체 추천 카드(+ '실측 요청 승인 카드를 만들어요')가 갔던 말
     assert ask_off("영화 추천해 줘").startswith("밤에 영화가 생각나셨군요!")
-    call = ask_off("업체에 전화 좀 해 줘")
-    assert call.startswith("밤에 전화 부탁이군요!") and "믿집 채팅" in call
-    rude = ask_off("씨발 치킨 시켜 줘")
-    assert rude == f"{free.OFF_SAID} {NOW}" and "치킨" not in rude
+    call = ask_off("업체에 전화 좀 해 줘")  # 앱 일 머리('…부탁이군요!')와 다른 꼴(F: QA 3차 f1)
+    assert call.startswith("대신 전화를 부탁하시는군요!") and "믿집 채팅" in call
+    rude = ask_off("씨발 치킨 시켜 줘")  # 지금 할 일 줄은 첫 답에 이미 말했어요(상태 그대로)
+    assert rude == free.OFF_SAID and "치킨" not in rude
     # 다른 공정 업체 연결: 되받기(공정 이름) · 솔직 · 지금 할 일 + 도배 쪽 오늘 할 일 카드
     got, kinds = turn(api, pid, "바닥 업체 추천해 줘")
     assert got == free.off_said("trade", "바닥", "밤", NOW, said) and kinds == ["today"]

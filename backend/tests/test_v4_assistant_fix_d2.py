@@ -131,10 +131,14 @@ def test_b7_free_extra_words_that_do_not_say_yes_show_cards(api):
     customer_token, pid, did = scheduled(api)
     post_extra(api, did)
     use(api, customer_token)
-    for text in ("추가 비용 없이 진행할게요", "추가 금액 승인하면 공사 금액이 얼마가 돼요?"):
+    # 둘째 턴은 지난 턴과 같은 글이라 짧은 글(F: QA 3차 f1x 11~13 같은 글 세 턴)
+    for text, want in (
+        ("추가 비용 없이 진행할게요", tools.EXTRAS),
+        ("추가 금액 승인하면 공사 금액이 얼마가 돼요?", free.AGAIN[tools.EXTRAS]),
+    ):
         ev = ok(ask(api, pid, text))
         assert not proposed(ev), text
-        assert cards_of(ev, "extra") and said(ev) == tools.EXTRAS, text
+        assert cards_of(ev, "extra") and said(ev) == want, text
     (a,) = proposed(ok(ask(api, pid, "추가 금액 승인할게요")), "extra_answer")
     assert a["summary"]["title"] == "추가 금액 승인"
 
@@ -160,10 +164,14 @@ def test_b7_free_pull_earlier_needs_a_date(api):
     llm.clear_stubs()
     customer_token, pid, did = scheduled(api)
     use(api, customer_token)
-    for text in ("공사 날짜를 당겨 주세요", "다음 달로 공사 날짜 미뤄 주세요"):
+    # 말에 맞춰 묻는다(F: QA 3차 f1x 15 · 16 같은 글 · 앞당기는데 늦은 예시 날짜)
+    for text, want in (
+        ("공사 날짜를 당겨 주세요", free.CHANGE_WHEN_PULL),
+        ("다음 달로 공사 날짜 미뤄 주세요", free.CHANGE_WHEN_NEXT),
+    ):
         ev = ok(ask(api, pid, text))
         assert not proposed(ev), text
-        assert said(ev) == free.CHANGE_WHEN, text
+        assert said(ev) == want, text
     (start,) = query("select start_date from deals where id = $1", uuid.UUID(did))
     want = start["start_date"] - timedelta(days=4)
     (a,) = proposed(ok(ask(api, pid, f"{want.month}월 {want.day}일로 당겨 주세요")), "date_change")
