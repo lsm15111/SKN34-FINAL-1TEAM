@@ -1,14 +1,19 @@
 """반셀프 직접 할 일: 고객 읽기 도구 diy_plan · 챙기기(오늘 할 일 · 공사 1주 전 · 공사 전날) · 업체에 알리기.
 
-- 고른 값은 칩(project.diy.diy_for)이 먼저예요. 칩을 아직 묻지 않았으면(None) 기억 diy 글(고객이 한 말)에서 낱말로
-  찾아요. '없어요'(빈 목록)면 직접 할 일이 없어요. 에이전트 추측은 쓰지 않아요.
+- 직접 할 일의 원본은 저장된 칩(project.diy.diy_for)뿐이에요(리드 결정 11-22, QA r3 s6). 칩을 아직 묻지
+  않았으면(None) 고른 일이 없어요. 기억 diy 글(고객이 대화에서 한 말)은 원본이 아니라 카드 · 실측 요청 '업체에
+  알릴 것' · 업체 브리핑에 넣지 않아요. '없어요'(빈 목록)면 직접 할 일이 없어요. 에이전트 추측은 쓰지 않아요.
+- 고객이 직접 할 일 카드를 거두거나 줄이거나 '없어요'로 저장하면 같은 일을 말하는 기억 조각도 지워요(forget,
+  assistant.actions가 불러요).
 - 날짜는 공정표(schedule.service.plan_for: 확정이 있으면 확정, 없으면 예상) 블록 → schedule.service.diy_tasks(calc.diy)
   값만 써요. 글은 knowledge/diy.json 정해 둔 글(숫자 없음)이고, 날짜 말만 계산 엔진 값으로 적어요.
 - 할 일 날짜(start · end · day)는 공정표 '고객이 직접' 줄과 같은 값이에요(모든 날 any · 사는 집 occupied). 고객이
   주말 · 공휴일만 된다고 했으면(도구 days · 기억 '주말에만') 주말 · 공휴일만으로 다시 찾은 값(alt)을 근거와 같이
   더해요: '12월 17일(목) ~ 12월 20일(일) 사이에 해요 · 주말이면 12월 19일(토)도 돼요'(QA r2 c3).
-- 실측을 요청한 뒤 직접 할 일을 바꾸면 확정 전 요청은 믿집이 알리고, 확정한 업체에는 따로 알려야 해요
-  (visit.flow.diy_reach · sync_diy, QA r2 c2). diy_plan 결과의 vendors(requests · deals)가 그 업체 이름이에요.
+- 실측을 요청한 뒤 직접 할 일을 바꾸면 확정 전 요청 · 공사 시작 전 확정은 믿집이 사본을 고치고 알려요. 공사가
+  시작된 확정 업체만 따로 알려야 해요(visit.flow.diy_reach · sync_diy, QA r2 c2 · r3 c2 · c6). diy_plan 결과의
+  vendors는 requests(믿집이 알리는 업체) · deals(사본에 지금 직접 할 일이 빠져 따로 알려야 하는 업체)예요. 사본에
+  이미 들어 있으면 따로 알리라고 하지 않아요.
 - 카드는 knowledge 카드의 체크 칸이에요: 모두 보기는 할 일마다 한 줄('페인트(문틀 · 몰딩) 칠하기 · 12월 4일(금)까지
   해요'), 한 가지를 물으면 그 일의 때 · 방법 · 주의점 줄과 준비물 체크 칸이에요.
 - 챙기기는 확정 공정표(수락한 공사 날짜)가 있을 때만 해요: 7일 안 마감 줄(today_rows) · 공사 1주 전 할 일
@@ -22,7 +27,7 @@
 import re
 import uuid
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel
@@ -92,14 +97,20 @@ DATES_NOTE = (
 )
 # 직접 할 일을 바꾸면 닿는 업체(diy_plan · propose_home_info 결과 vendors)
 REACH_LIVE = (
-    "실측을 요청한 업체(requests)는 직접 할 일을 바꾸면 믿집이 요청에 고쳐 적고 알림을 보내요."
+    "실측을 요청한 업체 · 공사 시작 전 확정 업체(requests)는 직접 할 일을 바꾸면 믿집이 요청 사본에 고쳐 적고 "
+    "알림을 보내요."
+)
+REACH_SYNCED = (
+    "지금 직접 할 일은 그 업체(requests) 요청 사본에 이미 들어 있어요. 따로 알리지 않아도 돼요."
 )
 REACH_DEALT = "확정한 업체(deals)는 {note}. 업체 채팅으로 알려 달라고 안내해요."
 SRC_NOTE = {
     "chips": "고객이 고른 직접 할 일이에요.",
-    "memory": "고객이 대화에서 직접 하겠다고 한 일이에요(칩은 아직 안 골랐어요).",
     "none": "고객이 직접 할 일은 없다고 골랐어요.",
-    "not_asked": "고객이 아직 직접 할 일을 고르지 않았어요. 표준견적서 화면에서 고를 수 있어요.",
+    "not_asked": (
+        "고객이 아직 직접 할 일을 고르지 않았어요. 대화에서 말한 일(기억)은 저장 전이라 카드 · 실측 요청 · 업체에 "
+        "들어가지 않아요. 집 정보 승인 카드(직접 할 일)나 표준견적서 화면에서 저장해요."
+    ),
 }
 WHY_NOTE = {
     "short": "앞 공사와 뒤 공사 사이가 모자라 날이 빠듯해요. 업체와 날짜를 맞춰 보세요.",
@@ -181,15 +192,13 @@ def _item_key(t: calc_diy.DiyTask) -> str:
 # ---- 고른 값 · 날짜 ----
 
 
-async def keys_for(s: AsyncSession, user_id: uuid.UUID, pid: uuid.UUID) -> tuple[list[str], str]:
-    """(고른 키, 출처). 출처: chips(칩) · none(칩 '없어요') · memory(기억 diy 글) · not_asked(아직 안 물음).
-    칩이 기억보다 먼저예요."""
+async def keys_for(s: AsyncSession, pid: uuid.UUID) -> tuple[list[str], str]:
+    """(고른 키, 출처). 출처: chips(칩) · none(칩 '없어요') · not_asked(아직 안 물음). 원본은 저장된 칩뿐이에요
+    (기억 diy 글로 채우지 않아요: 거둔 일이 다음 실측 요청에 다시 들어갔어요, QA r3 s6)."""
     chips = await diy_for(s, pid)
-    if chips is not None:
-        return chips, ("chips" if chips else "none")
-    said = next((m.value for m in await repo.memories(s, user_id) if m.key == "diy"), "")
-    got = keys_in(said)
-    return got, ("memory" if got else "not_asked")
+    if chips is None:
+        return [], "not_asked"
+    return chips, ("chips" if chips else "none")
 
 
 @dataclass
@@ -231,7 +240,7 @@ async def gather(
     from app.schedule import service as schedule_service
 
     p = await project_service.get_for(s, user, pid)
-    chosen, src = await keys_for(s, user.id, pid)
+    chosen, src = await keys_for(s, pid)
     rows = await repo.memories(s, user.id)
     free_src = "asked" if free == "weekend" else ""
     if free is None:
@@ -430,10 +439,11 @@ async def diy_plan(tc: ToolCtx, a: DiyIn) -> ToolOut:
     focus = None if a.item == "all" else a.item
     async with SessionLocal() as s:
         g = await gather(s, tc.user, pid, tc.today, free=a.days, keys=[focus] if focus else None)
-        reach = await visit_flow.diy_reach(s, pid)
+        reach = await visit_flow.diy_reach(s, pid, tc.today)
     data = model_of(g, focus)
-    if reach.live or reach.dealt:  # 직접 할 일을 바꾸면 닿는 업체(QA r2 c2)
-        data["vendors"] = vendors_of(reach)
+    # 직접 할 일이 닿는 업체 · 사본에 빠져 따로 알릴 업체(QA r2 c2 · r3 c2 · c3)
+    if reach.live or reach.missing:
+        data["vendors"] = vendors_of(reach, current=True)
     if focus is not None:
         return ToolOut(data=data, cards=[item_card(pid, focus, g)])
     if not g.tasks:
@@ -442,9 +452,12 @@ async def diy_plan(tc: ToolCtx, a: DiyIn) -> ToolOut:
     return ToolOut(data=data, cards=[list_card(pid, g)])
 
 
-def vendors_of(reach) -> dict:
-    """직접 할 일을 바꾸면 닿는 업체(visit.flow.DiyReach): 확정 전 요청(requests)은 믿집이 요청 사본을 고치고
-    알리고, 확정한 업체(deals)에는 비서가 업체 채팅으로 따로 알리라고 안내해요(QA r2 c2)."""
+def vendors_of(reach, *, current: bool = False) -> dict:
+    """직접 할 일이 닿는 업체(visit.flow.DiyReach): 확정 전 요청 · 공사 시작 전 확정(requests)은 믿집이 요청 사본을
+    고치고 알려요. 공사가 시작된 확정 업체(deals)에는 비서가 업체 채팅으로 따로 알리라고 안내해요(QA r2 c2).
+    current(지금 상태를 읽음, diy_plan)면 deals는 사본에 지금 직접 할 일이 빠진 업체만이고, requests 사본이 모두
+    지금과 같으면 이미 들어 있다고 적어요(QA r3 c2 21턴 · c3: 이미 간 일을 '따로 알리세요'). current가 아니면(바꾸는
+    카드, propose_home_info) 공사가 시작된 확정 업체 모두가 deals예요."""
     from app.visit.flow import DIY_DEALT_NOTE
 
     out: dict = {}
@@ -452,8 +465,11 @@ def vendors_of(reach) -> dict:
     if reach.live:
         out["requests"] = list(reach.live)
         notes.append(REACH_LIVE)
-    if reach.dealt:
-        out["deals"] = list(reach.dealt)
+        if current and reach.synced:
+            notes.append(REACH_SYNCED)
+    deals = reach.missing if current else reach.dealt
+    if deals:
+        out["deals"] = list(deals)
         notes.append(REACH_DEALT.format(note=DIY_DEALT_NOTE))
     out["notes"] = notes
     return out
@@ -542,7 +558,7 @@ async def home_ctx(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> 
 
     p = await project_service.get_for(s, user, pid)
     rows = await repo.memories(s, user.id)
-    keys, _src = await keys_for(s, user.id, pid)
+    keys, _src = await keys_for(s, pid)
     weekday = False
     for d in await schedule_service.deals_for(s, user, pid, None, today):
         if d.start_date is None or d.end_date is None:
@@ -645,20 +661,49 @@ async def eve_card(
 # ---- 업체에 알리기 ----
 
 
-async def offer_part(
-    s: AsyncSession, user_id: uuid.UUID, pid: uuid.UUID
-) -> tuple[SummaryRow | None, list[str]]:
-    """실측 요청 승인 카드 줄 '업체에 알릴 것'과 payload diy(고른 키). 직접 할 일이 없으면 (None, [])."""
-    keys, _src = await keys_for(s, user_id, pid)
+TOLD_LABEL = "업체에 알릴 것"
+
+
+def told_row(keys: list[str]) -> SummaryRow | None:
+    """실측 요청 승인 카드 줄 '업체에 알릴 것'(칩 키 → 화면 말). 없으면 None."""
     keys = [k for k in KEYS if k in set(keys)]
     if not keys:
-        return None, []
-    row = SummaryRow(
-        label="업체에 알릴 것",
+        return None
+    return SummaryRow(
+        label=TOLD_LABEL,
         value="고객이 직접 해요 — " + " · ".join(DIY[k] for k in keys),
         sub="승인하면 요청에 남아 업체가 요청서에서 봐요",
     )
-    return row, keys
+
+
+async def offer_part(
+    s: AsyncSession, user_id: uuid.UUID, pid: uuid.UUID
+) -> tuple[SummaryRow | None, list[str]]:
+    """실측 요청 승인 카드 줄 '업체에 알릴 것'과 payload diy(저장된 칩 키). 직접 할 일이 없으면 (None, []).
+    user_id는 부르는 쪽 모양을 지키려고 남겨 둬요(기억은 읽지 않아요)."""
+    keys, _src = await keys_for(s, pid)
+    keys = [k for k in KEYS if k in set(keys)]
+    return told_row(keys), keys
+
+
+async def forget(
+    s: AsyncSession, user_id: uuid.UUID, keys: list[str] | set[str], now: datetime
+) -> int:
+    """기억 '직접 할 일'에서 그 칩 일(keys)만 말하는 조각을 지운다(리드 결정 11-22: 고객이 직접 할 일 카드를
+    거두거나 줄이거나 '없어요'로 저장하면 같은 일을 말하는 기억도 빠져요, 기억 화면에서도). 칩 낱말이 없는
+    조각('장판 직접')과 남는 일도 같이 말하는 조각은 그대로예요. 다 빠지면 그 줄을 지워요. 바꾼 줄 수.
+    commit은 부르는 쪽."""
+    from app.assistant import memory
+
+    drop = set(keys)
+    if not drop:
+        return 0
+
+    def keep(part: str) -> bool:
+        said = set(keys_in(part))
+        return not said or not said <= drop
+
+    return await memory.drop_parts(s, user_id, "diy", keep, now)
 
 
 async def told_labels(s: AsyncSession, visit_id: uuid.UUID) -> list[str]:

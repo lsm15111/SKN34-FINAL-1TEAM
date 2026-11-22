@@ -1,7 +1,8 @@
 """QA 2차에서 넘어온 반셀프 직접 할 일(갈래 C).
 
-- c2: 실측을 요청한 뒤 직접 할 일 칩을 바꾸면 확정 전 요청(요청함 ~ 견적서 옴)의 '업체에 알릴 것' 사본을 같이 고치고
-  업체에 앱 안 알림을 한 번 보내요. 확정한 요청은 고치지 않고 '확정 뒤라 업체에 따로 알려야 해요'를 돌려줘요.
+- c2: 실측을 요청한 뒤 직접 할 일 칩을 바꾸면 살아 있는 요청(요청함 ~ 견적서 옴 · 공사 시작 전 확정, QA r3 c6 리드
+  결정)의 '업체에 알릴 것' 사본을 같이 고치고 업체에 앱 안 알림을 한 번 보내요. 공사가 시작된 확정만 고치지 않고
+  '공사가 시작된 뒤라 업체에 따로 알려야 해요'를 돌려줘요(test_v4_r3_b1_diy).
   벽지 직접 구매(paper_buy)도 같은 길이에요(화면 PUT /diy · 비서 승인 카드 둘 다).
 - c3 2 · 5번: 직접 할 일 도구 날짜는 공정표 '고객이 직접' 줄과 같은 값이고, 주말에만 되는 고객에게는 주말 날을 근거와
   같이 더해요. 사는 집이면 뒤에 할 일 마감이 공사 뒤 첫 주말까지예요(calc.diy diy_v3).
@@ -89,17 +90,23 @@ def test_chips_before_deal_update_live_requests_and_tell_each_vendor_once(api):
     assert r.json()["diy"] == ["실리콘 · 줄눈"]
 
 
-def test_chips_after_deal_keep_the_deal_copy_and_say_so(api, script):
+def test_chips_after_deal_update_the_deal_copy_before_work_starts(api, script):
+    """QA 3차 c6 리드 결정(11-22): 확정 뒤에도 공사 시작 전까지는 확정 업체 사본을 고치고 종 알림을 보내요(예전 기대:
+    사본 그대로 · '확정 뒤라 따로 알려야 해요'). 공사가 시작된 뒤는 test_v4_r3_b1_diy가 봐요."""
     customer, pid, va, _vb, _vc = setup(api)
     assert confirm(api, pid, va).status_code == 200
     r = api.put(f"/projects/{pid}/diy", json={"diy": ["silicone"]})
     assert r.status_code == 200, r.text
     out = r.json()
-    assert out["told"] == [] and out["notice"] == f"{DIY_DEALT_NOTE}(마루와벽)"
+    assert out["told"] == ["마루와벽"] and out["notice"] is None
     rows = {str(x["id"]): x for x in query("select id, status, diy from visits")}
-    assert (rows[va]["status"], rows[va]["diy"]) == ("chosen", [])  # 확정한 사본은 그대로
-    assert all(not notes(e, "visit_diy_changed") for e in VENDORS)  # 닫힌 요청에도 안 가요
-    # 직접 할 일 도구 결과에도 확정한 업체는 따로 알려야 한다고 적어요(비서가 업체 채팅으로 안내)
+    assert (rows[va]["status"], rows[va]["diy"]) == ("chosen", ["silicone"])  # 확정 사본도 고쳐요
+    (n,) = notes(VENDORS[0], "visit_diy_changed")
+    assert n["body"] == "고객이 직접 할 일을 바꿨어요: 실리콘 · 줄눈"
+    assert all(not notes(e, "visit_diy_changed") for e in VENDORS[1:])  # 닫힌 요청엔 안 가요
+    login(api, VENDORS[0])
+    assert api.get(f"/vendor/assistant/briefs/{va}").json()["diy"] == ["실리콘 · 줄눈"]
+    # 직접 할 일 도구 결과: 업체 사본에 이미 들어 있어 따로 알리라고 하지 않아요(QA r3 c2 21턴 · c3)
     use(api, customer)
     log = script(
         [
@@ -110,10 +117,10 @@ def test_chips_after_deal_keep_the_deal_copy_and_say_so(api, script):
     ok(ask(api, pid, "직접 할 일 정리해 줘"))
     got = tool_result(log, 1)
     assert got["vendors"] == {
-        "deals": ["마루와벽"],
-        "notes": [diy_tools.REACH_DEALT.format(note=DIY_DEALT_NOTE)],
+        "requests": ["마루와벽"],
+        "notes": [diy_tools.REACH_LIVE, diy_tools.REACH_SYNCED],
     }
-    assert DIY_DEALT_NOTE in got["vendors"]["notes"][0]
+    assert DIY_DEALT_NOTE not in json.dumps(got, ensure_ascii=False)
 
 
 def test_home_info_card_after_request_tells_live_vendors(api, script):

@@ -11,6 +11,10 @@
 - save: 같은 키는 새 말로 덮어쓴다. 목록 칸(LISTS: 직접 할 일 · 반려동물)은 앞 값에 새 것을 더한다(인용도 잇고, 근거
   메시지는 새 말). '실리콘만'처럼 '만'으로 말하면 덮어쓰고(only), 직접 할 일을 '업체에 맡길래요'라고 하면 앞 값에서
   뺀다(without, 다 빠지면 그 기억을 지운다). 사람마다 새것부터 MEMORY_MAX(12)줄만 남긴다. commit은 부르는 쪽이 한다.
+  미뤘다 뽑은 말(said_at)은 그 말 뒤에 바뀐 기억 줄을 덮지 않는다(옛 말이 새 말을 이기지 않게).
+- 미루기(리드 결정 11-22, QA r3 f1): LLM이 꺼졌거나 비용 상한이면 extract가 Later를 낸다. 기억 뽑기 일(assistant.jobs)은
+  같은 말로 뒤 시각의 일을 한 줄 더 넣어 LLM이 돌아오면 한 번 뽑는다(무료 모드에 한 말도 기억이 돼요).
+- drop_parts: 목록 칸에서 조각을 뺀다(고객이 직접 할 일 카드를 거두거나 줄이거나 '없어요'로 저장, tools.diy.forget).
 - 뽑기 스키마(Extracted)에는 길이 · 개수 상한을 두지 않는다(상한은 validate가 본다). 긴 인용 하나로 답 전체를 버리고
   유료로 다시 부르지 않게, 꼴이 틀린 줄은 빼고 나머지를 받는다.
 """
@@ -18,6 +22,7 @@
 import logging
 import re
 import uuid
+from collections.abc import Callable
 from datetime import datetime
 
 from pydantic import BaseModel, ValidationError, field_validator
@@ -92,6 +97,15 @@ CONTACT = re.compile(
     r"\[[^\]]*(?:번호|전화|주소|이메일|동호)[^\]]*\]"
 )
 MONEY = re.compile(r"\d[\d,.]*\s?(?:원|만|천|억)|₩|예산|가격|금액|비용|견적가|얼마")
+
+
+class Later(Exception):
+    """기억 뽑기를 지금 할 수 없어요(LLM 꺼짐 · 비용 상한): 일을 뒤로 미뤄 LLM이 돌아오면 한 번 뽑아요.
+    scope: off(꺼짐 · 키 없음) 또는 비용 상한 범위(usage.Scope · unknown)."""
+
+    def __init__(self, scope: str) -> None:
+        super().__init__(f"기억 뽑기 미룸({scope})")
+        self.scope = scope
 
 
 class Item(BaseModel):
@@ -267,9 +281,9 @@ def validate(items: list[Item], message: str) -> list[Item]:
 
 
 async def extract(message: str, user_id: uuid.UUID | None) -> list[Item]:
-    """Haiku가 고객 메시지 한 줄에서 기억 후보를 뽑는다. 꺼짐 · 상한이면 [](다시 하지 않음). 요청이 거절됐거나
-    답을 쓸 수 없으면(꼴 틀림 · 거절 · 잘림) 같은 말로 다시 불러도 같으니 [](유료로 다시 하지 않음).
-    공급자 일시 오류(LLMError)는 그대로 낸다(일이 다시 해 본다)."""
+    """Haiku가 고객 메시지 한 줄에서 기억 후보를 뽑는다. 꺼짐 · 상한이면 Later(일이 뒤로 미뤄 LLM이 돌아오면 한 번
+    뽑는다, 무료 모드에 한 말도). 요청이 거절됐거나 답을 쓸 수 없으면(꼴 틀림 · 거절 · 잘림) 같은 말로 다시 불러도
+    같으니 [](유료로 다시 하지 않음). 공급자 일시 오류(LLMError)는 그대로 낸다(일이 다시 해 본다)."""
     from app.agent import llm
 
     text = mask(message or "").strip()
@@ -280,8 +294,10 @@ async def extract(message: str, user_id: uuid.UUID | None) -> list[Item]:
             got = await llm.claude_json(
                 "memory", Extracted, prompts.text("memory"), text, max_tokens=1024
             )
-    except (llm.LLMOff, llm.OverBudget):
-        return []
+    except llm.LLMOff:
+        raise Later("off") from None
+    except llm.OverBudget as e:
+        raise Later(e.scope) from None
     except (llm.LLMRejected, llm.LLMBadOutput) as e:
         log.warning("기억 뽑기 답을 쓰지 못했어요 (%s)", type(e).__name__)
         return []
@@ -344,15 +360,23 @@ async def save(
     items: list[Item],
     now: datetime,
     said: str | None = None,
+    said_at: datetime | None = None,
 ) -> int:
     """검사한 기억을 저장하고 MEMORY_MAX줄만 남긴다. 같은 키는 덮어쓰고, 목록 칸(LISTS)은 앞 값에 더한다(인용도
     잇고, 근거 메시지는 새 말). '만'으로 줄인 말(only)은 덮어쓴다. said(그 고객 말)가 직접 할 일을 업체에 넘기면
-    앞 값에서 빼고(without), 다 빠지면 그 기억을 지운다. 바꾼 줄 수. commit은 부르는 쪽."""
+    앞 값에서 빼고(without), 다 빠지면 그 기억을 지운다. said_at(미뤘다 뽑은 말의 때)을 주면 그 뒤에 바뀐 기억
+    줄은 건드리지 않는다(옛 말로 새 말을 덮지 않게). 바꾼 줄 수. commit은 부르는 쪽."""
     old = (
         {m.key: m for m in await repo.memories(s, user_id)}
-        if said or any(it.key in LISTS for it in items)
+        if said or said_at or any(it.key in LISTS for it in items)
         else {}
     )
+
+    def newer(key: str) -> bool:  # 미룬 말보다 뒤에 바뀐 줄
+        row = old.get(key)
+        return said_at is not None and row is not None and row.updated_at > said_at
+
+    items = [it for it in items if not newer(it.key)]
     changed = 0
     for it in items:
         value, quote = it.value, it.evidence_quote
@@ -372,7 +396,7 @@ async def save(
         )
         changed += 1
     prev = old.get("diy")
-    if said and prev is not None and all(it.key != "diy" for it in items):
+    if said and prev is not None and not newer("diy") and all(it.key != "diy" for it in items):
         rest = without(prev.value, said)
         if not rest:
             await s.execute(
@@ -394,6 +418,39 @@ async def save(
             changed += 1
     await repo.trim_memory(s, user_id, MEMORY_MAX)
     return changed
+
+
+async def drop_parts(
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    key: str,
+    keep: Callable[[str], bool],
+    now: datetime,
+) -> int:
+    """목록 칸(LISTS) 기억에서 keep이 False인 조각을 뺀다. 인용도 keep인 조각만 남기고(남는 것이 없으면 앞 인용
+    그대로), 근거 메시지는 그대로예요. 다 빠지면 그 줄을 지운다(기억 화면에서도 빠져요). 바꾼 줄 수(0 · 1).
+    commit은 부르는 쪽."""
+    prev = next((m for m in await repo.memories(s, user_id) if m.key == key), None)
+    if prev is None:
+        return 0
+    parts = _parts(prev.value)
+    rest = [p for p in parts if keep(p)]
+    if len(rest) == len(parts):
+        return 0
+    if not rest:
+        await s.execute(delete(AssistantMemory).where(AssistantMemory.id == prev.id))
+        return 1
+    quotes = [q for q in prev.evidence_quote.split(QUOTE_SEP) if q.strip() and keep(q)]
+    await repo.upsert_memory(
+        s,
+        user_id,
+        key=key,
+        value=LIST_SEP.join(rest),
+        message_id=prev.evidence_message_id,
+        quote=QUOTE_SEP.join(quotes) or prev.evidence_quote,
+        now=now,
+    )
+    return 1
 
 
 def facts_line(rows: list) -> str | None:

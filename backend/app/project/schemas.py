@@ -415,9 +415,11 @@ class DiyOut(BaseModel):
     )
     told: list[str] = Field(
         default=[],
-        description="바뀐 직접 할 일을 알린 업체 이름(확정 전 실측 요청, 요청 사본도 같이 고쳐요)",
+        description="바뀐 직접 할 일을 알린 업체 이름(확정 전 실측 요청 · 공사 시작 전 확정, 요청 사본도 같이 "
+        "고쳐요)",
     )
     notice: str | None = Field(
         default=None,
-        description="확정한 업체가 있으면 '확정 뒤라 업체에 따로 알려야 해요(업체 이름)'. 업체 채팅으로 알려요",
+        description="공사가 시작된 확정 업체 사본에 빠졌으면 '공사가 시작된 뒤라 업체에 따로 알려야 해요(업체 "
+        "이름)'. 업체 채팅으로 알려요",
     )
