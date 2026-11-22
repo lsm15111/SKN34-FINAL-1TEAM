@@ -11,8 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth,
   getLatestThread, getMemory, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
-  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, takeToday, targetOfWrite, BUSY_TEXT,
-  TURN_RETRY_MS, TurnBusy,
+  rejectAction, replaceAction, resetMock, resetTurn, sayable, seqFilter, settledNudges, streamTurn, subscribeTurns, takeToday, targetOfWrite,
+  turnErrorText, BUSY_TEXT, TURN_RETRY_MS, TurnBusy,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -247,7 +247,7 @@ export function useAssistant(projectId: string) {
    *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요) */
   const send = useCallback(async (text: string, context?: TurnIn["context"]): Promise<"busy" | void> => {
     const t = text.trim();
-    if (!t || runningRef.current) return;
+    if (!sayable(t) || runningRef.current) return; // 보이지 않는 글자만 있는 글은 보내지 않아요
     runningRef.current = true;
     genRef.current += 1; // 이 턴 전에 시작한 기록 읽기 결과는 버려요
     setRunning(true);
@@ -312,7 +312,8 @@ export function useAssistant(projectId: string) {
           } else if (e instanceof ApiError && e.status === 429) {
             failMsg(e.message, "too_many");
           } else {
-            failMsg(errorText(e), e instanceof ApiError ? e.code : "send");
+            // 422면 서버 칸 글('보낼 말을 적어 주세요.')을 그대로 보여요
+            failMsg(turnErrorText(e), e instanceof ApiError ? e.code : "send");
           }
           return;
         }
