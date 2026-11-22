@@ -19,13 +19,17 @@
   rollback하고 새 트랜잭션에서 failed(기능 오류 코드 · 고객에게 준 말)로 바꾼 뒤 409. 견적서가 새 판(quote_changed)이면
   새 판 + 차액으로 새 제안을 만든다.
 - executed를 다시 승인하면 같은 결과(200). rejected · expired · failed는 409. approved는 처리 중(409 in_progress).
+- 거두기(withdraw, 고정 선 1의 예외): 실행 전(proposed) 카드는 고객 말로 거둔다. 거절과 같게 rejected로 남기고
+  result.reason = withdrawn(화면 error_code). 실행된 카드는 거둘 수 없다.
 - 만료 sweep: 기한 지난 proposed → expired(due), approved로 2분 넘게 남은 행 → failed 'stalled'(다시 실행 안 함).
-  대상 상태가 비서 밖(화면 단추)에서 바뀐 proposed → expired(handled_elsewhere).
+  대상 상태가 비서 밖(화면 단추)에서 바뀐 proposed → expired(handled_elsewhere). 열린 줄을 모두(새것부터 쪽마다)
+  보고, 시간 예산이 다 되면 멈춘 자리부터 다음 차례가 잇는다.
 """
 
 import hashlib
 import json
 import logging
+import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
@@ -55,12 +59,14 @@ FAILED = "실행하지 못했어요. 다시 해 주세요."  # 기능 오류가 
 # 닫힌 제안을 누를 때 · 턴 사실 '최근 처리한 카드'의 까닭 말(상태, 만료면 result.reason)
 CLOSED = {
     "rejected": "거절한 제안이에요.",
+    "withdrawn": "고객이 거둔 제안이에요.",  # 거절과 같게 남기되 까닭은 고객이 말로 거둠
     "expired": EXPIRED,
     "due": EXPIRED,  # 만료 까닭: 기한 지남
     "replaced": "새 카드로 바뀐 제안이에요.",
     "failed": "실행하지 못한 제안이에요. 비서에게 다시 만들어 달라고 해 주세요.",
     "handled_elsewhere": "화면에서 이미 처리했거나 상태가 바뀐 제안이에요.",
 }
+WITHDRAWN = "withdrawn"  # 고객 말로 거둔 카드(rejected)의 result.reason
 # 바꿔치기 묶음: 같은 대상에서 하나를 고르면 다른 것은 뜻이 없어지는 종류끼리만 열린 제안을 바꾼다. 묶음에 없는
 # 종류는 같은 종류끼리만 바꾼다(직접 할 일 · 집 정보(home_info)와 실측 요청(visit_request)은 같은 공사여도 따로다)
 SWAPS: tuple[frozenset[str], ...] = (
@@ -79,9 +85,10 @@ Executor = Callable[[AsyncSession, User, AssistantAction, datetime, Mark], Await
 
 
 def out(a: AssistantAction) -> ActionOut:
-    """행 → 화면 모양. 만료 까닭(due · replaced)은 error_code로 내보낸다(화면 호환)."""
+    """행 → 화면 모양. 만료 까닭(due · replaced)과 거둔 카드(withdrawn)는 error_code로 내보낸다(화면 호환).
+    target_id는 카드가 가리키는 대상이다(화면이 같은 대상이 처리된 카드의 단추를 숨긴다)."""
     res = a.result or {}
-    err = a.error_code or (res.get("reason") if a.status == "expired" else None)
+    err = a.error_code or (res.get("reason") if a.status in ("expired", "rejected") else None)
     shown = (
         ActionResult(text=res["text"], href=res.get("href"), label=res.get("label"))
         if a.status == "executed" and res.get("text")
@@ -98,6 +105,7 @@ def out(a: AssistantAction) -> ActionOut:
         kind=a.kind,  # type: ignore[arg-type]
         status=a.status,  # type: ignore[arg-type]
         summary=ActionSummary.model_validate(a.summary),
+        target_id=a.target_id,
         target_ver=a.target_ver,
         expires_at=a.expires_at,
         decided_at=a.decided_at,
@@ -276,9 +284,10 @@ async def propose(
 
 
 def _closed(a: AssistantAction) -> AppError:
-    reason = (a.result or {}).get("reason") if a.status == "expired" else a.status
+    reason = (a.result or {}).get("reason") if a.status in ("expired", "rejected") else None
+    reason = reason or a.status
     code = "expired" if a.status == "expired" and reason == "due" else "action_closed"
-    return AppError(409, code, CLOSED.get(reason or a.status, CLOSED["failed"]))
+    return AppError(409, code, CLOSED.get(reason, CLOSED["failed"]))
 
 
 async def reject(user: User, action_id: uuid.UUID, surface: str, now: datetime) -> ActionOut:
@@ -294,6 +303,20 @@ async def reject(user: User, action_id: uuid.UUID, surface: str, now: datetime) 
                 return out(got)
             a = await repo.action_owned(s, user.id, action_id, surface)
         return out(a)  # type: ignore[arg-type]
+
+
+async def withdraw(s: AsyncSession, a: AssistantAction, now: datetime) -> AssistantAction | None:
+    """고객 말로 실행 전 카드를 거둔다: proposed → rejected(result.reason withdrawn). 조건부 UPDATE라 같은 때
+    승인 · 거절 · 만료가 먼저면 None(부르는 쪽이 지금 상태를 다시 읽는다). commit은 부르는 쪽이 한다."""
+    return await repo.set_action(
+        s, a.id, ["proposed"], status="rejected", decided_at=now, result={"reason": WITHDRAWN}
+    )
+
+
+def keeps_lines(a: AssistantAction) -> bool:
+    """실행해도 먼저 말 건 줄을 닫지 않는 행동: 추가 금액을 채팅으로 물어봄. 답은 아직이라 화면 단추로 물어봤을
+    때처럼 그 줄은 답 기다림으로 남는다(proactive._extra_ctx가 asked를 기다림으로 본다)."""
+    return a.kind == "extra_answer" and (a.payload or {}).get("answer") == "ask"
 
 
 async def execute(
@@ -344,7 +367,9 @@ async def execute(
             if row is None:
                 raise AppError(409, "stale", "그사이 상태가 바뀌었어요. 새로 불러올게요.")
             # 이 대상의 먼저 말 건 줄은 할 일이 끝났다: 정리(2분)를 기다리지 않고 같은 트랜잭션에서 닫는다
-            await repo.close_lines_of(s, a, kinds=swap_kinds(a.kind))
+            # (채팅으로 묻기는 답 기다림이라 닫지 않는다)
+            if not keeps_lines(a):
+                await repo.close_lines_of(s, a, kinds=swap_kinds(a.kind))
             marked = True
 
         try:
@@ -519,7 +544,10 @@ async def expire_due(now: datetime) -> tuple[int, int]:
 
 
 HANDLED = "handled_elsewhere"  # 사람이 화면 단추로 직접 처리해 대상 상태가 바뀐 제안(result.reason)
-HANDLED_BATCH = 200
+HANDLED_BATCH = 200  # 한 쪽(읽기 조인 한 번)에 보는 열린 제안 수
+HANDLED_SECONDS = 10.0  # 한 차례 시간 예산(sweep 60초 안). 넘으면 멈춘 자리부터 다음 차례가 잇는다
+# 예산이 다 돼 멈춘 자리(created_at, id). 이 프로세스에만 둔다(지워져도 처음부터 다시 볼 뿐)
+_resume: tuple[datetime, uuid.UUID] | None = None
 
 
 @dataclass(frozen=True)
@@ -544,9 +572,14 @@ def home_ver(rev: int, fields: dict, picked: list[str] | None) -> str:
 
 def moved(a: AssistantAction, t: Targets) -> bool:
     """제안을 만든 때의 대상 상태(target_ver)와 지금 상태가 다르면 True: 이 제안은 더 쓸 데가 없다.
-    확정 제안(vendor_confirm)의 target_ver는 견적서 판이라 실측 상태(quoted)로 본다(새 판은 실행이 다시 제안)."""
+    확정 제안(vendor_confirm)의 target_ver는 견적서 판이라 실측 상태(quoted)로 본다(새 판은 실행이 다시 제안).
+    실측 요청 취소(visit_cancel)는 업체가 답해 상태가 바뀌어도 취소할 수 있는 동안은 그대로 둔다."""
+    from app.visit.service import CANCELLABLE
+
     pl = a.payload or {}
     match a.kind:
+        case "visit_cancel":
+            return t.visits.get(a.target_id) not in CANCELLABLE
         case "home_info" | "visit_request":
             p = t.projects.get(a.target_id)
             rev, _, chips = (a.target_ver or "").partition(":")
@@ -572,35 +605,57 @@ def moved(a: AssistantAction, t: Targets) -> bool:
     return False
 
 
-async def close_handled() -> int:
-    """sweep: 대상(target_kind · target_id)의 상태가 비서 밖(화면 단추 · 상대의 응답)에서 바뀐 열린 제안을 닫는다.
-    proposed → expired, result.reason = handled_elsewhere(화면 error_code). 그 행동을 단 먼저 말 걸기 줄도 닫는다.
-    바꾸기는 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이긴다. 닫은 수."""
+async def _moved_ids(s: AsyncSession, rows: list[AssistantAction]) -> list[uuid.UUID]:
+    """열린 제안들 중 대상 상태가 만든 때와 달라진 것(읽기 조인 한 번씩)."""
     from app.project.diy import diy_ver, picked_of
     from app.schedule import service as schedule_service
 
-    async with SessionLocal() as s:
-        rows = await repo.open_actions(s, HANDLED_BATCH)
-        if not rows:
-            return 0
+    def of(kind: str) -> list[uuid.UUID]:
+        return list({a.target_id for a in rows if a.target_kind == kind})
 
-        def of(kind: str) -> list[uuid.UUID]:
-            return list({a.target_id for a in rows if a.target_kind == kind})
+    chips = await repo.project_diys(s, of("project"))
+    t = Targets(
+        projects=await repo.project_states(s, of("project")),
+        visits=await repo.visit_states(s, of("visit")),
+        proposals=await repo.proposal_states(s, of("proposal")),
+        dates=await schedule_service.dates_states(s, of("deal")),
+        live=await repo.live_visits(s, of("project")),
+        diys={pid: diy_ver(picked_of(chips.get(pid, ()))) for pid in of("project")},
+    )
+    gone = [a.id for a in rows if moved(a, t)]
+    return gone + await aftercare.moved_ids(s, rows)  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
 
-        chips = await repo.project_diys(s, of("project"))
-        t = Targets(
-            projects=await repo.project_states(s, of("project")),
-            visits=await repo.visit_states(s, of("visit")),
-            proposals=await repo.proposal_states(s, of("proposal")),
-            dates=await schedule_service.dates_states(s, of("deal")),
-            live=await repo.live_visits(s, of("project")),
-            diys={pid: diy_ver(picked_of(chips.get(pid, ()))) for pid in of("project")},
-        )
-        gone = [a.id for a in rows if moved(a, t)]
-        gone += await aftercare.moved_ids(s, rows)  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
-        closed = await repo.close_handled(s, gone, HANDLED) if gone else []
-        await s.commit()
-    return len(closed)
+
+async def close_handled(limit: int | None = None, seconds: float | None = None) -> int:
+    """sweep: 대상(target_kind · target_id)의 상태가 비서 밖(화면 단추 · 상대의 응답)에서 바뀐 열린 제안을 닫는다.
+    proposed → expired, result.reason = handled_elsewhere(화면 error_code). 그 행동을 단 먼저 말 걸기 줄도 닫는다.
+    바꾸기는 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이긴다. 닫은 수.
+    열린 줄을 모두 본다: 새것부터 한 쪽(limit)씩 읽고(created_at · id 커서) 끝까지 간다(새것 200개 창만 보던 것,
+    D2 · 부하 L3). 시간 예산(seconds)이 다 되면 멈춘 자리를 남기고, 다음 차례는 그 자리부터 끝까지 본 뒤 처음(새것)
+    부터 한 번 더 돈다."""
+    global _resume
+    limit = limit or HANDLED_BATCH
+    stop = time.monotonic() + (HANDLED_SECONDS if seconds is None else seconds)
+    after, again, total = _resume, _resume is not None, 0
+    _resume = None
+    while True:
+        async with SessionLocal() as s:
+            rows = await repo.open_actions(s, limit, after=after)
+            gone = await _moved_ids(s, rows) if rows else []
+            if gone:
+                total += len(await repo.close_handled(s, gone, HANDLED))
+            await s.commit()
+        if len(rows) < limit:  # 가장 오래된 줄까지 봤다
+            if not again:
+                break
+            after, again = None, False  # 멈춘 자리부터 봤으면 처음(새것)부터 한 번 더
+            continue
+        after = (rows[-1].created_at, rows[-1].id)
+        if time.monotonic() > stop:
+            _resume = after
+            log.warning("비서 화면 처리 정리 시간 예산을 넘겨 다음 차례에 이어요")
+            break
+    return total
 
 
 # ---- 실행 함수(EXECUTORS): 행동 종류 → 기능 service 공개 함수. mark()는 기능 함수가 commit하기 바로 앞에서 ----
@@ -804,6 +859,34 @@ async def _date_change(s: AsyncSession, user: User, a: AssistantAction, now: dat
     await schedule_service.request_dates(s, user, a.project_id, deal_id, data, _day(now))  # type: ignore[arg-type]
 
 
+# 실측 요청 취소 까닭 코드(visit.models.CANCEL_CODES 중 고객이 고르는 것) → 카드 글(정해 둔 글). 견적서가 늦어
+# 닫음(late_quote)은 늦은 견적서 알림에서만 써서 뺀다. 메모는 넣지 않는다(LLM 글은 업체에 가지 않는다)
+CANCEL_REASONS: dict[str, str] = {
+    "changed": "일정이 바뀌었어요",
+    "other_vendor": "다른 업체로 할래요",
+    "other": "그 밖의 까닭",
+}
+
+
+async def _visit_cancel(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
+    """고객 실측 요청 취소: POST …/visits/{id}/cancel과 같은 visit.service.cancel(이유 코드, 메모 없음). 잡기 풀기 ·
+    담기 칸 비움 · 기한 일 취소 · 업체 알림은 그 함수가 한다. 같은 요청의 다른 열린 카드(반나절 고르기 · 확정 …)는
+    쓸 데가 없어 같은 트랜잭션에서 닫는다(handled_elsewhere). 취소할 수 없는 상태 · 남의 것은 기능 오류로 failed."""
+    from app.visit import service as visit_service
+    from app.visit.schemas import CancelIn
+
+    pl = a.payload
+    visit_id = uuid.UUID(pl["visit_id"])
+    others = [x.id for x in await repo.open_on(s, user.id, "visit", visit_id) if x.id != a.id]
+    text = f"{pl.get('vendor_name') or '업체'}에 보낸 실측 요청을 취소했어요"
+    href = f"/projects/{a.project_id}/visits"
+    await mark({"text": text, "href": href, "label": "실측 일정 보기"})
+    if others:
+        await repo.close_handled(s, others, HANDLED)
+    data = CancelIn(code=pl["code"])
+    await visit_service.cancel(s, user, a.project_id, visit_id, _day(now), data, now)  # type: ignore[arg-type]
+
+
 async def _window_answer(
     s: AsyncSession, vendor: User, a: AssistantAction, now: datetime, mark: Mark
 ):
@@ -857,6 +940,7 @@ EXECUTORS: dict[str, Executor] = {
     "dates_accept": _dates_accept,
     "delay_accept": _dates_accept,
     "date_change": _date_change,
+    "visit_cancel": _visit_cancel,
     "window_answer": _window_answer,
     "decline": _decline,
     "dates": _dates,

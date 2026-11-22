@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import and_, case, delete, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -332,13 +332,16 @@ async def fail_stuck(s: AsyncSession, before: datetime) -> list[AssistantAction]
     return list(res.scalars().all())
 
 
-async def open_actions(s: AsyncSession, limit: int) -> list[AssistantAction]:
-    """모든 사람의 열린 제안(proposed), 새 것부터 (sweep: 화면에서 직접 처리했는지 보기)."""
+async def open_actions(
+    s: AsyncSession, limit: int, after: tuple[datetime, uuid.UUID] | None = None
+) -> list[AssistantAction]:
+    """모든 사람의 열린 제안(proposed), 새 것부터 한 쪽 (sweep: 화면에서 직접 처리했는지 보기). after(앞 쪽 마지막
+    줄의 created_at · id)를 주면 그보다 오래된 줄부터 읽는다(커서: 줄 수가 쪽보다 많아도 빠짐없이)."""
+    q = select(AssistantAction).where(AssistantAction.status == "proposed")
+    if after is not None:
+        q = q.where(tuple_(AssistantAction.created_at, AssistantAction.id) < tuple_(*after))
     rows = await s.scalars(
-        select(AssistantAction)
-        .where(AssistantAction.status == "proposed")
-        .order_by(AssistantAction.created_at.desc())
-        .limit(limit)
+        q.order_by(AssistantAction.created_at.desc(), AssistantAction.id.desc()).limit(limit)
     )
     return list(rows.all())
 
@@ -527,6 +530,8 @@ SETTLES: dict[str, tuple[str, ...]] = {
     "extra_answer": ("extra_added",),
     "work_check": ("work_done",),
     "visit_again": ("vendor_out",),
+    # 보낸 실측 요청 취소: 그 요청의 반나절 고르기 줄
+    "visit_cancel": ("visit_offered",),
 }
 
 

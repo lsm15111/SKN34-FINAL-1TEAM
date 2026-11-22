@@ -24,11 +24,16 @@ from app.assistant.schemas import (
     CompareCol,
     CompareFileOut,
     DateRange,
+    GradeCompareData,
+    GradeRow,
     HomeArea,
     HomeInfoData,
     KnowledgeData,
     LinkOut,
+    MarketRangeData,
     NameWon,
+    OptionOut,
+    OptionsData,
     QuoteCompareData,
     ScheduleData,
     ScheduleDay,
@@ -221,6 +226,227 @@ async def standard(
             f"위 값은 {' · '.join(model['trades'])} 값이에요."
         )
     return card, model
+
+
+# ---- 벽지 두 종류 견주기 · 시세 범위 ----
+
+PAPER_ROW = "벽지 값"  # 두 벽지의 도배지 줄(이름이 벽지마다 달라 한 이름으로 맞춰요)
+GRADE_NOTE = (
+    "저장하지 않은 계산이에요. 지금 표준견적서와 고른 벽지는 그대로예요. 벽지를 바꾸려면 고객이 원할 때 집 정보 "
+    "승인 카드(벽지)를 만들어요(실측 요청 전만)."
+)
+
+
+def _home_label(h, *extra: str) -> str:
+    """계산에 넣은 집 조건 한 줄(공급 84.0㎡ · 빈 집 …)."""
+    parts = [
+        *extra,
+        f"{BASIS.get(h.area_basis, h.area_basis)} {_m2(h.area_m2)}",
+        "부분 공사" if h.scope == "partial" else None,
+        "살면서 공사" if h.occupied else "빈 집",
+    ]
+    return " · ".join(x for x in parts if x)
+
+
+async def grade_compare(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, dict]:
+    """지금 집 조건으로 도배 표준견적서를 합지 · 실크로 함께 센다(계산 엔진, 저장하지 않음). 기준(도배만 · 리모델링)은
+    표준견적서와 같은 고르기(모은 조건)를 쓰고, 차액은 계산 엔진(calc.visit_view.grade_diff)이 낸다. 달라지는 줄은
+    두 벽지로 금액이 다른 줄(벽지 줄 먼저)이다. 도배가 없거나 계산할 수 없으면 ValueError."""
+    from app.calc import dobae as dobae_calc
+    from app.calc.visit_view import grade_diff
+    from app.project import service as project_service
+    from app.quote import service as quote_service
+
+    p = await project_service.get_for(s, user, pid)
+    if p.trades.dobae is None:
+        raise ValueError("도배 없음")
+    said = await project_service.conditions(s, p.id)
+    pick = dobae_calc.pick_profile(quote_service.work_facts(p, said))
+    homes = {g: quote_service.home_v3(p, g) for g in ("economy", "basic")}
+    got = {g: quote_service.standard_v3(h, None, pick).quote for g, h in homes.items()}
+    by = {g: {ln.key: ln for ln in q.lines} for g, q in got.items()}
+
+    def amount(g: str, key: str) -> int | None:
+        ln = by[g].get(key)
+        return ln.amount if ln is not None and ln.state in COUNTED else None
+
+    rows: list[GradeRow] = []
+    for key in sorted(dict.fromkeys([*by["economy"], *by["basic"]]), key=lambda k: k != "paper"):
+        e, b = amount("economy", key), amount("basic", key)
+        if e == b:
+            continue
+        name = PAPER_ROW if key == "paper" else (by["basic"].get(key) or by["economy"][key]).name
+        rows.append(GradeRow(name=name, economy_won=e, basic_won=b))
+    current = (p.home.grade if p.home else None) or p.trades.dobae.grade
+    total = {g: q.total for g, q in got.items()}
+    diff = grade_diff(total["basic"], total["economy"])
+    data = GradeCompareData(
+        label=_home_label(homes["basic"], "도배"),
+        economy_won=total["economy"],
+        basic_won=total["basic"],
+        diff_won=diff,
+        current=current,
+        rows=rows,
+        can_change=p.home is not None and not p.locked,
+        href=href(pid, "/standard"),
+    )
+    card = CardOut(card_id="grades", kind="grade_compare", data=data.model_dump(mode="json"))
+
+    def item(g: str) -> dict:
+        return {"grade": GRADE[g], "total": total[g], "picked": current == g}
+
+    model = {
+        "trade": "도배",
+        "label": data.label,
+        "items": [item("economy"), item("basic")],
+        "diff_won": diff,  # 실크 합계 − 합지 합계(부가세 포함, 계산 엔진)
+        "lines": [
+            {
+                "name": r.name,
+                "items": [
+                    {"grade": GRADE["economy"], "amount": r.economy_won},
+                    {"grade": GRADE["basic"], "amount": r.basic_won},
+                ],
+            }
+            for r in rows
+        ],
+        "locked": p.locked,
+        "note": GRADE_NOTE,
+    }
+    return card, model
+
+
+MIN_SAMPLES = 30  # 시세 범위를 말할 근거 실견적 수(이보다 적으면 범위를 말하지 않는다)
+MARKET_SOURCE = "믿집이 모은 아파트 {trade} 실견적 {n}건 · 가운데 절반 범위 · 부가세 포함"
+MARKET_NOTE = "비슷한 집 실견적의 가운데 절반이 이 사이예요. 원자료(업체 · 글 주소)는 없어요. 실제 금액은 실측 견적서로 정해져요."
+MOK_ITEMS = {"molding": "몰딩", "base": "걸레받이", "door": "방문", "flatten": "천장 평탄화"}
+
+
+async def market_range(
+    s: AsyncSession, user: User, pid: uuid.UUID, trade: str
+) -> tuple[CardOut | None, dict]:
+    """이 집 조건의 시세 범위: 계산 엔진(calc.quick_budget → market_band, refprice 시장 기준 한 벌)이 낸 부가세 포함
+    범위(만 원 단위)와 근거 실견적 수 · 출처 한 줄. 원자료(줄 · 업체 · 글 주소)는 넘기지 않는다. 부분 공사 · 천장만 ·
+    천장 평탄화처럼 비슷한 실견적이 없거나 근거가 MIN_SAMPLES보다 적으면 범위 없이 까닭만(found false, 카드 없음)."""
+    from app.calc import quick_budget
+    from app.project import service as project_service
+    from app.quote import service as quote_service
+    from app.refprice.market import MARKET_2026_11
+
+    p = await project_service.get_for(s, user, pid)
+    h = quote_service.home_v3(p)
+    name = TRADE.get(trade, trade)
+    why: str | None = None
+    if trade == "dobae":
+        grade = (p.home.grade if p.home else None) or (
+            p.trades.dobae.grade if p.trades.dobae else None
+        )
+        label = _home_label(h, name, GRADE.get(grade or "", "벽지 미정(실크로 계산)"))
+        if h.scope == "partial":
+            why = "부분 공사는 비슷한 실견적이 모자라 시세 범위를 말할 수 없어요."
+        elif "wall" not in h.faces:
+            why = "천장만 하는 도배는 비슷한 실견적이 모자라 시세 범위를 말할 수 없어요."
+        inp = quick_budget.QuickIn(
+            area_m2=h.area_m2,
+            area_basis=h.area_basis,
+            dobae=True,
+            door="none",
+            grade=grade,  # type: ignore[arg-type]
+            ceiling="ceiling" in h.faces,
+            occupied=h.occupied,
+        )
+    else:
+        items = list(p.trades.mokgong.items) if p.trades.mokgong else []
+        label = _home_label(h, name, " · ".join(MOK_ITEMS.get(x, x) for x in items) or None)
+        said = await project_service.conditions(s, p.id)
+        if not items:
+            why = "이 공사는 목공을 고르지 않아 시세 범위가 없어요."
+        elif "flatten" in items:
+            why = "천장 평탄화가 든 목공은 비슷한 실견적이 모자라 시세 범위를 말할 수 없어요."
+        door = "none"
+        if "door" in items:
+            door = "leaf" if said.get("mokgong.doors") == "문짝만" else "frame"
+        inp = quick_budget.QuickIn(
+            area_m2=h.area_m2,
+            area_basis=h.area_basis,
+            dobae=False,
+            molding="molding" in items,
+            base="base" in items,
+            door=door,  # type: ignore[arg-type]
+            occupied=h.occupied,
+        )
+    r = None if why else quick_budget.quick(inp, MARKET_2026_11)
+    got = next(iter(r.trades), None) if r is not None else None
+    if got is not None and got.n < MIN_SAMPLES:
+        why = "비슷한 실견적이 모자라 시세 범위를 말할 수 없어요."
+    if why or r is None or got is None:
+        return None, {"trade": name, "label": label, "found": False, "note": why}
+    source = MARKET_SOURCE.format(trade=name, n=got.n)
+    data = MarketRangeData(
+        trade=name,
+        label=label,
+        found=True,
+        low_won=got.lo,
+        high_won=got.hi,
+        count=got.n,
+        source=source,
+        assumed=list(r.assumed),
+    )
+    card = CardOut(
+        card_id=f"market-{trade}", kind="market_range", data=data.model_dump(mode="json")
+    )
+    model = {
+        "trade": name,
+        "label": label,
+        "found": True,
+        "rows": [
+            {"label": "시세 범위 아래(부가세 포함)", "won": got.lo},
+            {"label": "시세 범위 위(부가세 포함)", "won": got.hi},
+        ],
+        "count": got.n,
+        "source": source,  # 말할 때 이 출처 한 줄을 같이
+        "basis": list(r.assumed),
+        "note": MARKET_NOTE,
+    }
+    return card, model
+
+
+# 보낸 실측 요청의 지금 상태(취소할 수 있는 것만) → 화면 말
+SENT_STATE = {
+    "requested": "업체 답 기다림",
+    "offered": "반나절 고를 차례",
+    "picked": "업체 수락 기다림",
+    "proposed": "업체가 낸 날 고를 차례",
+    "booked": "실측 날짜 잡힘",
+    "visited": "실측 받음 · 견적서 기다림",
+}
+
+
+async def sent_visits(
+    s: AsyncSession, user: User, pid: uuid.UUID, trade: str | None = None
+) -> list:
+    """이 공사에서 보낸 실측 요청 중 지금 취소할 수 있는 것(visit.service.CANCELLABLE = 견적서를 아직 안 보낸 곳,
+    오래된 것부터). trade를 주면 그 공정만. 읽기 조인. 남의 공사면 project.service가 404."""
+    from sqlalchemy import select
+
+    from app.project import service as project_service
+    from app.visit.models import Visit
+    from app.visit.service import CANCELLABLE
+
+    await project_service.get_for(s, user, pid)
+    q = select(Visit).where(Visit.project_id == pid, Visit.status.in_(CANCELLABLE))
+    if trade is not None:
+        q = q.where(Visit.trade == trade)
+    rows = await s.scalars(q.order_by(Visit.created_at, Visit.id))
+    return list(rows.all())
+
+
+def options_card(card_id: str, title: str, options: list[tuple[str, str, str | None]]) -> CardOut:
+    """고르기 칩 카드: (단추 글, 누르면 보낼 말, 덧말) 6개까지. 대상이 여럿일 때 하나를 고르게 한다."""
+    data = OptionsData(
+        title=title, options=[OptionOut(label=a, say=b, sub=c) for a, b, c in options[:6]]
+    )
+    return CardOut(card_id=card_id, kind="options", data=data.model_dump(mode="json"))
 
 
 # ---- 업체 추천 ----
@@ -490,6 +716,12 @@ async def visit_slots(
 
 # ---- 견적서 비교 ----
 
+# 받은 견적서가 없을 때 카드 대신 돌려주는 사실(QA r2 c5: 빈 비교 카드를 보내지 않아요) · 한 곳뿐일 때 사실.
+# 모델 값 count = 받은 견적서 수, waiting = 견적서를 기다리는 업체 수(policy.ALLOWED 안의 칸)
+NO_QUOTES_NOTE = "아직 받은 견적서가 없어요 · 기다리는 업체 {n}곳"
+NO_SENT_NOTE = "아직 받은 견적서가 없어요 · 실측 요청을 보낸 업체가 없어요"
+ONE_QUOTE_NOTE = "받은 견적서는 한 곳이에요"
+
 
 def _file(pid: uuid.UUID, q) -> CompareFileOut | None:
     f = q.files[0] if q.files else None
@@ -509,18 +741,28 @@ async def compare(
     trade: str,
     today: date,
     refs: "RefTable",
-) -> tuple[CardOut, dict]:
-    """visit.service.compare 값 그대로(표준 대비 %는 옮기지 않는다). 업체가 적은 칸은 자료 상자로."""
+) -> tuple[CardOut | None, dict]:
+    """visit.service.compare 값 그대로(표준 대비 %는 옮기지 않는다). 업체가 적은 칸은 자료 상자로.
+    받은 견적서가 없으면 카드 없이(None) '아직 받은 견적서가 없어요 · 기다리는 업체 n곳'을, 한 곳이면 비교가 아니라
+    그 견적서 카드(열 하나 · single)를 돌려준다. 기다리는 업체 = 견적서를 아직 안 보낸 실측 요청(취소할 수 있는 상태)."""
     from app.calc import visit_view
     from app.visit import service as visit_service
 
     out = await visit_service.compare(s, user, pid, trade, today)
-    decided = any(r.status == "chosen" for r in out.vendors)
+    got = [r for r in out.vendors if r.latest is not None]
+    waiting = len(await sent_visits(s, user, pid, trade))
+    if not got:
+        note = NO_QUOTES_NOTE.format(n=waiting) if waiting else NO_SENT_NOTE
+        model = {"trade": trade, "cols": [], "count": 0, "waiting": waiting, "note": note}
+        return None, model
+    single = len(got) == 1
+    rows = got if single else out.vendors
+    decided = any(r.status == "chosen" for r in rows)
     # 실측이 확정된(채팅이 열린) 업체에는 '채팅 열기'를 단다: 다른 업체를 확정해 닫힌 요청은 빼요
-    chats = await chat_links(s, pid, [r.vendor_id for r in out.vendors if r.status in CHAT_STATES])
+    chats = await chat_links(s, pid, [r.vendor_id for r in rows if r.status in CHAT_STATES])
     cols: list[CompareCol] = []
     model_cols: list[dict] = []
-    for r in out.vendors:
+    for r in rows:
         ref = refs.put(
             "visit",
             {"id": str(r.visit_id), "vendor_name": r.vendor_name, "seen_ver": r.seen_ver},
@@ -588,16 +830,25 @@ async def compare(
         else []
     )
     data = QuoteCompareData(
-        cols=cols, gap_won=out.gap_total, ask_chips=asks, href=href(pid, "/quotes"), decided=decided
+        cols=cols,
+        gap_won=out.gap_total,
+        ask_chips=asks,
+        href=href(pid, "/quotes"),
+        decided=decided,
+        single=single,
     )
-    quoted = sum(1 for c in cols if c.state == "quoted")
     card = CardOut(
         card_id=f"compare-{trade}",
         kind="quote_compare",
         data=data.model_dump(mode="json"),
-        say=f"실측 견적서가 {quoted}곳 왔어요." if quoted else None,
+        say=f"실측 견적서가 {len(got)}곳 왔어요.",
     )
-    model = {"trade": trade, "cols": model_cols, "gap_won": out.gap_total}
+    model = {
+        "trade": trade, "cols": model_cols, "gap_won": out.gap_total, "count": len(got),
+        "waiting": waiting,
+    }  # fmt: skip
+    if single:
+        model["note"] = ONE_QUOTE_NOTE + (f" · 기다리는 업체 {waiting}곳" if waiting else "")
     if decided:  # 확정했으면 지금 공사 금액(승인한 추가 금액 포함)
         from app.schedule import service as schedule_service
 
@@ -1060,6 +1311,7 @@ def news_line(body: str) -> tuple[str, str | None]:
 ACTION_ICON = {
     "home_info": "doc", "visit_request": "inbox", "visit_slot": "calendar",
     "vendor_confirm": "doc", "dates_accept": "calendar", "delay_accept": "calendar",
+    "visit_cancel": "inbox",
 }  # fmt: skip
 NEXT_TEXT = {
     "reply": "답 기다림",
@@ -1236,7 +1488,7 @@ async def step_card(tc, route: str) -> CardOut | None:
                 return None
             if route == "quote_explanation":
                 card, _model = await compare(s, tc.user, tc.project_id, "dobae", tc.today, tc.refs)
-                if any(c["state"] == "quoted" for c in card.data["cols"]):
+                if card is not None:  # 받은 견적서가 있을 때만 카드가 와요
                     return card
                 return (await standard(s, tc.user, tc.project_id))[0]
             if route == "schedule":

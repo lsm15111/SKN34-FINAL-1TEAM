@@ -29,6 +29,8 @@
 - 다른 공정(믿집이 계산 · 연결하지 않는 공정)만 물으면 알아 두기 자료(knowledge.other_trades)로 순서 · 주의점을 답하고
   '믿집은 … 업체를 잇지 않아요'를 붙인다. 도배 · 목공과 섞인 질문은 answer_only 답을 쓰고 모르면 자료로 바꾼다.
 - 업체 추천은 실측을 요청한 업체를 빼고 보여 준다(다 요청했으면 작업 카드, 확정했으면 확정한 업체).
+- '취소해 줘' · '그 카드 거둬 줘'(_cancel, 피클 표본 7): 열린 승인 카드가 하나면 바로 거두고(실행 전이라 고객 말로
+  된다, 거절과 같게 남음), 보낸 실측 요청이면 취소 승인 카드, 여럿이면 고르기 칩 카드. 묻는 말 · 가정은 빼요.
 """
 
 import re
@@ -1490,6 +1492,125 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
     return DECLINED, out
 
 
+# ---- 취소 · 거두기(피클 표본 7): 열린 승인 카드는 거두고, 보낸 실측 요청은 취소 승인 카드, 여럿이면 고르기 칩 ----
+
+CANCEL = re.compile(r"취소|거둬|거두|거둘|철회|없던\s{0,2}(?:일|걸|것)")
+# 말한 카드 종류(고객 말 → 승인 카드 종류). 보낸 요청도 '실측 요청'으로 부른다
+CANCEL_KIND: tuple[tuple[str, re.Pattern[str]], ...] = (
+    ("home_info", re.compile(
+        r"집\s{0,2}정보|면적|평수|평형|방\s{0,2}개수|철거\s{0,2}범위|직접\s{0,2}할\s{0,2}일"
+    )),
+    ("visit_request", re.compile(r"실측\s{0,2}요청|요청\s{0,2}카드|예약")),
+    ("visit_slot", re.compile(r"실측\s{0,2}(?:시간|날짜|일정)|반나절|시간\s{0,2}카드")),
+    ("vendor_confirm", re.compile(r"확정")),
+    ("dates_accept", re.compile(r"수락")),
+    ("delay_accept", re.compile(r"수락")),
+    ("date_change", re.compile(r"날짜\s{0,2}바꾸기|연기|미루")),
+    ("extra_answer", re.compile(r"추가\s{0,2}금액")),
+    ("work_check", re.compile(r"공사\s{0,2}끝|끝\s{0,2}확인")),
+    ("visit_again", re.compile(r"한\s{0,2}번\s{0,2}더")),
+)  # fmt: skip
+SENT_WORD = re.compile(r"보낸|보냈|보내\s{0,2}(?:둔|놓은|놨)|이미|요청한|예약한")
+CARD_WORD = re.compile(r"카드")
+EXTRA_WORD = re.compile(r"추가\s{0,2}금액")
+CANCEL_WHY = (
+    ("other_vendor", re.compile(r"다른\s{0,2}(?:업체|곳|데)|딴\s{0,2}(?:업체|곳|데)")),
+    ("changed", re.compile(r"일정|날짜|바빠|바쁘|사정|미뤄|미루|연기|이사")),
+)
+CANCEL_DONE = "네, {title} 카드를 거뒀어요! 다른 걸로 보시려면 말씀해 주세요."
+CANCEL_MADE = "{vendor}에 보낸 실측 요청을 취소하는 카드를 만들었어요. 카드를 누르시면 취소되고 업체에도 알림이 가요."
+CANCEL_SAME = "같은 실측 요청 취소 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
+CANCEL_REJECTED = (
+    "앞에서 거절한 실측 요청 취소 카드와 같아요. 취소는 실측 일정 화면에서도 할 수 있어요."
+)
+CANCEL_PICK = "무엇을 취소할까요? 아래에서 골라 주세요."
+CANCEL_NONE = "지금 거둘 승인 카드나 취소할 실측 요청이 없어요."
+CANCEL_CLOSED = "그 카드는 이미 처리됐어요."
+
+
+def cancel_said(text: str) -> bool:
+    """거두기 · 취소를 부탁하는 말인지(묻는 말 · 가정 '취소하면 …?'은 아니다)."""
+    return bool(CANCEL.search(text or "")) and not aftercare_tools.unsure(text)
+
+
+async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
+    """'취소해 줘': 후보(열린 승인 카드 · 보낸 실측 요청)를 말로 좁힌다. '카드'면 카드만, '보낸 · 이미'면 보낸 요청만,
+    카드 제목(고르기 칩이 보낸 말) · 업체 이름 · 카드 종류 낱말이 있으면 그것만. 하나면 카드는 바로 거두고(실행 전이라
+    고객 말로 된다) 보낸 요청은 취소 승인 카드(업체에 알림이 가니 한 번 누름을 남긴다), 여럿이면 고르기 칩. 추가 금액
+    말인데 거둘 카드가 없으면 None(추가 금액 길로)."""
+    from app.assistant.tools import propose
+
+    pid = tc.project_id
+    async with SessionLocal() as s:
+        rows = await propose.open_cards(s, tc.user.id, pid, tc.now)  # type: ignore[arg-type]
+        visits = await cards.sent_visits(s, tc.user, pid)  # type: ignore[arg-type]
+    cands: list[tuple[str, object]] = [("card", a) for a in rows] + [("visit", v) for v in visits]
+    card_only, sent_only = bool(CARD_WORD.search(text)), bool(SENT_WORD.search(text))
+    if card_only != sent_only:  # 느슨한 낱말이라 그쪽에 없으면 좁히지 않는다('보낸 요청 카드')
+        side = "card" if card_only else "visit"
+        cands = [c for c in cands if c[0] == side] or cands
+    said = propose.plain(text)
+
+    def hay(c) -> str:
+        return propose.haystack(c[1]) if c[0] == "card" else propose.plain(c[1].vendor_name)  # type: ignore[attr-defined]
+
+    titled = [c for c in cands if c[0] == "card" and propose.plain(propose.title_of(c[1])) in said]
+    cands = titled or cands
+    names = [n for n in await vendor_names(tc) if propose.plain(n) and propose.plain(n) in said]
+    if names:
+        cands = [c for c in cands if any(propose.plain(n) in hay(c) for n in names)]
+    kinds = {k for k, rx in CANCEL_KIND if rx.search(text)}
+    if kinds and not titled:
+        cands = [
+            c
+            for c in cands
+            if (c[0] == "card" and c[1].kind in kinds)  # type: ignore[attr-defined]
+            or (c[0] == "visit" and "visit_request" in kinds)
+        ]
+    if not cands:
+        return (
+            None
+            if EXTRA_WORD.search(text)
+            else (join(CANCEL_NONE, await now_line(tc)), ToolOut(data={}))
+        )
+    if len(cands) > 1:
+        options = [
+            *propose.unique_say([a for k, a in cands if k == "card"]),
+            *(
+                (
+                    f"{v.vendor_name}에 보낸 실측 요청",  # type: ignore[attr-defined]
+                    f"{v.vendor_name}에 보낸 실측 요청 취소해 줘",  # type: ignore[attr-defined]
+                    cards.SENT_STATE.get(v.status),  # type: ignore[attr-defined]
+                )
+                for k, v in cands
+                if k == "visit"
+            ),
+        ]
+        card = cards.options_card("cancel-pick", "무엇을 취소할까요?", options)
+        return CANCEL_PICK, ToolOut(data={}, cards=[card])
+    kind, it = cands[0]
+    if kind == "card":
+        out, state = await propose.withdraw_one(tc, it)
+        if state == "withdrawn":
+            return CANCEL_DONE.format(title=propose.title_of(it)), out
+        return CANCEL_CLOSED, out
+    code = next((c for c, rx in CANCEL_WHY if rx.search(text)), "other")
+    ref = propose.requests_model(tc, [it])[0]["ref"]
+    try:
+        got = await propose.propose_visit_cancel(
+            tc,
+            propose.VisitCancelIn(visit_ref=ref, code=code),  # type: ignore[arg-type]
+        )
+    except ToolError as e:
+        return e.message, ToolOut(data={})
+    said_by = {
+        "new": CANCEL_MADE.format(vendor=it.vendor_name),  # type: ignore[attr-defined]
+        "same": CANCEL_SAME,
+        "rejected": CANCEL_REJECTED,
+    }
+    return said_by.get(str(got.data.get("state")), CANCEL_CLOSED), got
+
+
 # ---- 한 턴 ----
 
 
@@ -1518,6 +1639,13 @@ async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Tool
         return said, out
     if MEMORY_WHERE.search(text):
         return MEMORY_GUIDE, ToolOut(data={})
+    # '취소해 줘' · '그 카드 거둬 줘': 열린 카드 거두기 · 보낸 실측 요청 취소 카드 · 여럿이면 고르기 칩
+    if (
+        tc.project_id is not None
+        and cancel_said(text)
+        and (got := await _cancel(tc, text)) is not None
+    ):
+        return got
     if (more := await aftercare_tools.free_answer(tc, text)) is not None:  # 07 자동화 카드
         return more
     if MEMORY_SAY_RX.search(text) and not_kept(text):  # '기억해: 내 예산은 …' → 기억하지 않는 것

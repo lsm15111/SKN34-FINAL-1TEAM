@@ -1,6 +1,7 @@
 "use client";
 // 승인 카드: 무엇을(제목) · 얼마에(부가세 포함) · 어느 판 · 기한. 금액이 바뀌었으면 차액 줄을 맨 먼저.
-// 상태: 승인 기다림 → 작업 중 → 완료(결과 링크) / 거절 / 만료(새 카드로 바뀜 · 기한 지남 · 비서 밖에서 처리됨) / 실패 / 처리됨(전체 화면 카드의 v3 단추로 이미 함).
+// 상태: 승인 기다림 → 작업 중 → 완료(결과 링크) / 거절 · 거둠(고객이 말로 거둔 실행 전 카드) / 만료(새 카드로 바뀜 · 기한 지남 · 비서 밖에서 처리됨) /
+// 실패 / 처리됨(전체 화면 카드의 v3 단추로 이미 함 · 같은 대상이 끝남: 실측 요청을 취소함).
 // 판이 바뀌면(409) 서버가 새 판 + 차액으로 만든 행동이 이 자리에 와요.
 // 되돌릴 수 없는 일은 이 카드의 단추로만 실행돼요. 누르면 바로 단추를 끄고(aria-busy) 결과를 카드 안에서 보여요(따로 확인 창 없음).
 import Link from "next/link";
@@ -12,7 +13,8 @@ import k from "./kit.module.css";
 
 /** 닫힌 까닭(error_code) → 화면 말. 모르는 기능 오류 코드는 '실행하지 못했어요' */
 function closedWord(a: ActionOut): string {
-  if (a.status === "rejected") return "거절했어요";
+  // 고객이 말로 거둔 카드(실행 전)는 거절과 같게 남지만 화면 말은 '거뒀어요'
+  if (a.status === "rejected") return a.error_code === "withdrawn" ? "거뒀어요" : "거절했어요";
   if (a.status === "expired") {
     if (a.error_code === "replaced") return "새 카드로 바뀌었어요";
     // 비서 밖(화면 단추 · 업체)에서 대상 상태가 바뀌어 서버가 닫았어요
@@ -23,12 +25,14 @@ function closedWord(a: ActionOut): string {
   return "실행하지 못했어요";
 }
 
-export function ApprovalCard({ action: a, now, busy = false, handled = false, error = null, onApprove, onReject, onRemake }: {
+export function ApprovalCard({ action: a, now, busy = false, handled = false, handledText = "화면에서 직접 했어요", error = null, onApprove, onReject, onRemake }: {
   action: ActionOut;
   now: string;
   busy?: boolean;
-  /** 전체 화면 카드 안 v3 단추로 같은 일을 이미 했어요(서버 행은 아직 열려 있어요) */
+  /** 전체 화면 카드 안 v3 단추로 같은 일을 이미 했거나 같은 대상이 끝났어요(서버 행은 아직 열려 있어요) */
   handled?: boolean;
+  /** 처리됨 옆 한 줄(같은 대상이 끝났으면 그 까닭) */
+  handledText?: string;
   error?: string | null;
   onApprove: () => void;
   onReject: () => void;
@@ -56,7 +60,7 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, er
         <span className={k.result}>
           <StatusTag tone="ok">처리됨</StatusTag>
           <b>{s.title}</b>
-          <span>화면에서 직접 했어요</span>
+          <span>{handledText}</span>
         </span>
       </section>
     );

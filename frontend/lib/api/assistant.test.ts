@@ -1,10 +1,10 @@
 // 먼저 말 건 줄 닫기(settledNudges): 서버 '완료' 줄 · 그 줄의 승인 카드(같은 대상)를 실행 · 처리하면 닫아요.
 // 첫 쪽 다시 읽기(keepOlder) · 마지막 카드 · 행동 찾기(lastCardIn · lastActionIn) · v3 단추 쓰기 → 행동 종류 · 처리됨(kindsForWrite · handledByWrite)
-// 화면이 만든 말 자리(anchorIndex) · 사이트 안 링크(insideHref)
+// 화면이 만든 말 자리(anchorIndex) · 사이트 안 링크(insideHref) · 행동 대상 id(targetOfWrite · handledByWrite 대상 · handledByTarget)
 import { expect, test } from "@playwright/test";
 import {
-  anchorIndex, handledByWrite, insideHref, keepOlder, kindsForWrite, lastActionIn, lastCardIn, settledNudges, vendorKindsForWrite,
-  type ActionKind, type ActionOut, type ActionStatus, type AssistantItem, type CardOut, type FeedItem, type FeedPart,
+  anchorIndex, handledByTarget, handledByWrite, insideHref, keepOlder, kindsForWrite, lastActionIn, lastCardIn, settledNudges, targetOfWrite,
+  vendorKindsForWrite, type ActionKind, type ActionOut, type ActionStatus, type AssistantItem, type CardOut, type FeedItem, type FeedPart,
 } from "./assistant";
 
 const AT = "2026-11-21T10:00:00+09:00";
@@ -137,6 +137,59 @@ test("v3 단추 쓰기 뒤 처리됨: 공사에 한 번 정하는 종류는 모�
   const answer = vendorKindsForWrite("POST", "/vendor/visits/v1/window");
   expect(handledByWrite(answer, [act("a", "window_answer", "proposed"), act("b", "window_answer", "proposed")])).toEqual([]);
   expect(handledByWrite(answer, [act("a", "window_answer", "proposed")])).toEqual(["a"]);
+});
+
+test("v3 단추 쓰기 주소의 대상 id: 실측 요청 · 확정 · 공사 날짜 제안 · 확정 공사 · 추가 금액", () => {
+  expect(targetOfWrite("POST", "/projects/p1/visits/v9/pick")).toBe("v9");
+  expect(targetOfWrite("POST", "/projects/p1/visits/v9/proposal/pick")).toBe("v9");
+  expect(targetOfWrite("POST", "/projects/p1/visits/v9/cancel")).toBe("v9");
+  expect(targetOfWrite("POST", "/projects/p1/quotes/v9/confirm")).toBe("v9");
+  expect(targetOfWrite("POST", "/projects/p1/deals/d1/dates/x7/accept")).toBe("x7");
+  expect(targetOfWrite("POST", "/projects/p1/deals/d1/date-requests")).toBe("d1");
+  expect(targetOfWrite("POST", "/projects/p1/deals/d1/extras/e3/answer")).toBe("e3");
+  expect(targetOfWrite("POST", "/vendor/visits/v9/window")).toBe("v9");
+  expect(targetOfWrite("POST", "/vendor/jobs/d1/dates")).toBe("d1");
+  expect(targetOfWrite("GET", "/projects/p1/visits/v9/pick")).toBeNull();
+  expect(targetOfWrite("PATCH", "/projects/p1")).toBeNull();
+  // 화면에서 실측 요청을 취소하면 그 요청의 취소 · 반나절 · 확정 카드
+  expect(kindsForWrite("POST", "/projects/p1/visits/v9/cancel", "p1")).toEqual(["visit_cancel", "visit_slot", "vendor_confirm"]);
+  expect(kindsForWrite("POST", "/projects/p1/deals/d1/extras/e3/answer", "p1")).toEqual(["extra_answer"]);
+});
+
+test("대상 id가 있으면 쓰기 대상과 같은 카드만 처리됨이에요(업체마다 따로인 종류도)", () => {
+  const slot = kindsForWrite("POST", "/projects/p1/visits/v1/pick", "p1");
+  const two = [act("a", "visit_slot", "proposed", null, { target_id: "v1" }), act("b", "visit_slot", "proposed", null, { target_id: "v2" })];
+  expect(handledByWrite(slot, two, "v1")).toEqual(["a"]);
+  expect(handledByWrite(slot, two, "v3")).toEqual([]);
+  // 대상 id를 모르면(옛 행동 · 주소에 대상이 없음) 전과 같이 하나뿐일 때만
+  expect(handledByWrite(slot, two)).toEqual([]);
+  expect(handledByWrite(slot, [act("a", "visit_slot", "proposed")], "v1")).toEqual(["a"]);
+  // 취소: 그 요청의 반나절 · 확정 · 취소 카드만, 다른 요청의 확정 카드는 그대로
+  const cancel = kindsForWrite("POST", "/projects/p1/visits/v1/cancel", "p1");
+  const many = [
+    act("s", "visit_slot", "proposed", null, { target_id: "v1" }),
+    act("c", "vendor_confirm", "proposed", null, { target_id: "v1" }),
+    act("x", "visit_cancel", "proposed", null, { target_id: "v1" }),
+    act("o", "vendor_confirm", "proposed", null, { target_id: "v2" }),
+  ];
+  expect(handledByWrite(cancel, many, "v1")).toEqual(["s", "c", "x"]);
+  // 업체 확정은 공사에 한 번 정하는 종류라 대상과 상관없이 모두(한 곳을 확정하면 다른 곳 확정 제안도 끝나요)
+  const confirm = kindsForWrite("POST", "/projects/p1/quotes/v1/confirm", "p1");
+  expect(handledByWrite(confirm, many, "v1")).toEqual(["c", "o"]);
+});
+
+test("실측 요청 취소가 실행되면 같은 요청의 열린 카드는 처리됨, 다른 요청은 그대로예요", () => {
+  const acts = [
+    act("x", "visit_cancel", "executed", null, { target_id: "v1" }),
+    act("s", "visit_slot", "proposed", null, { target_id: "v1" }),
+    act("t", "visit_slot", "proposed", null, { target_id: "v2" }),
+    act("d", "visit_slot", "rejected", null, { target_id: "v1" }),
+  ];
+  expect(handledByTarget(acts)).toEqual(["s"]);
+  // 취소가 아직 승인 전이면 아무것도 숨기지 않아요
+  expect(handledByTarget([act("x", "visit_cancel", "proposed", null, { target_id: "v1" }), acts[1]])).toEqual([]);
+  // 대상 id가 없는 옛 행동은 견주지 않아요
+  expect(handledByTarget([act("x", "visit_cancel", "executed"), act("s", "visit_slot", "proposed")])).toEqual([]);
 });
 
 test("마지막 행동 찾기는 test에 맞는 것만 봐요", () => {

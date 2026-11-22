@@ -47,6 +47,7 @@ READ_CARD = {
     "compare_quotes": "quote_compare",
     "get_schedule": "schedule",
     "request_brief": "vendor_brief",
+    "compare_grades": "grade_compare",
 }
 # 요청함이면 기간 답하기 승인 카드도 만드는 읽기 도구(계약서 3장)
 MADE_BY_READ = {"request_brief": "window_answer"}

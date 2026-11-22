@@ -144,6 +144,7 @@
 
 ### 카드 kind
 - home_info · standard_quote · vendor_picks · visit_slots · quote_compare · schedule · knowledge · answer · floorplan_links · today · vendor_brief · quote_checklist
+- (2026-11-22 갈래 T) grade_compare(벽지 두 종류 견주기: 합지 · 실크 합계 · 차액 · 달라지는 줄, 단추 choice `grade:<값>` → 집 정보 승인 카드) · market_range(시세 범위 · 출처 한 줄, 표본이 모자라면 카드 없음) · options(고르기 칩: 누르면 say를 보냄)
 - 화면은 `components/assistant/cards/registry`에서 kind로 컴포넌트를 골라요. data 모양은 `assistant/schemas.py`의 `*Data`예요.
 - 같은 card_id면 카드를 바꿔 끼워요. 대화를 다시 열면 `assistant_turns.cards`로 그려요.
 - 업체가 쓴 자유 글은 `vendor_note` 칸('업체가 적은 말', 40자)에만 와요: `quote_compare.cols[].vendor_note`(벽지 사양, 옛 `paper` 대신) · `visit_slots.vendor_note`(다른 날 제안 메모) · `schedule.vendor_note`(날짜 바꾼 까닭). 화면은 이 칸만 그 이름표로 보여 주고 다른 글에 섞지 않아요.
@@ -154,16 +155,18 @@
   - `quote_compare.cols[].received_on`은 서울 날짜예요(견적서 보낸 때 timestamptz → 서울).
 
 ### 행동(ActionOut)
-- `{action_id, kind, status, summary, target_ver, expires_at, decided_at?, executed_at?, error_code?, result?, supersedes?, replaced_by?}`
+- `{action_id, kind, status, summary, target_id, target_ver, expires_at, decided_at?, executed_at?, error_code?, result?, supersedes?, replaced_by?}`
+- `target_id`: 카드가 가리키는 대상 id(공사 · 실측 요청 · 확정 · 공사 날짜 제안 · 추가 금액, 2026-11-22). 화면은 v3 쓰기 주소의 대상과 같은 카드만 '처리됨'으로 보고, 실측 요청 취소(visit_cancel)가 실행되면 같은 대상의 열린 카드 단추를 숨겨요.
 - `replaced_by`: 같은 대상의 새 제안으로 닫힌 행동(expired · replaced)이면 그 새 행동 id예요(화면이 어림하지 않게).
-- kind는 제안 도구 이름에서 `propose_`를 뗀 것(home_info · visit_request · visit_slot · vendor_confirm · dates_accept · delay_accept · window_answer · decline · dates)이에요.
+- kind는 제안 도구 이름에서 `propose_`를 뗀 것(home_info · visit_request · visit_slot · vendor_confirm · dates_accept · delay_accept · window_answer · decline · dates · visit_cancel(0051))이에요.
+- 거두기(withdraw_proposal, 고정 선 1의 예외): 실행 전 카드는 고객 말로 거둬요. 거절과 같게 `rejected`로 남고 `result.reason = withdrawn`이라 `error_code` withdrawn으로 내보내요(화면 '거뒀어요'). 거둔 카드를 승인하면 409 action_closed('고객이 거둔 제안이에요.')예요.
 - summary: `{title, amount_won?, amounts[], diff?, version?, rows[], file?, note?, approve_label}`. 금액 · 차액은 계산 엔진 값이에요.
 - 만료 까닭은 `result.reason`에 두고 `error_code`로 내보내요(DB의 error_code는 failed에만, 2장 CHECK): `due`(기한 지남) · `replaced`(같은 대상 새 제안) · `handled_elsewhere`(대상 상태가 비서 밖에서 바뀜, 아래).
 - 닫힌 행동을 승인하면 409예요: due는 `expired`(문구 '기한이 지난 제안이에요. …'), 그 밖은 `action_closed`(문구: replaced '새 카드로 바뀐 제안이에요.' · handled_elsewhere '화면에서 이미 처리했거나 상태가 바뀐 제안이에요.').
 - 기능 오류로 실패한 행동은 고객에게 준 말을 `result.message`에 남겨요(턴 사실 '최근 처리한 카드'의 까닭, 2026-11-22).
 
 #### 화면에서 직접 처리한 제안 닫기(handled_elsewhere, 2026-11-21)
-- 사람이 v3 화면 단추(업체 확정 · 날짜 수락 · 기간 답하기 …)로 직접 처리하면 같은 대상의 비서 제안이 proposed로 남아요. sweep(2분)이 열린 제안(새 것부터 200개)의 대상 지금 상태를 읽기 조인으로 보고, 만든 때 상태(target_ver)와 다르면 `proposed → expired`, `result.reason = handled_elsewhere`로 닫아요.
+- 사람이 v3 화면 단추(업체 확정 · 날짜 수락 · 기간 답하기 …)로 직접 처리하면 같은 대상의 비서 제안이 proposed로 남아요. sweep(2분)이 열린 제안 모두(새 것부터 200개씩 쪽마다, 시간 예산 10초를 넘기면 멈춘 자리부터 다음 차례가 이어 봄)의 대상 지금 상태를 읽기 조인으로 보고, 만든 때 상태(target_ver)와 다르면 `proposed → expired`, `result.reason = handled_elsewhere`로 닫아요.
 - 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이겨요. 그 행동을 단 먼저 말 걸기 줄(sent · opened)도 `expired`(reason handled)로 닫아 대화 기록에서 빠져요.
 - 화면 신호는 따로 보내지 않아요. 화면은 다음 feed · actions 읽기나 승인 409(action_closed)로 알아요.
 
@@ -175,6 +178,7 @@
 | vendor_confirm | visit · 견적서 판 | 실측 상태가 quoted가 아님(직접 확정 · 다시 고르기 · 닫힘). 새 판은 승인 때 quote_changed로 새 제안 |
 | dates_accept · delay_accept | proposal · 공정표 판 | 낸 날짜가 pending이 아님(직접 수락 · 새로 냄 · 거둠) |
 | dates(업체) | deal · dates_state | 공사 날짜 상태가 바뀜(직접 날짜 보냄 · 고객 수락 · 다시 고르기) |
+| visit_cancel | visit · 만든 때 실측 상태 | 취소할 수 없는 상태가 됨(견적서 옴 · 확정 · 닫힘). 업체가 답해 상태가 바뀌어도 취소할 수 있는 동안은 그대로. 실행하면 같은 요청의 다른 열린 카드(반나절 · 확정)를 같은 트랜잭션에서 닫아요 |
 - 견적서가 새 판이라 확정이 실패(quote_changed)하면 새 판 금액 · 차액으로 새 제안을 만들고, 새 행동의 `supersedes` = 옛 id, 옛 행동 `result.superseded_by` = 새 id예요. feed는 옛 자리에 새 행동을 그려요.
 
 ### 화면 제안 칸(2026-11-21 반영)
@@ -271,13 +275,15 @@
 | `get_standard_quote`(trade) | `quote.service.standard_for` |
 | `recommend_vendors`(trade) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3 |
 | `vendor_free_slots`(ref, prefer, days) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3 |
-| `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요 |
+| `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요. 받은 견적서가 없으면 카드 없이 `note`('아직 받은 견적서가 없어요 · 기다리는 업체 n곳') · `count` 0 · `waiting`, 한 곳이면 비교가 아니라 그 견적서 카드(`quote_compare.single`, 열 하나)예요(`show_card(quote_compare)`도 같아요) |
 | `get_schedule`() | `schedule.service.schedule_for` |
 | `today_tasks`() | `service.feed_for`(`schedule.service.overview_for` + 열린 행동) |
 | `search_knowledge`(query, trade) | `knowledge.service.search` |
 | `answer_question`(question, kind) | `chat.service.answer_only` / `v2.ask.answer_only` |
 | `find_floorplan_docs`() | `tools/floorplan.py`: Sonnet 5.5 + `web_search_20260209`(max_uses 3, 네이버 부동산 · 호갱노노 · 아실 차단, 링크 · 출처만) |
 | `show_card`(kind) | `tools/cards.py` |
+| `compare_grades`() | `quote.service.home_v3` · `standard_v3`(합지 · 실크, 저장 안 함) + `calc.visit_view.grade_diff`(차액) |
+| `market_range`(trade) | `calc.quick_budget.quick`(`refprice.market` 시장 기준 한 벌): 부가세 포함 범위 · 근거 실견적 수 · 출처 한 줄. 부분 공사 · 천장만 · 천장 평탄화 · 근거 30건 미만이면 범위 없이 까닭 |
 | 업체 `request_brief`(visit_ref) | `visit.service.vendor_visit` + `vendor.service.get_profile` · `estimate_v3_for` |
 | 업체 `my_free_slots`(from, to) | `vendor_visit(preview)` + `calc.slots.best_windows`(새) → w1~w3 |
 | 업체 `quote_checklist`(visit_ref) | `quote.service.latest_of` + `agent/trades` 주의점 |
@@ -291,10 +297,12 @@
 | `propose_visit_slot`(slot_ref) | `visit.flow.pick` · `pick_proposal` |
 | `propose_vendor_confirm`(visit_ref) | `schedule.service.confirm`(seen_ver) |
 | `propose_dates_accept` · `propose_delay_accept`(proposal_ref) | `schedule.service.accept_dates`(seen_version) |
-| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수) |
+| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from, direction?) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수). direction(earlier 앞당기기 · later 미루기)과 반대인 후보는 내지 않아요. 없으면 delay_days는 미루기, wish_from은 지금 시작일과 견줘 정해요. 앞당길 날이 없으면 도구 오류 `no_earlier` |
 | 업체 `propose_window_answer`(visit_ref, window_ref) | `visit.flow.answer_window` |
 | 업체 `propose_decline`(visit_ref, code) | `visit.service.decline` |
 | 업체 `propose_dates`(deal_ref, days_ref) | `schedule.service.propose_dates` |
+| `propose_visit_cancel`(visit_ref, code) | `visit.service.cancel`(CancelIn 이유 코드 changed · other_vendor · other, 메모 없음) |
+| `withdraw_proposal`(kind, about) | 행동 행을 거둠(proposed → rejected · withdrawn). 하나면 바로, 여럿이면 고르기 칩 카드(state choose), 없으면 보낸 실측 요청(requests m…) |
 
 ### `actions.execute`
 1. tx1: proposed → approved(조건부 UPDATE, 만료 전) 뒤 commit해요.

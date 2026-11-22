@@ -9,8 +9,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth,
-  getLatestThread, getMemory, getToday, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi, rejectAction,
-  replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, BUSY_TEXT, TURN_RETRY_MS, TurnBusy,
+  getLatestThread, getMemory, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
+  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, targetOfWrite, BUSY_TEXT, TURN_RETRY_MS,
+  TurnBusy,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -232,7 +233,7 @@ export function useAssistant(projectId: string) {
       const { method, path } = (e as CustomEvent<ApiWrite>).detail ?? { method: "", path: "" };
       if (!path.startsWith(`/projects/${projectId}`)) return;
       const kinds = kindsForWrite(method, path, projectId);
-      if (kinds.length) markHandled(handledByWrite(kinds, [...actionsIn(itemsRef.current), ...openRef.current]));
+      if (kinds.length) markHandled(handledByWrite(kinds, [...actionsIn(itemsRef.current), ...openRef.current], targetOfWrite(method, path)));
       later(true, 300);
     };
     window.addEventListener(API_WRITE_EVENT, on);
@@ -474,10 +475,17 @@ export function useAssistant(projectId: string) {
   const actionOf = useCallback((id: string): ActionOut | null =>
     actionsIn(items).find((x) => x.action_id === id) ?? kept[id] ?? open.find((x) => x.action_id === id) ?? null, [items, kept, open]);
 
+  /** 같은 대상이 끝난 열린 승인 카드(실측 요청을 취소함 → 그 요청의 반나절 · 확정 카드): 단추를 숨겨요(서버 정리 전에도) */
+  const ended = useMemo<Record<string, true>>(
+    () => Object.fromEntries(handledByTarget([...actionsIn(items), ...open, ...Object.values(kept)]).map((x) => [x, true as const])),
+    [items, open, kept],
+  );
+  /** 처리됨으로 보일 카드: 화면 v3 단추로 한 것 + 같은 대상이 끝난 것 */
+  const handledAll = useMemo<Record<string, true>>(() => ({ ...handled, ...ended }), [handled, ended]);
   /** 할 일이 끝난 먼저 말 건 줄('완료'로 그려요): 서버가 닫은 줄 + 그 줄의 승인 카드(같은 대상)를 실행 · 처리한 것(서버 정리 전에도) */
   const settled = useMemo<Record<string, true>>(
-    () => Object.fromEntries(settledNudges(items, handled).map((x) => [x, true as const])),
-    [items, handled],
+    () => Object.fromEntries(settledNudges(items, handledAll).map((x) => [x, true as const])),
+    [items, handledAll],
   );
   /** 제안을 숨길 줄: 고객이 닫은 것 + 할 일이 끝난 것 */
   const shut = useMemo<Record<string, true>>(() => ({ ...gone, ...settled }), [gone, settled]);
@@ -504,7 +512,8 @@ export function useAssistant(projectId: string) {
   }, [items, open, kept, today, todayFirst, anchor, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone: shut, settled,
+    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled: handledAll, ended, health, memory,
+    gone: shut, settled,
     /** 대화가 아직 없어요(첫 인사). 화면이 만든 말은 세지 않아요 */
     fresh: fresh && !items.length,
     /** 기록의 마지막 말(화면이 만든 말 빼고): 입력 중 표시 · 답 기다림 줄은 이 말로 정해요 */
