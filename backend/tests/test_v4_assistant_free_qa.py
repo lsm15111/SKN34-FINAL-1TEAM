@@ -272,6 +272,8 @@ def customer_path(text: str) -> str:
 
 CHIP_PATH = {
     "업체 추천해 줘": "vendors",
+    # 업체 0곳 지역의 다음에 물을 말(고침 3차 A1): 무료 모드는 조사 없이 업체 추천(0곳 안내)으로
+    "믿집 밖 도배 업체 찾아 줘": "vendors",
     "가견적은 어떻게 계산해요?": "estimate",
     "실측은 무엇을 봐요?": "visit_what",
     "다른 시간도 볼래요": "slots",

@@ -318,9 +318,13 @@ def test_v3_memory_place_answer_is_no_longer_dropped_as_a_leak(monkeypatch):
 def test_v4_examples_and_persona_are_not_leaks_but_rules_are(monkeypatch):
     monkeypatch.setattr(settings, "assistant_prompt_set", "v4")
     rules = prompts.rules("customer")
+    # 좋은 예시 · 성격 소개를 닮은 답(고침 3차 A1에서 예시를 두세 문장으로 줄여 지금 예시 글로 바꿈)
     for said in (
-        "두세 곳에 같이 실측을 요청하면 업체가 와서 보고 같은 칸으로 견적서를 보내 줘요.",
-        "저는 묻는 말에 답만 하는 챗봇이 아니라, 공사가 끝날 때까지 다음 할 일을 먼저 챙기는 비서예요!",
+        "값을 먼저 보시려면 솔빛도배, 끝낸 공사가 많은 곳을 보시려면 고운도배가 잘 맞아요.",
+        (
+            "저는 업체 고르기부터 공사 끝까지 할 일을 먼저 챙기는 비서라, 정할 것은 승인 카드로 준비하고"
+            " 견적서 · 공사 날짜가 오면 먼저 알려 드려요."
+        ),
     ):
         assert leak_said(said, prompts.system("customer"))[1] == ["지시문 누출"]  # 고치기 전
         assert leak_said(said, rules)[0] == said
@@ -549,12 +553,14 @@ def test_period_line_says_expected_until_dates_are_accepted():
     p = SimpleNamespace(
         kind="expected", start=date(2026, 12, 7), end=date(2026, 12, 11), work_days=4
     )
+    # 확정 · 예상 공정표 이름을 밝힌다(QA r3 c2: 확정 뒤에 '지금 예상 공정표 기준'이라고 답함)
     assert assistant_service.period_line(p, today) == (
-        "공정표: 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일(업체가 공사 날짜를 올리기 전 예상)"
+        "공정표: 예상 공정표 · 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일"
+        "(업체가 공사 날짜를 올리기 전 예상)"
     )
     p.kind = "final"
     assert assistant_service.period_line(p, today) == (
-        "공정표: 공사 12월 7일(월)~11일(금) · 일하는 날 4일(수락한 공사 날짜)"
+        "공정표: 확정 공정표 · 공사 12월 7일(월)~11일(금) · 일하는 날 4일(수락한 공사 날짜)"
     )
     assert assistant_service.period_line(None, today) is None
 

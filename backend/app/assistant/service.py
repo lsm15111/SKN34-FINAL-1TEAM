@@ -2,7 +2,8 @@
 
 - start_turn(짧은 세션): 같은 client_key면 되돌림(done) 또는 409(running) → 권한(남의 공사 · 요청 404) → 시간당
   요청 제한 → 비서 대화(chats.kind=assistant) → 멈춘 턴 정리 → running 행(대화 잠금, 부분 UNIQUE → 409
-  turn_running) → 최근 12줄 · 열린 제안 · 턴 사실 → commit. 세션을 닫은 뒤 LLM을 부른다.
+  turn_running) → 최근 24줄 · 열린 제안 · 턴 사실(업체마다 상태 · 채팅 · 실제 단계) → commit. 세션을 닫은 뒤
+  LLM을 부른다.
 - finish_turn(한 트랜잭션): rev 올리기(조건부) → 가린 질문 · 검사한 답 두 줄 → (기억할 말이면 기억 일) →
   턴 done → commit → 다음에 물을 말(suggest_for) → done 이벤트.
 - SSE: 모든 data에 seq, 머리에 id {turn_id}:{seq}. action은 행 commit 뒤, done은 대화 저장 commit 뒤.
@@ -14,9 +15,12 @@
 import asyncio
 import json
 import logging
+import re
 import uuid
 from collections.abc import AsyncIterator
+from dataclasses import dataclass
 from datetime import datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
@@ -65,7 +69,13 @@ from app.shared.errors import AppError
 log = logging.getLogger(__name__)
 
 TURNS_PER_HOUR = 60  # 사용자별 시간당 턴 수(APP_ENV=local이면 세지 않음, v3와 같음)
-HISTORY = 12  # 지난 글 줄 수(계약서 4장 1)
+# 지난 글 줄 수(계약서 4장 1). 12줄(여섯 턴)이면 앞에서 한 말을 '처음 나왔다'고 고쳐 말해 24줄로 늘렸다(QA r3 c5).
+# 턴 비용(상한 $0.06)을 지키려고 최근 HISTORY_FULL줄은 그대로, 그 앞 비서 글은 앞 HISTORY_CUT자(문장 단위)만 보낸다
+HISTORY = 24
+HISTORY_FULL = 12
+HISTORY_CUT = 200
+# 지난 글 창보다 앞 대화가 있을 때 턴 사실에 넣는 줄(앞 대화를 몰라 고객 말을 틀리게 고치지 않게)
+OLDER = "지난 대화: 앞부분은 안 보이고 최근 {n}턴만 보여요"
 STALL = timedelta(minutes=2)  # heartbeat가 이만큼 멈추면 failed 'stalled'
 FEED_LIMIT = 30
 RUNNING = "앞 답을 만드는 중이에요. 끝나면 다시 보내 주세요."
@@ -78,8 +88,31 @@ _BACKGROUND: set[asyncio.Task] = set()  # 화면이 끊어도 끝까지 도는 �
 # ---- 턴 시작 ----
 
 
+def clip(text: str, n: int = HISTORY_CUT) -> str:
+    """긴 글 → 앞 문장들(n자 안). 첫 문장부터 n자를 넘으면 n자에서 자르고 '…'. n자 안이면 그대로."""
+    text = text.strip()
+    if len(text) <= n:
+        return text
+    out = ""
+    for x in (p.strip() for p in runtime.SENT_END.split(text) if p.strip()):
+        joined = f"{out} {x}".strip()
+        if len(joined) > n:
+            break
+        out = joined
+    return (out or text[: n - 1]) + "…"
+
+
 def _history(rows: list[ChatMessage]) -> list[dict]:
-    out = [{"role": m.role, "content": m.text} for m in rows if m.text.strip()]
+    """지난 글(Claude 꼴). 최근 HISTORY_FULL줄 앞의 비서 글은 앞부분만 보낸다(고객 말은 그대로)."""
+    old = len(rows) - HISTORY_FULL
+    out = [
+        {
+            "role": m.role,
+            "content": clip(m.text) if i < old and m.role == "assistant" else m.text,
+        }
+        for i, m in enumerate(rows)
+        if m.text.strip()
+    ]
     while out and out[0]["role"] != "user":  # Claude는 user로 시작한다
         out.pop(0)
     return out
@@ -93,8 +126,44 @@ DECIDED = {
     "failed": "승인했지만 실행 못 함",
     "expired": "실행 안 됨 · 닫힘",
 }
-# 실행 없이 닫힌 제안 중 턴 사실에 넣는 까닭(새 카드로 바뀜은 뺀다)
-CLOSED_REASONS = ("due", "handled_elsewhere")
+# 실행 없이 닫힌 제안 중 턴 사실에 넣는 까닭. 새 카드로 바뀐 카드도 넣는다(QA r3 c6 T13 · s4: 닫힌 앞 카드를
+# '아직 남아 있을 수 있어요' · '거둘까요?'라고 말함)
+CLOSED_REASONS = ("due", "handled_elsewhere", "replaced")
+DECIDED_MAX = 6  # 턴 사실 '최근 처리한 카드' 수(바뀐 카드까지 넣어 넷에서 늘림)
+# 승인 카드 종류 → (턴 사실에 붙일 종류 말, 제목에 있으면 종류 말을 붙이지 않는 낱말). 제목만으로는 무엇에 대한 카드인지
+# 모르는 것이 있어요(QA r3 c1 16 · 17턴: '도배 12월 14일(월)~16일(수) 수락'이 열려 있는데 수락 카드를 또 만들까 물음)
+CARD_KIND: dict[str, tuple[str, tuple[str, ...]]] = {
+    "home_info": ("집 정보", ("집 정보", "직접 할 일")),
+    "visit_request": ("실측 요청", ("실측 요청",)),
+    "visit_slot": ("실측 시간", ("실측 시간", "반나절")),
+    "vendor_confirm": ("업체 확정", ("업체 확정",)),
+    "dates_accept": ("공사 날짜 수락", ("공사 날짜 수락",)),
+    "delay_accept": ("바뀐 공사 날짜 수락", ("바뀐 공사 날짜",)),
+    "date_change": ("공사 날짜 바꾸기", ("날짜 바꾸기", "날짜 요청")),
+    "visit_cancel": ("실측 요청 취소", ("취소",)),
+    "extra_answer": ("추가 금액 답", ("추가 금액",)),
+    "work_check": ("공사 끝 확인", ("공사 끝", "남은 일")),
+    "visit_again": ("실측 다시 요청", ("한 번 더", "다시 요청")),
+    "window_answer": ("기간 답하기", ("답하기",)),
+    "decline": ("못 받아요", ("못 받아요",)),
+    "dates": ("공사 날짜 보내기", ("보내기",)),
+}
+
+
+def card_name(a, label: str | None = None) -> str:
+    """승인 카드 한 장 → 턴 사실 이름: 종류 말(제목에 없을 때) + 제목 + 업체 · 요청 이름(제목에 없을 때).
+    label은 업체 쪽 요청 이름('노원구 32평 도배')이에요. 고객 카드의 업체는 요약 칸 '업체'에서 읽어요."""
+    summary = a.summary or {}
+    title = summary.get("title") or a.kind
+    kind = CARD_KIND.get(a.kind)
+    head = f"{kind[0]}: " if kind and not any(w in title for w in kind[1]) else ""
+    rows = summary.get("rows") or []
+    vendor = next(
+        (str(r.get("value")) for r in rows if isinstance(r, dict) and r.get("label") == "업체"),
+        None,
+    )
+    tail = "".join(f" · {x}" for x in dict.fromkeys((vendor, label)) if x and x not in title)
+    return f"{head}{title}{tail}"
 
 
 def _why_not(a) -> str | None:
@@ -113,18 +182,20 @@ def _why_not(a) -> str | None:
     return runtime.SENT_END.split(str(said).strip())[0]
 
 
-def decided_line(rows: list) -> str | None:
-    """최근 처리한 카드 한 줄('제목(상태) · …'). 실행 못 한 카드는 '제목(상태 · 서버가 알린 까닭: …)'. 없으면 None."""
+def decided_line(rows: list, label_of=None) -> str | None:
+    """최근 처리한 카드 한 줄('제목(상태) · …'). 실행 못 한 카드는 '제목(상태 · 까닭: 화면이 알린 말)'. 없으면 None.
+    '서버가 알린 까닭'이라고 쓰면 비서가 '서버가'를 그대로 말해(QA r3 c6 T16 · T17 · T20) '까닭'만 쓴다.
+    label_of(카드) → 업체 쪽 요청 이름(없으면 None): 어느 요청의 카드인지 붙인다(QA r3 c6 T3)."""
     got = []
     for a in rows:
         if a.status not in DECIDED:
             continue
         if a.status == "expired" and (a.result or {}).get("reason") not in CLOSED_REASONS:
             continue
-        title = (a.summary or {}).get("title") or a.kind
+        title = card_name(a, label_of(a) if label_of else None)
         why = _why_not(a)
         got.append(
-            f"{title}({DECIDED[a.status]} · 서버가 알린 까닭: {why})"
+            f"{title}({DECIDED[a.status]} · 까닭: {why})"
             if why
             else f"{title}({DECIDED[a.status]})"
         )
@@ -151,25 +222,207 @@ START_WISH = "공사 시작 희망"
 START_LOCKED = "공사 시작 희망 안 정함(실측 요청 뒤라 업체와 정해요)"
 
 
+# 집 카드 사실의 평('32평', 표준견적서에 저장한 공급 기준 평). 전용 ㎡로 넣은 집은 환산 비율로 어림한 평이라 턴 사실에
+# 넣지 않는다(QA r3 c4b: 전용 59㎡ 집을 '21평'이라고 말함). 공급 기준이면 평형이라고 밝힌다
+PYEONG_FACT = re.compile(r"^(\d+(?:\.\d+)?)평$")
+
+
 def home_facts(home: dict) -> list[str]:
-    """턴 사실 '집:' 줄의 사실(집 카드와 같은 글). 잠긴 뒤 비어 있는 시작 희망만 바꾼다."""
+    """턴 사실 '집:' 줄의 사실(집 카드와 같은 글). 잠긴 뒤 비어 있는 시작 희망을 바꾸고, 평은 공급 기준 평형으로만
+    둔다(전용 면적 집은 ㎡만)."""
     facts = list(home["facts"])
     if home["locked"] and home.get("start_date") is None:
         facts = [START_LOCKED if f.startswith(START_WISH) else f for f in facts]
-    return facts
+    out = []
+    for f in facts:
+        if m := PYEONG_FACT.match(f):
+            if home.get("area_basis") == "exclusive":
+                continue
+            f = f"{m[1]}평형(공급)"
+        out.append(f)
+    return out
 
 
 def period_line(period, today) -> str | None:
-    """턴 사실 '공정표:' 줄(공정표 기간). 확정 전이면 예상이라고 밝힌다(QA r2 c5: 예상 공정표가 있는데 '도배는 언제
-    해요?'에 정해지지 않았다고 답함)."""
+    """턴 사실 '공정표:' 줄(공정표 기간). 확정 공정표인지 예상 공정표인지 이름으로 밝힌다(QA r2 c5: 예상 공정표가
+    있는데 정해지지 않았다고 답함, QA r3 c2: 확정 뒤에 '지금 예상 공정표 기준'이라고 답함)."""
     if period is None:
         return None
     days = kdate.long_range(period.start, period.end, today)
     if period.kind == "final":
-        return f"공정표: 공사 {days} · 일하는 날 {period.work_days}일(수락한 공사 날짜)"
+        return (
+            f"공정표: 확정 공정표 · 공사 {days} · 일하는 날 {period.work_days}일(수락한 공사 날짜)"
+        )
     return (
-        f"공정표: 예상 공사 {days} · 일하는 날 {period.work_days}일"
+        f"공정표: 예상 공정표 · 예상 공사 {days} · 일하는 날 {period.work_days}일"
         "(업체가 공사 날짜를 올리기 전 예상)"
+    )
+
+
+# ---- 턴 사실: 업체마다 지금 상태 · 채팅 · 실제 단계(QA r3 c4: 단계가 '실측 요청 뒤' 한 줄뿐이라 먼저 '견적서가
+# 왔어요'라고 알린 1분 뒤에 '견적서가 오면'이라고 답하고, 확정 때 닫힌 실측을 '잡혀 있었어요'라고 답함) ----
+
+HALF_KO = {"am": "오전", "pm": "오후"}
+# 실측 요청 상태 → 고객 화면 말(날짜 · 견적서가 붙는 상태는 visit_words가 만든다)
+VISIT_WORDS = {
+    "requested": "실측 요청함(업체 답 기다림)",
+    "offered": "실측 기간 답 옴(반나절 고를 차례)",
+    "picked": "실측 시간 고름(업체 수락 기다림)",
+    "proposed": "업체가 다른 실측 시간을 냄(고를 차례)",
+    "booked": "실측 날짜 정해짐",
+    "visited": "실측 받음(견적서 기다림)",
+    "quoted": "견적서 옴",
+}
+ENDED_WHY = {"declined": "업체가 못 받음", "no_show": "업체가 실측에 안 옴"}
+EXPIRED_WHY = {"reply": "업체 답 기한 지남", "pick": "반나절 고르기 기한 지남"}
+# 확정한 업체의 공사 날짜 상태(schedule.service.dates_states) → 화면 말. scheduled는 업체 공사 날로 쓴다
+DATES_WORDS = {
+    "waiting": "업체가 공사 날짜를 정하는 중",
+    "proposed": "업체가 올린 공사 날짜를 수락할 차례",
+    "requested": "다른 공사 날짜를 요청함(업체 답 기다림)",
+    "change_requested": "공사 날짜 바꾸기를 요청함(업체 답 기다림)",
+    "change_proposed": "업체가 바뀐 공사 날짜를 올림(수락할 차례)",
+}
+BEFORE_CHAT = ("requested", "offered", "picked", "proposed")  # 채팅이 열리기 전(업체 수락 전)
+CHAT_WAIT = "업체가 실측 시간을 수락하면 열려요"
+LIVE_VISITS = ("requested", "offered", "picked", "proposed", "booked", "visited", "quoted")
+NO_DOBAE = "표준견적서 · 상담(업체 연결은 도배만이라 이 공사는 업체 단계가 없어요)"
+UNKNOWN_STAGE = "지금 단계를 읽지 못했어요(도구로 확인해요)"
+
+
+def visit_words(r, chosen: bool, today) -> str:
+    """실측 일정 상태판 줄(visit.service.board_now) → 고객 화면 말. chosen: 이 공정에서 확정한 업체가 있다."""
+    st, b = r.status, r.booked
+    slot = f"{kdate.md_long(b.day, today)} {HALF_KO[b.half]}" if b is not None else None
+    if st == "picked" and slot:
+        return f"실측 시간 고름({slot} · 업체 수락 기다림)"
+    if st == "booked" and r.next.kind == "change":
+        return (
+            "실측 날짜 바꾸기를 요청함(업체 답 기다림)"
+            if r.next.who == "vendor"
+            else "업체가 다른 실측 날을 냄(고를 차례)"
+        )
+    if st == "booked" and slot:
+        return f"실측 날짜 정해짐({slot})"
+    if st == "quoted" and r.quote is not None:
+        return f"견적서 옴({r.quote.version}판 · 부가세 포함 {r.quote.total:,}원)"
+    if st == "closed":
+        return "닫힘(다른 업체 확정 때)" if chosen else "닫힘"
+    if st == "cancelled":
+        return "닫힘(견적서가 늦어 취소)" if r.cancel_code == "late_quote" else "닫힘(고객 취소)"
+    if st == "expired":
+        return f"닫힘({EXPIRED_WHY.get(r.expired_reason or '', '기한 지남')})"
+    if st in ENDED_WHY:
+        return f"닫힘({ENDED_WHY[st]})"
+    return VISIT_WORDS.get(st, "진행 중")
+
+
+def deal_words(d, dates: str | None, today) -> str:
+    """확정한 업체(schedule.service.deals_for 한 건) → '확정 · 공사 금액 … · 공사 날짜 상태'."""
+    parts = ["확정"]
+    if d.grand_total is not None:
+        parts.append(f"공사 금액 부가세 포함 {d.grand_total:,}원")
+    if d.status == "checking":
+        parts.append("업체가 공사를 끝냈다고 함(끝 확인할 차례)")
+    elif d.status == "fixing":
+        parts.append("남은 일 하는 중")
+    elif d.status == "done":
+        parts.append("공사 끝")
+    elif dates in DATES_WORDS:
+        parts.append(DATES_WORDS[dates])
+    elif d.start_date is not None and d.end_date is not None:
+        parts.append(f"업체 공사 날 {kdate.long_range(d.start_date, d.end_date, today)}")
+    return " · ".join(parts)
+
+
+def vendors_line(rows: list, deal, dates: str | None, today) -> str | None:
+    """턴 사실 '업체:' 줄: 이 공사에 걸린 업체마다 지금 상태(요청한 순). 없으면 None."""
+    items = []
+    for r in rows:
+        if deal is not None and r.visit_id == deal.visit_id:
+            items.append(f"{r.vendor_name} {deal_words(deal, dates, today)}")
+        else:
+            items.append(f"{r.vendor_name} {visit_words(r, deal is not None, today)}")
+    if deal is not None and all(r.visit_id != deal.visit_id for r in rows):
+        items.append(f"{deal.vendor_name} {deal_words(deal, dates, today)}")
+    return "업체: " + " / ".join(items) if items else None
+
+
+def chat_line(rows: list, deal, opened: set) -> str:
+    """턴 사실 '채팅:' 줄: 믿집 채팅이 열린 업체 · 아직 안 열린 업체(업체가 실측 시간을 수락하면 열려요)."""
+    names = [(r.vendor_id, r.vendor_name, r.status) for r in rows]
+    if deal is not None and all(v != deal.vendor_id for v, _, _ in names):
+        names.append((deal.vendor_id, deal.vendor_name, "chosen"))
+    on = [n for v, n, _ in names if v in opened]
+    wait = [n for v, n, st in names if v not in opened and st in BEFORE_CHAT]
+    parts = [f"{' · '.join(on)} 열림"] if on else []
+    if wait:
+        parts.append(f"{' · '.join(wait)} 아직 안 열림({CHAT_WAIT})")
+    return "채팅: " + (" / ".join(parts) if parts else f"열린 채팅 없음({CHAT_WAIT})")
+
+
+def stage_of(rows: list, deal, dates: str | None, today) -> tuple[str, str | None]:
+    """(턴 사실 단계 말, 다음에 물을 말 단계 키). 단계는 업체 고르기 · 실측 · 견적 견주기 · 확정 · 공사 · 끝이고,
+    업체 상태에서 나온다(요청을 모두 취소 · 거절당하면 다시 업체 고르기)."""
+    if deal is not None:
+        st, start = deal.status, deal.start_date
+        if st == "done":
+            return "끝(공사를 마쳤어요)", None
+        if st == "checking":
+            return "공사(업체가 끝냈다고 함 · 끝 확인할 차례)", "check"
+        if st == "fixing":
+            return "공사(남은 일 하는 중)", None
+        if st == "scheduled" and start is not None and today >= start:
+            return "공사(공사 날짜가 됐어요)", None
+        if st == "scheduled":
+            if dates != "scheduled":  # 날짜 바꾸기가 열려 있다
+                return "확정(공사 날짜 바꾸는 중)", None
+            key = "eve" if start == today + timedelta(days=1) else "prep"
+            return "확정(공사 날짜 수락함 · 공사 전)", key
+        return "확정(공사 날짜 정하기)", "dates"
+    quoted = [r for r in rows if r.status == "quoted"]
+    live = [r for r in rows if r.status in LIVE_VISITS and r.status != "quoted"]
+    if quoted:
+        wait = f" · 견적서 기다리는 업체 {len(live)}곳" if live else ""
+        return f"견적 견주기(받은 견적서 {len(quoted)}곳{wait})", "deal"
+    if live:
+        return f"실측(요청한 업체 {len(live)}곳 · 견적서 전)", "visit"
+    if rows:
+        return "업체 고르기(보낸 실측 요청이 모두 닫힘)", "pick"
+    return "업체 고르기(실측 요청 전)", "pick"
+
+
+@dataclass(frozen=True)
+class WorkNow:
+    """턴 사실 · 다음에 물을 말이 같이 쓰는 지금 공사 상태(도배, 업체 연결은 도배만)."""
+
+    stage: str
+    key: str | None  # 다음에 물을 말 단계 키(STEP_IDEAS)
+    vendors: str | None = None
+    chat: str | None = None
+
+
+async def work_now(s, user: User, p, today, now: datetime) -> WorkNow:
+    """업체마다 지금 상태(visit.service.board_now) · 확정(schedule.service.deals_for · dates_states) · 열린 채팅
+    (cards.chat_links). 모두 읽기만 한다(턴 시작 트랜잭션 중간에 부른다)."""
+    from app.assistant.tools import cards
+    from app.schedule import service as schedule_service
+    from app.visit import service as visit_service
+
+    if getattr(p.trades, "dobae", None) is None:
+        return WorkNow(NO_DOBAE, None)
+    rows = await visit_service.board_now(s, p.id, "dobae", now)
+    deals = await schedule_service.deals_for(s, user, p.id, "dobae", today)
+    deal = deals[-1] if deals else None
+    dates = (await schedule_service.dates_states(s, [deal.id])).get(deal.id) if deal else None
+    ids = [r.vendor_id for r in rows] + ([deal.vendor_id] if deal else [])
+    opened = set(await cards.chat_links(s, p.id, ids))
+    stage, key = stage_of(rows, deal, dates, today)
+    return WorkNow(
+        stage,
+        key,
+        vendors_line(rows, deal, dates, today),
+        chat_line(rows, deal, opened) if rows or deal else f"채팅: 열린 채팅 없음({CHAT_WAIT})",
     )
 
 
@@ -178,18 +431,26 @@ async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided
     from app.assistant.tools import cards
     from app.schedule import service as schedule_service
 
+    today = now.astimezone(SEOUL).date()
     _, home = await cards.home(s, user, p.id)
+    try:  # 업체 상태를 못 읽어도 턴은 돈다(세이브포인트: 턴 행을 넣은 트랜잭션을 지킨다)
+        async with s.begin_nested():
+            w = await work_now(s, user, p, today, now)
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 옛 단계 말로
+        log.warning("턴 사실 업체 상태 읽기 실패 (%s)", type(e).__name__)
+        w = WorkNow(UNKNOWN_STAGE, None)
     lines = [
         *time_lines(now),
         "화면: 고객 비서",
-        "단계: " + ("실측 요청 뒤(집 정보는 잠김)" if home["locked"] else "실측 요청 전"),
+        "단계: " + w.stage + (" · 집 정보 잠김(실측 요청 뒤)" if home["locked"] else ""),
         "집: " + " · ".join(home_facts(home)),
+        *(x for x in (w.vendors, w.chat) if x),
     ]
-    period = period_line(await schedule_service.period_now(s, p), now.astimezone(SEOUL).date())
+    period = period_line(await schedule_service.period_now(s, p), today)
     if period:
         lines.append(period)
     if opened:
-        lines.append("승인 기다리는 카드: " + " · ".join(a.summary["title"] for a in opened))
+        lines.append("승인 기다리는 카드: " + " / ".join(card_name(a) for a in opened))
     if done := decided_line(decided):
         lines.append(done)
     remembered = memory.facts_line(await repo.memories(s, user.id))
@@ -202,13 +463,105 @@ async def _customer_facts(s, user: User, p, now: datetime, opened: list, decided
     return "\n".join(lines)
 
 
-def _vendor_facts(now: datetime, visit_ref: str | None, opened: list, decided: list) -> str:
+# ---- 업체 턴 사실: 요청 · 공사마다 지금 상태와 카드가 어느 요청 것인지(QA r3 c6 T3: '세 건'이라 하고 한 건만 말함 ·
+# 다른 요청의 못 받아요를 이 요청에 붙임, T12 · T13: 닫힌 카드를 '아직 남아 있을 수 있어요') ----
+
+VENDOR_ROWS_MAX = 8  # 한 줄에 넣는 요청 · 공사 수
+TRADE_KO = {"dobae": "도배", "mokgong": "목공"}
+
+
+def request_name(r) -> str:
+    """업체 작업함 줄(구 · 평 · 공정) → '노원구 32평 도배'. 고객 이름 · 동 · 호는 없다."""
+    py = f"{Decimal(r.pyeong).normalize():f}평" if r.pyeong else None
+    return " ".join(x for x in (r.area_name, py, TRADE_KO.get(r.trade, r.trade)) if x)
+
+
+def row_words(r, slot: str | None = None) -> str:
+    """작업함 줄 상태(화면 글자 그대로) + 고객이 고른 · 잡힌 반나절(있으면 다음 일 글 대신) · 기한."""
+    from app.assistant.tools.cards import seoul_text
+
+    state = r.state.label if r.state else r.status
+    nxt = r.next.label if r.next and r.next.label not in (state, "") and not slot else None
+    due = seoul_text(r.next.due_at) if r.next and r.next.due_at else None
+    extra = " · ".join(x for x in (slot, nxt, due and f"{due}까지") if x)
+    return f"{state}({extra})" if extra else state
+
+
+@dataclass
+class VendorBook:
+    """업체 턴 사실 재료: 요청 · 공사 줄과 대상(요청 id · 확정 id) → 요청 이름."""
+
+    lines: list[str]
+    names: dict[uuid.UUID, str]
+
+    def label_of(self, a) -> str | None:
+        tid = getattr(a, "target_id", None)
+        return self.names.get(tid) if tid else None
+
+
+async def vendor_book(s, vendor: User, today, targets: list) -> VendorBook:
+    """업체 작업함(schedule.service.vendor_inbox: 할 일 · 기다림 · 일정 · 공사)과 고객이 고른 반나절(일정)로
+    '요청:' · '공사:' 줄을 만든다. targets(카드)의 대상 중 작업함에 없는 요청(끝난 요청)은 visit.service.rows_for로
+    이름만 읽는다. 모두 읽기만 한다."""
+    from app.assistant.tools import vendor as vendor_tools
+    from app.schedule import service as schedule_service
+    from app.visit import service as visit_service
+
+    rows = []
+    for tab in ("todo", "waiting", "sched"):
+        rows += (await schedule_service.vendor_inbox(s, vendor, tab, today, None, 50)).items
+    jobs = (await schedule_service.vendor_inbox(s, vendor, "jobs", today, None, 50)).items
+    picked, booked = await vendor_tools.visit_slots_of(s, vendor, today, vendor_tools.PICK_DAYS)
+    slots = {x.visit_id: f"{kdate.md_long(x.day, today)} {HALF_KO[x.half]}" for x in picked}
+    slots |= {x.visit_id: f"{kdate.md_long(x.day, today)} {HALF_KO[x.half]}" for x in booked}
+    names: dict[uuid.UUID, str] = {r.id: request_name(r) for r in [*rows, *jobs]}
+    names |= {r.deal_id: request_name(r) for r in jobs if r.deal_id}
+    lost = [
+        a.target_id
+        for a in targets
+        if getattr(a, "target_kind", None) == "visit" and a.target_id not in names
+    ]
+    if lost:
+        for vid, r in (await visit_service.rows_for(s, lost, today)).items():
+            names[vid] = request_name(r)
+    lines = []
+    if rows:
+        got = [f"{names[r.id]} {row_words(r, slots.get(r.id))}" for r in rows[:VENDOR_ROWS_MAX]]
+        lines.append(f"요청: {len(rows)}건 · " + " / ".join(got))
+    else:
+        lines.append("요청: 답하거나 챙길 실측 요청 없음")
+    if jobs:
+        got = [f"{names[r.id]} {row_words(r)}" for r in jobs[:VENDOR_ROWS_MAX]]
+        lines.append(f"공사: {len(jobs)}건 · " + " / ".join(got))
+    return VendorBook(lines, names)
+
+
+async def _vendor_facts(
+    s,
+    vendor: User,
+    now: datetime,
+    visit_id: uuid.UUID | None,
+    visit_ref: str | None,
+    opened: list,
+    decided: list,
+) -> str:
+    today = now.astimezone(SEOUL).date()
+    try:  # 작업함을 못 읽어도 턴은 돈다(세이브포인트: 턴 행을 넣은 트랜잭션을 지킨다)
+        async with s.begin_nested():
+            book = await vendor_book(s, vendor, today, [*opened, *decided])
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 요청 줄 없이
+        log.warning("업체 턴 사실 작업함 읽기 실패 (%s)", type(e).__name__)
+        book = VendorBook([], {})
     lines = [*time_lines(now), "화면: 업체 비서"]
     if visit_ref:
-        lines.append(f"지금 보는 요청: {visit_ref}")
+        name = book.names.get(visit_id) if visit_id else None
+        lines.append(f"지금 보는 요청: {visit_ref}" + (f"({name})" if name else ""))
+    lines += book.lines
     if opened:
-        lines.append("승인 기다리는 카드: " + " · ".join(a.summary["title"] for a in opened))
-    if done := decided_line(decided):
+        lines.append(
+            "승인 기다리는 카드: " + " / ".join(card_name(a, book.label_of(a)) for a in opened)
+        )
+    if done := decided_line(decided, book.label_of):
         lines.append(done)
     return "\n".join(lines)
 
@@ -310,11 +663,15 @@ async def start_turn(
                 raise AppError(409, "turn_running", RUNNING) from None
             return old
         rows = await repo.messages(s, chat.id, HISTORY)
-        opened = await repo.actions_of(
-            s, user.id, surface, project_id=project_id, status="proposed", limit=5
-        )
+        opened = [  # 기한이 지난 카드는 정리(sweep) 전이어도 누를 수 없어 열린 카드로 넣지 않는다
+            a
+            for a in await repo.actions_of(
+                s, user.id, surface, project_id=project_id, status="proposed", limit=5
+            )
+            if a.expires_at > now
+        ]
         decided = await repo.decided_of(
-            s, user.id, surface, project_id=project_id, closed=CLOSED_REASONS
+            s, user.id, surface, project_id=project_id, limit=DECIDED_MAX, closed=CLOSED_REASONS
         )
         refs = await RefTable.load(chat.id)
         visit_ref = (
@@ -323,8 +680,10 @@ async def start_turn(
         facts = (
             await _customer_facts(s, user, project, now, opened, decided)
             if project is not None
-            else _vendor_facts(now, visit_ref, opened, decided)
+            else await _vendor_facts(s, user, now, visit_id, visit_ref, opened, decided)
         )
+        if _has_older(rows, HISTORY):
+            facts += "\n" + OLDER.format(n=sum(1 for m in rows if m.role == "user"))
         rev = chat.rev
         await s.commit()
     # 이번 대화에서 도구 · 카드가 준 이름표와 카드의 집 정보 칸 고르기(칸:값)만 넘긴다. 이 화면의 행동 꼴인데
@@ -774,9 +1133,10 @@ async def feed_for(
 async def chip_facts(
     user: User, surface: str, project_id: uuid.UUID | None, cards: list[dict]
 ) -> set[str]:
-    """칩을 고를 공사 단계 사실(코드 값만, runtime.CHIPS): 고객은 visits 실측을 요청함 · quote 받은 실측 견적서가 있음 ·
-    dates 수락한 공사 날짜가 있음, 업체는 마지막 브리핑 카드 요청의 requested(답할 요청) · visited(견적서를 낼
-    요청). 읽기 조인만 하고, 못 읽으면 빈 집합(사실이 필요한 칩은 빠진다)."""
+    """칩을 고를 공사 단계 사실(코드 값만, runtime.CHIPS): 고객은 visits 실측을 요청함 · quote 받은 실측 견적서가 있고
+    아직 업체를 확정하지 않음(확정 뒤엔 견적 비교 칩이 지난 단계, QA r3 c1 20턴 · c2 13턴) · dates 수락한 공사 날짜가
+    있음, 업체는 마지막 브리핑 카드 요청의 requested(답할 요청) · visited(견적서를 낼 요청). 읽기 조인만 하고, 못 읽으면
+    빈 집합(사실이 필요한 칩은 빠진다)."""
     from sqlalchemy import exists
 
     from app.quote.models import VendorQuote
@@ -793,7 +1153,8 @@ async def chip_facts(
                 sent = exists().where(
                     VendorQuote.visit_id == Visit.id, VendorQuote.sent_at.is_not(None), mine
                 )
-                if await s.scalar(select(sent)):
+                dealt = exists().where(Deal.project_id == project_id, Deal.status != "reselected")
+                if await s.scalar(select(sent)) and not await s.scalar(select(dealt)):
                     out.add("quote")
                 dated = exists().where(Deal.project_id == project_id, Deal.start_date.is_not(None))
                 if await s.scalar(select(dated)):
@@ -1064,7 +1425,8 @@ STEP_IDEAS = {
     ),
     "standard": ("업체 3곳을 골라 둘까요?", "표준견적서 다음은 업체 고르기예요", "업체 추천해 줘"),
     "pick": ("실측 시간 후보를 볼까요?", "담은 업체에 실측을 요청할 차례예요", "실측 시간 찾아 줘"),
-    "visit": ("실측 일정을 챙길까요?", "업체 답과 실측 날짜를 볼 차례예요", "오늘 할 일 알려 줘"),
+    # 이름과 보내는 말을 맞춰요(QA r3 s5: '실측 일정을 챙길까요?'를 누르면 '오늘 할 일 알려 줘'가 감)
+    "visit": ("오늘 할 일을 볼까요?", "업체 답과 실측 날짜를 볼 차례예요", "오늘 할 일 알려 줘"),
     "deal": (
         "견적서를 견줘 볼까요?",
         "받은 실측 견적서로 업체를 정할 차례예요",
@@ -1083,7 +1445,15 @@ STEP_IDEAS = {
         "업체가 공사를 끝냈다고 했어요",
         "공사 끝 점검표 보여 줘",
     ),
+    # 이 지역에 고를 수 있는 업체가 없을 때 업체 고르기 대신(QA r3 s3: 0곳 지역에 '업체 3곳을 골라 둘까요?' 10턴)
+    "outside": (
+        "믿집 밖에서 찾아볼까요?",
+        "이 지역엔 믿집이 단가를 확인한 업체가 아직 없어요",
+        "믿집 밖 도배 업체 찾아 줘",
+    ),
 }
+# 고를 수 있는 업체가 셋보다 적을 때 업체 고르기 말(QA r3 c4 · f1: 2곳인 구에 '업체 3곳을 골라 둘까요?')
+PICK_FEW = "업체 {n}곳을 골라 둘까요?"
 # 제안이 이어지는 카드 종류: 바로 앞 턴에 그 카드를 보였으면 같은 제안을 되풀이하지 않아요
 STEP_CARD = {
     "house": "home_info",
@@ -1095,6 +1465,18 @@ STEP_CARD = {
     "prep": "knowledge",
     "eve": "knowledge",
     "check": "knowledge",
+    "outside": "research",
+}
+# 먼저 말 건 줄의 할 일이 끝났다고 보는 것: 그 줄 뒤 턴에 보인 카드 종류 · 그 줄 뒤에 만든 승인 카드 종류. 끝났으면
+# 그 줄에서 온 다음에 물을 말을 빼요(QA r3 c4: 견준 뒤 · 확정 카드를 연 뒤에도 '받은 견적서를 견줘 볼까요?', 추가 금액
+# 카드를 보인 뒤에도 '추가 금액을 볼까요?'가 9턴). 줄은 정리(sweep)가 대상 상태를 보고 따로 닫아요
+NUDGE_DONE: dict[str, tuple[str, frozenset[str]]] = {
+    "quote_sent": ("quote_compare", frozenset({"vendor_confirm"})),
+    "extra_added": ("extra", frozenset({"extra_answer"})),
+    "dates_proposed": ("schedule", frozenset({"dates_accept", "delay_accept"})),
+    "visit_offered": ("visit_slots", frozenset({"visit_slot"})),
+    "vendor_out": ("vendor_picks", frozenset({"visit_request"})),
+    "no_pick": ("vendor_picks", frozenset({"visit_request"})),
 }
 # 그 단계의 다음 일이 이미 열린 승인 카드로 와 있으면(누르기만 남음) 단계 제안을 하지 않아요(QA r2 c5: 업체를 골라
 # 실측 요청 카드가 열렸는데 '업체 3곳을 골라 둘까요?')
@@ -1137,9 +1519,12 @@ async def suggest_for(
 ) -> list[SuggestOut]:
     """다음에 물을 말 0~3개(코드가 고름): 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일).
     이번 말 · 칩과 같은 말, 고객이 최근에 이미 물은 말, 바로 앞 턴에 보인 카드로 이어지는 단계 제안은 뺀다(같은
-    제안을 여러 턴 되풀이하지 않게). 담은 업체가 없으면 '실측 시간' 대신 업체 고르기를 권한다. 못 읽으면(어떤 오류든)
-    비운다: 턴 저장 commit 뒤라 error 이벤트로 끝내면 화면은 실패, 다시 열면 답이 있다."""
+    제안을 여러 턴 되풀이하지 않게). 먼저 말 건 줄의 제안은 그 일이 끝났으면 뺀다(NUDGE_DONE). 단계는 공사 날짜를
+    수락하기 전엔 업체 상태에서 나온 실제 단계(work_now)다. 담은 업체가 없으면 '실측 시간' 대신 업체 고르기를, 고를
+    수 있는 업체 수만큼(0곳이면 믿집 밖 찾기) 권한다. 못 읽으면(어떤 오류든) 비운다: 턴 저장 commit 뒤라 error
+    이벤트로 끝내면 화면은 실패, 다시 열면 답이 있다."""
     from app.assistant import proactive
+    from app.project import service as project_service
     from app.schedule import service as schedule_service
     from app.visit import service as visit_service
 
@@ -1150,16 +1535,29 @@ async def suggest_for(
             shown = await repo.shown_nudges(
                 s, user.id, surface, project_id if surface == "customer" else None, open_only=True
             )
+            if surface == "customer" and project_id is not None:
+                gone = await _nudges_done(s, user.id, project_id, shown)
+                shown = [n for n in shown if n.id not in gone]
             out += [SuggestOut(**proactive.suggest_of(n)) for n in shown]
             if surface == "customer" and project_id is not None:
-                today = today_seoul()
+                today, now = today_seoul(), now_utc()
                 o = await schedule_service.overview_for(s, user, project_id, today)
                 key = step_key(o, today)
+                p = await project_service.get_for(s, user, project_id)
+                if o.phase not in ("work", "done") and getattr(p.trades, "dobae", None):
+                    key = (await work_now(s, user, p, today, now)).key  # 업체 상태에서 나온 단계
                 if key == "pick":  # 담은 업체가 없으면 실측 시간이 아니라 업체 고르기부터
                     lst = await visit_service.shortlist_for(s, user, project_id, "dobae")
                     key = "pick" if lst.items else "standard"
+                text: str | None = None
+                # 고를 수 있는 업체 수로 권한다(0곳이면 믿집 밖 찾기, 이미 찾는 중이면 없음)
+                if key == "standard":
+                    n = await _pickable(s, user, project_id)
+                    if n == 0:
+                        key = None if await _looking(s, user.id, project_id, now) else "outside"
+                    elif n < 3:
+                        text = PICK_FEW.format(n=n)
                 if key in STEP_OPEN:  # 다음 일이 열린 승인 카드로 와 있으면 그 카드가 다음 걸음
-                    now = now_utc()
                     live = await repo.actions_of(
                         s, user.id, surface, project_id=project_id, status="proposed", limit=20
                     )
@@ -1167,8 +1565,8 @@ async def suggest_for(
                         key = None
                 last, recent = await _recent(s, user.id, project_id)
                 if key is not None and STEP_CARD.get(key) not in last:
-                    text, why, say = STEP_IDEAS[key]
-                    out.append(SuggestOut(id=f"step-{key}", text=text, why=why, say=say))
+                    idea, why, say = STEP_IDEAS[key]
+                    out.append(SuggestOut(id=f"step-{key}", text=text or idea, why=why, say=say))
             elif surface == "vendor":
                 from app.assistant.tools import vendor as vendor_tools
 
@@ -1202,6 +1600,66 @@ async def _recent(s, user_id: uuid.UUID, project_id: uuid.UUID) -> tuple[set[str
     turns = await repo.turns_of(s, chat.id, [rows[-1].turn]) if rows else []
     kinds = {c.get("kind") for t in turns for c in (t.cards or [])}
     return {k for k in kinds if k}, said
+
+
+async def _nudges_done(s, user_id: uuid.UUID, project_id: uuid.UUID, shown: list) -> set[uuid.UUID]:
+    """열린 먼저 말 건 줄 중 할 일이 끝난 줄(NUDGE_DONE): 그 줄 뒤 턴에 그 카드를 보였거나 그 줄 뒤에 그 승인 카드를
+    만들었다(누름 · 거둠 상관없이). 줄의 제안(다음에 물을 말)만 빼고 줄은 그대로 둔다."""
+    mine = [n for n in shown if n.trigger in NUDGE_DONE and n.sent_at is not None]
+    if not mine:
+        return set()
+    since = min(n.sent_at for n in mine)
+    chat = await repo.assistant_chat(s, user_id, project_id)
+    turns = (
+        (
+            await s.execute(
+                select(AssistantTurn.created_at, AssistantTurn.cards).where(
+                    AssistantTurn.chat_id == chat.id, AssistantTurn.created_at > since
+                )
+            )
+        ).all()
+        if chat is not None
+        else []
+    )
+    made = [
+        a
+        for a in await repo.actions_of(s, user_id, "customer", project_id=project_id, limit=20)
+        if a.created_at > since
+    ]
+    gone: set[uuid.UUID] = set()
+    for n in mine:
+        card, kinds = NUDGE_DONE[n.trigger]
+        seen = any(
+            at > n.sent_at and any(c.get("kind") == card for c in cards or [])
+            for at, cards in turns
+        )
+        acted = any(
+            a.kind in kinds and a.created_at > n.sent_at and a.id != n.action_id for a in made
+        )
+        if seen or acted:
+            gone.add(n.id)
+    return gone
+
+
+async def _pickable(s, user: User, project_id: uuid.UUID) -> int:
+    """지금 고를 수 있는 도배 업체 수(업체 추천 카드와 같은 셈, 3곳까지). 이미 요청 · 확정했거나 빠진 업체는 뺀다."""
+    from app.assistant.tools import cards
+
+    _, model = await cards.vendor_picks(s, user, project_id, "dobae", RefTable(uuid.uuid4()))
+    return len(model.get("picks") or [])
+
+
+async def _looking(s, user_id: uuid.UUID, project_id: uuid.UUID, now: datetime) -> bool:
+    """믿집 밖 업체 조사가 도는 중이거나 방금(12시간 안) 끝났다(같은 제안을 다시 하지 않게)."""
+    from app.assistant import research
+    from app.assistant.models import RESEARCH_LIVE
+
+    r = await research.latest(s, user_id, project_id)
+    if r is None or r.kind != "outside_vendors":
+        return False
+    return r.status in RESEARCH_LIVE or (
+        r.ended_at is not None and now - r.ended_at <= research.RECENT
+    )
 
 
 # ---- 업체 ----

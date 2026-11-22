@@ -1839,6 +1839,15 @@ async def board_row(s: AsyncSession, v: Visit, now: datetime) -> BoardRowOut:
     return next(r for r in rows if r.visit_id == v.id)
 
 
+async def board_now(
+    s: AsyncSession, project_id: uuid.UUID, trade: str, now: datetime
+) -> list[BoardRowOut]:
+    """한 공정의 실측 일정 상태판 줄(업체마다 가장 최근 시도). 읽기만 한다: 비서 턴 사실이 트랜잭션 중간에
+    부른다. 권한은 부르는 쪽이 먼저 확인한다."""
+    _, rows = await board_rows(s, await repo.of_project(s, project_id, trade), now)
+    return rows
+
+
 # ---- 고객 읽기 (에이전트 도구도 부른다, contract 5장) ----
 
 
