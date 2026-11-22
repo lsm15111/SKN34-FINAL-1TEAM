@@ -178,7 +178,8 @@ def test_extra_added_card_amounts_and_approve_closes_line(api, monkeypatch):
     tick(api)
     (n,) = nudges(trigger="extra_added")
     assert (n["status"], str(n["ref_id"])) == ("sent", x["id"])
-    assert n["body"] == "마루와벽이 추가 금액을 올렸어요. 금액을 확인해 주세요."
+    # 금액(계산 엔진 합계)을 넣어 같은 업체 추가 금액 여럿이 구분돼요(F: QA 2차 t1 N9)
+    assert n["body"] == "마루와벽이 추가 금액 165,000원을 올렸어요. 금액을 확인해 주세요."
     card = card_of(n)
     d, m = card["data"], from_entered(150_000, "excluded")
     assert card["kind"] == "extra" and card["card_id"] == f"extra-{x['id']}"
@@ -317,7 +318,13 @@ def test_prep_week_time_trigger_two_cards_night_cap_and_moved_start(api, monkeyp
     assert (n["channel"], n["dedup_key"]) == ("feed", f"prep_week:{did}:{start}")
     # 대화 줄(feed)이라 밤 · 하루 알림 상한에 걸리지 않아요
     # 점수 65(기한 7일 · 날짜 결정 +15 · 승인 카드 없음): Haiku 판정 → 보냄
-    script([{"json": {"send": True}}, {"json": {"text": "도배 공사가 일주일 남았어요."}}])
+    # AI 글은 붙은 카드(공사 전 할 일 · 이웃 안내문)를 말해야 써요(F: QA 2차 t1 N7)
+    script(
+        [
+            {"json": {"send": True}},
+            {"json": {"text": "도배 공사가 일주일 남았어요. 공사 전 할 일을 챙겨 볼까요?"}},
+        ]
+    )
     assert run(api, proactive.evaluate_due, at(22)) == {"sent": 1}
     (n,) = nudges(trigger="prep_week")
     assert (n["status"], n["score"], n["src"]) == ("sent", 65, "ai")

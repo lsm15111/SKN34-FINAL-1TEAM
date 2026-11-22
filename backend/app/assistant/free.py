@@ -18,14 +18,18 @@
   '믿집 공정표는 …'처럼 일반 규칙을 말한 문장은 카드 말이 아니다.
 - 업체를 확정한 뒤 견적 비교를 물으면 확정한 업체 · 견적서 판을 말한다(확정 단추 안내를 하지 않는다).
 - 의도 모델 앞에서 거르는 말(guard_of, QA 1차 2026-11-22): 지시문 → 보여 드릴 수 없다 · 연락처 · 동호수 → 주고받지
-  않는다 · 영어 답 → 짧은 거절 + 지금 할 일 한 줄 · 내용 없이 화난 말 → 사과 · 범위 밖 부탁(음식 · 배달 / 날씨 · 잡담 /
-  돈 · 투자 / 다른 앱 일 / 대신 전화) → 범위 밖 답 틀(off_said: 되받기 · 솔직 · 지금 할 일, 피클 표본 8).
+  않는다 · 영어 답 → 짧은 거절 + 지금 할 일 한 줄 · 내용 없이 화난 말 → 사과 · 범위 밖 부탁(음식 · 배달 / 날씨 · 소식 /
+  놀이 · 잡담 / 돈 · 투자 / 다른 앱 일 / 대신 전화) → 범위 밖 답 틀(off_said: 되받기 · 솔직 · 지금 할 일, 피클 표본 8).
+  지금 할 일 한 줄은 상태가 바뀌었거나 처음일 때만 붙이고(같은 줄을 잇지 않게), 되받기 머리는 바로 앞 답과 다른 꼴로
+  고른다(QA 3차 f1).
+- 지난 턴과 글자까지 같은 답이면 짧은 글로 바꾼다(AGAIN, QA 3차 f1x 추가 금액 · 날짜).
 - 무료 모드는 LLM을 못 쓸 때 카드 + 짧은 안내를 하는 비상 길이다(docs/v4/08-rules.md). 말투 · 길이를 손보는 사례 규칙은
   더하지 않고, 말로 승인 카드를 만드는 길(날짜 바꾸기 · 업체 못 받아요 · 기간 답하기)의 낱말 규칙만 촘촘히 둔다.
 - 정해 둔 길(route_of, 의도 모델 앞): 비서가 낸 칩(runtime.CHIPS · 다음에 물을 말 · 카드 칩)과 같은 뜻의 말은 칩 뜻대로
-  간다. 폐기물 · 철거 포함 → 받은 견적서 칸, 비싸요 · 바가지 → 견적 비교 · 표준견적서 카드, 추가금 → 추가 금액 승인
-  길, 가견적 계산 · 실측에서 보는 것 · 공사 순서 → 정해 둔 글, 다른 시간 → 반나절 카드, 공사 전날 준비물 → 준비물 카드,
-  반려동물 · 출입 → 정해 둔 글.
+  간다. 폐기물 · 철거 포함 → 받은 견적서 칸, 비싸요 · 바가지 · 뭐가 빠졌어요 → 계산 사실(받은 견적서끼리 다른 포함 칸,
+  없으면 표준견적서에서 금액이 큰 줄 이름) + 견적 비교 · 표준견적서 카드(리드 결정 2, QA 3차 f1), 추가금 → 추가 금액
+  승인 길, 가견적 계산 · 실측에서 보는 것 · 공사 순서 → 정해 둔 글, 다른 시간 → 반나절 카드, 공사 전날 준비물 →
+  준비물 카드, 반려동물 · 출입 → 정해 둔 글.
 - 다른 공정(믿집이 계산 · 연결하지 않는 공정)만 물으면 알아 두기 자료(knowledge.other_trades)로 순서 · 주의점을 답하고
   '믿집은 … 업체를 잇지 않아요'를 붙인다. 도배 · 목공과 섞인 질문은 answer_only 답을 쓰고 모르면 자료로 바꾼다.
 - 업체 추천은 실측을 요청한 업체를 빼고 보여 준다(다 요청했으면 작업 카드, 확정했으면 확정한 업체).
@@ -132,8 +136,15 @@ CHANGE_HOW = (
 )
 CHANGE_MADE = "날짜 바꾸기 요청 승인 카드를 만들었어요. 카드를 확인하고 눌러야 업체에 요청이 가요."
 CHANGE_SAME = "같은 날짜 바꾸기 요청 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
-# 앞당기기 · '다음 달로'처럼 며칠인지 정할 수 없는 말: 카드 없이 날짜를 묻는다(일주일 뒤로 미루면 반대 · 다른 뜻)
-CHANGE_WHEN = "언제로 바꿀지 '12월 15일부터'처럼 날짜로 말해 주세요. 그 날짜로 날짜 바꾸기 요청 카드를 만들어 드릴게요."
+# 앞당기기 · '다음 달로'처럼 며칠인지 정할 수 없는 말: 카드 없이 날짜를 묻는다(일주일 뒤로 미루면 반대 · 다른 뜻).
+# 예시 날짜는 쓰지 않는다(QA 3차 f1x 15: 앞당기는 말에 지금 시작일보다 늦은 예시 '12월 15일부터')
+CHANGE_WHEN = (
+    "언제부터로 바꿀지 날짜로 말해 주세요. 그 날짜로 날짜 바꾸기 요청 카드를 만들어 드릴게요."
+)
+CHANGE_WHEN_PULL = (
+    "며칠부터로 당길지 날짜로 말해 주세요. 그 날짜로 날짜 바꾸기 요청 카드를 만들어 드릴게요."
+)
+CHANGE_WHEN_NEXT = "다음 달 며칠부터로 미룰지 날짜로 말해 주세요. 그 날짜로 날짜 바꾸기 요청 카드를 만들어 드릴게요."
 CHANGE_REJECTED = "앞에서 거절한 날짜 바꾸기 요청과 같아요. 다른 날짜를 말해 주시면 새로 만들어요."
 CHANGE_HOW_EARLY = "공사 날짜는 업체를 확정한 뒤 업체가 올려요. 그 뒤에 바꿔야 하면 날짜 바꾸기 요청으로 새 날짜를 부탁할 수 있어요."
 STANDARD = "이 집 표준견적서는 부가세 포함 {won}원이에요. 공공 기준 단가로 믿집이 계산한 참고 금액이고 업체 견적은 아니에요."
@@ -186,15 +197,24 @@ CONTACT_SAID = "연락처 · 동호수는 제가 주고받지 않아요. 업체�
 VENDOR_CONTACT = "고객 연락처 · 동호수는 제가 주고받지 않아요. 고객과 연락은 실측이 잡히면 믿집 채팅으로 이어져요."
 OFF_SAID = "그건 제가 도와드리기 어려워요. 저는 집 공사만 챙겨요."
 # 범위 밖 답 틀(피클 표본 8): 갈래마다 (되받기, 솔직) 셋을 돌려 써요. 답은 되받기 · 솔직 · 지금 할 일 한 줄이에요.
-# 자리: t 지금 때(새벽 · 밤 …) · w 고객 낱말(갈래 표의 꼴) · w_i 이/가 · w_eul 을/를 · w_igun 이군요/군요.
-# 그 밖(other)은 되받지 않아요(욕 · 가린 개인정보 · 이상한 글). 느낌표는 되받기에 하나만 써요
+# 자리: t 지금 때(새벽 · 밤 …) · t_meal 음식 앞 때 말('밤 ' · '아침부터 ', 어색한 때는 빈칸) · w 고객 낱말(갈래 표의
+# 꼴) · w_i 이/가 · w_eul 을/를 · w_igun 이군요/군요. 그 밖(other)은 되받지 않아요(욕 · 가린 개인정보 · 이상한 글).
+# 느낌표는 되받기에 하나만 써요. 되받기 머리 끝 어절은 갈래 안에서 서로 다르고, 앱 일과 대신 전화는 머리가 겹치지
+# 않아요(QA 3차 f1: '오전에 택시 부탁이군요!' 뒤 '오전에 전화 부탁이군요!')
 OFF_SAYS: dict[str, tuple[tuple[str, str], ...]] = {
     "food": (
-        ("오, {t} {w_igun}!", "아쉽지만 배달 주문은 제가 못 하고 집 공사만 챙겨요."),
+        ("오, {t_meal}{w_igun}!", "아쉽지만 배달 주문은 제가 못 하고 집 공사만 챙겨요."),
         ("{t}에 {w} 생각이 나셨군요!", "음식 주문은 제 일이 아니라서 도와드리지 못해요."),
         ("{t}에 {w_eul} 찾으시는군요!", "배달은 제가 시켜 드릴 수 없고 집 공사 일만 맡고 있어요."),
     ),
+    # 날씨 · 운세 · 경기처럼 알고 싶은 소식(물은 것을 되받아요. QA 3차 f1: '날씨가 생각나셨군요'가 물은 말과 어긋남)
     "chat": (
+        ("{t}에 {w_eul} 물으셨군요!", "그런 소식은 제가 찾아보지 못해서 집 공사 쪽만 도와드려요."),
+        ("{w} 이야기군요!", "저는 집 공사 비서라 그 소식은 답해 드리기 어려워요."),
+        ("오, {t}에 {w_i} 궁금하셨군요!", "바깥 소식은 제가 알려 드리지 못하고 집 공사만 챙겨요."),
+    ),
+    # 노래 · 게임 · 농담처럼 같이 하자는 말
+    "play": (
         ("{t}에 {w_i} 생각나셨군요!", "그런 이야기는 제가 잘 몰라서 집 공사 쪽만 도와드려요."),
         ("{t}에 {w_eul} 떠올리셨군요!", "저는 집 공사 비서라 그 이야기는 답해 드리기 어려워요."),
         ("오, {t}에 {w_eul} 찾으시는군요!", "잡담은 서툴러서 집 공사 이야기만 챙겨 드려요."),
@@ -204,15 +224,16 @@ OFF_SAYS: dict[str, tuple[tuple[str, str], ...]] = {
         ("오, {t} {w} 고민이군요!", "돈을 굴리거나 빌리는 일은 제가 도와드리지 못해요."),
         ("{t}에 {w_eul} 챙기시는군요!", "돈 관리는 제 일이 아니라서 집 공사만 챙겨요."),
     ),
+    # 솔직 글은 고객 낱말로('택시 같은 다른 앱 일', QA 3차 f1: 택시에 '예약이나 주문 같은 다른 앱 일')
     "app": (
-        ("{t}에 {w} 부탁이군요!", "예약이나 주문 같은 다른 앱 일은 제가 대신 못 해요."),
+        ("{t}에 {w} 부탁이군요!", "{w} 같은 다른 앱 일은 제가 대신 못 해요."),
         ("{t}에 {w_i} 필요하시군요!", "그 일은 다른 앱에서 하셔야 해서 저는 집 공사만 챙겨요."),
         ("오, {t}에 {w_eul} 맡기시려는군요!", "아쉽지만 그런 일은 제가 대신 해 드릴 수 없어요."),
     ),
     "call": (
-        ("{t}에 {w} 부탁이군요!", "대신 전화나 문자는 제가 못 하고 업체와 연락은 믿집 채팅으로 이어져요."),
-        ("{t}에 {w_i} 필요하시군요!", "저는 대신 연락하지 않지만 업체와는 믿집 채팅으로 이야기할 수 있어요."),
-        ("오, {t}에 {w_eul} 맡기시려는군요!", "전화 · 문자는 제가 대신 못 해서 업체와는 믿집 채팅으로 이야기해 주세요."),
+        ("대신 {w_eul} 부탁하시는군요!", "제가 걸거나 보내 드리지는 못하고 업체와 연락은 믿집 채팅으로 이어져요."),
+        ("{t}에 {w_i} 급하시군요!", "저는 대신 연락하지 않지만 업체와는 믿집 채팅으로 이야기할 수 있어요."),
+        ("오, {w} 심부름이군요!", "전화 · 문자는 제가 대신 못 해서 업체와는 믿집 채팅으로 이야기해 주세요."),
     ),
     "trade": (
         ("{t}에 {w} 공사도 챙기시는군요!", OTHER_TRADE),
@@ -246,7 +267,16 @@ NOW_VISIT = (
     (("picked",), "지금은 고른 실측 시간에 업체가 답하기를 기다리는 중이에요."),
     (("booked", "visited"), "지금은 실측과 실측 견적서를 기다리는 중이에요."),
 )
-# 돈 질문(추가금 · 폐기물). 비싸요 · 바가지는 견적 비교 · 표준견적서 카드의 정해 둔 글 그대로예요
+# 돈 질문(비싸요 · 바가지 · 빠진 것, 리드 결정 2 · QA 3차 f1 8 · f1x 9): 정해 둔 글만으로 끝내지 않고 계산 사실을
+# 넣어요. 화난 말 · '왜 비싸요'엔 공감 한마디, 받은 견적서가 있으면 견적서끼리 다른 포함 칸(빠진 줄), 없으면 표준견적서에서
+# 금액이 큰 줄 이름(계산 엔진 값 순, 숫자 없이)
+SORRY_MONEY = "금액이 부담되셨겠어요."
+PRICEY_LINES = "이 집 표준견적서는 {names} 순으로 금액이 커요."
+PRICEY_PLUS = "{name} 줄도 들어 있어요."
+PRICEY_REF = "공공 기준 단가로 믿집이 계산한 참고 금액이에요."
+QUOTES_WHY = "견적서 합계는 포함 항목 · 부가세 방식 · 공사 기간에 따라 달라져요."
+QUOTES_SEE = "카드에서 합계와 포함 항목을 견줘 보세요."
+# 돈 질문(추가금 · 폐기물)
 EXTRA_HOW = (
     "공사 중 추가 금액이 생기면 업체가 믿집에 올려요. 승인 · 거절 · 채팅으로 묻기 중에서 고르실 수 있고, "
     "승인하기 전에는 공사 금액이 바뀌지 않아요."
@@ -333,8 +363,9 @@ OFF_KINDS: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"(치킨|피자|짜장면|짜장|짬뽕|탕수육|족발|보쌈|떡볶이|햄버거|야식|초밥|삼겹살|(?<![가-힣])라면)|"
         r"(배달)\s{0,2}(?:시켜|주문|앱|음식)"
     )),
-    ("chat", re.compile(
-        r"(날씨|기온|미세\s{0,2}먼지|운세|야구|축구|끝말잇기|심심)|"
+    ("chat", re.compile(r"(날씨|기온|미세\s{0,2}먼지|운세|야구|축구)")),
+    ("play", re.compile(
+        r"(끝말잇기|심심)|"
         r"(노래|게임|영화|드라마|농담)\s{0,2}(?:불러|틀어|추천|하자|하나|좀|해\s{0,2}줘)"
     )),
     ("money", re.compile(r"(비트코인|코인|주식|로또|복권|집값|대출|금리|환율|적금|펀드)")),
@@ -370,6 +401,11 @@ ECHO_MAX = 60
 WHEN = (
     (6, "새벽"), (10, "아침"), (12, "오전"), (14, "점심"), (18, "오후"), (21, "저녁"), (24, "밤"),
 )  # fmt: skip
+# 음식 되받기 앞 때 말('오, 밤 치킨이군요!'): 음식 앞에 붙이면 어색한 때는 '부터'를 붙이거나 뺀다(QA 3차 f1 '오전 치킨')
+MEAL_WHEN = {
+    "새벽": "새벽 ", "아침": "아침부터 ", "오전": "오전부터 ", "점심": "점심 ", "오후": "", "저녁": "저녁 ",
+    "밤": "밤 ",
+}  # fmt: skip
 ENGLISH = re.compile(
     r"영어로\s{0,2}(?:답|대답|말|써|얘기|설명|해\s{0,2}(?:줘|주))|영문으로\s{0,2}(?:답|써)|"
     r"in\s+english|english\s+please|(?<![a-z])answer\s+in",
@@ -390,6 +426,9 @@ WHY_PRICE = re.compile(
     r"왜\s{0,2}(?:이렇게|이리|그렇게|케|캐|이\s{0,2}정도로?)?\s{0,2}(?:비싸|비쌈|많이)"
 )
 STRONG_PRICE = re.compile(r"바가지|덤터기|덤탱이|터무니|너무\s{0,2}비싸|과하")
+# 견적서에서 무엇이 빠졌는지 묻는 말('뭐가 빠진 거 아니에요?' · '뭔가 빠졌나요?'). 할 일 · 준비물 · 짐에서 빠진 것은 아님
+MISSING = re.compile(r"(?:뭐|뭔가|무엇|어떤\s{0,2}(?:게|것|항목))\S{0,2}\s{0,2}빠(?:진|졌|지|뜨)")
+NOT_QUOTE = re.compile(r"할\s{0,2}일|직접|준비물|점검표|짐|안내문")
 # 사람이 할 일을 대신 해 달라는 말('네가 알아서 확정해')
 DELEGATE = re.compile(
     r"(?:네가|니가|너가|비서가|당신이)[^.?!]{0,20}?(?:확정|골라|고르|정해|정하|승인|수락|눌러)"
@@ -661,7 +700,29 @@ async def guard(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
             kind, word = "other", ""
         return await off_answer(tc, kind, word), ToolOut(data={})
     head = {"secret": SECRET_SAID, "english": ENGLISH_SAID}[name]
-    return join(head, await now_line(tc)), ToolOut(data={})
+    return join(head, await now_tail(tc)), ToolOut(data={})
+
+
+# 지금 할 일 한 줄들(상태마다 하나). 상태가 그대로면 같은 줄을 다시 붙이지 않는다(QA 3차 f1 9~15: 일곱 턴 이어짐)
+NOW_LINES = frozenset((*NOW.values(), *(line for _, line in NOW_VISIT), NOW_NONE, VENDOR_NOW))
+
+
+def now_said(now: str, recent: list[str]) -> bool:
+    """지금 할 일 줄을 가장 최근에 붙인 답이 같은 줄이었는지(그 뒤로 상태가 그대로). 처음이거나 상태가 바뀌었으면
+    False(붙인다)."""
+    if not now:
+        return False
+    for x in reversed(recent):
+        hit = [line for line in NOW_LINES if line and line in x]
+        if hit:
+            return now in hit
+    return False
+
+
+async def now_tail(tc: ToolCtx) -> str:
+    """거르는 말 · 범위 밖 답 끝에 붙일 지금 할 일 한 줄(상태가 바뀌었거나 처음일 때만, 아니면 빈 글)."""
+    now = await now_line(tc)
+    return "" if now_said(now, await recent_said(tc)) else now
 
 
 # ---- 범위 밖 답(되받기 · 솔직 · 지금 할 일) ----
@@ -710,30 +771,44 @@ def josa(word: str, pair: str) -> str:
     return word + (has if _jong(word) else not_has)
 
 
+def head_end(text: str) -> str:
+    """글 첫 문장의 끝 어절(되받기 머리의 꼴: '부탁이군요!' · '궁금하셨군요!'). 없으면 빈 글."""
+    first = sents(text)[:1]
+    words = first[0].split() if first else []
+    return words[-1] if words else ""
+
+
 def off_said(
     kind: str, word: str, when: str, now: str, recent: list[str], *, echo: bool = True
 ) -> str:
-    """범위 밖 답 한 번: 되받기(고객 낱말 · 지금 때) · 솔직(못 하는 까닭) · 지금 할 일 한 줄. 갈래 틀 셋 가운데 최근 답에
-    가장 오래 안 나온 것을 골라 같은 말이 이어지지 않게 해요. echo=False면 되받기를 빼요(그 밖은 늘 빼요)."""
+    """범위 밖 답 한 번: 되받기(고객 낱말 · 지금 때) · 솔직(못 하는 까닭) · 지금 할 일 한 줄. 갈래 틀 셋 가운데 바로 앞
+    답과 머리 꼴(첫 문장 끝 어절)이 다르고 최근 답에 가장 오래 안 나온 것을 골라 같은 말이 이어지지 않게 해요(갈래가
+    바뀌어도 '…부탁이군요!'가 잇따르지 않게). 지금 할 일 줄은 상태가 바뀌었거나 처음일 때만 붙여요(now_said).
+    echo=False면 되받기를 빼요(그 밖은 늘 빼요)."""
     fill = {
         "t": when,
+        "t_meal": MEAL_WHEN.get(when, ""),
         "w": word,
         "w_i": josa(word, "이/가"),
         "w_eul": josa(word, "을/를"),
         "w_igun": josa(word, "이군요/군요"),
     }
     says = OFF_SAYS[kind]
+    prev = head_end(recent[-1]) if recent and echo else ""
 
-    def last(i: int) -> int:
+    def rank(i: int) -> tuple[bool, int, int]:
         honest = says[i][1].format(**fill)
-        return max((n for n, x in enumerate(recent) if honest in x), default=-1)
+        last = max((n for n, x in enumerate(recent) if honest in x), default=-1)
+        same = bool(prev) and head_end(says[i][0].format(**fill)) == prev
+        return same, last, i
 
-    head, honest = says[min(range(len(says)), key=lambda i: (last(i), i))]
-    return join(head.format(**fill) if echo else "", honest.format(**fill), now)
+    head, honest = says[min(range(len(says)), key=rank)]
+    tail = "" if now_said(now, recent) else now
+    return join(head.format(**fill) if echo else "", honest.format(**fill), tail)
 
 
-async def recent_said(tc: ToolCtx, limit: int = 12) -> list[str]:
-    """이 대화의 최근 비서 답(오래된 것부터, 읽기만)."""
+async def recent_said(tc: ToolCtx, limit: int = 24) -> list[str]:
+    """이 대화의 최근 비서 답(오래된 것부터, 읽기만). limit은 고객 말까지 센 줄 수(비서 답 약 열두 개)."""
     from app.assistant import repository as repo
 
     async with SessionLocal() as s:
@@ -960,13 +1035,66 @@ async def _compare(tc: ToolCtx, text: str, _found: list[str]) -> tuple[str, Tool
     return QUOTES, ToolOut(data={}, cards=[card], task=task)
 
 
-async def _pricey(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
-    """'왜 이렇게 비싸요' · '바가지예요?': 받은 견적서가 있으면 견적 비교 카드, 없으면 표준견적서 카드(정해 둔 글 그대로).
-    의도 모델은 이 말을 업체 추천으로 자주 봐서 '실측 요청 승인 카드를 만들어요'로 새는 것만 막아요."""
-    said, out = await _compare(tc, text, [])
-    if out.cards:
-        return said, out
-    return await _standard(tc, text, [])
+# 줄 이름 끝 괄호 풀이('벽 도배 시공 (풀 포함)' · '도배지 (실크)'): 글에서는 뗀다(카드에는 그대로)
+PAREN_TAIL = re.compile(r"\s*\([^)]*\)\s*$")
+
+
+def line_name(name: str) -> str:
+    return PAREN_TAIL.sub("", name or "").strip()
+
+
+def top_names(model: dict, n: int = 2) -> list[str]:
+    """표준견적서에서 금액이 큰 줄 이름(계산 엔진 값 순, 숫자 없이). 줄 금액 칸은 'amount' 또는 '공급가'(같은 기준이라
+    순서만 본다)."""
+    lines = sorted(
+        model.get("lines") or [], key=lambda x: -(x.get("amount") or x.get("공급가") or 0)
+    )
+    return list(dict.fromkeys(x for x in (line_name(ln.get("name")) for ln in lines) if x))[:n]
+
+
+async def _missing(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
+    """받은 견적서가 있으면 견적서끼리 다른 포함 칸(폐기물 처리 먼저, r2와 같은 한 문장) + 할 일 + 견적 비교 카드.
+    포함 칸이 같으면 빠졌거나 안 적은 폐기물 처리, 그것도 없으면 합계를 정하는 것. 받은 견적서가 없으면 None."""
+    pid = tc.project_id
+    async with SessionLocal() as s:
+        card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)  # type: ignore[arg-type]
+        got = quoted_cols(model) if card is not None else []
+        if not got:
+            return None
+        task = await cards.visit_task_for(s, tc.user, pid, tc.today, tc.now)  # type: ignore[arg-type]
+        key = next((k for k in INCL_WHAT if len({c.get(k) for c in got}) > 1), None)
+        if key is None and any(c.get("waste") is not True for c in got):
+            key = "waste"
+        home = (await cards.home(s, tc.user, pid))[1]["demolition"] if key == "demolish" else None  # type: ignore[arg-type]
+    said = incl_said(got, key, home) if key else join(QUOTES_WHY, QUOTES_SEE)
+    return said, ToolOut(data={}, cards=[card], task=task)  # type: ignore[list-item]
+
+
+async def _pricey(tc: ToolCtx, text: str) -> tuple[str, ToolOut]:
+    """'왜 이렇게 비싸요 장난해요?' · '바가지예요?'(리드 결정 2, QA 3차 f1 8 · f1x 9): 화났거나 왜 비싼지 물으면 공감
+    한마디, 받은 견적서가 있으면 견적서끼리 다른 포함 칸(빠진 줄), 없으면 표준견적서에서 금액이 큰 줄 이름(할증 줄이
+    있으면 그것도) + 참고 금액이라는 말. 값은 계산 엔진 · 견적 비교 도구 값만, 숫자는 카드에. 의도 모델은 이 말을 업체
+    추천으로 자주 봐서 '실측 요청 승인 카드를 만들어요'로 새지 않게 이 길로 받아요."""
+    sorry = SORRY_MONEY if (ANGRY.search(text) or WHY_PRICE.search(text)) else ""
+    got = await _missing(tc, text)
+    if got is not None:
+        return join(sorry, got[0]), got[1]
+    async with SessionLocal() as s:
+        card, model = await cards.standard(s, tc.user, tc.project_id)  # type: ignore[arg-type]
+    names = top_names(model)
+    if not names:
+        return join(sorry, STANDARD_NO_TOTAL), ToolOut(data={}, cards=[card])
+    plus = next(
+        (line_name(x["name"]) for x in model.get("lines") or [] if "할증" in (x.get("name") or "")),
+        "",
+    )
+    said = join(
+        sorry,
+        PRICEY_LINES.format(names=" · ".join(names)),
+        PRICEY_PLUS.format(name=plus) if plus and plus not in names else "",
+        PRICEY_REF,
+    )
+    return said, ToolOut(data={}, cards=[card])
 
 
 async def _schedule(tc: ToolCtx, _text: str, _found: list[str]) -> tuple[str, ToolOut]:
@@ -1035,6 +1163,7 @@ CHANGE = re.compile(
 # 앞당기는 말 · 며칠인지 정할 수 없는 때(날짜 없이는 카드를 만들지 않는다)
 PULL = re.compile(r"당기|당겨|당길|일찍|빨리")
 VAGUE = re.compile(r"다음\s{0,2}달|담달|나중에|언젠가")
+NEXT_MONTH = re.compile(r"다음\s{0,2}달|담달")
 # 바라는 말이 있어야 카드를 만든다. 없으면('미루면 어떻게 돼요?') 안내만 한다
 CHANGE_WANT = re.compile(
     r"싶|원해|주세요|주실|줄\s*수|줄래|줘요|해\s*줘|려고|(?:룰|출|꿀|길|할)\s*(?:게|래)|"
@@ -1109,8 +1238,10 @@ async def _change(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOu
     if not deals:
         return CHANGE_NONE, out
     delay, wish = change_wish(text, tc.today)
-    if delay is None and wish is None:  # 날짜 없이 앞당기기 · '다음 달로': 날짜를 묻는다
-        return CHANGE_WHEN, out
+    if delay is None and wish is None:  # 날짜 없이 앞당기기 · '다음 달로': 날짜를 묻는다(말에 맞춰)
+        if PULL.search(text):
+            return CHANGE_WHEN_PULL, out
+        return (CHANGE_WHEN_NEXT if NEXT_MONTH.search(text) else CHANGE_WHEN), out
     d = next(
         (x for x in deals if x["trade"] in found),
         next((x for x in deals if x["trade"] == "dobae"), deals[0]),
@@ -1181,12 +1312,16 @@ async def _access(tc: ToolCtx) -> tuple[str, ToolOut]:
 
 def route_of(text: str) -> str | None:
     """정해 둔 길 이름(의도 모델 앞, QA 1차 c1 · c3 · c4 · c5): 비서가 낸 칩과 같은 뜻의 말 · 돈 질문 · 공사 날 생활
-    질문. waste · pricey · extra · estimate · visit_what · slots · eve · order · pet · access, 아니면 None(의도 모델로)."""
+    질문. waste · pricey · missing · extra · estimate · visit_what · slots · eve · order · pet · access, 아니면 None(의도
+    모델로)."""
     t = text or ""
     if WASTE.search(t):  # 칩 '폐기물 처리도 포함인가요?'
         return "waste"
     if PRICEY.search(t) and (ANGRY.search(t) or WHY_PRICE.search(t) or STRONG_PRICE.search(t)):
         return "pricey"
+    # '뭐가 빠진 거 아니에요?'(받은 견적서가 없으면 의도 모델로)
+    if MISSING.search(t) and not NOT_QUOTE.search(t):
+        return "missing"
     if EXTRA_ASK.search(t):
         return "extra"
     if ESTIMATE_HOW.search(t):  # 칩 '가견적은 어떻게 계산해요?'
@@ -1219,6 +1354,8 @@ async def route(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
         return await _compare(tc, text, [])
     if name == "pricey":
         return await _pricey(tc, text)
+    if name == "missing":
+        return await _missing(tc, text)
     if name == "extra":
         return _extra(text)
     if name == "slots":
@@ -1571,7 +1708,7 @@ async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
         return (
             None
             if EXTRA_WORD.search(text)
-            else (join(CANCEL_NONE, await now_line(tc)), ToolOut(data={}))
+            else (join(CANCEL_NONE, await now_tail(tc)), ToolOut(data={}))
         )
     if len(cands) > 1:
         options = [
@@ -1621,8 +1758,30 @@ def _lead(text: str, said: str, out: ToolOut) -> tuple[str, ToolOut]:
     return said, out
 
 
+# 지난 턴과 글자까지 같은 답이면 짧게(QA 3차 f1x 11~13 추가 금액 세 턴 · 15 · 16 날짜 · f1 6 · 7 연락처). 짧게 바꾼 다음
+# 턴에 같은 말이 또 오면 원래 글이라 이어서 같은 글이 되지 않는다
+AGAIN: dict[str, str] = {
+    aftercare_tools.EXTRAS: "위 추가 금액 카드에서 승인 · 거절 · 채팅으로 묻기 중 하나를 골라 주세요.",
+    CHANGE_WHEN: "바꿀 날짜만 말해 주시면 날짜 바꾸기 요청 카드를 만들어 드릴게요.",
+    CHANGE_WHEN_PULL: "당길 날짜만 말해 주시면 날짜 바꾸기 요청 카드를 만들어 드릴게요.",
+    CHANGE_WHEN_NEXT: "다음 달 며칠부터인지만 말해 주시면 날짜 바꾸기 요청 카드를 만들어 드릴게요.",
+    CHANGE_HOW: "'2주 미뤄 주세요'처럼 말해 주시면 날짜 바꾸기 요청 카드를 만들어 드릴게요.",
+    CONTACT_SAID: "그것도 제가 업체에 전하지 않아요. 업체와는 믿집 채팅으로 이야기해 주세요.",
+    QUOTES: "카드에서 견줘 보고 확정할 업체를 골라 주세요.",
+}
+
+
 async def answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, ToolOut]:
-    """무료 모드 답 한 번(글, 카드 · 행동 · 작업 카드). 글이 비면 부르는 쪽이 실패 문구를 쓴다."""
+    """무료 모드 답 한 번(글, 카드 · 행동 · 작업 카드). 글이 비면 부르는 쪽이 실패 문구를 쓴다. 지난 턴 답과 글자까지
+    같은 정해 둔 글이면 짧은 글(AGAIN)로 바꾼다."""
+    said, out = await _answer(tc, text, card_id)
+    short = AGAIN.get(said)
+    if short and tc.chat_id is not None and said in (await recent_said(tc, 4))[-1:]:
+        said = short
+    return said, out
+
+
+async def _answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, ToolOut]:
     if policy.small_talk(text) or policy.ack(text):  # 인사 · 맞장구만: 카드 · 지식 답 없이 한 문장
         return (SMALL_TALK_HI if HELLO.search(text) else SMALL_TALK), ToolOut(data={})
     # 지시문 · 연락처 · 잡담 · 영어 답 · 화난 말은 의도 모델 앞에서 거른다

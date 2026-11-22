@@ -60,6 +60,12 @@ TRIGGERS: tuple[dict, ...] = (
         "say": "추가 금액 보여 줘", "why": "업체가 추가 금액을 올렸어요", "ask": "추가 금액을 볼까요?",
         "feed": "{vendor_i_ga} 추가 금액을 올렸어요. 금액을 확인해 주세요.",
         "notify": "{vendor_i_ga} 올린 추가 금액이 아직 답을 기다려요.",
+        # {won}: 그 추가 금액 합계(계산 엔진, 부가세 포함). 같은 업체 추가 금액 여럿이 서로 구분되게(QA 2차 t1).
+        # 업체가 적은 '한 일'은 비서 문장에 넣지 않고 카드 칸에만(policy.vendor_note)
+        "more": (
+            ("feed", ("won",), "{vendor_i_ga} 추가 금액 {won}원을 올렸어요. 금액을 확인해 주세요."),
+            ("notify", ("won",), "{vendor_i_ga} 올린 추가 금액 {won}원이 아직 답을 기다려요."),
+        ),
     },
     {
         "name": "work_done", "surface": "customer", "kinds": ("work_done", "done_remind"),
@@ -294,7 +300,8 @@ async def _extra_ctx(s: AsyncSession, n: AssistantNudge):
     d, p = await _owned_deal(s, x.deal_id, n.user_id, vendor=False)
     if d is None or d.status == "reselected":
         return None
-    return _ctx(p.id, _deal_names(d, p, vendor=False))
+    # 문장 사실: 그 추가 금액 합계(계산 엔진 값, 부가세 포함) — 같은 업체 추가 금액 여럿이 서로 구분되게(QA 2차 t1)
+    return _ctx(p.id, {**_deal_names(d, p, vendor=False), "won": f"{x.total:,}"})
 
 
 async def _done_ctx(s: AsyncSession, n: AssistantNudge):
@@ -539,7 +546,9 @@ async def build(s: AsyncSession, t, n: AssistantNudge, user: User, c, now: datet
             t.name == "dates_requested"
         ):  # 카드 없이 첫 후보로 날짜 보내기 승인 카드(업체 확정 줄과 같음)
             job = await schedule_service.job_for(s, user, n.ref_id, today)
-            cands = tools.request_candidates(job, n.ref_id, today)
+            # 열린 다른 공사 날짜 카드가 잡은 날도 피한다(QA 3차 c6)
+            held = await vendor_tools.held_days(s, user.id, n.ref_id, now)
+            cands = tools.request_candidates(job, n.ref_id, today, held=held)
             if cands:  # 고객이 바란 날이 모두 겹치면 가장 가까운 빈 날(다른 날 제안, alt)
                 offer = tools.request_dates_offer(job, n.ref_id, cands[0], now)
                 c.names["next"] = NEXT_OTHER if cands[0].get("alt") else NEXT_PICKED

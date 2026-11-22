@@ -7,6 +7,7 @@
 
 import re
 import uuid
+from collections.abc import Collection
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING
 
@@ -41,7 +42,7 @@ from app.auth.models import User
 from app.calc.common import COUNTED
 from app.db import SessionLocal
 from app.shared import kdate
-from app.shared.clock import SEOUL
+from app.shared.clock import SEOUL, now_utc
 from app.shared.kdate import md_list, md_week
 from app.shared.korean import i_ga
 
@@ -699,11 +700,13 @@ async def vendor_today(
             from app.assistant.tools import aftercare as aftercare_tools
 
             job = await schedule_service.job_for(s, vendor, first.deal_id, today)
-            # 고객이 날짜를 요청했으면 고객이 고른 날(모두 막히면 가장 가까운 빈 날, 다른 날 제안)
+            # 고객이 날짜를 요청했으면 고객이 고른 날(모두 막히면 가장 가까운 빈 날, 다른 날 제안).
+            # 열린 다른 공사 날짜 카드가 잡은 날도 피한다(QA 3차 c6)
+            held = await held_days(s, vendor.id, first.deal_id, now_utc())
             cands = (
-                aftercare_tools.request_candidates(job, first.deal_id, today)
+                aftercare_tools.request_candidates(job, first.deal_id, today, held=held)
                 if job.request is not None
-                else date_candidates(job, first.deal_id, today)
+                else date_candidates(job, first.deal_id, today, held=held)
             )
             if cands:
                 c = cands[0]
@@ -845,11 +848,41 @@ class NoArgs(BaseModel):
     pass
 
 
-def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
+async def held_days(
+    s: AsyncSession, user_id: uuid.UUID, deal_id: uuid.UUID, now: datetime
+) -> frozenset[date]:
+    """같은 업체의 다른 공사에 열린(아직 누르지 않은 · 기한 안) 공사 날짜 보내기 승인 카드(dates)가 잡은 날. 업체 팀은
+    하나라(schedule.service.TEAMS) 그날도 찬 날로 본다(QA 3차 c6: 먼저 말 걸기 카드 둘이 12.15에서 겹침). 읽기만."""
+    from sqlalchemy import select
+
+    from app.assistant.models import AssistantAction
+
+    rows = await s.scalars(
+        select(AssistantAction.payload).where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.kind == "dates",
+            AssistantAction.status == "proposed",
+            AssistantAction.target_id != deal_id,
+            AssistantAction.expires_at > now,
+        )
+    )
+    out: set[date] = set()
+    for pl in rows.all():
+        for x in (pl or {}).get("days") or []:
+            try:
+                out.add(date.fromisoformat(x))
+            except (TypeError, ValueError):
+                continue
+    return frozenset(out)
+
+
+def date_candidates(
+    job, deal_id: uuid.UUID, today: date, held: Collection[date] = ()
+) -> list[dict]:
     """공사 날 후보 둘(job_for 결과): 견적서 공사 기간 · 예상 공정표 시작일로 계산 엔진(calc.schedule.free_blocks)이
-    고른 일하는 날. 같은 업체의 다른 공사로 찬 날(job.busy_days: 수락한 날 · 낸 날)이 끼지 않게 잇고, 둘째 후보는
-    첫 후보 일주일 뒤부터예요(1년 안). 값은 이름표(days) 값 꼴 {deal_id, start, days, crew}.
-    my_jobs · 먼저 말 걸기(deal_confirmed) · 오늘 할 일이 같이 쓴다."""
+    고른 일하는 날. 같은 업체의 다른 공사로 찬 날(job.busy_days: 수락한 날 · 낸 날)과 열린 공사 날짜 카드가 잡은 날
+    (held, held_days)이 끼지 않게 잇고, 둘째 후보는 첫 후보 일주일 뒤부터예요(1년 안). 값은 이름표(days) 값 꼴
+    {deal_id, start, days, crew}. my_jobs · 먼저 말 걸기(deal_confirmed) · 오늘 할 일이 같이 쓴다."""
     from app.calc.schedule import WEEKEND, free_blocks
     from app.refprice.holidays import days_off
     from app.schedule.service import AHEAD_DAYS
@@ -859,7 +892,8 @@ def date_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
     tomorrow = today + timedelta(days=1)  # 예상 시작일 그날부터(내일보다 앞이면 내일부터)
     base = max(job.plan_start or tomorrow, tomorrow)
     last = today + timedelta(days=AHEAD_DAYS)
-    blocks = free_blocks(base, count, 2, job.busy_days, days_off(base, last), weekend, until=last)
+    busy = {*job.busy_days, *held}
+    blocks = free_blocks(base, count, 2, busy, days_off(base, last), weekend, until=last)
     return [
         {
             "deal_id": str(deal_id),
@@ -923,11 +957,13 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
 
                 job = await schedule_service.job_for(s, tc.user, r.deal_id, tc.today)
                 # 고객의 날짜 요청이 열려 있으면 고객이 고른 시작일 후보(먼저 말 걸기 dates_requested와 같은 길),
-                # 고른 날이 모두 다른 공사와 겹치면 가장 가까운 빈 날(다른 날 제안)
+                # 고른 날이 모두 다른 공사와 겹치면 가장 가까운 빈 날(다른 날 제안). 열린 다른 공사 날짜 카드가
+                # 잡은 날도 피한다(QA 3차 c6)
+                held = await held_days(s, tc.user.id, r.deal_id, tc.now)
                 got = (
-                    aftercare_tools.request_candidates(job, r.deal_id, tc.today)
+                    aftercare_tools.request_candidates(job, r.deal_id, tc.today, held=held)
                     if job.request is not None
-                    else date_candidates(job, r.deal_id, tc.today)
+                    else date_candidates(job, r.deal_id, tc.today, held=held)
                 )
                 cands = []
                 for c in got:

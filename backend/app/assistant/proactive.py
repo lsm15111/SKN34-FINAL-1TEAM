@@ -14,6 +14,13 @@
 - 점수: 기본 50, 기한 24시간 안 +50(48시간 안 +30), 승인 카드 준비 +20, 돈 · 날짜 결정 +15, 같은 알림 읽음 −30,
   24시간 안 보낸 제안마다 −20, 같은 trigger를 7일 안에 닫음 −30. 70 이상 보냄, 40~69 판정, 40 미만 기록만(held).
   판정을 못 부르면(꺼짐 · 상한 · 실패) 대화 기록(feed)은 보내고 알림(notify)은 기록만 한다.
+  사건 알림(NEWS: 견적서 도착 · 공사 날짜 · 추가 금액 · 업체 빠짐 · 공사 끝의 첫 알림)은 고객이 꼭 알아야 하는 새
+  소식이라 점수 · 판정 없이 보낸다(리드 결정 2026-11-22, QA 3차 c1 P4: 같은 65점 견적서 줄 하나만 판정이 막음).
+  하루 상한 · 밤 · 쉬기 · 멈춤(RULES)은 그대로다.
+- 문장은 무엇 · 얼마 · 누구를 담는다(틀 more · AI 글 검사 kept_facts): 견적서가 여러 곳이면 모든 업체 이름, 추가 금액은
+  금액(업체가 적은 '한 일'은 비서 문장에 넣지 않고 카드 칸에만, policy.vendor_note), 업체가 올린 날짜는 시작일과 고객
+  요청(다른 날짜 · 날짜 바꾸기)의 답인지, 공사 전날 · 1주 전은 붙은 카드(준비물 · 할 일 · 이웃 안내문). AI 글이
+  빠뜨리면 틀을 쓴다(QA 2차 t1 · 3차 c2 · c4).
 - 대상마다 보이는 제안은 하나: 같은 대상의 새 제안을 보내면 앞 것은 expired(replaced).
 """
 
@@ -95,6 +102,8 @@ class Trigger:
     notify: str = ""  # 문장 틀(알림)
     ask: str = ""  # 제안 카드 한 줄(먼저 말 건 문장을 되풀이하지 않게 할 일을 묻는 말)
     soon: str = ""  # 기한이 하루 안일 때 문장 틀(채널과 상관없이, {until}이 있을 때만)
+    # 사실이 더 있으면 쓰는 틀: (바꿀 틀 feed · notify, 있어야 할 사실 이름들, 틀). 위에서부터 60자 안인 첫 것
+    more: tuple[tuple[str, tuple[str, ...], str], ...] = ()
 
 
 TRIGGERS: dict[str, Trigger] = {
@@ -114,6 +123,8 @@ TRIGGERS: dict[str, Trigger] = {
             feed="{vendor_i_ga} 실측 견적서를 보냈어요. 받은 견적서를 견줘 볼까요?",
             notify="받은 실측 견적서를 아직 확인하지 않았어요. 견줘 볼까요?",
             soon="{vendor_i_ga} 보낸 실측 견적서는 {until}까지 유효해요. 견줘 볼까요?",
+            # 두 곳 넘게 왔으면 받은 곳 이름 모두(QA 3차 c2 · c4: 두 곳이 왔는데 한 곳 이름만)
+            more=(("feed", ("quoted",), "{quoted}에서 실측 견적서가 왔어요. 받은 견적서를 견줘 볼까요?"),),
         ),
         Trigger(
             "dates_proposed", "customer", ("dates_proposed",), follow=timedelta(days=2),
@@ -121,6 +132,15 @@ TRIGGERS: dict[str, Trigger] = {
             why="업체가 공사 날짜를 올렸어요", ask="공사 날짜를 볼까요?",
             feed="{vendor_i_ga} 공사 날짜를 올렸어요. 날짜를 확인해 주세요.",
             notify="{vendor_i_ga} 올린 공사 날짜가 아직 수락 전이에요.",
+            # 시작일 · 고객 요청(다른 날짜 · 날짜 바꾸기)의 답인지 · 업체가 바꾸자고 한 것인지(QA 3차 c4 #24)
+            more=(
+                ("feed", ("asked", "start"),
+                 "요청하신 {asked}에 {vendor_i_ga} {start}부터로 답했어요. 확인하고 수락해 주세요."),
+                ("feed", ("change", "start"),
+                 "{vendor_i_ga} 공사 날짜를 {start}부터로 바꾸자고 했어요. 확인해 주세요."),
+                ("feed", ("start",), "{vendor_i_ga} 공사 날짜를 {start}부터로 올렸어요. 확인하고 수락해 주세요."),
+                ("notify", ("asked",), "요청하신 {asked}에 {vendor_i_ga} 올린 날짜가 아직 수락 전이에요."),
+            ),
         ),
         Trigger(
             "work_eve", "customer", channel="notify", state="deal", say="공사 전날 준비물 알려 줘",
@@ -215,7 +235,11 @@ STEPS: dict[str, tuple[str, str]] = {
     "vendor_out": ("실측 요청 뒤 · 요청한 업체가 빠짐", "골라 둔 다른 업체 보기"),
     "extra_added": ("공사 중 · 추가 금액 답 전", "추가 금액 보고 승인 · 거절 고르기"),
     "work_done": ("업체가 공사를 끝냄 · 공사 끝 확인 전", "점검표로 보고 공사 끝 확인하기"),
-    "prep_week": ("공사 날짜 수락 끝 · 공사 일주일 전", "공사 전에 할 일 챙기기"),
+    # 붙은 카드 둘(공사 전 할 일 · 이웃 안내문 초안)을 할 일로(QA 2차 t1: '대화에서 한번 확인해 보실래요?')
+    "prep_week": (
+        "공사 날짜 수락 끝 · 공사 일주일 전",
+        "공사 전에 할 일 챙기고 이웃 안내문 초안 보기",
+    ),
 }
 
 
@@ -260,6 +284,17 @@ def no_24h_penalty(t: Trigger, n: AssistantNudge) -> bool:
     return fresh_event(t, n) or t.name in MUST_SEND
 
 
+# 사건 알림(리드 결정 2026-11-22): 견적서 도착 · 공사 날짜 · 추가 금액 · 업체 빠짐 · 공사 끝은 고객이 꼭 알아야 하는 새
+# 소식이라 점수 · 판정(Haiku 40~69) 없이 보낸다. QA 3차 c1 P4: 같은 65점 견적서 줄 중 하나만 판정이 막았다
+NEWS = frozenset({"quote_sent", "dates_proposed", "extra_added", "vendor_out", "work_done"})
+
+
+def news(t: Trigger, n: AssistantNudge) -> bool:
+    """판정 없이 보내는 사건 알림인지: NEWS 트리거의 첫 알림(무응답 다시 알림 ':notify'는 아님). 하루 상한 · 밤 ·
+    쉬기 · 멈춤(RULES)은 그대로 본다."""
+    return t.name in NEWS and fresh_event(t, n)
+
+
 class JudgeOut(BaseModel):
     send: bool
 
@@ -298,15 +333,50 @@ def _soon(f: Facts) -> bool:
     return f.hours_left is not None and f.hours_left <= SOON_HOURS
 
 
+# 틀 글 길이(먼저 말 건 한 줄, AI 글 검사 SENTENCE_MAX와 같다)
+TEMPLATE_MAX = 60
+
+
+def _fill(raw: str, names: dict) -> str:
+    return " ".join(raw.format_map(_Safe(names)).split())
+
+
 def template(f: Facts) -> str:
+    """정해 둔 틀 글. 기한이 하루 안이면 기한 틀(soon), 사실이 더 있으면 그 사실을 넣은 틀(more, 60자 안인 첫 것)."""
     t = TRIGGERS[f.trigger]
-    raw = t.notify if f.channel == "notify" and t.notify else t.feed or t.notify
+    base = "notify" if (f.channel == "notify" and t.notify) or not t.feed else "feed"
+    raw = t.notify if base == "notify" else t.feed
+    names = {**f.names, "vendor_i_ga": i_ga(f.names["vendor"]) if f.names.get("vendor") else ""}
     h = f.hours_left
     # 기한이 하루 안: 기한을 말한다(유효기간이 오늘인 견적서에 '견줘 볼까요?'만 하지 않게)
     if t.soon and f.names.get("until") and h is not None and 0 <= h <= SOON_HOURS:
-        raw = t.soon
-    names = {**f.names, "vendor_i_ga": i_ga(f.names["vendor"]) if f.names.get("vendor") else ""}
-    return " ".join(raw.format_map(_Safe(names)).split())
+        return _fill(t.soon, names)
+    for ch, keys, more in t.more:
+        if ch == base and all(f.names.get(k) for k in keys):
+            got = _fill(more, names)
+            if len(got) <= TEMPLATE_MAX:
+                return got
+    return _fill(raw, names)
+
+
+# 붙은 카드 말: 공사 전날은 준비물, 1주 전은 공사 전 할 일 · 이웃 안내문(QA 2차 t1: 준비물 카드에 '업체 일정 확인')
+CARD_WORDS: dict[str, tuple[str, ...]] = {"work_eve": ("준비",), "prep_week": ("할 일", "안내문")}
+
+
+def kept_facts(text: str, f: Facts) -> bool:
+    """AI 글이 이 줄의 사실을 담았는지(빠뜨리면 틀을 쓴다): 견적서가 여러 곳이면 모든 업체 이름, 추가 금액은 금액,
+    업체가 올린 날짜는 시작일 · 고객 요청의 답이면 '요청', 공사 전날 · 1주 전은 붙은 카드 말."""
+    n = f.names
+    if n.get("quoted") and not all(x in text for x in n["quoted"].split(" · ")):
+        return False
+    if n.get("won") and n["won"] not in text:
+        return False
+    if f.trigger == "dates_proposed" and n.get("start") and n["start"].split("(")[0] not in text:
+        return False
+    if n.get("asked") and "요청" not in text:
+        return False
+    words = CARD_WORDS.get(f.trigger)
+    return not words or any(w in text for w in words)
 
 
 # 이 길이 이상의 이름 조각이 이름 밖에 있으면 잘린 이름이다('도배' 같은 2자 공정 이름은 빼요)
@@ -333,8 +403,8 @@ def name_cut(text: str, name: str | None) -> bool:
 async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
     """문장 하나(60자 안): Haiku가 쓰고 검사에 걸리거나 못 부르면 틀. (글, 출처 ai · guide)
     검사: vendor.sentence_ok(길이 · 숫자 · 한 일처럼 …) + 업체 이름이 잘리지 않았는지 + 기한이 하루 안인데 '천천히'
-    같은 말을 쓰지 않았는지. 업체 쪽은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린
-    적이 있다(QA r1 c6)."""
+    같은 말을 쓰지 않았는지 + 이 줄의 사실(kept_facts: 여러 곳 이름 · 금액 · 시작일 · 요청의 답 · 붙은 카드)을 담았는지.
+    업체 쪽은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린 적이 있다(QA r1 c6)."""
     from app.agent import llm
     from app.assistant.tools.vendor import sentence_ok
 
@@ -353,7 +423,12 @@ async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
         return template(f), "guide"
     text = " ".join(got.text.split())
     slow = _soon(f) and bool(SLOW.search(text))
-    if not sentence_ok(text, facts) or name_cut(text, f.names.get("vendor")) or slow:
+    if (
+        not sentence_ok(text, facts)
+        or name_cut(text, f.names.get("vendor"))
+        or slow
+        or not kept_facts(text, f)
+    ):
         return template(f), "guide"
     return text, "ai"
 
@@ -423,6 +498,11 @@ async def _visit_ctx(
             .limit(1)
         )
         c.due = _end_of(until) if until else None
+        # 견적서를 보낸 곳(먼저 보낸 곳부터)이 둘 넘으면 이름 모두: 같은 공사의 견적서 줄은 새 줄 하나로 합쳐 보이니
+        # 그 줄 글이 받은 곳을 다 말한다(QA 3차 c2 · c4: 두 곳이 왔는데 한 곳 이름만)
+        quoted = await _quoted(s, v)
+        if len(quoted) > 1:
+            c.names["quoted"] = " · ".join(quoted)
         # 유효기간(문장 사실 · 기한이 하루 안이면 쓰는 틀): '오늘' · '내일' · '12월 3일(목)'
         if until:
             c.names["until"] = (
@@ -447,6 +527,27 @@ async def _visit_ctx(
         if hold is not None:  # 업체 틀: 고객이 고른 반나절
             c.names["picked"] = f"{_md_week(hold.day)} {HALF_KO.get(hold.half, '')}".strip()
     return c
+
+
+async def _quoted(s: AsyncSession, v) -> list[str]:
+    """같은 공사 · 공정에서 실측 견적서를 보내 고객이 고를 수 있는 업체 이름(먼저 보낸 곳부터). 읽기 조인."""
+    from app.quote.models import VendorQuote
+    from app.visit.models import Visit
+
+    first = func.min(VendorQuote.sent_at)
+    rows = await s.execute(
+        select(Visit.vendor_name, first)
+        .join(VendorQuote, VendorQuote.visit_id == Visit.id)
+        .where(
+            Visit.project_id == v.project_id,
+            Visit.trade == v.trade,
+            Visit.status == "quoted",
+            VendorQuote.sent_at.is_not(None),
+        )
+        .group_by(Visit.id, Visit.vendor_name)
+        .order_by(first)
+    )
+    return list(dict.fromkeys(name for name, _ in rows if name))
 
 
 HALF_KO = {"am": "오전", "pm": "오후"}
@@ -504,6 +605,10 @@ async def _deal_ctx(
     if proposal is not None:
         # '12월 14일(월)'(코드 꼴 날짜를 옮기지 않게)
         c.names["start"] = _ko_day(proposal.start_date)
+        if proposal.request_id is not None:  # 고객이 한 요청에 업체가 답한 날짜(QA 3차 c4 #24)
+            c.names["asked"] = "날짜 바꾸기" if proposal.kind == "change" else "다른 날짜"
+        elif proposal.kind == "change":  # 업체가 먼저 바꾸자고 한 날짜(연기)
+            c.names["change"] = "업체가 공사 날짜를 바꾸자고 함"
         c.due = _start_of(proposal.start_date)
         c.follow = timedelta(days=1) if proposal.kind == "change" else None
         return c
@@ -920,16 +1025,17 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         names=c.names,
     )
     points = score(f)
-    if points < JUDGE_AT:
-        await _close(n, "held", "low", score=points)
-        return "held"
-    if points < SEND_AT:
-        yes = await judge(f, n.user_id)
-        if yes is None:
-            yes = channel == "feed"  # 판정을 못 하면 조용한 줄만 보낸다
-        if not yes:
-            await _close(n, "held", "judge", score=points)
+    if not news(t, n):  # 사건 알림은 점수 · 판정 없이 보낸다(점수는 기록만)
+        if points < JUDGE_AT:
+            await _close(n, "held", "low", score=points)
             return "held"
+        if points < SEND_AT:
+            yes = await judge(f, n.user_id)
+            if yes is None:
+                yes = channel == "feed"  # 판정을 못 하면 조용한 줄만 보낸다
+            if not yes:
+                await _close(n, "held", "judge", score=points)
+                return "held"
     text, src = await write(f, n.user_id)
     return await _send(n, t, c, now, text, src, points, channel)
 
@@ -1138,7 +1244,9 @@ async def _build(
             return card.model_dump(mode="json"), live[0].action_id if live else None
         elif t.name == "deal_confirmed":
             job = await schedule_service.job_for(s, user, n.ref_id, today)
-            cands = vendor_tools.date_candidates(job, n.ref_id, today)
+            # 같은 업체의 다른 공사에 열린(아직 안 누른) 공사 날짜 카드가 잡은 날도 피한다(QA 3차 c6: 12.15 이중 예약)
+            held = await vendor_tools.held_days(s, user.id, n.ref_id, now)
+            cands = vendor_tools.date_candidates(job, n.ref_id, today, held=held)
             if cands and job.dates_state in ("waiting", "requested"):
                 offer = propose.vendor_dates_offer(job, n.ref_id, cands[0], now)
     except ToolError:

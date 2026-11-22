@@ -12,6 +12,7 @@
 
 import re
 import uuid
+from collections.abc import Collection
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, Literal
 
@@ -102,6 +103,18 @@ async def deal_of(s: AsyncSession, user: User, pid: uuid.UUID, deal_id: uuid.UUI
     if t is None:
         raise ToolError("not_found", "공사를 찾을 수 없어요.")
     return t.deal
+
+
+def review_said(deals, ended: dict) -> list[str]:
+    """끝난 공사 중 아직 리뷰를 안 쓴 공사가 있으면 리뷰 안내 한 줄(QA 2차 t1 X4: 자동으로 끝난 뒤 리뷰 안내 없음)."""
+    return [REVIEW_SAID] if any(d.review_open for d in deals if d.id in ended) else []
+
+
+def auto_line(d) -> str | None:
+    """확인 기다리는 공사(checking)의 자동 끝 날 한 줄(계산 엔진 auto_done_at). 없으면 None."""
+    if d.auto_done_at is None:
+        return None
+    return f"{d.vendor_name} {trade_ko(d.trade)} 공사는 {ko_day(_seoul_day(d.auto_done_at))}에 자동으로 끝나요."
 
 
 async def ended_lines(s: AsyncSession, deals) -> dict[uuid.UUID, str]:
@@ -479,8 +492,11 @@ def work_check_offer(
     아니면 지금 상태 그대로 까닭을 준다(how: 끝난 공사가 어떻게 끝났는지, aftercare.done_how). 자동으로 끝난 공사에
     '업체가 아직 올리지 않았어요'라고 하지 않게."""
     if d.status != "checking":
-        if d.status == "done":
-            raise ToolError("already_done", NOT_CHECKING["auto" if how == "auto" else "checked"])
+        if d.status == "done":  # 어떻게 끝났는지 + 리뷰를 쓸 수 있으면 리뷰 안내(QA 2차 t1 X4)
+            said = NOT_CHECKING["auto" if how == "auto" else "checked"]
+            if getattr(d, "review_open", False):
+                said = f"{said} {REVIEW_SAID}"
+            raise ToolError("already_done", said)
         if d.status == "fixing":
             raise ToolError("fixing", NOT_CHECKING["fixing"])
         raise ToolError("not_checking", NOT_CHECKING["early"])
@@ -573,11 +589,14 @@ def again_offer(v, today: date, now: datetime) -> dict:
     }
 
 
-def request_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
+def request_candidates(
+    job, deal_id: uuid.UUID, today: date, held: Collection[date] = ()
+) -> list[dict]:
     """고객의 다른 날짜 · 날짜 바꾸기 요청에 답할 공사 날 후보(이름표 days 값 꼴). 고객이 고른 시작일마다
-    vendor_tools.date_candidates(같은 업체의 다른 공사로 찬 날 빼기)로 날을 세고, 시작일이 고객이 고른 날인 후보만
-    쓴다. 고른 날이 모두 막혔으면(calc.schedule.wishes_blocked: schedule service가 다른 날 제안을 받는 것과 같은 판정)
-    가장 이른 고른 날부터 가장 가까운 빈 날(다른 날 제안, alt=True)을 쓴다. kind · request_id를 같이 둔다(실행이 넘긴다)."""
+    vendor_tools.date_candidates(같은 업체의 다른 공사로 찬 날 · 열린 공사 날짜 카드가 잡은 날 held 빼기)로 날을 세고,
+    시작일이 고객이 고른 날인 후보만 쓴다. 열린 카드가 잡은 날 때문에만 막혔으면 그 카드를 빼고 다시 센다. 고른 날이
+    모두 다른 공사로 막혔으면(calc.schedule.wishes_blocked: schedule service가 다른 날 제안을 받는 것과 같은 판정) 가장
+    이른 고른 날부터 가장 가까운 빈 날(다른 날 제안, alt=True)을 쓴다. kind · request_id를 같이 둔다(실행이 넘긴다)."""
     from app.assistant.tools import vendor as vendor_tools
     from app.calc.schedule import WEEKEND, wishes_blocked
     from app.refprice.holidays import days_off
@@ -587,25 +606,30 @@ def request_candidates(job, deal_id: uuid.UUID, today: date) -> list[dict]:
     if r is None:
         return []
     kind = "change" if job.status == "scheduled" else "initial"
-    out: list[dict] = []
     wishes = sorted(w for w in set(r.wish_dates) if w > today)
-    for w in wishes:
-        probe = job.model_copy(update={"plan_start": w})
-        for c in vendor_tools.date_candidates(probe, deal_id, today):
-            if c["start"] == w.isoformat() and all(x["start"] != c["start"] for x in out):
-                out.append({**c, "kind": kind, "request_id": str(r.id)})
+
+    def wished(keep: Collection[date]) -> list[dict]:
+        got: list[dict] = []
+        for w in wishes:
+            probe = job.model_copy(update={"plan_start": w})
+            for c in vendor_tools.date_candidates(probe, deal_id, today, held=keep):
+                if c["start"] == w.isoformat() and all(x["start"] != c["start"] for x in got):
+                    got.append({**c, "kind": kind, "request_id": str(r.id)})
+        return got
+
+    out = wished(held) or (wished(()) if held else [])
     last = today + timedelta(days=AHEAD_DAYS)
     count = max(job.quote.days or job.need.days, 1)  # date_candidates와 같은 날 수
     weekend = () if job.weekend_work else WEEKEND
     blocked = wishes_blocked(
         r.wish_dates, count, today, job.busy_days, days_off(today, last), weekend, last
     )
-    # 고른 날이 모두 막힘: 다른 날 제안(가장 이른 고른 날부터, 없으면 예상 시작일부터)
+    # 고른 날이 모두 다른 공사로 막힘: 다른 날 제안(가장 이른 고른 날부터, 없으면 예상 시작일부터)
     if not out and blocked:
         probe = job.model_copy(update={"plan_start": wishes[0]}) if wishes else job
         out = [
             {**c, "kind": kind, "request_id": str(r.id), "alt": True}
-            for c in vendor_tools.date_candidates(probe, deal_id, today)
+            for c in vendor_tools.date_candidates(probe, deal_id, today, held=held)
         ]
     return out
 
@@ -709,7 +733,8 @@ class CheckListIn(BaseModel):
     description="stage before는 공사 전 할 일(관리사무소에 물어볼 것 · 이웃 안내 · 짐 정리 · 직접 할 일 마감)이고, "
     "stage after는 공사 끝 점검표(국토교통부 하자판정기준의 도배 · 목공 항목을 볼 곳으로)예요. 하자인지는 판정하지 "
     "않아요. 고객이 공사 전에 할 일을 물으면 before로, 업체가 공사를 끝냈다고 했거나 고객이 무엇을 봐야 하는지 "
-    "물으면 after로 써요. after는 확인 기다리는 공사 이름표(d…)도 받아요.",
+    "물으면 after로 써요. 확인을 못 눌렀거나 끝난 공사가 어떻게 됐는지(자동으로 끝났는지 · 리뷰) 물을 때도 after로 "
+    "써요. after는 확인 기다리는 공사 이름표(d…)와 끝난 공사가 어떻게 끝났는지(자동 끝 날 · 리뷰)도 줘요.",
     model=CheckListIn,
     schema=obj(
         {"trade": TRADE, "stage": {"type": "string", "enum": ["before", "after"]}},
@@ -755,12 +780,13 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
                     "due_at": cards.seoul_text(d.auto_done_at),
                 }
             )
-            if d.auto_done_at is not None:
-                day = ko_day(_seoul_day(d.auto_done_at))
-                lines.append(f"{d.vendor_name} {trade_ko(d.trade)} 공사는 {day}에 자동으로 끝나요.")
+            if (got := auto_line(d)) is not None:
+                lines.append(got)
         elif a.stage == "before" and d.status == "scheduled" and d.start_date:
             if d.start_date > tc.today:
                 lines.append(f"{trade_ko(d.trade)} 공사가 {ko_day(d.start_date)}에 시작해요.")
+    # 끝난 공사에 리뷰를 쓸 수 있으면 리뷰 안내 한 줄(QA 2차 t1 X4)
+    lines += review_said([t.deal for t in sch.trades], ended)
     card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra, home)
     model = {
         "title": card.data["title"],
@@ -1015,6 +1041,19 @@ def fix_said(text: str) -> bool:
     )
 
 
+# 공사 끝 확인을 못 눌렀거나 자동으로 끝났는지 묻는 말(QA 2차 t1 X4 '확인을 못 눌렀는데 어떻게 됐어요?' · X5)
+DONE_ASK = re.compile(
+    r"자동\S{0,3}\s{0,2}끝|확인\S{0,2}\s{0,2}(?:못|안)\s{0,2}눌|"
+    r"끝\S{0,2}\s{0,2}확인\S{0,2}\s{0,2}(?:못|안)\s{0,2}(?:했|하|해|눌)"
+)
+
+
+def done_asked(text: str) -> bool:
+    """공사 끝 확인을 못 눌렀거나 자동으로 끝났는지 묻는 말인지('끝' 낱말이 함께 있어야 해요)."""
+    t = text or ""
+    return bool(DONE_ASK.search(t) and "끝" in t)
+
+
 def again_said(text: str) -> bool:
     """한 번 더 요청을 부탁하는 말인지(견적서 · 날짜를 다시 요청하는 말 · 묻는 말은 아니에요)."""
     t = text or ""
@@ -1040,9 +1079,12 @@ async def _free_extra(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     return EXTRA_MADE[answer], out
 
 
-async def _free_work(tc: ToolCtx, text: str, fix: bool) -> tuple[str, ToolOut]:
+async def _free_work(
+    tc: ToolCtx, text: str, fix: bool, *, asked: bool = False
+) -> tuple[str, ToolOut]:
     """공사 끝 확인 · 남은 일 말 → 점검표 + 승인 카드. 확인 기다리는 공사가 없으면 지금 상태 그대로(자동으로 끝남 ·
-    확인해서 끝남 · 남은 일 하는 중, 아니면 아직 안 올림)를 말한다."""
+    확인해서 끝남 · 남은 일 하는 중, 아니면 아직 안 올림) + 리뷰 안내를 말한다. asked(어떻게 됐는지 묻는 말)면 확인
+    기다리는 공사의 자동 끝 날도 먼저 말한다."""
     pid = pid_of(tc)
     async with SessionLocal() as s:
         sch = await _schedule(s, tc.user, pid, tc.today)
@@ -1051,9 +1093,8 @@ async def _free_work(tc: ToolCtx, text: str, fix: bool) -> tuple[str, ToolOut]:
     if not checking:
         trades = [t.deal.trade for t in sch.trades] or ["dobae"]
         card = check_card(f"after-{pid}", "after", trades, [])
-        review = any(t.deal.review_open for t in sch.trades if t.deal.id in ended)
-        lines = [*list(ended.values())[:2], *([REVIEW_SAID] if review else [])]  # 세 문장 안
-        return " ".join(lines) or NO_CHECKING, ToolOut(data={}, cards=[card])
+        lines = [*list(ended.values())[:2], *review_said([t.deal for t in sch.trades], ended)]
+        return " ".join(lines) or NO_CHECKING, ToolOut(data={}, cards=[card])  # 세 문장 안
     d = checking[0]
     card = done_card(d, pid, tc.refs)
     note = " ".join(text.split())[:300] if fix else None
@@ -1064,7 +1105,9 @@ async def _free_work(tc: ToolCtx, text: str, fix: bool) -> tuple[str, ToolOut]:
     except ToolError as e:
         return e.message, ToolOut(data={}, cards=[card])
     out.cards = [card, *out.cards]
-    return (FIX_MADE if fix else WORK_MADE), out
+    if fix:
+        return FIX_MADE, out
+    return " ".join(x for x in (auto_line(d) if asked else None, WORK_MADE) if x), out
 
 
 async def _free_check(tc: ToolCtx) -> tuple[str, ToolOut]:
@@ -1135,6 +1178,9 @@ async def free_answer(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     if EXTRA.search(t) and (got := await _free_extra(tc, t)) is not None:
         return got
     fix = fix_said(t)
+    # 공사 끝 확인을 못 눌렀는데 어떻게 됐는지 · 자동으로 끝났는지 묻는 말: 지금 상태(자동 끝 날 · 리뷰)를 먼저
+    if not fix and done_asked(t):
+        return await _free_work(tc, t, False, asked=True)
     if fix or WORK_DONE.search(t):
         return await _free_work(tc, t, fix)
     if CHECK_SHOW.search(t):
