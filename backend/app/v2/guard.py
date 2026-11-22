@@ -8,6 +8,7 @@
   v2 · v3 답 파이프라인 안쪽 검사(check · _bad_number)는 그대로다.
 """
 
+import json
 import math
 import re
 from bisect import bisect_left
@@ -159,6 +160,9 @@ def check(text: str, allowed_text: str, calc_text: str | None = None) -> Checked
 #   같은 월 · 일이 날짜로 있으면 통과. 없으면 옛 검사처럼 월 · 일 숫자를 따로 본다. 요일 없는 '12.15'는 근거 날짜일 때만
 # - 그대로: 근거 없는 돈 숫자, 기간(일 · 주 · 개월) · % 같은 그 밖 숫자(근거 값 그대로), 한글 금액(HANGUL_MONEY),
 #   표준 대비 %(부르는 쪽 policy.VS_STANDARD)
+# - 금액 기준(고침 3차 A2): 근거 금액에 기준 꼬리표(basis)가 있으면 합 · 차는 같은 기준끼리만 다시 만든다. 공급가
+#   (부가세 별도) ± 부가세 포함은 만들지 않고(QA r3 s5: 부가세 포함 합계 − 공급가 벽지 줄), 부가세 몫은 어느 쪽과도
+#   된다(공급가 + 부가세 = 합계). 꼬리표가 없는 값(고객 말 · 턴 사실)은 지금처럼 어느 쪽과도 된다
 
 APPROX = re.compile(r"(?<![가-힣])약\s?\d|쯤|정도|안팎|가량")
 BAND = re.compile(r"^대(?!신)")  # '300만 원대'의 대(띄어 쓴 '원 대신'은 아님)
@@ -191,6 +195,106 @@ DATE_BARE = re.compile(rf"(?<![\d.,])(?P<m>{_MO})\.(?P<d>{_DA})(?![\d.,])")  # �
 
 Token = tuple[int, int, int, int]  # (글 자리 시작, 끝, 월, 일)
 
+# ---- 금액 기준 꼬리표(basis) ----
+# 도구 결과의 돈은 부가세 포함이 기본이고(K 결정 2), 공급가 칸은 이름 · 글에 '공급가'를 붙인다. 읽는 곳:
+# - JSON 도구 결과: 키 supply · '공급가' · *_supply는 공급가, vat · '부가세'는 부가세 몫. 같은 묶음의 label · name ·
+#   line · title 글이 '공급가 · 부가세 별도'면 그 묶음 금액이 공급가, '부가세 포함'이면 포함. 그 밖 금액은 포함(기본)
+# - 글(고객 말 · 턴 사실 · 요약 줄): '공급가 913,665원' · '913,665원(공급가)' · '부가세 22,000원' · '부가세 포함 …'
+#   처럼 금액 바로 앞뒤의 낱말. 낱말이 없으면 기준 모름(어느 쪽과도 된다)
+SUPPLY, INCL, VAT, ANY = "supply", "incl", "vat", "any"
+_INCL_WORD = re.compile(r"부가세\s*포함|VAT\s*포함", re.IGNORECASE)
+_SUPPLY_WORD = re.compile(r"공급가|부가세\s*(?:별도|제외)|VAT\s*별도", re.IGNORECASE)
+_VAT_ONLY = re.compile(r"^\s*(?:부가세|VAT)(?:\s*(?:액|몫|금액))?\s*$", re.IGNORECASE)
+# 금액 바로 앞(사이에 낱말 하나 · 조사까지): '부가세 포함 합계 1,947,460원' · '공급가 220,000원' · '부가세 22,000원'
+_TAG_BEFORE = re.compile(
+    r"(공급가|부가세\s*(?:별도|제외|포함)|부가세)\s*(?:[가-힣]{1,4}\s*)?(?:은|는|이|가|[:：])?\s*$"
+)
+# 금액 바로 뒤: '913,665원(공급가)' · '2,952,491원, 부가세 포함'(뒤에 다른 금액이 이어지면 아님)
+_TAG_AFTER = re.compile(
+    r"^\s*(?:\(\s*(공급가|부가세\s*(?:별도|제외|포함))\s*\)|[,·]?\s*(부가세\s*(?:별도|제외|포함))(?!\s*\d))"
+)
+# 묶음 기준을 읽는 글 칸(vat_way는 업체가 적은 방식이라 아님)
+_TAG_KEYS = ("label", "name", "line", "title")
+
+
+def _word_tag(word: str) -> str | None:
+    if _INCL_WORD.search(word):
+        return INCL
+    if _SUPPLY_WORD.search(word):
+        return SUPPLY
+    return VAT if _VAT_ONLY.match(word) else None
+
+
+def _key_tag(key: str) -> str | None:
+    k = key.lower()
+    if "공급가" in k or k == "supply" or k.startswith("supply_") or k.endswith("_supply"):
+        return SUPPLY
+    if k == "vat" or k.startswith("vat_won") or ("부가세" in k and "포함" not in k):
+        return VAT
+    return INCL if "부가세" in k else None
+
+
+def _put_tag(out: dict[float, set[str]], v: float, tag: str) -> None:
+    out.setdefault(round(v, 4), set()).add(tag)
+
+
+def _text_tags(text: str, inherited: str | None, default: str, strong: dict, weak: dict) -> None:
+    """글의 금액마다 기준: 바로 앞뒤 낱말 → 물려받은 묶음 기준 → 기본(default, 약한 꼬리표)."""
+    for m in NUM.finditer(text):
+        v = _val(m.group(1), m.group(2))
+        unit = (m.group(2) or "").replace(" ", "")
+        if v is None or v < PART_MIN or not (unit in MONEY_UNITS or not unit):
+            continue
+        before = _TAG_BEFORE.search(text[max(0, m.start() - 16) : m.start()])
+        after = _TAG_AFTER.match(text[m.end() :])
+        word = (before and before.group(1)) or (after and (after.group(1) or after.group(2)))
+        tag = (_word_tag(word) if word else None) or inherited
+        _put_tag(strong if tag else weak, v, tag or default)
+
+
+def _json_tags(value, inherited: str | None, strong: dict, weak: dict) -> None:
+    """JSON 도구 결과의 금액마다 기준(키 · 같은 묶음 글 칸 · 기본은 부가세 포함)."""
+    if isinstance(value, dict):
+        own = inherited
+        for k in _TAG_KEYS:
+            if isinstance(value.get(k), str) and (t := _word_tag(value[k])):
+                own = t
+                break
+        for k, x in value.items():
+            kt = _key_tag(str(k)) or own
+            if isinstance(x, int | float) and not isinstance(x, bool):
+                if x >= PART_MIN:
+                    _put_tag(strong if kt else weak, float(x), kt or INCL)
+            else:
+                _json_tags(x, kt, strong, weak)
+    elif isinstance(value, list):
+        for x in value:
+            _json_tags(x, inherited, strong, weak)
+    elif isinstance(value, str):
+        _text_tags(value, inherited, INCL, strong, weak)
+
+
+def basis(pieces: list[str]) -> dict[float, frozenset[str]]:
+    """허용 글 조각들 → 금액마다 기준 꼬리표. JSON으로 읽히는 조각은 도구 결과(기본 부가세 포함), 그 밖은 글(기본 모름).
+    같은 값에 낱말 · 키로 읽은 꼬리표(강함)가 있으면 기본값(약함)은 보지 않는다."""
+    strong: dict[float, set[str]] = {}
+    weak: dict[float, set[str]] = {}
+    for piece in pieces:
+        try:
+            got = json.loads(piece)
+        except (TypeError, ValueError):
+            got = None
+        if isinstance(got, dict | list):
+            _json_tags(got, None, strong, weak)
+        else:
+            _text_tags(piece or "", None, ANY, strong, weak)
+    return {v: frozenset(strong.get(v) or weak[v]) for v in {*strong, *weak}}
+
+
+def mixable(a: frozenset[str], b: frozenset[str]) -> bool:
+    """두 근거 금액을 더하거나 빼도 되는지: 공급가와 부가세 포함만 섞지 않는다(기준 모름 · 부가세 몫은 어느 쪽과도)."""
+    return any({x, y} != {SUPPLY, INCL} for x in a for y in b)
+
 
 @dataclass(frozen=True)
 class Ground:
@@ -218,9 +322,10 @@ def _tokens(text: str) -> list[Token]:
     return out
 
 
-def ground(text: str) -> Ground:
-    """허용 글 → 근거(옛 검사 값 · 파생 값 · 어림 견줄 값 · 날짜)."""
+def ground(text: str, tags: dict[float, frozenset[str]] | None = None) -> Ground:
+    """허용 글 → 근거(옛 검사 값 · 파생 값 · 어림 견줄 값 · 날짜). tags(basis)를 주면 합 · 차는 같은 기준끼리만."""
     text = text or ""
+    tags = tags or {}
     money: dict[float, None] = {}
     areas: set[float] = set()
     for m in NUM.finditer(text):
@@ -234,10 +339,12 @@ def ground(text: str) -> Ground:
             money.setdefault(v)
     areas.update(float(x) for x in AREA_KEY.findall(text))
     parts = list(money)[:MONEY_MAX]
+    anyway = frozenset({ANY})
     derived: set[float] = set()
     for i, a in enumerate(parts):
         for b in parts[i + 1 :]:
-            derived.update((a + b, abs(a - b)))
+            if mixable(tags.get(round(a, 4), anyway), tags.get(round(b, 4), anyway)):
+                derived.update((a + b, abs(a - b)))
     for a in parts:
         if a >= LOOSE_MIN:
             derived.update(a / p for p in areas if 0 < p <= AREA_MAX)

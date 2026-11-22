@@ -9,7 +9,7 @@ import asyncio
 import pytest
 
 from app.assistant import policy
-from app.assistant.runtime import claims_done, recent_ends
+from app.assistant.runtime import claims_done, recent_said
 from app.assistant.schemas import CardOut
 from tests.test_v4_assistant_talk import gate
 from tests.test_v4_assistant_talk import run as run_gate
@@ -18,13 +18,13 @@ from tests.test_v4_assistant_talk import run as run_gate
 
 
 def test_answer_asked_again_is_not_dropped_as_a_repeat():
-    ends = recent_ends(
+    said = recent_said(
         [
             {"role": "user", "content": "공사 언제 시작해요?"},
             {"role": "assistant", "content": "확정 공정표를 봤어요. 공사는 12월 14일에 시작해요."},
         ]
     )
-    g, sent = gate("12월 14일 2026-12-14", ends=ends)
+    g, sent = gate("12월 14일 2026-12-14", said=said)
     run_gate(g, "다시 알려 드릴게요. 공사는 12월 14일에 시작해요.")  # 고객: '언제 시작한다고요?'
     assert sent == ["다시 알려 드릴게요.", " 공사는 12월 14일에 시작해요."]
 
@@ -45,14 +45,14 @@ def test_opposite_or_other_kind_words_are_not_the_same_line(a, b):
 
 
 def test_changed_fact_at_the_end_is_sent():
-    g, sent = gate(ends=["이번 주 토요일 오전 실측은 가능해요."])
+    g, sent = gate(said=["이번 주 토요일 오전 실측은 가능해요."])
     run_gate(g, "업체 답을 다시 봤어요. 이번 주 토요일 오전 실측은 불가능해요.")
     assert sent == ["업체 답을 다시 봤어요.", " 이번 주 토요일 오전 실측은 불가능해요."]
 
 
 def test_same_nag_at_the_end_is_still_dropped():
     nag = "결도배 실측 승인 카드를 확인하고 눌러 주세요."
-    g, sent = gate(ends=[nag])
+    g, sent = gate(said=[nag])
     run_gate(g, f"콘센트는 전기 공사업체가 옮겨요. {nag}", opened={"visit_slot"})
     assert sent == ["콘센트는 전기 공사업체가 옮겨요."]
 
@@ -79,19 +79,16 @@ def test_review_examples_are_not_cut_any_more():
     ]
 
 
-def test_very_long_answer_keeps_questions_and_next_steps():
+def test_very_long_answer_keeps_only_the_last_question():
+    """넘친 문장은 마지막 묻는 말 하나만 끝에 보낸다(고침 3차 A2 결정 4: 다음 할 일 · 물음을 여럿 몰아 붙이지 않음)."""
     g, sent = gate()
     run_gate(
         g,
         "하나예요. 둘이에요. 셋이에요. 넷이에요. 다섯이에요. 여섯이에요. "
         "업체 카드에서 골라 주세요. 덧붙이는 말이에요. 실측은 무슨 요일이 편하세요? 편한 시간도 알려 주세요.",
     )
-    assert sent[6:] == [
-        " 업체 카드에서 골라 주세요.",
-        " 실측은 무슨 요일이 편하세요?",
-        " 편한 시간도 알려 주세요.",
-    ]
-    assert g.cut == 1 and "길이 상한" in g.dropped
+    assert sent[6:] == [" 편한 시간도 알려 주세요."]
+    assert g.cut == 3 and "길이 상한" in g.dropped
 
 
 def test_vendor_or_compare_card_answer_is_not_cut():

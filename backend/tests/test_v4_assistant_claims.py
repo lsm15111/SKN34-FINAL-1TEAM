@@ -1,6 +1,7 @@
-"""v4 비서 말과 행동 맞추기: 모델 글이 승인 카드를 만들었다 · 만들어 드린다 · 눌러 달라고 하면 이 턴에 제안 도구가 카드를
-만들었거나 그 카드가 열려 있을 때만 보낸다(아니면 정직한 한 줄) · 조건 · 물음이 붙은 제안은 그대로 · 평형('34평')과
-면적 기준(계약서 · 타입의 ㎡는 전용)으로 집 정보 승인 카드를 만든다(기준 없는 ㎡는 도구 오류). 유료 호출 0회(Claude 대본)."""
+"""v4 비서 말과 행동 맞추기: 모델 글이 승인 카드를 만들었다 · 눌러 달라고 하면 이 턴에 제안 도구가 카드를 만들었거나
+그 카드가 열려 있을 때만 보낸다(아니면 정직한 한 줄) · 앞으로 하겠다는 말('만들어 드릴게요') · 조건 · 물음이 붙은 제안은
+그대로(고침 3차 A2) · 평형('34평')과 면적 기준(계약서 · 타입의 ㎡는 전용)으로 집 정보 승인 카드를 만든다(기준 없는 ㎡는
+도구 오류). 유료 호출 0회(Claude 대본)."""
 
 import pytest
 from v3_kb import repo_index
@@ -94,10 +95,20 @@ def test_card_words_without_a_card_are_made_honest(api, script):
     )
     ev = ok(ask(api, pid, "면적 다시 봐 주세요"))
     text = tokens(ev)
-    assert "만들어 드릴게요" not in text and "눌러 주세요" not in text
-    assert policy.CARD_NOT_MADE in text and "표준견적서도 같이 바뀌어요" in text
+    # 앞으로 하겠다는 말은 그대로 두고(고침 3차 A2), 누를 것이 없는데 눌러 달라는 말만 정직한 한 줄로
+    assert "만들어 드릴게요" in text and "눌러 주세요" not in text
+    assert policy.NO_CARD in text and "표준견적서도 같이 바뀌어요" in text
     (saved,) = query("select text from chat_messages where role = 'assistant'")
-    assert "만들어 드릴게요" not in saved["text"]
+    assert "눌러 주세요" not in saved["text"]
+    # 이 턴에 만들었다는 말(지난 일)은 그대로 정직한 한 줄로 바꾼다
+    script(
+        [
+            {"tool_calls": [{"id": "g", "name": "get_home", "input": {}}]},
+            {"text": "면적을 고치는 승인 카드를 만들었어요. 표준견적서도 같이 바뀌어요."},
+        ]
+    )
+    text = tokens(ok(ask(api, pid, "면적 고쳐 주세요")))
+    assert "만들었어요" not in text and policy.CARD_NOT_MADE in text
 
 
 def test_card_words_with_a_card_or_an_offer_stay(api, script):
@@ -127,8 +138,14 @@ def test_card_words_with_a_card_or_an_offer_stay(api, script):
     ("text", "kind"),
     [
         ("승인 카드를 만들었어요.", "made"),
-        ("면적을 고치는 승인 카드를 만들어 드릴게요.", "promise"),
+        ("면적을 고치는 승인 카드를 만들어 뒀어요.", "made"),
+        ("면적을 고치는 승인 카드를 만들어 드릴게요.", None),  # 앞으로 하겠다는 말(고침 3차 A2)
+        ("날짜가 정해지면 카드로 준비해 둘게요.", None),
         ("카드를 확인하고 눌러 주세요.", "press"),
+        ("[맞아요, 저장]을 눌러 주세요.", "press"),
+        ("요청 카드는 아까 눌러 주셨어요.", None),  # 지난 일
+        ("결과 카드의 링크를 눌러 보세요.", None),  # 승인 카드가 아닌 것
+        ("카드의 [채팅 열기]를 눌러 물어보세요.", None),
         ("카드에서 수락을 눌러 주세요.", "press"),
         ("버튼을 누르기 전에는 보내지지 않아요.", None),  # 설명은 눌러 달라는 말이 아니다
         ("기준을 알려 주시면 카드를 만들어 드릴게요.", None),
@@ -187,6 +204,6 @@ def test_press_and_made_words_change_only_when_surely_wrong():
 
 def test_card_claim_names_the_kind():
     assert policy.card_claim("실측 요청 카드를 만들었어요.")[1] == {"visit_request"}
-    assert policy.card_claim("면적을 고치는 카드를 만들어 드릴게요.")[1] == {"home_info"}
+    assert policy.card_claim("면적을 고치는 카드를 만들어 뒀어요.")[1] == {"home_info"}
     assert "date_change" in policy.card_claim("날짜 바꾸기 요청 카드를 만들었어요.")[1]
     assert policy.card_claim("카드를 만들었어요.")[1] == set()

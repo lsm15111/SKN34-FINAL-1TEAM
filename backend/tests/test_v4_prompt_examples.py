@@ -138,16 +138,16 @@ def problems(a: dict) -> list[str]:
                 out.append(f"{why}: {s[:30]}")
         if runtime.claims_done(s):
             out.append(f"승인 없이 한 일처럼 말함: {s[:30]}")
+    # 길이 상한(runtime): 보통 6문장, '길어도 돼요' 예시(소개 · 비교)는 8문장. 넘친 문장은 마지막 묻는 말 하나만 남는다
     n = len(sents)
-    if not a["long"] and not (
-        n <= policy.TALK_LEAD or (n == policy.TALK_LEAD + 1 and policy.next_step(sents[-1]))
-    ):
+    lead = policy.LONG_LEAD if a["long"] else policy.TALK_LEAD
+    if not (n <= lead or (n == lead + 1 and policy.asks(sents[-1]))):
         out.append(f"길이 상한을 넘음({n}문장)")
     return out
 
 
 def claim_misses(a: dict) -> list[str]:
-    """카드를 만들었다 · 만들어 드린다 · 눌러 달라는 말이 그 예시에서 만든 · 열린 · 보인 카드와 맞지 않는 문장."""
+    """카드를 만들었다 · 눌러 달라는 말이 그 예시에서 만든 · 열린 · 보인 카드와 맞지 않는 문장."""
     miss = []
     for s in sl.sentences(a["text"]):
         c = policy.card_claim(s)
