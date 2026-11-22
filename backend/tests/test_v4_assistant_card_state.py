@@ -119,7 +119,8 @@ def test_diy_card_and_visit_request_card_stay_open_together(api, script, monkeyp
 
 def test_diy_approval_leaves_the_vendor_out_line_and_its_card(api, script, monkeypatch):
     """업체 빠짐 줄의 실측 요청 카드는 직접 할 일 카드를 만들어도 그대로이고, 직접 할 일을 실행해도 그 줄을
-    '완료'(acted)로 닫지 않는다(다른 업체를 잇지 않았다)."""
+    '완료'(acted)로 닫지 않는다(다른 업체를 잇지 않았다). 실행하면 그 카드는 같은 업체 · 같은 조건에 바뀐 직접 할
+    일을 넣은 새 판으로 바뀐다(QA r3 s6 리드 결정 11-22, 예전 기대: 옛 카드 그대로)."""
     quiet(monkeypatch)
     maru = vendor(api, "maru@mitjip.test", "마루와벽")
     vendor(api, "gyeol@mitjip.test", "결도배")
@@ -138,7 +139,11 @@ def test_diy_approval_leaves_the_vendor_out_line_and_its_card(api, script, monke
     r = approve(api, d["action_id"], seen=d["target_ver"])
     assert r.status_code == 200 and r.json()["status"] == "executed", r.text
     assert line(n["id"]) == ("sent", None)
-    assert action(n["action_id"])["status"] == "proposed"
+    old = action(n["action_id"])
+    assert (old["status"], old["result"]["reason"]) == ("expired", "replaced")
+    new = action(old["result"]["replaced_by"])
+    assert new["status"] == "proposed" and new["payload"]["diy"] == ["clean"]
+    assert new["payload"]["vendor_ids"] == old["payload"]["vendor_ids"]
 
 
 # ---- B5 · L4: 먼저 말 걸기 카드 멱등 키 ----

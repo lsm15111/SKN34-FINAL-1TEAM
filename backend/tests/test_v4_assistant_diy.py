@@ -1,6 +1,7 @@
 """v4 반셀프 직접 할 일: 칩(project.diy, 시험은 set_diy로 넣어요) → 공정표 '고객이 직접' 줄 · 오늘 할 일(7일 안 마감) ·
 공사 1주 전 · 공사 전날 · 실측 요청 '업체에 알릴 것'(승인하면 요청에 고정) · 업체 브리핑(자료) · diy_plan 도구 ·
-무료 모드('직접 할 일 알려 줘' · '페인트 언제 칠해요?'). 칩이 기억 diy 글보다 먼저예요. 유료 호출 0회(Claude 대본)."""
+무료 모드('직접 할 일 알려 줘' · '페인트 언제 칠해요?'). 원본은 칩뿐이에요(기억 diy 글은 쓰지 않아요, QA r3 s6).
+유료 호출 0회(Claude 대본)."""
 
 import json
 import re
@@ -269,8 +270,8 @@ def test_visit_request_tells_vendor_and_fixes_list_on_request(api):
     (pl,) = query("select payload from assistant_actions where id = $1", uuid.UUID(a["action_id"]))
     payload = json.loads(pl["payload"]) if isinstance(pl["payload"], str) else pl["payload"]
     assert payload["diy"] == ["paint", "outlet"]
-    # 승인 전에 칩을 바꿔도 요청에는 고객이 본 목록이 남아요(요청 때 고정)
-    chips(api, pid, ["light"])
+    # 승인하면 고객이 본 목록이 요청에 고정돼요. 승인 전에 칩을 바꾸면 보내지 않고 새 판 카드를 만들어요(QA r3 s6
+    # 리드 결정 11-22, 예전 기대는 '옛 목록 그대로 보냄' → test_v4_r3_b1_diy가 봐요)
     r = approve(api, a["action_id"])
     assert r.status_code == 200 and r.json()["status"] == "executed", r.text
     (v,) = query("select id, vendor_id, diy from visits")
@@ -356,13 +357,11 @@ def test_free_mode_not_asked_none_memory_and_chips_first(api):
     # 준비물만 물으면(직접 할 일이 없으면) 원래 길잡이로
     ev = ok(ask(api, pid, "준비물 알려 주세요"))
     assert not [c for c in cards_of(ev, "knowledge") if c["data"]["title"] == "직접 할 일 준비물"]
-    # 기억 diy 글(칩 전): 그 글의 일로
+    # 기억 diy 글(칩 전)은 원본이 아니라 고른 일로 채우지 않아요(QA r3 s6 리드 결정 11-22, 예전 기대: 그 글의 일로)
     remember(api, pid, "diy", "페인트는 제가 직접 칠할게요")
     ev = ok(ask(api, pid, "직접 할 일 알려 줘"))
-    (card,) = [c for c in cards_of(ev, "knowledge") if c["data"]["title"] == "직접 할 일"]
-    (only,) = card["data"]["checklist"]
-    assert only["label"].startswith("페인트(문틀 · 몰딩) 칠하기 · ")
-    # 칩이 기억보다 먼저예요
+    assert said(ev) == diy_tools.FREE_NOT_ASKED
+    # 칩이 원본이에요
     chips(api, pid, ["light"])
     ev = ok(ask(api, pid, "직접 할 일 알려 줘"))
     (card,) = [c for c in cards_of(ev, "knowledge") if c["data"]["title"] == "직접 할 일"]

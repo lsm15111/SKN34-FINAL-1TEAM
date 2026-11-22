@@ -21,6 +21,10 @@
 - executed를 다시 승인하면 같은 결과(200). rejected · expired · failed는 409. approved는 처리 중(409 in_progress).
 - 거두기(withdraw, 고정 선 1의 예외): 실행 전(proposed) 카드는 고객 말로 거둔다. 거절과 같게 rejected로 남기고
   result.reason = withdrawn(화면 error_code). 실행된 카드는 거둘 수 없다.
+- 직접 할 일(반셀프, 리드 결정 11-22 · QA r3 s6): 직접 할 일 카드를 거두거나 거절하면 저장되지 않은 일, 승인해 칩을
+  줄이거나 '없어요'로 저장하면 빠진 일을 말하는 기억 조각도 지운다(tools.diy.forget). 칩이 바뀌면 열린 실측 요청
+  카드는 같은 업체 · 같은 조건에 '업체에 알릴 것'만 바꾼 새 판으로 바꾼다(옛 카드는 replaced). 화면에서 칩을 바꾼 뒤
+  옛 카드를 누르면 보내지 않고 새 판을 만들어(supersedes) 409 diy_changed로 알린다.
 - 만료 sweep: 기한 지난 proposed → expired(due), approved로 2분 넘게 남은 행 → failed 'stalled'(다시 실행 안 함).
   대상 상태가 비서 밖(화면 단추)에서 바뀐 proposed → expired(handled_elsewhere). 열린 줄을 모두(새것부터 쪽마다)
   보고, 시간 예산이 다 되면 멈춘 자리부터 다음 차례가 잇는다.
@@ -298,6 +302,8 @@ async def reject(user: User, action_id: uuid.UUID, surface: str, now: datetime) 
             raise AppError(404, "not_found", NOT_FOUND)
         if a.status == "proposed":
             got = await repo.set_action(s, a.id, ["proposed"], status="rejected", decided_at=now)
+            if got is not None:
+                await forget_unsaved_diy(s, got, now)
             await s.commit()
             if got is not None:
                 return out(got)
@@ -307,10 +313,101 @@ async def reject(user: User, action_id: uuid.UUID, surface: str, now: datetime) 
 
 async def withdraw(s: AsyncSession, a: AssistantAction, now: datetime) -> AssistantAction | None:
     """고객 말로 실행 전 카드를 거둔다: proposed → rejected(result.reason withdrawn). 조건부 UPDATE라 같은 때
-    승인 · 거절 · 만료가 먼저면 None(부르는 쪽이 지금 상태를 다시 읽는다). commit은 부르는 쪽이 한다."""
-    return await repo.set_action(
+    승인 · 거절 · 만료가 먼저면 None(부르는 쪽이 지금 상태를 다시 읽는다). 직접 할 일 카드면 거둔 일의 기억도
+    지운다. commit은 부르는 쪽이 한다."""
+    got = await repo.set_action(
         s, a.id, ["proposed"], status="rejected", decided_at=now, result={"reason": WITHDRAWN}
     )
+    if got is not None:
+        await forget_unsaved_diy(s, got, now)
+    return got
+
+
+# ---- 직접 할 일(반셀프): 기억 지우기 · 열린 실측 요청 카드 새 판(리드 결정 11-22, QA r3 s6) ----
+
+DIY_CHANGED = "diy_changed"
+DIY_CHANGED_TEXT = (
+    "직접 할 일이 바뀌어 실측 요청 카드를 새로 만들었어요. 바뀐 카드를 보고 다시 눌러 주세요."
+)
+DIY_REISSUED = "열려 있던 실측 요청 카드도 바뀐 직접 할 일로 새로 만들었어요"
+
+
+def _diy_keys(keys) -> list[str]:
+    """직접 할 일 칩 키를 칩 순서로(모르는 키는 버려요)."""
+    from app.project.diy import DIY
+
+    got = set(keys or ())
+    return [k for k in DIY if k in got]
+
+
+async def _chips_now(s: AsyncSession, project_id: uuid.UUID) -> list[str]:
+    """지금 저장된 직접 할 일 칩(아직 안 물음 · 없어요는 빈 목록)."""
+    from app.project.diy import diy_for
+
+    return _diy_keys(await diy_for(s, project_id))
+
+
+async def forget_unsaved_diy(s: AsyncSession, a: AssistantAction, now: datetime) -> None:
+    """거두거나 거절한 직접 할 일 카드: 카드가 더하려던 일 중 저장되지 않은 일(카드 목록 − 지금 칩)을 말하는 기억
+    조각을 지운다(기억은 원본이 아니에요, 거둔 일이 다음 요청에 다시 들어갔어요). commit은 부르는 쪽."""
+    from app.assistant.tools import diy as diy_tools
+
+    fields = (a.payload or {}).get("fields") or {}
+    if a.kind != "home_info" or "diy" not in fields or a.project_id is None:
+        return
+    gone = set(_diy_keys(fields["diy"])) - set(await _chips_now(s, a.project_id))
+    await diy_tools.forget(s, a.user_id, gone, now)
+
+
+async def _remake_request(
+    s: AsyncSession, user: User, a: AssistantAction, keys: list[str], now: datetime
+) -> AssistantAction | None:
+    """실측 요청 카드 a를 같은 업체 · 같은 조건에 '업체에 알릴 것'만 keys(지금 칩)로 바꾼 새 판으로 만든다
+    (supersedes = a). 열린 옛 카드는 offer가 replaced로 닫는다. 새 판을 못 만들면 None. commit은 부르는 쪽."""
+    from app.assistant.tools import diy as diy_tools
+
+    if a.project_id is None or a.expires_at <= now:
+        return None
+    payload = {k: v for k, v in (a.payload or {}).items() if k not in ("diy", "supersedes")}
+    if keys:
+        payload["diy"] = keys
+    payload["supersedes"] = str(a.id)
+    summary = ActionSummary.model_validate(a.summary)
+    summary.rows = [r for r in summary.rows if r.label != diy_tools.TOLD_LABEL]
+    if (row := diy_tools.told_row(keys)) is not None:
+        summary.rows.append(row)
+    got = await offer(
+        s,
+        user,
+        surface=a.surface,
+        kind=a.kind,
+        target_kind=a.target_kind,
+        target_id=a.target_id,
+        target_ver=a.target_ver,
+        payload=payload,
+        summary=summary,
+        now=now,
+        expires_at=a.expires_at,
+        project_id=a.project_id,
+        turn_id=None,
+        origin="turn",  # 고객이 직접 할 일을 바꾼 결과(먼저 말 걸기 카드도 덮어써요)
+        pressed=True,  # 거절한 같은 제안이 있어도 열린 카드를 바꿔요
+    )
+    return got.row if got.state == "new" else None
+
+
+async def reissue_requests(
+    s: AsyncSession, user: User, project_id: uuid.UUID, keys: list[str], now: datetime
+) -> int:
+    """직접 할 일 칩이 바뀐 뒤(같은 트랜잭션): 이 공사의 열린 실측 요청 카드 중 '업체에 알릴 것'이 지금 칩과 다른
+    것을 새 판으로 바꾼다(리드 결정 11-22). 바꾼 수. commit은 부르는 쪽."""
+    keys = _diy_keys(keys)
+    n = 0
+    for a in await repo.open_on(s, user.id, "project", project_id):
+        if a.kind != "visit_request" or _diy_keys((a.payload or {}).get("diy")) == keys:
+            continue
+        n += await _remake_request(s, user, a, keys, now) is not None
+    return n
 
 
 def keeps_lines(a: AssistantAction) -> bool:
@@ -438,13 +535,19 @@ async def _fail(
         result: dict = {"reason": code}
         if message:
             result["message"] = message
+        fresh = None
         if code == "quote_changed" and a.kind == "vendor_confirm":
             try:
                 fresh = await _remake_confirm(s, user, a, now)
             except AppError:
                 fresh = None
-            if fresh is not None:
-                result["superseded_by"] = str(fresh.id)
+        elif code == DIY_CHANGED and a.kind == "visit_request" and a.project_id is not None:
+            try:  # 화면에서 직접 할 일 칩이 바뀌었어요: 지금 칩으로 새 판(supersedes)
+                fresh = await _remake_request(s, user, a, await _chips_now(s, a.project_id), now)
+            except AppError:
+                fresh = None
+        if fresh is not None:
+            result["superseded_by"] = str(fresh.id)
         await repo.set_action(
             s, a.id, ["approved"], status="failed", error_code=code[:40], result=result
         )
@@ -707,6 +810,8 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
     done = {"text": "집 정보를 저장했어요", "href": f"/projects/{pid}", "label": "공사 보기"}
     if data is not None:
         await mark(done)
+        if diy_keys is not None:  # 저장한 목록에 없는 일의 기억 조각은 지워요(리드 결정 11-22)
+            await _forget_left_out(s, user, diy_keys, now)
         await project_service.update(s, user, pid, data, _day(now))  # type: ignore[arg-type]
         return
     if demolition is not None:
@@ -715,14 +820,26 @@ async def _home_info(s: AsyncSession, user: User, a: AssistantAction, now: datet
         from app.visit import flow
 
         picked = await diy.set_diy(s, pid, list(diy_keys))  # type: ignore[arg-type]
-        # 확정 전 실측 요청의 '업체에 알릴 것'도 맞추고 업체에 알려요. 확정한 업체는 따로(QA r2 c2)
+        await _forget_left_out(s, user, picked, now)
+        # 실측 요청(확정 전 · 공사 시작 전 확정)의 '업체에 알릴 것'도 맞추고 업체에 알려요(QA r2 c2 · r3 c6)
         synced = await flow.sync_diy(s, pid, picked, now)  # type: ignore[arg-type]
         if synced.told:
             done["text"] += f" · 실측을 요청한 업체({' · '.join(synced.told)})에도 알렸어요"
         if synced.note:
             done["text"] += f" · {synced.note}"
+        if await reissue_requests(s, user, pid, picked, now):  # type: ignore[arg-type]
+            done["text"] += f" · {DIY_REISSUED}"
     await mark(done)
     await s.commit()
+
+
+async def _forget_left_out(s: AsyncSession, user: User, picked, now: datetime) -> None:
+    """칩을 저장했어요: 저장한 목록에 없는 일(줄인 일 · '없어요')을 말하는 기억 조각을 지운다(리드 결정 11-22)."""
+    from app.assistant.tools import diy as diy_tools
+    from app.project.diy import DIY
+
+    kept = set(picked or ())
+    await diy_tools.forget(s, user.id, [k for k in DIY if k not in kept], now)
 
 
 async def _visit_request(
@@ -749,6 +866,11 @@ async def _visit_request(
         except AppError as e:
             if e.code != "already":
                 raise
+    # 카드의 '업체에 알릴 것'이 지금 칩과 다르면(화면에서 칩을 바꿈) 보내지 않고 새 판을 만들어요(_fail, 리드 결정
+    # 11-22). 공사 행을 잠가 칩 저장(PUT /diy · 집 정보 승인)과 줄 세워 비교와 요청이 같은 칩을 봐요
+    await project_service.lock(s, p.id)
+    if _diy_keys(pl.get("diy")) != await _chips_now(s, p.id):
+        raise AppError(409, DIY_CHANGED, DIY_CHANGED_TEXT)
     href = f"/projects/{pid}/visits"
     await mark(
         {"text": f"{len(vids)}곳에 실측 요청을 보냈어요", "href": href, "label": "실측 일정 보기"}

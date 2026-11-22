@@ -9,11 +9,11 @@
 """
 
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
 from fastapi.responses import Response
-from sqlalchemy import update
+from sqlalchemy import select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -128,6 +128,14 @@ async def _area(s: AsyncSession, v: Visit, h: repo.HomeFacts) -> str:
 def _work(h: repo.HomeFacts, v: Visit) -> str:
     """업체 알림 끝에 붙이는 공사 이름: '노원구 상계동 도배' (이름 · 아파트 · 동호수 없음)"""
     return work_name(h.sgg, h.emd, v.trade)
+
+
+def _eul(word: str) -> str:
+    """받침이 있으면 '을', 없으면 '를'(오전을 · 오후를, QA r2 c6 '오후을'). 한글로 끝나지 않으면 '을'."""
+    last = word[-1:] or " "
+    if "가" <= last <= "힣":
+        return word + ("을" if (ord(last) - 0xAC00) % 28 else "를")
+    return word + "을"
 
 
 def _no_grade(trade: str, grade: str | None) -> None:
@@ -513,8 +521,11 @@ async def again(
     s: AsyncSession, user: User, project_id: uuid.UUID, visit_id: uuid.UUID, now: datetime
 ) -> BoardRowOut:
     """한 번 더 요청 (C18): 답 없음 · 고르기 기한 지남 · 취소 뒤 같은 업체에 시도 2. 앞 기간에서 지난 날을
-    빼고 다시 보낸다(계산 엔진). 사진 · 벽지 · 공사 희망일 · 업체에 알릴 직접 할 일(diy)은 앞 요청 사본 그대로.
-    두 번째 뒤에는 409 blocked_retry."""
+    빼고 다시 보낸다(계산 엔진). 사진 · 벽지 · 공사 희망일은 앞 요청 사본 그대로. 업체에 알릴 직접 할 일(diy)은
+    지금 저장된 칩이에요(앞 요청이 닫힌 뒤 바꾼 칩은 사본에 없어서, 리드 결정 11-22 '원본은 칩'). 칩을 아직 안
+    골랐으면 앞 요청 사본 그대로예요(QA r2 D4). 두 번째 뒤에는 409 blocked_retry."""
+    from app.project.diy import diy_for
+
     p = await project_service.get_for(s, user, project_id)
     first = await svc.in_project(s, p.id, visit_id)
     p, std, lines = await svc._standard(s, user, project_id, first.trade)
@@ -552,6 +563,9 @@ async def again(
         )
         s.add(row)
     start, end = again_wish(prev.wish_start, prev.wish_end, svc.today_of(now))
+    # '업체에 알릴 것'(직접 할 일): 지금 칩, 아직 안 골랐으면 앞 사본
+    chips = await diy_for(s, p.id)
+    told = set(prev.diy or ()) if chips is None else set(chips)
     v = Visit(
         id=uuid7(),
         project_id=p.id,
@@ -568,7 +582,7 @@ async def again(
         wish_end=end,
         work_wish_on=prev.work_wish_on,
         grade=prev.grade,
-        diy=list(prev.diy or []),  # 고객이 승인한 '업체에 알릴 것'(직접 할 일) 사본도 그대로 옮겨요
+        diy=[k for k in DIY_KEYS if k in told],
         reply_due_at=deadline.reply_due(now),
         created_at=now,
     )
@@ -696,7 +710,7 @@ async def pick(
             s,
             user_id=v.vendor_id,
             kind="visit_picked",
-            body=f"고객이 {when}을 골랐어요. 수락해 주세요 · {_work(h, v)}",
+            body=f"고객이 {_eul(when)} 골랐어요. 수락해 주세요 · {_work(h, v)}",
             link=link("visit_picked", vid=v.id),
             dedup_key=f"visit_picked:{v.id}:{_short(hold.id)}",
         )
@@ -1289,59 +1303,105 @@ async def vendor_schedule(
     )
 
 
-# ---- v4 반셀프: 직접 할 일이 바뀌면 요청 사본 맞추기(리드 결정 2026-11-22, QA r2 c2) ----
+# ---- v4 반셀프: 직접 할 일이 바뀌면 요청 사본 맞추기(리드 결정 2026-11-22, QA r2 c2 · r3 c2 · c3 · c6) ----
+# 사본(visits.diy)을 맞추는 요청: 살아 있는 요청 모두(요청함 ~ 견적서 옴 · 확정). 확정한 요청도 공사가 시작되기
+# 전까지는 맞추고 알려요(견적서 확정 판은 그대로, 직접 할 일은 요청 사본 · 업체 브리핑 쪽). 공사가 시작된 확정만
+# 고치지 않고 업체 채팅으로 따로 알려요.
 
-DIY_SYNC = tuple(x for x in LIVE if x != "chosen")  # 확정 전 살아 있는 요청(요청함 ~ 견적서 옴)
-DIY_DEALT_NOTE = "확정 뒤라 업체에 따로 알려야 해요"
+DIY_SYNC = LIVE
+DIY_DEALT_NOTE = "공사가 시작된 뒤라 업체에 따로 알려야 해요"
+DEAL_BEFORE = ("confirmed", "scheduled")  # 공사 끝 단계 전 확정(scheduled는 시작일 전날까지)
+
+
+async def _started(s: AsyncSession, visits: list[Visit], today: date) -> set[uuid.UUID]:
+    """확정한 요청(chosen) 중 공사가 시작된 것: 확정이 공사 끝 단계(checking · fixing · done)이거나 수락한 시작일이
+    오늘이거나 지났어요(읽기 조인)."""
+    from app.schedule.models import Deal
+
+    chosen = [v.id for v in visits if v.status == "chosen"]
+    if not chosen:
+        return set()
+    rows = await s.execute(
+        select(Deal.visit_id, Deal.status, Deal.start_date).where(
+            Deal.visit_id.in_(chosen), Deal.status != "reselected"
+        )
+    )
+    return {
+        vid
+        for vid, status, start in rows
+        if status not in DEAL_BEFORE or (start is not None and start <= today)
+    }
 
 
 @dataclass(frozen=True)
 class DiyReach:
-    live: list[str]  # 확정 전 살아 있는 요청의 업체(칩을 바꾸면 사본을 고치고 알림이 가요)
-    dealt: list[str]  # 확정한 업체(사본은 그대로, 업체 채팅으로 따로 알려야 해요)
+    """직접 할 일이 닿는 업체. live: 칩을 바꾸면 믿집이 사본을 고치고 알리는 업체(확정 전 요청 · 공사 시작 전 확정).
+    dealt: 공사가 시작된 확정 업체(사본은 그대로, 바꾸면 업체 채팅으로 따로 알려야 해요). missing: dealt 중 사본에
+    지금 직접 할 일이 빠진 업체(지금 따로 알려야 해요, 사본이 같으면 알릴 것이 없어요). synced: live 업체 사본이 모두
+    지금 직접 할 일과 같아요(이미 업체에 갔어요)."""
+
+    live: list[str]
+    dealt: list[str]
+    missing: list[str] = field(default_factory=list)
+    synced: bool = True
 
 
-async def diy_reach(s: AsyncSession, project_id: uuid.UUID) -> DiyReach:
-    """직접 할 일을 바꾸면 닿는 업체(읽기만). 승인 카드 메모 · 직접 할 일 도구가 같이 써요."""
+async def diy_reach(s: AsyncSession, project_id: uuid.UUID, today: date | None = None) -> DiyReach:
+    """직접 할 일을 바꾸면 닿는 업체와 지금 사본이 칩과 같은지(읽기만). 승인 카드 메모 · 직접 할 일 도구가 같이
+    써요. today를 비우면 서울 오늘이에요."""
+    from app.project.diy import diy_for
+
+    want = [k for k in DIY_KEYS if k in set(await diy_for(s, project_id) or ())]
+    visits = await repo.of_project(s, project_id, None)
+    started = await _started(s, visits, today or svc.today_of(now_utc()))
     live: list[str] = []
     dealt: list[str] = []
-    for v in await repo.of_project(s, project_id, None):
-        if v.status == "chosen":
+    missing: list[str] = []
+    synced = True
+    for v in visits:
+        if v.status not in DIY_SYNC:
+            continue
+        same = list(v.diy or ()) == want
+        if v.id in started:
             dealt.append(v.vendor_name)
-        elif v.status in DIY_SYNC:
-            live.append(v.vendor_name)
-    return DiyReach(live, dealt)
+            if not same:
+                missing.append(v.vendor_name)
+            continue
+        live.append(v.vendor_name)
+        synced = synced and same
+    return DiyReach(live, dealt, missing, synced)
 
 
 @dataclass(frozen=True)
 class DiySync:
-    told: list[str]  # 바뀐 직접 할 일을 알린 업체 이름(확정 전 살아 있는 요청)
-    dealt: list[str]  # 확정한 업체 이름(사본은 그대로, 업체 채팅으로 따로 알려야 해요)
+    told: list[str]  # 바뀐 직접 할 일을 알린 업체 이름(확정 전 요청 · 공사 시작 전 확정)
+    dealt: list[str]  # 공사가 시작된 확정 업체 이름(사본은 그대로, 업체 채팅으로 따로 알려야 해요)
 
     @property
     def note(self) -> str | None:
-        """도구 · 승인 결과에 붙일 말(확정한 업체가 있을 때만)."""
+        """도구 · 승인 결과에 붙일 말(공사가 시작된 확정 업체가 있을 때만)."""
         return f"{DIY_DEALT_NOTE}({' · '.join(self.dealt)})" if self.dealt else None
 
 
 async def sync_diy(
     s: AsyncSession, project_id: uuid.UUID, keys: list[str], now: datetime
 ) -> DiySync:
-    """직접 할 일 칩이 바뀐 뒤 같은 트랜잭션에서 부른다(commit은 부르는 쪽). 확정 전 살아 있는 실측 요청의
+    """직접 할 일 칩이 바뀐 뒤 같은 트랜잭션에서 부른다(commit은 부르는 쪽). 살아 있는 실측 요청(확정 포함)의
     '업체에 알릴 것' 사본(visits.diy)을 지금 칩으로 맞추고, 바뀐 요청의 업체에 앱 안 알림 한 줄을 보낸다
-    (사본이 이미 같으면 그대로라 두 번 불러도 한 번만 가요). 확정한 요청(chosen)은 고치지 않고 업체 이름만
+    (사본이 이미 같으면 그대로라 두 번 불러도 한 번만 가요). 공사가 시작된 확정 요청은 고치지 않고 업체 이름만
     돌려준다(비서가 업체 채팅으로 따로 알리라고 안내해요). 벽지 직접 구매(paper_buy)도 같은 길이에요."""
     from app.project.diy import DIY, diy_ver
 
     want = [k for k in DIY_KEYS if k in set(keys)]
     sent: list[str] = []
     dealt: list[str] = []
-    for v in await repo.of_project(s, project_id, None):
-        if v.status == "chosen":
-            if list(v.diy or ()) != want:
-                dealt.append(v.vendor_name)
-            continue
+    visits = await repo.of_project(s, project_id, None)
+    started = await _started(s, visits, svc.today_of(now))
+    for v in visits:
         if v.status not in DIY_SYNC or list(v.diy or ()) == want:
+            continue
+        if v.id in started:
+            dealt.append(v.vendor_name)
             continue
         res = await s.execute(
             update(Visit)
@@ -1349,7 +1409,7 @@ async def sync_diy(
             .values(diy=want)
             .execution_options(synchronize_session=False)
         )
-        if res.rowcount != 1:  # 그사이 확정 · 닫힘이거나 이미 같은 사본
+        if res.rowcount != 1:  # 그사이 닫혔거나 이미 같은 사본
             continue
         sent.append(v.vendor_name)
         if v.vendor_id is None:
