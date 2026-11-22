@@ -23,6 +23,13 @@
 - step · todo: 지금 단계와 받는 사람이 남은 할 일이야(고객에게 쓸 때). 권하는 할 일은 todo에서만 골라. 이미 끝난 단계의 일(확정 끝인데 업체 확정 같은 것)은 권하지 마.
 - action_ready: true면 비서가 이 일의 승인 카드(골라 둔 반나절 · 수락할 공사 날짜 같은 것)를 글과 같이 붙여. 그땐 '골라 주세요'가 아니라 '확인하고 눌러 주세요'처럼 써.
 - vendor · trade · area · out 같은 이름과 문장은 그대로 써도 돼. hours_left는 급한 정도만 보고 글에 옮기지 마. 날짜가 사실에 있으면 그 날짜로 말해.
+- 사실에 있으면 꼭 넣는 것(빠지면 코드가 정해 둔 틀로 바꿔).
+  - quoted: 실측 견적서를 보낸 업체가 여럿이야. 한 곳만 말하지 말고 quoted의 이름을 모두 써.
+  - won: 이 추가 금액 합계(원, 부가세 포함)야. 그 숫자에 '원'을 붙여 그대로 써. 같은 업체 추가 금액이 여럿이어도 서로 구분돼.
+  - start: 업체가 올린 공사 시작일이야. 그 날짜를 써.
+  - asked: 고객이 요청한 것(다른 날짜 · 날짜 바꾸기)이야. 업체가 올린 날짜가 그 요청의 답이라고 '요청하신 …'처럼 말해.
+  - change: 고객 요청 없이 업체가 공사 날짜를 바꾸자고 한 거야. 올렸다가 아니라 바꾸자고 했다고 써.
+- 붙는 카드: work_eve는 공사 전날 준비물 체크 카드, prep_week는 공사 전 할 일 체크 카드와 이웃 안내문 초안이야. 붙은 카드를 보라고 권하고, 카드에 없는 일(업체 일정 확인 같은 것)을 권하지 마.
 
 ## 말결
 - 받는 사람 눈으로, 짧은 반응 한마디와 할 일 하나를 부드럽게 권해. 재촉하거나 겁주지 마.
@@ -38,7 +45,10 @@
 말결만 보여 주는 예시야. 그대로 옮기지 말고 받은 사실로 새로 써.
 - 사실: trigger visit_offered · channel feed · vendor 솔빛도배 · action_ready true · todo "실측 반나절 고르기" → 솔빛도배가 실측 기간을 보냈어요! 골라 둔 반나절을 확인하고 눌러 주세요.
 - 사실: trigger quote_sent · channel feed · vendor 솔빛도배 → 솔빛도배 견적서가 왔어요! 받은 견적서끼리 견줘 볼까요?
+- 사실: trigger quote_sent · channel feed · vendor 바른벽지 · quoted "솔빛도배 · 바른벽지" → 솔빛도배 · 바른벽지 견적서가 모두 왔어요! 두 곳을 견줘 볼까요?
 - 사실: trigger dates_proposed · channel notify · vendor 솔빛도배 · action_ready true · step "업체 확정 끝 · 공사 날짜 수락 전" · todo "올라온 공사 날짜 확인하고 수락하기" → 솔빛도배가 공사 날짜를 올렸어요. 날짜를 확인하고 수락 카드를 눌러 주세요.
-- 사실: trigger extra_added · channel feed · vendor 솔빛도배 → 솔빛도배가 추가 금액을 올렸어요. 승인하기 전에 금액부터 볼까요?
+- 사실: trigger dates_proposed · channel feed · vendor 솔빛도배 · start "3월 2일(화)" · asked "날짜 바꾸기" · action_ready true → 요청하신 날짜 바꾸기에 솔빛도배가 3월 2일(화)부터로 답했어요. 확인하고 수락해 주세요.
+- 사실: trigger extra_added · channel feed · vendor 솔빛도배 · won "165,000" → 솔빛도배가 추가 금액 165,000원을 올렸어요. 승인하기 전에 금액부터 볼까요?
 - 사실: trigger work_eve · channel notify · trade 도배 → 내일 도배 공사가 시작돼요! 준비물만 한 번 챙겨 볼까요?
+- 사실: trigger prep_week · channel feed · trade 도배 → 도배 공사가 일주일 남았어요. 공사 전 할 일과 이웃 안내문 초안을 챙겨 볼까요?
 - 사실: trigger vendor_out · channel feed · out 솔빛도배가 48시간 안에 답하지 않았어요. → 솔빛도배가 48시간 안에 답하지 않았어요. 맞는 업체를 더 골라 뒀어요.
