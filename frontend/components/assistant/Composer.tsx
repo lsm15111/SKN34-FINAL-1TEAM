@@ -3,8 +3,9 @@
 // 빠른 답 칩은 고객 말로 남을 뿐 일을 실행하지 않아요(실행은 승인 카드만). 쓰다 만 글만 이 탭에 둬요(편의).
 // 비서가 무료 모드(LLM 없이)면 입력 칸 위에 한 줄로 알려요(health: off · budget · breaker).
 // 넘쳐서 끝내 못 보냈으면(onSend가 "busy") 쓴 글을 입력 칸에 되살려요(지우지 않아요).
+// 보이지 않는 글자(폭 없는 빈칸 · 한글 채움 등)만 있는 글은 빈 글로 봐요(보내기 단추를 꺼요, canSend).
 import { useEffect, useRef, useState } from "react";
-import type { HealthOut } from "@/lib/api/assistant";
+import { canSend, type HealthOut } from "@/lib/api/assistant";
 import { I } from "./kit/icons";
 import s from "./assistant.module.css";
 
@@ -39,8 +40,8 @@ export function Composer({ projectId, chips, busy, onSend, band, onBand, health 
   }, [text, key]);
 
   async function submit() {
+    if (!canSend(text, busy)) return;
     const t = text.trim();
-    if (!t || busy) return;
     setText("");
     if ((await onSend(t)) === "busy") setText((cur) => cur || t); // 그사이 새로 쓴 글이 있으면 그대로 둬요
   }
@@ -65,7 +66,7 @@ export function Composer({ projectId, chips, busy, onSend, band, onBand, health 
           placeholder="궁금한 걸 물어보세요"
           aria-label="비서에게 보낼 말"
         />
-        <button className={s.send} type="submit" aria-label="보내기" disabled={busy || !text.trim()}><I n="up" /></button>
+        <button className={s.send} type="submit" aria-label="보내기" disabled={!canSend(text, busy)}><I n="up" /></button>
       </div>
     </form>
   );

@@ -5,7 +5,7 @@
 // - 먼저 말 걸기(nudges) · 기억(memory)은 다른 담당이 같은 때 만들어요. 계약 모양으로 부르고, 404면 '없음'으로 돌려줘 화면이 숨겨요.
 // - 목업(lib/mock/assistant)이면 같은 모양 · 같은 이벤트를 대본으로 흘려요. 목업 모듈은 쓸 때만 불러요(운영 묶음에 안 들어가게).
 // - 금액 · 날짜 · 차액 · 기한은 서버(계산 엔진) 값이에요. 화면은 모양만 바꾸고 계산하지 않아요. '표준 대비 %'는 없어요.
-import { ApiError, call, type Schemas } from "@/lib/backend/client";
+import { ApiError, call, errorText, type FieldError, type Schemas } from "@/lib/backend/client";
 import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 
 // ───── 카드(kind로 구분, components/assistant/cards/registry). data 모양은 backend assistant/schemas.py의 *Data
@@ -792,7 +792,36 @@ export async function busyOnce<T>(go: () => Promise<T>, pause: (ms: number) => P
   }
 }
 
-/** 한 턴(SSE). 스트림을 열기 전 오류(404 · 409 turn_running · 429 · 422)는 ApiError로 던져요. 끝(done · error)을 받았으면 true */
+// 보이지 않는 글자(서버 shared/text의 CONTROL · INVISIBLE과 같은 범위, 탭 · 줄바꿈은 빼요): 제어 문자 · 방향 바꾸기 글자 ·
+// 폭 없는 빈칸 · 이음 · BOM · 한글 채움 · 모양 고르기 등. 이것만 있는 글은 빈 글로 봐요(서버도 422 '보낼 말을 적어 주세요.')
+const HIDDEN: ReadonlyArray<readonly [number, number]> = [
+  [0x0, 0x8], [0xb, 0xc], [0xe, 0x1f], [0x7f, 0x9f], [0xad, 0xad], [0x34f, 0x34f], [0x61c, 0x61c], [0x115f, 0x1160], [0x17b4, 0x17b5],
+  [0x180b, 0x180f], [0x200b, 0x200f], [0x202a, 0x202e], [0x2060, 0x2064], [0x2066, 0x206f], [0x2800, 0x2800],
+  [0x3164, 0x3164], [0xfe00, 0xfe0f], [0xfeff, 0xfeff], [0xffa0, 0xffa0], [0xfff9, 0xfffb], [0x1d173, 0x1d17a],
+  [0xe0000, 0xe007f], [0xe0100, 0xe01ef],
+];
+const hidden = (c: string) => { const n = c.codePointAt(0) ?? 0; return HIDDEN.some(([a, b]) => n >= a && n <= b); };
+
+/** 보낼 말이 남는지 볼 글: 보이지 않는 글자를 빼고 앞뒤 빈칸을 뗀 글(비면 보낼 말이 없어요). 보낼 때는 쓴 글을 그대로 보내요 */
+export function sayable(text: string): string {
+  return Array.from(text).filter((c) => !hidden(c)).join("").trim();
+}
+
+/** 보내기 단추를 켤지: 답을 만드는 중이 아니고, 보이지 않는 글자 · 빈칸만 있는 글이 아닐 때 */
+export function canSend(text: string, busy: boolean): boolean {
+  return !busy && sayable(text) !== "";
+}
+
+/** 턴 보내기 오류 글: 422면 서버가 준 칸 글(한국어, 예 '보낼 말을 적어 주세요.')을 그대로, 아니면 오류 문장 */
+export function turnErrorText(e: unknown): string {
+  if (e instanceof ApiError && e.status === 422) {
+    const said = [...new Set((e.fields ?? []).map((f) => f.msg).filter((m) => /[가-힣]/.test(m)))];
+    if (said.length) return said.join(" ");
+  }
+  return errorText(e);
+}
+
+/** 한 턴(SSE). 스트림을 열기 전 오류(404 · 409 turn_running · 429 · 422)는 ApiError로 던져요(422는 칸 글 fields 포함). 끝(done · error)을 받았으면 true */
 export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signal?: AbortSignal): Promise<boolean> {
   let ended = false;
   const emit = seqFilter((e) => { if (e.type === "done" || e.type === "error") ended = true; on(e); });
@@ -828,7 +857,8 @@ async function postSse(url: string, body: TurnIn | VendorTurnIn, emit: (e: TurnE
     const code: string = e?.code ?? "unknown";
     const message: string = e?.message ?? (res.status === 429 ? "너무 많이 물었어요. 잠시 뒤에 다시 해 주세요." : "답을 만들지 못했어요. 다시 해 주세요.");
     if (res.status === 503 && (code === "busy" || code === "unavailable")) throw new TurnBusy(code, message, busyWaitMs(res.headers.get("retry-after")));
-    throw new ApiError(res.status, code, message);
+    const fields: FieldError[] | undefined = Array.isArray(e?.fields) ? e.fields : undefined;
+    throw new ApiError(res.status, code, message, fields);
   }
   try {
     await readSse(res.body, emit);
