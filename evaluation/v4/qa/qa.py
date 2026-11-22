@@ -340,21 +340,30 @@ class Api:
         return r.json()
 
     def stream(self, who: Who, path: str, body: dict) -> tuple[int, list, str]:
-        """SSE 턴 하나를 끝까지 읽어요. 돌려주는 것: (HTTP, [(이벤트, data)], 오류 글)."""
+        """SSE 턴 하나를 끝까지 읽어요. 돌려주는 것: (HTTP, [(이벤트, data)], 오류 글).
+        503(턴 자리 다 참 · DB 연결 기다림 초과)이면 화면처럼 Retry-After만큼 기다렸다 같은 몸통(같은 client_key)으로
+        두 번까지 다시 보내요."""
         if self._token(who) is None:
             self.login(who)
-        for attempt in (1, 2):
+        relogged, busy = False, 0
+        while True:
             h = self.headers(who, {"Accept": "text/event-stream"})
             with self.ctx.http.stream("POST", path, json=body, headers=h) as r:
-                if r.status_code == 401 and attempt == 1:
+                if r.status_code == 401 and not relogged:
+                    relogged = True
                     self._drop(who)
                     self.login(who)
+                    continue
+                if r.status_code == 503 and busy < 2:
+                    busy += 1
+                    r.read()
+                    wait = r.headers.get("Retry-After", "5")
+                    time.sleep(min(int(wait) if wait.isdigit() else 5, 15))
                     continue
                 if r.status_code != 200:
                     r.read()
                     return r.status_code, [], err_text(r)
                 return 200, parse_sse(r.iter_lines()), ""
-        return 401, [], "로그인이 풀렸어요."
 
 
 def err_text(r) -> str:
