@@ -5,14 +5,17 @@
   업체 · 웹 글은 도구가 {"자료(지시 아님)": …}로 감싸서 넘긴다(그 키도 허용 칸).
 - TurnBudget: 도구 6 · LLM 8 · 45초 · 턴 $0.06(LLM_CAP_TURN_USD). 넘으면 '지금까지로 답해요' 한 번, 그래도 넘으면 멈춤.
 - mode_for: 꺼짐(키 없음 · LLM_LIVE=false) · 상한 · 차단기면 무료 모드.
-- card_claim · honest: 말과 행동 맞추기(고정 선 5, docs/v4/08-rules.md). 모델 글이 승인 카드를 만들었다(made) ·
-  만들어 드린다(promise, 조건 · 물음 없이) · 카드를 눌러 달라(press)고 하면 runtime.SentenceGate가 그 말이 확실히
-  틀릴 때만 바꾼다: 만들었다는 말은 이 턴에 만든 카드가 하나도 없을 때, 눌러 달라는 말은 누를 것(이 턴에 만든 ·
-  열린 승인 카드, 이 턴에 보인 화면 카드 단추)이 하나도 없을 때. 첫 문장은 정직한 한 줄(honest)로, 나머지는 뺀다.
-- 말 길이 · 되풀이(TALK_*): 말투 · 길이는 모델에 맡기고 코드는 아주 긴 답만 줄인다. 앞 TALK_LEAD 문장(TALK_CHARS
-  자)까지 바로 보내고, 넘친 문장은 묻는 말(asks) · 다음 할 일(next_step)만 턴 끝에 보낸다. 대화 첫 답(소개 ·
-  첫인사)과 업체 소개 · 견적 비교 카드(LONG_CARDS)를 보인 턴은 줄이지 않는다. 지난 비서 턴 REPEAT_TURNS개의 끝
-  문장과 완전히 같은(same_line) 다음 할 일 끝 문장만 뺀다.
+- card_claim · honest: 말과 행동 맞추기(고정 선 5, docs/v4/08-rules.md). 모델 글이 이 턴에 승인 카드를 만들었다 ·
+  만들어 뒀다(made) · 카드를 눌러 달라(press)고 하면 runtime.SentenceGate가 그 말이 확실히 틀릴 때만 바꾼다: 만들었다는
+  말은 이 턴에 만든 카드가 하나도 없을 때, 눌러 달라는 말은 누를 것(이 턴에 만든 · 열린 승인 카드, 이 턴에 보인 화면
+  카드 단추)이 하나도 없을 때. 첫 문장은 정직한 한 줄(honest)로, 나머지는 뺀다. 앞으로 하겠다는 말('만들어 드릴게요'
+  · 조건 · 물음 · 제안 · 할 수 있는 일 소개)과 지난 일('눌러 주셨어요') · 채팅 · 링크를 누르라는 말은 걸지 않는다.
+- 말 길이 · 되풀이(TALK_*): 말투 · 길이는 모델에 맡기고 코드는 아주 긴 답만 줄인다. 보통 턴은 TALK_LEAD 문장
+  (TALK_CHARS 자), 대화 첫 답 · 업체 소개 · 견적 비교 카드(LONG_CARDS)를 보인 턴은 LONG_LEAD 문장(LONG_CHARS 자)까지
+  보낸다. 넘친 문장은 마지막 묻는 말(asks) 하나만 턴 끝에 보낸다(이미 물었으면 없음). 앞으로 가리키는 문장(pointer)과
+  뒤 목록 줄은 한 묶음이라 통째로 보내거나 뺀다(답 자체가 목록이면 목록 줄 LIST_FIRST개까지). 목록 번호 · 기호는
+  문장으로 세지 않는다. 지난 비서 턴 REPEAT_TURNS개에 보낸 안내 · 권유 · 묻는 말(guide)과 거의 같은(near_same)
+  문장은 뺀다(첫 문장 · 숫자가 든 사실 답 · 이 턴 카드를 가리키는 말은 둔다).
 - NudgeRules(계약서 6장): 먼저 말 걸기 규칙. 하루 알림 상한(고객 2 · 업체 3) · 밤(21~9시) 알림은 9시로 ·
   닫으면 같은 trigger 3일 쉬기 · 7일 안에 2번 닫으면 알림 7일 멈춤. 시각은 부르는 쪽이 넣는다(고정 시계로 시험).
 """
@@ -63,6 +66,8 @@ ALLOWED = frozenset(
         "survey", "dates_state", "proposal", "proposals", "change", "conflicts", "fits",
         "money", "period", "decided", "days_off", "vendor_note", "diy",
         "missing", "days_for", "basis", "vat_way", "weekend",
+        # 금액 기준 꼬리표 칸(guard.basis가 읽는다): 공급가(부가세 별도) 금액은 이 이름으로도 넘길 수 있다
+        "공급가", "supply_won", "won_supply", "amount_supply",
     }
 )  # fmt: skip
 DENY_PREFIX = ("vs_", "contact", "phone", "owner")  # 허용 목록에 잘못 들어와도 버리는 칸
@@ -123,16 +128,19 @@ CARD_NOT_MADE = "승인 카드는 아직 만들지 않았어요."
 CARD_ALREADY = "같은 승인 카드가 이미 있어요. 그 카드를 확인하고 눌러 주세요."
 NO_CARD = "지금 누를 승인 카드는 없어요."
 _CARD = re.compile(r"카드|버튼|단추")
+# 이 턴에 한 일 · 해 둔 것(지난 · 지금)만. 앞으로 하겠다는 말('만들어 드릴게요' · '준비해 둘게요?')은 약속 · 제안이라
+# 걸지 않는다(고침 3차 A2: 소개 · 제안 답에 정직한 한 줄이 맥락 없이 끼어듦, QA r3 s2 3턴)
 _MADE = re.compile(
     r"만들었|만들어\s*(?:드렸|뒀|두었|놨|놓았)|준비했|준비해\s*(?:드렸|뒀|두었)|올려\s*(?:드렸|뒀)"
 )
-_PROMISE = re.compile(
-    r"만들어\s*(?:드릴게|드릴께|드리겠|둘게|놓을게|줄게)|만들게|만들겠|준비해\s*(?:드릴게|둘게|드리겠)"
+# 눌러 달라는 말만('눌러야 실행돼요' · '누르기 전에는 …' 같은 설명, '이미 눌러 주셨어요' 같은 지난 일은 아니다)
+_PRESS = re.compile(
+    r"눌러\s*(?:주(?:세요|시면|시고|시기|십시오|실래요|시겠어요|셔야|셔도)|줘|"
+    r"보(?:세요|시면|시고|실래요|셔도))|누르세요|누르시(?:면|고|기|겠)|누르셔야|클릭해\s*주(?:세요|시면)"
 )
-# 눌러 달라는 말만('눌러야 실행돼요' · '누르기 전에는 …' 같은 설명은 아니다)
-_PRESS = re.compile(r"눌러\s*(?:주|보|줘)|누르세요|누르시|클릭해\s*주")
-# 조건 · 물음이 붙은 제안('알려 주시면 만들어 드릴게요' · '만들어 드릴까요?')은 약속이 아니다
-_OFFER = re.compile(r"(?:면|다면|라면)(?:\s|,)|\?\s*$")
+# 승인 카드가 아닌 것을 누르라는 말(채팅 열기 · 조사 링크 · 사진)은 카드 말이 아니다
+_NOT_CARD = re.compile(r"채팅\s*열기|링크|사진|파일|지도")
+_LABEL = re.compile(r"\[[^\]]{1,20}\]")  # 단추 이름('[맞아요, 저장]')
 # 말이 가리키는 행동 종류(카드 이름 낱말). 없으면 종류를 가리지 않는다
 KIND_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("home_info", re.compile(r"집\s*정보|면적|평형|평수|철거\s*범위|방\s*개수")),
@@ -175,14 +183,18 @@ def buttons_of(kind: str, data: dict) -> frozenset[str]:
 
 
 def card_claim(text: str) -> tuple[str, set[str]] | None:
-    """승인 카드를 두고 한 말인지: ("made" · "promise" · "press", 말이 가리키는 행동 종류) 또는 None."""
+    """승인 카드를 두고 한 말인지: ("made" · "press", 말이 가리키는 행동 종류) 또는 None. 이 턴에 만들었다 · 만들어
+    뒀다(made)와 카드 · 단추를 눌러 달라(press)는 말만 본다(고정 선 5: 하지 않은 일을 한 것처럼, 없는 카드를 있는
+    것처럼). 채팅 열기 · 링크 · 사진을 누르라는 말은 승인 카드 말이 아니다."""
     t = (text or "").strip()
     kinds = {k for k, rx in KIND_WORDS if rx.search(t)}
     if _MADE.search(t) and _CARD.search(t):
         return "made", kinds
-    if _PROMISE.search(t) and _CARD.search(t) and not _OFFER.search(t):
-        return "promise", kinds
-    if _PRESS.search(t):
+    if (
+        _PRESS.search(t)
+        and (_CARD.search(t) or _LABEL.search(t) or kinds)
+        and not _NOT_CARD.search(t)
+    ):
         return "press", kinds
     return None
 
@@ -193,11 +205,11 @@ def claim_ok(
     opened: Collection[str],
     buttons: Collection[str] = (),
 ) -> bool:
-    """그 말을 그대로 둘지(확실히 틀릴 때만 False): 만들었다 · 만들어 드린다는 이 턴에 만든 승인 카드(made)가 하나라도
-    있으면 둔다(종류 낱말이 어긋나도 카드는 화면에 있다). 눌러 달라는 말은 누를 것(이 턴에 만든 · 열린 승인 카드,
-    이 턴에 보인 화면 카드 단추)이 하나라도 있으면 둔다."""
+    """그 말을 그대로 둘지(확실히 틀릴 때만 False): 만들었다는 말은 이 턴에 만든 승인 카드(made)가 하나라도 있으면
+    둔다(종류 낱말이 어긋나도 카드는 화면에 있다). 눌러 달라는 말은 누를 것(이 턴에 만든 · 열린 승인 카드, 이 턴에
+    보인 화면 카드 단추)이 하나라도 있으면 둔다."""
     what, _kinds = claim
-    if what in ("made", "promise"):
+    if what == "made":
         return bool(made)
     return bool({*made, *opened, *buttons})
 
@@ -206,25 +218,62 @@ def honest(claim: tuple[str, set[str]], opened: set[str]) -> str:
     """확실히 틀린 카드 말 대신 보낼 한 줄(정해 둔 글)."""
     what, kinds = claim
     there = bool(kinds & opened) if kinds else bool(opened)
-    if what in ("made", "promise"):
+    if what == "made":
         return CARD_ALREADY if there else CARD_NOT_MADE
     return NO_CARD
 
 
-# ---- 말 길이 · 되풀이 (말투 · 길이는 모델에 맡기고, 코드는 아주 긴 답 · 완전히 같은 끝 안내만, 08-rules) ----
+# ---- 말 길이 · 되풀이 (말투 · 길이는 모델에 맡기고, 코드는 아주 긴 답 · 지난 턴 안내 되풀이만, 08-rules) ----
 
 TALK_LEAD = 6  # 바로 보내는 문장 수(지시문은 두세 문장: 이보다 긴 답만 줄인다)
 TALK_CHARS = 500  # 바로 보낸 글이 이만큼 되면 뒤 문장은 모은다
-REPEAT_TURNS = 2  # 끝 문장을 견줄 지난 비서 턴 수
-# 업체 소개 · 견적 비교 카드: 이 카드를 보인 턴의 답은 카드를 풀어 말해 길 수 있어 줄이지 않는다
+# 대화 첫 답(소개 · 첫인사) · 업체 소개 · 견적 비교 카드를 보인 턴: 카드를 풀어 말해 길 수 있지만 끝은 있다(고침 3차 A2
+# 결정 1, QA r3 c4 #1 525자 · c5 첫 답 14문장)
+LONG_LEAD = 8
+LONG_CHARS = 700
+LIST_FIRST = 8  # 답 자체가 목록(묶음이 첫 문장)이면 상한을 넘어도 보내는 목록 줄 수
+REPEAT_TURNS = 3  # 안내 되풀이를 견줄 지난 비서 턴 수
+# 업체 소개 · 견적 비교 카드: 이 카드를 보인 턴은 LONG_LEAD까지
 LONG_CARDS = frozenset({"vendor_picks", "quote_compare"})
-# '다음 할 일' 문장: 누를 카드 · 단추 · 승인 · 고르기 · 채팅. 넘친 문장이어도 턴 끝에 보낸다
+# '다음 할 일' 문장: 누를 카드 · 단추 · 승인 · 고르기 · 채팅
 NEXT_STEP = re.compile(
     r"카드|단추|버튼|승인|눌러|누르|수락|골라|고르|채팅|다음\s*할\s*일|할\s*차례"
 )
-# 고객에게 묻거나 부탁하는 말(넘친 문장이어도 턴 끝에 보낸다: 빠지면 고객이 무엇을 답할지 모른다)
+# 고객에게 묻거나 부탁하는 말(넘친 문장 중 마지막 하나는 턴 끝에 보낸다: 빠지면 고객이 무엇을 답할지 모른다)
 ASKS = re.compile(r"[?？]\s*$|알려\s*주|말씀해\s*주|정해\s*주|확인해\s*주")
+# 권유 · 해 보라는 말('…물어보세요' · '…잘 맞아요' · '권해요')
+SUGGEST = re.compile(r"세요[.!~]*\s*$|잘\s*맞아요|권해요|추천해요")
 _PLAIN = re.compile(r"[\s.,!?~·:;'\"“”‘’()\[\]<>-]+")
+_WORD = re.compile(r"[가-힣A-Za-z0-9]+")
+# 뜻을 뒤집는 낱말: 한 낱말 차이여도 다른 말이다('들어 있어요' ≠ '안 들어 있어요')
+_FLIP = frozenset(
+    {"안", "못", "아니", "아니요", "아니에요", "않아요", "없어요", "말고", "불가능해요"}
+)
+# 앞으로 가리키는 문장(뒤 목록 · 문장과 한 묶음): ':'로 끝남 · '이래요' · '다음과 같아요' · '아래를' · '이렇게 …세요'
+# (고침 3차 A2 결정 3, QA r3 c1 13 · 21턴 · c4 #20 · #35 · c5 11턴). 뒤에 가리킨 것이 없으면 이 문장도 뺀다
+POINTER = re.compile(
+    r"[:：]\s*$"
+    r"|(?:이래요|이렇습니다|다음과\s*같(?:아요|습니다))[.!]?\s*$"
+    r"|아래(?:와\s*같|를|처럼|\s*(?:내용|항목))"
+    r"|이렇게\s+(?:\S+\s+){0,2}\S*(?:세요|가요)[.!]?\s*$|이렇게\s+보시면\s*돼요"
+)
+# 수를 말하는 가리킴('이유는 두 가지예요.'): 뒤와 한 묶음이지만, 뒤에 아무것도 없으면 앞 말을 줄인 끝 문장일 수 있어 둔다
+COUNTED = re.compile(r"(?:가지|단계)(?:예요|이에요|가\s*있어요|입니다)[.!]?\s*$")
+
+
+def pointer(text: str) -> bool:
+    """앞으로 가리키는 문장인지(뒤 목록 · 문장과 한 묶음)."""
+    t = (text or "").strip()
+    return bool(POINTER.search(t) or COUNTED.search(t))
+
+
+# 목록 줄의 머리(기호 · 번호 · 따옴표 예문). 이 머리는 문장으로 세지 않는다(runtime.SENT_END가 '1. '에서 자르지 않음)
+LIST_MARK = re.compile(r"^\s*(?:[-•*·▪◦]\s|\d{1,2}[.)]\s|[①-⑳]\s?|[\"“‘'])")
+# 앞 문장이 빠져 첫 문장이 된 문장의 첫머리 접속 말(고침 3차 A2 결정 5, QA r3 c4 #33 '다만 …')
+LEAD_LINK = re.compile(
+    r"^(?:다만|대신|그래서|그리고|또한|또|그런데|하지만|그러나|그러니까|그러니)\s*[,，]?\s+"
+)
+_DIGIT = re.compile(r"\d")
 
 
 def next_step(text: str) -> bool:
@@ -237,10 +286,38 @@ def asks(text: str) -> bool:
     return bool(ASKS.search((text or "").strip()))
 
 
+def guide(text: str) -> bool:
+    """되풀이를 볼 안내 · 권유 · 묻는 말인지(다음 할 일 · 물음 · 해 보라는 말). 숫자가 든 문장은 사실 답이라 아니다."""
+    t = (text or "").strip()
+    return bool(t) and not _DIGIT.search(t) and (next_step(t) or asks(t) or bool(SUGGEST.search(t)))
+
+
 def same_line(a: str, b: str) -> bool:
     """두 문장이 완전히 같은지(띄움 · 문장부호만 다름). 한 글자라도 다르면 다른 말이다('포함' ≠ '불포함')."""
     x, y = _PLAIN.sub("", a or ""), _PLAIN.sub("", b or "")
     return bool(x) and x == y
+
+
+def near_same(a: str, b: str) -> bool:
+    """거의 같은 문장인지: 완전히 같거나 낱말 하나만 더하거나 뺀 것('이어서' · '도배'). 바꾼 낱말 · 숫자 낱말 · 뜻을
+    뒤집는 낱말('안' · '못')이 다르면 다른 말이다."""
+    if same_line(a, b):
+        return True
+    x, y = _WORD.findall(a or ""), _WORD.findall(b or "")
+    if len(x) < len(y):
+        x, y = y, x
+    if len(x) != len(y) + 1 or len(y) < 2:
+        return False
+    for i, w in enumerate(x):
+        if x[:i] + x[i + 1 :] == y:
+            return w not in _FLIP and not _DIGIT.search(w)
+    return False
+
+
+def strip_lead(text: str) -> str:
+    """첫머리 접속 말('다만 · 대신 · 그래서 …')을 뗀 글(남는 글이 없으면 그대로)."""
+    t = LEAD_LINK.sub("", text or "", count=1)
+    return t if t.strip() else text
 
 
 # ---- 안쪽 말(모델에만 주는 이름표 · 도구 · 칸 이름 · 도구 오류 hint)은 고객 답에 내지 않는다 ----
@@ -250,15 +327,22 @@ REF_LIKE = re.compile(r"(?<![A-Za-z0-9_])(?<!\d\s)[vmrswdpnx]\d{1,3}(?![A-Za-z0-
 # 영어 snake_case 도구 · 칸 이름(propose_visit_request · vendor_ref · area_m2)
 SNAKE = re.compile(r"(?<![A-Za-z0-9_])[a-z][a-z0-9]*_[a-z0-9_]*[a-z0-9](?![A-Za-z0-9_])")
 QUOTE_RUN = 8  # 도구 hint 글과 이만큼(띄움 · 부호를 뺀 글자) 이어서 같으면 옮긴 문장이다
+# 도구 · 서버가 실패했다는 안쪽 사정('도구가 실패해서' · '도구 오류', QA r3 c4 #34). 연장 '도구'('준비할 도구는 …')는 아니다
+INNER_FAIL = re.compile(
+    r"도구\s*(?:가|를|의|에서|는)?\s*(?:\S+\s+){0,2}?\S*(?:실패|오류|에러)"
+    r"|(?:서버|시스템)\s*(?:가|에서|의)?\s*(?:오류|에러|실패)"
+)
 
 
 def inside(text: str) -> str | None:
-    """고객 답에 나오면 안 되는 안쪽 말이 든 문장인지: 까닭('이름표' · '안쪽 이름') 또는 None."""
+    """고객 답에 나오면 안 되는 안쪽 말이 든 문장인지: 까닭('이름표' · '안쪽 이름' · '안쪽 말') 또는 None."""
     t = text or ""
     if "이름표" in t or REF_LIKE.search(t):
         return "이름표"
     if SNAKE.search(t):
         return "안쪽 이름"
+    if INNER_FAIL.search(t):
+        return "안쪽 말"
     return None
 
 
