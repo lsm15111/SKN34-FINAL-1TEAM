@@ -12,8 +12,10 @@
   글)를 지난 것만 token으로 보낸다. 숫자는 근거 값 그대로에 더해 어림 · 차액 · 합계 · 평당 · 날짜 꼴을 읽고
   (guard.loose, 합 · 차는 같은 금액 기준끼리만), 누출은 지시문의 규칙 절과만 견준다(prompts.rules). 말투 · 길이는
   모델에 맡기고(docs/v4/08-rules.md) 아주 긴 답만 줄인다: 앞 문장부터 상한까지 보내고 넘친 문장은 마지막 묻는 말
-  하나만 턴 끝에 보낸다. 앞으로 가리키는 문장과 뒤 목록은 묶음째 보내거나 뺀다. 지난 세 비서 턴의 안내 · 권유 ·
-  묻는 말과 거의 같은 문장은 뺀다(policy.TALK_* · LONG_* · REPEAT_TURNS).
+  하나만 턴 끝에 보낸다. 앞으로 가리키는 문장과 뒤 목록은 묶음째 보내거나 뺀다(안 문장이 검사로 빠지면 가리키는 말이
+  수를 말할 때만 묶음째, 아니면 그 문장만). 지난 세 비서 턴의 안내 · 권유 · 묻는 말 · 약속과 거의 같은 문장, 같은
+  카드 · 채팅을 다시 가리키는 안내는 뺀다(policy.TALK_* · LONG_* · REPEAT_TURNS). 검사로 본문이 빠져 남은 글이 없거나
+  가리키는 말뿐이면 정해 둔 정직한 한 줄(CUT_TEXT · 카드가 있으면 FAIL_TEXT)을 끝에 보낸다.
 """
 
 import asyncio
@@ -49,6 +51,11 @@ Emit = Callable[[str, dict], Awaitable[None]]
 
 WRAP = "도구는 더 부르지 말고, 지금까지 얻은 결과로만 짧게 답해 주세요."
 FAIL_TEXT = "설명을 만들지 못했어요. 카드와 버튼으로 이어서 진행해 주세요."
+# 문장 검사로 답의 본문이 빠져 보낼 글이 없거나 가리키는 말뿐인 턴(카드 없음)의 끝 한 줄(고침 4차 G, QA r4 c2 15턴)
+CUT_TEXT = "이번에는 답을 다 만들지 못했어요. 다시 말씀해 주시겠어요?"
+# 버린 까닭 중 답의 본문이 빠진 것이 아닌 것(외국어 속말 · 한자): 남은 글을 보고 정직한 한 줄을 붙이지 않는다
+NOISE = frozenset({"외국어 속말", "한글 없는 외국어 글", "한자 섞인 글"})
+NUM_MARK = re.compile(r"^(\d{1,2})([.)])\s")  # 번호 목록 줄 머리('1. ')
 TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
 EMPTY_TEXT = "말씀이 비어 있어요. 궁금한 것을 적어 주세요."
 # 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글)
@@ -348,6 +355,40 @@ def recent_said(history: list[dict], turns: int = policy.REPEAT_TURNS) -> list[s
     return out
 
 
+def ref_names(refs: RefTable) -> set[str]:
+    """이 대화 이름표 표의 업체 이름(업체 · 실측 요청 이름표에 든 것). 같은 카드 · 채팅을 가리키는지 가릴 때 쓴다."""
+    out = set()
+    for it in refs.items.values():
+        name = it.get("name") or it.get("vendor_name")
+        if it.get("kind") in ("vendor", "visit") and isinstance(name, str) and name.strip():
+            out.add(name.strip())
+    return out
+
+
+FACT_VENDORS = re.compile(r"^업체:\s*(.+)$", re.MULTILINE)  # 턴 사실 '업체:' 줄(업체마다 ' / ')
+NAME_HEAD = re.compile(r"[가-힣A-Za-z0-9]{2,}")
+
+
+def fact_names(facts: str) -> set[str]:
+    """턴 사실 '업체:' 줄의 업체 이름(항목마다 첫 낱말, 뒤에 붙은 상태 말은 보지 않는다)."""
+    out = set()
+    for m in FACT_VENDORS.finditer(facts or ""):
+        for item in m.group(1).split(" / "):
+            if head := NAME_HEAD.match(item.strip()):
+                out.add(head.group(0))
+    return out
+
+
+def card_vendors(summary: dict | None) -> set[str]:
+    """승인 카드 요약의 '업체' 줄 값(고객 카드)."""
+    rows = (summary or {}).get("rows") or []
+    return {
+        str(r["value"]).strip()
+        for r in rows
+        if isinstance(r, dict) and r.get("label") == "업체" and str(r.get("value") or "").strip()
+    }
+
+
 def card_ground(data: dict) -> str:
     """화면 카드 값 → 숫자 근거 글(모델에 보내는 칸만: id · 링크 · 표준 대비 % 없음, policy.to_model)."""
     return json.dumps(policy.to_model(data or {}), ensure_ascii=False, default=str)
@@ -386,13 +427,19 @@ class _Piece:
 @dataclass
 class _Group:
     """앞으로 가리키는 문장(머리, policy.pointer)과 뒤 목록 줄 · 이어진 문장의 묶음(고침 3차 A2 결정 3). 머리가 없으면
-    목록 줄만의 묶음이다. 통째로 보내거나 뺀다(가리키는 문장만 남기지 않는다)."""
+    목록 줄만의 묶음이다. 통째로 보내거나 뺀다(가리키는 문장만 남기지 않는다). 안 문장이 검사로 빠지면 가리키는 말이
+    수를 말할 때(counted)만 묶음째 빼고, 아니면 빠진 문장만 뺀다(고침 4차 G, QA r4 c2 15턴: 업체에 보낼 초안 중 한
+    문장이 숫자 검사에 걸려 초안이 통째로 사라짐)."""
 
     head: bool
     members: list[_Piece] = field(default_factory=list)
-    bad: bool = False  # 검사로 빠진 문장이 있다(가리킨 수 · 짝이 틀릴 수 있어 통째로 뺀다)
+    bad: bool = False  # 검사로 빠진 문장이 있다
     inline: bool = False  # 머리 줄에 이어 쓴 문장이 있다(가리킨 것이 같은 줄에 있다)
     broke: bool = False  # 머리 뒤 새 줄이 왔다
+    # 가리키는 말(머리, 머리가 없으면 바로 앞에 보낸 문장)이 뒤 줄의 수를 말한다('세 가지예요'): 한 줄이 빠지면 묶음째
+    counted: bool = False
+    # 검사로 빠진 문장이 줄을 열었다: (앞 띄움, 목록 기호 · 닫지 않은 여는 따옴표). 같은 줄 다음 문장이 이어받는다
+    orphan: tuple[str, str] | None = None
 
     def takes(self, newline: bool, row: bool) -> bool:
         """이 조각이 묶음에 드는지: 같은 줄 · 목록 줄, 머리 줄이 끝난 바로 뒤 한 줄(가리킨 것)."""
@@ -404,6 +451,44 @@ class _Group:
             self.broke = True
             return True
         return False
+
+    def lose(self, raw: str, sep: str, newline: bool, row: bool) -> None:
+        """검사로 빠진 문장 하나. 줄을 열었으면 띄움과 목록 기호(닫지 않은 따옴표)를 같은 줄 다음 문장에 넘기고, 앞에서 연
+        따옴표를 닫았으면 닫는 따옴표를 같은 줄 앞 문장에 붙인다."""
+        self.bad = True
+        if newline:
+            mark = ""
+            if row and (m := policy.LIST_MARK.match(raw)):
+                mark = m.group(0)
+                if mark.strip() in policy.QUOTES and not policy.quote_left(raw):
+                    mark = ""  # 한 문장으로 닫힌 따옴표 줄(넘길 따옴표가 없다)
+            self.orphan = (sep, mark)
+            return
+        close = policy.quote_right(raw)
+        if close and self.members and self.members[-1].item:
+            last = self.members[-1]
+            self.members[-1] = replace(last, text=last.text + close)
+
+    def add(self, p: _Piece, newline: bool) -> None:
+        """검사를 지난 문장을 묶음에 넣는다. 같은 줄 앞 문장이 빠져 줄 머리가 비었으면 그 띄움 · 기호를 이어받는다."""
+        if self.orphan is not None:
+            sep, mark = self.orphan
+            self.orphan = None
+            if not newline:
+                p = replace(p, sep=sep, text=mark + p.text, row=p.row or bool(mark))
+        self.members.append(p)
+
+
+def renumber(members: list[_Piece]) -> None:
+    """빠진 번호 목록 줄 뒤 번호를 다시 매긴다('1. · 3.' → '1. · 2.')."""
+    n: int | None = None
+    for i, p in enumerate(members):
+        m = NUM_MARK.match(p.text) if p.row else None
+        if m is None:
+            continue
+        n = int(m.group(1)) if n is None else n + 1
+        if int(m.group(1)) != n:
+            members[i] = replace(p, text=f"{n}{m.group(2)}{p.text[m.end(2) :]}")
 
 
 class SentenceGate:
@@ -419,10 +504,14 @@ class SentenceGate:
     견적 비교 카드를 보인 턴은 8문장 · 700자)까지 보내고, 넘친 뒤 문장은 모두 모았다가 턴 끝에 마지막 묻는 말 하나만
     보낸다(이미 물었으면 없음). 앞으로 가리키는 문장과 뒤 목록 줄은 한 묶음(_Group): 상한 안이면 같이 보내고 넘으면
     통째로 뺀다. 묶음이 답의 첫 문장이면(답 자체가 목록) 목록 줄 LIST_FIRST개까지 보낸다. 묶음 안 문장이 검사로 빠지면
-    묶음째 빼고, 가리킨 말이 없는 머리도 뺀다. 앞 문장이 빠져 첫 문장이 되면 첫머리 접속 말을 뗀다.
+    가리키는 말이 수를 말할 때만 묶음째 빼고, 아니면 그 문장만 뺀다(줄 머리 기호 · 따옴표는 이웃 문장이 이어받고 번호는
+    다시 매긴다). 가리킨 말이 없는 머리는 뺀다. 앞 문장이 빠져 첫 문장이 되면 첫머리 접속 말을 뗀다.
     되풀이: 이 턴에 보낸 문장과 같은 문장은 빼고, 지난 비서 턴(said, REPEAT_TURNS)에 보낸 문장과 거의 같은 안내 ·
-    권유 · 묻는 말(policy.guide · near_same)은 뺀다. 첫 문장 · 숫자가 든 사실 답 · 이 턴에 만든 카드와 보인 카드 단추를
-    가리키는 말 · 묶음 안 문장은 두고, 그 문장뿐이면 둔다."""
+    권유 · 묻는 말 · 약속(policy.guide · near_same), 같은 카드 · 채팅 · 약속을 새 대상 없이 다시 가리키는 안내
+    (policy.same_aim, 대상 이름은 names)는 뺀다. 첫 문장 · 이 턴에 만든 카드와 보인 카드 단추를 가리키는 말 · 지난 일 ·
+    묶음 안 문장은 두고, 그 문장뿐이면 둔다. 고객이 금액 · 날짜를 물은 턴(asked 'fact')은 숫자가 든 사실 답을, 카드 ·
+    할 일을 물은 턴('how')은 같은 카드 안내도 둔다.
+    본문이 빠짐: 검사 · 묶음으로 답의 본문이 빠져 보낸 글이 없거나 가리키는 말뿐이면 턴 끝(mend)에 정직한 한 줄을 보낸다."""
 
     def __init__(
         self,
@@ -432,6 +521,8 @@ class SentenceGate:
         made: Collection[str] = (),
         said: Collection[str] = (),
         long_ok: bool = False,
+        names: Collection[str] = (),
+        asked: Collection[str] = (),
     ) -> None:
         self._emit = emit
         self._prompt = prompt  # 누출 견주기 글(prompts.rules: 지시문의 규칙 절만)
@@ -459,6 +550,10 @@ class SentenceGate:
         # 길게 둬도 되는 턴(LONG_* 상한): 대화 첫 답(소개 · 첫인사) · 업체 소개 · 견적 비교 카드를 보인 턴
         self.long_ok = long_ok
         self._hints: list[str] = []  # 이번 턴 도구 오류의 hint(모델에만 주는 글)
+        # 업체 이름(같은 카드 · 채팅인지 가리는 대상)
+        self.names: set[str] = {n for n in names if n}
+        self.asked = frozenset(asked)  # 이 턴 고객 말이 묻는 것(policy.asked: fact · how)
+        self._gone = 0  # 검사 · 묶음으로 빠진 본문 문장 수(외국어 속말 · 한자는 세지 않는다)
 
     @property
     def text(self) -> str:
@@ -498,6 +593,7 @@ class SentenceGate:
             await self._one(tail)
         elif tail.strip():
             self.dropped.append("끊긴 문장")
+            self._gone += 1
             if self._group is not None:
                 self._group.bad = True
         busy = self._out or self._held or self._group or self._extra
@@ -520,6 +616,7 @@ class SentenceGate:
             self._newline,
             self._row,
             self._last_row,
+            self._gone,
         )
         return len(self._out), keep, len(self.dropped), self.cut
 
@@ -540,6 +637,7 @@ class SentenceGate:
             self._newline,
             self._row,
             self._last_row,
+            self._gone,
         ) = keep
         del self.dropped[dropped:]
         self.cut = cut
@@ -590,24 +688,27 @@ class SentenceGate:
         if g is not None and not g.takes(newline, row):
             await self._close()
             g = None
-        if g is None and row and not self._over:  # 머리 없는 목록 줄 묶음
-            g = self._group = _Group(head=False)
+        if g is None and row and not self._over:  # 머리 없는 목록 줄 묶음(앞 문장이 가리킴)
+            counted = bool(self.sent) and policy.counted(self.sent[-1])
+            g = self._group = _Group(head=False, counted=counted)
         ok, why = self._check(raw)
         if ok is None:
             if why:
                 self.dropped.append(why)
+            if why not in NOISE:
+                self._gone += 1
             if g is not None:
-                g.bad = True
+                g.lose(raw, sep, newline, row)
             if not self._out:
                 self._lost = True
             return
         p = _Piece(sep, ok, policy.card_claim(ok), item=self._row, row=row)
         if g is not None:
-            g.members.append(p)
+            g.add(p, newline)
         elif self._over:
             self._extra.append(p)
         elif policy.pointer(ok):  # 앞으로 가리키는 문장: 가리킨 것을 볼 때까지 모은다
-            self._group = _Group(head=True, members=[p])
+            self._group = _Group(head=True, members=[p], counted=policy.counted(ok))
         else:
             await self._admit(p)
 
@@ -645,16 +746,24 @@ class SentenceGate:
         await self._send(p)
 
     async def _close(self) -> None:
-        """모은 묶음을 정리한다: 상한 안이면 같이 보내고, 넘치면 통째로 뺀다(답 자체가 목록이면 목록 줄 여덟까지)."""
+        """모은 묶음을 정리한다: 안 문장이 검사로 빠졌으면 가리키는 말이 수를 말할 때만 묶음째 빼고, 아니면 빠진 문장만 뺀
+        채(번호는 다시 매김) 둔다. 가리킨 것이 없는 머리는 뺀다. 상한 안이면 같이 보내고, 넘치면 통째로 뺀다(답 자체가
+        목록이면 목록 줄 여덟까지)."""
         g, self._group = self._group, None
         if g is None:
             return
-        if g.bad:
+        if g.bad and g.counted:  # '세 가지예요' 뒤 한 줄이 빠지면 수가 틀린다
+            self._gone += len(g.members)
             self._cut(g.members, "묶음째 뺌")
             return
-        if g.head and len(g.members) == 1:  # 뒤에 가리킨 것이 없다
+        if g.bad:
+            renumber(g.members)
+        if not g.members:
+            return
+        if g.head and len(g.members) == 1:  # 뒤에 가리킨 것이 없다(다 빠졌거나 처음부터 없다)
             head = g.members[0]
             if policy.POINTER.search(head.text):
+                self._gone += 1
                 self._cut(g.members, "가리킨 말 없음")
             else:  # '…두 가지예요.'는 앞 말을 줄인 끝 문장일 수 있다
                 await self._admit(head)
@@ -690,19 +799,28 @@ class SentenceGate:
         return policy.claim_ok(claim, self.made, self.opened, self.buttons)
 
     def _fresh(self, text: str) -> bool:
-        """이 턴에 만든 카드 · 보인 카드 단추를 가리키는 카드 말(같은 글이어도 새 안내다)."""
-        claim = policy.card_claim(text)
-        if claim is None:
-            return False
+        """이 턴에 만든 카드 · 보인 카드 단추를 가리키는 말(같은 글이어도 새 안내다)."""
         new = self.made | self.buttons
-        return bool(claim[1] & new) if claim[1] else bool(new)
+        if not new:
+            return False
+        claim = policy.card_claim(text)
+        if claim is not None:
+            return bool(claim[1] & new) if claim[1] else True
+        # 카드 종류를 읽을 수 있는 안내('실측 시간 카드가 열려 있어요')
+        return bool(policy.aims(text) & new)
 
     def _repeat(self, text: str) -> bool:
-        """지난 비서 턴에 보낸 안내 · 권유 · 묻는 말과 거의 같은 문장(새 안내 · 숫자가 든 사실 답은 아니다)."""
+        """지난 비서 턴에 보낸 안내 · 권유 · 묻는 말 · 약속과 거의 같은 문장, 같은 카드 · 채팅 · 약속을 새 대상 없이 다시
+        가리키는 안내(고침 4차 G, QA r4 c5 9~12턴 · c1 8~10턴). 새 안내(이 턴 카드) · 지난 일 · 새 소식은 아니고, 고객이
+        금액 · 날짜를 물은 턴은 숫자가 든 사실 답을, 카드 · 할 일을 물은 턴은 같은 카드 안내를 둔다."""
+        if self._fresh(text) or not policy.guide(text, numbers=not self.asked):
+            return False
+        if any(policy.near_same(text, x) for x in self.said):
+            return True
         return (
-            policy.guide(text)
-            and any(policy.near_same(text, x) for x in self.said)
-            and not self._fresh(text)
+            "how" not in self.asked
+            and not policy.past(text)
+            and any(policy.same_aim(text, x, self.names) and not policy.past(x) for x in self.said)
         )
 
     async def _send(self, p: _Piece) -> None:
@@ -767,6 +885,14 @@ class SentenceGate:
         last = self._tail()
         if last is not None:
             await self._put(last.sep, last.text)
+
+    async def mend(self, cards: bool) -> None:
+        """LLM 턴 끝(settle 뒤): 검사 · 묶음으로 답의 본문이 빠져 보낸 글이 없거나 가리키는 말(카드 · 단추 · 채팅 · 앞으로
+        가리키는 문장)뿐이면 정해 둔 정직한 한 줄을 끝에 보낸다(고침 4차 G, QA r4 c2 15턴: 초안이 빠지고 없는 카드 단추를
+        가리키는 한 줄만 남음). 이 턴에 카드가 있으면 FAIL_TEXT, 없으면 CUT_TEXT. 카드 말 정직한 한 줄을 이미 썼으면 없다."""
+        if not self._gone or self._fixed or any(not policy.points(s) for s in self.sent):
+            return
+        await self._put(" ", FAIL_TEXT if cards else CUT_TEXT)
 
     def _tail(self) -> _Piece | None:
         """넘친 문장 중 끝에 보낼 마지막 묻는 말 하나(목록 줄 · 가리키는 문장 · 맞지 않는 카드 말 · 이 턴과 같은 말 ·
@@ -950,6 +1076,9 @@ class _Turn:
             said=recent_said(ctx.history),
             # 대화 첫 답은 소개 · 첫인사라 길게 둔다(08-rules '소개 답은 예외', 상한은 LONG_*)
             long_ok=not any(m.get("role") == "assistant" for m in ctx.history),
+            # 같은 카드 · 채팅인지 가리는 업체 이름(턴 사실 업체 줄 · 이 대화 이름표 표, 열린 카드 업체는 run에서 더함)
+            names=fact_names(ctx.facts) | ref_names(ctx.refs),
+            asked=policy.asked(ctx.text),
         )
         # 카드 단추 고르기(choices)가 이 턴에 보낸 카드 · 승인 카드: 숫자 근거 · 누를 단추 · 길게 둘 카드
         if note:
@@ -1007,7 +1136,8 @@ class _Turn:
         await self.gate.shown(card)
 
     async def _open_kinds(self) -> set[str]:
-        """턴 앞에 열려 있는 승인 카드 종류(카드를 눌러 달라는 말이 맞는지 본다). 못 읽으면 빈 집합."""
+        """턴 앞에 열려 있는 승인 카드 종류(카드를 눌러 달라는 말이 맞는지 본다). 못 읽으면 빈 집합. 그 카드의 업체
+        이름은 되풀이 거름의 대상 이름(gate.names)에 더한다."""
         from app.assistant import repository as repo
         from app.db import SessionLocal
 
@@ -1024,7 +1154,10 @@ class _Turn:
         except Exception as e:  # noqa: BLE001 - 못 읽으면 열린 카드가 없는 것으로 본다(말이 더 정직해진다)
             log.warning("비서 열린 카드 읽기 실패 (%s)", type(e).__name__)
             return set()
-        return {a.kind for a in rows if a.expires_at > self.ctx.now}
+        live = [a for a in rows if a.expires_at > self.ctx.now]
+        for a in live:
+            self.gate.names |= card_vendors(a.summary)
+        return {a.kind for a in live}
 
     async def run(self) -> None:
         self.gate.opened |= await self._open_kinds()
@@ -1310,6 +1443,8 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
             await turn.run()
             # 붙잡아 둔 카드 말 · 넘친 문장 · 지난 턴과 같은 끝 문장을 정리한다(맞지 않는 카드 말은 정직한 한 줄)
             await turn.gate.settle()
+            # 검사로 본문이 빠져 남은 글이 없거나 가리키는 말뿐이면 정직한 한 줄(고침 4차 G)
+            await turn.gate.mend(bool(res.cards))
             res.text = turn.gate.text
             if not res.text and not res.cards:
                 res.text = FAIL_TEXT
