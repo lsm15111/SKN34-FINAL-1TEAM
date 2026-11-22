@@ -6,7 +6,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
@@ -21,6 +21,7 @@ from app.agent.v3.schemas import (
     View,
 )
 from app.project.schemas import ConditionOut
+from app.shared.text import Tidy
 
 FIRST_NOTICE = "AI가 답해요. 금액 · 날짜는 믿집 계산을 그대로 보여 주고, 저장 · 확정은 하지 않아요."
 
@@ -33,7 +34,7 @@ class AiContext(BaseModel):
 
 class AiTurnIn(BaseModel):
     client_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")
-    text: str = Field(min_length=1, max_length=TEXT_MAX)
+    text: Annotated[str, Field(min_length=1, max_length=TEXT_MAX), Tidy]
     chat_id: uuid.UUID | None = None
     context: AiContext = AiContext()
     button: Button | None = None

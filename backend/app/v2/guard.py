@@ -3,7 +3,7 @@
 - 계산 결과 · 자료 · 고객이 쓴 글에 없는 숫자가 든 문장은 뺀다.
 - 공사 기간(일 · 주 · 개월)은 계산 엔진 결과에 있는 숫자만 허용한다.
 - 한글로 쓴 금액 · 면적, 쓰면 안 되는 표현이 든 문장도 뺀다.
-- 전화번호 · 동호수는 가린다.
+- 개인정보는 가린다(shared/pii.mask, v3 check와 같은 규칙 하나).
 - v4 비서 대화(runtime.SentenceGate)만 어림 · 파생 · 날짜를 더 읽는다(ground · loose, 아래 'v4 대화 숫자' 절).
   v2 · v3 답 파이프라인 안쪽 검사(check · _bad_number)는 그대로다.
 """
@@ -14,6 +14,8 @@ import re
 from bisect import bisect_left
 from dataclasses import dataclass, field
 
+from app.shared.pii import mask
+
 NUM = re.compile(
     r"(?<![\w.,])(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*"
     r"(만\s*원|천\s*원|억\s*원|억|만|원|%|퍼센트|㎡|m²|평|일|개월|개|롤|cm|mm|m|배|시간|주|층|장|짝|명|인|품)?",
@@ -22,8 +24,6 @@ NUM = re.compile(
 COUNT_WORDS = re.compile(r"^\s*(가지|번|단계|번째|곳|군데|가지씩)")
 HANGUL_MONEY = re.compile(r"(?:[일이삼사오육칠팔구]?[십백천])+\s*(?:만|억)?\s*원")
 HANGUL_AREA = re.compile(r"(?:[일이삼사오육칠팔구]?[십백천])+\s*평")
-PHONE = re.compile(r"01[016789][-\s.]?\d{3,4}[-\s.]?\d{4}")
-UNIT_NO = re.compile(r"\d{1,4}\s*동\s*\d{1,4}\s*호")
 MULT = {"만원": 1e4, "만": 1e4, "천원": 1e3, "억원": 1e8, "억": 1e8}
 BANNED = re.compile(
     r"사기꾼|바가지|양아치|업체가\s*속이|법적으로\s*(?:아무\s*)?문제(?:가)?\s*없|무조건\s*(?:승소|이겨)"
@@ -65,10 +65,6 @@ def numbers(text: str) -> set[float]:
             out.add(round(v / 1e4) * 1e4)
             out.add((v // 1e4) * 1e4)
     return out
-
-
-def mask(text: str) -> str:
-    return UNIT_NO.sub("(동호수 가림)", PHONE.sub("(번호 가림)", text or ""))
 
 
 def _small_count(v: float, unit: str | None, rest: str) -> bool:

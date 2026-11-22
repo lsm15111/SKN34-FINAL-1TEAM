@@ -6,7 +6,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
-Note = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300)]
+from app.shared.text import Tidy
+
+Note = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=300), Tidy]
 ReportKind = Literal["chat", "vendor", "link"]
 ReasonCode = Literal["offsite", "abuse", "promise", "other", "wrong_place", "not_vendor"]
 Action = Literal["warn", "mute_chat", "suspend_new", "suspend_all", "hide_link", "none"]

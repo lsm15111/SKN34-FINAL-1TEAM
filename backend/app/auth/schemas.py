@@ -4,14 +4,15 @@ from datetime import datetime
 
 from pydantic import BaseModel, Field, field_validator
 
-from app.shared.text import strip_controls
+from app.shared.text import strip_controls, visible
 
 _EMAIL = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def normalize_email(v: str) -> str:
     v = v.strip().lower()
-    if not _EMAIL.match(v):
+    # 제어 · 보이지 않는 글자가 든 주소는 받지 않는다(NUL은 저장 · 조회에서 500, 보안 QA r2 N2)
+    if not _EMAIL.match(v) or not v.isprintable():
         raise ValueError("이메일 형식이 아니에요.")
     return v
 
@@ -28,9 +29,10 @@ def normalize_phone(v: str) -> str:
 
 
 def clean_name(v: str) -> str:
-    """제어 문자 · ANSI 색 코드 · 방향 바꾸기 글자를 지우고(NUL은 저장에서 500) 빈칸을 한 칸으로."""
+    """제어 문자 · ANSI 색 코드 · 방향 바꾸기 글자를 지우고(NUL은 저장에서 500) 빈칸을 한 칸으로.
+    보이지 않는 글자(한글 채움 U+3164 등)만 남으면 빈 이름이에요(보안 QA r2 N4)."""
     v = " ".join(strip_controls(v).split())
-    if not v:
+    if not visible(v):
         raise ValueError("이름을 적어 주세요.")
     return v
 
@@ -59,7 +61,7 @@ class LoginIn(BaseModel):
     @field_validator("email")
     @classmethod
     def _lower(cls, v: str) -> str:
-        return v.strip().lower()
+        return strip_controls(v).strip().lower()  # NUL은 조회에서 500(보안 QA r2 N2)
 
 
 class MePatch(BaseModel):

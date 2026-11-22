@@ -17,6 +17,7 @@ from pydantic import (
 )
 
 from app.auth.schemas import clean_name, normalize_email, normalize_phone
+from app.shared.text import Tidy, strip_controls, tidy, visible
 from app.vendor.models import (
     LINKS_MAX,
     NEEDS_INFO_CODES,
@@ -31,6 +32,7 @@ ContactMethod = Literal["phone", "sms", "kakao", "web"]
 FaqKey = Literal["process", "pricing", "extra_cost", "duration", "as_refund"]
 TaxKind = Literal["general", "simplified", "exempt"]  # 일반 · 간이(L02) · 면세
 PriceMode = Literal["price", "included", "excluded"]  # 단가 × 수량 · 다른 줄에 포함 · 빼기
+# 사람이 쓰는 글 칸: Annotated[Text, Field(...), Tidy](Tidy는 맨 뒤, 제어 문자 지움 · 보안 QA r2 N2)
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
 VISIT_FEE_MAX = 1_000_000
 INTRO_MAX = 60  # 한 줄 소개 (V15)
@@ -48,7 +50,8 @@ def clean_url(v: str | None) -> str | None:
         ok = parts.scheme in ("http", "https") and "." in (parts.hostname or "")
     except ValueError:  # 대괄호가 깨진 주소 같은 것
         ok = False
-    if not ok or any(c.isspace() for c in v):
+    # 빈칸 · 제어 문자 · 보이지 않는 글자가 든 주소는 받지 않는다(NUL은 저장에서 500, 보안 QA r2 N2)
+    if not ok or any(c.isspace() or not c.isprintable() for c in v):
         raise ValueError("주소를 확인해 주세요. 예: https://www.example.com")
     if len(v) > 300:
         raise ValueError("주소는 300자까지 적을 수 있어요.")
@@ -60,8 +63,9 @@ def _blank_none(v: str | None) -> str | None:
 
 
 def _one_line(v):
-    """줄바꿈 · 겹친 빈칸을 한 칸으로 (한 줄 소개). 글이 아니면 그대로 넘겨 형식 검사에 맡긴다."""
-    return " ".join(v.split()) if isinstance(v, str) else v
+    """줄바꿈 · 겹친 빈칸을 한 칸으로 (한 줄 소개). 제어 문자는 지우고 보이지 않는 글자만이면 빈 글(shared.text.tidy).
+    글이 아니면 그대로 넘겨 형식 검사에 맡긴다."""
+    return " ".join(tidy(v).split()) if isinstance(v, str) else v
 
 
 def _local_time(v: time | None) -> time | None:
@@ -80,8 +84,8 @@ class AreaOut(AreaIn):
 
 
 def _biz_name(v: str) -> str:
-    v = " ".join(v.split())
-    if not v:
+    v = " ".join(strip_controls(v).split())  # NUL은 저장에서 500(보안 QA r2 N2)
+    if not visible(v):
         raise ValueError("상호를 적어 주세요.")
     return v
 
@@ -172,7 +176,7 @@ class ReviewIn(BaseModel):
 
     action: Literal["approve", "needs_info", "reject"]
     code: str | None = Field(default=None, max_length=20)
-    note: Annotated[Text, Field(max_length=300)] | None = None
+    note: Annotated[Text, Field(max_length=300), Tidy] | None = None
     opened_on: date | None = Field(default=None, description="등록증에서 읽은 개업일 (선택)")
 
     _note = field_validator("note")(_blank_none)
@@ -287,11 +291,11 @@ class ApplicationOut(BaseModel):
 
 class FaqIn(BaseModel):
     key: FaqKey
-    answer: Annotated[Text, Field(max_length=200)]  # 비우면 그 질문은 지운다
+    answer: Annotated[Text, Field(max_length=200), Tidy]  # 비우면 그 질문은 지운다
 
 
 class LinkIn(BaseModel):
-    label: Annotated[Text, Field(max_length=40)] | None = None
+    label: Annotated[Text, Field(max_length=40), Tidy] | None = None
     url: str
 
     _label = field_validator("label")(_blank_none)
@@ -306,8 +310,8 @@ class LinkIn(BaseModel):
 
 
 class PortfolioMeta(BaseModel):
-    title: Annotated[Text, Field(min_length=1, max_length=60)]
-    space: Annotated[Text, Field(max_length=20)] | None = None
+    title: Annotated[Text, Field(min_length=1, max_length=60), Tidy]
+    space: Annotated[Text, Field(max_length=20), Tidy] | None = None
     pyeong: int | None = Field(default=None, ge=1, le=200, description="옛 칸 (v3는 area_m2)")
     taken_on: date | None = None
     area_m2: Decimal | None = Field(
@@ -355,7 +359,7 @@ class ProfileIn(BaseModel):
         description="GET에서 받은 값 그대로. 그 사이 다른 곳에서 저장했으면 409"
     )
     phone: str = Field(max_length=20)
-    address: Annotated[Text, Field(max_length=200)] | None = None
+    address: Annotated[Text, Field(max_length=200), Tidy] | None = None
     site_url: str | None = None
     trades: list[Trade] = Field(min_length=1, max_length=2)
     areas: list[AreaIn] = Field(min_length=1, max_length=100)
@@ -384,8 +388,8 @@ class ProfileIn(BaseModel):
         max_length=INTRO_MAX,
         description="v3: 한 줄 소개 60자 (V15). 줄바꿈은 한 칸으로, 빈 글이면 지우고 null이면 그대로",
     )
-    interior_license: Annotated[Text, Field(max_length=100)] | None = None
-    insurance: Annotated[Text, Field(max_length=100)] | None = None
+    interior_license: Annotated[Text, Field(max_length=100), Tidy] | None = None
+    insurance: Annotated[Text, Field(max_length=100), Tidy] | None = None
     faqs: list[FaqIn] = Field(default_factory=list, max_length=5)
     links: list[LinkIn] = Field(default_factory=list, max_length=LINKS_MAX)
     portfolio: list[PortfolioEdit] | None = Field(
@@ -725,7 +729,7 @@ class PricesV3Out(BaseModel):
 
 
 class ReviewLinkIn(BaseModel):
-    label: Annotated[Text, Field(max_length=40)] | None = None
+    label: Annotated[Text, Field(max_length=40), Tidy] | None = None
     url: str = Field(max_length=300, description="https:// 주소만")
 
     _label = field_validator("label")(_blank_none)
@@ -763,7 +767,7 @@ class LinkCheckIn(BaseModel):
     """관리자 링크 확인 (A01)"""
 
     status: Literal["shown", "hidden"]
-    note: Annotated[Text, Field(max_length=300)] | None = None
+    note: Annotated[Text, Field(max_length=300), Tidy] | None = None
     url: str | None = Field(
         default=None,
         max_length=300,
@@ -785,11 +789,11 @@ class RatingOut(BaseModel):
 
 class SuspendIn(BaseModel):
     scope: Literal["new", "all"] = Field(description="새 요청만 막기 · 진행 중인 것도 닫기")
-    note: Annotated[Text, Field(min_length=1, max_length=300)]
+    note: Annotated[Text, Field(min_length=1, max_length=300), Tidy]
 
 
 class UnsuspendIn(BaseModel):
-    note: Annotated[Text, Field(max_length=300)] | None = None
+    note: Annotated[Text, Field(max_length=300), Tidy] | None = None
 
 
 class VendorSuspendOut(BaseModel):

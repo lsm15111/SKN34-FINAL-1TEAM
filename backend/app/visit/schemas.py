@@ -6,6 +6,7 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from app.quote.schemas import QuoteBriefOut, VendorQuoteOut
+from app.shared.text import Tidy
 from app.vendor.schemas import (
     AreaOut,
     ContactOut,
@@ -18,6 +19,7 @@ from app.vendor.schemas import (
 
 Direction = Literal["less", "more", "same"]  # 표준견적서보다 적어요 · 많아요 · 같아요
 Trade = Literal["dobae", "mokgong"]
+# 사람이 쓰는 글 칸: Annotated[Text, Field(...), Tidy](Tidy는 맨 뒤, 제어 문자 지움 · 보안 QA r2 N2)
 Text = Annotated[str, StringConstraints(strip_whitespace=True)]
 # ---- v3 실측 일정 ----
 Half = Literal["am", "pm"]  # 오전 · 오후
@@ -437,7 +439,7 @@ class CancelIn(BaseModel):
     """실측 취소 이유 (C30). 그 밖이면 한 줄"""
 
     code: CancelCode
-    note: Annotated[Text, Field(max_length=100)] | None = None
+    note: Annotated[Text, Field(max_length=100), Tidy] | None = None
 
     @field_validator("note")
     @classmethod
@@ -450,17 +452,17 @@ class VisitCreateIn(BaseModel):
 
     trade: Trade
     vendor_ids: list[uuid.UUID] = Field(min_length=1, max_length=3)
-    message: Annotated[Text, Field(max_length=300)] | None = Field(
+    message: Annotated[Text, Field(max_length=300), Tidy] | None = Field(
         default=None, description="업체에 남길 말"
     )
     share_contact_ids: list[uuid.UUID] = Field(
         default_factory=list, max_length=3, description="내 연락처를 보낼 업체 (vendor_ids 안에서)"
     )
-    apt_name: Annotated[Text, Field(max_length=40)] | None = Field(
+    apt_name: Annotated[Text, Field(max_length=40), Tidy] | None = Field(
         default=None, description="아파트 이름 (연락처를 보내면 필수)"
     )
-    dong: Annotated[Text, Field(max_length=10)] | None = None
-    ho: Annotated[Text, Field(max_length=10)] | None = None
+    dong: Annotated[Text, Field(max_length=10), Tidy] | None = None
+    ho: Annotated[Text, Field(max_length=10), Tidy] | None = None
     consent_ver: str | None = Field(
         default=None, max_length=20, description="동의한 문구 버전 (연락처를 보내면 필수)"
     )
@@ -506,7 +508,7 @@ class VisitPhotoIn(BaseModel):
     """요청 사진 한 장 (이름표는 '거실 벽' · '안방 천장'처럼 20자 안)"""
 
     file_id: uuid.UUID
-    label: Annotated[Text, Field(max_length=20)] | None = None
+    label: Annotated[Text, Field(max_length=20), Tidy] | None = None
 
     @field_validator("label")
     @classmethod
@@ -591,7 +593,7 @@ class DeclineIn(BaseModel):
     code: Literal["full", "out_of_area", "other"] = Field(
         description="일정이 꽉 찼어요 · 지역 밖이에요 · 그 밖"
     )
-    note: Annotated[Text, Field(max_length=100)] | None = Field(
+    note: Annotated[Text, Field(max_length=100), Tidy] | None = Field(
         default=None, description="v3: 그 밖일 때 한 줄"
     )
 
@@ -757,7 +759,7 @@ class ProposeIn(BaseModel):
     """다른 날 제안 (V07): 반나절 1~3개 · 고객 희망 기간 안"""
 
     reason_code: Literal["other_site", "no_crew", "other"]
-    note: Annotated[Text, Field(max_length=100)] | None = None
+    note: Annotated[Text, Field(max_length=100), Tidy] | None = None
     slots: list[SlotIn] = Field(min_length=1, max_length=3)
 
     @model_validator(mode="after")

@@ -17,6 +17,7 @@ from app.calc.space_share import rooms_needed
 from app.project.diy import DIY, DiyKey
 from app.shared.errors import app_error
 from app.shared.regions import is_region
+from app.shared.text import strip_controls, visible
 
 SizeBand = Literal["10", "20", "30", "40", "50"]
 Budget = Literal["u300", "300-500", "500-700", "700-1000", "o1000", "undecided"]
@@ -46,8 +47,8 @@ class SpaceIn(BaseModel):
     @field_validator("name")
     @classmethod
     def _name(cls, v: str) -> str:
-        v = " ".join(v.split())
-        if not v:
+        v = " ".join(strip_controls(v).split())  # NUL은 저장에서 500(보안 QA r2 N2)
+        if not visible(v):
             raise ValueError("공간 이름을 적어 주세요.")
         return v
 

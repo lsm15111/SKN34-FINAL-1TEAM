@@ -2,10 +2,11 @@
 
 import uuid
 from datetime import date, datetime
-from typing import Any
+from typing import Annotated, Any
 
 from pydantic import BaseModel, Field
 
+from app.shared.text import Tidy
 from app.v2.schemas import V2PlanIn, V2QuoteIn
 
 Title = Field(min_length=1, max_length=40)
@@ -14,14 +15,14 @@ Title = Field(min_length=1, max_length=40)
 class V2CaseSaveIn(BaseModel):
     """state: 화면이 고른 값(사진 · 올린 파일은 빼고). quote_in · plan_in이 있으면 서버가 다시 계산해 남긴다."""
 
-    title: str | None = Field(default=None, min_length=1, max_length=40)
+    title: Annotated[str, Field(min_length=1, max_length=40), Tidy] | None = None
     state: dict[str, Any]
     quote_in: V2QuoteIn | None = None
     plan_in: V2PlanIn | None = None
 
 
 class V2CaseTitleIn(BaseModel):
-    title: str = Title
+    title: Annotated[str, Tidy] = Title
 
 
 class V2CaseItemOut(BaseModel):

@@ -7,11 +7,15 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, Field, StringConstraints, model_validator
 
 from app.review.models import BODY_MAX, PHOTOS_MAX
+from app.shared.text import Tidy
 from app.vendor.schemas import RatingOut, ReviewLinkOut
 
 ReviewTag = Literal["seam", "on_time", "kind", "tidy"]  # 이음매 · 약속한 날 · 설명 친절 · 뒷정리
 HiddenCode = Literal["abuse", "privacy", "unrelated", "paid"]
-Body = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=BODY_MAX)]
+Body = Annotated[
+    str, StringConstraints(strip_whitespace=True, min_length=1, max_length=BODY_MAX), Tidy
+]
+HideNote = Annotated[str, StringConstraints(strip_whitespace=True, max_length=300), Tidy]
 
 
 class ReviewWriteIn(BaseModel):
@@ -95,7 +99,7 @@ class ReviewHideIn(BaseModel):
     """관리자 숨김: 공개한 기준 코드만 (C49)"""
 
     code: HiddenCode
-    note: Annotated[str, StringConstraints(strip_whitespace=True, max_length=300)] | None = None
+    note: HideNote | None = None
 
 
 class ReviewStateOut(BaseModel):

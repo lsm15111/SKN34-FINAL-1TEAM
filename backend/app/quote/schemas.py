@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, StringConstraints, field_validator, model
 
 from app.calc.schedule import JOB_MAX_DAYS
 from app.quote.models import QUOTE_FILES_MAX
+from app.shared.text import Tidy
 
 VatMode = Literal["included", "excluded", "exempt"]  # 넣은 금액이 부가세 포함 · 부가세 빼고 · 면세
 AMOUNT_MAX = 1_000_000_000
@@ -127,9 +128,9 @@ class QuoteDraftIn(BaseModel):
     # v3 '포함됐나요?' 칩 4칸 (D21). 비우면 '안 적었어요'
     incl_removal: bool | None = Field(default=None, description="기존 벽지 철거 포함")
     incl_waste: bool | None = Field(default=None, description="폐기물 처리 포함")
-    paper_spec: Annotated[str, StringConstraints(strip_whitespace=True, max_length=60)] | None = (
-        Field(default=None, description="벽지 제조사 · 규격 (LX 실크벽지 베스트 · 폭 106cm)")
-    )
+    paper_spec: (
+        Annotated[str, StringConstraints(strip_whitespace=True, max_length=60), Tidy] | None
+    ) = Field(default=None, description="벽지 제조사 · 규격 (LX 실크벽지 베스트 · 폭 106cm)")
     warranty_months: int | None = Field(
         default=None, ge=0, le=120, description="하자 보수 기간(개월)"
     )
