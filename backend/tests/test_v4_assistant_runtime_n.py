@@ -549,12 +549,14 @@ def test_period_line_says_expected_until_dates_are_accepted():
     p = SimpleNamespace(
         kind="expected", start=date(2026, 12, 7), end=date(2026, 12, 11), work_days=4
     )
+    # 확정 · 예상 공정표 이름을 밝힌다(QA r3 c2: 확정 뒤에 '지금 예상 공정표 기준'이라고 답함)
     assert assistant_service.period_line(p, today) == (
-        "공정표: 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일(업체가 공사 날짜를 올리기 전 예상)"
+        "공정표: 예상 공정표 · 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일"
+        "(업체가 공사 날짜를 올리기 전 예상)"
     )
     p.kind = "final"
     assert assistant_service.period_line(p, today) == (
-        "공정표: 공사 12월 7일(월)~11일(금) · 일하는 날 4일(수락한 공사 날짜)"
+        "공정표: 확정 공정표 · 공사 12월 7일(월)~11일(금) · 일하는 날 4일(수락한 공사 날짜)"
     )
     assert assistant_service.period_line(None, today) is None
 

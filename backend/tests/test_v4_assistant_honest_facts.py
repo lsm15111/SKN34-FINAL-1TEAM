@@ -1,6 +1,6 @@
 """v4 비서 턴 사실 정직(QA r1 '고칠 것' c1-3 · c3-1): '최근 처리한 카드'에 실행 못 한 카드(실패 · 실행 없이 닫힘)와
-서버가 알린 까닭을 넣어 비서가 까닭을 지어내지 않게 한다('카드가 오래돼서' · '저장됐을 가능성이 커요'). 새 카드로 바뀐
-카드는 넣지 않는다. 유료 호출 0회(Claude 대본)."""
+화면이 알린 까닭을 넣어 비서가 까닭을 지어내지 않게 한다('카드가 오래돼서' · '저장됐을 가능성이 커요'). 새 카드로 바뀐
+카드도 닫힌 카드로 넣는다(QA r3 c6 T13 · s4). 유료 호출 0회(Claude 대본)."""
 
 import uuid
 from types import SimpleNamespace
@@ -52,15 +52,16 @@ def test_decided_line_tells_why_a_card_did_not_run():
             card("expired", {"reason": "handled_elsewhere"}),
             card("failed", {"reason": "stalled"}, "stalled"),
             card("failed", {"reason": "quote_changed"}, "quote_changed"),
-            card("expired", {"reason": "replaced"}),  # 새 카드로 바뀜: 넣지 않는다
+            card("expired", {"reason": "replaced"}),  # 새 카드로 바뀜: 닫힌 카드로 넣는다(QA r3)
             card("executed", {"text": "저장했어요."}),
         ]
     )
     assert line == (
         "최근 처리한 카드: "
-        "집 정보 저장(실행 안 됨 · 닫힘 · 서버가 알린 까닭: 화면에서 이미 처리했거나 상태가 바뀐 제안이에요.)"
-        " · 집 정보 저장(승인했지만 실행 못 함 · 서버가 알린 까닭: 실행하지 못한 제안이에요.)"
-        " · 집 정보 저장(승인했지만 실행 못 함 · 서버가 알린 까닭: 업체가 견적서를 다시 올렸어요.)"
+        "집 정보 저장(실행 안 됨 · 닫힘 · 까닭: 화면에서 이미 처리했거나 상태가 바뀐 제안이에요.)"
+        " · 집 정보 저장(승인했지만 실행 못 함 · 까닭: 실행하지 못한 제안이에요.)"
+        " · 집 정보 저장(승인했지만 실행 못 함 · 까닭: 업체가 견적서를 다시 올렸어요.)"
+        " · 집 정보 저장(실행 안 됨 · 닫힘 · 까닭: 새 카드로 바뀐 제안이에요.)"
         " · 집 정보 저장(승인해 실행됨)"
     )
 
@@ -88,6 +89,5 @@ def test_closed_card_and_its_reason_reach_the_turn_facts(api, script):
     log = script([{"text": "카드가 닫혀서 저장되지 않았어요."}])
     ok(ask(api, pid, "눌렀는데 이미 처리했대요"))
     assert (
-        "최근 처리한 카드: 집 정보 저장(실행 안 됨 · 닫힘 · 서버가 알린 까닭: "
-        f"{r.json()['error']['message']})"
+        f"최근 처리한 카드: 집 정보 저장(실행 안 됨 · 닫힘 · 까닭: {r.json()['error']['message']})"
     ) in facts_of(log[0])

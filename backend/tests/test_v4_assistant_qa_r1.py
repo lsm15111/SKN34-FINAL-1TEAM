@@ -250,6 +250,8 @@ def test_today_hides_settled_news_and_contact_button(api, monkeypatch):
 
 def test_suggest_vendor_picks_before_any_shortlist(api):
     """c1 · c2 · c5: 담은 업체가 없는데 '담은 업체에 실측 요청할 차례'를 권하지 않아요."""
+    # 고를 수 있는 업체가 있는 구(0곳이면 업체 고르기 대신 믿집 밖 찾기를 권해요, 고침 3차 A1)
+    vendor(api, "maru@mitjip.test", "마루와벽")
     _, pid = home(api)
     ev = ok(ask(api, pid, "집 정보 확인해 줘"))
     says = [x["say"] for x in ev[-1][1]["suggest"]]

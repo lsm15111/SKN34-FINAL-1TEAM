@@ -381,7 +381,7 @@ def test_due_card_says_it_expired_and_stays_in_recent_cards(api, script):
 
     ids, said = run(api, go)
     assert ids[0] == a["action_id"]  # 방금 기한이 지난 카드는 기한으로 줄 선다(만든 때 아님)
-    assert "서버가 알린 까닭: 기한이 지난 제안이에요." in said
+    assert "까닭: 기한이 지난 제안이에요." in said
 
 
 def test_decided_line_uses_due_words_and_the_saved_failure_message():
@@ -405,8 +405,8 @@ def test_decided_line_uses_due_words_and_the_saved_failure_message():
         ]
     )
     assert said == (
-        "최근 처리한 카드: 실측 시간(실행 안 됨 · 닫힘 · 서버가 알린 까닭: 기한이 지난 제안이에요.)"
-        " · 실측 시간(승인했지만 실행 못 함 · 서버가 알린 까닭: 방금 다른 고객이 골랐어요.)"
+        "최근 처리한 카드: 실측 시간(실행 안 됨 · 닫힘 · 까닭: 기한이 지난 제안이에요.)"
+        " · 실측 시간(승인했지만 실행 못 함 · 까닭: 방금 다른 고객이 골랐어요.)"
     )
 
 
