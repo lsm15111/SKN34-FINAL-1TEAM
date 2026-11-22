@@ -96,6 +96,14 @@ MADE_NOW = "이번 턴에 승인 카드를 만들었어요. 사람이 카드 버
 # 문장 끝: 마침표 · 물음표 · 느낌표 뒤 빈칸, 또는 줄 바꿈('필요 없어요'의 '요 '는 끝으로 보지 않는다). 목록 번호(줄
 # 머리 · 빈칸 뒤 한두 자리 수 + 점, '1. ')는 문장 끝이 아니다(고침 3차 A2 결정 2, QA r3 c5 19턴 '2.'에서 끊김)
 SENT_END = re.compile(r"(?<!\s\d\.)(?<!\s\d\d\.)(?<!^\d\.)(?<!^\d\d\.)(?<=[.!?。])[ \t]+|\n+")
+
+
+def spacing(sep: str) -> str:
+    """문장 사이 띄움: 빈 줄(말풍선 나눔, 줄 바꿈 둘 이상) · 줄 바꿈 · 빈칸. 화면은 빈 줄마다 말풍선을 나눈다."""
+    n = sep.count("\n")
+    return "\n\n" if n >= 2 else "\n" if n else " "
+
+
 # 승인이 있어야 하는 일을 한 것처럼 끝맺는 말('확정했어요' · '요청을 보냈어요' · '결제를 완료'). 비서는 실행하지 않는다
 CLAIM = re.compile(
     r"(?:확정|수락|승인|거절|결제|예약|저장|실행|처리|요청|신청|접수|전송)(?:을|를|으로|로)?\s*"
@@ -614,8 +622,11 @@ class SentenceGate:
             return
         self._buf = parts[-1]
         for text, sep in zip(parts[:-1], seps, strict=True):
-            await self._one(text)
-            self._sep = "\n" if "\n" in sep else " "
+            if text.strip():
+                await self._one(text)
+                self._sep = spacing(sep)
+            else:  # 띄움만 이어졌다(글 조각 경계에서 빈 줄이 나뉨): 앞 띄움에 더한다
+                self._sep = spacing(self._sep + sep)
 
     async def flush(self, drop_tail: bool = False) -> None:
         """모델 글 블록이 끝났다. drop_tail이면(max_tokens) 끊긴 마지막 문장을 버린다(묶음 안이면 묶음째)."""
@@ -628,7 +639,8 @@ class SentenceGate:
             if self._group is not None:
                 self._group.bad = True
         busy = self._out or self._held or self._group or self._extra
-        self._sep = " " if busy else ""
+        # 도구 뒤 글은 새 말풍선으로 연다(카드 앞뒤로 말풍선을 나눈다)
+        self._sep = "\n\n" if busy else ""
         # 다음 블록(도구 뒤 글)은 새 줄로 본다(가리킨 목록이 도구 뒤에 와도 묶음에 든다)
         self._newline = True
 
@@ -930,7 +942,7 @@ class SentenceGate:
         가리키는 한 줄만 남음). 이 턴에 카드가 있으면 FAIL_TEXT, 없으면 CUT_TEXT. 카드 말 정직한 한 줄을 이미 썼으면 없다."""
         if not self._gone or self._fixed or any(not policy.points(s) for s in self.sent):
             return
-        await self._put(" ", FAIL_TEXT if cards else CUT_TEXT)
+        await self._put("\n\n", FAIL_TEXT if cards else CUT_TEXT)  # 정직한 한 줄은 따로 한 말풍선
 
     def _tail(self) -> _Piece | None:
         """넘친 문장 중 끝에 보낼 마지막 묻는 말 하나(목록 줄 · 가리키는 문장 · 맞지 않는 카드 말 · 이 턴과 같은 말 ·

@@ -16,6 +16,7 @@ import { ApprovalCard } from "@/components/assistant/kit/ApprovalCard";
 import { SourceTag } from "@/components/assistant/kit/StatusTag";
 import { I } from "@/components/assistant/kit/icons";
 import k from "@/components/assistant/kit/kit.module.css";
+import { bubbles } from "@/lib/richText";
 import p from "./pro.module.css";
 
 const SHOW = 3;
@@ -101,7 +102,16 @@ export function VendorFeed({ now }: { now: string }) {
   };
   const part = (x: FeedPart, i: number) => {
     if (x.t === "action") return card(x.action);
-    if (x.t === "text") return <p key={i} className={p.say}>{x.src === "ai" ? <I n="sparkle" /> : null}{x.text}</p>;
+    if (x.t === "text") {
+      // 말풍선 나누기: 빈 줄마다 한 줄 묶음(첫 줄에만 반짝 표시, 나머지는 글 머리에 맞춰 들여요)
+      return (
+        <div key={i} className={p.says}>
+          {bubbles(x.text).map((t, j) => (
+            <p key={j} className={`${p.say} ${j && x.src === "ai" ? p.sayMore : ""}`}>{x.src === "ai" && !j ? <I n="sparkle" /> : null}<span>{t}</span></p>
+          ))}
+        </div>
+      );
+    }
     if (x.t === "card" && x.card.kind === "vendor_brief") {
       const vid = (x.card.data as { visit_id: string }).visit_id;
       return <Link key={i} className={k.text} href={`/vendor/requests/${encodeURIComponent(vid)}`}>요청 브리핑 보기<I n="chev" /></Link>;

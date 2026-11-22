@@ -50,3 +50,17 @@ export function blocks(text: string): Block[] {
   close();
   return out;
 }
+
+const BLANK = /\n[ \t]*\n/;
+const LISTY = /^\s*(?:[-*•]|\d{1,2}\.)\s+/m;
+
+/**
+ * 비서 답 글 → 말풍선 글들(피클처럼 생각 덩어리마다 말풍선을 나눠요). 빈 줄마다 나누고, 빈 줄이 없는 옛 답은 줄마다
+ * 나눠요. 목록 줄이 든 글은 줄로 나누지 않아요(목록이 말풍선 여럿으로 흩어지지 않게).
+ */
+export function bubbles(text: string): string[] {
+  const t = text.replace(/\r\n?/g, "\n").trim();
+  if (!t) return [];
+  const parts = BLANK.test(t) ? t.split(/\n[ \t]*\n+/) : LISTY.test(t) ? [t] : t.split("\n");
+  return parts.map((x) => x.trim()).filter(Boolean);
+}

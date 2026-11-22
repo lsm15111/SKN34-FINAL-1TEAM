@@ -67,6 +67,10 @@
 .me .bubble { background: var(--mj-fill); padding: 10px 16px; border-radius: 18px 18px 4px 18px; }
 .ai { display: grid; gap: 6px; }
 .aiTag { justify-self: start; }
+/* 말풍선 나누기: 비서 글은 빈 줄마다 옅은 말풍선 하나(고객 말풍선과 거울 꼴), 정해 둔 글은 말풍선 없이 줄만 나눠요 */
+.aiBubble { justify-self: start; background: var(--mj-surface-sub); padding: 10px 16px; border-radius: 4px 18px 18px 18px; }
+.aiBubble + .aiBubble { border-radius: 18px; }
+.says { display: grid; gap: 6px; }
 .note { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-mute); }
 /* 할 일이 끝난 먼저 말 건 줄 끝 '완료' */
 .settled { margin: 0; display: flex; align-items: center; min-height: 24px; }

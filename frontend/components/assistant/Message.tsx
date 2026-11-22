@@ -1,5 +1,5 @@
 "use client";
-// 말 하나: 비서는 28px 'AI' 원 + 말풍선 없는 글 · 카드, 고객은 회색 말풍선(18 18 4 18).
+// 말 하나: 비서는 28px 'AI' 원 + 옅은 말풍선(4 18 18 18, 빈 줄마다 하나) · 카드, 고객은 회색 말풍선(18 18 4 18).
 // 비서 말 안 순서는 서버가 보낸 순서 그대로예요: 정해 둔 글 · 계산 카드가 먼저, AI 글은 뒤에 붙어요('AI 답변' 이름표).
 // 비서 글은 굵게 · 줄바꿈 · '- ' 목록만 화면 꼴로 그려요(RichText, HTML 주입 없음). 고객 말은 쓴 그대로예요.
 // 무료 모드(LLM 없이)에서 카드만 남았으면 '설명을 만들지 못했어요', 한도에 닿아 멈췄으면(stopped) 그렇게 알려요.
@@ -8,6 +8,7 @@
 import { createContext, useContext } from "react";
 import type { ActionOut, FeedItem, FeedPart, SuggestOut } from "@/lib/api/assistant";
 import { callName } from "@/lib/callName";
+import { bubbles } from "@/lib/richText";
 import { ApprovalCard } from "./kit/ApprovalCard";
 import { RichText } from "./kit/RichText";
 import { SourceTag, StatusTag } from "./kit/StatusTag";
@@ -90,9 +91,12 @@ function Part({ part: p, ctx, act, old }: { part: FeedPart; ctx: CardCtx; act: A
   const me = useContext(MyName);
   switch (p.t) {
     case "text":
+      // 말풍선 나누기(피클처럼): 빈 줄마다 말풍선 하나(빈 줄 없는 옛 답은 줄마다, lib/richText bubbles)
       return p.src === "ai"
-        ? <div className={s.ai}><span className={s.aiTag}><SourceTag src="ai" /></span><div className={s.bubble}><RichText text={callName(p.text, me)} /></div></div>
-        : <div className={`${s.bubble} ${s.say}`}><RichText text={p.text} /></div>;
+        ? <div className={s.ai}><span className={s.aiTag}><SourceTag src="ai" /></span>
+            {bubbles(callName(p.text, me)).map((x, i) => <div key={i} className={`${s.bubble} ${s.aiBubble}`}><RichText text={x} /></div>)}
+          </div>
+        : <div className={s.says}>{bubbles(p.text).map((x, i) => <div key={i} className={`${s.bubble} ${s.say}`}><RichText text={x} /></div>)}</div>;
     case "card":
       return (
         <>

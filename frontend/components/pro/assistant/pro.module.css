@@ -3,6 +3,9 @@
 .brief h3 { font-size: var(--mj-type-title); margin-top: -6px; }
 .say { margin: 0; display: flex; gap: 8px; align-items: flex-start; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
 .say svg { width: 16px; height: 16px; color: var(--mj-primary); margin-top: 3px; flex: none; }
+/* 말풍선 나누기: 빈 줄마다 한 줄 묶음, 둘째 묶음부터는 반짝 표시 너비(16 + 8)만큼 들여 글 머리를 맞춰요 */
+.says { display: grid; gap: 6px; }
+.sayMore { padding-left: 24px; }
 .fit { list-style: none; margin: 0; padding: 0; display: grid; border-top: 1px solid var(--mj-line-soft); }
 .fit li { display: grid; grid-template-columns: 20px 44px minmax(0, 1fr); gap: 10px; align-items: start; padding: 9px 0; border-bottom: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
 .fit svg { width: 18px; height: 18px; color: var(--mj-st-ok); margin-top: 2px; }

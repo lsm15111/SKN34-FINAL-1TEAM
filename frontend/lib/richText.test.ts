@@ -1,6 +1,6 @@
 // AI 답 글 작은 마크다운(lib/richText): 굵게 · 줄바꿈 · '- ' 목록만, 별표가 화면에 남지 않아요
 import { expect, test } from "@playwright/test";
-import { blocks, spans } from "./richText";
+import { blocks, bubbles, spans } from "./richText";
 
 const b = (text: string) => ({ text, bold: true });
 const n = (text: string) => ({ text, bold: false });
@@ -56,4 +56,24 @@ test("글 안의 하이픈 · 숫자 목록은 그대로 둬요", () => {
   ]);
   expect(blocks("")).toEqual([]);
   expect(blocks("\n\n")).toEqual([]);
+});
+
+test("말풍선: 빈 줄마다 나눠요(말풍선 안 줄바꿈은 그대로)", () => {
+  expect(bubbles("세 곳을 골라 왔어요!\n\n가견적은 실측 전 값이에요.\n값을 먼저 보시려면 결도배예요.\n\n어느 곳에 요청할까요?")).toEqual([
+    "세 곳을 골라 왔어요!",
+    "가견적은 실측 전 값이에요.\n값을 먼저 보시려면 결도배예요.",
+    "어느 곳에 요청할까요?",
+  ]);
+  expect(bubbles("하나예요.\n \n\n둘이에요.")).toEqual(["하나예요.", "둘이에요."]);
+});
+
+test("말풍선: 빈 줄이 없는 옛 답은 줄마다, 줄도 없으면 하나예요", () => {
+  expect(bubbles("첫 줄이에요.\n둘째 줄이에요.")).toEqual(["첫 줄이에요.", "둘째 줄이에요."]);
+  expect(bubbles("한 덩어리 답이에요. 두 문장이에요.")).toEqual(["한 덩어리 답이에요. 두 문장이에요."]);
+  expect(bubbles("  \n ")).toEqual([]);
+});
+
+test("말풍선: 목록이 든 글은 줄로 나누지 않아요", () => {
+  expect(bubbles("챙길 것은 셋이에요.\n- 고무장갑\n- 마스킹 테이프")).toEqual(["챙길 것은 셋이에요.\n- 고무장갑\n- 마스킹 테이프"]);
+  expect(bubbles("순서예요.\n1. 짐 빼기\n2. 도배")).toEqual(["순서예요.\n1. 짐 빼기\n2. 도배"]);
 });

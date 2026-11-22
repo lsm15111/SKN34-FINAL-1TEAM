@@ -136,7 +136,8 @@ def test_honest_line_when_nothing_or_only_pointers_are_left():
         g,
         '이렇게 보내 보세요.\n"실리콘 값 1,234,567원은 제가 내요."\n메뉴의 [채팅]에서 직접 보내 주세요.',
     )
-    assert got == f"메뉴의 [채팅]에서 직접 보내 주세요. {runtime.CUT_TEXT}"
+    # 정직한 한 줄은 따로 한 말풍선
+    assert got == f"메뉴의 [채팅]에서 직접 보내 주세요.\n\n{runtime.CUT_TEXT}"
     assert "가리킨 말 없음" in g.dropped
     g = gate()
     assert run(g, "실리콘 값은 1,234,567원이에요.", cards=True) == runtime.FAIL_TEXT

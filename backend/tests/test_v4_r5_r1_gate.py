@@ -176,7 +176,8 @@ def test_only_the_very_next_sentence_is_checked():
 def test_honest_line_when_only_a_pointer_is_left():
     g = gate()
     got = run(g, f"{ROUGH} {S54} 업체 추천 카드를 눌러 주세요.", opened={"visit_request"})
-    assert got == f"업체 추천 카드를 눌러 주세요. {runtime.CUT_TEXT}"
+    # 정직한 한 줄은 따로 한 말풍선
+    assert got == f"업체 추천 카드를 눌러 주세요.\n\n{runtime.CUT_TEXT}"
 
 
 @pytest.mark.parametrize(
