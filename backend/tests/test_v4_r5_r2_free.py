@@ -13,6 +13,8 @@ from app.agent import llm
 from app.assistant import free
 from app.shared.clock import SEOUL
 from tests.conftest import query
+from tests.helpers import use
+from tests.test_extras import scheduled
 from tests.test_v4_assistant_actions import acts
 from tests.test_v4_assistant_free_qa import turn, two_quotes, two_vendors
 from tests.test_v4_assistant_new_tools import cards_of, said, two_requests
@@ -180,6 +182,18 @@ def test_notify_ask_promises_only_what_mitjip_sends_first(api, monkeypatch):
     lint(free.NOTIFY_LIST, free.NOTIFY_LIST_AGAIN, said_)
 
 
+def test_notify_ask_about_a_delay_makes_no_date_change_card(api, monkeypatch):
+    """'공사가 미뤄지면 알려 주세요'는 날짜 바꾸기 길(일주일 뒤로 미루는 승인 카드)로 가지 않아요."""
+    monkeypatch.setattr(free, "is_night", lambda _now: False)
+    customer, pid, _did = scheduled(api)  # 공사 날짜까지 수락한 집
+    use(api, customer)
+    ev = free_ok(api, pid, "공사가 미뤄지면 알려 주세요")
+    assert not [x for x in acts(ev) if x["kind"] == "date_change"]
+    want = free.NOTIFY_SAID.format(when=free.NOTIFY_WHEN["dates"][0])
+    assert said(ev) == want
+    lint(want, free.NOTIFY_AGAIN.format(when=free.NOTIFY_WHEN["dates"][1]))
+
+
 @pytest.mark.parametrize(
     ("text", "kind"),
     [
@@ -191,6 +205,8 @@ def test_notify_ask_promises_only_what_mitjip_sends_first(api, monkeypatch):
         ("견적서 나오면 바로 알려 줘", "quote"),
         ("실측 끝나면 알려 주세요", "quote"),
         ("업체가 공사 날짜 올리면 알려 주세요", "dates"),
+        ("공사가 미뤄지면 알려 주세요", "dates"),
+        ("공사 연기되면 알려 줘", "dates"),
         ("추가 금액 생기면 알려 줘", "extra"),
         ("공사 다 끝나면 알려 줘", "done"),
         ("조사 끝나면 알려 줘", "research"),
