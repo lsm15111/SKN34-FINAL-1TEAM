@@ -37,7 +37,7 @@ function nameOf(l: StdLineIn): { name: string; note?: string } {
   return { name: l.name };
 }
 
-/** 벽지 직접 구매(API own_paper): 도배지 줄은 '고객 구매'(합계 밖, 계산 엔진). rolls는 롤 수 글(API rolls.text) */
+/** 벽지 직접 구매(API own_paper): 도배지 줄은 '고객 구매'(합계 밖, 계산 엔진). rolls는 롤 수 글(내 공사 rolls.text · 손님 rolls_text) */
 export type OwnPaper = { rolls: string | null };
 
 export function toQuoteLines(lines: StdLineIn[], scope: "full" | "partial" | null | undefined, own?: OwnPaper): QuoteLine[] {
@@ -46,9 +46,11 @@ export function toQuoteLines(lines: StdLineIn[], scope: "full" | "partial" | nul
     const state = (STATES as string[]).includes(l.state) ? (l.state as LineState) : undefined;
     let note = base;
     if (l.key === "paper" && (l.basis === "market" || l.basis === "assumed" || (l.source ?? "").includes("시장"))) note = "시장 평균 가격";
-    // 고객 구매 줄: 사야 할 양(수량 · 롤 수)만 보이고 단가 · 금액은 '—'(합계 밖이라 '안 함' 말은 붙이지 않아요)
+    // 고객 구매 줄: 사야 할 양만 보이고 단가 · 금액은 '—'(합계 밖이라 '안 함' 말은 붙이지 않아요). 양은 단위 하나로:
+    // 롤 수(계산 엔진)가 있으면 롤 수만, 없으면 벽지 평 수량만(QA r3 v1 L11: '약 17롤 · 85 벽지 평' 두 단위가 같이 보였어요)
     if (own && l.key === "paper" && state === "excluded") {
-      return { key: l.key, name, note: ["고객 구매", own.rolls].filter(Boolean).join(" · "), qty: l.qty, unit: unitText(l.unit), amount: null };
+      if (own.rolls) return { key: l.key, name, note: `고객 구매 · ${own.rolls}`, amount: null };
+      return { key: l.key, name, note: "고객 구매", qty: l.qty, unit: unitText(l.unit), amount: null };
     }
     if (state === "excluded" && scope === "partial") note = "고르지 않았어요";
     if (state === "excluded" && scope === "partial") return { key: l.key, name, note, amount: null, state };

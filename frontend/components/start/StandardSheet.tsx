@@ -19,14 +19,15 @@ export function StandardSheet({ view, changeHref }: { view: StdView; changeHref:
           <BigFigure value={view.total} caption={daysCaption(view.days) || false} sub={view.budget ?? undefined} />
           <Button variant="text" href={changeHref} aria-label={`조건 바꾸기 · 지금 조건: ${view.condition}`}>조건 바꾸기</Button>
         </div>
+        {/* 벽지 직접 구매: 도배지 줄은 '고객 구매'로 합계 밖(계산 엔진). 업체 가견적은 벽지 값이 든 값이라 안내 한 줄(틀)을
+            합계 바로 아래에 둬요(폰에서 줄 표 끝까지 내리지 않아도 보이게, QA r3 v1 L11) */}
+        {view.paperNote ? <p className={s.info}>{view.paperNote}</p> : null}
       </section>
       <section className={s.group} aria-labelledby="std-lines">
         <h2 id="std-lines" className={part ? s.eyebrow : "mj-sr"}>{part ? "고른 공간만 어림했어요" : "표준견적서 줄"}</h2>
         <QuoteLines lines={view.lines} totals={{ supply: view.supply, vat: view.vat, total: view.total }} vatSplit caption="표준견적서 줄" />
       </section>
       {part ? <p className={s.info}>부분 공사는 고른 공간의 넓이를 어림해 계산했어요. 실측 뒤 업체 견적서로 확정해요.</p> : null}
-      {/* 벽지 직접 구매: 도배지 줄은 '고객 구매'로 합계 밖(계산 엔진). 업체 가견적은 벽지 값이 든 값이라 안내 한 줄(틀) */}
-      {view.paperNote ? <p className={s.info}>{view.paperNote}</p> : null}
     </>
   );
 }
