@@ -54,6 +54,7 @@ ALLOWED = frozenset(
         "start", "end", "start_date", "end_date", "day", "days", "half", "date", "when",
         "wish", "wish_start", "wish_end", "work_start", "work_wish_on", "move_in",
         "total", "total_won", "supply", "vat", "amount", "won", "estimate", "estimate_won",
+        "estimate_low_won", "estimate_high_won",
         "diff_won", "gap_won", "diff_vs_estimate", "changed", "from_version", "version",
         "valid_until", "valid_soon", "expired", "received_on", "visit_day", "due", "due_at",
         "days_needed", "crew", "work_days", "plan_version", "final_version",

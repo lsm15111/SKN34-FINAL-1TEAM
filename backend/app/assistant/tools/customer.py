@@ -308,7 +308,7 @@ async def _elsewhere(s, tc: ToolCtx, p, trade: str, sido: str, sgg: str) -> Tool
         ],
         "count": len(picks),
         "note": note,
-    }
+    } | cards.estimate_range(picks)
     return ToolOut(data=model, cards=[card] if picks else [])
 
 

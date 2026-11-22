@@ -583,6 +583,15 @@ VAT_WAY = {
 }
 
 
+def estimate_range(picks: list[VendorPick]) -> dict:
+    """고른 업체 가견적의 가장 낮은 · 높은 값(모델 값, 두 곳 이상일 때). 범위 끝을 모델이 고르지 않게 한다
+    (QA r4 s5: 다른 업체 값을 범위 아래 끝으로 말함). 고르기만 하고 새 금액은 만들지 않는다."""
+    wons = [x.estimate_won for x in picks if x.estimate_won]
+    if len(wons) < 2:
+        return {}
+    return {"estimate_low_won": min(wons), "estimate_high_won": max(wons)}
+
+
 async def vendor_picks(
     s: AsyncSession,
     user: User,
@@ -676,7 +685,7 @@ async def vendor_picks(
             for x in picks
         ],
         "count": len(picks),
-    }
+    } | estimate_range(picks)
     notes = []
     if opened:
         names = [x.name for x in picks if x.vendor_id in asked]
