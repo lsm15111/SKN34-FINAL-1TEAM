@@ -183,8 +183,11 @@ def test_diy_line_has_calc_dates_and_the_vendor_copy(api, script):
         *(f"{x['title']} {x['text']}" for x in items),
         "업체 사본: 들어감(마루와벽)",
     ]
-    # 집 줄에는 직접 할 일을 두 번 적지 않아요
-    assert S.DIY_FACT not in line_of(facts, "집: ")
+    # 집 줄의 고른 일(집 카드와 같은 글)은 그대로 두고, 날짜 · 사본은 다음 줄에(집 줄 바로 뒤)
+    rows = facts.split("\n")
+    home_at = next(i for i, x in enumerate(rows) if x.startswith("집: "))
+    assert "직접 할 일 페인트(문틀 · 몰딩), 실리콘 · 줄눈" in rows[home_at]
+    assert rows[home_at + 1] == line
     # 도구 없이 답하는 턴도 그 날짜를 말할 수 있어요(날짜 문장이 숫자 검사로 빠지던 것)
     when = f"페인트는 {items[0]['text']}."
     script([{"text": when}])

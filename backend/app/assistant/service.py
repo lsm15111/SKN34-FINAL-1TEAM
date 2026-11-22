@@ -225,19 +225,16 @@ START_LOCKED = "공사 시작 희망 안 정함(실측 요청 뒤라 업체와 �
 # 집 카드 사실의 평('32평', 표준견적서에 저장한 공급 기준 평). 전용 ㎡로 넣은 집은 환산 비율로 어림한 평이라 턴 사실에
 # 넣지 않는다(QA r3 c4b: 전용 59㎡ 집을 '21평'이라고 말함). 공급 기준이면 평형이라고 밝힌다
 PYEONG_FACT = re.compile(r"^(\d+(?:\.\d+)?)평$")
-DIY_FACT = "직접 할 일 "  # 집 카드 사실의 직접 할 일(cards.home)
 
 
-def home_facts(home: dict, *, diy: bool = True) -> list[str]:
+def home_facts(home: dict) -> list[str]:
     """턴 사실 '집:' 줄의 사실(집 카드와 같은 글). 잠긴 뒤 비어 있는 시작 희망을 바꾸고, 평은 공급 기준 평형으로만
-    둔다(전용 면적 집은 ㎡만). diy=False면 직접 할 일 사실을 뺀다('직접 할 일:' 줄이 날짜 · 사본과 같이 말해요)."""
+    둔다(전용 면적 집은 ㎡만)."""
     facts = list(home["facts"])
     if home["locked"] and home.get("start_date") is None:
         facts = [START_LOCKED if f.startswith(START_WISH) else f for f in facts]
     out = []
     for f in facts:
-        if not diy and f.startswith(DIY_FACT):
-            continue
         if m := PYEONG_FACT.match(f):
             if home.get("area_basis") == "exclusive":
                 continue
@@ -496,7 +493,7 @@ async def _customer_facts(
         *time_lines(now),
         "화면: 고객 비서",
         "단계: " + w.stage + (" · 집 정보 잠김(실측 요청 뒤)" if home["locked"] else ""),
-        "집: " + " · ".join(home_facts(home, diy=diy is None)),
+        "집: " + " · ".join(home_facts(home)),
         *([diy] if diy else []),
         *(x for x in (w.vendors, w.chat) if x),
     ]
