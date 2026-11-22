@@ -133,7 +133,7 @@
 
 ### SSE
 - 순서: `ack`{turn_id, chat_id, at} → `status`{text, task?} · `card`{card_id, kind, data, say?} · `action`(ActionOut)(여러 번) → `token`{text}(여러 번) → `done`{rev, mode, cards, actions, stopped, chips, suggest}
-- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 같은 client_key 되돌림에서는 비워요.
+- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 그 단계의 다음 일이 열린 승인 카드로 와 있으면(실측 요청 · 반나절 · 업체 확정 · 날짜 수락) 단계 제안은 빼요(`STEP_OPEN`, QA r2 c5). 같은 client_key 되돌림에서는 비워요.
   - 화면 메모: 목업(`lib/api/assistant.ts`)은 `suggest`를 하나(SuggestOut)로 받아요. 백엔드는 목록이라 화면 담당이 맞춰야 해요.
 - 실패하면 `done` 대신 `error`{code, message}를 보내요.
 - 모든 data에 `seq`(턴 안에서 늘기만 함)와 `id: {turn_id}:{seq}`를 붙여요. 화면은 이미 받은 seq 이하를 버려요.
@@ -144,6 +144,7 @@
 
 ### 카드 kind
 - home_info · standard_quote · vendor_picks · visit_slots · quote_compare · schedule · knowledge · answer · floorplan_links · today · vendor_brief · quote_checklist
+- (2026-11-22 갈래 T) grade_compare(벽지 두 종류 견주기: 합지 · 실크 합계 · 차액 · 달라지는 줄, 단추 choice `grade:<값>` → 집 정보 승인 카드) · market_range(시세 범위 · 출처 한 줄, 표본이 모자라면 카드 없음) · options(고르기 칩: 누르면 say를 보냄)
 - 화면은 `components/assistant/cards/registry`에서 kind로 컴포넌트를 골라요. data 모양은 `assistant/schemas.py`의 `*Data`예요.
 - 같은 card_id면 카드를 바꿔 끼워요. 대화를 다시 열면 `assistant_turns.cards`로 그려요.
 - 업체가 쓴 자유 글은 `vendor_note` 칸('업체가 적은 말', 40자)에만 와요: `quote_compare.cols[].vendor_note`(벽지 사양, 옛 `paper` 대신) · `visit_slots.vendor_note`(다른 날 제안 메모) · `schedule.vendor_note`(날짜 바꾼 까닭). 화면은 이 칸만 그 이름표로 보여 주고 다른 글에 섞지 않아요.
@@ -154,16 +155,18 @@
   - `quote_compare.cols[].received_on`은 서울 날짜예요(견적서 보낸 때 timestamptz → 서울).
 
 ### 행동(ActionOut)
-- `{action_id, kind, status, summary, target_ver, expires_at, decided_at?, executed_at?, error_code?, result?, supersedes?, replaced_by?}`
+- `{action_id, kind, status, summary, target_id, target_ver, expires_at, decided_at?, executed_at?, error_code?, result?, supersedes?, replaced_by?}`
+- `target_id`: 카드가 가리키는 대상 id(공사 · 실측 요청 · 확정 · 공사 날짜 제안 · 추가 금액, 2026-11-22). 화면은 v3 쓰기 주소의 대상과 같은 카드만 '처리됨'으로 보고, 실측 요청 취소(visit_cancel)가 실행되면 같은 대상의 열린 카드 단추를 숨겨요.
 - `replaced_by`: 같은 대상의 새 제안으로 닫힌 행동(expired · replaced)이면 그 새 행동 id예요(화면이 어림하지 않게).
-- kind는 제안 도구 이름에서 `propose_`를 뗀 것(home_info · visit_request · visit_slot · vendor_confirm · dates_accept · delay_accept · window_answer · decline · dates)이에요.
+- kind는 제안 도구 이름에서 `propose_`를 뗀 것(home_info · visit_request · visit_slot · vendor_confirm · dates_accept · delay_accept · window_answer · decline · dates · visit_cancel(0051))이에요.
+- 거두기(withdraw_proposal, 고정 선 1의 예외): 실행 전 카드는 고객 말로 거둬요. 거절과 같게 `rejected`로 남고 `result.reason = withdrawn`이라 `error_code` withdrawn으로 내보내요(화면 '거뒀어요'). 거둔 카드를 승인하면 409 action_closed('고객이 거둔 제안이에요.')예요.
 - summary: `{title, amount_won?, amounts[], diff?, version?, rows[], file?, note?, approve_label}`. 금액 · 차액은 계산 엔진 값이에요.
 - 만료 까닭은 `result.reason`에 두고 `error_code`로 내보내요(DB의 error_code는 failed에만, 2장 CHECK): `due`(기한 지남) · `replaced`(같은 대상 새 제안) · `handled_elsewhere`(대상 상태가 비서 밖에서 바뀜, 아래).
 - 닫힌 행동을 승인하면 409예요: due는 `expired`(문구 '기한이 지난 제안이에요. …'), 그 밖은 `action_closed`(문구: replaced '새 카드로 바뀐 제안이에요.' · handled_elsewhere '화면에서 이미 처리했거나 상태가 바뀐 제안이에요.').
 - 기능 오류로 실패한 행동은 고객에게 준 말을 `result.message`에 남겨요(턴 사실 '최근 처리한 카드'의 까닭, 2026-11-22).
 
 #### 화면에서 직접 처리한 제안 닫기(handled_elsewhere, 2026-11-21)
-- 사람이 v3 화면 단추(업체 확정 · 날짜 수락 · 기간 답하기 …)로 직접 처리하면 같은 대상의 비서 제안이 proposed로 남아요. sweep(2분)이 열린 제안(새 것부터 200개)의 대상 지금 상태를 읽기 조인으로 보고, 만든 때 상태(target_ver)와 다르면 `proposed → expired`, `result.reason = handled_elsewhere`로 닫아요.
+- 사람이 v3 화면 단추(업체 확정 · 날짜 수락 · 기간 답하기 …)로 직접 처리하면 같은 대상의 비서 제안이 proposed로 남아요. sweep(2분)이 열린 제안 모두(새 것부터 200개씩 쪽마다, 시간 예산 10초를 넘기면 멈춘 자리부터 다음 차례가 이어 봄)의 대상 지금 상태를 읽기 조인으로 보고, 만든 때 상태(target_ver)와 다르면 `proposed → expired`, `result.reason = handled_elsewhere`로 닫아요.
 - 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이겨요. 그 행동을 단 먼저 말 걸기 줄(sent · opened)도 `expired`(reason handled)로 닫아 대화 기록에서 빠져요.
 - 화면 신호는 따로 보내지 않아요. 화면은 다음 feed · actions 읽기나 승인 409(action_closed)로 알아요.
 
@@ -175,6 +178,7 @@
 | vendor_confirm | visit · 견적서 판 | 실측 상태가 quoted가 아님(직접 확정 · 다시 고르기 · 닫힘). 새 판은 승인 때 quote_changed로 새 제안 |
 | dates_accept · delay_accept | proposal · 공정표 판 | 낸 날짜가 pending이 아님(직접 수락 · 새로 냄 · 거둠) |
 | dates(업체) | deal · dates_state | 공사 날짜 상태가 바뀜(직접 날짜 보냄 · 고객 수락 · 다시 고르기) |
+| visit_cancel | visit · 만든 때 실측 상태 | 취소할 수 없는 상태가 됨(견적서 옴 · 확정 · 닫힘). 업체가 답해 상태가 바뀌어도 취소할 수 있는 동안은 그대로. 실행하면 같은 요청의 다른 열린 카드(반나절 · 확정)를 같은 트랜잭션에서 닫아요 |
 - 견적서가 새 판이라 확정이 실패(quote_changed)하면 새 판 금액 · 차액으로 새 제안을 만들고, 새 행동의 `supersedes` = 옛 id, 옛 행동 `result.superseded_by` = 새 id예요. feed는 옛 자리에 새 행동을 그려요.
 
 ### 화면 제안 칸(2026-11-21 반영)
@@ -205,9 +209,11 @@
    - 복원: 최근 12줄(글만) · `project_facts` · 기억 · 열린 행동 · refs(Redis 30분)
    - 세션을 닫은 뒤 LLM을 불러요.
 2. 프롬프트 캐시
-   - 순서: tools(고정 · 이름순, 끝에 cache_control) → system(판 고정, cache_control) → 지난 턴 글 → 이번 글(가림) → `role:"system"` 턴 사실(오늘 · 단계 · 집 요약 · 기억, 코드 값만)
+   - 순서: tools(고정 · 이름순, 끝에 cache_control) → system(판 고정, cache_control) → 지난 턴 글 → 이번 글(가림) → `role:"system"` 턴 사실(지금 · 올해 · 알림 · 단계 · 집 요약 · 기억, 코드 값만)
+   - 시각 줄(2026-11-22): `지금: 11월 22일(일) 새벽 2시 5분`(서울, 때 말은 `shared.kdate.PERIODS` 표 하나) · `올해: 2026년` · `알림: 밤 9시~아침 9시엔 아침에 보내요`(`proactive.RULES` 값에서). 지시문 판 묶음은 `ASSISTANT_PROMPT_SET`(v3 기본 · v4)이고 판마다 system이 달라 캐시도 따로 맞아요
+   - 공정표 줄(QA r2 c5): `공정표: 예상 공사 12월 7일(월)~11일(금) · 일하는 날 4일(업체가 공사 날짜를 올리기 전 예상)`, 수락 뒤엔 `(수락한 공사 날짜)`. 공사 판(rev)이 바뀐 낡은 예상은 넣지 않아요(`schedule.service.period_now`, 읽기만). 실측 요청 뒤 비어 있는 시작 희망은 `공사 시작 희망 안 정함(실측 요청 뒤라 업체와 정해요)`으로 넣어요
    - 턴 안에서는 덧붙이기만 하고, 턴 사이에는 글만으로 다시 짜요.
-3. 모델 설정: `claude-sonnet-5-5`, thinking adaptive, effort medium, max_tokens 8000, stream, tool_choice auto + strict
+3. 모델 설정: `claude-sonnet-5-5`, thinking adaptive, effort medium, max_tokens 8000, stream, tool_choice auto + strict. 앱 시작 때 SDK(anthropic · openai)를 작업 스레드로 미리 불러요(`llm.warm`: 첫 LLM 턴의 늦은 import 12~20초 · 이벤트 루프 멈춤, QA r2 c5)
 4. stop_reason
    - tool_use → 도구 실행
    - pause_turn → 다시 보냄(2회까지)
@@ -236,12 +242,14 @@
      | 집 정보 · 오늘 할 일 | home_info · today(+ 작업 카드) | 정해 둔 글 |
 
    - 그 밖(지식 · 공통)은 입구 관문 단계 카드 + `chat.service.answer_only(mode="free", view, button)`예요. view는 보던 카드(card_id 머리: picks → vendors · slots → pick · compare → quotes …), 없으면 공사 요약 phase(estimate → vendors · progress → visits · work → schedule · done → plan)예요. 목공만 물으면 `button=(trade, mokgong)`으로 목공 담당이 답하고, '언제 해요'처럼 공종 일의 때를 물으면 answer_only에 보내는 글 끝에 '순서'를 붙여요(무료 낱말 검색이 순서 자료를 찾게, 대화 기록은 그대로).
-   - 글이 카드를 말하면(희망 기간 · 실측 날짜 · 업체 n곳 · 견적서 비교 · 공정표 · 표준견적서) 같은 턴에 그 카드가 있어야 해요(`free.fit_cards`): 없으면 만들고, 못 만들면 그 문장을 빼요. '믿집 공정표는 …'처럼 일반 규칙을 말한 문장은 카드 말이 아니고, 남은 첫 문장 앞 이음말('다만 …')은 떼요.
-   - 의도 모델 앞에서 거르는 말(`free.guard_of`, QA 1차 2026-11-22): 지시문 → '그건 보여 드릴 수 없어요' · 연락처 · 동호수 → '주고받지 않아요 · 업체와 연락은 믿집 채팅으로' · 영어 답 · 공사와 상관없는 부탁 → 짧은 거절(지시문 · 영어 · 잡담은 지금 할 일 한 줄을 붙여요) · 내용 없이 화난 말 → 사과 + 무엇이 문제인지 묻기.
-   - 정해 둔 길(`free.route_of`, 의도 모델 앞): 비서가 낸 칩(runtime.CHIPS · 다음에 물을 말 · 카드 칩 · 첫 화면 칩)과 같은 뜻의 말은 칩 뜻대로 가요. 폐기물 · 철거 포함 → 받은 견적서의 포함 칸(철거는 집 정보 철거 범위와 다르면 확인하라고) · 비싸요 · 바가지 → 공감 + 금액을 정하는 것(견적서 포함 항목 · 표준견적서 큰 줄 이름) + 카드 · 추가금 → 추가 금액 승인 길 · 가견적 계산 · 실측에서 보는 것 · 공사 순서 → 정해 둔 글 · 다른 시간 → 반나절 카드 · 공사 전날 준비물 → 준비물 카드 · 반려동물 · 출입 → 정해 둔 글. 이번 말이 요일을 바라면('평일엔 회사라 주말에') 반나절 후보는 그 요일을 먼저 봐요.
+   - 글이 카드를 말하면(희망 기간 · 실측 날짜 · 업체 n곳 · 견적서 비교 · 공정표 · 표준견적서) 같은 턴에 그 카드가 있어야 해요(`free.fit_cards`): 없으면 만들고, 못 만들면 그 문장을 빼요. '믿집 공정표는 …'처럼 일반 규칙을 말한 문장은 카드 말이 아니에요.
+   - 의도 모델 앞에서 거르는 말(`free.guard_of`, QA 1차 2026-11-22): 지시문 → '그건 보여 드릴 수 없어요' · 연락처 · 동호수 → '주고받지 않아요 · 업체와 연락은 믿집 채팅으로' · 영어 답 → 짧은 거절 + 지금 할 일 한 줄 · 내용 없이 화난 말 → 사과 + 무엇이 문제인지 묻기.
+   - 범위 밖 답 틀(`free.off_said`, 2026-11-22 FM, 피클 표본 8): 되받기(고객 낱말 · 지금 서울 때 낱말, 받침에 맞춘 조사) · 솔직(못 하는 까닭 한 마디) · 지금 할 일 한 줄. 갈래는 음식 · 배달 / 날씨 · 잡담 / 돈 · 투자 / 다른 앱 일(예약 · 쇼핑 · 택시) / 대신 전화 · 문자(공사 낱말이 있어도) / 다른 공정(업체 연결 의도에 바닥 · 욕실 · 전기 …만, 오늘 할 일 카드와 함께) / 그 밖이에요. 갈래마다 틀 셋을 이 대화의 최근 답에 덜 나온 것부터 돌려 써요. 되받는 낱말은 갈래 표에서 맞은 꼴만 쓰고, 욕 · 화난 말 · 가린 개인정보 · 이상한 글(영어 · 주소 · 위험한 말 · 60자 넘는 글)은 되받지 않고 그 밖 틀로 답해요. 느낌표는 되받기에 하나만이에요.
+   - 무료 모드는 카드 + 짧은 안내를 하는 비상 길이에요(08-rules). 말투 · 길이를 손보는 사례 규칙(공감 머리말 · 결론 먼저 글 · 이음말 떼기 · 글자 수 상한)은 두지 않고, 말로 승인 카드를 만드는 길의 낱말 규칙(묻는 말 · 가정 · 부정 · 다른 뜻 거르기)만 촘촘히 둬요.
+   - 정해 둔 길(`free.route_of`, 의도 모델 앞): 비서가 낸 칩(runtime.CHIPS · 다음에 물을 말 · 카드 칩 · 첫 화면 칩)과 같은 뜻의 말은 칩 뜻대로 가요. 폐기물 · 철거 포함 → 받은 견적서의 포함 칸(철거는 집 정보 철거 범위와 다르면 확인하라고) · 비싸요 · 바가지 → 받은 견적서가 있으면 견적 비교 카드, 없으면 표준견적서 카드(정해 둔 글 그대로) · 추가금 → 추가 금액 승인 길 · 가견적 계산 · 실측에서 보는 것 · 공사 순서 → 정해 둔 글 · 다른 시간 → 반나절 카드 · 공사 전날 준비물 → 준비물 카드 · 반려동물 · 출입 → 정해 둔 글. 이번 말이 요일을 바라면('평일엔 회사라 주말에') 반나절 후보는 그 요일을 먼저 봐요.
    - 다른 공정(믿집이 계산 · 연결하지 않는 공정)만 물으면 알아 두기 자료(`knowledge.other_trades`)로 순서 · 주의점 두 문장 + '믿집은 … 업체를 잇지 않아요'로 답해요(돈 · 기간은 계산하지 않는다는 말). 도배 · 목공과 섞인 질문은 answer_only 답을 쓰고 모르면 자료로 바꿔요. answer_only의 v3 단계 번호('지금은 2단계예요')는 떼고, 단추로 되묻는 글은 정해 둔 되묻기로 바꿔요.
    - 말로 고른 일도 승인 카드를 만들어요(2026-11-21 바꿈): 날짜 바꾸기 요청 · 추가 금액 답 · 공사 끝 확인 · 한 번 더 요청 · 이웃 안내문처럼 뜻이 분명한 말만이에요. 실행은 여전히 사람이 카드를 승인할 때만이에요.
-   - 업체 연결(추천 · 실측 · 견적 비교 · 확정)은 아직 도배만이에요. 목공(다른 공사)으로 물으면 '아직 도배 업체만 연결돼요. 목공은 표준견적서와 궁금한 점까지 도와드려요.'와 도배 쪽 오늘 할 일 카드를 보여요. 목공 지식 · 표준견적서는 그대로 답해요.
+   - 업체 연결(추천 · 실측 · 견적 비교 · 확정)은 아직 도배만이에요. 목공으로 물으면 '아직 도배 업체만 연결돼요. 목공은 표준견적서와 궁금한 점까지 도와드려요.', 다른 공사(바닥 · 욕실 · 전기 …)로 물으면 범위 밖 답 틀(다른 공정)로 답하고 도배 쪽 오늘 할 일 카드를 보여요. 목공 지식 · 표준견적서는 그대로 답해요.
      - 공종 낱말은 이 대화(이름표 표) · 공사(실측 요청 · 확정 · 담기)에 나온 업체 이름을 뺀 뒤 찾아요('마루와벽으로 확정할게요'의 '마루'는 바닥이 아니에요).
      - 견적서 말('견적서에 철거 포함 · 폐기물 처리도 포함인가요?')의 철거 · 폐기물은 도배 견적 칸이라 다른 공사로 보지 않아요.
    - 비서가 기억한 것을 어디서 보고 지우는지 물으면 정해 둔 안내('내 정보 → 비서가 기억한 것')로 답해요(기억해 달라는 말은 아님).
@@ -267,13 +275,15 @@
 | `get_standard_quote`(trade) | `quote.service.standard_for` |
 | `recommend_vendors`(trade) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3 |
 | `vendor_free_slots`(ref, prefer, days) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3 |
-| `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요 |
+| `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요. 받은 견적서가 없으면 카드 없이 `note`('아직 받은 견적서가 없어요 · 기다리는 업체 n곳') · `count` 0 · `waiting`, 한 곳이면 비교가 아니라 그 견적서 카드(`quote_compare.single`, 열 하나)예요(`show_card(quote_compare)`도 같아요) |
 | `get_schedule`() | `schedule.service.schedule_for` |
 | `today_tasks`() | `service.feed_for`(`schedule.service.overview_for` + 열린 행동) |
 | `search_knowledge`(query, trade) | `knowledge.service.search` |
 | `answer_question`(question, kind) | `chat.service.answer_only` / `v2.ask.answer_only` |
 | `find_floorplan_docs`() | `tools/floorplan.py`: Sonnet 5.5 + `web_search_20260209`(max_uses 3, 네이버 부동산 · 호갱노노 · 아실 차단, 링크 · 출처만) |
 | `show_card`(kind) | `tools/cards.py` |
+| `compare_grades`() | `quote.service.home_v3` · `standard_v3`(합지 · 실크, 저장 안 함) + `calc.visit_view.grade_diff`(차액) |
+| `market_range`(trade) | `calc.quick_budget.quick`(`refprice.market` 시장 기준 한 벌): 부가세 포함 범위 · 근거 실견적 수 · 출처 한 줄. 부분 공사 · 천장만 · 천장 평탄화 · 근거 30건 미만이면 범위 없이 까닭 |
 | 업체 `request_brief`(visit_ref) | `visit.service.vendor_visit` + `vendor.service.get_profile` · `estimate_v3_for` |
 | 업체 `my_free_slots`(from, to) | `vendor_visit(preview)` + `calc.slots.best_windows`(새) → w1~w3 |
 | 업체 `quote_checklist`(visit_ref) | `quote.service.latest_of` + `agent/trades` 주의점 |
@@ -287,10 +297,12 @@
 | `propose_visit_slot`(slot_ref) | `visit.flow.pick` · `pick_proposal` |
 | `propose_vendor_confirm`(visit_ref) | `schedule.service.confirm`(seen_ver) |
 | `propose_dates_accept` · `propose_delay_accept`(proposal_ref) | `schedule.service.accept_dates`(seen_version) |
-| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수) |
+| `propose_date_change`(deal_ref, reason, delay_days 또는 wish_from, direction?) | `schedule.service.request_dates`(`POST …/date-requests`와 같은 함수). direction(earlier 앞당기기 · later 미루기)과 반대인 후보는 내지 않아요. 없으면 delay_days는 미루기, wish_from은 지금 시작일과 견줘 정해요. 앞당길 날이 없으면 도구 오류 `no_earlier` |
 | 업체 `propose_window_answer`(visit_ref, window_ref) | `visit.flow.answer_window` |
 | 업체 `propose_decline`(visit_ref, code) | `visit.service.decline` |
 | 업체 `propose_dates`(deal_ref, days_ref) | `schedule.service.propose_dates` |
+| `propose_visit_cancel`(visit_ref, code) | `visit.service.cancel`(CancelIn 이유 코드 changed · other_vendor · other, 메모 없음) |
+| `withdraw_proposal`(kind, about) | 행동 행을 거둠(proposed → rejected · withdrawn). 하나면 바로, 여럿이면 고르기 칩 카드(state choose), 없으면 보낸 실측 요청(requests m…) |
 
 ### `actions.execute`
 1. tx1: proposed → approved(조건부 UPDATE, 만료 전) 뒤 commit해요.
@@ -393,7 +405,7 @@
 - 가림
   - 사용자 글: `mask_in`(저장 · LLM 전)
   - 도구 결과: `to_model` 허용 필드만(이름 · 연락처 · 동호수 없음)
-  - 모델 글: `SentenceGate`(숫자 · AI_ACTS · URL · 누출)
+  - 모델 글: `SentenceGate`(숫자 · AI_ACTS · URL · 누출). 숫자는 근거 값에 더해 어림 · 원대 · 차액 · 합계 · 평당 · 날짜 꼴을 읽고(`guard.loose`, 08-rules 숫자 절), 누출은 지시문의 규칙 절과만 견줘요(`prompts.rules`: `<!-- 규칙 -->`부터 `<!-- 예시 -->` 앞까지, 큰따옴표 말 뺌). 한글이 없고 로마자 같은 다른 글자가 반 넘는 문장(도구 앞 영어 속말, QA r2 c3)은 보내지 않고 까닭만 trace에 남겨요(`runtime.foreign`)
   - 웹 질의: 단지명 · 구만
   - 기록: `llm_usage` · trace · 로그에 글을 남기지 않아요.
 - 주입 방어

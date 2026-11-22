@@ -7,7 +7,7 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import and_, case, delete, func, or_, select, update
+from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -332,13 +332,16 @@ async def fail_stuck(s: AsyncSession, before: datetime) -> list[AssistantAction]
     return list(res.scalars().all())
 
 
-async def open_actions(s: AsyncSession, limit: int) -> list[AssistantAction]:
-    """모든 사람의 열린 제안(proposed), 새 것부터 (sweep: 화면에서 직접 처리했는지 보기)."""
+async def open_actions(
+    s: AsyncSession, limit: int, after: tuple[datetime, uuid.UUID] | None = None
+) -> list[AssistantAction]:
+    """모든 사람의 열린 제안(proposed), 새 것부터 한 쪽 (sweep: 화면에서 직접 처리했는지 보기). after(앞 쪽 마지막
+    줄의 created_at · id)를 주면 그보다 오래된 줄부터 읽는다(커서: 줄 수가 쪽보다 많아도 빠짐없이)."""
+    q = select(AssistantAction).where(AssistantAction.status == "proposed")
+    if after is not None:
+        q = q.where(tuple_(AssistantAction.created_at, AssistantAction.id) < tuple_(*after))
     rows = await s.scalars(
-        select(AssistantAction)
-        .where(AssistantAction.status == "proposed")
-        .order_by(AssistantAction.created_at.desc())
-        .limit(limit)
+        q.order_by(AssistantAction.created_at.desc(), AssistantAction.id.desc()).limit(limit)
     )
     return list(rows.all())
 
@@ -498,16 +501,16 @@ async def sent_count(
 
 async def dismissals(
     s: AsyncSession, user_id: uuid.UUID, since: datetime
-) -> list[tuple[str, datetime]]:
-    """since 뒤에 닫은 제안(트리거, 닫은 때)."""
+) -> list[tuple[str, datetime, uuid.UUID]]:
+    """since 뒤에 닫은 제안(트리거, 닫은 때, 대상 id)."""
     rows = await s.execute(
-        select(AssistantNudge.trigger, AssistantNudge.acted_at).where(
+        select(AssistantNudge.trigger, AssistantNudge.acted_at, AssistantNudge.ref_id).where(
             AssistantNudge.user_id == user_id,
             AssistantNudge.status == "dismissed",
             AssistantNudge.acted_at >= since,
         )
     )
-    return [(t, at) for t, at in rows]
+    return [(t, at, ref) for t, at, ref in rows]
 
 
 # 행동 종류 → 그 행동을 실행하면 할 일이 끝나는 먼저 말 걸기 줄의 트리거(줄의 대상 ref_id = 행동 대상, 또는
@@ -527,6 +530,8 @@ SETTLES: dict[str, tuple[str, ...]] = {
     "extra_answer": ("extra_added",),
     "work_check": ("work_done",),
     "visit_again": ("vendor_out",),
+    # 보낸 실측 요청 취소: 그 요청의 반나절 고르기 줄
+    "visit_cancel": ("visit_offered",),
 }
 
 

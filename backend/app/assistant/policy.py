@@ -136,7 +136,9 @@ _OFFER = re.compile(r"(?:면|다면|라면)(?:\s|,)|\?\s*$")
 # 말이 가리키는 행동 종류(카드 이름 낱말). 없으면 종류를 가리지 않는다
 KIND_WORDS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("home_info", re.compile(r"집\s*정보|면적|평형|평수|철거\s*범위|방\s*개수")),
-    ("visit_request", re.compile(r"실측\s*요청")),
+    # '실측 요청을 취소하는 카드'는 실측 요청 카드가 아니라 취소 카드다
+    ("visit_request", re.compile(r"실측\s*요청(?!\S{0,3}\s*취소)")),
+    ("visit_cancel", re.compile(r"취소")),
     ("visit_slot", re.compile(r"실측\s*(?:시간|날짜|일정)|반나절|시간\s*(?:카드|고르기)")),
     (
         "vendor_confirm",
@@ -157,12 +159,17 @@ BUTTONS: dict[str, frozenset[str]] = {
     "quote_compare": frozenset({"vendor_confirm"}),
     "schedule": frozenset({"dates_accept", "delay_accept"}),
     "vendor_brief": frozenset({"window_answer", "decline"}),
+    # [합지로 바꾸기] · [실크로 바꾸기] → 집 정보(벽지) 승인 카드
+    "grade_compare": frozenset({"home_info"}),
 }
 
 
 def buttons_of(kind: str, data: dict) -> frozenset[str]:
-    """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만."""
+    """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만, 벽지 견주기 카드는
+    벽지를 바꿀 수 있을 때(can_change)만."""
     if kind == "schedule" and not data.get("proposal_ref"):
+        return frozenset()
+    if kind == "grade_compare" and not data.get("can_change"):
         return frozenset()
     return BUTTONS.get(kind, frozenset())
 
@@ -347,10 +354,11 @@ Verdict = Literal["send", "defer", "hold", "quiet"]
 
 @dataclass(frozen=True)
 class Dismissal:
-    """닫은 제안 하나(트리거 · 닫은 때). 규칙은 이것만 본다."""
+    """닫은 제안 하나(트리거 · 닫은 때 · 대상). 규칙은 이것만 본다."""
 
     trigger: str
     at: datetime
+    ref: object | None = None  # 닫은 줄의 대상 id(새 소식은 같은 대상을 닫았을 때만 쉰다)
 
 
 @dataclass(frozen=True)
@@ -385,8 +393,14 @@ class NudgeRules:
         day = local.date() if local.hour < self.night_to else local.date() + timedelta(days=1)
         return datetime.combine(day, time(self.night_to), SEOUL)
 
-    def snoozed(self, trigger: str, dismissals: list[Dismissal], now: datetime) -> bool:
-        return any(d.trigger == trigger and now - d.at < self.snooze for d in dismissals)
+    def snoozed(
+        self, trigger: str, dismissals: list[Dismissal], now: datetime, ref: object | None = None
+    ) -> bool:
+        """같은 trigger를 snooze 안에 닫았으면 쉰다. ref를 주면(새 소식) 같은 대상을 닫았을 때만."""
+        return any(
+            d.trigger == trigger and (ref is None or d.ref == ref) and now - d.at < self.snooze
+            for d in dismissals
+        )
 
     def muted_until(self, dismissals: list[Dismissal]) -> datetime | None:
         """mute_window 안에 이어 닫은 두 번이 있으면 뒤의 것 + mute_for까지 알림을 멈춘다."""
@@ -404,11 +418,13 @@ class NudgeRules:
         sent_today: int,
         dismissals: list[Dismissal],
         due: datetime | None = None,
+        snooze_ref: object | None = None,
     ) -> RuleOut:
         """보낼지(send) · 미룰지(defer, until) · 기록만 할지(hold) · 알림 대신 조용한 대화 줄로 지금 보낼지(quiet).
         sent_today는 오늘(서울) 보낸 알림 수. due는 할 일의 기한(공사 시작일 등): 밤 · 상한으로 미루면 그 기한이
-        지나는 알림은 미루지 않고 대화 줄(feed, 종 알림 없음)로 보낸다(미룬 공사 전날 알림이 시작일에 닫혀 안 가던 것)."""
-        if self.snoozed(trigger, dismissals, now):
+        지나는 알림은 미루지 않고 대화 줄(feed, 종 알림 없음)로 보낸다(미룬 공사 전날 알림이 시작일에 닫혀 안 가던 것).
+        snooze_ref를 주면(새 소식, proactive.fresh_event) 같은 대상을 닫았을 때만 쉰다. 멈춤은 그대로."""
+        if self.snoozed(trigger, dismissals, now, snooze_ref):
             return RuleOut("hold", "snooze")
         if channel != "notify":
             return RuleOut("send")

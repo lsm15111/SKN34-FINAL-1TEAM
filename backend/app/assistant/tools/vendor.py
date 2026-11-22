@@ -36,11 +36,13 @@ from app.assistant.schemas import (
     VendorTodayData,
 )
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, obj, tool
-from app.assistant.tools.cards import GRADE, HALF, TRADE, md_list, md_week, seoul_text
+from app.assistant.tools.cards import GRADE, HALF, TRADE, seoul_text
 from app.auth.models import User
 from app.calc.common import COUNTED
 from app.db import SessionLocal
+from app.shared import kdate
 from app.shared.clock import SEOUL
+from app.shared.kdate import md_list, md_week
 from app.shared.korean import i_ga
 
 if TYPE_CHECKING:
@@ -122,7 +124,7 @@ async def brief(
     trade = TRADE.get(d.trade, d.trade)
     grade = GRADE.get(d.grade or "")
     in_area = any(a.sgg == d.area_name or a.label == d.region for a in prof.areas)
-    wish = f"고객 희망 {md_week(start)} ~ {md_week(end)}"
+    wish = f"고객 희망 {kdate.md_range(start, end, today)}"
     has_open = (d.open_count or 0) > 0
     fit = [
         _fit("trade", "공정", d.trade in prof.trades, f"{trade} 요청"),
@@ -192,7 +194,7 @@ async def brief(
         summary = ActionSummary(
             title="이 기간으로 답하기",
             rows=[
-                SummaryRow(label="기간", value=f"{md_week(w.start)} ~ {md_week(w.end)}"),
+                SummaryRow(label="기간", value=kdate.md_range(w.start, w.end, today)),
                 SummaryRow(label="빈 반나절", value=f"{w.open_count}칸"),
                 SummaryRow(label="바로 확정", value=INSTANT[instant]),
             ],
@@ -235,7 +237,7 @@ async def brief(
             )
     facts = [x for x in (d.home_text, f"도배 {grade}" if grade else None, d.when_text) if x]
     if d.work_wish_on:
-        facts.append(f"공사 시작 희망 {md_week(d.work_wish_on)}")
+        facts.append(f"공사 시작 희망 {md_week(d.work_wish_on, today)}")
     if d.photos:
         facts.append(f"사진 {len(d.photos)}장")
     # 고객이 반나절을 골랐으면(업체 수락 차례) 그 날과 수락 기한 · 누를 곳(요청 화면)
@@ -251,7 +253,7 @@ async def brief(
         due = seoul_text(picked.due_at)
         facts.insert(
             0,
-            f"고객이 고른 날 {md_week(b.day)} {HALF[b.half]}"
+            f"고객이 고른 날 {md_week(b.day, today)} {HALF[b.half]}"
             + (f" · {due}까지 수락" if due else ""),
         )
     from app.assistant.tools import diy as diy_tools  # 반셀프: 요청 때 고정한 '고객이 직접 할 일'
@@ -382,17 +384,13 @@ class Sentence(BaseModel):
     text: str
 
 
-def _md(d: date) -> str:
-    return f"{d.month:02d}.{d.day:02d}"
-
-
 def brief_template(data: VendorBriefData) -> str:
     """브리핑 한 문장 틀(코드 값만): 맞지 않는 것부터(공정이면 못 받아요로 답하는 길), 다 맞으면 답하기 좋은
     기간(카드의 제안 칸 수), 그다음 확인 필요(고객이 아직 정하지 않은 것 · 서비스 지역 밖)."""
     if data.picked is not None:  # 고객이 반나절을 골랐어요: 수락 차례
         p = data.picked
         half = f"{HALF[p.half]}{'을' if p.half == 'am' else '를'}"  # 오전을 · 오후를
-        return f"고객이 {_md(p.day)} {half} 골랐어요. 요청 화면에서 수락해 주세요."
+        return f"고객이 {md_week(p.day)} {half} 골랐어요. 요청 화면에서 수락해 주세요."
     bad = next((f for f in data.fit if f.state == "no"), None)
     if bad is not None and bad.key in MISFIT_KEYS:
         return f"{i_ga(bad.label)} 우리 업체와 맞지 않아요. 받기 어려우면 못 받아요로 답해 주세요."
@@ -400,7 +398,8 @@ def brief_template(data: VendorBriefData) -> str:
         return f"{i_ga(bad.label)} 맞지 않아요. 요청을 열어 확인해 주세요."
     g = data.suggest
     if g is not None:
-        return f"{_md(g.start)}~{_md(g.end)}에 빈 반나절 {g.open_count}칸이 있어 답하기 좋아요."
+        days = kdate.md_range(g.start, g.end)
+        return f"{days}에 빈 반나절 {g.open_count}칸이 있어 답하기 좋아요."
     check = next((f for f in data.fit if f.state == "check"), None)
     if check is not None:
         return CHECK_SAY.get(
@@ -410,15 +409,20 @@ def brief_template(data: VendorBriefData) -> str:
 
 
 def _brief_facts(data: VendorBriefData) -> dict:
-    """AI 한 문장에 넘길 사실: 카드에 보이는 값만(칸 수는 제안 기간 하나, 맞음은 세 갈래)."""
+    """AI 한 문장에 넘길 사실: 카드에 보이는 값만(칸 수는 제안 기간 하나, 맞음은 세 갈래). 날짜 · 시각은 긴 꼴 글
+    ('12월 7일(월)' · '11월 27일(금) 오후 6시'): 문장 검사(sentence_ok)가 월 · 일 · 시를 따로 본다."""
     g = data.suggest
     return {
         "title": data.title,
         "fit": [{"label": f.label, "state": f.state, "text": f.text} for f in data.fit],
-        "suggest": {"start": _md(g.start), "end": _md(g.end), "open_count": g.open_count}
+        "suggest": {
+            "start": kdate.md_long(g.start),
+            "end": kdate.md_long(g.end),
+            "open_count": g.open_count,
+        }
         if g
         else None,
-        "due": data.due_at.astimezone(SEOUL).strftime("%m.%d %H:%M") if data.due_at else None,
+        "due": seoul_text(data.due_at),
     }
 
 
@@ -706,7 +710,7 @@ async def vendor_today(
                 d = refs.put("deal", {"id": str(first.deal_id), "trade": first.trade})
                 n = refs.put("days", c)
                 days = [date.fromisoformat(x) for x in c["days"]]
-                sub.append(f"후보 {_md(days[0])}~{_md(days[-1])}")
+                sub.append(f"후보 {kdate.md(days[0], today)}~{kdate.md(days[-1], today)}")
                 if c.get("alt"):
                     sub.append("고객이 바란 날은 다른 공사와 겹쳐요")
                 action = RowAction(

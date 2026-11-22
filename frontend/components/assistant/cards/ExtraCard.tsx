@@ -22,9 +22,12 @@ const ANSWER: Record<string, string> = {
   rejected: "거절했어요",
 };
 
-/** 이 추가 금액에 답한 승인 카드인지: 행동에 대상 id가 없어 만든 때 상태(target_ver '답:판') · 합계 · 업체가 같은 것으로 봐요 */
+/** 이 추가 금액에 답한 승인 카드인지: 대상 id(target_id)가 이 추가 금액이면 그것, 대상 id가 없는 옛 행동은 만든 때 상태
+ *  (target_ver '답:판') · 합계 · 업체가 같은 것으로 봐요 */
 const answers = (d: ExtraData) => (a: ActionOut) =>
-  a.target_ver === `${d.answer}:${d.version}` && a.summary.amount_won === d.total_won && (a.summary.rows ?? []).some((r) => r.value === d.vendor_name);
+  a.target_id
+    ? a.target_id === d.extra_id
+    : a.target_ver === `${d.answer}:${d.version}` && a.summary.amount_won === d.total_won && (a.summary.rows ?? []).some((r) => r.value === d.vendor_name);
 
 export function ExtraCard({ card, ctx, old }: CardProps<"extra">) {
   const d = card.data;

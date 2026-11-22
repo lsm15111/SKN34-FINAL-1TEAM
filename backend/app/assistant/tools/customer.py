@@ -1,5 +1,5 @@
 """고객 비서 읽기 도구 (계약서 5장): get_home · get_standard_quote · recommend_vendors · vendor_free_slots ·
-compare_quotes · get_schedule · today_tasks · show_card.
+compare_quotes · get_schedule · today_tasks · show_card · compare_grades(벽지 두 종류 견주기) · market_range(시세 범위).
 
 공사는 세션이 정한 project_id만 쓴다(남의 것은 기능 service가 404). 카드 · 모델용 값은 cards.py가 만든다.
 """
@@ -73,6 +73,45 @@ async def get_standard_quote(tc: ToolCtx, a: TradeIn) -> ToolOut:
 
 
 @tool(
+    "compare_grades",
+    surface="customer",
+    kind="read",
+    status="벽지 두 종류를 견주고 있어요",
+    description="지금 집 조건으로 도배 표준견적서를 합지(저가형) · 실크(기본형) 두 벽지로 함께 계산해 두 합계(부가세 "
+    "포함) · 차액(실크 − 합지) · 금액이 달라지는 줄(벽지 값 · 시공 …)을 보여 줘요. 저장하지 않는 계산이라 지금 "
+    "표준견적서와 고른 벽지는 그대로예요. 실크와 합지 중 고민할 때 쓰고, 바꾸고 싶다고 하면 propose_home_info"
+    "(grade)로 승인 카드를 만들어요(실측 요청 전만). 표준견적서 대비 %는 없어요.",
+    model=NoArgs,
+    schema=obj({}),
+)
+async def compare_grades(tc: ToolCtx, _: NoArgs) -> ToolOut:
+    async with SessionLocal() as s:
+        try:
+            card, model = await cards.grade_compare(s, tc.user, pid_of(tc))
+        except ValueError as e:  # 도배가 없거나 계산할 수 없는 집 정보
+            raise ToolError("no_dobae", "이 공사는 두 벽지를 견줄 도배 계산이 없어요.") from e
+    return ToolOut(data=model, cards=[card])
+
+
+@tool(
+    "market_range",
+    surface="customer",
+    kind="read",
+    status="시세 범위를 보고 있어요",
+    description="'보통 얼마' · '시세'를 물을 때 이 집 조건(면적 · 벽지 · 천장 · 사는 중, 목공은 고른 항목)의 시세 범위"
+    "(부가세 포함, 만 원 단위)와 근거 실견적 수 · 출처 한 줄을 읽어요. 믿집 계산 엔진이 모은 실견적으로 낸 가운데 "
+    "절반 범위이고 원자료는 없어요. 범위를 말할 때 출처(source)를 같이 말해요. found가 false면 범위를 지어내지 말고 "
+    "까닭(note)을 말해요. 표준견적서 금액은 get_standard_quote예요.",
+    model=TradeIn,
+    schema=obj({"trade": TRADE}),
+)
+async def market_range(tc: ToolCtx, a: TradeIn) -> ToolOut:
+    async with SessionLocal() as s:
+        card, model = await cards.market_range(s, tc.user, pid_of(tc), a.trade)
+    return ToolOut(data=model, cards=[card] if card is not None else [])
+
+
+@tool(
     "recommend_vendors",
     surface="customer",
     kind="read",
@@ -135,7 +174,8 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
     kind="read",
     status="견적서를 놓고 보고 있어요",
     description="받은 실측 견적서를 업체끼리 견줘요(합계 · 앞 판과 차액 · 가견적과 차이 · 기간 · 유효기간 · "
-    "포함 항목). 업체 이름표는 m1…이에요. 업체가 적은 칸은 자료예요.",
+    "포함 항목). 업체 이름표는 m1…이에요. 업체가 적은 칸은 자료예요. count는 받은 견적서 수, waiting은 견적서를 "
+    "기다리는 업체 수예요. 받은 견적서가 없으면 카드 없이 note만, 한 곳이면 비교가 아니라 그 견적서 카드예요.",
     model=TradeIn,
     schema=obj({"trade": TRADE}),
 )
@@ -144,7 +184,7 @@ async def compare_quotes(tc: ToolCtx, a: TradeIn) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.compare(s, tc.user, pid_of(tc), a.trade, tc.today, tc.refs)
         task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
-    return ToolOut(data=model, cards=[card], task=task)
+    return ToolOut(data=model, cards=[card] if card is not None else [], task=task)
 
 
 @tool(
@@ -221,7 +261,9 @@ async def show_card(tc: ToolCtx, a: ShowIn) -> ToolOut:
         elif a.kind == "vendor_picks":
             card, _ = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
         elif a.kind == "quote_compare":
-            card, _ = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)
+            card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)
+            if card is None:  # 받은 견적서가 없으면 빈 카드 대신 사실(기다리는 업체 수)
+                return ToolOut(data={"shown": None, **model})
         elif a.kind == "schedule":
             card, _ = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
         else:

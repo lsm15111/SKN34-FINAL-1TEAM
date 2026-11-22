@@ -13,6 +13,8 @@ from app.agent import llm
 from app.assistant import proactive
 from app.calc import deadline
 from app.calc.schedule import workdays
+from app.shared import kdate
+from app.shared.clock import today_seoul
 from tests.conftest import query
 from tests.helpers import use
 from tests.test_dates import OFF, TODAY
@@ -211,7 +213,8 @@ def test_vendor_today_dates_button_makes_an_approval_card(api):
     first = first_block(api.get(f"/vendor/jobs/{did}").json())
     row = dates_row(api)
     assert (row["title"], row["icon"]) == ("공사 날짜 낼 공사 1건", "calendar")
-    assert f"후보 {first[0]:%m.%d}~{first[-1]:%m.%d}" in row["sub"]
+    t = today_seoul()
+    assert f"후보 {kdate.md(first[0], t)}~{kdate.md(first[-1], t)}" in row["sub"]
     a = row["action"]
     assert a["choice"].startswith("dates:d") and ",n" in a["choice"] and a["primary"] and a["say"]
     # 단추 = 업체 턴(무료 모드) + 고르기 → 공사 날짜 승인 카드(실행은 승인 뒤)
@@ -241,7 +244,8 @@ def test_vendor_today_candidate_avoids_other_job_and_free_turn_card_has_button(a
     assert post_days(api, did2, first).status_code == 200
     row = dates_row(api)
     assert row["title"] == "공사 날짜 낼 공사 1건"  # 날짜를 낸 공사는 세지 않는다
-    assert f"후보 {first[0]:%m.%d}" not in row["sub"]  # 다른 공사 날을 피한 후보
+    # 다른 공사 날을 피한 후보
+    assert f"후보 {kdate.md(first[0], today_seoul())}~" not in row["sub"]
     # 무료 모드 '오늘 할 일' 카드에도 같은 단추(이 턴의 이름표)
     r = api.post(
         "/vendor/assistant/turns",

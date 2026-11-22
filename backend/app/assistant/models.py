@@ -57,6 +57,8 @@ ACTION_KINDS = (
     "extra_answer",
     "work_check",
     "visit_again",
+    # 보낸 실측 요청 취소(0051, visit.service.cancel)
+    "visit_cancel",
 )
 ACTION_STATUSES = ("proposed", "approved", "executed", "rejected", "expired", "failed")
 ORIGINS = ("turn", "nudge")
@@ -199,6 +201,13 @@ class AssistantNudge(Base):
     __table_args__ = (
         UniqueConstraint("user_id", "dedup_key", name="uq_assistant_nudges_user_dedup"),
         Index("ix_assistant_nudges_due", "due_at", postgresql_where=text("status = 'pending'")),
+        # 보이는 줄의 due_at = 정리가 마지막으로 본 때(proactive._settle_rows가 오래 안 본 줄부터 읽는다, 0051)
+        Index(
+            "ix_assistant_nudges_shown_due",
+            "due_at",
+            "id",
+            postgresql_where=text("status in ('sent', 'opened')"),
+        ),
         Index("ix_assistant_nudges_user_sent", "user_id", "sent_at"),
         CheckConstraint(f"surface in {_in(SURFACES)}", name="surface"),
         CheckConstraint(f"trigger in {_in(NUDGE_TRIGGERS)}", name="trigger"),

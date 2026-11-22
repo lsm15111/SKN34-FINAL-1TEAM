@@ -6,6 +6,7 @@ import type { CardKind, CardOut } from "@/lib/api/assistant";
 import { BriefCard } from "@/components/pro/assistant/BriefCard";
 import { QuoteChecklist } from "@/components/pro/assistant/QuoteChecklist";
 import { TodayCard } from "../kit/TodayCard";
+import { GradeCompareCard, MarketRangeCard, OptionsCard } from "./ChoiceCards";
 import { ExtraCard } from "./ExtraCard";
 import { HomeInfoCard } from "./HomeInfoCard";
 import { NoticeCard } from "./NoticeCard";
@@ -35,6 +36,9 @@ export const CARDS: Registry = {
   quote_checklist: ({ card }) => <QuoteChecklist visitId={card.data.visit_id} data={card.data} />,
   extra: ExtraCard,
   notice: NoticeCard,
+  grade_compare: GradeCompareCard,
+  market_range: MarketRangeCard,
+  options: OptionsCard,
   research: ResearchCard,
 };
 

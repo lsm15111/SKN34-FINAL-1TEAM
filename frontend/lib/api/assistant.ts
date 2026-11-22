@@ -13,7 +13,8 @@ import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
   | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
-  | "extra" | "notice" | "research";
+  | "extra" | "notice" | "research"
+  | "grade_compare" | "market_range" | "options";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -110,7 +111,8 @@ export type CompareCol = {
   chat_href?: string | null;
 };
 /** decided: 이 공정을 이미 확정함(확정 단추를 두지 않아요) */
-export type QuoteCompareData = { cols: CompareCol[]; gap_won: number | null; ask_chips: string[]; href: string; decided?: boolean };
+/** single: 받은 견적서가 한 곳뿐이라 비교가 아니라 그 견적서 카드(열 하나). 받은 견적서가 없으면 서버가 카드를 보내지 않아요 */
+export type QuoteCompareData = { cols: CompareCol[]; gap_won: number | null; ask_chips: string[]; href: string; decided?: boolean; single?: boolean };
 
 export type ScheduleData = {
   /** dates: 업체가 올린 공사 날짜(수락 전) · final: 확정 공정표 */
@@ -187,6 +189,28 @@ export type NoticeData = {
   blanks: string[]; note: string; style_exempt: boolean;
 };
 
+/** 벽지 두 종류 견주기: 지금 집 조건으로 도배 표준견적서를 합지 · 실크로 함께 센 값(저장 안 함). 합계 · 차액 · 줄 금액은 서버(계산 엔진) 값 */
+export type GradeCompareData = {
+  label: string;
+  /** 합계(부가세 포함) */
+  economy_won: number; basic_won: number;
+  /** 실크 합계 − 합지 합계(계산 엔진) */
+  diff_won: number;
+  current: "economy" | "basic" | null;
+  /** 두 벽지로 금액이 달라지는 줄(부가세 별도, 벽지 줄 먼저) */
+  rows: { name: string; economy_won: number | null; basic_won: number | null }[];
+  /** 벽지를 바꿀 수 있음(실측 요청 전). [○○로 바꾸기] = choice 'grade:<값>' → 집 정보 승인 카드 */
+  can_change: boolean;
+  href: string;
+};
+/** 이 집 조건의 시세 범위(계산 엔진, 부가세 포함 · 만 원 단위)와 출처 한 줄. 원자료는 없어요. 표본이 모자라면 카드가 오지 않아요 */
+export type MarketRangeData = {
+  trade: string; label: string; found: boolean;
+  low_won: number | null; high_won: number | null; count: number;
+  source: string; assumed: string[]; note: string | null;
+};
+/** 고르기 칩: 대상이 여럿일 때 하나를 골라요(누르면 say를 보내요) */
+export type OptionsData = { title: string; options: { label: string; say: string; sub?: string | null }[] };
 /** 09 조사 담당(진행 · 결과 카드, GET /assistant/research/{id}). 링크는 서버가 서버 도구 결과에서 뽑은 것만, 순위 · 금액 · 연락처는 없어요 */
 export type ResearchStatus = Schemas["ResearchData"]["status"];
 export type ResearchData = Schemas["ResearchData"];
@@ -196,6 +220,7 @@ export type CardData = {
   quote_compare: QuoteCompareData; schedule: ScheduleData; knowledge: KnowledgeData; answer: AnswerData;
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
   extra: ExtraData; notice: NoticeData; research: ResearchData;
+  grade_compare: GradeCompareData; market_range: MarketRangeData; options: OptionsData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 
@@ -211,10 +236,10 @@ export type TaskOut = {
   error?: string | null;
 };
 
-/** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change) */
+/** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change), visit_cancel은 보낸 실측 요청 취소 */
 export type ActionKind =
   | "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates"
-  | "extra_answer" | "work_check" | "visit_again";
+  | "extra_answer" | "work_check" | "visit_again" | "visit_cancel";
 export type ActionStatus = "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
 /** 무엇 · 얼마 · 어느 버전(assistant_actions.summary). 금액 · 차액은 서버 값 */
 export type ActionSummary = {
@@ -233,10 +258,12 @@ export type ActionSummary = {
 export type ActionOut = {
   action_id: string; kind: ActionKind; status: ActionStatus;
   summary: ActionSummary;
+  /** 카드가 가리키는 대상 id(공사 · 실측 요청 · 확정 · 공사 날짜 제안 · 추가 금액). 같은 대상이 처리됐으면 단추를 숨겨요 */
+  target_id?: string | null;
   target_ver?: string | null;
   expires_at: string;
   decided_at?: string | null; executed_at?: string | null;
-  /** 실패 코드. 만료면 까닭(due · replaced · handled_elsewhere) */
+  /** 실패 코드. 만료면 까닭(due · replaced · handled_elsewhere), 고객 말로 거둔 카드면 withdrawn */
   error_code?: string | null;
   result?: { text: string; href?: string | null; label?: string | null } | null;
   /** 판이 바뀌어 새로 만든 행동이면 옛 행동 id(409 quote_changed 뒤) */
@@ -322,6 +349,8 @@ export const CHOICE = {
   /** 추가 금액(x…)에 답하는 승인 카드: 승인(기본) · 거절 · 채팅으로 묻기 */
   extraAnswer: (extra: string, answer: "approve" | "reject" | "ask" = "approve") =>
     answer === "approve" ? `extra_answer:${extra}` : `extra_answer:${extra},${answer}`,
+  /** 집 정보 벽지 칸(벽지 두 종류 견주기 카드): 그 벽지로 바꾸는 집 정보 승인 카드 */
+  grade: (grade: "economy" | "basic") => `grade:${grade}`,
 };
 
 // ───── 대화 · 보드 · 오늘 · 상태 · 기억 · 알림
@@ -571,13 +600,43 @@ export function anchorIndex(items: FeedItem[], anchor: { id: string; at: string 
 
 /**
  * v3 단추 쓰기(kindsForWrite) 뒤 '처리됨'으로 볼 열린 승인 카드 id(서버 행은 그대로라 화면에서만).
- * 공사에 한 번 정하는 종류는 그 종류 열린 카드 모두. 대상이 여럿일 수 있는 종류(반나절 · 공사 날짜)는 행동에 대상 id가 없어서
- * 쓰기 종류의 열린 카드가 하나뿐일 때만 그 카드예요(둘 이상이면 어느 것인지 몰라 서버 정리 handled_elsewhere를 기다려요).
+ * 공사에 한 번 정하는 종류는 그 종류 열린 카드 모두. 대상이 여럿일 수 있는 종류(반나절 · 공사 날짜 · 취소)는 쓰기 주소의 대상
+ * (targetOfWrite)과 행동의 대상 id(target_id)가 같은 카드만이에요. 대상 id가 없는 옛 행동이면 쓰기 종류의 열린 카드가 하나뿐일
+ * 때만 그 카드예요(둘 이상이면 어느 것인지 몰라 서버 정리 handled_elsewhere를 기다려요).
  */
-export function handledByWrite(kinds: ActionKind[], actions: ActionOut[]): string[] {
-  const open = [...new Set(actions.filter((a) => a.status === "proposed" && kinds.includes(a.kind)).map((a) => a.action_id))];
-  if (kinds.length && kinds.every((k) => ONE_DECISION.has(k))) return open;
+export function handledByWrite(kinds: ActionKind[], actions: ActionOut[], target: string | null = null): string[] {
+  const live = actions.filter((a) => a.status === "proposed" && kinds.includes(a.kind));
+  const ids = (xs: ActionOut[]) => [...new Set(xs.map((a) => a.action_id))];
+  if (kinds.length && kinds.every((k) => ONE_DECISION.has(k))) return ids(live);
+  if (target && live.some((a) => a.target_id)) return ids(live.filter((a) => a.target_id === target));
+  const open = ids(live);
   return open.length === 1 ? open : [];
+}
+
+/** 대상을 끝내는 행동: 실행되면 같은 대상의 다른 열린 카드(반나절 고르기 · 확정 …)는 쓸 데가 없어요 */
+const ENDS_TARGET: ReadonlySet<ActionKind> = new Set<ActionKind>(["visit_cancel"]);
+
+/**
+ * 같은 대상이 처리된 열린 승인 카드 id: 대상을 끝내는 행동(실측 요청 취소)이 실행됐으면 같은 대상(target_id)의 열린 카드는
+ * 단추를 숨겨요(서버는 같은 트랜잭션에서 닫지만 대화는 다시 읽기 전까지 열린 모습이에요).
+ */
+export function handledByTarget(actions: ActionOut[]): string[] {
+  const ended = new Set(actions.filter((a) => a.status === "executed" && ENDS_TARGET.has(a.kind) && a.target_id).map((a) => a.target_id));
+  return [...new Set(actions.filter((a) => a.status === "proposed" && !!a.target_id && ended.has(a.target_id)).map((a) => a.action_id))];
+}
+
+/** v3 단추 쓰기 주소의 대상 id(실측 요청 · 공사 날짜 제안 · 확정 · 추가 금액). 행동의 target_id와 견줘요. 모르면 null */
+export function targetOfWrite(method: string, path: string): string | null {
+  if (method !== "POST") return null;
+  const hit = [
+    /\/visits\/([^/]+)\/(?:pick|proposal\/pick|repick|cancel|window|decline)$/,
+    /\/quotes\/([^/]+)\/confirm$/,
+    /\/deals\/[^/]+\/dates\/([^/]+)\/accept$/,
+    /\/deals\/([^/]+)\/date-requests$/,
+    /\/extras\/([^/]+)\/answer$/,
+    /^\/vendor\/jobs\/([^/]+)\/dates$/,
+  ].map((rx) => rx.exec(path)).find(Boolean);
+  return hit ? hit[1] : null;
 }
 
 /** 사이트 안 경로만(링크 · 이동): '/'로 시작하고 '//' · '/\'(브라우저가 다른 사이트로 읽음) · 역빗금 · 공백 · 제어 문자가 없어요
@@ -603,9 +662,12 @@ export function kindsForWrite(method: string, path: string, projectId: string): 
   if (method !== "POST") return [];
   if (tail === "/visits") return ["visit_request"];
   if (/^\/visits\/[^/]+\/(pick|proposal\/pick|repick)$/.test(tail)) return ["visit_slot"];
+  // 화면에서 실측 요청을 취소하면 그 요청의 취소 · 반나절 · 확정 카드가 끝나요(대상 id로 그 요청만)
+  if (/^\/visits\/[^/]+\/cancel$/.test(tail)) return ["visit_cancel", "visit_slot", "vendor_confirm"];
   if (/^\/quotes\/[^/]+\/confirm$/.test(tail)) return ["vendor_confirm"];
   if (/^\/deals\/[^/]+\/dates\/[^/]+\/accept$/.test(tail)) return ["dates_accept", "delay_accept"];
   if (/^\/deals\/[^/]+\/date-requests$/.test(tail)) return ["date_change"];
+  if (/^\/deals\/[^/]+\/extras\/[^/]+\/answer$/.test(tail)) return ["extra_answer"];
   return [];
 }
 /** 업체 쪽 v3 쓰기 → 같은 일을 하는 제안 행동 종류 */
@@ -661,6 +723,22 @@ export async function getHealth(): Promise<HealthOut | null> {
 /** 끊긴 턴을 같은 client_key로 다시 이을 때 기다리는 시간(턴 상한 45초를 넘기도록). 고객 · 업체 턴이 같이 써요 */
 export const TURN_RETRY_MS = [1200, 2500, 4000, 6000, 8000, 10000, 12000];
 
+/** 턴 POST가 넘쳐 거절됐어요(503 busy · unavailable, 턴을 만들기 전). 서버가 알려 준 Retry-After만큼 기다렸다 같은 client_key로
+ *  한 번 다시 보내요. waitMs: 기다릴 때(Retry-After 초, 없거나 이상하면 2초, 길어도 10초) */
+export class TurnBusy extends ApiError {
+  constructor(code: string, message: string, public waitMs: number) {
+    super(503, code, message);
+  }
+}
+/** 다시 보내도 넘쳤을 때 보이는 말(입력 칸 글은 되살려요) */
+export const BUSY_TEXT = "지금 이야기하는 분이 많아요. 잠시 뒤에 다시 보내 주세요.";
+
+/** Retry-After 머리(초) → 기다릴 ms */
+export function busyWaitMs(header: string | null): number {
+  const sec = Number(header);
+  return header && Number.isFinite(sec) && sec > 0 ? Math.min(sec, 10) * 1000 : 2000;
+}
+
 /** 한 턴(SSE). 스트림을 열기 전 오류(404 · 409 turn_running · 429 · 422)는 ApiError로 던져요. 끝(done · error)을 받았으면 true */
 export async function streamTurn(body: TurnIn, on: (e: TurnEvent) => void, signal?: AbortSignal): Promise<boolean> {
   let ended = false;
@@ -694,7 +772,10 @@ async function postSse(url: string, body: TurnIn | VendorTurnIn, emit: (e: TurnE
   }
   if (!res.ok || !res.body) {
     const e = (await res.json().catch(() => null))?.error;
-    throw new ApiError(res.status, e?.code ?? "unknown", e?.message ?? (res.status === 429 ? "너무 많이 물었어요. 잠시 뒤에 다시 해 주세요." : "답을 만들지 못했어요. 다시 해 주세요."));
+    const code: string = e?.code ?? "unknown";
+    const message: string = e?.message ?? (res.status === 429 ? "너무 많이 물었어요. 잠시 뒤에 다시 해 주세요." : "답을 만들지 못했어요. 다시 해 주세요.");
+    if (res.status === 503 && (code === "busy" || code === "unavailable")) throw new TurnBusy(code, message, busyWaitMs(res.headers.get("retry-after")));
+    throw new ApiError(res.status, code, message);
   }
   try {
     await readSse(res.body, emit);

@@ -9,8 +9,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth,
-  getLatestThread, getMemory, getToday, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi, rejectAction,
-  replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, TURN_RETRY_MS,
+  getLatestThread, getMemory, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
+  rejectAction, replaceAction, resetMock, resetTurn, seqFilter, settledNudges, streamTurn, subscribeTurns, targetOfWrite, BUSY_TEXT, TURN_RETRY_MS,
+  TurnBusy,
   type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
@@ -232,14 +233,16 @@ export function useAssistant(projectId: string) {
       const { method, path } = (e as CustomEvent<ApiWrite>).detail ?? { method: "", path: "" };
       if (!path.startsWith(`/projects/${projectId}`)) return;
       const kinds = kindsForWrite(method, path, projectId);
-      if (kinds.length) markHandled(handledByWrite(kinds, [...actionsIn(itemsRef.current), ...openRef.current]));
+      if (kinds.length) markHandled(handledByWrite(kinds, [...actionsIn(itemsRef.current), ...openRef.current], targetOfWrite(method, path)));
       later(true, 300);
     };
     window.addEventListener(API_WRITE_EVENT, on);
     return () => window.removeEventListener(API_WRITE_EVENT, on);
   }, [projectId, markHandled, later]);
 
-  const send = useCallback(async (text: string, context?: TurnIn["context"]) => {
+  /** 한 턴 보내기. 넘쳐서(503 busy · unavailable) Retry-After만큼 기다렸다 같은 client_key로 한 번 다시 보내도 넘치면
+   *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요) */
+  const send = useCallback(async (text: string, context?: TurnIn["context"]): Promise<"busy" | void> => {
     const t = text.trim();
     if (!t || runningRef.current) return;
     runningRef.current = true;
@@ -253,6 +256,7 @@ export function useAssistant(projectId: string) {
     const body: TurnIn = { project_id: projectId, client_key: key, text: t, context: context ?? null };
     let turnId = "";
     let tries = 0;
+    let busyTried = false;
     const failMsg = (message: string, code = "send") =>
       setItems((cur) => [...cur, { id: `a-fail-${key}-${Date.now()}`, role: "assistant", at: nowRef.current, turn_id: null, parts: [], done: true, error: { code, message } }]);
     try {
@@ -271,6 +275,19 @@ export function useAssistant(projectId: string) {
           throw new Dropped();
         } catch (e) {
           if (ctl.signal.aborted) return;
+          // 넘침(503, 턴을 만들기 전): Retry-After만큼 기다렸다 같은 client_key로 한 번 더. 또 넘치면 서버가 받지 않은 말이라
+          // 보낸 말을 빼고 안내해요(입력 칸에는 글을 되살려요)
+          if (e instanceof TurnBusy) {
+            if (!busyTried) {
+              busyTried = true;
+              await wait(e.waitMs);
+              if (ctl.signal.aborted) return;
+              continue;
+            }
+            setItems((cur) => cur.filter((x) => x.id !== userId));
+            failMsg(BUSY_TEXT, "busy");
+            return "busy";
+          }
           // 같은 client_key로 다시 잇는 중(again)에 온 409 turn_running은 내 턴이 아직 도는 거예요(ack 전에 끊겼어도)
           const ours = e instanceof ApiError && e.code === "turn_running" && (!!turnId || again);
           const drop = e instanceof Dropped || (e instanceof ApiError && e.code === "network");
@@ -458,10 +475,17 @@ export function useAssistant(projectId: string) {
   const actionOf = useCallback((id: string): ActionOut | null =>
     actionsIn(items).find((x) => x.action_id === id) ?? kept[id] ?? open.find((x) => x.action_id === id) ?? null, [items, kept, open]);
 
+  /** 같은 대상이 끝난 열린 승인 카드(실측 요청을 취소함 → 그 요청의 반나절 · 확정 카드): 단추를 숨겨요(서버 정리 전에도) */
+  const ended = useMemo<Record<string, true>>(
+    () => Object.fromEntries(handledByTarget([...actionsIn(items), ...open, ...Object.values(kept)]).map((x) => [x, true as const])),
+    [items, open, kept],
+  );
+  /** 처리됨으로 보일 카드: 화면 v3 단추로 한 것 + 같은 대상이 끝난 것 */
+  const handledAll = useMemo<Record<string, true>>(() => ({ ...handled, ...ended }), [handled, ended]);
   /** 할 일이 끝난 먼저 말 건 줄('완료'로 그려요): 서버가 닫은 줄 + 그 줄의 승인 카드(같은 대상)를 실행 · 처리한 것(서버 정리 전에도) */
   const settled = useMemo<Record<string, true>>(
-    () => Object.fromEntries(settledNudges(items, handled).map((x) => [x, true as const])),
-    [items, handled],
+    () => Object.fromEntries(settledNudges(items, handledAll).map((x) => [x, true as const])),
+    [items, handledAll],
   );
   /** 제안을 숨길 줄: 고객이 닫은 것 + 할 일이 끝난 것 */
   const shut = useMemo<Record<string, true>>(() => ({ ...gone, ...settled }), [gone, settled]);
@@ -488,7 +512,8 @@ export function useAssistant(projectId: string) {
   }, [items, open, kept, today, todayFirst, anchor, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled, health, memory, gone: shut, settled,
+    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled: handledAll, ended, health, memory,
+    gone: shut, settled,
     /** 대화가 아직 없어요(첫 인사). 화면이 만든 말은 세지 않아요 */
     fresh: fresh && !items.length,
     /** 기록의 마지막 말(화면이 만든 말 빼고): 입력 중 표시 · 답 기다림 줄은 이 말로 정해요 */
