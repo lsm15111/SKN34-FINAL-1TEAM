@@ -1549,7 +1549,8 @@ STEP_IDEAS = {
     "standard": ("업체 3곳을 골라 둘까요?", "표준견적서 다음은 업체 고르기예요", "업체 추천해 줘"),
     "pick": ("실측 시간 후보를 볼까요?", "담은 업체에 실측을 요청할 차례예요", "실측 시간 찾아 줘"),
     # 이름과 보내는 말을 맞춰요(QA r3 s5: '실측 일정을 챙길까요?'를 누르면 '오늘 할 일 알려 줘'가 감)
-    "visit": ("오늘 할 일을 볼까요?", "업체 답과 실측 날짜를 볼 차례예요", "오늘 할 일 알려 줘"),
+    # 실측 단계 제안은 대화마다 되풀이돼 잠시 꺼 둬요(2026-11-23 사용자 '일단 주석'). 이 단계에는 단계 제안이 없어요
+    # "visit": ("오늘 할 일을 볼까요?", "업체 답과 실측 날짜를 볼 차례예요", "오늘 할 일 알려 줘"),
     "deal": (
         "견적서를 견줘 볼까요?",
         "받은 실측 견적서로 업체를 정할 차례예요",
@@ -1687,8 +1688,9 @@ async def suggest_for(
                     if any(a.kind in STEP_OPEN[key] and a.expires_at > now for a in live):
                         key = None
                 last, recent = await _recent(s, user.id, project_id)
-                if key is not None and STEP_CARD.get(key) not in last:
-                    idea, why, say = STEP_IDEAS[key]
+                ideas = STEP_IDEAS.get(key) if key else None  # 꺼 둔 단계(visit)는 단계 제안 없음
+                if key and ideas and STEP_CARD.get(key) not in last:
+                    idea, why, say = ideas
                     out.append(SuggestOut(id=f"step-{key}", text=text or idea, why=why, say=say))
             elif surface == "vendor":
                 from app.assistant.tools import vendor as vendor_tools

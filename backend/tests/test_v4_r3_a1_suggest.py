@@ -50,9 +50,10 @@ def suggests(api, script, pid: str, text: str = "도배는 어떻게 해요?", t
     return {x["id"]: x for x in ev[-1][1]["suggest"]}
 
 
-def test_visit_idea_name_matches_what_it_sends():
-    text, _why, say = S.STEP_IDEAS["visit"]
-    assert (text, say) == ("오늘 할 일을 볼까요?", "오늘 할 일 알려 줘")
+def test_visit_idea_is_off_for_now():
+    # 실측 단계 '오늘 할 일을 볼까요?'는 대화마다 되풀이돼 잠시 꺼 둠(2026-11-23 사용자)
+    assert "visit" not in S.STEP_IDEAS
+    assert all("오늘 할 일을 볼까요" not in t for t, _, _ in S.STEP_IDEAS.values())
     assert all("실측 일정을 챙길까요" not in t for t, _, _ in S.STEP_IDEAS.values())
 
 
@@ -71,11 +72,12 @@ def test_no_vendor_district_offers_outside_search_instead(api, script):
     assert (out["text"], out["say"]) == ("믿집 밖에서 찾아볼까요?", "믿집 밖 도배 업체 찾아 줘")
 
 
-def test_requested_stage_offers_today_not_vendor_picks(api, script):
+def test_requested_stage_offers_no_step_idea_for_now(api, script):
+    # 실측을 요청한 단계: 업체 고르기로 돌아가지 않고, 꺼 둔 '오늘 할 일을 볼까요?'도 없다(다른 제안 길은 그대로)
     f = requested(api)
     got = suggests(api, script, f["pid"])
-    assert got["step-visit"]["text"] == "오늘 할 일을 볼까요?"
-    assert "step-standard" not in got
+    assert "step-visit" not in got and "step-standard" not in got
+    assert all(x["text"] != "오늘 할 일을 볼까요?" for x in got.values())
 
 
 def test_quote_stage_offers_compare_and_nudge_idea_goes_after_comparing(api, script):

@@ -146,7 +146,9 @@ def test_done_suggest_task_and_board_range(api, script):
     assert "오늘 할 일 알려 줘" not in {x["say"] for x in ev[-1][1]["suggest"]}
     script([{"text": "업체 답이 오면 알려 드릴게요."}])
     done = ok(ask(api, pid, "알겠어요"))[-1][1]
-    assert 1 <= len(done["suggest"]) <= 3
+    # 실측 단계 제안('오늘 할 일을 볼까요?')은 잠시 꺼 둬서(2026-11-23 사용자) 이 단계에는 0개일 수 있어요
+    assert 0 <= len(done["suggest"]) <= 3
+    assert "오늘 할 일 알려 줘" not in {x["say"] for x in done["suggest"]}
     assert all({"id", "text", "why", "say"} <= set(x) for x in done["suggest"])
     assert len({x["say"] for x in done["suggest"]}) == len(done["suggest"])
     assert not {x["say"] for x in done["suggest"]} & set(done["chips"])
