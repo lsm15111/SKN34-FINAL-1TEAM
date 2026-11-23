@@ -10,7 +10,7 @@ import { InfoForm } from "@/components/start/InfoForm";
 import { InfoLocked } from "@/components/start/InfoLocked";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
-import { getMyProject, getProjectShell, getRegions, getRoomRule, getStartWishes } from "@/lib/api/project";
+import { getDiy, getMyProject, getProjectShell, getRegions, getRoomRule, getStartWishes } from "@/lib/api/project";
 import { todaySeoul } from "@/lib/format";
 import { EMPTY_DRAFT, draftOfProject, fromSaved, placeText, roomsOf } from "@/lib/guest/info";
 import { MOCK_V3A, mockKeyOf } from "@/lib/mock/v3a/mode";
@@ -25,10 +25,11 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
 
   if (edit) {
     if (!mockKeyOf(edit)) await requireRole("customer", `/start?edit=${encodeURIComponent(edit)}`);
-    const shell = await getProjectShell(edit);
+    const [shell, diy] = await Promise.all([getProjectShell(edit), getDiy(edit)]);
     if (!shell) notFound();
     const p = shell.mock ? null : await getMyProject(edit);
-    const draft = shell.home ? fromSaved(shell.home) : p ? draftOfProject(p) : EMPTY_DRAFT;
+    // 직접 할 일은 기본 정보에 없어서 모은 조건에서 따로 읽어요(고치기 칸 · 잠긴 뒤 고치기)
+    const draft = { ...(shell.home ? fromSaved(shell.home) : p ? draftOfProject(p) : EMPTY_DRAFT), diy };
     const crumbs = [{ label: "내 공사", href: "/my" }, { label: shell.name, href: `/projects/${shell.id}` }, { label: "기본 정보" }];
     if (shell.locked) {
       return (
@@ -36,7 +37,7 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
           <AppHeader phone={{ title: "기본 정보", back: `/projects/${shell.id}` }} />
           <Main narrow>
             <PageHead title="기본 정보" crumbs={crumbs} />
-            <InfoLocked draft={draft} region={placeText(regions, draft)} today={today} rooms={roomsOf(draft, roomRule)} />
+            <InfoLocked draft={draft} region={placeText(regions, draft)} today={today} rooms={roomsOf(draft, roomRule)} diy={{ projectId: shell.id, mock: shell.mock }} />
           </Main>
           <BottomBar>
             <Button variant="secondary" size="lg" href="/start">다른 조건으로 새로 받기</Button>

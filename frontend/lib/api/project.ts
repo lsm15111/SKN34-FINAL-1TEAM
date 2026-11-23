@@ -4,7 +4,7 @@ import { cache } from "react";
 import { serverGet, type Schemas } from "@/lib/backend/server";
 import type { BandTask } from "@/components/site/ProjectBand";
 import { dueText } from "@/lib/format";
-import { ROOM_RULE_EMPTY, projectName, stepIndex } from "@/lib/guest/info";
+import { ROOM_RULE_EMPTY, diyOfKeys, projectName, stepIndex, type DiyKey } from "@/lib/guest/info";
 import { mockKeyOf } from "@/lib/mock/v3a/mode";
 import { MOCK_CHECKS, mockPlan, mockProject } from "@/lib/mock/v3a/project";
 import { SIDO } from "@/lib/mock/regions";
@@ -20,6 +20,14 @@ const seg = (id: string) => encodeURIComponent(id);
 export async function listMyProjects() { return (await serverGet<ApiProjectItem[]>("/projects")) ?? []; }
 /** 내 프로젝트(또는 관리자). 없거나 남의 것이면 null. 한 요청 안에서는 한 번만 부른다(레이아웃과 화면이 같이 써도). */
 export const getMyProject = cache(async (id: string) => (UUID.test(id) ? serverGet<ApiProject>(`/projects/${seg(id)}`) : null));
+
+/** 고른 직접 할 일(반셀프 칩): 모은 조건(GET /projects/{id}/conditions)의 diy.* 줄. 아직 안 물었거나 못 읽으면 null, '없어요'면 [].
+ *  기본 정보(HomeInfoOut)에는 이 칸이 없어서 따로 읽어요 */
+export async function getDiy(id: string): Promise<DiyKey[] | null> {
+  if (!isUuid(id)) return null;
+  const rows = await serverGet<Schemas["ConditionOut"][]>(`/projects/${seg(id)}/conditions`).catch(() => null);
+  return rows ? diyOfKeys(rows.map((r) => r.key)) : null;
+}
 
 /** 견적 받기 지역 고르기: 시 · 도 → 시 · 군 · 구 (GET /regions) */
 export type Region = { id: string; name: string; full: string; groups: { label: string; prefix: string; items: string[] }[] };

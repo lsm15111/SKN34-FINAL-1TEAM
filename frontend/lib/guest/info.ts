@@ -40,6 +40,24 @@ export const DIY: { key: DiyKey; label: string }[] = [
 ];
 /** 고른 직접 할 일 글(내 말 줄): '페인트(문틀 · 몰딩), 입주 청소' · 빈 목록이면 '없어요' */
 export const diyText = (keys: readonly string[]): string => DIY.filter((x) => keys.includes(x.key)).map((x) => x.label).join(", ") || "없어요";
+/** 모은 조건 키(GET /projects/{id}/conditions의 diy.*) → 고른 직접 할 일(DIY 순서). 줄이 없으면 null(아직 안 물음),
+ *  '없어요'(diy.none)만이면 빈 목록. 서버 project/diy.py picked_of와 같아요 */
+export function diyOfKeys(keys: readonly string[]): DiyKey[] | null {
+  const got = new Set(keys.filter((k) => k.startsWith("diy.")));
+  return got.size ? DIY.map((x) => x.key).filter((k) => got.has(`diy.${k}`)) : null;
+}
+/** 고치기 화면의 직접 할 일 칩(첫 대화와 같은 칩 + 없어요) · 그 묶음 id(보드에서 열면 처음 초점) */
+export const DIY_CHIPS: { value: string; label: string }[] = [...DIY.map((x) => ({ value: x.key, label: x.label })), { value: "none", label: "없어요" }];
+export const DIY_FIELD_ID = "inf-diy";
+/** 직접 할 일 칩에 켜 둘 값: 고른 칩 · 없어요(빈 목록) · 아직 안 물었으면 아무것도 */
+export const diyPicks = (diy: readonly DiyKey[] | null | undefined): string[] => (diy == null ? [] : diy.length ? [...diy] : ["none"]);
+/** 칩을 누른 뒤 값: '없어요'는 다른 칩과 같이 고르지 않고, 다 끄면 '없어요'(빈 목록)예요 */
+export function diyFromPicks(next: readonly string[], prev: readonly string[]): DiyKey[] {
+  if (next.find((x) => !prev.includes(x)) === "none") return [];
+  return DIY.map((x) => x.key).filter((k) => next.includes(k));
+}
+/** 철거 범위 글(요약 줄 · 보드, 서버 calc.dobae.DEMOLITION과 같은 말) */
+export const DEMOLITION_TEXT: Record<Demolition, string> = { full: "전체 철거", partial: "부분 철거", none: "철거 안 함" };
 
 /** 넣는 중인 답(기기에 저장하는 모양). 다 차면 toHomeInfo로 API 몸통이 돼요 */
 export type InfoDraft = {
@@ -273,10 +291,14 @@ export function summaryLine(d: InfoDraft): string {
   ].filter(Boolean).join(" · ");
 }
 
-/** 웹 '넣은 내용' 칸(D11) · 잠긴 기본 정보(C50)가 같이 쓰는 줄 */
+/** 웹 '넣은 내용' 칸(D11) · 잠긴 기본 정보(C50)가 같이 쓰는 줄. 철거 범위 · 직접 할 일은 고른 때만 */
 export function summaryRows(d: InfoDraft, opts: { longDate?: string; fullRegion?: string; rooms?: number } = {}): { label: string; value: string; sub?: string }[] {
   const budget = budgetWon(d.budget);
   const rooms = d.rooms ?? opts.rooms;
+  const more = [
+    ...(d.demolition ? [{ label: "철거 범위", value: DEMOLITION_TEXT[d.demolition] }] : []),
+    ...(d.diy ? [{ label: "직접 할 일", value: diyText(d.diy) }] : []),
+  ];
   return [
     { label: "공사 종류", value: "도배" },
     { label: "공사 범위", value: scopeText(d) },
@@ -288,6 +310,7 @@ export function summaryRows(d: InfoDraft, opts: { longDate?: string; fullRegion?
     { label: "벽지", value: d.grade ? GRADE_WORD[d.grade] : "" },
     { label: "예산", value: budget ? won(budget) : d.budget.trim() ? "" : "아직 몰라요" },
     { label: "공사 시작 희망일", value: d.start ? opts.longDate ?? dateShort(d.start) : "아직 몰라요" },
+    ...more,
   ];
 }
 

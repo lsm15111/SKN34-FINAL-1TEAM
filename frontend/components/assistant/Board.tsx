@@ -3,8 +3,8 @@
 // 이 공사가 어디까지 왔는지만 봐요. 정할 일 수는 대화 위 '오늘 정할 일 n'(웹) · 입력 칸 위 '보드 · 정할 일 n'(폰)에만,
 // 비서가 기억한 것은 내 정보 '비서가 기억한 것'에만 둬요(2026-11-23 사용자). 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만).
 // 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 → '우리 집 정보' 창(그 칸에 초점,
-// 실측 요청 뒤 잠기면 보기만) · 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 · 업체 줄 → 그 업체
-// 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류 모음. 철거 범위 · 직접 할 일 줄은 대화에서 정해요.
+// 철거 범위 · 직접 할 일도. 실측 요청 뒤 잠기면 직접 할 일만 고치고 나머지는 보기만) · 금액 → 표준견적서(업체를 확정했으면 실측
+// 견적서) · 업체 금액 범위 → 견적서 비교 · 업체 줄 → 그 업체 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류 모음.
 import Link from "next/link";
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { BoardOut } from "@/lib/api/assistant";
@@ -55,7 +55,7 @@ export function Board({ board, open, flash, base, onClose }: {
 }
 
 /** 보드 '우리 집' 줄 → 고치기 창에서 처음 초점을 줄 칸. 줄 꼴은 서버 tools/cards.home(첫 줄 지역 · 면적 · 평 · 사는 중 ·
- *  도배 · 방 · 시작 희망 · 철거 · 직접 할 일). 철거 범위 · 직접 할 일은 그 창에서 고치지 않아 null */
+ *  도배 · 방 · 시작 희망 · 철거(calc.dobae.DEMOLITION 말) · 직접 할 일) */
 export function factField(fact: string, i: number): string | null {
   if (i === 0) return "region";
   if (/㎡|평$/.test(fact)) return "area";
@@ -63,15 +63,18 @@ export function factField(fact: string, i: number): string | null {
   if (fact.startsWith("도배 ·")) return "grade";
   if (/^방 \d+개/.test(fact)) return "rooms";
   if (fact.startsWith("공사 시작 희망")) return "start";
+  if (/^(전체 철거|부분 철거|철거 안 함)$/.test(fact)) return "demolition";
+  if (fact.startsWith("직접 할 일")) return "diy";
   return null;
 }
 
 function Sections({ b, base, onOpen }: { b: BoardOut; base: string; onOpen?: () => void }) {
   const homeHref = `${base}/home`;
-  // 실측 요청 뒤(잠김)에도 창은 열려요(보기만, 고치기는 막힌 화면). 초점 칸은 고칠 수 있을 때만. 따로 '고치기' 단추는 두지 않아요
+  // 실측 요청 뒤(잠김)에도 창은 열려요: 직접 할 일만 고치고 나머지는 보기만(잠긴 화면). 초점 칸은 고칠 수 있을 때만.
+  // 따로 '고치기' 단추는 두지 않아요
   const locked = !!b.home?.locked;
-  const act = locked ? "보기" : "고치기";
-  const to = (field: string) => (locked ? homeHref : `${homeHref}?field=${field}`);
+  const editable = (field: string) => !locked || field === "diy";
+  const to = (field: string) => (editable(field) ? `${homeHref}?field=${field}` : homeHref);
   const go = { scroll: false, onClick: onOpen } as const;
   // 금액 칸 이름은 서버 말 앞쪽(확정 전 '표준견적서', 확정 뒤 '확정 금액' · 추가 금액이 있으면 '공사 금액'), 뒤쪽은 '부가세 포함'
   const [moneyTitle, ...moneyTail] = b.money ? b.money.label.split(" · ") : [""];
@@ -84,7 +87,7 @@ function Sections({ b, base, onOpen }: { b: BoardOut; base: string; onOpen?: () 
             {b.facts.map((f, i) => {
               const field = factField(f, i);
               return field ? (
-                <li key={f}><Link href={to(field)} {...go} aria-label={`${f} · ${act}`}><span>{f}</span></Link></li>
+                <li key={f}><Link href={to(field)} {...go} aria-label={`${f} · ${editable(field) ? "고치기" : "보기"}`}><span>{f}</span></Link></li>
               ) : <li key={f}><span>{f}</span></li>;
             })}
           </ul>

@@ -4,6 +4,7 @@
 // - 로그인한 고객: 같은 답으로 POST /projects(Idempotency-Key = 기기 답의 key) → 내 공사 표준견적서로 가요.
 // - 고치기(?edit=): 그 공사 값을 채우고 PATCH /projects/{id}(첫 요청 뒤에는 서버가 409 locked, 화면은 C50).
 //   대화 안 '우리 집 정보' 창(/projects/{id}/home)은 같은 고치기에 after(저장 뒤 갈 곳: 대화) · focus(처음 초점 칸)를 줘요.
+//   고치기에는 v4 첫 대화가 묻는 철거 범위 · 직접 할 일 칸도 있어요(같은 PATCH, 칩 이름 · 순서는 첫 대화 · 서버 project/diy.py와 같아요).
 // - 검사는 '표준견적서 보기'를 누를 때 한 번(I6 B): 맨 위 '고칠 칸이 n개 있어요' + 칸 아래 오류 + 첫 틀린 칸으로 옮겨 가요.
 // - 금액은 서버 계산 엔진이 세요. 여기서는 단위만 바꿔요(평 → ㎡ 넣기 도움 · 만 원 → 원).
 // - 칸 아래 도움말 · 저장 안내 · 아래 띠 요약 줄은 두지 않아요(11-19 사용자 결정: 화면을 가볍게).
@@ -16,12 +17,13 @@ import { ChoiceChips } from "@/components/ui/ChoiceChip";
 import { Segmented } from "@/components/ui/Segmented";
 import { Field } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
+import { DEMOLITION } from "@/lib/api/assistant";
 import type { Region } from "@/lib/api/project";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort } from "@/lib/format";
 import {
-  EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, checkDraft, chipsFor, onChips, placeText, roomsOf, scopeOf, spaceLabel, summaryRows, toEditBody, toHomeInfo,
-  type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
+  DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, roomsOf, scopeOf,
+  spaceLabel, summaryRows, toEditBody, toHomeInfo, type Demolition, type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
 } from "@/lib/guest/info";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
 import { DateSheet } from "./DateSheet";
@@ -30,13 +32,13 @@ import { RegionSheet } from "./RegionSheet";
 import s from "./info.module.css";
 
 export type InfoMode = "guest" | "member" | "edit";
-/** 처음 초점을 줄 칸(오류 칸 + 방 개수 · 시작 희망일) */
-export type InfoFocus = keyof InfoErrors | "rooms" | "start";
+/** 처음 초점을 줄 칸(오류 칸 + 방 개수 · 시작 희망일 · 고치기의 철거 범위 · 직접 할 일) */
+export type InfoFocus = keyof InfoErrors | "rooms" | "start" | "demolition" | "diy";
 
 const FIELD_ID: Record<keyof InfoErrors, string> = {
   spaces: "inf-spaces", faces: "inf-faces", region: "inf-region", area: "inf-area", occupied: "inf-occupied", grade: "inf-grade", budget: "inf-budget",
 };
-const FOCUS_ID: Record<InfoFocus, string> = { ...FIELD_ID, rooms: "inf-rooms", start: "inf-start" };
+const FOCUS_ID: Record<InfoFocus, string> = { ...FIELD_ID, rooms: "inf-rooms", start: "inf-start", demolition: "inf-demolition", diy: DIY_FIELD_ID };
 
 /** 칸 묶음(id)의 첫 입력 · 단추에 초점을 주고 가운데로 보여요 */
 function focusBox(id: string) {
@@ -219,6 +221,12 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
               <ChoiceChips multiple legend="면" value={d.faces} error={errors.faces} onChange={(v) => set(scopeOf(on, v as Face[], chips))}
                 options={FACES.map((x) => ({ value: x.key, label: x.label }))} />
             </div>
+            {mode === "edit" ? (
+              <div id={FOCUS_ID.demolition}>
+                <ChoiceChips legend="철거 범위" value={d.demolition ?? null} onChange={(v) => set({ demolition: v as Demolition })}
+                  options={DEMOLITION.map((x) => ({ value: x.key, label: x.label }))} />
+              </div>
+            ) : null}
           </section>
 
           <section className={s.group} aria-labelledby="g-want">
@@ -250,6 +258,16 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
               </div>
             </div>
           </section>
+
+          {mode === "edit" ? (
+            <section className={s.group} aria-labelledby="g-diy">
+              <h2 id="g-diy" className={s.grp}>직접 할 일</h2>
+              <div id={FOCUS_ID.diy}>
+                <ChoiceChips multiple legend="직접 할 일" hideLegend value={diyPicks(d.diy)} onChange={(v) => set({ diy: diyFromPicks(v, diyPicks(d.diy)) })}
+                  options={DIY_CHIPS} />
+              </div>
+            </section>
+          ) : null}
 
           {formErr ? <p className={s.formErr} role="alert"><Icon name="error" size={18} />{formErr}</p> : null}
         </form>

@@ -62,4 +62,6 @@
 /* 잠긴 기본 정보(C50) */
 .locked { display: flex; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: var(--mj-radius-card); background: var(--mj-warn-weak); color: var(--mj-on-warn-weak); font-size: var(--mj-type-label); line-height: var(--mj-lh-body); }
 .locked > svg { flex: none; margin-top: 2px; }
+/* 잠긴 뒤에도 고치는 직접 할 일(DiyEdit): 저장 단추는 오른쪽 */
+.diySave { display: flex; justify-content: flex-end; }
 .meta { font-size: var(--mj-type-label); color: var(--mj-text-sub); }
