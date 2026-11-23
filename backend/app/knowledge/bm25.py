@@ -38,6 +38,9 @@ TRADE_WORDS = {
 SCOPES = ("도배", "목공")
 COMMON_TAGS = frozenset({"전체", "공통"})
 COMMON, OUT = "공통", "범위밖"
+# 도배 대신 쓰는 다른 마감이 주인 조각(첫 표시): 도배 · 목공 표시가 곁에 있어도 범위 밖으로 봐요(2026-11-23: '도배 전
+# 퍼티' 질문에 인테리어필름 조각이 1위). 결로 · 철거처럼 도배와 이어지는 공정은 정답이 많아 그대로 둬요(RAG 평가 dev 확인)
+OTHER_FINISH = frozenset({"필름"})
 TIER = {
     "law": 1.0, "gov_notice": 1.0, "gov_guide": 1.0, "gov_qa": 1.0, "kcs": 1.0, "pumsem": 1.0,
     "standard_contract": 1.0, "consumer_agency": 1.0, "official": 1.0, "public_data": 1.0,
@@ -149,7 +152,10 @@ class Result:
 
 
 def scope_of(trades: tuple[str, ...]) -> tuple[str, ...]:
-    """도배 · 목공 표시가 있으면 그 공정들, 없고 전체 · 공통뿐이거나 비었으면 공통, 다른 공정뿐이면 범위 밖"""
+    """도배 · 목공 표시가 있으면 그 공정들, 없고 전체 · 공통뿐이거나 비었으면 공통, 다른 공정뿐이면 범위 밖.
+    첫 표시가 다른 마감(OTHER_FINISH)이면 도배 · 목공 표시가 있어도 범위 밖이에요"""
+    if trades and trades[0] in OTHER_FINISH:
+        return (OUT,)
     own = tuple(t for t in SCOPES if t in trades)
     if own:
         return own
