@@ -1,0 +1,2147 @@
+{
+ "label": "after-pass1",
+ "source": "files",
+ "index_items": 2693,
+ "active": [
+  "files+expert"
+ ],
+ "final": false,
+ "aggregate": {
+  "all/all": {
+   "n": 120,
+   "top5_all": 0.725,
+   "top5_recall": 0.821,
+   "tool4_all": 0.667,
+   "tool4_recall": 0.771,
+   "expert_share_top5": 0.428
+  },
+  "all/dev": {
+   "n": 80,
+   "top5_all": 0.725,
+   "top5_recall": 0.833,
+   "tool4_all": 0.675,
+   "tool4_recall": 0.79,
+   "expert_share_top5": 0.425
+  },
+  "all/heldout": {
+   "n": 40,
+   "top5_all": 0.725,
+   "top5_recall": 0.796,
+   "tool4_all": 0.65,
+   "tool4_recall": 0.733,
+   "expert_share_top5": 0.435
+  },
+  "dobae/all": {
+   "n": 60,
+   "top5_all": 0.65,
+   "top5_recall": 0.769,
+   "tool4_all": 0.583,
+   "tool4_recall": 0.714,
+   "expert_share_top5": 0.393
+  },
+  "dobae/dev": {
+   "n": 40,
+   "top5_all": 0.625,
+   "top5_recall": 0.771,
+   "tool4_all": 0.575,
+   "tool4_recall": 0.725,
+   "expert_share_top5": 0.385
+  },
+  "dobae/heldout": {
+   "n": 20,
+   "top5_all": 0.7,
+   "top5_recall": 0.767,
+   "tool4_all": 0.6,
+   "tool4_recall": 0.692,
+   "expert_share_top5": 0.41
+  },
+  "mokgong/all": {
+   "n": 60,
+   "top5_all": 0.8,
+   "top5_recall": 0.872,
+   "tool4_all": 0.75,
+   "tool4_recall": 0.828,
+   "expert_share_top5": 0.463
+  },
+  "mokgong/dev": {
+   "n": 40,
+   "top5_all": 0.825,
+   "top5_recall": 0.896,
+   "tool4_all": 0.775,
+   "tool4_recall": 0.854,
+   "expert_share_top5": 0.465
+  },
+  "mokgong/heldout": {
+   "n": 20,
+   "top5_all": 0.75,
+   "top5_recall": 0.825,
+   "tool4_all": 0.7,
+   "tool4_recall": 0.775,
+   "expert_share_top5": 0.46
+  }
+ },
+ "dev_topics": {
+  "dobae/건조": "2/2",
+  "dobae/검수": "1/2",
+  "dobae/견적서 읽기": "0/2",
+  "dobae/계약": "1/2",
+  "dobae/계절": "1/2",
+  "dobae/공정 순서": "2/2",
+  "dobae/다른 공정과 순서": "2/2",
+  "dobae/도구": "2/2",
+  "dobae/뒤 관리": "1/2",
+  "dobae/바탕": "1/2",
+  "dobae/분쟁": "1/2",
+  "dobae/살면서 공사": "1/2",
+  "dobae/안전": "0/2",
+  "dobae/온습도": "1/2",
+  "dobae/자재": "2/2",
+  "dobae/책임": "1/2",
+  "dobae/친환경": "2/2",
+  "dobae/품질 기준": "2/2",
+  "dobae/하자 원인": "1/2",
+  "dobae/하자보증": "1/2",
+  "mokgong/건조": "2/2",
+  "mokgong/검수": "2/2",
+  "mokgong/견적서 읽기": "1/2",
+  "mokgong/계약": "1/2",
+  "mokgong/계절": "2/2",
+  "mokgong/공정 순서": "2/2",
+  "mokgong/다른 공정과 순서": "1/2",
+  "mokgong/도구": "1/2",
+  "mokgong/뒤 관리": "2/2",
+  "mokgong/바탕": "2/2",
+  "mokgong/분쟁": "2/2",
+  "mokgong/살면서 공사": "1/2",
+  "mokgong/안전": "2/2",
+  "mokgong/온습도": "1/2",
+  "mokgong/자재": "2/2",
+  "mokgong/책임": "2/2",
+  "mokgong/친환경": "2/2",
+  "mokgong/품질 기준": "2/2",
+  "mokgong/하자 원인": "1/2",
+  "mokgong/하자보증": "2/2"
+ },
+ "questions": [
+  {
+   "id": "kbd-001",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "자재",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21049",
+    "K23037",
+    "K23016",
+    "K23040",
+    "K23051"
+   ],
+   "tool4": [
+    "K21049",
+    "K23037",
+    "K23016",
+    "K23040"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbd-002",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "자재",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": false,
+   "tool4_recall": 0.667,
+   "missing": [],
+   "top5": [
+    "K21048",
+    "K23001",
+    "K21050",
+    "K23002",
+    "K21055"
+   ],
+   "tool4": [
+    "K21048",
+    "K23001",
+    "K21050",
+    "K21055"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-004",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "바탕",
+   "top5_all": false,
+   "top5_recall": 0.667,
+   "tool4_all": false,
+   "tool4_recall": 0.667,
+   "missing": [
+    "방균제|곰팡이 저항성"
+   ],
+   "top5": [
+    "K751",
+    "K20182",
+    "K23037",
+    "K23016",
+    "K1281"
+   ],
+   "tool4": [
+    "K751",
+    "K20182",
+    "K23037",
+    "K23016"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-005",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "바탕",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23010",
+    "K21047",
+    "K23425",
+    "K226",
+    "K23011"
+   ],
+   "tool4": [
+    "K23010",
+    "K21047",
+    "K23425",
+    "K23011"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-007",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "공정 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23022",
+    "K22016",
+    "K21048",
+    "K21077",
+    "K21075"
+   ],
+   "tool4": [
+    "K23022",
+    "K22016",
+    "K21048",
+    "K21077"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-008",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "공정 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23021",
+    "K2614",
+    "K2599",
+    "K1155",
+    "K20143"
+   ],
+   "tool4": [
+    "K23021",
+    "K2614",
+    "K2599",
+    "K1155"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-010",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "도구",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23023",
+    "K190",
+    "K23044",
+    "K340",
+    "K183"
+   ],
+   "tool4": [
+    "K23023",
+    "K190",
+    "K23044",
+    "K340"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-011",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "도구",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20141",
+    "K23023",
+    "K2587",
+    "K21048",
+    "K2599"
+   ],
+   "tool4": [
+    "K20141",
+    "K23023",
+    "K21048",
+    "K2599"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-013",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "품질 기준",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20141",
+    "K23029",
+    "K21048",
+    "K20143",
+    "K22026"
+   ],
+   "tool4": [
+    "K20141",
+    "K23029",
+    "K21048",
+    "K20143"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-014",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "품질 기준",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21048",
+    "K23028",
+    "K23033",
+    "K22026",
+    "K968"
+   ],
+   "tool4": [
+    "K21048",
+    "K23028",
+    "K23033",
+    "K22026"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-016",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "하자 원인",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "통풍"
+   ],
+   "top5": [
+    "K22024",
+    "K23033",
+    "K23028",
+    "K23025",
+    "K968"
+   ],
+   "tool4": [
+    "K22024",
+    "K23033",
+    "K23028",
+    "K23025"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-017",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "하자 원인",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K746",
+    "K23037",
+    "K405",
+    "K20183",
+    "K23045"
+   ],
+   "tool4": [
+    "K746",
+    "K23037",
+    "K405",
+    "K20183"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-019",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "책임",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21037",
+    "K20042",
+    "K23032",
+    "K20059",
+    "K23062"
+   ],
+   "tool4": [
+    "K21037",
+    "K20042",
+    "K23032",
+    "K20059"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-020",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "책임",
+   "top5_all": false,
+   "top5_recall": 0.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "발생 시점|발생시점",
+    "육안"
+   ],
+   "top5": [
+    "K21056",
+    "K21076",
+    "K21054",
+    "K188",
+    "K1424"
+   ],
+   "tool4": [
+    "K21056",
+    "K21076",
+    "K21054",
+    "K1424"
+   ],
+   "expert_in_top5": 0
+  },
+  {
+   "id": "kbd-022",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "검수",
+   "top5_all": false,
+   "top5_recall": 0.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "톤온톤",
+    "올바른 위치|제 위치"
+   ],
+   "top5": [
+    "K23029",
+    "K23041",
+    "K23047",
+    "K1420",
+    "K1424"
+   ],
+   "tool4": [
+    "K23029",
+    "K1420",
+    "K23062"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-023",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "검수",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23030",
+    "K23029",
+    "K190",
+    "K23041",
+    "K23009"
+   ],
+   "tool4": [
+    "K23030",
+    "K23029",
+    "K190",
+    "K23041"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbd-025",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "건조",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K183",
+    "K751",
+    "K23063",
+    "K23011",
+    "K20182"
+   ],
+   "tool4": [
+    "K183",
+    "K751",
+    "K23063",
+    "K23011"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-026",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "건조",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23011",
+    "K23017",
+    "K178",
+    "K181",
+    "K23027"
+   ],
+   "tool4": [
+    "K23011",
+    "K23017",
+    "K178",
+    "K181"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-028",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "온습도",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21077",
+    "K23043",
+    "K20139",
+    "K22024",
+    "K172"
+   ],
+   "tool4": [
+    "K21077",
+    "K23043",
+    "K20139",
+    "K22024"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-029",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "온습도",
+   "top5_all": false,
+   "top5_recall": 0.667,
+   "tool4_all": false,
+   "tool4_recall": 0.667,
+   "missing": [
+    "콘크리트 위|습기가 많은"
+   ],
+   "top5": [
+    "K23020",
+    "K22016",
+    "K23808",
+    "K21056",
+    "K23008"
+   ],
+   "tool4": [
+    "K23020",
+    "K22016",
+    "K23808",
+    "K23008"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-031",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "계절",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23044",
+    "K23027",
+    "K21052",
+    "K172",
+    "K22024"
+   ],
+   "tool4": [
+    "K23044"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-032",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "계절",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "직사광선"
+   ],
+   "top5": [
+    "K23045",
+    "K190",
+    "K22017",
+    "K22016",
+    "K23003"
+   ],
+   "tool4": [
+    "K23045",
+    "K190",
+    "K22017",
+    "K22016"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-034",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "살면서 공사",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "긁힘|찍힘"
+   ],
+   "top5": [
+    "K22020",
+    "K23047",
+    "K20159",
+    "K22019",
+    "K23049"
+   ],
+   "tool4": [
+    "K22020",
+    "K23047",
+    "K20159",
+    "K23049"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-035",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "살면서 공사",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K22017",
+    "K22020",
+    "K2555",
+    "K20138",
+    "K20159"
+   ],
+   "tool4": [
+    "K22017",
+    "K22020",
+    "K2555",
+    "K20138"
+   ],
+   "expert_in_top5": 0
+  },
+  {
+   "id": "kbd-037",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "안전",
+   "top5_all": false,
+   "top5_recall": 0.333,
+   "tool4_all": false,
+   "tool4_recall": 0.333,
+   "missing": [
+    "암모니아",
+    "장갑"
+   ],
+   "top5": [
+    "K23016",
+    "K5048",
+    "K356",
+    "K23047",
+    "K20182"
+   ],
+   "tool4": [
+    "K23016",
+    "K5048",
+    "K356",
+    "K21057"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-038",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "안전",
+   "top5_all": false,
+   "top5_recall": 0.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "48시간",
+    "다공성"
+   ],
+   "top5": [
+    "K23016",
+    "K408",
+    "K23461",
+    "K23437",
+    "K20138"
+   ],
+   "tool4": [],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-040",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "친환경",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23050",
+    "K20132",
+    "K979",
+    "K23817",
+    "K1286"
+   ],
+   "tool4": [
+    "K23050",
+    "K20132",
+    "K979",
+    "K23817"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-041",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "친환경",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K1286",
+    "K20132",
+    "K22028",
+    "K23818",
+    "K979"
+   ],
+   "tool4": [
+    "K1286",
+    "K20132",
+    "K22028",
+    "K23818"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-043",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "견적서 읽기",
+   "top5_all": false,
+   "top5_recall": 0.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "초벌|밑바름|밑붙임",
+    "정벌"
+   ],
+   "top5": [
+    "K23053",
+    "K23003",
+    "K23054",
+    "K742",
+    "K23058"
+   ],
+   "tool4": [
+    "K23053",
+    "K23003",
+    "K23054",
+    "K742"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbd-044",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "견적서 읽기",
+   "top5_all": false,
+   "top5_recall": 0.667,
+   "tool4_all": false,
+   "tool4_recall": 0.667,
+   "missing": [
+    "오염"
+   ],
+   "top5": [
+    "K23053",
+    "K23058",
+    "K23056",
+    "K23054",
+    "K742"
+   ],
+   "tool4": [
+    "K23053",
+    "K23058",
+    "K23056",
+    "K23054"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbd-046",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "계약",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "교체시공|교체 시공"
+   ],
+   "top5": [
+    "K23059",
+    "K1273",
+    "K21050",
+    "K20064",
+    "K23806"
+   ],
+   "tool4": [
+    "K23806"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-047",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "계약",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23060",
+    "K21027",
+    "K21113",
+    "K23040",
+    "K23061"
+   ],
+   "tool4": [
+    "K23060",
+    "K21027",
+    "K23040",
+    "K23061"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbd-049",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "하자보증",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "실내건축"
+   ],
+   "top5": [
+    "K20059",
+    "K23060",
+    "K851",
+    "K23040",
+    "K20028"
+   ],
+   "tool4": [
+    "K20059",
+    "K23060",
+    "K851",
+    "K23040"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbd-050",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "하자보증",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21097",
+    "K20028",
+    "K1313",
+    "K566",
+    "K21045"
+   ],
+   "tool4": [
+    "K21097",
+    "K20028",
+    "K1313",
+    "K566"
+   ],
+   "expert_in_top5": 0
+  },
+  {
+   "id": "kbd-052",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "분쟁",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [],
+   "top5": [
+    "K22003",
+    "K23030",
+    "K190",
+    "K547",
+    "K20007"
+   ],
+   "tool4": [
+    "K22003",
+    "K837"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-053",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "분쟁",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "하자심사"
+   ],
+   "top5": [
+    "K21041",
+    "K23007",
+    "K1313",
+    "K724",
+    "K21044"
+   ],
+   "tool4": [
+    "K21041",
+    "K23007",
+    "K1313",
+    "K724"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-055",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "다른 공정과 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K22018",
+    "K22016",
+    "K22022",
+    "K23048",
+    "K21045"
+   ],
+   "tool4": [
+    "K22018",
+    "K21045"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-056",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "다른 공정과 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23063",
+    "K182",
+    "K21057",
+    "K317",
+    "K21075"
+   ],
+   "tool4": [
+    "K23063",
+    "K182",
+    "K183",
+    "K23453"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-058",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "뒤 관리",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K22022",
+    "K22016",
+    "K356",
+    "K22024",
+    "K23016"
+   ],
+   "tool4": [
+    "K22022",
+    "K22016",
+    "K356",
+    "K22024"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbd-059",
+   "trade": "dobae",
+   "split": "dev",
+   "topic": "뒤 관리",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "중성 세제|중성세제"
+   ],
+   "top5": [
+    "K22026",
+    "K736",
+    "K5052",
+    "K23036",
+    "K22028"
+   ],
+   "tool4": [
+    "K22026",
+    "K5052",
+    "K23036",
+    "K22028"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-001",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "자재",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K22001",
+    "K23410",
+    "K22007",
+    "K915",
+    "K22004"
+   ],
+   "tool4": [
+    "K22001",
+    "K23410",
+    "K22007",
+    "K915"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-002",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "자재",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23410",
+    "K915",
+    "K948",
+    "K21011",
+    "K757"
+   ],
+   "tool4": [
+    "K23410",
+    "K915",
+    "K948",
+    "K21011"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-004",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "바탕",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23414",
+    "K23432",
+    "K20146",
+    "K23461",
+    "K298"
+   ],
+   "tool4": [
+    "K23414",
+    "K23432",
+    "K20146",
+    "K23461"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-005",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "바탕",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23416",
+    "K23418",
+    "K23417",
+    "K2043",
+    "K20146"
+   ],
+   "tool4": [
+    "K23416",
+    "K23418",
+    "K23417",
+    "K2043"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-007",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "공정 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [],
+   "top5": [
+    "K23423",
+    "K23429",
+    "K21075",
+    "K716",
+    "K23446"
+   ],
+   "tool4": [
+    "K23423",
+    "K23429",
+    "K716",
+    "K1412"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-008",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "공정 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20146",
+    "K2043",
+    "K23432",
+    "K2035",
+    "K2037"
+   ],
+   "tool4": [
+    "K20146",
+    "K2043",
+    "K23432",
+    "K2035"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-010",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "도구",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "건량"
+   ],
+   "top5": [
+    "K23409",
+    "K23428",
+    "K23425",
+    "K23419",
+    "K23011"
+   ],
+   "tool4": [
+    "K23409",
+    "K23428",
+    "K23425",
+    "K23011"
+   ],
+   "expert_in_top5": 5
+  },
+  {
+   "id": "kbm-011",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "도구",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23414",
+    "K23421",
+    "K21072",
+    "K23447",
+    "K20146"
+   ],
+   "tool4": [
+    "K23414",
+    "K23421",
+    "K21072",
+    "K23447"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-013",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "품질 기준",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23431",
+    "K23428",
+    "K23420",
+    "K998",
+    "K23448"
+   ],
+   "tool4": [
+    "K23431",
+    "K23428",
+    "K23420",
+    "K998"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbm-014",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "품질 기준",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23430",
+    "K21067",
+    "K2044",
+    "K299",
+    "K23417"
+   ],
+   "tool4": [
+    "K23430",
+    "K21067",
+    "K2044",
+    "K299"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-016",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "하자 원인",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23435",
+    "K23437",
+    "K23433",
+    "K23453",
+    "K23013"
+   ],
+   "tool4": [
+    "K23435",
+    "K23437",
+    "K23433",
+    "K23453"
+   ],
+   "expert_in_top5": 5
+  },
+  {
+   "id": "kbm-017",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "하자 원인",
+   "top5_all": false,
+   "top5_recall": 0.667,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "멤브레인"
+   ],
+   "top5": [
+    "K23441",
+    "K23440",
+    "K138",
+    "K22009",
+    "K22004"
+   ],
+   "tool4": [
+    "K23441",
+    "K23440",
+    "K22009"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-019",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "책임",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21039",
+    "K23429",
+    "K23811",
+    "K23460",
+    "K23461"
+   ],
+   "tool4": [
+    "K21039",
+    "K23811"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbm-020",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "책임",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20014",
+    "K22008",
+    "K336",
+    "K16",
+    "K23410"
+   ],
+   "tool4": [
+    "K20014",
+    "K22008",
+    "K336",
+    "K16"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-022",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "검수",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23449",
+    "K23423",
+    "K1411",
+    "K23420",
+    "K909"
+   ],
+   "tool4": [
+    "K23449",
+    "K23423",
+    "K23420"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-023",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "검수",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K21072",
+    "K23013",
+    "K22009",
+    "K22006",
+    "K23466"
+   ],
+   "tool4": [
+    "K21072"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-025",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "건조",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23416",
+    "K23417",
+    "K21072",
+    "K23418",
+    "K2043"
+   ],
+   "tool4": [
+    "K23416",
+    "K23417",
+    "K21072",
+    "K23418"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-026",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "건조",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23418",
+    "K23416",
+    "K23417",
+    "K2045",
+    "K2039"
+   ],
+   "tool4": [
+    "K23418",
+    "K23416",
+    "K23417",
+    "K2045"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-028",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "온습도",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23450",
+    "K23452",
+    "K2015",
+    "K23439",
+    "K23416"
+   ],
+   "tool4": [
+    "K23450",
+    "K23452",
+    "K2015",
+    "K23439"
+   ],
+   "expert_in_top5": 4
+  },
+  {
+   "id": "kbm-029",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "온습도",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "받침목"
+   ],
+   "top5": [
+    "K23451",
+    "K20145",
+    "K23420",
+    "K2048",
+    "K23401"
+   ],
+   "tool4": [
+    "K23451",
+    "K20145",
+    "K23420",
+    "K2048"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-031",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "계절",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23465",
+    "K20185",
+    "K23419",
+    "K1284",
+    "K23444"
+   ],
+   "tool4": [
+    "K23465",
+    "K20185",
+    "K23419",
+    "K1284"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-032",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "계절",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23451",
+    "K20145",
+    "K295",
+    "K23804",
+    "K2318"
+   ],
+   "tool4": [
+    "K23451",
+    "K20145",
+    "K23804"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-034",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "살면서 공사",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23454",
+    "K2195",
+    "K646",
+    "K20113",
+    "K23011"
+   ],
+   "tool4": [
+    "K646",
+    "K20113"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-035",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "살면서 공사",
+   "top5_all": false,
+   "top5_recall": 0.5,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [
+    "동선|오가는 길"
+   ],
+   "top5": [
+    "K21071",
+    "K23808",
+    "K21078",
+    "K966",
+    "K23820"
+   ],
+   "tool4": [
+    "K23808",
+    "K21078",
+    "K23820",
+    "K23455"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-037",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "안전",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23429",
+    "K1121",
+    "K2381",
+    "K2382",
+    "K2387"
+   ],
+   "tool4": [
+    "K23429",
+    "K1121",
+    "K2381",
+    "K2382"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-038",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "안전",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23456",
+    "K298",
+    "K358",
+    "K23459",
+    "K396"
+   ],
+   "tool4": [
+    "K23456"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-040",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "친환경",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23405",
+    "K1081",
+    "K2261",
+    "K23404",
+    "K2504"
+   ],
+   "tool4": [
+    "K23405",
+    "K1081",
+    "K2261",
+    "K23404"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-041",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "친환경",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23454",
+    "K1081",
+    "K2261",
+    "K2263",
+    "K2392"
+   ],
+   "tool4": [
+    "K23454",
+    "K1081",
+    "K2261",
+    "K2263"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-043",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "견적서 읽기",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K948",
+    "K23408",
+    "K23405",
+    "K23462",
+    "K1109"
+   ],
+   "tool4": [
+    "K948",
+    "K23408",
+    "K23405",
+    "K23462"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-044",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "견적서 읽기",
+   "top5_all": false,
+   "top5_recall": 0.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "ㄴ자",
+    "마감재"
+   ],
+   "top5": [
+    "K23460",
+    "K948",
+    "K23458",
+    "K821",
+    "K914"
+   ],
+   "tool4": [
+    "K23460",
+    "K948",
+    "K23458",
+    "K821"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-046",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "계약",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23462",
+    "K23447",
+    "K2007",
+    "K21070",
+    "K2411"
+   ],
+   "tool4": [
+    "K23462",
+    "K23447",
+    "K2007",
+    "K2411"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-047",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "계약",
+   "top5_all": false,
+   "top5_recall": 0.0,
+   "tool4_all": false,
+   "tool4_recall": 0.0,
+   "missing": [
+    "해상도",
+    "단종"
+   ],
+   "top5": [
+    "K22007",
+    "K921",
+    "K23443",
+    "K23803",
+    "K23442"
+   ],
+   "tool4": [
+    "K22007",
+    "K23803",
+    "K1377",
+    "K23804"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-049",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "하자보증",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20029",
+    "K23464",
+    "K22004",
+    "K911",
+    "K258"
+   ],
+   "tool4": [
+    "K20029",
+    "K23464",
+    "K22004",
+    "K23460"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-050",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "하자보증",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K442",
+    "K441",
+    "K504",
+    "K233",
+    "K20030"
+   ],
+   "tool4": [
+    "K442",
+    "K441",
+    "K504",
+    "K20030"
+   ],
+   "expert_in_top5": 0
+  },
+  {
+   "id": "kbm-052",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "분쟁",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K1196",
+    "K849",
+    "K1186",
+    "K20039",
+    "K23805"
+   ],
+   "tool4": [
+    "K1196",
+    "K849",
+    "K20039",
+    "K23805"
+   ],
+   "expert_in_top5": 1
+  },
+  {
+   "id": "kbm-053",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "분쟁",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20046",
+    "K20185",
+    "K1284",
+    "K23465",
+    "K23444"
+   ],
+   "tool4": [
+    "K20046",
+    "K20185",
+    "K1284",
+    "K23444"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-055",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "다른 공정과 순서",
+   "top5_all": false,
+   "top5_recall": 0.667,
+   "tool4_all": false,
+   "tool4_recall": 0.667,
+   "missing": [
+    "샌딩|핸디코트|퍼티"
+   ],
+   "top5": [
+    "K21069",
+    "K23465",
+    "K21070",
+    "K23419",
+    "K22013"
+   ],
+   "tool4": [
+    "K21069",
+    "K21070",
+    "K23419",
+    "K22013"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-056",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "다른 공정과 순서",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K23413",
+    "K22014",
+    "K23422",
+    "K333",
+    "K1111"
+   ],
+   "tool4": [
+    "K23413",
+    "K22014",
+    "K23422",
+    "K333"
+   ],
+   "expert_in_top5": 2
+  },
+  {
+   "id": "kbm-058",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "뒤 관리",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": true,
+   "tool4_recall": 1.0,
+   "missing": [],
+   "top5": [
+    "K20185",
+    "K23444",
+    "K1284",
+    "K23465",
+    "K23419"
+   ],
+   "tool4": [
+    "K20185",
+    "K23444",
+    "K1284",
+    "K23465"
+   ],
+   "expert_in_top5": 3
+  },
+  {
+   "id": "kbm-059",
+   "trade": "mokgong",
+   "split": "dev",
+   "topic": "뒤 관리",
+   "top5_all": true,
+   "top5_recall": 1.0,
+   "tool4_all": false,
+   "tool4_recall": 0.5,
+   "missing": [],
+   "top5": [
+    "K22006",
+    "K23411",
+    "K919",
+    "K22008",
+    "K22004"
+   ],
+   "tool4": [
+    "K22006",
+    "K22004"
+   ],
+   "expert_in_top5": 1
+  }
+ ]
+}
