@@ -3,6 +3,7 @@
     cd backend
     uv run python ../evaluation/v4/expert_compare.py --answers ../evaluation/v4/runs/expert-cmp67/answers.jsonl
     uv run python ../evaluation/v4/expert_compare.py --pick      # 공정 고르기(코드)를 RAG 질문 390개 공정 표시로 재요
+    uv run python ../evaluation/v4/expert_compare.py --kb        # K 문항(sets/trade_*.jsonl) 정답 사실이 받는 자료에 드는 몫
 
 - 전체 · 묶음(group)별 · '전문가가 실제로 답한 문항'(v4_expert의 answer_question이 expert 길로 간 질문)만 따로 봐요.
   마지막 묶음이 새 엔진이 바꾼 몫이라 두 시스템 차이는 여기서 커요(나머지는 같은 v2g · v3 길).
@@ -11,6 +12,12 @@
   hits 제목)와 글에 출처 말(시방서 · 기준 · 자료 · 가이드 …)이 있는 답 수. 물음: 글이 물음표로 끝나는 답 수.
 - 실패: 오류 줄 · 끝나지 않은 턴 · answer_question 오류 · 전문가 실패(물러섬)를 나눠 세요.
 - 비교는 판정이 아니에요. 품질 판정은 grade.py(Opus, 리드)가 해요.
+- --kb(공정 지식 묶음이 병합된 갈래에서): K 갈래 문항(gold = 정답 사실 낱말, `|`는 다른 표기)마다 글 쓰는 모델이 받는
+  자료에 정답 사실이 몇 몫 드는지 견줘요(LLM · 임베딩 없음, 저장소 지식 + 공정 지식 묶음 색인).
+  - v2g: 지금 엔진이 비서에게 주는 조각(질문 낱말로 공정 하나일 때만 그 공정, k=6, 조각 글 앞 320자) + 공정 설정 줄.
+  - expert_evidence: 전문가가 받는 조각(공정 고르기 → 그 공정 + 공통 8개, 520자). 고른 공정이 없으면 v2g와 같아요.
+  - expert_all: 위 조각 + 전문가 지시문 · 입문서(전문 지식 G). 전문가가 '알 수 있는' 몫이에요(답에 쓴 몫이 아님).
+  - 비교 글 맞추기는 trade_kb_eval.norm과 같아요(소문자 · 공백 · 숫자 쉼표 · 단위 표기).
 """
 
 import argparse
@@ -201,6 +208,98 @@ def pick_eval() -> dict:
     return out
 
 
+# ---- K 문항으로 받는 자료 견주기(--kb) ----
+KB_SETS = [HERE / "sets/trade_dobae.jsonl", HERE / "sets/trade_mokgong.jsonl"]
+KO = {"dobae": "도배", "mokgong": "목공"}
+_SUBS = [("㎡", "m2"), ("m²", "m2"), ("°c", "℃"), ("º c", "℃"), ("㎜", "mm"), ("㎝", "cm"), ("㎏", "kg"),
+         ("×", "x")]  # fmt: skip
+
+
+def norm(text: str) -> str:
+    t = (text or "").lower()
+    for a, b in _SUBS:
+        t = t.replace(a, b)
+    t = re.sub(r"(?<=\d),(?=\d)", "", t)
+    t = re.sub(r"[∼～〜]", "~", t)
+    t = re.sub(r"['\"‘’“”`]", "", t)
+    return re.sub(r"\s+", "", t)
+
+
+def gold_found(gold: list[str], text: str) -> list[bool]:
+    t = norm(text)
+    return [any(norm(alt) in t for alt in g.split("|") if alt.strip()) for g in gold]
+
+
+def kb_index():
+    """저장소 지식(tests/v3_kb.datasets) + 공정 지식 묶음(app.knowledge.expert_pack, 병합된 갈래에만 있어요)."""
+    sys.path.insert(0, str(ROOT / "backend"))
+    sys.path.insert(0, str(ROOT / "backend/tests"))
+    from v3_kb import datasets
+
+    from app.knowledge import bm25, expert_pack  # expert_pack: 공정 지식 묶음(병합된 갈래)
+    from app.knowledge.sources import assemble
+
+    data, problems = expert_pack.check()
+    if problems:
+        raise SystemExit(f"공정 지식 묶음 검사 실패: {problems[0]}")
+    chunks, docs = assemble([*datasets(), (expert_pack.KEY, expert_pack.rows(data))])
+    return bm25.build(chunks, docs, "repo+expert")
+
+
+def kb_eval(sets: list[Path]) -> dict:
+    from app.agent.trades import TRADES
+    from app.assistant.experts import agent as experts
+    from app.assistant.experts import pick as picking
+    from app.assistant.tools import cards
+    from app.knowledge import bm25, other_trades
+
+    ix = kb_index()
+    by_name = {c.name: c for c in TRADES.values()}
+    rows = [r for p in sets for r in jsonl(p)]
+    per: list[dict] = []
+    for r in rows:
+        q = r["text"]
+        one = bm25.trade_of(q)  # v2 grounds: 공정 하나일 때만
+        v2 = bm25.search(ix, q, trade=one, k=6).hits
+        seen = [
+            f"{cards.clean_name(h.title)} {h.section} {cards.clean_source_text(h.text)[:320]}"
+            for h in v2
+        ]
+        if one in by_name:
+            c = by_name[one]
+            seen += [*c.cautions, *c.survey_vars, *c.prep]
+        got = picking.pick(q, ("도배", "목공"), other=other_trades.notes_for(q) is not None)
+        if got.why == "unknown":
+            got = picking.infer(bm25.search(ix, q, k=experts.SEARCH_K).hits)
+        ev: list[str] = []
+        guide: list[str] = []
+        for t in got.trades:
+            hits = experts.evidence(bm25.search(ix, q, trade=t, k=experts.SEARCH_K).hits, t)
+            ev += [f"{p.title} {p.section} {p.text}" for p in map(experts.piece_of, hits)]
+            guide.append(experts.system_of(experts.SPECS[t]))
+        ev = ev or seen  # 고른 공정이 없으면 v2g로 물러서요
+        f = {
+            "v2g": gold_found(r["gold"], " ".join(seen)),
+            "expert_evidence": gold_found(r["gold"], " ".join(ev)),
+            "expert_all": gold_found(r["gold"], " ".join([*ev, *guide])),
+        }
+        per.append({"trade": r["trade"], "split": r["split"], "why": got.why, "picked": got.trades,
+                    **{k: sum(v) / len(v) for k, v in f.items()},
+                    **{f"{k}_all": all(v) for k, v in f.items()}})  # fmt: skip
+    out: dict = {"n": len(per), "pick": dict(Counter(p["why"] for p in per))}
+    out["routed_right"] = sum(KO[p["trade"]] in p["picked"] for p in per)
+    for key in ("all", "dev", "heldout", "dobae", "mokgong"):
+        rs = [p for p in per if key == "all" or key in (p["split"], p["trade"])]
+        if not rs:
+            continue
+        out[key] = {"n": len(rs)} | {
+            f"{k}{suf}": round(statistics.mean(float(p[k + suf]) for p in rs), 3)
+            for k in ("v2g", "expert_evidence", "expert_all")
+            for suf in ("", "_all")
+        }
+    return out
+
+
 def main(argv=None) -> int:
     utf8_stdout()
     ap = argparse.ArgumentParser(description="공정 전문가 무료 비교")
@@ -208,11 +307,17 @@ def main(argv=None) -> int:
         "--answers", type=Path, action="append", help="run_v4_answers answers.jsonl(여러 번)"
     )
     ap.add_argument("--pick", action="store_true", help="공정 고르기를 RAG 질문으로 재요")
+    ap.add_argument("--kb", action="store_true", help="K 문항 정답 사실이 받는 자료에 드는 몫")
+    ap.add_argument(
+        "--kb-sets", type=Path, action="append", help="--kb 문항 파일(기본 sets/trade_*.jsonl)"
+    )
     ap.add_argument("--out", type=Path, help="결과 JSON을 쓸 곳")
     a = ap.parse_args(argv)
     got: dict = {}
     if a.pick:
         got["pick"] = pick_eval()
+    if a.kb:
+        got["kb"] = kb_eval(a.kb_sets or KB_SETS)
     for p in a.answers or []:
         got[p.parent.name] = compare(p)
     text = json.dumps(got, ensure_ascii=False, indent=1)
