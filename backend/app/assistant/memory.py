@@ -228,15 +228,41 @@ def _busy_value(key: str, value: str, message: str) -> bool:
     return any(w in said and w not in free for w in words)
 
 
-def validate(items: list[Item], message: str) -> list[Item]:
+# 반려동물 값에서 인용에 없는 꾸밈말('키움' · '있음')만 떼고 남길 때 막는 뜻을 뒤집는 낱말(값 · 인용 어디에 있어도)
+NEGATE = re.compile(r"(?<![가-힣])(?:안|못)(?![가-힣])|없|아니|않")
+# 반려동물 이름: 바꿔 쓴 값에서는 이 낱말만 근거를 보고 남긴다('고양이 두 마리'의 '마리'처럼 셈 말만 남지 않게)
+PET_NAME = re.compile(
+    r"강아지|반려견|애견|개|푸들|말티즈|고양이|냥이|반려묘|햄스터|토끼|앵무새|새|물고기|금붕어|거북이|고슴도치|반려동물"
+)
+
+
+def _pet_name(word: str) -> str | None:
+    """낱말이 반려동물 이름이면 그 이름(조사를 뗀 꼴도 본다: '강아지가' → '강아지'). 아니면 None."""
+    return next((w for w in (word, JOSA.sub("", word)) if PET_NAME.fullmatch(w)), None)
+
+
+def _pet_part(value: str, quote: str) -> str | None:
+    """반려동물 값('강아지 키움')에서 뿌리가 인용에 있는 반려동물 이름만 남긴 값('강아지'). 뜻을 뒤집는 말이 있거나 남는
+    이름이 없으면 None(QA r6 c3 M9: 하소연 말의 '강아지 키움'이 인용 밖 낱말 하나로 통째로 빠짐)."""
+    if NEGATE.search(value) or NEGATE.search(quote):
+        return None
+    q = _squash(quote)
+    words = [w for w in re.split(r"[\s,·/()]+", FILLER.sub(" ", value)) if w]
+    kept = [n for w in words if (n := _pet_name(w)) and any(r in q for r in _roots(n))]
+    return " ".join(dict.fromkeys(kept)) or None
+
+
+def validate(items: list[Item], message: str, why: list[str] | None = None) -> list[Item]:
     """허용 키 · 인용은 메시지 안 · 값은 인용 안(바꿔 쓴 값이면 낱말이 모두 인용에 있어야 하고 붙인 말은 뺀다).
     건강 · 연락처 · 금액이 든 값은 버리고, 인용에만 있으면 인용을 값으로 줄인다(근거 메시지 id는 그대로 남는다).
     편한 요일 · 때에 안 되는 때를 적은 값('평일엔 회사')은 같은 말 속 되는 때('주말')로 바꾸고, 없으면 버린다.
     편한 요일 · 때에 날짜('2.1(월)')를 적은 값도 버린다. 같은 키가 여럿이면 먼저 것(목록 칸은 합친다).
-    ITEMS_MAX개까지."""
+    ITEMS_MAX개까지. 반려동물 값은 인용 밖 꾸밈말만 떼고 남긴다(_pet_part).
+    why를 주면 버린 줄마다 '키:까닭'을 넣는다(값 · 인용 글은 넣지 않는다, 기억 뽑기 일의 로그용)."""
     out: list[Item] = []
     seen: set[str] = set()
     msg = _squash(message)
+    lost = why if why is not None else []
     for it in items:
         key, value, quote = (
             it.key.strip(),
@@ -244,28 +270,38 @@ def validate(items: list[Item], message: str) -> list[Item]:
             " ".join(it.evidence_quote.split()),
         )
         if key not in KEYS or (key in seen and key not in LISTS):
+            lost.append(f"{key if key in KEYS else '?'}:key")
             continue
         if not value or len(value) > VALUE_MAX or not quote:
+            lost.append(f"{key}:size")
             continue
         if _squash(quote) not in msg:
+            lost.append(f"{key}:quote_outside")
             continue  # 고객이 하지 않은 말
         flat = " ".join(message.split())
         if key in WHEN and _busy_value(key, value, flat):  # 되는 때 칸에 안 되는 때를 적었다
             got = _free_when(key, flat)
             if got is None:
+                lost.append(f"{key}:busy")
                 continue
             value, quote = got
         if key in WHEN and ONE_DAY.search(value):
+            lost.append(f"{key}:one_day")
             continue  # 한 번 고른 날짜는 편한 요일 · 때로 남기지 않는다
         loose = _squash(value) not in _squash(quote)
         if loose:
-            value = _grounded(value, quote) or ""
+            value = (
+                _grounded(value, quote) or (_pet_part(value, quote) if key == "pet" else None) or ""
+            )
             if not value:
+                lost.append(f"{key}:value_outside")
                 continue  # 인용 밖 값
         if _bad(value):
+            lost.append(f"{key}:{_bad(value)}")
             continue
         if _bad(quote) or len(quote) > QUOTE_MAX:
             if loose:
+                lost.append(f"{key}:quote_bad")
                 continue  # 바꿔 쓴 값은 고객 말 인용 없이 남기지 않는다
             quote = value  # 값은 인용 안이라 그대로도 고객 말이다
         prev = next((x for x in out if x.key == key), None)
@@ -274,6 +310,7 @@ def validate(items: list[Item], message: str) -> list[Item]:
             prev.evidence_quote = merged_quote(prev.evidence_quote, quote)
             continue
         if len(out) >= ITEMS_MAX:
+            lost.append(f"{key}:max")
             continue
         seen.add(key)
         out.append(Item(key=key, value=value, evidence_quote=quote))

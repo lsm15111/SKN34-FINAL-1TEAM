@@ -14,6 +14,7 @@
   조각은 버린다(옛 말이 새 결정을 이기지 않게).
 """
 
+import logging
 import uuid
 from datetime import datetime
 
@@ -25,6 +26,8 @@ from app.chat.models import Chat, ChatMessage
 from app.jobs import service as jobs_service
 from app.jobs.models import Job
 from app.jobs.service import JobHandler
+
+log = logging.getLogger(__name__)
 
 KIND = "assistant_memory"
 LATER = ":later"  # 미룬 일의 dedup_key 꼬리(차례 번호가 붙어요)
@@ -58,7 +61,11 @@ async def remember(s: AsyncSession, job: Job, now: datetime) -> bool:
     except memory.Later as e:
         await _later(s, job, said_at, now, e.scope)
         return False
-    items = memory.validate(got, text)
+    why: list[str] = []
+    items = memory.validate(got, text, why)
+    # 어디서 빠지는지 보이게(QA r6 c3 M9: 강아지를 두 번 말해도 기억 없음, 뽑기 · 검사 중 어디인지 기록이 없었어요).
+    # 키 · 까닭 코드만 남기고 값 · 고객 글은 남기지 않아요
+    log.info("기억 뽑기: 뽑음 %d · 남김 %d · 뺌 %s", len(got), len(items), ",".join(why) or "-")
     late = LATER in job.dedup_key
     settled = late and await _diy_settled(s, user_id, project_id, said_at)
     if settled:  # 미룬 사이 직접 할 일을 저장 · 정했어요: 옛 말의 직접 할 일은 버려요(칩이 원본)

@@ -398,11 +398,15 @@ async def request(
     now: datetime,
     *,
     diy: list[str] | None = None,
+    screen: bool = False,
 ) -> VisitCreateOut:
     """실측 요청 보내기 (v3): 담은 업체에만 · 희망 기간(62일 안) · 시도 번호 · 가견적 사본 · 공사 희망일
     사본(L04) · 프로젝트 잠금 · 담기 칸과 연결 · 답 기한 일(+48시간) · 업체 알림.
     보낼 수 없는 업체는 만들지 않고 failed로 돌려준다(모두 안 되면 409).
-    v4 반셀프: diy는 고객이 승인 카드에서 본 '업체에 알릴 것'(직접 할 일 칩 키)이에요. 요청마다 사본으로 고정해요."""
+    v4 반셀프: diy는 고객이 승인 카드에서 본 '업체에 알릴 것'(직접 할 일 칩 키)이에요. 요청마다 사본으로 고정해요.
+    screen(화면에서 보낸 요청)이면 지금 저장된 직접 할 일 칩을 사본으로 고정해요(QA r6 화면 M2: 화면 요청엔 안 갔어요)."""
+    from app.project.diy import diy_for
+
     today = svc.today_of(now)
     told = [k for k in DIY_KEYS if k in set(diy or ())]
     if data.wish_start is None or data.wish_end is None:
@@ -415,6 +419,8 @@ async def request(
     p, std, lines = await svc._standard(s, user, project_id, data.trade)
     await _check_photos(s, user, data.photos)
     await project_service.lock_for_visit(s, p.id)  # 같은 집의 요청이 줄 서고, 기본 정보가 잠긴다
+    if screen:  # 잠근 뒤에 읽어요(칩 저장과 줄 서요)
+        told = [k for k in DIY_KEYS if k in set(await diy_for(s, p.id) or ())]
     live = await repo.live(s, p.id, data.trade)
     if any(v.status == "chosen" for v in live):
         raise app_error("locked", "업체를 확정한 뒤라 더 요청할 수 없어요.")

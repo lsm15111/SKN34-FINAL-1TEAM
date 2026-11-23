@@ -116,7 +116,7 @@ def test_rip_off_and_missing_with_quotes_say_the_missing_line(api):
 def test_now_line_is_said_once_per_state(api, monkeypatch):
     monkeypatch.setattr(free, "when_word", lambda _now: "밤")
     f = offered(api)  # 업체가 실측 기간을 답함(고객이 반나절을 고를 차례)
-    now = "지금은 업체가 답한 기간에서 실측 시간을 고를 차례예요."
+    now = "지금은 마루와벽 실측 시간을 고를 차례예요."  # 그 상태 업체 이름과 말해요(QA r6 c3 M6)
     first, _ = turn(api, f["pid"], "치킨 시켜 줘")
     assert first.endswith(now), first
     for text in ("오늘 날씨 어때?", "요즘 주식 뭐 사면 좋아요?"):
@@ -127,18 +127,22 @@ def test_now_line_is_said_once_per_state(api, monkeypatch):
     # 상태가 바뀌면(반나절을 고름 → 실측 확정) 새 줄을 한 번
     assert choose(api, f["pid"], f["visit"]).status_code == 200
     got, _ = turn(api, f["pid"], "택시 불러 줘")
-    assert got.endswith("지금은 실측과 실측 견적서를 기다리는 중이에요."), got
+    assert got.endswith("지금은 마루와벽 실측과 실측 견적서를 기다리는 중이에요."), got
     got, _ = turn(api, f["pid"], "피자 시켜 줘")
     assert "지금은" not in got, got
 
 
 def test_now_said_reads_the_latest_now_line():
-    other = "지금은 실측과 실측 견적서를 기다리는 중이에요."
+    other = "지금은 마루와벽 실측과 실측 견적서를 기다리는 중이에요."
     assert free.now_said(NOW, []) is False  # 처음
     assert free.now_said(NOW, [f"오, 밤 치킨이군요! {NOW}", "날씨 이야기군요!"]) is True
     assert free.now_said(other, [f"치킨이군요! {NOW}"]) is False  # 상태가 바뀜
     assert free.now_said(NOW, [f"치킨이군요! {NOW}", f"그건 보여 드릴 수 없어요. {other}"]) is False
     assert free.now_said("", [NOW]) is False
+    # 실측 줄은 업체 이름까지 같아야 같은 줄이에요(새 업체가 실측을 잡으면 다시 붙여요)
+    assert free.now_said(other, [f"치킨이군요! {other}"]) is True
+    both = "지금은 결도배 · 마루와벽 실측과 실측 견적서를 기다리는 중이에요."
+    assert free.now_said(both, [f"치킨이군요! {other}"]) is False
 
 
 ONE = {

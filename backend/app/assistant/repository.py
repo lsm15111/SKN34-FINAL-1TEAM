@@ -6,7 +6,7 @@
 import re
 import uuid
 from collections.abc import Sequence
-from datetime import datetime
+from datetime import date, datetime
 
 from sqlalchemy import and_, case, delete, func, or_, select, tuple_, update
 from sqlalchemy.dialects.postgresql import insert
@@ -434,6 +434,27 @@ async def open_count(s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID 
             or_(AssistantAction.project_id == project_id, AssistantAction.project_id.is_(None))
         )
     return int(await s.scalar(q) or 0)
+
+
+async def open_slot_halves(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID, visit_id: uuid.UUID
+) -> set[tuple[date, str]]:
+    """같은 공사의 다른 실측 요청에 열린 실측 시간 승인 카드가 고른 반나절(날, am · pm). 대화 도구 · 먼저 말 걸기가 같은
+    반나절을 두 업체에 내지 않게 본다(QA r6 c4 1: 두 업체 모두 11.28 오전 카드, 둘째 승인이 409 slot_clash)."""
+    rows = await s.scalars(
+        select(AssistantAction.payload).where(
+            AssistantAction.user_id == user_id,
+            AssistantAction.project_id == project_id,
+            AssistantAction.kind == "visit_slot",
+            AssistantAction.status == "proposed",
+            AssistantAction.target_id != visit_id,
+        )
+    )
+    out = set()
+    for p in rows.all():
+        if p and p.get("day") and p.get("half"):
+            out.add((date.fromisoformat(str(p["day"])), str(p["half"])))
+    return out
 
 
 # ---- 먼저 말 걸기 ----

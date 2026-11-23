@@ -218,11 +218,13 @@ BUTTONS: dict[str, frozenset[str]] = {
 
 def buttons_of(kind: str, data: dict) -> frozenset[str]:
     """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만, 벽지 견주기 카드는
-    벽지를 바꿀 수 있을 때(can_change)만."""
+    벽지를 바꿀 수 있을 때(can_change)만. 화면 링크 단추가 있는 답 카드는 'link'(누르라는 말이 맞다)."""
     if kind == "schedule" and not data.get("proposal_ref"):
         return frozenset()
     if kind == "grade_compare" and not data.get("can_change"):
         return frozenset()
+    if kind == "answer" and data.get("links"):  # 화면으로 가는 단추(리뷰 쓰기 등, QA r6 c4 4)
+        return frozenset({"link"})
     return BUTTONS.get(kind, frozenset())
 
 
@@ -380,6 +382,14 @@ def points(text: str) -> bool:
     if pointer(t):
         return True
     return bool(UI_POINT.search(t)) and bool(SUGGEST.search(t) or asks(t) or _PRESS.search(t))
+
+
+def leads(text: str) -> bool:
+    """다음 걸음을 말하는 문장인지: 가리키는 말(points) · 묻는 말 · 부탁(asks) · 할 일(고르기 · 누르기 · 수락 · 채팅 …)을
+    하라는 말('업체 추천에서 다시 골라 주세요'). '고르지 않거나 …'처럼 낱말만 닮은 설명은 아니다. 지금 할 일 줄 붙이기 ·
+    되풀이로 뺀 다음 걸음 살리기가 답에 다음 걸음이 있는지 볼 때 쓴다."""
+    t = (text or "").strip()
+    return points(t) or asks(t) or (next_step(t) and bool(SUGGEST.search(t)))
 
 
 # '…오면 알려 드릴게요' 꼴 약속(업체 답 · 견적서가 오면 알린다): 숫자가 있어도 되풀이를 본다(고침 4차 G, QA r4 c5 3 · 5 · 7턴)

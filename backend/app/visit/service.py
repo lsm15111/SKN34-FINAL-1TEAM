@@ -35,6 +35,7 @@ from app.quote import service as quote_service
 from app.quote.models import QUOTE_FILES_MAX, VAT_MODES, StandardQuote, StandardQuoteLine
 from app.quote.schemas import QuoteBriefOut, QuoteDraftIn
 from app.realtime import service as realtime
+from app.shared import kdate
 from app.shared.clock import SEOUL, now_utc
 from app.shared.errors import AppError, app_error
 from app.shared.ids import uuid7
@@ -1181,6 +1182,14 @@ async def send_quote(
     if v.status != "quoted" and v.status not in first:
         raise _quote_blocked(v)
     again = v.status == "quoted"
+    # 실측 날 전에는 첫 견적서를 보내지 않는다(화면 QuoteForm과 같은 규칙, QA r6 c3 · 화면 M1: 실측 11.28 확정인데
+    # 11.23에 견적서가 받아짐). 실측한 날 칸이 없어도 서버가 막는다. 실측 날 당일부터는 보낼 수 있다
+    if not again and v.status == "booked" and v.booked_day is not None and v.booked_day > today:
+        raise AppError(
+            409,
+            "before_visit",
+            f"실측하는 {kdate.md_long(v.booked_day, today)}부터 견적서를 보낼 수 있어요.",
+        )
     if again and not await quote_service.has_draft(s, v.id):
         raise AppError(
             409, "already_sent", "이미 보낸 견적서예요. 고쳐서 임시 저장한 뒤 다시 올려 주세요."

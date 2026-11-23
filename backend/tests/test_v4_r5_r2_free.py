@@ -4,14 +4,14 @@
 표준견적서 줄의 포함 상태(실측 후 · 선택 · 안 함)로 답한다. 유료 호출 0회(LLM 꺼짐 = 무료 모드)."""
 
 import re
-from datetime import datetime
+from datetime import datetime, time, timedelta
 
 import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant import free
-from app.shared.clock import SEOUL
+from app.shared.clock import SEOUL, now_utc, today_seoul
 from tests.conftest import query
 from tests.helpers import use
 from tests.test_extras import scheduled
@@ -154,17 +154,27 @@ def test_notify_ask_promises_the_vendor_answer_by_day_and_is_short_when_repeated
     lint(first, again)
 
 
-def test_notify_ask_at_night_says_it_goes_in_the_morning(api, monkeypatch):
+def test_notify_ask_names_deferred_alerts_only_when_there_are_some(api, monkeypatch):
+    """밤이라고 '밤 알림은 아침 9시에 가요'를 붙이지 않아요(업체 답 종 알림 · 대화 줄은 밤에도 바로 가요). 밤 · 하루
+    상한으로 미뤄 둔 알림이 있을 때만 그 수와 갈 때를 말해요(QA r6 c1 M10, 턴 사실 '알림' 줄과 같은 값)."""
+    from app.assistant import repository as repo
+    from app.assistant import service
+
     monkeypatch.setattr(free, "is_night", lambda _now: True)
     w = two_requests(api)
     first, _ = turn(api, w["pid"], "연락 오면 말해 줘")
     assert first.startswith(("결도배 · 마루와벽이 답하면 ", "마루와벽 · 결도배가 답하면 ")), first
-    assert first.endswith("밤 알림은 아침 9시에 가요."), first
-    again, _ = turn(api, w["pid"], "연락 오면 말해 줘")
-    assert again == free.join(
-        free.NOTIFY_AGAIN.format(when="답이 오면"), "밤 알림은 아침 9시에 가요."
-    )
-    lint(first, again)
+    assert not re.search(r"밤|아침", first), first  # 미뤄 둔 알림이 없으면 때 얘기 없음
+    due = datetime.combine(today_seoul() + timedelta(days=1), time(9), tzinfo=SEOUL)
+
+    async def deferred(*_a, **_k):
+        return 1, due
+
+    monkeypatch.setattr(repo, "deferred_nudges", deferred)
+    got, _ = turn(api, w["pid"], "견적서 나오면 알려 줘")
+    later = free.NOTIFY_LATER.format(n=1, at=service.deferred_at(due, now_utc()))
+    assert got == free.join(free.NOTIFY_SAID.format(when="실측 견적서가 오면"), later), got
+    lint(first, got)
 
 
 def test_notify_ask_promises_only_what_mitjip_sends_first(api, monkeypatch):

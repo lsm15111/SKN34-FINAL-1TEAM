@@ -197,7 +197,11 @@ WORDS = {
 
 
 def now_lines() -> list[str]:
-    return [*free.NOW.values(), *(line for _, line in free.NOW_VISIT), free.NOW_NONE, ""]
+    # 실측 줄은 그 상태 업체 이름 자리가 있는 틀이라 이름(받침 있음 · 없음 · 둘)을 채워 봐요
+    visit = [
+        line.format(names=n) for _, line in free.NOW_VISIT for n in ("결도배", "마루와벽 · 결도배")
+    ]
+    return [*free.NOW.values(), *visit, free.NOW_NONE, ""]
 
 
 def test_every_off_answer_passes_style_lint():

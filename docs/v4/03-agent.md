@@ -133,7 +133,7 @@
 
 ### SSE
 - 순서: `ack`{turn_id, chat_id, at} → `status`{text, task?} · `card`{card_id, kind, data, say?} · `action`(ActionOut)(여러 번) → `token`{text}(여러 번) → `done`{rev, mode, cards, actions, stopped, chips, suggest}
-- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 그 단계의 다음 일이 열린 승인 카드로 와 있으면(실측 요청 · 반나절 · 업체 확정 · 날짜 수락) 단계 제안은 빼요(`STEP_OPEN`, QA r2 c5). 같은 client_key 되돌림에서는 비워요.
+- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 열린 승인 카드가 있으면(종류와 상관없이, 누르기만 남음) 단계 제안은 빼요(QA r2 c5 · r6 c2). 같은 단계 제안은 최근 8턴에 3번 보였으면 쉬어요(`STEP_WINDOW` · `STEP_REPEAT`, 보인 제안은 턴 흔적 `trace.suggest`). 같은 client_key 되돌림에서는 비워요.
   - 화면 메모: 목업(`lib/api/assistant.ts`)은 `suggest`를 하나(SuggestOut)로 받아요. 백엔드는 목록이라 화면 담당이 맞춰야 해요.
 - 실패하면 `done` 대신 `error`{code, message}를 보내요.
 - 모든 data에 `seq`(턴 안에서 늘기만 함)와 `id: {turn_id}:{seq}`를 붙여요. 화면은 이미 받은 seq 이하를 버려요.
@@ -315,7 +315,7 @@
 
 - 대상마다 열린 제안은 하나예요(`actions.offer` · `propose`). 같은 (사람, 대상)의 제안 만들기는 트랜잭션 잠금으로 줄 서요. 같은 제안(종류 · target_ver · payload)이 열려 있으면 턴이 달라도 새 행을 만들지 않고 그 행을 써요. 다르면 그 대상의 열린 제안 중 서로 바꾸는 묶음(같은 종류, 그리고 기간 답하기 ↔ 못 받아요 · 날짜 수락 ↔ 바뀐 날짜 수락)만 만료(replaced)로 바꾸고 새 행을 넣어요(예: 업체 기간 답하기 → 못 받아요). 같은 공사의 직접 할 일 · 집 정보 카드와 실측 요청 카드는 서로 바꾸지 않아요(2026-11-22).
   - 먼저 말 걸기는 같은 종류 · 같은 판의 열린 카드(대화에서 만든 것)를 덮지 않고 그 행을 써요.
-  - 거절한 제안은 대상 판 · 금액 · 날짜가 같으면 다시 만들지 않아요. 도구는 오류 대신 모델 값 state rejected('고객이 거절한 제안이에요')를 돌려줘요. 카드 단추로 직접 고른 턴(pressed)과 LLM 턴에서 고객이 분명히 해 달라고 한 말('저장해 주세요' 같은 부탁)은 새 결정이라 새로 만들어요. 거절 막기는 먼저 말 걸기 · 비서가 스스로 낸 제안에만 걸어요.
+  - 거절한 제안은 대상 판 · 금액 · 날짜가 같으면 다시 만들지 않아요. 도구는 오류 대신 모델 값 state rejected('고객이 거절한 제안이에요')를 돌려줘요. 카드 단추로 직접 고른 턴(pressed)과 LLM 턴에서 모델이 제안 도구 인자 `asked_again`을 켠 부름(고객이 이번 턴 말로 거절 · 거둔 제안을 다시 해 달라고 함, 이번 턴 고객 말이 있을 때만)은 새 결정이라 새로 만들어요. 말뜻은 모델이 읽고 코드는 낱말을 보지 않아요(고침 6차, QA r6 c1 H2). 거절 막기는 먼저 말 걸기 · 비서가 스스로 낸 제안에만 걸어요.
   - 멱등 키(턴 · 종류 · 대상 · payload)가 같은 행이 닫혔거나 기한이 지났으면 새로 만들어요(먼저 말 걸기는 턴이 없어 키가 늘 같아요).
   - 실행 중 기능 함수 안 읽기 도우미(표준견적서 · 예상 공정표)의 commit이 executed를 먼저 확정하지 않게, 승인 실행은 그 도우미를 executed 표시 앞에서 먼저 불러 맞춰요.
 - 업체 연결 도구(`recommend_vendors` · `compare_quotes` · `propose_visit_request`)는 trade가 dobae가 아니면 도구 오류 `dobae_only`('아직 도배 업체만 연결돼요. …')예요. `get_standard_quote`(mokgong) · 지식 답은 그대로예요.

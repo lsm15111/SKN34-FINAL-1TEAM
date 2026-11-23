@@ -111,7 +111,9 @@ def test_standard_tool_gives_how_save_and_outside_lines(api, script):  # noqa: F
     paper = got["paper"]["rows"][0]["won"]  # 벽지 값(부가세 포함) = 벽지 직접 구매로 줄어드는 돈
     assert saves["벽지 직접 구매"]["diff_won"] == paper
     assert "빈 집에서 공사" not in saves  # 이미 빈 집
-    assert tokens(ev) == HOW_ANSWER  # how 숫자로 쓴 문장은 숫자 검사를 지나요
+    # how 숫자로 쓴 문장은 숫자 검사를 지나요. 다음 걸음 없는 답이라 끝에 지금 할 일 줄이 붙어요(QA r6 c3 M8)
+    got_text = tokens(ev)
+    assert got_text.startswith(HOW_ANSWER) and got_text.rstrip().endswith("차례예요."), got_text
 
 
 def test_how_and_save_pass_the_model_filter():

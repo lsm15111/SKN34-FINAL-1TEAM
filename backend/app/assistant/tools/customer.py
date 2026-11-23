@@ -1,9 +1,11 @@
 """고객 비서 읽기 도구 (계약서 5장): get_home · get_standard_quote · recommend_vendors · vendor_free_slots ·
-compare_quotes · get_schedule · today_tasks · show_card · compare_grades(벽지 두 종류 견주기) · market_range(시세 범위).
+compare_quotes · get_schedule · today_tasks · show_card · compare_grades(벽지 두 종류 견주기) · market_range(시세 범위) ·
+offer_choices(물은 갈래를 고르기 칩으로).
 
 공사는 세션이 정한 project_id만 쓴다(남의 것은 기능 service가 404). 카드 · 모델용 값은 cards.py가 만든다.
 """
 
+import re
 import uuid
 from datetime import date
 from typing import Literal
@@ -221,8 +223,40 @@ async def recommend_vendors(tc: ToolCtx, a: RecommendIn) -> ToolOut:
             if region != (p.sido, p.sgg):
                 return await _elsewhere(s, tc, p, a.trade, *region)
         card, model = await cards.vendor_picks(s, tc.user, pid, a.trade, tc.refs)
+        if not model["picks"]:
+            return await no_picks(s, tc, pid, model)
     left_to_us(model)
     return ToolOut(data=model, cards=[card])
+
+
+# 추천할 곳이 0곳(QA r6 c3 H1: 0곳 카드를 다섯 번 내고 '두 업체 카드를 다시 보여 드렸어요'라고 함): 빈 카드를 보내지
+# 않고 까닭(why, cards.vendor_picks) · 다음 할 일(next) 하나를 모델에 준다. 진행 중인 실측 요청이 있으면 그 다음 일과
+# 작업 카드, 없으면 믿집 밖 조사(이미 맡겼으면 그 결과)
+NONE_NOTE = (
+    "추천할 업체가 0곳이라 업체 추천 카드는 보이지 않았어요(카드를 보였다고 말하지 마요). 까닭(why)과 다음 할 일"
+    "(next) 하나를 짧게 말해요."
+)
+NEXT_LIVE = "진행 중인 실측 요청을 이어 가요: {steps}"
+NEXT_OUTSIDE = "믿집 밖 공개 페이지에서 찾아볼지 한 번 물어요(start_research). 고객이 말하지 않은 다른 지역은 먼저 권하지 않아요"
+NEXT_LOOKED = "믿집 밖 업체 조사를 이미 맡겼어요(진행 · 결과는 get_research)"
+
+
+async def no_picks(s, tc: ToolCtx, pid: uuid.UUID, model: dict) -> ToolOut:
+    """0곳 업체 추천의 도구 결과: 카드 없이 까닭 · 다음 할 일(진행 중인 요청이 있으면 작업 카드도)."""
+    from app.assistant import research
+    from app.schedule import service as schedule_service
+
+    o = await schedule_service.overview_for(s, tc.user, pid, tc.today)
+    steps = cards.visits_next(o)
+    if steps:
+        nxt = NEXT_LIVE.format(steps=steps)
+    elif await research.outside_lately(s, tc.user.id, pid, tc.now):
+        nxt = NEXT_LOOKED
+    else:
+        nxt = NEXT_OUTSIDE
+    note = " ".join(x for x in (model.get("note"), NONE_NOTE) if x)
+    task = cards.visit_task(pid, o, tc.now) if steps else None
+    return ToolOut(data={**model, "next": nxt, "note": note}, task=task)
 
 
 ELSEWHERE_NOTE = (
@@ -377,6 +411,7 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
                 prefer=a.prefer,
                 days=a.days,
                 skip=skip,
+                said=tc.text,
             )
             if skip and model.get("status") == "offered":  # 다른 시간(QA r3 c1 6턴)
                 model["note"] = MORE_NOTE if model["candidates"] else MORE_NONE
@@ -462,7 +497,9 @@ class ShowIn(BaseModel):
     surface="customer",
     kind="read",
     status="카드를 불러오고 있어요",
-    description="화면 카드 하나를 다시 보여 줘요(집 정보 · 표준견적서 · 업체 추천 · 견적서 비교 · 공사 날짜 · 오늘).",
+    description="화면 카드 하나를 다시 보여 줘요(집 정보 · 표준견적서 · 업체 추천 · 견적서 비교 · 공사 날짜 · 오늘). "
+    "결과는 지금 다시 센 카드의 핵심 값이에요(업체 추천이면 몇 곳 · 어느 업체). 말은 이 값으로 해요. 보일 것이 없으면(업체 "
+    "0곳 · 받은 견적서 없음) 카드 없이 까닭만 와요.",
     model=ShowIn,
     schema=obj(
         {
@@ -484,19 +521,113 @@ async def show_card(tc: ToolCtx, a: ShowIn) -> ToolOut:
     pid = pid_of(tc)
     async with SessionLocal() as s:
         if a.kind == "home_info":
-            card, _ = await cards.home(s, tc.user, pid)
+            card, model = await cards.home(s, tc.user, pid)
         elif a.kind == "standard_quote":
-            card, _ = await cards.standard(s, tc.user, pid)
+            card, model = await cards.standard(s, tc.user, pid)
         elif a.kind == "vendor_picks":
-            card, _ = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
+            card, model = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
+            if not model["picks"]:  # 0곳: 빈 카드 대신 까닭 · 다음 할 일(QA r6 c3 H1)
+                out = await no_picks(s, tc, pid, model)
+                return ToolOut(data={"shown": None, **out.data}, task=out.task)
         elif a.kind == "quote_compare":
             card, model = await cards.compare(s, tc.user, pid, "dobae", tc.today, tc.refs)
             if card is None:  # 받은 견적서가 없으면 빈 카드 대신 사실(기다리는 업체 수)
                 return ToolOut(data={"shown": None, **model})
         elif a.kind == "schedule":
-            card, _ = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
+            card, model = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
         else:
-            card, _ = await cards.today(s, tc.user, pid, tc.today, tc.now, tc.refs)
+            card, model = await cards.today(s, tc.user, pid, tc.today, tc.now, tc.refs)
     if card is None:
         raise ToolError("no_card", "보여 줄 카드가 아직 없어요.")
-    return ToolOut(data={"shown": a.kind}, cards=[card])
+    return ToolOut(data=shown_of(a.kind, model), cards=[card])
+
+
+# show_card가 모델에 돌려줄 보인 카드의 핵심 값(카드 종류마다 칸, QA r6 c3 H1: {"shown": kind}만 받아 0곳 카드를
+# '두 업체 카드'로 말함). 값은 카드를 만든 그대로(계산 엔진 · DB)이고, 큰 칸(표준견적서 줄 · 근거 글)은 뺀다
+SHOWN: dict[str, tuple[str, ...]] = {
+    "home_info": ("facts", "locked"),
+    "standard_quote": ("trades", "total", "days"),
+    "vendor_picks": ("area", "count", "estimate_low_won", "estimate_high_won", "note"),
+    "quote_compare": ("count", "waiting", "gap_won", "note"),
+    "schedule": ("final_version", "deals", "period"),
+    "today": ("todo", "waiting", "news"),
+}
+SHOWN_ROWS: dict[str, tuple[str, tuple[str, ...]]] = {
+    "vendor_picks": ("picks", ("ref", "name", "estimate_won", "instant", "proposed")),
+    "quote_compare": ("cols", ("ref", "vendor_name", "status", "version", "total")),
+}
+
+
+def shown_of(kind: str, model: dict) -> dict:
+    """보인 카드의 핵심 값: {"shown": 종류, 칸…}. 목록 칸(업체 · 견적서)은 줄마다 이름표 · 이름 · 금액만."""
+    got: dict = {"shown": kind}
+    got |= {k: model[k] for k in SHOWN.get(kind, ()) if model.get(k) not in (None, "", [], {})}
+    if kind in SHOWN_ROWS:
+        key, cols = SHOWN_ROWS[kind]
+        got[key] = [{c: row[c] for c in cols if c in row} for row in model.get(key) or []]
+    return got
+
+
+# ---- 물은 갈래를 고르기 칩으로(QA r6 c1 M12: 'A부터 볼까요, B부터 볼까요?'라고 물어도 누를 칩이 없었어요) ----
+
+# 칩 글에 넣지 않는 것: 숫자(금액 · 날짜는 카드 값으로만) · 영어(이름표 · 도구 이름)
+CHOICE_BAD = re.compile(r"[0-9A-Za-z]")
+CHOICES_SAID = "고르기 칩을 보였어요. 고객이 누르면 그 말(say)이 와요. 칩을 다시 늘어놓지 말고 묻는 말 하나로 맺어요."
+
+
+class ChoiceOpt(BaseModel):
+    label: str = Field(min_length=1, max_length=20)  # 단추 글
+    say: str = Field(min_length=1, max_length=40)  # 누르면 비서에게 보낼 고객 말
+
+
+class ChoicesIn(BaseModel):
+    title: str = Field(min_length=1, max_length=40)
+    options: list[ChoiceOpt] = Field(min_length=2, max_length=4)
+
+
+@tool(
+    "offer_choices",
+    surface="customer",
+    kind="read",
+    status="고를 것을 준비하고 있어요",
+    description="고객에게 둘 이상의 갈래 중 하나를 고르게 물을 때(예: '견적 금액부터 볼까요, 벽지부터 볼까요?') 그 갈래를 "
+    "누를 칩으로 같이 보여 줘요. title은 묻는 말(짧게), options는 2~4개: label은 단추 글(10자 안팎), say는 누르면 "
+    "비서에게 갈 고객 말('견적 금액부터 볼래요'). 숫자 · 영어는 넣지 않아요. 승인 카드가 아니라 말만 보내요. 고를 "
+    "갈래를 묻지 않는 답에는 쓰지 않아요.",
+    model=ChoicesIn,
+    schema=obj(
+        {
+            "title": {"type": "string", "description": "묻는 말(40자 안)"},
+            "options": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": obj(
+                    {
+                        "label": {"type": "string", "description": "단추 글(20자 안)"},
+                        "say": {"type": "string", "description": "누르면 보낼 고객 말(40자 안)"},
+                    }
+                ),
+            },
+        }
+    ),
+)
+async def offer_choices(tc: ToolCtx, a: ChoicesIn) -> ToolOut:
+    """모델이 정한 갈래를 고르기 칩 카드로(cards.options_card, 한 턴에 한 장: 다시 부르면 바꿔 끼워요). 칩 글은 모델이
+    썼으니 숫자 · 영어를 받지 않고 개인정보는 가려요(누르면 고객 말로 다시 검사를 지나요)."""
+    texts = [a.title, *(x for o in a.options for x in (o.label, o.say))]
+    if any(CHOICE_BAD.search(t) for t in texts):
+        raise ToolError(
+            "bad_input",
+            "고를 것에 넣을 수 없는 글이 있어요.",
+            hint="칩 글(title · label · say)에서 숫자 · 영어를 빼고 다시 불러요",
+        )
+    opts = [(policy.mask_in(o.label), policy.mask_in(o.say), None) for o in a.options]
+    if any(not x or not y for x, y, _ in opts):
+        raise ToolError(
+            "bad_input", "고를 것에 넣을 수 없는 글이 있어요.", hint="칩 글을 다시 써요"
+        )
+    card = cards.options_card(f"choices-{tc.turn_id}", policy.mask_in(a.title), opts)
+    return ToolOut(
+        data={"shown": "options", "count": len(opts), "note": CHOICES_SAID}, cards=[card]
+    )

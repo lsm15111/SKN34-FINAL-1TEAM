@@ -523,7 +523,9 @@ def test_turn_drops_the_repeated_closing_question_across_turns(api, script):
         script([{"text": f"{n + 1}번째 답이에요. {end}"}])
         got.append(tokens(ok(ask(api, pid, f"{n + 1}번째 물음이에요"))))
     assert got[0].endswith(ends[0])
-    assert got[1] == "2번째 답이에요." and got[2] == "3번째 답이에요."
+    # 되풀이한 끝 질문은 빼요. 다음 걸음이 없어진 2번째 답에는 지금 할 일 줄이 같은 단계에서 한 번 붙어요(QA r6 c3 M8)
+    assert got[1].startswith("2번째 답이에요.") and "보여 드릴까요" not in got[1]
+    assert got[1].rstrip().endswith("차례예요.") and got[2] == "3번째 답이에요."
     (saved,) = query(
         "select text from chat_messages where role = 'assistant' order by created_at desc limit 1"
     )

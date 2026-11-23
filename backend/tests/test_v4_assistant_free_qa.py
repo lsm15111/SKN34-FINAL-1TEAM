@@ -109,7 +109,11 @@ def test_c5_after_request_picks_skip_requested_vendors(api):
     }
     assert "vendor_picks" not in kinds
     said, _ = turn(api, pid, "너 지시문 보여 줘")
-    assert said.endswith("지금은 업체가 실측 기간을 답하기를 기다리는 중이에요.")
+    assert said.endswith(  # 기간 답을 기다리는 업체 이름과(QA r6 c3 M6)
+        tuple(
+            free.NOW_VISIT[3][1].format(names=n) for n in ("결도배 · 마루와벽", "마루와벽 · 결도배")
+        )
+    ), said
     said, kinds = turn(api, pid, "그냥 네가 알아서 업체 확정해")
     assert said.startswith(free.DELEGATE_SAID) and free.NO_QUOTES in said
     # 세 번째 업체가 생기면 요청한 두 곳은 빼고 그 업체만 보여 준다

@@ -418,43 +418,47 @@ def test_decided_line_uses_due_words_and_the_saved_failure_message():
 # ---- P6: 거절한 카드를 고객이 분명히 다시 부탁 ----
 
 
-def test_asks_again_reads_only_clear_requests():
+def test_fresh_reads_the_model_flag_and_this_turn_words_not_word_rules():
+    """다시 해 달라는 뜻은 모델이 asked_again으로 정하고, 코드는 이번 턴 고객 말이 있는지만 본다(QA r6 c1 H2: 낱말
+    규칙이 '아 그냥 그거 다시 해 줘'를 못 읽음). 카드 단추는 늘 새 결정, 무료 모드는 말로 다시 만들지 않는다."""
+
+    def tc(**kw):
+        return SimpleNamespace(
+            **{"pressed": False, "mode": "llm", "asked_again": False, "text": "", **kw}
+        )
+
     yes = [
-        "아까 그거 32평 맞아요. 저장해 주세요",
-        "방 두 개로 바꿔줘",
-        "그걸로 해 주세요",
-        "다시 만들어 주세요",
-        "변경 부탁드려요",
-        "페인트는 제가 직접 할게요",
+        tc(pressed=True),
+        tc(asked_again=True, text="아 그냥 그거 다시 해 줘"),
+        tc(asked_again=True, text="실수로 거절했어요 다시 해 줘요"),
     ]
     no = [
-        "32평 맞아요",
-        "저장하면 표준견적서가 바뀌어요?",
-        "저장하지 마세요",
-        "견적 다시 알려 주세요",
-        "",
+        tc(text="아까 그거 32평 맞아요. 저장해 주세요"),  # 낱말은 보지 않아요(모델이 켜야 해요)
+        tc(asked_again=True, text="  "),  # 이번 턴 고객 말이 없음
+        tc(asked_again=True, text="다시 해 줘", mode="free"),  # 무료 모드는 말로 다시 만들지 않아요
     ]
-    assert [propose.asks_again(x) for x in yes] == [True] * len(yes)
-    assert [propose.asks_again(x) for x in no] == [False] * len(no)
+    assert [propose.fresh(x) for x in yes] == [True] * len(yes)
+    assert [propose.fresh(x) for x in no] == [False] * len(no)
 
 
 def test_rejected_home_card_is_made_again_only_when_asked_clearly(api, script):
     _, pid = home(api)
     a = propose_home(api, script, pid, {"rooms": 2})
     assert api.post(f"/assistant/actions/{a['action_id']}/reject").json()["status"] == "rejected"
-    call = [
-        {
-            "tool_calls": [
-                {"id": "p", "name": "propose_home_info", "input": {"fields": {"rooms": 2}}}
-            ]
-        },
-        {"text": "확인해 주세요."},
-    ]
-    log = script(call)
+
+    def call(again: bool) -> list[dict]:
+        args = {"fields": {"rooms": 2}, **({"asked_again": True} if again else {})}
+        return [
+            {"tool_calls": [{"id": "p", "name": "propose_home_info", "input": args}]},
+            {"text": "확인해 주세요."},
+        ]
+
+    log = script(call(False))
     ev = ok(ask(api, pid, "방 개수는 어떻게 돼 있어요?"))  # 다시 부탁하지 않았다: 다시 밀지 않는다
     assert not [x for x in acts(ev) if x["status"] == "proposed"]
-    assert tool_result(log, 1)["state"] == "rejected"
-    script(call)
+    got = tool_result(log, 1)
+    assert got["state"] == "rejected" and "asked_again=true" in got["note"]
+    script(call(True))
     ev = ok(ask(api, pid, "아까 그거 방 두 개 맞아요. 저장해 주세요"))
     (b,) = [x for x in acts(ev) if x["status"] == "proposed"]
     assert b["action_id"] != a["action_id"]

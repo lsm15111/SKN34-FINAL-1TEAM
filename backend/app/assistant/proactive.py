@@ -123,8 +123,13 @@ TRIGGERS: dict[str, Trigger] = {
             feed="{vendor_i_ga} 실측 견적서를 보냈어요. 받은 견적서를 견줘 볼까요?",
             notify="받은 실측 견적서를 아직 확인하지 않았어요. 견줘 볼까요?",
             soon="{vendor_i_ga} 보낸 실측 견적서는 {until}까지 유효해요. 견줘 볼까요?",
-            # 두 곳 넘게 왔으면 받은 곳 이름 모두(QA 3차 c2 · c4: 두 곳이 왔는데 한 곳 이름만)
-            more=(("feed", ("quoted",), "{quoted}에서 실측 견적서가 왔어요. 받은 견적서를 견줘 볼까요?"),),
+            # 다시 올린 판이면 판 · 바뀐 것(QA r6 c4 2), 두 곳 넘게 왔으면 받은 곳 이름 모두(QA 3차 c2 · c4)
+            more=(
+                ("feed", ("version", "change"),
+                 "{vendor_i_ga} 견적서를 {version}판으로 다시 올렸어요({change}). 견줘 볼까요?"),
+                ("feed", ("version",), "{vendor_i_ga} 견적서를 {version}판으로 다시 올렸어요. 견줘 볼까요?"),
+                ("feed", ("quoted",), "{quoted}에서 실측 견적서가 왔어요. 받은 견적서를 견줘 볼까요?"),
+            ),
         ),
         Trigger(
             "dates_proposed", "customer", ("dates_proposed",), follow=timedelta(days=2),
@@ -329,6 +334,20 @@ class _Safe(dict):
         return ""
 
 
+def quote_change(prev, last) -> str | None:
+    """견적서 앞 판 → 새 판에서 바뀐 것 글: '220,000원 내려감 · 3일 → 2일'(차액은 계산 엔진 visit_view.grade_diff,
+    부가세 포함 합계끼리). 바뀐 것이 없으면 None."""
+    from app.calc import visit_view
+
+    parts = []
+    if prev.total is not None and last.total is not None and prev.total != last.total:
+        diff = visit_view.grade_diff(last.total, prev.total)
+        parts.append(f"{abs(diff):,}원 {'내려감' if diff < 0 else '올라감'}")
+    if prev.days is not None and last.days is not None and prev.days != last.days:
+        parts.append(f"{prev.days}일 → {last.days}일")
+    return " · ".join(parts) or None
+
+
 def _soon(f: Facts) -> bool:
     return f.hours_left is not None and f.hours_left <= SOON_HOURS
 
@@ -364,8 +383,9 @@ CARD_WORDS: dict[str, tuple[str, ...]] = {"work_eve": ("준비",), "prep_week": 
 
 
 def kept_facts(text: str, f: Facts) -> bool:
-    """AI 글이 이 줄의 사실을 담았는지(빠뜨리면 틀을 쓴다): 견적서가 여러 곳이면 모든 업체 이름, 추가 금액은 금액,
-    업체가 올린 날짜는 시작일 · 고객 요청의 답이면 '요청', 공사 전날 · 1주 전은 붙은 카드 말."""
+    """AI 글이 이 줄의 사실을 담았는지(빠뜨리면 틀을 쓴다): 견적서가 여러 곳이면 모든 업체 이름, 다시 올린 견적서는
+    다시 올렸다는 말(판), 추가 금액은 금액, 업체가 올린 날짜는 시작일 · 고객 요청의 답이면 '요청', 공사 전날 · 1주 전은
+    붙은 카드 말."""
     n = f.names
     if n.get("quoted") and not all(x in text for x in n["quoted"].split(" · ")):
         return False
@@ -374,6 +394,13 @@ def kept_facts(text: str, f: Facts) -> bool:
     if f.trigger == "dates_proposed" and n.get("start") and n["start"].split("(")[0] not in text:
         return False
     if n.get("asked") and "요청" not in text:
+        return False
+    # 다시 올린 견적서는 다시 올렸다는 것(판)을 말해야 해요(QA r6 c4 2)
+    if (
+        f.trigger == "quote_sent"
+        and n.get("version")
+        and not ("다시" in text or f"{n['version']}판" in text)
+    ):
         return False
     words = CARD_WORDS.get(f.trigger)
     return not words or any(w in text for w in words)
@@ -491,13 +518,26 @@ async def _visit_ctx(
             .limit(1)
         )
     elif t.name == "quote_sent":
-        until = await s.scalar(
-            select(VendorQuote.valid_until)
-            .where(VendorQuote.visit_id == v.id, VendorQuote.sent_at.is_not(None))
-            .order_by(VendorQuote.version.desc())
-            .limit(1)
-        )
+        sent = (
+            await s.execute(
+                select(
+                    VendorQuote.version,
+                    VendorQuote.total,
+                    VendorQuote.days,
+                    VendorQuote.valid_until,
+                )
+                .where(VendorQuote.visit_id == v.id, VendorQuote.sent_at.is_not(None))
+                .order_by(VendorQuote.version.desc())
+                .limit(2)
+            )
+        ).all()
+        until = sent[0].valid_until if sent else None
         c.due = _end_of(until) if until else None
+        # 다시 올린 견적서(2판 넘게): 판 · 바뀐 것(QA r6 c4 2: 2판이 와도 첫 도착과 같은 글)
+        if len(sent) == 2:
+            c.names["version"] = str(sent[0].version)
+            if change := quote_change(sent[1], sent[0]):
+                c.names["change"] = change
         # 견적서를 보낸 곳(먼저 보낸 곳부터)이 둘 넘으면 이름 모두: 같은 공사의 견적서 줄은 새 줄 하나로 합쳐 보이니
         # 그 줄 글이 받은 곳을 다 말한다(QA 3차 c2 · c4: 두 곳이 왔는데 한 곳 이름만)
         quoted = await _quoted(s, v)
@@ -968,6 +1008,34 @@ async def close_settled(
     return len(closed)
 
 
+NEWS_DAYS = timedelta(days=2)  # 끝난 일 소식 정리가 보는 안 읽은 알림 기간
+NEWS_BATCH = 500
+
+
+async def settle_news(now: datetime) -> int:
+    """정리(2분): 끝난 일의 종 알림을 읽음으로 한다(QA r6 c1 #11 · r5 A5 · r4 s6: 고른 뒤의 '날짜를 골라 주세요',
+    취소한 요청의 '실측이 정해졌어요'가 '새'로 남음). 끝난 일은 보드 '새 소식'에서 빼는 기준(repo.settled_events)과
+    같다. 최근 NEWS_DAYS 안 읽은 알림만 보고, commit 뒤 바뀐 사람에게 안 읽은 수를 보낸다. 읽음으로 바꾼 수."""
+    from app.notify import service as notify_service
+
+    async with SessionLocal() as s:
+        mine: dict[uuid.UUID, list[uuid.UUID]] = {}
+        for nid, uid in await notify_service.unread_since(s, now - NEWS_DAYS, NEWS_BATCH):
+            mine.setdefault(uid, []).append(nid)
+        done: dict[uuid.UUID, set[uuid.UUID]] = {}
+        for uid, ids in mine.items():
+            if got := await repo.settled_events(s, uid, ids):
+                done[uid] = got
+        n = await notify_service.mark_read_ids(s, [i for ids in done.values() for i in ids], now)
+        await s.commit()
+        if n:
+            try:
+                await notify_service.push_unread(s, list(done))
+            except Exception as e:  # noqa: BLE001 - 신호는 지워져도 되는 것(화면은 다시 읽어 맞춘다)
+                log.warning("끝난 일 소식 신호 실패 (%s)", type(e).__name__)
+    return n
+
+
 async def _close(n: AssistantNudge, status: str, reason: str, **values) -> None:
     async with SessionLocal() as s:
         await repo.set_nudge(s, n.id, ["pending"], status=status, reason=reason, **values)
@@ -1276,7 +1344,6 @@ async def _taken_halves(
 ) -> set[tuple[str, str]]:
     """같은 공사의 다른 실측이 잡은 반나절(확정 · 업체 수락 기다림)과 열린 실측 시간 승인 카드가 고른 반나절
     ('YYYY-MM-DD', am · pm). 먼저 말 걸기가 같은 반나절을 미리 고르지 않게 본다. 읽기 조인."""
-    from app.assistant.models import AssistantAction
     from app.visit.models import Visit, VisitHold
 
     if project_id is None:
@@ -1287,16 +1354,8 @@ async def _taken_halves(
         .where(Visit.project_id == project_id, Visit.id != visit_id, VisitHold.status == "active")
     )
     out = {(d.isoformat(), h) for d, h in held}
-    opened = await s.scalars(
-        select(AssistantAction.payload).where(
-            AssistantAction.user_id == user_id,
-            AssistantAction.project_id == project_id,
-            AssistantAction.kind == "visit_slot",
-            AssistantAction.status == "proposed",
-            AssistantAction.target_id != visit_id,
-        )
-    )
-    return out | {(p.get("day"), p.get("half")) for p in opened.all() if p}
+    opened = await repo.open_slot_halves(s, user_id, project_id, visit_id)  # 대화 도구와 같은 셈
+    return out | {(d.isoformat(), h) for d, h in opened}
 
 
 def _pin(card, row) -> None:

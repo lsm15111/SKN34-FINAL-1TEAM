@@ -128,7 +128,8 @@ async def request_visits(
     s: AsyncSession = Session,
 ) -> VisitCreateOut:
     if data.wish_start is not None or data.wish_end is not None:  # v3: 담긴 업체 · 희망 기간
-        return await flow.request(s, user, project_id, data, now_utc())
+        # 화면 요청도 고객 직접 할 일을 '업체에 알릴 것'으로 같이 보내요(비서 길과 같게)
+        return await flow.request(s, user, project_id, data, now_utc(), screen=True)
     if data.photos or data.grade is not None:
         raise app_error("invalid", "사진 · 벽지는 희망 기간을 고른 요청에만 붙여요.")
     return await service.request_visits(s, user, project_id, data, today_seoul())

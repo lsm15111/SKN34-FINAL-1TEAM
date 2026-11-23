@@ -214,15 +214,18 @@ def time_lines(now: datetime) -> list[str]:
 DEFERRED = "알림: 미룬 알림 {n}개는 {at}에 가요"
 
 
+def deferred_at(due: datetime, now: datetime) -> str:
+    """미룬 알림이 갈 때 글: '아침 9시', 오늘이 아니면 '11월 25일(수) 아침 9시'(턴 사실 · 무료 알림 부탁 답이 같이 씀)."""
+    at, day = due.astimezone(SEOUL), now.astimezone(SEOUL).date()
+    when = kdate.hour_text(at.hour, at.minute)
+    return when if at.date() == day else f"{kdate.md_long(at.date(), day)} {when}"
+
+
 def deferred_line(count: int, due: datetime | None, now: datetime) -> str | None:
     """턴 사실 '알림:' 줄(미룬 알림 수 · 가장 이른 보낼 때, 오늘이 아니면 날짜도). 미룬 알림이 없으면 None."""
     if count <= 0 or due is None:
         return None
-    at, day = due.astimezone(SEOUL), now.astimezone(SEOUL).date()
-    when = kdate.hour_text(at.hour, at.minute)
-    if at.date() != day:
-        when = f"{kdate.md_long(at.date(), day)} {when}"
-    return DEFERRED.format(n=count, at=when)
+    return DEFERRED.format(n=count, at=deferred_at(due, now))
 
 
 async def deferred_lines(
@@ -304,6 +307,8 @@ DATES_WORDS = {
     "change_requested": "공사 날짜 바꾸기를 요청함(업체 답 기다림)",
     "change_proposed": "업체가 바뀐 공사 날짜를 올림(수락할 차례)",
 }
+# 끝난 공사의 리뷰를 아직 안 썼을 때 업체 줄에 붙이는 말(쓰는 곳: 공사 화면 · 점검표 카드의 [리뷰 쓰기] 단추)
+REVIEW_OPEN = "리뷰 아직 안 씀(공사 화면 · 공사 끝 점검표 카드의 [리뷰 쓰기]에서 써요)"
 BEFORE_CHAT = ("requested", "offered", "picked", "proposed")  # 채팅이 열리기 전(업체 수락 전)
 # 요청함 · 기간 답 옴 · 고름(업체 수락 기다림)은 모두 실측 날짜가 정해질 때 열려요. '업체가 수락하면'은 아직 기간 답 전인
 # 바로 확정 업체에 맞지 않았어요(QA r6 c3 t13)
@@ -365,6 +370,11 @@ def deal_words(d, dates: str | None, today) -> str:
         parts.append("남은 일 하는 중")
     elif d.status == "done":
         parts.append("공사 끝")
+        # 리뷰를 아직 안 썼으면 쓰는 곳(QA r6 c4 4: '리뷰는 어디서 써요?'에 위치를 모름)
+        if getattr(d, "review_open", False):
+            parts.append(REVIEW_OPEN)
+        elif getattr(d, "review_id", None):
+            parts.append("리뷰 씀")
     elif dates in DATES_WORDS:
         parts.append(DATES_WORDS[dates])
     elif d.start_date is not None and d.end_date is not None:
@@ -510,6 +520,7 @@ async def _customer_facts(
     except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 옛 단계 말로
         log.warning("턴 사실 업체 상태 읽기 실패 (%s)", type(e).__name__)
         w = WorkNow(UNKNOWN_STAGE, None)
+    picked = await shortlist_facts(s, p, refs) if refs is not None else None
     lines = [
         *time_lines(now),
         *await deferred_lines(s, user.id, "customer", p.id, now),
@@ -517,7 +528,7 @@ async def _customer_facts(
         "단계: " + w.stage + (" · 집 정보 잠김(실측 요청 뒤)" if home["locked"] else ""),
         "집: " + " · ".join(home_facts(home)),
         *([diy] if diy else []),
-        *(x for x in (w.vendors, w.chat) if x),
+        *(x for x in (w.vendors, picked, w.chat) if x),
     ]
     period = period_line(await schedule_service.period_now(s, p), today)
     if period:
@@ -538,6 +549,88 @@ async def _customer_facts(
     if looked := await research.facts_line(s, user.id, p.id, now):
         lines.append(looked)
     return "\n".join(lines)
+
+
+# 턴 사실 '담은 업체' 줄(QA r6 화면 H3: 업체 보기 화면에서 담은 업체는 대화 카드에 없어 이름표가 없었고, 비서가 '목록에
+# 없어요'라며 요청 카드를 못 만듦)
+SHORTLIST_FACT = "담은 업체(업체 보기에서 고객이 담음 · 아직 요청 전, 이 이름표로 실측 요청 카드를 만들 수 있어요): {items}"
+
+
+async def shortlist_facts(s, p, refs: RefTable) -> str | None:
+    """담았고 살아 있는 요청 · 확정이 없는 도배 업체(담은 칸 순): 이름(이름표 v…). 이름표는 대화 표에 넣어요(같은 업체는
+    같은 이름표). 표준견적서를 새로 저장할 수 있는 visit.service.shortlist_for 대신 읽기 조인만 해요(턴 행을 넣은
+    트랜잭션 안이라 commit · rollback을 부르지 않게)."""
+    from app.vendor.models import Vendor
+    from app.visit.models import Shortlist, Visit
+
+    busy = select(Visit.vendor_id).where(
+        Visit.project_id == p.id,
+        Visit.trade == "dobae",
+        Visit.status.in_((*LIVE_VISITS, "chosen")),
+        Visit.vendor_id.is_not(None),
+    )
+    rows = await s.execute(
+        select(Shortlist.vendor_id, Vendor.biz_name)
+        .join(Vendor, Vendor.user_id == Shortlist.vendor_id)
+        .where(
+            Shortlist.project_id == p.id,
+            Shortlist.trade == "dobae",
+            Shortlist.status == "active",
+            Shortlist.vendor_id.not_in(busy),
+        )
+        .order_by(Shortlist.slot)
+    )
+    items = [
+        f"{name}({refs.put('vendor', {'id': str(vid), 'name': name, 'trade': 'dobae'})})"
+        for vid, name in rows.all()
+        if name
+    ]
+    return SHORTLIST_FACT.format(items=" / ".join(items)) if items else None
+
+
+# ---- 턴 사실: 먼저 말 건 줄(QA r6 c1 M11: 먼저 말 걸기 줄은 chat_messages에 없어 모델 기록에 안 들어가, 반나절 카드가 온
+# 바로 뒤 '그거 알아서 해 줘요'를 앞 얘기(벽지 색)로 받음). 기록에 비서 말로 끼우면 되풀이 거름 · 숫자 근거(지난 비서 말
+# 두 개) · 앞 물음 판단이 같이 바뀌어서 턴 사실 한 줄로 준다 ----
+
+NUDGE_FACT_MAX = 2  # 넣는 줄 수(고객이 마지막으로 말한 뒤 보낸 것, 새것 둘)
+NUDGE_FACT = "먼저 말 건 줄(고객이 마지막으로 말한 뒤 비서가 먼저 보낸 것, 화면 맨 아래): {items}"
+NUDGE_ACT = {
+    "proposed": "승인 기다림",
+    "executed": "승인해 실행됨",
+    "rejected": "거절함",
+    "expired": "닫힘",
+    "failed": "실행 못 함",
+}
+
+
+def nudge_item(n, a) -> str:
+    """먼저 말 건 줄 하나 → 턴 사실 글: 보낸 때 · 글(비서가 쓴 말) · 카드 · 승인 카드(지금 상태)."""
+    parts = [f"{kdate.now_text(n.sent_at)} '{clip(n.body or '', 120)}'"]
+    kinds = [c.get("kind") for c in (n.card if isinstance(n.card, list) else [n.card]) if c]
+    if names := list(dict.fromkeys(runtime.CARD_NAME.get(k, "카드") for k in kinds if k)):
+        parts.append(f"카드 {' · '.join(names)}")
+    if a is not None:
+        parts.append(f"승인 카드 {card_name(a)}({NUDGE_ACT.get(a.status, a.status)})")
+    return " · ".join(parts)
+
+
+async def nudge_facts(s, user: User, project_id: uuid.UUID, rows: list[ChatMessage]) -> str | None:
+    """턴 사실 '먼저 말 건 줄': 고객이 마지막으로 말한 뒤(대화가 없으면 처음부터) 보낸 고객 먼저 말 걸기 줄(보이는 것,
+    새것 NUDGE_FACT_MAX개, 오래된 것부터). 없거나 못 읽으면 None(덧붙이는 사실이라 턴을 막지 않는다). 읽기만 한다."""
+    last = next((m.created_at for m in reversed(rows) if m.role == "user"), None)
+    try:
+        shown = await repo.shown_nudges(
+            s, user.id, "customer", project_id, since=last, limit=NUDGE_FACT_MAX
+        )
+        shown = [n for n in shown if n.sent_at is not None and (last is None or n.sent_at > last)]
+        if not shown:
+            return None
+        acts = await repo.actions_by_id(s, user.id, [n.action_id for n in shown if n.action_id])
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 줄 없이
+        log.warning("턴 사실 먼저 말 건 줄 읽기 실패 (%s)", type(e).__name__)
+        return None
+    items = [nudge_item(n, acts.get(n.action_id)) for n in reversed(shown)]
+    return NUDGE_FACT.format(items=" / ".join(items))
 
 
 # ---- 턴 사실: 직접 할 일 날짜 · 업체 사본(QA r4 c2 12 · 15턴: 도구 없이 답한 턴은 날짜를 몰라 날짜 문장이 숫자 검사에
@@ -824,6 +917,8 @@ async def start_turn(
             if project is not None
             else await _vendor_facts(s, user, now, visit_id, visit_ref, opened, decided)
         )
+        if project is not None and (nudged := await nudge_facts(s, user, project.id, rows)):
+            facts += "\n" + nudged
         if _has_older(rows, HISTORY):
             facts += "\n" + OLDER.format(n=sum(1 for m in rows if m.role == "user"))
         rev = chat.rev
@@ -974,6 +1069,7 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
             ideas = await suggest_for(
                 ctx.user, ctx.surface, ctx.project_id, said=ctx.text, chips=res.chips
             )
+            await note_suggest(ctx.turn_id, [x.id for x in ideas if x.id.startswith("step-")])
             await emit(
                 "done",
                 {
@@ -1700,15 +1796,6 @@ NUDGE_DONE: dict[str, tuple[str, frozenset[str]]] = {
     "vendor_out": ("vendor_picks", frozenset({"visit_request"})),
     "no_pick": ("vendor_picks", frozenset({"visit_request"})),
 }
-# 그 단계의 다음 일이 이미 열린 승인 카드로 와 있으면(누르기만 남음) 단계 제안을 하지 않아요(QA r2 c5: 업체를 골라
-# 실측 요청 카드가 열렸는데 '업체 3곳을 골라 둘까요?')
-STEP_OPEN = {
-    "standard": frozenset({"visit_request"}),
-    "pick": frozenset({"visit_request"}),
-    "visit": frozenset({"visit_slot"}),
-    "deal": frozenset({"vendor_confirm"}),
-    "dates": frozenset({"dates_accept", "delay_accept"}),
-}
 RECENT_SAID = 6  # 고객이 최근에 한 말 줄 수(이미 물은 제안은 빼요)
 VENDOR_IDEAS = {
     "new": ("새 요청을 정리해 볼까요?", "답할 새 요청이 있어요", "새 요청 브리핑해 줘"),
@@ -1779,15 +1866,22 @@ async def suggest_for(
                         key = None if await _looking(s, user.id, project_id, now) else "outside"
                     elif n < 3:
                         text = PICK_FEW.format(n=n)
-                if key in STEP_OPEN:  # 다음 일이 열린 승인 카드로 와 있으면 그 카드가 다음 걸음
-                    live = await repo.actions_of(
-                        s, user.id, surface, project_id=project_id, status="proposed", limit=20
-                    )
-                    if any(a.kind in STEP_OPEN[key] and a.expires_at > now for a in live):
-                        key = None
+                # 열린 승인 카드가 있으면 그 카드가 다음 걸음(누르기만 남음): 단계 제안을 하지 않아요. 단계와 다른 카드여도
+                # 같아요(QA r6 c2 T2: 집 정보 승인을 기다리는데 '업체 2곳을 골라 둘까요?')
+                live = await repo.actions_of(
+                    s, user.id, surface, project_id=project_id, status="proposed", limit=20
+                )
+                if any(a.expires_at > now for a in live):
+                    key = None
                 last, recent = await _recent(s, user.id, project_id)
                 ideas = STEP_IDEAS.get(key) if key else None  # 꺼 둔 단계(visit)는 단계 제안 없음
-                if key and ideas and STEP_CARD.get(key) not in last:
+                seen = await _shown_steps(s, user.id, project_id) if key and ideas else {}
+                if (
+                    key
+                    and ideas
+                    and STEP_CARD.get(key) not in last
+                    and seen.get(f"step-{key}", 0) < STEP_REPEAT
+                ):
                     idea, why, say = ideas
                     out.append(SuggestOut(id=f"step-{key}", text=text or idea, why=why, say=say))
             elif surface == "vendor":
@@ -1811,6 +1905,40 @@ async def suggest_for(
         seen.add(x.say)
         picked.append(x)
     return picked[:SUGGEST_MAX]
+
+
+# 같은 단계 제안(다음에 물을 말)은 최근 STEP_WINDOW턴에 STEP_REPEAT번 보였으면 쉬어요(QA r6 c2: '업체 2곳을 골라
+# 둘까요?'가 21턴 내내). 보인 제안은 턴 흔적(trace.suggest)에 남겨요(note_suggest)
+STEP_WINDOW = 8
+STEP_REPEAT = 3
+
+
+async def _shown_steps(s, user_id: uuid.UUID, project_id: uuid.UUID) -> dict[str, int]:
+    """최근 STEP_WINDOW턴(이번 턴 포함)에 보인 다음에 물을 말 id마다 보인 수."""
+    chat = await repo.assistant_chat(s, user_id, project_id)
+    if chat is None:
+        return {}
+    rows = await repo.messages(s, chat.id, STEP_WINDOW * 2)
+    turns = await repo.turns_of(s, chat.id, list({m.turn for m in rows}))
+    got: dict[str, int] = {}
+    for t in turns:
+        for x in (t.trace or {}).get("suggest") or []:
+            got[str(x)] = got.get(str(x), 0) + 1
+    return got
+
+
+async def note_suggest(turn_id: uuid.UUID, ids: list[str]) -> None:
+    """이 턴에 보인 다음에 물을 말 id를 턴 흔적에 남겨요(되풀이 셈, _shown_steps). 못 남기면 그대로 둬요."""
+    if not ids:
+        return
+    try:
+        async with SessionLocal() as s:
+            t = await s.get(AssistantTurn, turn_id)
+            if t is not None:
+                t.trace = {**(t.trace or {}), "suggest": ids}
+                await s.commit()
+    except SQLAlchemyError as e:  # 지워져도 되는 셈(되풀이를 한 번 더 셀 뿐)
+        log.warning("다음에 물을 말 흔적 저장 실패 (%s)", type(e).__name__)
 
 
 async def _recent(s, user_id: uuid.UUID, project_id: uuid.UUID) -> tuple[set[str], set[str]]:
@@ -1961,7 +2089,8 @@ async def health(user: User) -> HealthOut:
 
 async def sweep(now: datetime) -> dict[str, int]:
     """worker assistant_sweep(2분): 만료 제안 · 멈춘 승인 · 화면에서 직접 처리한 제안(handled_elsewhere) · 할 일이 끝난
-    먼저 말 건 줄(settled) · 멈춘 턴 · 상태 전이 알림 → 먼저 말 걸기 · 기한이 된 제안 평가(보냄 · 미룸 · 기록만 · 닫음).
+    먼저 말 건 줄(settled) · 끝난 일의 종 알림 읽음(news_read) · 멈춘 턴 · 상태 전이 알림 → 먼저 말 걸기 · 기한이 된
+    제안 평가(보냄 · 미룸 · 기록만 · 닫음).
     기억 뽑기는 sweep_jobs(jobs kind=assistant_memory)가 한다."""
     from app.assistant import proactive
 
@@ -1971,6 +2100,8 @@ async def sweep(now: datetime) -> dict[str, int]:
     handled = await actions.close_handled()
     # 할 일이 끝난 먼저 말 건 줄(실행 · 대상 상태 바뀜)
     settled = await proactive.close_settled(now, until=settle_until)
+    # 끝난 일의 종 알림은 읽음으로(보드 '새 소식'과 같은 기준)
+    news = await proactive.settle_news(now)
     async with SessionLocal() as s:
         stalled = await repo.fail_stalled(s, now, now - STALL)
         await s.commit()
@@ -1981,6 +2112,7 @@ async def sweep(now: datetime) -> dict[str, int]:
         "stuck": stuck,
         "handled": handled,
         "settled": settled,
+        "news_read": news,
         "stalled": stalled,
         "events": events,
         **{f"nudge_{k}": v for k, v in tally.items()},
