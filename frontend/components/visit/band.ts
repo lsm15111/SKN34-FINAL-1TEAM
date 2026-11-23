@@ -19,7 +19,7 @@ export function visitBandTasks(board: VisitBoard, projectId: string): { todo: Ba
       else if (r.next.kind === "proposal") todo.push({ label: `${iGa(name)} 제안한 날 고르기`, href: pick, due });
       else if (r.next.kind === "change") todo.push({ label: `${name} 일정 바꾸기 답하기`, href: r.thread_id ? `/chat/${encodeURIComponent(r.thread_id)}` : `/projects/${pid}/visits` });
       else if (r.next.kind === "visit") todo.push({ label: `${name} 실측 받았는지 알려 주기`, href: `/projects/${pid}/visits` });
-      else if (r.next.kind === "confirm" && !confirm) { confirm = true; todo.push({ label: "견적서 견주고 한 곳 확정하기", href: `/projects/${pid}/quotes` }); }
+      else if (r.next.kind === "confirm" && !confirm) { confirm = true; todo.push({ label: "견적서 비교하고 한 곳 확정하기", href: `/projects/${pid}/quotes` }); }
     } else if (r.next.who === "vendor") {
       const what = r.next.kind === "reply" ? "답 기다림" : r.next.kind === "accept" ? "수락 기다림" : r.next.kind === "change" ? "일정 바꾸기 답 기다림" : r.next.kind === "quote" ? "견적서 기다림" : null;
       if (what) waiting.push({ label: `${name} ${what}`, due });

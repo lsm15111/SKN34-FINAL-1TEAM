@@ -47,10 +47,10 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
         <div className={s.hero}>
           <section className={`${s.group} ${s.heroText}`} aria-labelledby="hero-t">
             <p className={s.eb}>업체를 만나기 전에</p>
-            <h1 id="hero-t" className={s.h}>표준견적서부터<br />받아 보세요</h1>
+            <h1 id="hero-t" className={s.h}>인테리어,<br />믿집에서 시작해요</h1>
             <div className={s.cta}>
               <StartCta ongoing={ongoing} autoOpen={resume === "1"} />
-              <p className={s.note}>{member || preview ? "1분이면 나와요" : "1분 · 가입 없이 바로 봐요"}</p>
+              <p className={s.note}>{member || preview ? "1분이면 표준견적서가 나와요" : "1분 · 가입 없이 표준견적서를 바로 봐요"}</p>
             </div>
           </section>
           {std ? <SampleQuote std={std} /> : null}

@@ -140,7 +140,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
                   <QuoteLines lines={lines.inside} caption={`${name} 가견적 줄 · 표준견적서와 같은 일`} />
                   {/* 퍼티 · 식대 · 운송비처럼 표준견적서 합계에 같은 일이 없는 줄은 따로 보여요. 표준견적서와 견준 %에서는 빠져요(API in_standard).
                       그중 '선택' 줄(퍼티 · 운송비, API optional)은 표준견적서처럼 괄호 금액 · 합계 밖이에요(아래 합계도 API가 빼고 셌어요) */}
-                  <p className={s.eb}>표준견적서 합계에 없는 줄 · 표준견적서와 견줄 때는 빼요</p>
+                  <p className={s.eb}>표준견적서 합계에 없는 줄 · 표준견적서와 비교할 때는 빼요</p>
                   <QuoteLines lines={lines.outside} totals={{ supply: est.supply, vat: est.vat, total: est.total }} vatSplit caption={`${name} 가견적 줄 · 표준견적서 합계에 없는 일`} />
                 </>
               ) : (

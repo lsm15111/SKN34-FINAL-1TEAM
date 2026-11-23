@@ -28,7 +28,7 @@ export function GradeCompareCard({ card, ctx, old }: CardProps<"grade_compare">)
   return (
     <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
-        <h3 id={`${card.card_id}-t`}>벽지 두 종류 견주기</h3>
+        <h3 id={`${card.card_id}-t`}>벽지 두 종류 비교</h3>
         <SourceTag src="calc" />
       </div>
       <p className={k.muted}>{d.label} · 부가세 포함</p>

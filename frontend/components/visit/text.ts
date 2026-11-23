@@ -79,7 +79,7 @@ export function nextText(r: BoardRow): string {
     case "proposed": return "제안한 날 고르기";
     case "booked": return r.can.visited ? "실측 받았는지 알려 주기" : r.change?.status === "open" ? `${iGa(v)} 일정 바꾸기에 답해요` : "실측 날 기다리기";
     case "visited": return `${iGa(v)} 견적서를 보내요`;
-    case "quoted": return "견적서 견주고 확정하기";
+    case "quoted": return "견적서 비교하고 확정하기";
     case "chosen": return `${iGa(v)} 공사 날짜를 올려요`;
     case "expired": return r.can.again ? "한 번 더 요청 · 다른 업체 담기" : "다른 업체 담기";
     case "declined": return "다른 업체 담기";

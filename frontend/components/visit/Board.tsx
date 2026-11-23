@@ -188,7 +188,7 @@ export function Board({ board, project }: { board: VisitBoard; project: VisitPro
         <div className={s.cardAct}><Button href={L.newReq}>실측 일정 요청</Button></div>
       </Group>
     ) : (
-      <EmptyState icon="calendar" title="실측을 요청할 업체를 먼저 담아요" action={<Button variant="text" arrow href={L.vendors}>업체 보기</Button>}>가견적을 견주고 3곳까지 담을 수 있어요</EmptyState>
+      <EmptyState icon="calendar" title="실측을 요청할 업체를 먼저 담아요" action={<Button variant="text" arrow href={L.vendors}>업체 보기</Button>}>가견적을 비교하고 3곳까지 담을 수 있어요</EmptyState>
     );
   }
 

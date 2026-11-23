@@ -13,7 +13,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "믿집", template: "%s · 믿집" },
-  description: "아파트 도배 · 목공, 시장 데이터 기준 표준견적서와 업체 가견적을 견주고 실측까지",
+  description: "아파트 도배 · 목공, 시장 데이터 기준 표준견적서와 업체 가견적을 비교하고 실측까지",
   applicationName: "믿집",
   // iOS 홈 화면 앱: 제목 · 상태 막대(기본값, standalone에서만 먹어요). 아이콘은 app/apple-icon.tsx
   appleWebApp: { capable: true, title: "믿집", statusBarStyle: "default" },

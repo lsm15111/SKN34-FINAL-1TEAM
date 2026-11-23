@@ -7,7 +7,7 @@ export default function manifest(): MetadataRoute.Manifest {
     id: "/",
     name: "믿집",
     short_name: "믿집",
-    description: "아파트 도배 · 목공, 시장 데이터 기준 표준견적서와 업체 가견적을 견주고 실측까지",
+    description: "아파트 도배 · 목공, 시장 데이터 기준 표준견적서와 업체 가견적을 비교하고 실측까지",
     lang: "ko",
     dir: "ltr",
     start_url: "/",

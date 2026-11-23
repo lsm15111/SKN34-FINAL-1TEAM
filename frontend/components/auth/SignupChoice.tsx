@@ -19,7 +19,7 @@ export function SignupChoice({ next }: { next?: string }) {
   return (
     <div className={s.card}>
       <section className={s.group} aria-labelledby="su-h">
-        <h1 id="su-h" className={s.h}>가입하면 업체 가견적을<br />견줄 수 있어요</h1>
+        <h1 id="su-h" className={s.h}>가입하면 업체 가견적을<br />비교할 수 있어요</h1>
         <ul className={s.ticks}>
           {["견적서 저장", "가견적 비교", "일정 알림", "AI 채팅"].map((t) => <li key={t}><Icon name="check" size={16} strokeWidth={2.6} />{t}</li>)}
         </ul>
