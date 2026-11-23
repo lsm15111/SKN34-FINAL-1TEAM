@@ -12,7 +12,8 @@ const one = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v);
 const NEED_DATES = ["waiting", "requested", "change_requested"];
 
 // 공사 한 건(알림 link: /vendor/jobs/{did}). 공사 날짜를 아직 안 냈거나 고객이 다른 날짜를 요청했으면 공사 날짜 올리기(V11),
-// 그 밖에는 공사 한 건(V23). ?step=extra 추가 금액(V12) · ?step=done 공사 끝(V13). 남의 공사면 404.
+// 그 밖에는 공사 한 건(V23). ?step=extra 추가 금액(V12) · ?step=done 공사 끝(V13) · ?step=dates 수락한 날짜 바꾸기(이유 칸,
+// 서버 kind=change). 남의 공사면 404.
 export default async function VendorJobPage({ params, searchParams }: { params: Promise<{ dealId: string }>; searchParams: Promise<{ step?: string | string[] }> }) {
   const { dealId } = await params;
   const step = one((await searchParams).step);
@@ -21,6 +22,8 @@ export default async function VendorJobPage({ params, searchParams }: { params: 
   if (!job) notFound();
   const href = `/vendor/jobs/${encodeURIComponent(job.deal_id)}`;
   const working = job.dates_state === "scheduled" && !job.done_posted_at && !job.work_done_on && job.status !== "done";
+  // 수락한 날짜를 업체가 스스로 바꾸기: 공사 끝을 알리기 전까지(서버 CHANGEABLE). 바꾸자고 보낸 뒤에도 다시 보낼 수 있어요(앞 것 대신)
+  const canChange = job.status === "scheduled" && (job.dates_state === "scheduled" || job.dates_state === "change_proposed") && !job.done_posted_at && !job.work_done_on;
 
   if (step === "extra" && working) {
     const profile = await getMyProfile().catch(() => null);
@@ -39,6 +42,14 @@ export default async function VendorJobPage({ params, searchParams }: { params: 
       </>
     );
   }
+  if (step === "dates" && canChange) {
+    return (
+      <>
+        <ProHeader me={me} phone={{ title: "공사 날짜 바꾸기", back: href }} />
+        <DatesForm job={job} now={vendorNow("dates")} change />
+      </>
+    );
+  }
   if (NEED_DATES.includes(job.dates_state)) {
     return (
       <>
@@ -51,7 +62,7 @@ export default async function VendorJobPage({ params, searchParams }: { params: 
   return (
     <>
       <ProHeader me={me} phone={{ title: "공사 한 건", back: "/vendor?tab=jobs" }} />
-      <JobView job={job} log={log} now={vendorNow("job")} />
+      <JobView job={job} log={log} now={vendorNow("job")} canChange={canChange} />
     </>
   );
 }

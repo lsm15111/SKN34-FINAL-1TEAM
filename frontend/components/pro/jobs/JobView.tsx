@@ -1,6 +1,7 @@
 // 공사 한 건(V23 v_job, D25 A): 상태 · 공사 날짜 · 견적서 · 추가 금액 · 동 · 호수 · 연락처(채팅) · 기록을 한곳에서.
 // 추가 금액 올리기(?step=extra, V12) · 공사 끝 알리기(?step=done, V13, CF-23)로 이어져요. 금액 · 날은 API 값 그대로예요.
 // 첫 공사 날 전이면 '공사 전', 끝 알리기는 마지막 공사 날부터라 그 전에는 단추 이름으로 언제부터인지 알려요(QA r6 M13).
+// canChange면 공사 날짜 줄 아래 [날짜 바꾸기](?step=dates, 이유 칸)로 수락한 날짜를 바꾸자고 보내요. 고객이 수락해야 바뀌어요.
 import { Main, PageHead } from "@/components/site/Frame";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { BottomBar } from "@/components/ui/BottomBar";
@@ -25,7 +26,7 @@ function jobState(j: JobV3, today: string): { tone: BadgeTone; label: string } {
   return { tone: "now", label: "공사 날짜 올리기" };
 }
 
-export function JobView({ job, log, now }: { job: JobV3; log: VendorJobLog; /** 지금 시각(서버 값) */ now: string }) {
+export function JobView({ job, log, now, canChange = false }: { job: JobV3; log: VendorJobLog; /** 지금 시각(서버 값) */ now: string; /** 수락한 날짜를 바꾸자고 보낼 수 있어요 */ canChange?: boolean }) {
   const v = job.visit;
   const today = dateSeoul(now);
   const st = jobState(job, today);
@@ -52,7 +53,7 @@ export function JobView({ job, log, now }: { job: JobV3; log: VendorJobLog; /** 
             <Row label="상태" value={`${st.label}${working && job.day_no ? ` · ${job.day_no}일째` : ""}`} />
             <Row
               label="공사 날짜"
-              sub={job.proposal?.decided_at && job.dates_state === "scheduled" ? `고객이 ${dateShort(job.proposal.decided_at)} 수락` : job.dates_state === "proposed" ? "고객 수락 기다림" : undefined}
+              sub={job.proposal?.decided_at && job.dates_state === "scheduled" ? `고객이 ${dateShort(job.proposal.decided_at)} 수락` : job.dates_state === "proposed" ? "고객 수락 기다림" : job.dates_state === "change_proposed" && job.proposal ? `${daysText(job.proposal.days)}로 바꾸자고 보냄 · 고객 답 기다림` : undefined}
               value={days.length ? daysText(days) : "—"}
             />
             {/* CF-38: '버전' 대신 보낸 날 */}
@@ -64,6 +65,7 @@ export function JobView({ job, log, now }: { job: JobV3; log: VendorJobLog; /** 
             />
             {job.thread_id ? <Row label="동 · 호수 · 연락처" sub="고객이 채팅으로 알려 줘요" href={`/chat/${enc(job.thread_id)}`} /> : null}
           </Rows>
+          {canChange ? <div className={s.rowAct}><Button variant="text" arrow href={`${href}?step=dates`}>날짜 바꾸기</Button></div> : null}
         </Group>
         {items.length ? (
           <Group flush>

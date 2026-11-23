@@ -1,4 +1,6 @@
 /* 공사 한 건(V23) · 공사 날짜(V11) · 추가 금액(V12) · 공사 끝(V13) */
 .jt { font-size: var(--mj-type-title-s); font-weight: var(--mj-weight-bold); }
 .js { font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+/* 줄 목록 아래 글자 단추(날짜 바꾸기) */
+.rowAct { display: flex; justify-content: flex-start; margin: 0 0 4px -4px; }
 .err { display: flex; align-items: center; gap: 6px; font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-danger); }
