@@ -49,8 +49,12 @@ class Settings(BaseSettings):
     # · v2g(v2.ask.grounds: v2 근거만, LLM 없이) · v2+v3 · v2g+v3(v2 먼저, v2 관문이 범위 밖으로 보고 v3가 답하면 v3).
     # 'v3'처럼 하나면 모두, 'price=v3,*=v2+v3'처럼
     # 종류=엔진을 쉼표로 적으면 그 종류만(* = 나머지, 없으면 v3). 기본값: 공정 에이전트는 전문지식만 넘기고 비서가 받아
-    # 한 번에 정리한다(v2g, 2026-11-23 사용자 결정 · 판정 j-route-terra: 품질 비슷 · 턴 비용 41% 적고 35% 빠름)
+    # 한 번에 정리한다(v2g, 2026-11-23 사용자 결정 · 판정 j-route-terra: 품질 비슷 · 턴 비용 41% 적고 35% 빠름).
+    # expert · expert+v3: 코드가 공정(도배 · 목공 · 둘 다)을 고르고 공정 전문가(assistant/experts, LLM 구조화 답)가
+    # 근거 번호 · 주의점 · 확인할 조건을 내면 비서가 받아 써요. 모르는 공정 · 실패는 v2g로 물러서요(docs/v4/13)
     assistant_answer_route: str = "period=v3,price=v3,*=v2g+v3"
+    # 공정 전문가 모델: main = 비서와 같은 모델 · 강도(기본), light = 'trade' 목적 기본(가벼운 모델)
+    assistant_expert_model: Literal["main", "light"] = "main"
     # 비서 지시문 판 묶음(assistant/prompts SETS): v4(기본, customer_v4 · vendor_v4 · nudge_write_v3) · v3(옛 판).
     # 판마다 지시문 글이 달라 프롬프트 캐시도 판마다 따로 맞는다
     assistant_prompt_set: Literal["v3", "v4"] = "v4"
