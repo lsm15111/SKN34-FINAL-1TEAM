@@ -2,7 +2,7 @@
 // 같은 턴 안에서 다시 오면 그 자리, 앞 말에 있던 같은 card_id는 지금 답 아래로 옮기고, 오늘 정할 일은 처음 자리에 마지막 값.
 // 대화를 다시 열 때(foldCards)도 스트림과 같은 모양이에요. 서버 · 브라우저 없이 순수 함수만 봐요(pnpm test:unit).
 import { expect, test } from "@playwright/test";
-import { applyTurnEvent, foldCards, type AssistantItem, type CardOut, type FeedItem, type HomeInfoData, type TodayData } from "./assistant";
+import { applyTurnEvent, foldCards, type ActionOut, type AssistantItem, type CardOut, type FeedItem, type HomeInfoData, type TodayData } from "./assistant";
 
 const AT = "2026-11-23T01:00:00Z";
 const home = (facts: string[]): CardOut<"home_info"> => ({
@@ -61,4 +61,16 @@ test("대화를 다시 열 때도 같은 카드는 마지막 자리에 마지막
   // 바뀔 것이 없으면 같은 말 객체를 그대로 둬요(다시 그리지 않게)
   const plain: FeedItem[] = [reply("t1", home(["a"])), said("u2", "고마워요")];
   expect(foldCards(plain)[0]).toBe(plain[0]);
+});
+
+test("같은 승인 카드(action_id)도 마지막 자리에 하나만 보여요(먼저 말 걸기 두 줄이 같은 제안을 실어 와도)", () => {
+  const act = { action_id: "a1", kind: "visit_request", status: "proposed" } as unknown as ActionOut;
+  const nudge = (id: string): AssistantItem => ({
+    id, role: "assistant", at: AT, turn_id: null, done: true, nudge_id: id,
+    parts: [{ t: "text", text: `${id} 말`, src: "ai" }, { t: "action", action: act }],
+  });
+  const got = foldCards([nudge("n1"), nudge("n2")]);
+  const acts = got.map((it) => (it.role === "assistant" ? it.parts.filter((p) => p.t === "action").length : 0));
+  expect(acts).toEqual([0, 1]);
+  expect(got[0].role === "assistant" && got[0].parts.map((p) => p.t)).toEqual(["text"]); // 글은 그대로
 });

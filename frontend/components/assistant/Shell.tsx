@@ -54,6 +54,10 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
     if (stack.current.length > 1) router.back();
     else router.replace(base, { scroll: false });
   }, [router, base]);
+  const markOpener = (target: EventTarget) => {
+    const t = (target as HTMLElement).closest<HTMLElement>("a[href^='/projects/'], button");
+    if (t) opener.current = t;
+  };
 
   // 알림에서 온 먼저 말 걸기(?nudge=): 열었다고 알리고 주소에서 떼요
   const nudge = params.get("nudge");
@@ -131,13 +135,13 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
         {siteHeader}
         <Header projectId={projectId} name={a.board?.project_name && mock ? a.board.project_name : name} unread={unread} tick={tick} mock={mock} site={!!siteHeader} onMock={(x) => { setMarks({}); void a.reset(x).then(() => setMock(x)); }} />
       </div>
-      <div className={s.body}>
-        <div
-          ref={col}
-          className={s.col}
-          inert={cardOpen || boardOpen}
-          onPointerDownCapture={(e) => { const t = (e.target as HTMLElement).closest<HTMLElement>("a[href^='/projects/'], button"); if (t) opener.current = t; }}
-        >
+      {/* 카드를 연 단추(대화 · 보드 칸, 누르거나 Enter)를 기억해 닫으면 그리로 초점을 돌려요 */}
+      <div
+        className={s.body}
+        onPointerDownCapture={(e) => markOpener(e.target)}
+        onKeyDownCapture={(e) => { if (e.key === "Enter" || e.key === " ") markOpener(e.target); }}
+      >
+        <div ref={col} className={s.col} inert={cardOpen || boardOpen}>
           <div className={s.thread}>
             <StepBar
               base={base}

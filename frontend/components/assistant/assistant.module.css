@@ -145,6 +145,7 @@
 .boxLink:hover { border-color: var(--mj-line-control); background: var(--mj-fill); }
 .boxLink:focus-visible { outline: 2px solid var(--mj-link); outline-offset: 1px; }
 .boxChev { position: absolute; right: 12px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%); color: var(--mj-text-mute); }
+.money b { word-break: keep-all; overflow-wrap: anywhere; }
 .rangeLine { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 8px; min-height: var(--mj-hit-min); margin: -6px 0 -8px; padding: 0 2px; font-size: var(--mj-type-caption); color: var(--mj-text-mute); text-decoration: none; }
 a.rangeLine { color: var(--mj-link); font-weight: var(--mj-weight-semibold); }
 a.rangeLine:hover { text-decoration: underline; text-underline-offset: 3px; }

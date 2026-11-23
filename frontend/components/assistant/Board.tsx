@@ -6,7 +6,7 @@
 // (그 칸에 초점, 실측 요청 뒤 잠기면 보기만) · 낼 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 ·
 // 업체 줄 → 그 업체 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류. 철거 범위 · 직접 할 일 줄은 대화에서 정해요.
 import Link from "next/link";
-import { useEffect, useRef, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { BoardOut, MemoryOut } from "@/lib/api/assistant";
 import { won } from "@/lib/format";
 import { StatusTag } from "./kit/StatusTag";
@@ -170,7 +170,7 @@ function Sections({ b, memory, base, onOpen, onForget }: {
           <h3 className={s.bsecT}>{b.period.label}</h3>
           {/* 예상 공사(확정 전)는 예상 공정표, 공사 날짜를 수락했으면 확정 공정표. 시작 희망일은 '우리 집' 줄에서 고쳐요 */}
           <Box href={`${base}/plan`} go={go} label={`${b.period.label} ${b.period.value} · 공정표 보기`}>
-            <b className={s.num}>{b.period.value}</b>{b.period.sub ? <small>{b.period.sub}</small> : null}
+            <b className={s.num}>{tildeBreak(b.period.value)}</b>{b.period.sub ? <small>{b.period.sub}</small> : null}
           </Box>
         </section>
       ) : null}
@@ -201,6 +201,11 @@ function Sections({ b, memory, base, onOpen, onForget }: {
       ) : null}
     </>
   );
+}
+
+/** '2027.1.6(수)~2027.1.10(일)'은 '~' 뒤에서만 줄을 바꿔요('(일'과 ')'로 갈라지지 않게, CSS keep-all과 같이) */
+function tildeBreak(v: string): ReactNode {
+  return v.split("~").map((x, i) => (i ? <Fragment key={i}>~<wbr />{x}</Fragment> : x));
 }
 
 /** 금액 · 기간 상자. href가 있으면 눌러 그 칸의 자세히를 열어요(오른쪽 ›) */

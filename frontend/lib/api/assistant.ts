@@ -482,18 +482,33 @@ function swapPart(items: FeedItem[], hit: (p: FeedPart) => boolean, part: FeedPa
 /**
  * 대화를 다시 열 때도 스트림(applyTurnEvent card)과 같게 보이도록 같은 card_id는 하나만 남겨요:
  * 마지막에 나온 자리에 마지막 값(앞 말의 같은 카드는 뺌). 오늘 정할 일만 처음 나온 자리에 마지막 값이에요(takeToday와 같은 규칙).
+ * 같은 승인 카드(action_id)도 마지막 자리에 하나만 남겨요.
  */
 export function foldCards(items: FeedItem[]): FeedItem[] {
   const latest = new Map<string, CardOut>();
   const lastAt = new Map<string, number>();
+  const lastAct = new Map<string, number>();
   items.forEach((it, k) => {
-    if (it.role === "assistant") for (const p of it.parts) if (p.t === "card") { latest.set(p.card.card_id, p.card); lastAt.set(p.card.card_id, k); }
+    if (it.role !== "assistant") return;
+    for (const p of it.parts) {
+      if (p.t === "card") { latest.set(p.card.card_id, p.card); lastAt.set(p.card.card_id, k); }
+      else if (p.t === "action") lastAct.set(p.action.action_id, k);
+    }
   });
   const seen = new Set<string>();
+  const seenAct = new Set<string>();
   return items.map((it, k) => {
     if (it.role !== "assistant") return it;
     let changed = false;
     const parts = it.parts.flatMap((p): FeedPart[] => {
+      // 같은 승인 카드(action_id)도 하나만, 마지막 자리에(2026-11-23 c03: 기한 지난 업체 둘의 먼저 말 걸기가 같은 제안을 실어
+      // 와 '요청 보내기' 카드가 두 번 보였어요). 상태는 actionOf로 따로 읽어요
+      if (p.t === "action") {
+        const id = p.action.action_id;
+        if (lastAct.get(id) !== k || seenAct.has(id)) { changed = true; return []; }
+        seenAct.add(id);
+        return [p];
+      }
       if (p.t !== "card") return [p];
       const id = p.card.card_id;
       const keep = p.card.kind === "today" ? !seen.has(id) : lastAt.get(id) === k && !seen.has(id);
