@@ -158,7 +158,8 @@ def search_words(question: str) -> str:
     kind="read",
     status="답을 찾고 있어요",
     description="도배 · 목공 일반 질문에 믿집 답 파이프라인으로 근거 문장을 찾아요(검증된 카드 · 자료 발췌). "
-    "돌려준 문장 범위 안에서만 답해요.",
+    "사실 · 숫자는 돌려준 문장 범위 안에서만 말해요. 앞 대화와 잇는 말 · 이 집 조건에 맞춘 권고 · 끝 질문은 붙여요. "
+    "kind price · period는 이 공사 금액 · 공사 기간(공정표)을 물을 때예요.",
     model=AskIn,
     schema=obj(
         {
