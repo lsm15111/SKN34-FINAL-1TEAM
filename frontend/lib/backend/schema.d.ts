@@ -6441,10 +6441,16 @@ export interface components {
             /**
              * End
              * Format: date
+             * @description 공정표 마지막 날(자연 건조 · 입주 청소까지)
              */
             end: string;
             /** Work Days */
             work_days: number;
+            /**
+             * Work End
+             * @description 업체 공사가 끝나는 날(자연 건조 · 입주 청소 빼고). 공정표 화면 '공사 처음 ~ 끝'의 끝과 같아요
+             */
+            work_end?: string | null;
         };
         /** PhotoIn */
         PhotoIn: {

@@ -266,7 +266,8 @@ def period_line(period, today) -> str | None:
     있는데 정해지지 않았다고 답함, QA r3 c2: 확정 뒤에 '지금 예상 공정표 기준'이라고 답함)."""
     if period is None:
         return None
-    days = kdate.long_range(period.start, period.end, today)
+    # 공사 처음 ~ 업체 공사 끝(공정표 화면 · 보드와 같은 값, 자연 건조 · 입주 청소 빼고, QA r6 화면 M8)
+    days = kdate.long_range(period.start, getattr(period, "work_end", None) or period.end, today)
     if period.kind == "final":
         return (
             f"공정표: 확정 공정표 · 공사 {days} · 일하는 날 {period.work_days}일(수락한 공사 날짜)"
@@ -1536,7 +1537,8 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         vendors=BoardVendors(title="업체", rows=rows) if rows else None,
         period=BoardPeriod(
             label="공사" if final else "예상 공사",
-            value=kdate.md_range(o.period.start, o.period.end, today),  # 화면 날짜 꼴(F2 · F5)
+            # 업체 공사 처음 ~ 끝(공정표 화면 '공사'와 같은 값, 자연 건조 · 입주 청소 빼고, QA r6 화면 M8). 화면 날짜 꼴(F2 · F5)
+            value=kdate.md_range(o.period.start, o.period.work_end or o.period.end, today),
             sub=f"일하는 날 {o.period.work_days}일",
         )
         if o.period.start

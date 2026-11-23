@@ -9,7 +9,7 @@
   카드에 보여요(살면서 ↔ 빈 집도).
 - c2 페인트 날짜 창: 공정표에 목공 날짜가 없으면 시작은 '목공이 끝난 뒤'(calc.diy diy_v4).
 - c4 고칠 것 3: '하루만 당겨'가 주말을 넘으면 앞 일하는 날(금요일), 없으면 실제 까닭.
-- 화면 M9 전체 철거 철거 줄.
+- 화면 M9 전체 철거 철거 줄 · M6 기한 · M8 보드 공사 기간 · H2 가입 뒤 첫 보드 500.
 """
 
 import json
@@ -26,7 +26,7 @@ from app.agent import llm
 from app.assistant import service as assistant_service
 from app.assistant.tools import ToolError, propose
 from app.assistant.tools import diy as diy_tools
-from app.calc import dobae, market_band, mokgong, quick_budget
+from app.calc import deadline, dobae, market_band, mokgong, quick_budget
 from app.calc.common import SUPPLY_PER_EXCLUSIVE
 from app.calc.schedule import no_earlier_why, start_choices_before
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
@@ -44,7 +44,7 @@ from app.refprice.house import HOUSE_2026H2, HOUSE_DEFAULT
 from app.refprice.market import MARKET_2026_11
 from app.refprice.wallpaper_market import paper_market
 from app.shared import kdate
-from app.shared.clock import SEOUL
+from app.shared.clock import SEOUL, today_seoul
 from tests.conftest import query
 from tests.helpers import signup
 from tests.test_v3_project_home import HOME, create
@@ -424,6 +424,38 @@ def test_start_choices_before_and_why():
     assert no_earlier_why(MON, MON, d("2026-11-24"), None, wish=MON) == "wish"
 
 
+# ---- 7. 기한 (화면 M6) ----
+
+
+def test_pick_and_accept_deadlines_do_not_pass_the_schedule():
+    at = datetime(2026, 11, 23, 22, 6, tzinfo=SEOUL)
+    # 고르기: 업체 답 + 7일(11.30)이지만 기간 마지막 날(11.28)이 오기 전까지
+    assert deadline.pick_due(at) == at + timedelta(days=7)
+    assert deadline.pick_due(at, d("2026-11-28")) == datetime(2026, 11, 28, 0, 0, tzinfo=SEOUL)
+    assert deadline.pick_due(at, d("2026-12-31")) == at + timedelta(days=7)
+    # 수락: 고른 때 + 48시간(11.25 22:06)이지만 고른 반나절(11.25 오후 13시)이 시작하기 전까지
+    assert deadline.accept_due(at, d("2026-11-25"), "pm") == datetime(
+        2026, 11, 25, 13, 0, tzinfo=SEOUL
+    )
+    assert deadline.accept_due(at, d("2026-11-30"), "am") == at + timedelta(hours=48)
+    assert deadline.accept_due(at) == at + timedelta(hours=48)
+
+
+# ---- 8. 보드 공사 기간 = 공정표 '공사' (화면 M8) ----
+
+
+def test_board_period_ends_with_the_vendor_work(api):
+    signup(api)
+    pid = create(api, HOME).json()["id"]
+    p = plan(api, pid)
+    work_end = max(b["end"] for b in p["blocks"] if b["kind"] == "work")
+    assert work_end < p["end"]  # 공정표 마지막 날은 자연 건조 · 입주 청소까지
+    got = board(api, pid)["period"]
+    assert got["value"] == kdate.md_range(d(p["start"]), d(work_end), today_seoul())
+    ov = api.get(f"/projects/{pid}/overview").json()["period"]
+    assert (ov["end"], ov["work_end"]) == (p["end"], work_end)
+
+
 # ---- 9. 전체 철거면 기존 벽지 철거 줄 '안 함' (화면 M9) ----
 
 
@@ -453,3 +485,28 @@ def test_full_demolition_on_the_saved_standard(api):
     pid2 = create(api, {**HOME, "demolition": "partial"}).json()["id"]
     dob2 = next(t for t in standard(api, pid2)["trades"] if t["trade"] == "dobae")
     assert next(ln for ln in dob2["lines"] if ln["key"] == "removal")["state"] == "after_visit"
+
+
+# ---- 10. 가입 뒤 첫 보드 500(화면 H2) ----
+
+
+def test_first_board_survives_a_racing_plan_save(api, monkeypatch):
+    """화면 QA H2: 가입 뒤 첫 화면이 보드와 다른 읽기를 같이 부르면 예상 공정표 저장이 겹쳐 한쪽이 되돌려요(rollback).
+    되돌리면 세션의 ORM 칸이 모두 만료되는데, 그 전에 읽은 표준견적서 행의 평을 다시 읽어 MissingGreenlet 500이었어요."""
+    from app.db import SessionLocal
+    from app.schedule import service as schedule_service
+
+    signup(api)
+    pid = create(api, {**HOME, "diy": ["outlet", "silicone"]}).json()["id"]
+    real = schedule_service._save
+
+    async def racing(s, p, start, weekend_work, prev):
+        async with SessionLocal() as other:  # 다른 요청이 같은 판을 먼저 저장했어요
+            await real(other, p, start, weekend_work, prev)
+        await real(s, p, start, weekend_work, prev)  # 같은 판 → IntegrityError → rollback
+
+    monkeypatch.setattr(schedule_service, "_save", racing)
+    b = board(api, pid)
+    assert "32평" not in b["facts"] and b["period"] is not None
+    (n,) = query("select count(*) as n from plans where project_id = $1::uuid", pid)
+    assert n["n"] == 1
