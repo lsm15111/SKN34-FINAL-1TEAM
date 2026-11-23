@@ -29,6 +29,9 @@ BASE: dict[str, str] = {
     "memory": "memory_v3",
     "brief": "brief_v2",
     "researcher": "researcher_v4",  # 조사 담당(worker, 웹 검색 · 가져오기, 진행 말 · 항목 꼴 · 자재 판매가 · 규격)
+    # 공정 전문가 하위 에이전트(assistant/experts, 비서 answer_question 'expert' 엔진). 고객에게 직접 말하지 않아요
+    "expert_dobae": "expert_dobae_v1",
+    "expert_mokgong": "expert_mokgong_v1",
 }
 _DIR = Path(__file__).resolve().parent
 MARK = re.compile(r"^<!--\s*(규칙|예시)\s*-->[ \t]*$")
