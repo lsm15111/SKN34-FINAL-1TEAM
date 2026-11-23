@@ -429,3 +429,23 @@ def test_sweep_reads_the_bell_news_of_finished_work_only(api, monkeypatch):
         " where u.email = 'maru@mitjip.test' and n.read_at is null"
     )[0]["n"]
     assert vendor_unread >= 1  # 업체 종('취소했어요')은 건드리지 않아요
+
+
+# ---- '말한 요일이에요'는 이름으로 말한 요일만(QA r6 c3 t12 · FA2 넘김) ----
+
+
+def test_said_day_reason_only_for_the_weekday_the_customer_named():
+    from datetime import date
+
+    sat, sun = date(2026, 11, 28), date(2026, 11, 29)
+    named = cards.said_weekdays("결도배 실측 토요일 오전으로 해 주세요")
+    assert named == {5}
+    assert cards.day_why(("prefer_half", "prefer_day"), sat, named) == ["prefer_half", "prefer_day"]
+    assert cards.why_words(cards.day_why(("prefer_day", "earliest"), sun, named)) == [
+        "주말이에요",
+        "가장 빠른 날이에요",
+    ]
+    # 요일 이름이 없으면 주말 · 평일 사실로, 안 되는 때로 말한 요일은 세지 않아요
+    assert cards.said_weekdays("주말이 편해요") == frozenset()
+    assert cards.said_weekdays("토요일이나 일요일은 안 돼요") == frozenset()
+    assert cards.said_weekdays("토욜 오전이 좋아요") == {5}

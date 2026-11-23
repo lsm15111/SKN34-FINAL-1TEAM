@@ -935,6 +935,30 @@ def why_words(codes) -> list[str]:
     return [WHY[c] for c in codes if c in WHY]
 
 
+# 고객이 이름으로 말한 요일('토요일 오전으로' · '토욜'). '말한 요일이에요'는 이 요일일 때만 단다(QA r6 c3 t12: 토요일을
+# 말했는데 주말로 찾은 일요일 후보에도 '말한 요일이에요'). 안 되는 때로 말한 요일('토요일은 안 돼요')은 세지 않는다
+DAY_NAME = re.compile(r"([월화수목금토일])(?:요일|욜)")
+WEEKDAY_OF = {c: i for i, c in enumerate("월화수목금토일")}
+
+
+def said_weekdays(text: str) -> frozenset[int]:
+    """말(이번 턴 고객 말 · 기억한 편한 요일)에 이름으로 나온 되는 요일(월 0 … 일 6)."""
+    from app.assistant import memory
+
+    return frozenset(
+        WEEKDAY_OF[m.group(1)] for m, no in memory.busy(DAY_NAME, text or "") if not no
+    )
+
+
+def day_why(codes, day: date, named: frozenset[int]) -> list[str]:
+    """후보 까닭에서 편한 요일 맞음(prefer_day)은 고객이 그 요일을 이름으로 말했을 때만 두고, 아니면 주말 · 평일 사실로
+    바꾼다(평일 · 주말로만 말했거나 기억만 있을 때)."""
+    if "prefer_day" not in codes or day.weekday() in named:
+        return list(codes)
+    fact = "weekend" if day.weekday() >= 5 else "weekday"
+    return [fact if c == "prefer_day" else c for c in codes]
+
+
 async def wishes(
     s: AsyncSession,
     user: User,
@@ -1001,11 +1025,13 @@ async def visit_slots(
     prefer: str,
     days: str,
     skip: frozenset[tuple[date, str]] = frozenset(),
+    said: str = "",
 ) -> tuple[CardOut, dict]:
     """요청 뒤: 날짜 고르기 화면(pick_view)의 열린 반나절 → calc.slots.candidates → s1~s3.
     업체가 다른 날을 냈으면(proposed) 그 날들이 후보다(고르면 바로 확정). skip(이미 보인 반나절, 비서 '다른 시간')은
     업체 기간 후보에서 뺀다. 같은 집 다른 업체 실측이 잡은 반나절과 다른 요청의 열린 실측 시간 카드가 고른 반나절도
-    뺀다(QA r6 c4 1: '두 업체 다 토요일로'에 두 카드 모두 11.28 오전, 둘째 승인이 409 slot_clash)."""
+    뺀다(QA r6 c4 1: '두 업체 다 토요일로'에 두 카드 모두 11.28 오전, 둘째 승인이 409 slot_clash).
+    said(이번 턴 고객 말)와 기억한 편한 요일에 이름으로 나온 요일만 '말한 요일이에요'를 단다(day_why)."""
     from app.assistant import repository as repo
     from app.calc import slots
     from app.refprice.holidays import days_off
@@ -1033,7 +1059,11 @@ async def visit_slots(
             days_off=days_off(opened[0].day, opened[-1].day),
             taken=taken | skip,
         )
-        picks = [(c.day, c.half, list(c.why), "pick") for c in found]
+        remembered = next(
+            (m.value for m in await repo.memories(s, user.id) if m.key == "avail_days"), ""
+        )
+        named = said_weekdays(said) | said_weekdays(remembered)
+        picks = [(c.day, c.half, day_why(c.why, c.day, named), "pick") for c in found]
     cands = [
         SlotCandidate(
             ref=refs.put(

@@ -214,15 +214,18 @@ def time_lines(now: datetime) -> list[str]:
 DEFERRED = "알림: 미룬 알림 {n}개는 {at}에 가요"
 
 
+def deferred_at(due: datetime, now: datetime) -> str:
+    """미룬 알림이 갈 때 글: '아침 9시', 오늘이 아니면 '11월 25일(수) 아침 9시'(턴 사실 · 무료 알림 부탁 답이 같이 씀)."""
+    at, day = due.astimezone(SEOUL), now.astimezone(SEOUL).date()
+    when = kdate.hour_text(at.hour, at.minute)
+    return when if at.date() == day else f"{kdate.md_long(at.date(), day)} {when}"
+
+
 def deferred_line(count: int, due: datetime | None, now: datetime) -> str | None:
     """턴 사실 '알림:' 줄(미룬 알림 수 · 가장 이른 보낼 때, 오늘이 아니면 날짜도). 미룬 알림이 없으면 None."""
     if count <= 0 or due is None:
         return None
-    at, day = due.astimezone(SEOUL), now.astimezone(SEOUL).date()
-    when = kdate.hour_text(at.hour, at.minute)
-    if at.date() != day:
-        when = f"{kdate.md_long(at.date(), day)} {when}"
-    return DEFERRED.format(n=count, at=when)
+    return DEFERRED.format(n=count, at=deferred_at(due, now))
 
 
 async def deferred_lines(

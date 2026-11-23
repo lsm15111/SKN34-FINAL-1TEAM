@@ -411,6 +411,7 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
                 prefer=a.prefer,
                 days=a.days,
                 skip=skip,
+                said=tc.text,
             )
             if skip and model.get("status") == "offered":  # 다른 시간(QA r3 c1 6턴)
                 model["note"] = MORE_NOTE if model["candidates"] else MORE_NONE

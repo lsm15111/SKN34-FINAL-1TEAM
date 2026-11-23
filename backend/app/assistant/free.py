@@ -972,6 +972,7 @@ async def _slots(tc: ToolCtx, text: str, _found: list[str]) -> tuple[str, ToolOu
                 tc.refs,
                 prefer=prefer,
                 days=days,
+                said=text,
             )
             if model["candidates"]:
                 got.append(card)
@@ -1904,7 +1905,9 @@ NOTIFY_LIST = (
 )
 NOTIFY_LIST_AGAIN = "업체 답 · 견적서 · 공사 날짜 같은 공사 소식만 먼저 알려 드려요."
 NOTIFY_APP = "문자 · 메일 · 전화가 아니라 믿집 알림으로 가요."
-NOTIFY_NIGHT = "밤 알림은 {at}에 가요."  # {at}: 먼저 말 걸기 규칙의 아침 시각('아침 9시')
+# 미뤄 둔 알림(밤 · 하루 상한으로 미룬 먼저 말 걸기 줄)이 있을 때만 그 수와 갈 때를 말해요. 업체 답 같은 종 알림 · 대화
+# 줄은 밤에도 바로 가서 '밤 알림은 아침 9시에 가요'는 사실과 달랐어요(QA r6 c1 M10, 턴 사실 '알림' 줄과 같은 값)
+NOTIFY_LATER = "미뤄 둔 알림 {n}개는 {at}에 가요."
 CHANNEL_WORD = re.compile(r"문자|메일|카톡|카카오|전화")
 WAIT_REPLY = ("requested", "picked")  # 업체 답을 기다리는 요청(기간 답하기 · 고른 시간 수락)
 
@@ -1943,10 +1946,22 @@ def notify_lines(kind: str | None, who: str) -> tuple[str, str]:
     return NOTIFY_SAID.format(when=when.format(who=who)), NOTIFY_AGAIN.format(when=short)
 
 
+async def later_line(tc: ToolCtx) -> str:
+    """미뤄 둔 알림 줄(repo.deferred_nudges 수 · 가장 이른 갈 때, service.deferred_at). 없으면 빈 글."""
+    from app.assistant import repository as repo
+    from app.assistant import service
+
+    async with SessionLocal() as s:
+        n, due = await repo.deferred_nudges(s, tc.user.id, "customer", tc.project_id, tc.now)
+    if n <= 0 or due is None:
+        return ""
+    return NOTIFY_LATER.format(n=n, at=service.deferred_at(due, tc.now))
+
+
 async def _notify(tc: ToolCtx, text: str) -> tuple[str, ToolOut]:
     """알림 부탁: 믿집이 먼저 알리는 일만 약속(업체 답이면 답 기다리는 업체 이름, 계산 · 저장 값만). 문자 · 전화로
-    알려 달라면 믿집 알림으로 간다는 말, 밤이면 아침에 간다는 말을 붙이고(낮에는 밤 얘기를 하지 않아요), 바로 앞 답과
-    같은 글이면 짧게."""
+    알려 달라면 믿집 알림으로 간다는 말, 미뤄 둔 알림이 있을 때만 그 수와 갈 때를 붙이고(밤이라고 늘 붙이지 않아요),
+    바로 앞 답과 같은 글이면 짧게."""
     kind = notify_kind(text)
     who = "업체가"
     if kind == "reply":
@@ -1957,10 +1972,7 @@ async def _notify(tc: ToolCtx, text: str) -> tuple[str, ToolOut]:
         if names:
             who = i_ga(" · ".join(names))
     full, short = notify_lines(kind, who)
-    tail = (
-        NOTIFY_APP if CHANNEL_WORD.search(text) else "",
-        NOTIFY_NIGHT.format(at=morning_at()) if is_night(tc.now) else "",
-    )
+    tail = (NOTIFY_APP if CHANNEL_WORD.search(text) else "", await later_line(tc))
     said = join(full, *tail)
     if await said_last(tc, said):
         said = join(short, *tail)

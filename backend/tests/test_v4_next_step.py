@@ -86,3 +86,15 @@ def test_standard_quote_card_does_not_stop_the_next_step(api, script):
     ev = ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?"))
     assert "standard_quote" in [d["kind"] for e, d, _ in ev if e == "card"]
     assert said(ev).rstrip().endswith("차례예요.")
+
+
+def test_no_next_step_when_it_would_pass_four_sentences(api, script):
+    """지시문은 많아야 네 문장이에요. 이미 네 문장인 답에는 줄을 붙이지 않고, 같은 단계의 다음 짧은 답에 붙여요(QA r6 ·
+    고침 6차 FA2: 코드가 붙인 줄로 다섯 문장 넘는 답)."""
+    _, pid = home(api)
+    four = "바탕이 고르지 않으면 들떠요. 초배가 덜 돼도 그래요. 습기가 많으면 더 늦게 말라요. 겨울엔 난방을 낮춰 두세요."
+    script([{"tool_calls": [ASK]}, {"text": four}, {"tool_calls": [ASK]}, {"text": SAID}])
+    first = said(ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?")))
+    assert "차례예요" not in first and first.count("요.") == 4
+    again = said(ok(ask(api, pid, "들뜸 말고 주름은요?")))
+    assert again.startswith(SAID) and again.rstrip().endswith("차례예요.")

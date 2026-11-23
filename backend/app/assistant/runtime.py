@@ -1151,6 +1151,9 @@ def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
 # 줄을 붙이지 않아요. 표준견적서 카드는 금액을 보여 줄 뿐 다음 할 일을 알려 주지 않아 빼요(2026-11-23 평가: 실측 · 공사
 # 단계에서 표준견적서 카드가 다음 단계 줄을 막음)
 STEP_CARDS = frozenset(CARD_NAME) - {"knowledge", "answer", "standard_quote"}
+# 지금 할 일 줄을 붙여도 답이 이 문장 수를 넘지 않을 때만 붙여요(지시문 '많아야 네 문장', QA r6 · FA2: 코드가 붙인 줄로
+# 다섯 문장 넘는 답이 생김). 넘으면 이번 턴은 붙이지 않고 같은 단계의 다음 답에 붙어요(now_said는 붙인 줄만 셈)
+STEP_ROOM = 4
 
 
 async def next_step(turn: "_Turn", res: TurnResult) -> str:
@@ -1167,6 +1170,8 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
     if STEP_CARDS & {c["kind"] for c in res.cards} or res.text.rstrip().endswith("?"):
         return ""
     if any(policy.points(s) or policy.asks(s) for s in turn.gate.sent):
+        return ""
+    if len(turn.gate.sent) >= STEP_ROOM:  # 붙이면 많아야 네 문장을 넘어요
         return ""
     try:
         line = await free.now_tail(turn.tc)
