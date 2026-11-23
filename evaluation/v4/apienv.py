@@ -119,10 +119,13 @@ class ToolTap:
 class App:
     """시험 DB를 만들고 앱을 ASGI(TestClient)로 올려요. reset()은 판마다 표 · Redis를 비워요."""
 
-    def __init__(self, db_name: str, redis_db: int) -> None:
+    def __init__(self, db_name: str, redis_db: int, knowledge: str = "repo") -> None:
+        """knowledge: repo(저장소 색인 · 임베딩 끔, 기본) · db(시험 DB에 넣은 지식 판 · 임베딩은 설정대로, 도커와 같은 조건)."""
         if not db_name.startswith("mitjip_eval"):  # 개발 · 시험 DB를 지우지 않게
             raise SystemExit("평가 DB 이름은 mitjip_eval로 시작해야 해요.")
-        self.db_name, self.redis_db = db_name, redis_db
+        if knowledge not in ("repo", "db"):
+            raise SystemExit("knowledge는 repo · db 중 하나예요.")
+        self.db_name, self.redis_db, self.knowledge = db_name, redis_db, knowledge
         self.api = None
         self.tap = ToolTap()
 
@@ -151,7 +154,8 @@ class App:
 
         self._tc = TestClient(app)
         self.api = self._tc.__enter__()  # 이벤트 루프 하나로 모든 요청을 돌려요(백엔드 시험과 같음)
-        self._patch_knowledge()
+        if self.knowledge == "repo":
+            self._patch_knowledge()
         self.tap.install()
         return self
 
