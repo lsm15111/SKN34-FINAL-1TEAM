@@ -1,12 +1,13 @@
 // 실측 요청의 나머지 모습(9판에 따로 그린 화면이 없는 상태): 고객 차례 · 실측 확정 · 실측 받음 · 견적서 보냄 · 업체 확정 · 끝남.
 // 작업함 · 일정 탭 줄이 이 주소로 와요. 다음 할 일 단추 하나만 둬요(실측 견적서 올리기 · 채팅 열기).
+// 실측 날 전에는 견적서를 보낼 수 없어서 채팅이 주 단추고, 견적서 단추는 꺼 두고 언제부터인지 이름으로 알려요(QA r6 M1).
 import { Main, PageHead } from "@/components/site/Frame";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
 import { BigFigure } from "@/components/ui/Money";
 import { StateTag } from "@/components/ui/StateTag";
 import type { VendorVisitV3 } from "@/lib/api/vendor";
-import { dueText, halfDayText, rangeText } from "@/lib/format";
+import { dateSeoul, dateShort, dueText, halfDayText, rangeText } from "@/lib/format";
 import { DECLINE_LABEL, visitState, type StateTone } from "@/lib/labels";
 import { enc } from "../send";
 import { LOC_NOTE } from "../text";
@@ -20,6 +21,8 @@ export function VisitStatus({ v, now }: { v: VendorVisitV3; now: string }) {
   const quoteHref = `/vendor/requests/${enc(v.id)}/quote`;
   const chatHref = v.thread_id ? `/chat/${enc(v.thread_id)}` : null;
   const canQuote = v.status === "booked" || v.status === "visited";
+  /** 실측 날 전(실측 확정 · 날이 오늘 뒤) */
+  const early = canQuote && !!b && b.day > dateSeoul(now);
   let body: React.ReactNode = null;
   switch (v.status) {
     case "offered":
@@ -75,8 +78,9 @@ export function VisitStatus({ v, now }: { v: VendorVisitV3; now: string }) {
       </Main>
       {canQuote || chatHref || v.status === "chosen" ? (
         <BottomBar>
-          {chatHref ? <Button size="lg" variant={canQuote ? "secondary" : "primary"} href={chatHref}>채팅 열기</Button> : null}
-          {canQuote ? <Button size="lg" href={quoteHref}>실측 견적서 올리기</Button> : null}
+          {chatHref ? <Button size="lg" variant={canQuote && !early ? "secondary" : "primary"} href={chatHref}>채팅 열기</Button> : null}
+          {early && b ? <Button size="lg" variant="secondary" disabled>{`견적서는 ${dateShort(b.day)}부터`}</Button>
+            : canQuote ? <Button size="lg" href={quoteHref}>실측 견적서 올리기</Button> : null}
           {v.status === "chosen" ? <Button size="lg" href="/vendor?tab=jobs">공사 탭 보기</Button> : null}
         </BottomBar>
       ) : null}

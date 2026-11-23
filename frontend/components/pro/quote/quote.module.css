@@ -2,3 +2,9 @@
 .two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 @media (max-width: 359px) { .two { grid-template-columns: minmax(0, 1fr); } }
 .err { display: flex; align-items: center; gap: 6px; font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-danger); }
+/* 파일 · 칸 묶음. 실측 날 전에는 통째로 꺼져요(QA r6 M1) */
+.lock { margin: 0; padding: 0; border: 0; min-width: 0; display: flex; flex-direction: column; gap: var(--mj-gap-group); }
+.lock:disabled { opacity: 0.55; }
+/* 보낸 견적서 아래 최신 판 파일 */
+.sentFiles { display: flex; flex-direction: column; gap: 8px; padding: 4px 0 12px; }
+.sentFiles:empty { display: none; }
