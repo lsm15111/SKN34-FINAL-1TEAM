@@ -76,6 +76,8 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
   const [sheet, setSheet] = useState<null | "pyeong" | "region" | "date">(null);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState<string | null>(null);
+  /** 준비 중 칩(목공 · 아파트 밖 주거)을 눌렀을 때 그 자리에 보일 한 줄: 지금 되는 범위로 이끌어요(QA r6 M4 · M18) */
+  const [soon, setSoon] = useState<{ at: "trade" | "house"; text: string } | null>(null);
   const sumRef = useRef<HTMLDivElement>(null);
   const budgetRef = useRef<HTMLInputElement>(null);
 
@@ -172,15 +174,17 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
           <section className={s.group} aria-labelledby="g-what">
             <h2 id="g-what" className={s.grp}>어떤 공사</h2>
             <div className={s.cols}>
-              <ChoiceChips legend="공사 종류" value="dobae" onChange={() => {}} options={[{ value: "dobae", label: "도배" }, { value: "mokgong", label: "목공", soon: true }]} />
+              <ChoiceChips legend="공사 종류" value="dobae" onChange={() => {}} onSoon={() => setSoon({ at: "trade", text: "목공은 준비 중이에요. 지금은 도배 견적만 받을 수 있어요." })} options={[{ value: "dobae", label: "도배" }, { value: "mokgong", label: "목공", soon: true }]} />
+              {soon?.at === "trade" ? <p className={s.meta} role="status">{soon.text}</p> : null}
             </div>
           </section>
 
           <section className={s.group} aria-labelledby="g-home">
             <h2 id="g-home" className={s.grp}>우리 집</h2>
-            <ChoiceChips legend="주거 종류" value="apt" onChange={() => {}} options={[
+            <ChoiceChips legend="주거 종류" value="apt" onChange={() => {}} onSoon={() => setSoon({ at: "house", text: "지금은 아파트만 견적을 받을 수 있어요." })} options={[
               { value: "apt", label: "아파트" }, { value: "villa", label: "빌라 · 다세대", soon: true }, { value: "officetel", label: "오피스텔", soon: true }, { value: "house", label: "단독주택", soon: true },
             ]} />
+            {soon?.at === "house" ? <p className={s.meta} role="status">{soon.text}</p> : null}
             <div className={s.f}>
               <p className={s.fl} id="inf-region-l">지역</p>
               <button id={FIELD_ID.region} type="button" className={errors.region ? `${s.pick} ${s.bad}` : s.pick} aria-labelledby="inf-region-l inf-region-v" aria-describedby={errors.region ? "inf-region-e" : undefined} aria-invalid={errors.region ? true : undefined} onClick={() => setSheet("region")}>
