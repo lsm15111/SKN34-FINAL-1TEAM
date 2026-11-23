@@ -430,7 +430,8 @@ async def get_schedule(tc: ToolCtx, _: NoArgs) -> ToolOut:
     surface="customer",
     kind="read",
     status="오늘 정할 일을 보고 있어요",
-    description="오늘 정할 일: 승인 기다리는 카드 · 지금 할 일 · 고객 차례인 업체(m1…) · 기다리는 업체 · 새 소식.",
+    description="오늘 정할 일: 승인 기다리는 카드 · 지금 할 일 · 고객 차례인 업체(m1…) · 기다리는 업체. "
+    "news는 이틀 안 안 읽은 알림이에요(카드에는 보이지 않고 종 알림에 있어요).",
     model=NoArgs,
     schema=obj({}),
 )
@@ -438,13 +439,13 @@ async def today_tasks(tc: ToolCtx, _: NoArgs) -> ToolOut:
     async with SessionLocal() as s:
         card, model = await cards.today(s, tc.user, pid_of(tc), tc.today, tc.now, tc.refs)
         task = await cards.visit_task_for(s, tc.user, pid_of(tc), tc.today, tc.now)
-    # 빈 카드는 보내지 않아요(QA r3 s6 B3)
-    if not any(card.data.get(k) for k in ("todo", "waiting", "news", "know")):
+    # 빈 카드는 보내지 않아요(QA r3 s6 B3). 새 알림(news)은 카드에 보이지 않아서 세지 않아요(2026-11-23 사용자)
+    if not any(card.data.get(k) for k in ("todo", "waiting", "know")):
         return ToolOut(data={**model, "note": TODAY_EMPTY}, task=task)
     return ToolOut(data=model, cards=[card], task=task)
 
 
-TODAY_EMPTY = "오늘 정할 일 · 기다리는 일 · 새 소식이 없어요(빈 카드는 보이지 않았어요)."
+TODAY_EMPTY = "오늘 정할 일 · 기다리는 일이 없어요(빈 카드는 보이지 않았어요)."
 
 
 ShowKind = Literal[

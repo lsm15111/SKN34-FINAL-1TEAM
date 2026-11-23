@@ -132,11 +132,9 @@
 .tlist li b { font-weight: var(--mj-weight-bold); line-height: 1.45; }
 .tlist li span { font-size: var(--mj-type-label); color: var(--mj-text-mute); }
 .tlist li span.dueText { color: var(--mj-badge-wait-fg); font-weight: var(--mj-weight-semibold); }
-.tlistNews li { grid-template-columns: 40px minmax(0, 1fr) auto; }
 .tic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--mj-primary-weak); color: var(--mj-primary); }
 .tic svg { width: 20px; height: 20px; }
 .ticWait { background: var(--mj-badge-wait-bg); color: var(--mj-badge-wait-fg); }
-.ticNews { background: var(--mj-fill); color: var(--mj-text-sub); }
 .ticKnow { background: var(--mj-badge-ok-bg); color: var(--mj-badge-ok-fg); }
 .todayFoot { display: flex; justify-content: flex-end; margin-top: -6px; }
 

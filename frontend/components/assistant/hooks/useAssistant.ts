@@ -481,7 +481,7 @@ export function useAssistant(projectId: string) {
   const todayDate = today?.date ?? null;
   const firstToday = useMemo(() => {
     if (!todayFirst || !today) return false;
-    const rows = today.todo.length + today.waiting.length + today.news.length;
+    const rows = today.todo.length + today.waiting.length; // 새 알림(news)은 카드에 보이지 않아요
     const hasToday = items.some((it) => it.role === "assistant" && it.parts.some((p) => p.t === "card" && p.card.kind === "today" && (p.card.data as TodayData).date === today.date));
     return rows > 0 && !hasToday;
   }, [items, today, todayFirst]);

@@ -1,5 +1,6 @@
 "use client";
-// 오늘 정할 일(C8): 날짜 · '오늘 정할 일 n' · 줄(아이콘 · 할 일 · 기한 · 단추) · 묶음(정할 일 · 기다리는 일 · 밤사이 소식 · 알아 두기).
+// 오늘 정할 일(C8): 날짜 · '오늘 정할 일 n' · 줄(아이콘 · 할 일 · 기한 · 단추) · 묶음(정할 일 · 기다리는 일 · 알아 두기).
+// 새 알림(서버 news, 이틀 안 안 읽은 알림)은 종 알림과 겹쳐서 이 카드에 두지 않아요(2026-11-23 사용자).
 // 줄은 모두 코드 사실이에요(비서 말 한 문장은 카드 위 말로 따로). [오늘은 그만]은 먼저 말 건 카드를 닫아요(같은 일 3일 쉬기).
 // 할 일이 끝난 줄의 카드(old)는 보낸 때 줄만 남겨요(줄 단추 · [오늘은 그만] 없음).
 import Link from "next/link";
@@ -30,7 +31,6 @@ export function TodayCard({ card, ctx, old }: CardProps<"today">) {
       </div>
       <Group title="정할 일" rows={d.todo} ctx={ctx} old={old} />
       <Group title="기다리는 일" rows={d.waiting} ctx={ctx} old={old} wait />
-      <Group title="밤사이 소식" rows={d.news} ctx={ctx} old={old} news />
       <Group title="알아 두기" rows={d.know ?? []} ctx={ctx} old={old} know />
       {d.nudge_id && !old ? (
         <div className={k.todayFoot}>
@@ -41,13 +41,13 @@ export function TodayCard({ card, ctx, old }: CardProps<"today">) {
   );
 }
 
-function Group({ title, rows, ctx, old, wait, news, know }: { title: string; rows: TodayRow[]; ctx: CardProps<"today">["ctx"]; old: boolean; wait?: boolean; news?: boolean; know?: boolean }) {
+function Group({ title, rows, ctx, old, wait, know }: { title: string; rows: TodayRow[]; ctx: CardProps<"today">["ctx"]; old: boolean; wait?: boolean; know?: boolean }) {
   if (!rows.length) return null;
-  const tic = know ? `${k.tic} ${k.ticKnow}` : news ? `${k.tic} ${k.ticNews}` : wait ? `${k.tic} ${k.ticWait}` : k.tic;
+  const tic = know ? `${k.tic} ${k.ticKnow}` : wait ? `${k.tic} ${k.ticWait}` : k.tic;
   return (
     <div className={k.tsec}>
       <span className={k.tsecT}>{title}</span>
-      <ul className={news ? `${k.tlist} ${k.tlistNews}` : k.tlist}>
+      <ul className={k.tlist}>
         {rows.map((r) => (
           <li key={r.id}>
             <span className={tic}><I n={ICON[r.icon]} /></span>
