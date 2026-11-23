@@ -29,7 +29,9 @@
 .note { margin-top: 1px; font-size: var(--mj-type-caption); font-style: normal; font-weight: var(--mj-weight-bold); line-height: 1.2; color: var(--mj-text-mute); white-space: nowrap; max-width: 100%; overflow: hidden; }
 .dayBtn:focus-visible { outline: none; }
 .dayBtn:focus-visible .dot { outline: var(--mj-focus-w) solid var(--mj-focus); outline-offset: 1px; }
-.dayBtn:hover:not(:disabled) .dot { background: var(--mj-fill); }
+/* 고른 날은 마우스가 위에 있어도(폰은 누른 뒤에도 :hover가 남아요) 파랑 바탕 그대로예요(QA r6 M7: 흰 글자 + 회색 바탕) */
+.day:not(.selected) .dayBtn:hover:not(:disabled) .dot { background: var(--mj-fill); }
+.selected:not(.prop):not(.rangeMid) .dayBtn:hover .dot { background: var(--mj-primary-hover); }
 
 /* 띠: 칸 뒤에 깔아요(희망 blue-50 · 업체 blue-100) */
 .wish::before, .vband::after { content: ""; position: absolute; left: 0; right: 0; top: var(--pad); height: var(--dotz); z-index: 0; }
