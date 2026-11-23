@@ -170,6 +170,14 @@ def claude_model_for(purpose: str) -> tuple[str, str]:
     return settings.llm_claude_light_model, settings.llm_claude_light_effort
 
 
+def main_args() -> dict[str, str]:
+    """가벼운 목적(trade 등)을 비서와 같은 모델 · 강도로 부를 때 claude_json에 넘길 model · effort(공급자별).
+    공정 전문가(assistant/experts)가 써요: 장부 목적은 'trade'로 나누고 모델은 비서와 같아요."""
+    if settings.llm_provider == "openai":
+        return {"model": settings.openai_agent_model, "effort": settings.openai_reasoning_effort}
+    return {"model": settings.llm_claude_model, "effort": settings.llm_claude_effort}
+
+
 def available() -> bool:
     """유료 LLM을 부를 수 있는지(LLM_LIVE=true이고 고른 공급자의 키가 있음). 무료 모드 판단에 쓴다."""
     if not settings.llm_live:
