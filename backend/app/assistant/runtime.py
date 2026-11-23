@@ -1100,8 +1100,10 @@ def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
 
 
 KNOW_TOOLS = frozenset({"answer_question", "search_knowledge"})
-# 다음 일로 이끄는 카드(집 정보 · 표준견적서 · 업체 추천 · 오늘 할 일 …): 이 카드가 나온 턴에는 한 줄을 붙이지 않아요
-STEP_CARDS = frozenset(CARD_NAME) - {"knowledge", "answer"}
+# 다음 일로 이끄는 카드(집 정보 · 업체 추천 · 실측 시간 · 견적서 비교 · 공사 날짜 · 오늘 할 일 …): 이 카드가 나온 턴에는 한
+# 줄을 붙이지 않아요. 표준견적서 카드는 금액을 보여 줄 뿐 다음 할 일을 알려 주지 않아 빼요(2026-11-23 평가: 실측 · 공사
+# 단계에서 표준견적서 카드가 다음 단계 줄을 막음)
+STEP_CARDS = frozenset(CARD_NAME) - {"knowledge", "answer", "standard_quote"}
 
 
 async def next_step(turn: "_Turn", res: TurnResult) -> str:

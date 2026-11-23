@@ -7,7 +7,11 @@ import pytest
 from app.agent import llm
 from tests.test_v4_assistant_turns import ask, home, ok
 
-ASK = {"id": "q", "name": "answer_question", "input": {"question": "실크벽지 들뜸은 왜 생겨요?", "kind": "general"}}
+ASK = {
+    "id": "q",
+    "name": "answer_question",
+    "input": {"question": "실크벽지 들뜸은 왜 생겨요?", "kind": "general"},
+}
 SAID = "바탕이 고르지 않거나 초배가 덜 되면 들뜰 수 있어요."
 
 
@@ -45,8 +49,18 @@ def test_no_next_step_without_knowledge_tools(api, script):
 
 def test_no_next_step_when_a_step_card_is_shown(api, script):
     _, pid = home(api)
+    show = {"id": "s", "name": "show_card", "input": {"kind": "today"}}
+    script([{"tool_calls": [ASK, show]}, {"text": SAID}])
+    ev = ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?"))
+    assert "today" in [d["kind"] for e, d, _ in ev if e == "card"]
+    assert "차례예요" not in said(ev)
+
+
+def test_standard_quote_card_does_not_stop_the_next_step(api, script):
+    # 표준견적서 카드는 금액만 보여 줘서 다음 일 카드로 보지 않아요(2026-11-23 평가: 실측 · 공사 단계에서 줄을 막음)
+    _, pid = home(api)
     show = {"id": "s", "name": "show_card", "input": {"kind": "standard_quote"}}
     script([{"tool_calls": [ASK, show]}, {"text": SAID}])
     ev = ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?"))
     assert "standard_quote" in [d["kind"] for e, d, _ in ev if e == "card"]
-    assert "차례예요" not in said(ev)
+    assert said(ev).rstrip().endswith("차례예요.")
