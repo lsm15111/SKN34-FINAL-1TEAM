@@ -30,6 +30,9 @@ type Tax = "general" | "simplified" | "exempt";
 type FaqKey = (typeof FAQ_LABEL)[number]["key"];
 const TIMES = Array.from({ length: 33 }, (_, i) => { const m = 6 * 60 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; });
 const digits = (v: string) => v.replace(/\D/g, "").slice(0, 7);
+// 한 줄 소개는 60자(서버 INTRO_MAX). 넘게 붙여 넣으면 말없이 자르지 않고 오류 글로 알려요(QA r6 L10)
+const INTRO_MAX = 60;
+const introErr = (v: string) => `한 줄 소개는 ${INTRO_MAX}자 안으로 줄여 주세요 · 지금 ${v.trim().length}자예요.`;
 const labelOf = (regions: Region[], sido: string, sgg: string) => {
   const r = regions.find((x) => x.id === sido);
   const g = r?.groups.find((x) => x.items.includes(sgg));
@@ -73,6 +76,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
     if (busy) return;
     const e: Record<string, string> = {};
     if (!areas.length) e.areas = "다니는 지역을 하나 이상 골라 주세요.";
+    if (hasIntro && intro.trim().length > INTRO_MAX) e.intro = introErr(intro);
     if (feeMode === "paid" && !(Number(fee) > 0)) e.fee = "출장비를 원 단위로 넣어 주세요.";
     if (needUrl && contactUrl.trim() && !/^https?:\/\//i.test(contactUrl.trim())) e.url = "주소를 https://로 시작하게 넣어 주세요.";
     if (callStart >= callEnd) e.call = "통화 끝을 통화 시작보다 늦게 골라 주세요.";
@@ -113,7 +117,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
         <PageHead title="업체 정보" crumbs={[{ label: "업체 정보", href: "/vendor/profile" }, { label: "기본" }]} />
         {tabs}
         <Group>
-          {hasIntro ? <Field label="한 줄 소개" maxLength={60} value={intro} onChange={(e) => setIntro(e.target.value)} /> : null}
+          {hasIntro ? <Field label="한 줄 소개" maxLength={200} value={intro} error={intro.trim().length > INTRO_MAX ? introErr(intro) : undefined} onChange={(e) => setIntro(e.target.value)} /> : null}
           <div className={s.areaRow}>
             <ChoiceChips
               multiple
