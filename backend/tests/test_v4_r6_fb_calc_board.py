@@ -8,12 +8,14 @@
 - c2 고칠 것 7 · 8: 집 정보 승인 카드 메모는 표준견적서 금액이 실제로 바뀔 때만 '새로 계산해요', 바뀌면 차액(계산 엔진)을
   카드에 보여요(살면서 ↔ 빈 집도).
 - c2 페인트 날짜 창: 공정표에 목공 날짜가 없으면 시작은 '목공이 끝난 뒤'(calc.diy diy_v4).
+- c4 고칠 것 3: '하루만 당겨'가 주말을 넘으면 앞 일하는 날(금요일), 없으면 실제 까닭.
 - 화면 M9 전체 철거 철거 줄.
 """
 
 import json
+import uuid
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -22,10 +24,11 @@ from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant import service as assistant_service
+from app.assistant.tools import ToolError, propose
 from app.assistant.tools import diy as diy_tools
-from app.assistant.tools import propose
 from app.calc import dobae, market_band, mokgong, quick_budget
 from app.calc.common import SUPPLY_PER_EXCLUSIVE
+from app.calc.schedule import no_earlier_why, start_choices_before
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
 from app.calc.standard_quote import house_pyeong
 from app.quote.service import OWN_PAPER_NOTE
@@ -36,9 +39,12 @@ from app.refprice.book import (
     MOKGONG_2026H2,
     MOKGONG_DEFAULT,
 )
+from app.refprice.holidays import days_off
 from app.refprice.house import HOUSE_2026H2, HOUSE_DEFAULT
 from app.refprice.market import MARKET_2026_11
 from app.refprice.wallpaper_market import paper_market
+from app.shared import kdate
+from app.shared.clock import SEOUL
 from tests.conftest import query
 from tests.helpers import signup
 from tests.test_v3_project_home import HOME, create
@@ -338,6 +344,84 @@ def test_paint_waits_for_carpentry_in_the_plan_and_the_tool(api, script):
     )  # 빈 칸은 모델 값에서 빠져요
     assert item["text"] == f"목공이 끝난 뒤 ~ {diy_tools.ko_day(due)} 사이에 해요"
     assert item["note"] == diy_tools.AFTER_NOTE["mokgong"]
+
+
+# ---- 6. 날짜 당기기 (c4 고칠 것 3) ----
+
+MON, TUE = d("2026-12-21"), d("2026-12-22")
+OFF = days_off(d("2026-11-01"), d("2027-03-01"))
+
+
+def _sch(*deals) -> SimpleNamespace:
+    trades = [
+        SimpleNamespace(
+            deal=x, request=None, requests_left=2, proposal=None, dates_state="scheduled"
+        )
+        for x in deals
+    ]
+    return SimpleNamespace(trades=trades, weekend_work=False)
+
+
+def _deal(trade: str, start: date, end: date) -> SimpleNamespace:
+    return SimpleNamespace(
+        id=uuid.uuid4(), trade=trade, status="scheduled", start_date=start, end_date=end
+    )
+
+
+def _offer(sch, deal, today: date, **kw) -> dict:
+    now = datetime.combine(today, datetime.min.time(), SEOUL) + timedelta(hours=21)
+    return propose.date_change_offer(sch, str(deal.id), "family", today, now, **kw)
+
+
+def test_one_day_earlier_over_a_weekend_is_the_friday():
+    """12.21(월)~22 공사를 '하루만 당겨': 하루 전(일)부터 앞으로만 찾아 후보가 없었어요. 앞 일하는 날(금)부터예요."""
+    dob = _deal("dobae", MON, TUE)
+    got = _offer(_sch(dob), dob, d("2026-11-23"), delay_days=1, direction="earlier")
+    assert got["payload"]["wish_dates"] == ["2026-12-18", "2026-12-17", "2026-12-16"]
+    rows = [r.value for r in got["summary"].rows if r.label.startswith("후보")]
+    assert rows[0] == kdate.md_range(d("2026-12-18"), MON)  # 일하는 날 2일: 금 · 월
+    # 말한 첫날(wish_from)이 있으면 그날보다 앞으로는 안 가요(앞 판과 같음)
+    wish = _offer(_sch(dob), dob, d("2026-11-23"), wish_from=d("2026-12-17"), direction="earlier")
+    assert wish["payload"]["wish_dates"] == ["2026-12-17", "2026-12-18"]
+
+
+def test_no_earlier_day_gives_the_real_reason():
+    dob = _deal("dobae", MON, TUE)
+    with pytest.raises(ToolError) as e:  # 금요일 밤: 내일 · 모레가 주말
+        _offer(_sch(dob), dob, d("2026-12-18"), delay_days=1, direction="earlier")
+    assert e.value.code == "no_earlier" and "주말 · 공휴일" in e.value.message
+    assert "다른 공정" not in e.value.message
+    with pytest.raises(ToolError) as e:  # 내일 시작하는 공사
+        _offer(_sch(dob), dob, d("2026-12-20"), delay_days=1, direction="earlier")
+    assert e.value.code == "no_earlier" and e.value.message.startswith(
+        "공사가 12월 21일(월)에 시작해서"
+    )
+    mok = _deal("mokgong", d("2026-12-17"), d("2026-12-18"))
+    with pytest.raises(ToolError) as e:  # 앞 공정(목공)이 금요일에 끝나요
+        _offer(_sch(mok, dob), dob, d("2026-11-23"), delay_days=1, direction="earlier")
+    assert "앞 공정이 끝난 다음 일하는 날" in e.value.message
+    with pytest.raises(ToolError) as e:  # 지금 시작일부터라고 하면 앞당길 날이 아니에요
+        _offer(_sch(dob), dob, d("2026-11-23"), wish_from=MON, direction="earlier")
+    assert "지금 시작일(12월 21일(월))보다 앞이 아니에요" in e.value.message
+
+
+def test_start_choices_before_and_why():
+    fri = d("2026-12-18")
+    assert start_choices_before(d("2026-12-20"), 2, 2, MON, d("2026-11-24"), OFF) == [
+        (fri, MON),
+        (d("2026-12-17"), fri),
+    ]
+    # 바라는 날부터 앞으로 먼저(지금 시작일 전까지), 모자라면 거슬러요
+    assert start_choices_before(d("2026-12-17"), 1, 3, MON, d("2026-11-24"), OFF) == [
+        (d("2026-12-17"), d("2026-12-17")),
+        (fri, fri),
+        (d("2026-12-16"), d("2026-12-16")),
+    ]
+    assert start_choices_before(d("2026-12-20"), 1, 3, MON, d("2026-12-19"), OFF) == []
+    assert no_earlier_why(MON, d("2026-12-19"), d("2026-12-19"), None) == "off"
+    assert no_earlier_why(MON, MON, MON, None) == "soon"
+    assert no_earlier_why(MON, MON, d("2026-11-24"), MON) == "prev"
+    assert no_earlier_why(MON, MON, d("2026-11-24"), None, wish=MON) == "wish"
 
 
 # ---- 9. 전체 철거면 기존 벽지 철거 줄 '안 함' (화면 M9) ----

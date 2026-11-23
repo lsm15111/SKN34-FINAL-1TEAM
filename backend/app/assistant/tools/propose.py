@@ -879,9 +879,23 @@ CHANGE_AHEAD = timedelta(days=365)  # 요청 날짜는 1년 안(schedule service
 ChangeReason = Literal["move", "family", "other_work", "other"]
 # 바꾸는 쪽: 앞당기기 earlier(지금 시작일 전 후보만) · 미루기 later(지금 시작일 뒤 후보만)
 ChangeDirection = Literal["earlier", "later"]
-NO_EARLIER = (
-    "지금 시작일 전에는 다른 공정과 겹치지 않게 앞당길 수 있는 날이 없어요. 다른 때를 말해 주세요."
-)
+
+
+def no_earlier_text(why: str, before: date, floor: date) -> str:
+    """앞당길 날이 없는 까닭(계산 엔진 calc.schedule.no_earlier_why) → 오류 글. 공정이 하나인 집에 '다른 공정과
+    겹쳐요'라고 하지 않게 실제 까닭을 말해요(QA r6 c4)."""
+    first = cards.md_long(before)
+    if why == "soon":
+        return f"공사가 {first}에 시작해서 그 전으로 앞당길 날이 없어요. 업체와 믿집 채팅으로 이야기해 주세요."
+    if why == "prev":
+        return f"앞 공정이 끝난 다음 일하는 날이 지금 시작일({first})이라 더 앞당길 수 없어요."
+    if why == "wish":
+        return f"말씀하신 날이 지금 시작일({first})보다 앞이 아니에요. 앞당길 날을 말해 주세요."
+    last = cards.md_long(before - timedelta(days=1))
+    return (
+        f"{cards.md_long(floor)}부터 {last}까지는 주말 · 공휴일이라 앞당길 일하는 날이 없어요. "
+        "다른 때를 말해 주세요."
+    )
 
 
 def date_change_offer(
@@ -899,8 +913,18 @@ def date_change_offer(
     시작해도 되는 날은 계산 엔진이 고른다: 지금 날짜에서 delay_days 뒤(또는 wish_from)부터 지금과 같은 일하는 날
     수로, 다른 공정과 겹치지 않는 자리 안에서 1~3개. 요청할 수 없으면 ToolError.
     direction(earlier 앞당기기 · later 미루기)과 반대인 후보는 내지 않는다(QA r2 f1x: 앞당기기에 늦은 후보). 없으면
-    delay_days는 미루기, wish_from은 지금 시작일과 견줘 정한다(같은 날이면 정하지 않음). earlier + delay_days는 며칠 앞으로."""
-    from app.calc.schedule import WEEKEND, Dated, count_workdays, free_range, start_choices
+    delay_days는 미루기, wish_from은 지금 시작일과 견줘 정한다(같은 날이면 정하지 않음). earlier + delay_days는 며칠 앞으로,
+    그날이 쉬는 날이면 그 앞 일하는 날도 찾아요(QA r6 c4: 월요일 공사를 '하루만 당겨'면 금요일). 앞당길 날이 없으면
+    실제 까닭(내일 전 · 앞 공정 · 주말 · 공휴일 · 말한 날)을 오류 글로 말해요."""
+    from app.calc.schedule import (
+        WEEKEND,
+        Dated,
+        count_workdays,
+        free_range,
+        no_earlier_why,
+        start_choices,
+        start_choices_before,
+    )
     from app.refprice.holidays import days_off
     from app.schedule import service as schedule_service
 
@@ -926,14 +950,7 @@ def date_change_offer(
         direction = "later"
     elif direction is None and wish_from is not None and wish_from != base[0]:
         direction = "earlier" if wish_from < base[0] else "later"
-    if delay_days:
-        step = timedelta(days=delay_days)
-        first = base[0] - step if direction == "earlier" else base[0] + step
-    else:
-        first = wish_from
-    first = max(first or today, today + timedelta(days=1))
-    if direction == "later":  # 미루기: 지금 시작일 뒤부터
-        first = max(first, base[0] + timedelta(days=1))
+    tomorrow = today + timedelta(days=1)
     others = [
         Dated(x.deal.trade, x.deal.start_date, x.deal.end_date)
         for x in sch.trades
@@ -945,18 +962,33 @@ def date_change_offer(
     start_from, end_by = free_range(
         t.deal.trade, [Dated(t.deal.trade, *base), *others], schedule_service.ORDER, off, weekend
     )
-    first = max(first, start_from) if start_from else first
-    got = start_choices(first, n, CHANGE_WISH_MAX, {base[0]}, off, weekend, end_by)
-    # 앞당기기: 지금 시작일 전 후보만(뒤로 갈수록 늦어지니 앞 후보는 그대로 남아요)
+    floor = max(tomorrow, start_from) if start_from else tomorrow
+    # 앞당기기: 지금 시작일 전, 바라는 날에 가까운 일하는 날부터(계산 엔진)
     if direction == "earlier":
-        got = [(a, b) for a, b in got if a < base[0]]
+        target = base[0] - timedelta(days=delay_days) if delay_days else (wish_from or base[0])
+        # 며칠 앞으로(delay_days)면 그 앞 일하는 날까지 거슬러 찾고, 말한 첫날(wish_from)보다 앞으로는 가지 않아요
+        low = floor if delay_days else max(floor, target)
+        got = start_choices_before(target, n, CHANGE_WISH_MAX, base[0], low, off, weekend, end_by)
         if not got:
-            raise ToolError("no_earlier", NO_EARLIER)
+            why = no_earlier_why(base[0], low, tomorrow, start_from, None if delay_days else target)
+            raise ToolError("no_earlier", no_earlier_text(why, base[0], low))
+    else:
+        first = base[0] + timedelta(days=delay_days) if delay_days else wish_from
+        first = max(first or today, tomorrow)
+        if direction == "later":  # 미루기: 지금 시작일 뒤부터
+            first = max(first, base[0] + timedelta(days=1))
+        first = max(first, start_from) if start_from else first
+        got = start_choices(first, n, CHANGE_WISH_MAX, {base[0]}, off, weekend, end_by)
     picked = [(a, b) for a, b in got if a <= today + CHANGE_AHEAD]
     if not picked:
-        raise ToolError(
-            "no_room", "그때로는 다른 공정과 겹치지 않는 날이 없어요. 다른 때를 말해 주세요."
+        why = (
+            "날짜 바꾸기는 1년 안 날짜로만 요청할 수 있어요."
+            if got
+            else f"뒤 공정이 시작하기 전({cards.md_long(end_by)})까지 끝낼 수 있는 날이 없어요."
+            if end_by is not None
+            else "그때로는 요청할 수 있는 날이 없어요."
         )
+        raise ToolError("no_room", f"{why} 다른 때를 말해 주세요.")
     change = t.deal.status == "scheduled"
     name = cards.TRADE.get(t.deal.trade, t.deal.trade)
     rows = [
