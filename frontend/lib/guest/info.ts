@@ -214,6 +214,12 @@ export function toHomeInfo(d: InfoDraft): HomeBody {
   };
 }
 
+/** 고치기(PATCH /projects/{id}) 몸통. 동은 이 폼에서 받지 않지만 비서 대화로 받아 둔 동은 지켜요(안 보내면 지워져 공사 이름이
+ *  '상계동 …'에서 '노원구 …'로 바뀌어요). 지역을 다시 고르면 폼이 동을 비워요 */
+export function toEditBody(d: InfoDraft): HomeBody {
+  return { ...toHomeInfo(d), ...(d.emd ? { emd: d.emd } : {}) };
+}
+
 /** 저장된 공사의 v3 기본 정보 → 넣는 중인 답(고치기 C02 · ?edit=) */
 export function fromSaved(h: HomeInfoSaved): InfoDraft {
   return {

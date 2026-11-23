@@ -20,7 +20,7 @@ import type { Region } from "@/lib/api/project";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort } from "@/lib/format";
 import {
-  EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, checkDraft, chipsFor, onChips, placeText, roomsOf, scopeOf, spaceLabel, summaryRows, toHomeInfo,
+  EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, checkDraft, chipsFor, onChips, placeText, roomsOf, scopeOf, spaceLabel, summaryRows, toEditBody, toHomeInfo,
   type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
 } from "@/lib/guest/info";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
@@ -116,7 +116,7 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
     setBusy(true);
     try {
       if (mode === "edit" && projectId) {
-        if (!mock) await call("PATCH", `/projects/${encodeURIComponent(projectId)}`, toHomeInfo(d));
+        if (!mock) await call("PATCH", `/projects/${encodeURIComponent(projectId)}`, toEditBody(d));
         // 대화 안 창이면 창을 닫고 대화로(이 창 주소를 대화 주소로 바꿔요). 저장(PATCH)이 보드 · 집 정보 카드를 다시 읽게 해요
         if (after) router.replace(after, { scroll: false });
         else router.push(`/projects/${projectId}/standard`);
