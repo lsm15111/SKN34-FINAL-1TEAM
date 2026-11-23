@@ -5,7 +5,7 @@
 import Link from "next/link";
 import { PreWorkCheck } from "@/components/project/PreWorkCheck";
 import { span } from "@/components/schedule/text";
-import { budgetLabel, phoneText, projectTitle, tradeLabel } from "@/lib/labels";
+import { budgetLabel, phoneText, projectTitle, todoView, tradeLabel } from "@/lib/labels";
 import { decText, md, todaySeoul, won } from "@/lib/format";
 import { Chev, State } from "./icons";
 import { tradeDates, tradeState, type Overview as Ov } from "./text";
@@ -16,7 +16,7 @@ export function Overview({ ov }: { ov: Ov }) {
   const title = projectTitle(ov.region, ov.trades.map((t) => t.trade));
   const early = ov.phase === "estimate";
   const contacts = early ? [] : ov.contacts.filter((c) => c.contact.phone);
-  const todo = ov.todo;
+  const todo = ov.todo ? todoView(ov.todo) : null;
   const finished = todo ? todo.code === "done" : ov.phase === "done";
   const { money, period } = ov;
   const allStandard = money.by_trade.every((m) => m.source === "standard");

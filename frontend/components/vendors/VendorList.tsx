@@ -5,6 +5,8 @@
 // - 이 구에 업체가 없으면 가까운 구 업체를 보여요(C12). 막다른 화면을 만들지 않아요.
 // - 폰: 담기 띠가 아래에 붙어요. 웹: 목록 아래 카드 + 담은 업체 칩(빼기).
 // - 업체가 많아져도 처음엔 5곳만 보이고 아래 '더보기'로 5곳씩 더 펼쳐요. 가견적 설명은 제목 옆 '!' 도움말에 있어요(11-19).
+// - 담기 띠 단추는 단계를 따라요(QA r6 M5): 업체를 확정했으면 다음 할 일(next) · 담은 업체에 모두 요청했으면 실측 일정 ·
+//   아직 요청 안 한 업체가 있으면 실측 일정 잡기. 요청서와 업체 보기가 서로를 가리키며 돌지 않게요.
 import { useMemo, useRef, useState, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Main, PageHead, WithAside, type Crumb } from "@/components/site/Frame";
@@ -15,7 +17,8 @@ import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { VendorCard, type ShortlistState } from "@/components/ui/VendorCard";
 import { ApiError, call, errorText, type Schemas } from "@/lib/backend/client";
-import { eulReul, won } from "@/lib/format";
+import { eulReul, euro, won } from "@/lib/format";
+import { ASKED_VISIT } from "@/lib/labels";
 import { feeText } from "./v3text";
 import s from "./vendors3.module.css";
 
@@ -25,10 +28,12 @@ type Short = Schemas["ShortlistOut"];
 const MAX = 3;
 const PAGE = 5; // 처음 보이는 업체 수 · 더보기로 더 여는 수
 
-export function VendorList({ projectId, list, shortlist, mock, head, aside }: {
+export function VendorList({ projectId, list, shortlist, next, mock, head, aside }: {
   projectId: string;
   list: List;
   shortlist: Short | null;
+  /** 업체를 확정한 뒤 담기 띠 단추(공사 요약 '지금 할 일') */
+  next?: { label: string; href: string };
   mock: boolean;
   head: { title: string; crumbs: Crumb[]; desc: ReactNode };
   aside: ReactNode;
@@ -101,17 +106,26 @@ export function VendorList({ projectId, list, shortlist, mock, head, aside }: {
     />
   );
 
-  const ready = list.local.filter((c) => c.state !== "no_estimate");
+  // 가견적 낮은 순(서버 순서)은 그대로 두고, 담을 수 있는 업체를 먼저 보여요(이 벽지는 안 해요 · 다시 요청 못 함이 맨 위에 오지 않게, QA r6 L28)
+  const ready = list.local.filter((c) => c.state !== "no_estimate").sort((a, b) => Number(a.state !== "ok") - Number(b.state !== "ok"));
   const preparing = list.local.filter((c) => c.state === "no_estimate");
   const zero = list.local.length === 0;
-  const trayText = count === 0 ? `${MAX}곳까지 담을 수 있어요` : left > 0 ? "" : `${MAX}곳을 다 담았어요`;
+  // 담은 업체의 요청 상태(서버 담은 목록 값): 확정한 업체 · 이미 요청한 업체
+  const items = shortlist?.items ?? [];
+  const chosen = items.find((it) => it.visit_status === "chosen") ?? null;
+  const asked = new Set(items.filter((it) => it.visit_status != null && ASKED_VISIT.has(it.visit_status)).map((it) => it.vendor_id));
+  const allAsked = count > 0 && picked.every((vid) => asked.has(vid));
+  const trayText = chosen ? "" : count === 0 ? `${MAX}곳까지 담을 수 있어요` : left > 0 ? "" : `${MAX}곳을 다 담았어요`;
   // 5곳씩: 가견적 있는 업체 → 준비 중 업체 순서로 채워요(이 구에 업체가 없으면 가까운 구 업체를 같은 식으로)
   const readyShown = ready.slice(0, shown);
   const prepShown = preparing.slice(0, Math.max(0, shown - ready.length));
   const nearShown = list.nearby.slice(0, shown);
   const hiddenCount = zero ? list.nearby.length - nearShown.length : ready.length + preparing.length - readyShown.length - prepShown.length;
   const tip = !zero ? `가견적은 업체가 확인한 단가 × 믿집 수량이에요. 부가세 포함이고, 표준견적서는 ${won(list.standard_total)}이에요.` : null;
-  const go = <Button size="sm" href={`${base}/visits/new`} disabled={count === 0}>실측 일정 잡기</Button>;
+  const go = chosen ? <Button size="sm" href={next?.href ?? `${base}/schedule`}>{next?.label ?? "공사 날짜 보기"}</Button>
+    : allAsked ? <Button size="sm" href={`${base}/visits`}>실측 일정 보기</Button>
+    : <Button size="sm" href={`${base}/visits/new`} disabled={count === 0}>실측 일정 잡기</Button>;
+  const chosenText = chosen ? `${euro(chosen.name)} 확정했어요` : null;
 
   return (
     <>
@@ -153,8 +167,8 @@ export function VendorList({ projectId, list, shortlist, mock, head, aside }: {
           {/* 웹: 목록 아래 담기 카드 */}
           <div className={s.webTray} aria-live="polite">
             <div className={s.trayText}>
-              {/* CF-31: 0곳일 때는 '3곳까지 담을 수 있어요'만 보여요 */}
-              {count > 0 ? (
+              {/* CF-31: 0곳일 때는 '3곳까지 담을 수 있어요'만 보여요. 확정한 뒤에는 확정한 업체만 */}
+              {chosenText ? <p className={s.trayHead}><b>{chosenText}</b></p> : count > 0 ? (
                 <p className={s.trayHead}>
                   <b>담은 업체 {count}곳</b>
                   {picked.map((vid) => (
@@ -173,7 +187,7 @@ export function VendorList({ projectId, list, shortlist, mock, head, aside }: {
       </Main>
       {/* 폰: 아래에 붙는 담기 띠 */}
       <div className={s.phoneTray} aria-live="polite">
-        <div className={s.trayText}>{count > 0 ? <b>담은 업체 {count}곳</b> : null}{trayText ? <span>{trayText}</span> : null}</div>
+        <div className={s.trayText}>{chosenText ? <b>{chosenText}</b> : count > 0 ? <b>담은 업체 {count}곳</b> : null}{trayText ? <span>{trayText}</span> : null}</div>
         {go}
       </div>
     </>

@@ -22,6 +22,7 @@ import { DetailActions } from "@/components/vendors/DetailActions";
 import { DetailTabs, type TabItem } from "@/components/vendors/DetailTabs";
 import { GradeToggle } from "@/components/vendors/GradeToggle";
 import { ReviewLinks } from "@/components/vendors/ReviewLinks";
+import { FAQ_LABEL } from "@/components/vendors/text";
 import { areasText, caseLabel, compareText, estimateLines, feeText, monthText, replyText, safeLinks } from "@/components/vendors/v3text";
 import { VendorMenu } from "@/components/vendors/VendorMenu";
 import s from "@/components/vendors/vendors3.module.css";
@@ -74,6 +75,8 @@ export default async function VendorDetailPage({ params, searchParams }: {
   const lines = est ? estimateLines(est.lines, grade) : null;
   const count = short?.count ?? (d.shortlisted ? 1 : 0);
   const v4 = (await uiMode()) === "v4";
+  // 업체가 적은 자주 묻는 답(업체 정보 화면과 같은 순서 · 이름, QA r6 M12). 업체 글은 글 그대로 보여요
+  const faqs = FAQ_LABEL.flatMap(({ key, label }) => { const answer = pr.faqs.find((f) => f.key === key)?.answer?.trim(); return answer ? [{ key, label, answer }] : []; });
 
   const tabs: TabItem[] = [
     { id: "est", label: "가견적" },
@@ -150,6 +153,15 @@ export default async function VendorDetailPage({ params, searchParams }: {
           ) : null}
 
           {photos.length ? <CasesBlock id="cases" photos={photos} /> : null}
+
+          {faqs.length ? (
+            <section id="faq" className={s.group} aria-labelledby="faq-t">
+              <h2 id="faq-t" className={s.hs}>자주 묻는 답</h2>
+              <dl className={s.faq}>
+                {faqs.map((f) => <div key={f.key}><dt>{f.label}</dt><dd>{f.answer}</dd></div>)}
+              </dl>
+            </section>
+          ) : null}
 
           <section id="reviews" className={s.group} aria-labelledby="rv-t">
             <div className={s.gh}>

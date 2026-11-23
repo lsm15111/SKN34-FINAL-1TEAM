@@ -121,11 +121,12 @@ export async function getVisitSummary(mockVariant?: string | null) {
   if (MOCK) return mockVariant === "first" ? { ...M.MOCK_SUMMARY, todo: 0, waiting: 0, sched: 0, jobs: 0, done: 0 } : M.MOCK_SUMMARY;
   return serverGet<VendorInboxSummary>("/vendor/visits/summary");
 }
-/** 처음 할 일(V02)을 마쳤는지: 단가 = v3 확인 묶음 있음 · 업체 정보 = 한 번이라도 저장 · 링크 = 1개 이상 */
-export async function getSetupDone(mockVariant?: string | null): Promise<{ prices: boolean; profile: boolean; links: boolean }> {
-  if (MOCK && mockVariant === "first") return { prices: false, profile: false, links: false };
+/** 처음 할 일(V02)을 마쳤는지: 단가 = v3 확인 묶음 있음 · 업체 정보 = 한 번이라도 저장 · 링크 = 1개 이상.
+ *  trades는 업체 공정(목공만 하는 업체는 도배 단가 할 일이 없어요). 업체 정보를 못 읽으면 도배로 봐요 */
+export async function getSetupDone(mockVariant?: string | null): Promise<{ prices: boolean; profile: boolean; links: boolean; trades: string[] }> {
+  if (MOCK && mockVariant === "first") return { prices: false, profile: false, links: false, trades: ["dobae"] };
   const [p, prof, links] = await Promise.all([getMyPricesV3("dobae").catch(() => null), getMyProfile().catch(() => null), getReviewLinks().catch(() => [])]);
-  return { prices: !!p && !p.needs_setup && !!p.confirmed_at, profile: !!prof?.updated_at, links: links.length > 0 };
+  return { prices: !!p && !p.needs_setup && !!p.confirmed_at, profile: !!prof?.updated_at, links: links.length > 0, trades: prof?.trades.length ? prof.trades : ["dobae"] };
 }
 /** 실측 요청 하나(내 요청이 아니면 null → 404) */
 export async function getVendorVisit(vid: string) {

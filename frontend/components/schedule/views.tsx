@@ -36,8 +36,10 @@ export function datesView({ projectId, t, holidays, finalVersion, today, startDa
       body: (
         <>
           <Group>
-            <Eyebrow>{iGa(v)} 올린 공사 날짜</Eyebrow>
+            {/* 수락한 날짜를 업체가 바꾸자고 했으면 그 이유(업체가 적은 글, 고객에게 보여요)를 같이 보여요 */}
+            <Eyebrow>{t.dates_state === "change_proposed" ? `${iGa(v)} 바꾸자고 한 공사 날짜` : `${iGa(v)} 올린 공사 날짜`}</Eyebrow>
             <p className={`${s.big} mj-num`}>{daysText(days)}</p>
+            {t.dates_state === "change_proposed" && p.reason ? <Quote>{p.reason}</Quote> : null}
             <Sub>{[`${p.workdays}일`, `${p.crew}명`, startDate && p.start === startDate ? "공사 시작 희망일과 같아요" : null].filter(Boolean).join(" · ")}</Sub>
           </Group>
           <Group>

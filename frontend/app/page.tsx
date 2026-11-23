@@ -61,7 +61,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
             <h1 id="hero-t" className={s.h}>인테리어,<br />믿집에서 시작해요</h1>
             <div className={s.cta}>
               <StartCta ongoing={ongoing} autoOpen={resume === "1"} />
-              <p className={s.note}>{member || preview ? "1분이면 표준견적서가 나와요" : "1분 · 가입 없이 표준견적서를 바로 봐요"}</p>
+              {/* 지금 되는 범위(아파트 도배)를 첫 화면에서 알려요(QA r6 M18: 목공 · 욕실 손님이 /start에서야 알았어요) */}
+              <p className={s.note}>{member || preview ? "지금은 아파트 도배만 · 1분이면 표준견적서가 나와요" : "지금은 아파트 도배만 · 가입 없이 1분이면 표준견적서를 봐요"}</p>
             </div>
           </section>
           {std ? <SampleQuote std={std} /> : null}

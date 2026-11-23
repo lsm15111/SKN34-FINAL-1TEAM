@@ -49,7 +49,7 @@ export default async function VendorHome({ searchParams }: { searchParams: Promi
     return (
       <>
         <ProHeader me={me} />
-        <Main narrow><FirstDay done={done} /></Main>
+        <Main narrow><FirstDay done={done} home /></Main>
         <ProTabBar />
       </>
     );

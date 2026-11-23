@@ -5,6 +5,7 @@
 // - proposed: 업체가 제안한 반나절만 골라 바로 확정, 안 맞으면 '업체 기간에서 고르기'(C21 · D17 · CF-05)
 // - booked: 실측 확정됨(C17) · picked: 수락 기다림(C19 덧그림) · 그 밖: 짧은 상태
 // 열린 반나절 · 마감 · 내 다른 실측 · 기한은 모두 API(계산 엔진) 값이에요. 같은 반나절을 거의 같이 누르면 늦은 쪽은 409 slot_taken.
+// inCard(v4 비서 화면 카드 창 안): 창이 옆 AI 칸을 숨겨서, 웹은 고른 날 칸(반나절 · 보내기)을 본문 오른쪽에 둬요(QA r6 H1).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
@@ -38,7 +39,8 @@ function Err({ text, id }: { text: string | null; id?: string }) {
   return text ? <p id={id} className={s.err} role="alert"><Icon name="error" size={16} />{text}</p> : null;
 }
 
-export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; project: VisitProject; today: string; aside: ReactNode }) {
+export function PickBoard({ pick, project, today, aside, inCard = false }: { pick: VisitPick; project: VisitProject; today: string; aside: ReactNode; inCard?: boolean }) {
+  const ai = inCard ? undefined : aside;
   const router = useRouter();
   const toast = useToast();
   const web = useMedia(MQ.web);
@@ -175,7 +177,7 @@ export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; pr
       <>
         <Main>
           <PageHead title="실측 일정" crumbs={crumbs.slice(0, 3).concat({ label: "실측 확정" })} />
-          <WithAside aside={aside}>
+          <WithAside aside={ai}>
             <Group>
               <div className={s.done}>
                 <span className={s.okc} aria-hidden="true"><Icon name="check" size={34} strokeWidth={2.6} /></span>
@@ -213,7 +215,7 @@ export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; pr
     return (
       <Main>
         <PageHead title="실측 일정" crumbs={crumbs} />
-        <WithAside aside={aside}>
+        <WithAside aside={ai}>
           <Group>
             <GroupHead><Name>{v}</Name><StateTag tone="wait">수락 기다림</StateTag></GroupHead>
             {pick.booked ? <Sub>{eulReul(slotText(pick.booked))} 보냈어요</Sub> : null}
@@ -233,7 +235,7 @@ export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; pr
     return (
       <Main>
         <PageHead title={title} crumbs={crumbs} />
-        <WithAside aside={aside}>
+        <WithAside aside={ai}>
           <Group>
             <Title as="h2">겹치는 날이 없어요</Title>
             <Sub>업체는 {rangeLong(w.start, w.end)}에 돼요.{late && pick.work_wish_on ? <><br />공사 시작({dayOnly(pick.work_wish_on)})보다 늦어요.</> : null}</Sub>
@@ -268,7 +270,7 @@ export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; pr
     return (
       <Main>
         <PageHead title={title} crumbs={crumbs} />
-        <WithAside aside={aside}>
+        <WithAside aside={ai}>
           <Group>
             <GroupHead><Name>{v}</Name><StateTag tone={st.tone}>{st.label}</StateTag></GroupHead>
             {status === "requested" && pick.next.due_at ? <Sub>{dueText(pick.next.due_at)} 답해요</Sub> : null}
@@ -325,31 +327,35 @@ export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; pr
     </section>
   );
 
+  const calGroup = (
+    <Group label="달력">
+      <CalendarLegend items={isProp ? ["wish", "proposed", "selected"] : ["wish", "available", "selected", "unavailable"]} wishText={!isProp && wish ? `내 희망 ${rangeText(wish.from, wish.to)}` : undefined} />
+      <Calendar
+        mode="single"
+        label={title}
+        today={today}
+        month={proposal?.slots[0]?.day ?? pick.window?.start ?? pick.wish_start ?? today}
+        value={day}
+        onChange={chooseDay}
+        wish={wish}
+        marks={cal.marks}
+        notes={cal.notes}
+        only={cal.only}
+        wide={web}
+      />
+      {web && !isProp && pick.days.some((d) => (d.am || d.pm) && d.am !== d.pm) ? <Small>업체가 된다고 한 날만 고를 수 있어요. 날짜 아래 &apos;오전만 · 오후만&apos;은 남은 반나절이에요.</Small> : null}
+      {web && pick.mine.length ? <Small>이미 잡힌 내 실측({pick.mine.map((m) => `${Number(m.day.slice(8))}일 ${HALF_LABEL[m.half]} · ${m.vendor_name}`).join(", ")})도 달력에 보여요.</Small> : null}
+      {!day ? <div className={s.phoneStack}><Err text={err} /></div> : null}
+    </Group>
+  );
+
   return (
     <>
       <Main>
         <PageHead title={title} crumbs={crumbs} />
         {headLine ? <p className={s.headLine}>{headLine}</p> : null}
-        <WithAside aside={<div className={s.sideStack}>{side}<div className={s.aiFill}>{aside}</div></div>}>
-          <Group label="달력">
-            <CalendarLegend items={isProp ? ["wish", "proposed", "selected"] : ["wish", "available", "selected", "unavailable"]} wishText={!isProp && wish ? `내 희망 ${rangeText(wish.from, wish.to)}` : undefined} />
-            <Calendar
-              mode="single"
-              label={title}
-              today={today}
-              month={proposal?.slots[0]?.day ?? pick.window?.start ?? pick.wish_start ?? today}
-              value={day}
-              onChange={chooseDay}
-              wish={wish}
-              marks={cal.marks}
-              notes={cal.notes}
-              only={cal.only}
-              wide={web}
-            />
-            {web && !isProp && pick.days.some((d) => (d.am || d.pm) && d.am !== d.pm) ? <Small>업체가 된다고 한 날만 고를 수 있어요. 날짜 아래 &apos;오전만 · 오후만&apos;은 남은 반나절이에요.</Small> : null}
-            {web && pick.mine.length ? <Small>이미 잡힌 내 실측({pick.mine.map((m) => `${Number(m.day.slice(8))}일 ${HALF_LABEL[m.half]} · ${m.vendor_name}`).join(", ")})도 달력에 보여요.</Small> : null}
-            {!day ? <div className={s.phoneStack}><Err text={err} /></div> : null}
-          </Group>
+        <WithAside aside={inCard ? undefined : <div className={s.sideStack}>{side}<div className={s.aiFill}>{aside}</div></div>}>
+          {inCard ? <div className={s.pickCols}>{calGroup}{side}</div> : calGroup}
           {day ? (
             <div className={s.phoneStack}>
               <Group label="반나절">

@@ -44,6 +44,8 @@ export function useAssistant(projectId: string) {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
   const [board, setBoard] = useState<BoardOut | null>(null);
+  /** 마지막 보드 읽기가 실패했어요(읽어 둔 보드가 없으면 보드 자리에 '다시 불러오기') */
+  const [boardFailed, setBoardFailed] = useState(false);
   const [today, setToday] = useState<TodayData | null>(null);
   const [open, setOpen] = useState<ActionOut[]>([]);
   /** 기록 밖(열린 승인 카드 묶음)에서 승인 · 거절한 행동의 지금 모습: 열린 목록에서 빠져도 결과 카드로 남겨요 */
@@ -105,8 +107,17 @@ export function useAssistant(projectId: string) {
       if (boardKey.current && boardKey.current !== key) setFlash((n) => n + 1);
       boardKey.current = key;
       setBoard(b);
-    } catch { /* 보드는 다음 소식 때 다시 읽어요 */ }
+      setBoardFailed(false);
+    } catch {
+      // 읽어 둔 보드가 있으면 그대로 두고 다음 소식 때 다시 읽어요. 처음 읽기가 실패하면 보드가 '다시 불러오기'를 보여요(QA r6 H2)
+      setBoardFailed(true);
+    }
   }, [projectId]);
+  /** 보드 '다시 불러오기': 다시 읽는 동안은 '불러오고 있어요'로 돌아가요 */
+  const retryBoard = useCallback(() => {
+    setBoardFailed(false);
+    void refreshBoard();
+  }, [refreshBoard]);
 
   /** 보드 · 오늘 정할 일 · 열린 대기 행동 · 무료 모드(대화 옆 값들) */
   const refreshSide = useCallback(async () => {
@@ -511,7 +522,7 @@ export function useAssistant(projectId: string) {
   }, [items, open, kept, today, todayFirst, firstToday, pin, anchor, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled: handledAll, ended, health,
+    projectId, items: view, chips, now, loaded, loadError, running, board, boardFailed, retryBoard, pending, errors, flash, handled: handledAll, ended, health,
     gone: shut, settled,
     /** 처음 열 때 대화가 비었어요(첫 인사). 이 화면에서는 첫 말을 보낸 뒤에도 그대로 보여요 */
     fresh: greet,

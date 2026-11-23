@@ -75,3 +75,7 @@
 }
 /* 더보기(업체가 5곳을 넘을 때) */
 .more { align-self: stretch; }
+/* 업체 자세히 · 자주 묻는 답(업체가 적은 글, 줄바꿈 그대로) */
+.faq { margin: 0; display: flex; flex-direction: column; gap: 12px; }
+.faq dt { font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-text); }
+.faq dd { margin: 2px 0 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); white-space: pre-line; overflow-wrap: anywhere; }

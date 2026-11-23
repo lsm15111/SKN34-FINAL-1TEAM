@@ -38,6 +38,7 @@ const STEP1: Key[] = ["bizName", "owner", "bizNo", "email", "file", "trades", "a
 const STEP2: Key[] = ["phone", "pw", "pw2", "terms"];
 const TRADES = ["dobae", "mokgong"] as const;
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+// 약관 '보기'는 새 창으로 열어요: 같은 창으로 가면 돌아왔을 때 넣은 칸이 모두 사라져요(QA r6 M14)
 const TERMS = [
   { key: "tos", label: "[필수] 이용약관", see: "/legal?tab=terms", seeLabel: "이용약관 보기" },
   { key: "privacy", label: "[필수] 개인정보 수집 · 이용", see: "/legal?tab=privacy", seeLabel: "개인정보 수집 · 이용 보기" },
@@ -231,7 +232,7 @@ export function VendorSignupForm({ regions, again }: { regions: Region[]; again?
                 {TERMS.map((t) => (
                   <div key={t.key} className={s.term}>
                     <Check label={t.label} checked={agree[t.key]} onChange={(on) => { setAgree((a) => ({ ...a, [t.key]: on })); clear("terms"); }} />
-                    <Button variant="text" gray href={t.see} aria-label={t.seeLabel}>보기</Button>
+                    <Button variant="text" gray href={t.see} external aria-label={`${t.seeLabel} · 새 창`}>보기</Button>
                   </div>
                 ))}
               </fieldset>

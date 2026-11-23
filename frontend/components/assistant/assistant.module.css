@@ -82,6 +82,7 @@
 .ideas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
 .ideas button { white-space: normal; text-align: left; line-height: 1.35; padding-block: 8px; max-width: 100%; }
 .fail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: var(--mj-type-label); color: var(--mj-danger); }
+.fail > svg { flex: none; width: 18px; height: 18px; }
 .day { display: flex; align-items: center; gap: 12px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); }
 .day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--mj-line); }
 .typing { display: inline-flex; gap: 4px; padding: 10px 0; }
@@ -200,6 +201,8 @@ a.rangeLine:hover { text-decoration: underline; text-underline-offset: 3px; }
 .sheetBody :global(aside[aria-label^="AI"]) { display: none; }
 .sheetBody :global(div:has(> aside[aria-label^="AI"])) { grid-template-columns: minmax(0, 1fr) !important; }
 .sheetBody :global(div:has(> aside[aria-label^="AI"]) > div:first-child) { display: none; }
+/* AI가 아닌 옆 칸(확정 공정표 '공사 전 할 일')은 AI 대화 칸이 없어서 창 높이까지 늘리지 않고 내용만큼만 */
+.sheetBody :global(aside:not([aria-label^="AI"])) { height: auto; }
 .sheetBody :global(main h1) { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .drawer { position: fixed; top: 0; right: 0; bottom: 0; z-index: var(--mj-z-overlay); width: min(480px, 100%); background: var(--mj-bg); box-shadow: var(--mj-shadow-overlay); display: flex; flex-direction: column; overflow: hidden; overflow: clip; --mj-sticky-top: 0px; --mj-header-h: 0px; }
 .drawer[data-enter] { animation: side var(--mj-dur-slow) var(--mj-ease-out); }

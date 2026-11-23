@@ -1,5 +1,6 @@
 "use client";
-// 업체 정보 · 기본(V15 v_profile): 한 줄 소개 · 다니는 지역 · 실측 출장비 · 연락 방법 · 통화 시간 · 세금 · 바로 확정 기본값 · 반나절당 받는 실측 수 · 등록 · 보험.
+// 업체 정보 · 기본(V15 v_profile): 한 줄 소개 · 다니는 지역 · 실측 출장비 · 연락 방법 · 통화 시간 · 세금 · 바로 확정 기본값 · 반나절당 받는 실측 수 · 등록 · 보험
+// · 자주 묻는 답 5가지(고객 업체 자세히에 보여요. 서버 vendor_faqs는 있었는데 고칠 칸이 없었어요, QA r6 M12).
 // 잠정 결정: 세금에 간이과세(L02) · 반나절당 받는 실측 수 1~3, 기본 2(L03) · 실내건축업 등록을 비우면 고객 화면에 아무것도 안 보여요(L05).
 // 저장 → PUT /vendor/profile(updated_at으로 먼저 저장한 곳이 있으면 409). 통화 시작 · 끝은 한 칸에 한 줄씩(8판).
 import { useRef, useState, type ReactNode } from "react";
@@ -8,16 +9,17 @@ import { Main, PageHead } from "@/components/site/Frame";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
 import { ChoiceChips } from "@/components/ui/ChoiceChip";
-import { Field, SelectField } from "@/components/ui/Field";
+import { Field, SelectField, TextArea } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
 import { Sheet } from "@/components/ui/Sheet";
 import { useToast } from "@/components/ui/Toast";
 import type { ProfileV3, Region } from "@/lib/api/vendor";
 import { errorText } from "@/lib/backend/client";
 import { CONTACT_LABEL, type ContactMethod } from "@/lib/labels";
+import { FAQ_LABEL } from "@/components/vendors/text";
 import { send } from "../send";
 import { TAX_KINDS } from "../text";
-import { Group, Small } from "../ui/parts";
+import { Eyebrow, Group, Small } from "../ui/parts";
 import { Segmented } from "@/components/ui/Segmented";
 import { Switch } from "@/components/ui/Switch";
 import { profileBody } from "./body";
@@ -25,8 +27,12 @@ import s from "./Profile.module.css";
 
 type Area = { sido: string; sgg: string; label: string };
 type Tax = "general" | "simplified" | "exempt";
+type FaqKey = (typeof FAQ_LABEL)[number]["key"];
 const TIMES = Array.from({ length: 33 }, (_, i) => { const m = 6 * 60 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; });
 const digits = (v: string) => v.replace(/\D/g, "").slice(0, 7);
+// 한 줄 소개는 60자(서버 INTRO_MAX). 넘게 붙여 넣으면 말없이 자르지 않고 오류 글로 알려요(QA r6 L10)
+const INTRO_MAX = 60;
+const introErr = (v: string) => `한 줄 소개는 ${INTRO_MAX}자 안으로 줄여 주세요 · 지금 ${v.trim().length}자예요.`;
 const labelOf = (regions: Region[], sido: string, sgg: string) => {
   const r = regions.find((x) => x.id === sido);
   const g = r?.groups.find((x) => x.items.includes(sgg));
@@ -53,6 +59,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
   const [cap, setCap] = useState(String(profile.visit_capacity ?? 2));
   const [license, setLicense] = useState(profile.interior_license ?? "");
   const [insurance, setInsurance] = useState(profile.insurance ?? "");
+  const [faq, setFaq] = useState<Record<FaqKey, string>>(() => Object.fromEntries(FAQ_LABEL.map(({ key }) => [key, profile.faqs.find((f) => f.key === key)?.answer ?? ""])) as Record<FaqKey, string>);
   const [err, setErr] = useState<Record<string, string | undefined>>({});
   const [busy, setBusy] = useState(false);
   const feeRef = useRef<HTMLInputElement>(null);
@@ -69,6 +76,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
     if (busy) return;
     const e: Record<string, string> = {};
     if (!areas.length) e.areas = "다니는 지역을 하나 이상 골라 주세요.";
+    if (hasIntro && intro.trim().length > INTRO_MAX) e.intro = introErr(intro);
     if (feeMode === "paid" && !(Number(fee) > 0)) e.fee = "출장비를 원 단위로 넣어 주세요.";
     if (needUrl && contactUrl.trim() && !/^https?:\/\//i.test(contactUrl.trim())) e.url = "주소를 https://로 시작하게 넣어 주세요.";
     if (callStart >= callEnd) e.call = "통화 끝을 통화 시작보다 늦게 골라 주세요.";
@@ -91,6 +99,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
         visit_capacity: Number(cap),
         interior_license: license.trim() || null,
         insurance: insurance.trim() || null,
+        faqs: FAQ_LABEL.map(({ key }) => ({ key, answer: faq[key].trim() })).filter((f) => f.answer),
         ...(hasIntro ? { intro: intro.trim() || null } : {}),
       }));
       toast.show("저장했어요.");
@@ -108,7 +117,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
         <PageHead title="업체 정보" crumbs={[{ label: "업체 정보", href: "/vendor/profile" }, { label: "기본" }]} />
         {tabs}
         <Group>
-          {hasIntro ? <Field label="한 줄 소개" maxLength={60} value={intro} onChange={(e) => setIntro(e.target.value)} /> : null}
+          {hasIntro ? <Field label="한 줄 소개" maxLength={200} value={intro} error={intro.trim().length > INTRO_MAX ? introErr(intro) : undefined} onChange={(e) => setIntro(e.target.value)} /> : null}
           <div className={s.areaRow}>
             <ChoiceChips
               multiple
@@ -142,6 +151,12 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
           <Switch label="고객이 고르면 바로 확정" desc="기간을 답할 때 처음 켜 둘 값이에요. 요청마다 바꿀 수 있어요." checked={instant} onChange={setInstant} />
           <Segmented legend="한 반나절에 받을 실측 수" options={[{ value: "1", label: "1건" }, { value: "2", label: "2건" }, { value: "3", label: "3건" }]} value={cap} onChange={setCap} />
           <Small>같은 반나절에 이만큼까지 고객이 고를 수 있어요. 시각은 확정 뒤 채팅으로 정해요.</Small>
+        </Group>
+        <Group>
+          <Eyebrow as="h2">자주 묻는 답</Eyebrow>
+          {FAQ_LABEL.map(({ key, label }) => (
+            <TextArea key={key} label={label} optional rows={2} maxLength={200} value={faq[key]} onChange={(e) => setFaq((x) => ({ ...x, [key]: e.target.value }))} />
+          ))}
         </Group>
         {err.form ? <p className={s.err} role="alert"><Icon name="error" size={16} />{err.form}</p> : null}
       </Main>

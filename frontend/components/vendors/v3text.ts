@@ -30,7 +30,8 @@ const SPACE: Record<string, string> = { living: "거실", kitchen: "주방", mas
 export function caseLabel(p: { title: string; space?: string | null; paper?: string | null }, long = false): string {
   const space = (p.space && SPACE[p.space]) || p.title;
   const paper = p.paper === "basic" ? "실크" : p.paper === "economy" ? "합지" : "";
-  return paper ? `${space} · ${paper}${long ? "벽지" : ""}` : space;
+  // 제목에 이미 벽지가 들어 있으면 다시 붙이지 않아요('거실 · 실크 · 실크', QA r6 L11)
+  return paper && !space.split(" · ").includes(paper) ? `${space} · ${paper}${long ? "벽지" : ""}` : space;
 }
 
 /** '2026-10-12' · '2026-10' → '2026년 10월' */

@@ -140,7 +140,8 @@ export function RequestForm({ projectId, projectName, draft, today, aside }: {
                 <Button variant="text" className={s.calToggle} aria-expanded={calOpen} aria-controls={ids.cal} onClick={() => setCalOpen((v) => !v)}>{calOpen ? "접기" : "바꾸기"}</Button>
               </GroupHead>
               <div id={ids.cal} ref={calRef} tabIndex={-1} className={calOpen ? `${s.calBox} ${s.calOn}` : s.calBox}>
-                <Calendar mode="range" label="희망 기간 고르기" today={today} month={range?.from ?? today} value={range} onChange={(v) => { setRange(v); setWishErr(null); }} />
+                {/* 희망 기간은 내일부터예요(서버 규칙): 오늘 칸은 꺼 둬요. 내일 날짜를 화면이 셈하지 않으려고 오늘을 '안 됨'으로 표시해요(QA r6 L15) */}
+                <Calendar mode="range" label="희망 기간 고르기" today={today} month={range?.from ?? today} value={range} marks={{ [today]: ["unavailable"] }} onChange={(v) => { setRange(v); setWishErr(null); }} />
               </div>
               {wishErr ? <p id={ids.wishErr} className={s.err} role="alert"><Icon name="error" size={16} />{wishErr}</p> : null}
             </Group>

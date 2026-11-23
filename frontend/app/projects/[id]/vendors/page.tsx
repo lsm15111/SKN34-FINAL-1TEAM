@@ -24,6 +24,9 @@ export default async function VendorsPage({ params }: { params: Promise<{ id: st
     ? `${list.area_name} ${n}곳 · 모두 사업자 확인함 · 가견적 낮은 순 · 표준견적서 ${won(list.standard_total)}`
     : undefined;
   const context = n ? `업체 ${n}곳 보는 중` : "업체 보기 보는 중";
+  // 업체를 확정한 뒤 담기 띠가 가리킬 다음 할 일(공사 요약 '지금 할 일', 없으면 공사 날짜)
+  const todo = shell.todo.find((t) => t.href);
+  const next = { label: todo?.label ?? "공사 날짜 보기", href: todo?.href ?? `${base}/schedule` };
   return (
     <>
       <AppHeader only="phone" phone={{ title: "업체 보기", back: `${base}/standard`, action: n ? <AsideOpenButton /> : undefined }} />
@@ -31,6 +34,7 @@ export default async function VendorsPage({ params }: { params: Promise<{ id: st
         projectId={shell.id}
         list={list}
         shortlist={shortlist}
+        next={next}
         mock={shell.mock}
         head={{ title: "업체 보기", crumbs: [{ label: "내 공사", href: "/my" }, { label: shell.name, href: base }, { label: "업체 보기" }], desc }}
         aside={<AiPanel screen="vendors" projectId={shell.id} context={context} />}
