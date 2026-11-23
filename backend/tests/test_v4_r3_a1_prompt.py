@@ -4,6 +4,8 @@
   규칙은 '말풍선 둘(많아야 셋) · 모두 합쳐 많아야 다섯 문장 · 문장은 50자 안팎'이고, 예시 답 전체는 그대로 160자 안이에요.
 - 결정 2: 목록(-, 1.) · 굵은 글씨 · 제목 없음. 결정 3: 한국어로만.
 - 할 일 2: 이름 부르기 원리 · '반갑습니다' · 지키지 못할 약속 · 취소 까닭 · 조사는 부탁했을 때만 · 채팅이 열린 업체만.
+- 고침 6차(QA r6): 고객 답은 두세 문장 · 많아야 네 문장(예시도 넷 안), 막는 답 뒤 지금 할 일로 돌아오기, 밤 알림은
+  미룬 알림 줄이 있을 때만, 먼 지역 · 목공 · 업체에 알리는 길 · 누가 할 일 · 채팅 열림은 턴 사실 말대로.
 """
 
 import re
@@ -14,7 +16,8 @@ from app.assistant import prompts
 from tests.test_v4_prompt_examples import PROMPTS, answers, sl
 
 EXAMPLE_BUBBLES = 3  # '말풍선 둘(많아야 셋)'
-EXAMPLE_SENTS = 5  # '모두 합쳐 많아야 다섯 문장'
+# 고객 '많아야 네 문장'(고침 6차) · 업체 '많아야 다섯 문장'
+EXAMPLE_SENTS = {"customer_v4": 4, "vendor_v4": 5}
 SENT_CHARS = 60  # '문장은 50자 안팎'
 EXAMPLE_CHARS = 160  # 예시 답 전체(모델이 예시 길이를 따라 해요)
 BUBBLE = re.compile(r"\n[ \t]*\n")
@@ -36,7 +39,7 @@ def test_example_answers_are_short_and_plain(name):
         why = []
         if len(bubbles) > EXAMPLE_BUBBLES:
             why.append(f"말풍선 {len(bubbles)}개")
-        if len(sents) > EXAMPLE_SENTS:
+        if len(sents) > EXAMPLE_SENTS[name]:
             why.append(f"{len(sents)}문장")
         if any(len(x) > SENT_CHARS for x in sents):
             why.append(f"{SENT_CHARS}자 넘는 문장")
@@ -54,7 +57,8 @@ def test_example_answers_are_short_and_plain(name):
 @pytest.mark.parametrize("name", ["customer_v4", "vendor_v4"])
 def test_rules_set_length_format_and_korean_only(name):
     r = rules(name)
-    assert "말풍선 둘(많아야 셋)" in r and "많아야 다섯 문장" in r
+    assert "말풍선 둘(많아야 셋)" in r
+    assert ("두세 문장, 많아야 네 문장" if name == "customer_v4" else "많아야 다섯 문장") in r
     assert ("문장은 50자 안팎으로 짧게" if name == "customer_v4" else "문장은 짧게 끊고") in r
     assert "목록(-, 1.) · 굵은 글씨 · 제목을 쓰지 마" in r
     assert "한국어로만 답해" in r and "지금은 한국어로만 답할 수 있어요" in r
@@ -71,7 +75,11 @@ def test_customer_rules_follow_the_r3_list():
     assert "말하지 않았으면 other" in r
     assert "업체가 수락하면 정해져요" in r
     assert "고객이 부탁했을 때만 start_research" in r and "찾아볼지 묻기만" in r
-    assert "채팅이 열린 업체만" in r and "업체가 실측 시간을 수락하면 채팅이 열려요" in r
+    assert (
+        "채팅이 열린 업체만" in r
+        and "그 줄 괄호 말대로" in r
+        and "실측 날짜가 정해지면 채팅이 열려요" in r
+    )
     assert "새로 만들겠다거나 만들까 묻지 말고" in r
     assert "'먼저 확인해 볼게요' 같은 혼잣말" in r and "'도구가 실패해서'" in r
     assert "지난 턴들과 같은 끝 질문은 되풀이하지 마" in r
@@ -93,3 +101,30 @@ def test_vendor_rules_ban_inside_words_and_written_choices():
     assert "글로 다시 묻지 말고" in r and "같은 확인을 다시 묻지 말고" in r
     assert "다른 요청의 카드를 이 요청에 붙이지 마" in r
     assert "새 카드로 바뀌어 닫힌 카드는 남아 있다고 하지 말고" in r
+
+
+def test_customer_rules_follow_the_r6_list():
+    """고침 6차(QA r6) 원리: 막는 답 뒤 지금 할 일로 · 밤 알림은 미룬 알림 줄이 있을 때만 · 먼 지역은 한 문장 · 목공은
+    연결 준비 중과 다음 걸음 하나 · 업체에 알리는 실제 길 · 누가 할 일인지 · 기간은 보드와 같게 · 취향은 고르는 법."""
+    r = rules("customer_v4")
+    assert "범위 밖 · 잡담 · 되돌리기에도 한 문장으로 짧게 답하고 이 걸음으로 돌아와" in r
+    assert "알림은 밤에도 바로 가" in r and "그 줄이 있을 때만 미룬 알림이 언제 가는지 말해" in r
+    assert "밤 알림은 아침에 가요" not in prompts._model_text("customer_v4")
+    assert "집과 먼 지역" in r and "지금 할 일로 돌아와" in r
+    assert "그 업체 연결은 아직 준비 중이야" in r and "'공정을 바꾸세요'" in r
+    assert "그 업체를 찾아 달라고 하면 이 말부터 하고" in r and "믿집 밖에서 찾아볼지 묻기만" in r
+    assert "도배를 같이 하면 도배는 업체 연결까지 된다고" in r
+    assert "업체에 전하는 길은 셋뿐이야" in r and "날짜 · 메모는 안 가" in r
+    assert "요청은 두고 알리는 길(실측 때 · 열린 채팅)을 먼저 말하고" in r
+    assert "고객에게 시키지 말고" in r and "건조 · 입주 청소까지" in r
+    assert "취향은 정해 주지 말고 고르는 법을 말해" in r
+    assert "모른다 · 확인할 수 없다고 하지 말고" in r and "[리뷰 쓰기]" in r
+
+
+def test_vendor_rules_point_to_real_screen_paths():
+    """고침 6차(QA r6 c4 V15 · V16 · V19 · V21): 못 하는 부탁도 대신 되는 길로. 수락한 날짜는 업체 화면에서 못 바꿔요."""
+    r = rules("vendor_v4")
+    assert "대신 되는 길(화면 단추 · 채팅 · 카드) 하나로 이어" in r
+    assert "[추가 금액 올리기]" in r and "[공사 끝 알리기]" in r and "'리뷰 · 답글'" in r
+    assert "업체 화면에서 바로 바꿀 수 없어요" in r and "propose_dates" in r
+    assert "알림은 밤에도 바로 가고" in r and "밤 9시~아침 9시 알림은 아침에 가" not in r
