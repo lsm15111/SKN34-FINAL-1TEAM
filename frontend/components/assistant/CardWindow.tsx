@@ -5,7 +5,7 @@
 // 창 안에서 다른 카드 주소로 가면 바탕 · 틀은 그대로 두고 안만 바꿔요(iOS 시트 · 머티리얼처럼). 처음 열 때만 올라오고, 모양이
 // 바뀌어도(시트 ↔ 서랍 ↔ 가운데 창) 다시 올라오지 않아요. 앞 단계가 있으면 머리 왼쪽 '앞 화면으로'(한 칸 뒤로),
 // 바탕 · X · Esc는 창 전체를 닫고 대화로 가요(몇 칸 돌아갈지는 Shell이 정해요). 단계를 옮기면 제목에 초점을 두고,
-// 뒤로 · 앞으로 돌아온 단계는 그때 보던 스크롤 자리로, 새 단계는 맨 위에서 열어요.
+// 뒤로 · 앞으로 돌아온 단계는 그때 보던 스크롤 자리로, 새 단계는 맨 위에서 열어요. 스크롤은 머리 아래 몸통만 해요.
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { I } from "./kit/icons";
 import s from "./assistant.module.css";
@@ -21,7 +21,7 @@ export function CardWindow({ kind, title, step, onBack, onClose, children }: {
 }) {
   const id = useId();
   const head = useRef<HTMLHeadingElement>(null);
-  const panel = useRef<HTMLDivElement>(null);
+  const body = useRef<HTMLDivElement>(null);
   // 처음 열 때만 올라와요(애니메이션이 끝나면 떼서, 모양을 바꿔도 다시 돌지 않아요)
   const [entering, setEntering] = useState(true);
   const close = useRef(onClose);
@@ -39,7 +39,7 @@ export function CardWindow({ kind, title, step, onBack, onClose, children }: {
   const shown = useRef<string | null>(null);
   const key = `${step.at}|${step.path}`;
   useLayoutEffect(() => {
-    const el = panel.current;
+    const el = body.current;
     if (el && shown.current !== null && shown.current !== key) {
       tops.current.set(shown.current, top.current);
       el.scrollTop = step.pop ? (tops.current.get(key) ?? 0) : 0;
@@ -53,13 +53,11 @@ export function CardWindow({ kind, title, step, onBack, onClose, children }: {
   return (
     <div className={s.sheetBg} data-enter={enter} onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div
-        ref={panel}
         className={PANEL[kind]}
         data-enter={enter}
         role="dialog"
         aria-modal="true"
         aria-labelledby={id}
-        onScroll={(e) => { top.current = e.currentTarget.scrollTop; }}
         onAnimationEnd={(e) => { if (e.target === e.currentTarget) setEntering(false); }}
       >
         <div className={onBack ? `${s.sheetHead} ${s.sheetHeadBack}` : s.sheetHead}>
@@ -67,7 +65,7 @@ export function CardWindow({ kind, title, step, onBack, onClose, children }: {
           <h2 id={id} ref={head} tabIndex={-1}>{title}</h2>
           <button type="button" className={s.x} aria-label={`${title} 닫기`} onClick={onClose}><I n="x" /></button>
         </div>
-        <div className={s.sheetBody}>{children}</div>
+        <div ref={body} className={s.sheetBody} onScroll={(e) => { top.current = e.currentTarget.scrollTop; }}>{children}</div>
       </div>
     </div>
   );
