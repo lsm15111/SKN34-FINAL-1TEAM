@@ -371,6 +371,8 @@ export type BoardOut = {
   /** 단계 띠 지금 칸(0 집 정보 ~ 6 공사) */
   step: number;
   facts: string[];
+  /** 지금 집 정보 카드 값. 대화의 집 정보 카드는 보낸 때 값이 아니라 이 값으로 그려요(저장 · 고치기 뒤 바로 바뀌게) */
+  home?: HomeInfoData | null;
   confirmed: boolean;
   todo: number; waiting: number;
   /** won: 확정한 공정은 지금 공사 금액(확정 + 승인한 추가 금액). extra_won: 그중 승인한 추가 금액 */
@@ -391,7 +393,8 @@ export type NotifyPage = Schemas["NotificationPage"];
 
 const lastAssistant = (items: FeedItem[], turnId: string) => items.findIndex((x) => x.role === "assistant" && x.turn_id === turnId);
 
-/** 턴 이벤트 하나를 대화에 반영. 같은 card_id면 카드를 바꿔 끼우고, 같은 task_id면 작업 카드를 바꿔요(대화 어디에 있든) */
+/** 턴 이벤트 하나를 대화에 반영. 같은 card_id는 하나만(같은 턴이면 그 자리, 앞 말에 있었으면 지금 답 아래로 옮김, 오늘 정할 일은
+ *  처음 자리), 같은 task_id면 작업 카드를 지금 말 아래로 옮겨요 */
 export function applyTurnEvent(items: FeedItem[], turnId: string, ev: TurnEvent, at: string): FeedItem[] {
   let next = items;
   let i = lastAssistant(next, turnId);
@@ -418,8 +421,15 @@ export function applyTurnEvent(items: FeedItem[], turnId: string, ev: TurnEvent,
     }
     case "card": {
       const { seq: _seq, ...card } = ev.data;
-      const swapped = swapPart(next, (p) => p.t === "card" && p.card.card_id === card.card_id, { t: "card", card });
-      return swapped ?? put([...item.parts, { t: "card", card }]);
+      const same = (p: FeedPart) => p.t === "card" && p.card.card_id === card.card_id;
+      // 같은 턴 안에서 다시 오면 그 자리에서 바꿔 끼워요
+      if (item.parts.some(same)) return put(item.parts.map((p) => (same(p) ? { t: "card" as const, card } : p)));
+      // 오늘 정할 일은 화면이 만든 자리(takeToday)에 그대로 둬요(QA r3 v1 L2)
+      if (card.kind === "today") return swapPart(next, same, { t: "card", card }) ?? put([...item.parts, { t: "card", card }]);
+      // 앞 말에 있던 같은 카드는 지금 답 아래로 옮겨요(하나만, 보는 자리에. 2026-11-23 사용자: 위에 집 정보 카드가 있으면
+      // '집 정보 바꿀게'에 아래로 안 나왔어요)
+      const moved = next.map((x, k) => (k !== i && x.role === "assistant" && x.parts.some(same) ? { ...x, parts: x.parts.filter((p) => !same(p)) } : x));
+      return moved.map((x, k) => (k === i ? { ...item, parts: [...item.parts, { t: "card" as const, card }] } : x));
     }
     case "action": {
       const { seq: _seq, ...action } = ev.data;
@@ -465,21 +475,26 @@ function swapPart(items: FeedItem[], hit: (p: FeedPart) => boolean, part: FeedPa
 }
 
 /**
- * 대화를 다시 열 때도 '같은 card_id면 바꿔 끼우기'(계약서 3장)가 스트림 때와 같게 보이도록:
- * 같은 card_id는 처음 나온 자리에 마지막 값으로 하나만 남겨요(스트림의 applyTurnEvent card와 같은 결과).
+ * 대화를 다시 열 때도 스트림(applyTurnEvent card)과 같게 보이도록 같은 card_id는 하나만 남겨요:
+ * 마지막에 나온 자리에 마지막 값(앞 말의 같은 카드는 뺌). 오늘 정할 일만 처음 나온 자리에 마지막 값이에요(takeToday와 같은 규칙).
  */
 export function foldCards(items: FeedItem[]): FeedItem[] {
   const latest = new Map<string, CardOut>();
-  for (const it of items) if (it.role === "assistant") for (const p of it.parts) if (p.t === "card") latest.set(p.card.card_id, p.card);
+  const lastAt = new Map<string, number>();
+  items.forEach((it, k) => {
+    if (it.role === "assistant") for (const p of it.parts) if (p.t === "card") { latest.set(p.card.card_id, p.card); lastAt.set(p.card.card_id, k); }
+  });
   const seen = new Set<string>();
-  return items.map((it) => {
+  return items.map((it, k) => {
     if (it.role !== "assistant") return it;
     let changed = false;
     const parts = it.parts.flatMap((p): FeedPart[] => {
       if (p.t !== "card") return [p];
-      if (seen.has(p.card.card_id)) { changed = true; return []; }
-      seen.add(p.card.card_id);
-      const card = latest.get(p.card.card_id) ?? p.card;
+      const id = p.card.card_id;
+      const keep = p.card.kind === "today" ? !seen.has(id) : lastAt.get(id) === k && !seen.has(id);
+      if (!keep) { changed = true; return []; }
+      seen.add(id);
+      const card = latest.get(id) ?? p.card;
       if (card !== p.card) changed = true;
       return [{ t: "card", card }];
     });

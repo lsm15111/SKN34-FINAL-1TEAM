@@ -10,27 +10,13 @@ import { InfoForm } from "@/components/start/InfoForm";
 import { InfoLocked } from "@/components/start/InfoLocked";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
-import { getMyProject, getProjectShell, getRegions, getRoomRule, getStartWishes, type ApiProject } from "@/lib/api/project";
-import { decText, todaySeoul } from "@/lib/format";
-import { EMPTY_DRAFT, fromSaved, placeText, roomsOf, type InfoDraft } from "@/lib/guest/info";
+import { getMyProject, getProjectShell, getRegions, getRoomRule, getStartWishes } from "@/lib/api/project";
+import { todaySeoul } from "@/lib/format";
+import { EMPTY_DRAFT, draftOfProject, fromSaved, placeText, roomsOf } from "@/lib/guest/info";
 import { MOCK_V3A, mockKeyOf } from "@/lib/mock/v3a/mode";
 import { getSession, requireRole } from "@/lib/session";
 
 export const metadata = { title: "기본 정보" };
-
-/** v2로 만든 공사(기본 정보 v3 칸이 비었음)는 옛 칸에서 모아요 */
-function draftOfProject(p: ApiProject): InfoDraft {
-  if (p.home) return fromSaved(p.home);
-  return {
-    ...EMPTY_DRAFT,
-    sido: p.sido, sgg: p.sgg, emd: p.emd ?? "",
-    area: p.size.m2 ? decText(String(p.size.m2)) : "",
-    basis: p.size.basis === "exclusive" ? "exclusive" : "supply",
-    occupied: p.occupied, grade: p.trades.dobae?.grade ?? null,
-    budget: p.budget_won ? String(Math.round(p.budget_won / 10000)) : "",
-    start: p.when.kind === "date" ? p.when.start ?? null : null,
-  };
-}
 
 export default async function StartPage({ searchParams }: { searchParams: Promise<{ edit?: string }> }) {
   const { edit } = await searchParams;

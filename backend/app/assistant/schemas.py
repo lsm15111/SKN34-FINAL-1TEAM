@@ -898,6 +898,11 @@ class BoardOut(BaseModel):
     project_name: str
     step: int = Field(ge=0, le=6, description="단계 띠 지금 칸(0 집 정보 ~ 6 공사)")
     facts: list[str]
+    home: HomeInfoData | None = Field(
+        default=None,
+        description="지금 집 정보 카드 값(요약 줄 · 면적 · 철거 범위 · 잠김). 대화의 집 정보 카드가 보낸 때 값이 아니라 "
+        "이 값으로 그려서, 저장 · 고치기 뒤 바로 바뀌어요",
+    )
     confirmed: bool
     todo: int
     waiting: int

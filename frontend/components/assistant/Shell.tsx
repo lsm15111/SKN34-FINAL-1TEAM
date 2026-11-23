@@ -18,9 +18,10 @@ import { MyName, type ActionHandlers } from "./Message";
 import { StepBar } from "./StepBar";
 import s from "./assistant.module.css";
 
-/** me: 로그인한 고객 이름(비서 글의 '고객님'을 그릴 때만 바꿔요, 없으면 null). locked: 처음 연 때 집 정보 잠김(실측 요청 뒤) */
-export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = false, children }: {
-  projectId: string; name: string; me: string | null; unread: number; locked?: boolean; children: ReactNode;
+/** me: 로그인한 고객 이름(비서 글의 '고객님'을 그릴 때만 바꿔요, 없으면 null). locked: 처음 연 때 집 정보 잠김(실측 요청 뒤).
+ *  siteHeader: 사이트 공통 머리(웹, 레이아웃이 그려 넘겨요). 있으면 비서 머리는 웹에서 얇은 공사 줄만 그려요 */
+export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = false, siteHeader, children }: {
+  projectId: string; name: string; me: string | null; unread: number; locked?: boolean; siteHeader?: ReactNode; children: ReactNode;
 }) {
   const a = useAssistant(projectId);
   const router = useRouter();
@@ -80,8 +81,10 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
   const { approve: approveFn, actionOf, send, pending, handled, dismissNudge, items, reload } = a;
   // 지금 잠김: 처음 연 때 값 + 보드 단계 + 이 대화에서 실행한 실측 요청(카드 때 값 can_change는 그때 모습이에요)
   const locked = lockedNow(lockedAtOpen, a.board, items);
+  const home = a.board?.home ?? null;
   const ctx: CardCtx = useMemo(() => ({
     projectId,
+    home,
     now: a.now,
     busy: a.running,
     locked,
@@ -96,7 +99,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
     lastCard: (kind, test) => lastCardIn(items, kind, test),
     lastAction: (kind, test) => lastActionIn(items, kind, test),
     reload: () => { void reload(); },
-  }), [projectId, a.now, a.running, locked, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items, reload]);
+  }), [projectId, home, a.now, a.running, locked, send, approveFn, actionOf, pending, handled, dismissNudge, marks, mark, items, reload]);
 
   const act: ActionHandlers = {
     approve: (x) => { void a.approve(x); },
@@ -125,7 +128,8 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
   return (
     <div className={s.shell}>
       <div inert={cardOpen || boardOpen} style={{ display: "contents" }}>
-        <Header projectId={projectId} name={a.board?.project_name && mock ? a.board.project_name : name} unread={unread} tick={tick} mock={mock} onMock={(x) => { setMarks({}); void a.reset(x).then(() => setMock(x)); }} />
+        {siteHeader}
+        <Header projectId={projectId} name={a.board?.project_name && mock ? a.board.project_name : name} unread={unread} tick={tick} mock={mock} site={!!siteHeader} onMock={(x) => { setMarks({}); void a.reset(x).then(() => setMock(x)); }} />
       </div>
       <div className={s.body}>
         <div
@@ -137,7 +141,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
           <div className={s.thread}>
             <StepBar
               base={base}
-              editHref={`/start?edit=${encodeURIComponent(projectId)}`}
+              editHref={`${base}/home`}
               current={a.board?.step ?? 0}
               onHome={() => scrollTo("section[aria-label='집 확인']")}
               today={a.board?.today_pin ?? 0}
@@ -166,7 +170,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
             <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => a.send(t)} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
           </div>
         </div>
-        <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />
+        <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} editHref={`${base}/home`} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />
       </div>
       <CardSlot onClose={close}>{children}</CardSlot>
     </div>

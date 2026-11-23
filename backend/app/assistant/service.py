@@ -44,6 +44,7 @@ from app.assistant.schemas import (
     ErrorOut,
     FeedPage,
     HealthOut,
+    HomeInfoData,
     LinkOut,
     MemoryOut,
     NudgeOut,
@@ -1394,7 +1395,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     today = today_seoul()
     async with SessionLocal() as s:
         p = await project_service.get_for(s, user, project_id)
-        _, home = await cards.home(s, user, project_id)
+        home_card, home = await cards.home(s, user, project_id)
         o = await schedule_service.overview_for(s, user, project_id, today)
         works = {w.trade: w for w in await schedule_service.work_money(s, user, project_id)}
         opened = await repo.open_count(s, user.id, project_id)
@@ -1428,6 +1429,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         project_name=f"{p.sgg} 아파트 {trades}".strip(),
         step=step,
         facts=home["facts"],
+        home=HomeInfoData.model_validate(home_card.data),
         confirmed=p.home is not None,
         todo=opened + (1 if cards.todo_kind(o.todo) == "todo" else 0),
         waiting=sum(1 for v in o.vendors if v.next.who == "vendor")

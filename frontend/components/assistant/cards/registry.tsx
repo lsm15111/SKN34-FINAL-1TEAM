@@ -1,5 +1,6 @@
 "use client";
-// 카드 kind → 컴포넌트(계약서 3장: 서버 · 화면이 같은 이름). 같은 card_id면 카드를 바꿔 끼워요(lib/api/assistant applyTurnEvent).
+// 카드 kind → 컴포넌트(계약서 3장: 서버 · 화면이 같은 이름). 같은 card_id는 하나만: 뒤 턴에 다시 오면 지금 답 아래로 옮겨요
+// (lib/api/assistant applyTurnEvent · foldCards).
 // 모르는 kind는 그리지 않아요(서버가 새 kind를 먼저 더해도 화면이 깨지지 않게).
 import type { ComponentType } from "react";
 import type { CardKind, CardOut } from "@/lib/api/assistant";

@@ -3,6 +3,7 @@
 // - 손님: 답은 이 기기에만 저장돼요(mj_guest_v3). '표준견적서 보기'를 누르면 가입 없이 /start/standard로 가요(N1 A).
 // - 로그인한 고객: 같은 답으로 POST /projects(Idempotency-Key = 기기 답의 key) → 내 공사 표준견적서로 가요.
 // - 고치기(?edit=): 그 공사 값을 채우고 PATCH /projects/{id}(첫 요청 뒤에는 서버가 409 locked, 화면은 C50).
+//   대화 안 '우리 집 정보' 창(/projects/{id}/home)은 같은 고치기에 after(저장 뒤 갈 곳: 대화) · focus(처음 초점 칸)를 줘요.
 // - 검사는 '표준견적서 보기'를 누를 때 한 번(I6 B): 맨 위 '고칠 칸이 n개 있어요' + 칸 아래 오류 + 첫 틀린 칸으로 옮겨 가요.
 // - 금액은 서버 계산 엔진이 세요. 여기서는 단위만 바꿔요(평 → ㎡ 넣기 도움 · 만 원 → 원).
 // - 칸 아래 도움말 · 저장 안내 · 아래 띠 요약 줄은 두지 않아요(11-19 사용자 결정: 화면을 가볍게).
@@ -29,12 +30,23 @@ import { RegionSheet } from "./RegionSheet";
 import s from "./info.module.css";
 
 export type InfoMode = "guest" | "member" | "edit";
+/** 처음 초점을 줄 칸(오류 칸 + 방 개수 · 시작 희망일) */
+export type InfoFocus = keyof InfoErrors | "rooms" | "start";
 
 const FIELD_ID: Record<keyof InfoErrors, string> = {
   spaces: "inf-spaces", faces: "inf-faces", region: "inf-region", area: "inf-area", occupied: "inf-occupied", grade: "inf-grade", budget: "inf-budget",
 };
+const FOCUS_ID: Record<InfoFocus, string> = { ...FIELD_ID, rooms: "inf-rooms", start: "inf-start" };
 
-export function InfoForm({ regions, roomRule, today, mode, projectId, initial, mock, crumbs }: {
+/** 칸 묶음(id)의 첫 입력 · 단추에 초점을 주고 가운데로 보여요 */
+function focusBox(id: string) {
+  const box = document.getElementById(id);
+  const el = box?.matches("input, button") ? box : box?.querySelector<HTMLElement>("input:not([disabled]), button");
+  el?.focus();
+  box?.scrollIntoView({ block: "center" });
+}
+
+export function InfoForm({ regions, roomRule, today, mode, projectId, initial, mock, crumbs, after, focus }: {
   regions: Region[];
   /** 방 개수 칸 범위 · 평형 기본값 표(서버 계산 엔진) */
   roomRule: RoomRule;
@@ -48,6 +60,10 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
   initial?: InfoDraft;
   /** 개발 예시(NEXT_PUBLIC_MJ_MOCK) */
   mock: boolean;
+  /** 고치기: 저장 뒤 갈 곳(대화 안 창이면 대화로 돌아가 창을 닫아요). 없으면 표준견적서. 있으면 단추 이름은 '저장' */
+  after?: string;
+  /** 처음 초점을 줄 칸(보드의 '우리 집' 줄을 눌러 열었을 때) */
+  focus?: InfoFocus;
 }) {
   const router = useRouter();
   const [d, setD] = useState<InfoDraft>(initial ?? EMPTY_DRAFT);
@@ -75,12 +91,13 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
 
   const set = (patch: Partial<InfoDraft>) => { setD((p) => ({ ...p, ...patch })); setDirty(true); setFormErr(null); };
 
-  function focusField(k: keyof InfoErrors) {
-    const box = document.getElementById(FIELD_ID[k]);
-    const el = box?.matches("input, button") ? box : box?.querySelector<HTMLElement>("input:not([disabled]), button");
-    el?.focus();
-    box?.scrollIntoView({ block: "center" });
-  }
+  const focusField = (k: InfoFocus) => focusBox(FOCUS_ID[k]);
+  // 보드에서 고른 칸으로 처음 초점을 옮겨요(창이 열리며 제목에 준 초점 뒤에)
+  useEffect(() => {
+    if (!focus) return;
+    const t = window.setTimeout(() => focusBox(FOCUS_ID[focus]), 60);
+    return () => window.clearTimeout(t);
+  }, [focus]);
 
   async function submit(e?: React.FormEvent) {
     e?.preventDefault();
@@ -100,7 +117,9 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
     try {
       if (mode === "edit" && projectId) {
         if (!mock) await call("PATCH", `/projects/${encodeURIComponent(projectId)}`, toHomeInfo(d));
-        router.push(`/projects/${projectId}/standard`);
+        // 대화 안 창이면 창을 닫고 대화로(이 창 주소를 대화 주소로 바꿔요). 저장(PATCH)이 보드 · 집 정보 카드를 다시 읽게 해요
+        if (after) router.replace(after, { scroll: false });
+        else router.push(`/projects/${projectId}/standard`);
         router.refresh();
         return;
       }
@@ -132,7 +151,7 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
 
   const errKeys = ERROR_ORDER.filter((k) => errors[k]);
   const place = placeText(regions, d);
-  const cta = d.scope === "partial" ? "부분 표준견적서 보기" : "표준견적서 보기";
+  const cta = after ? "저장" : d.scope === "partial" ? "부분 표준견적서 보기" : "표준견적서 보기";
   const ctaLabel = busy ? "저장하는 중" : cta;
 
   return (
@@ -180,8 +199,10 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
             <div className={s.gh}>
               <Button variant="text" onClick={() => setSheet("pyeong")}>평으로 넣기</Button>
             </div>
-            <ChoiceChips legend="방 개수" value={String(rooms)} onChange={(v) => setRooms(Number(v))}
-              options={Array.from({ length: roomRule.max - roomRule.min + 1 }, (_, i) => { const n = roomRule.min + i; return { value: String(n), label: `${n}개` }; })} />
+            <div id={FOCUS_ID.rooms}>
+              <ChoiceChips legend="방 개수" value={String(rooms)} onChange={(v) => setRooms(Number(v))}
+                options={Array.from({ length: roomRule.max - roomRule.min + 1 }, (_, i) => { const n = roomRule.min + i; return { value: String(n), label: `${n}개` }; })} />
+            </div>
             <div id={FIELD_ID.occupied}>
               <ChoiceChips legend="공사할 때 집은" value={d.occupied === null ? null : d.occupied ? "yes" : "no"} error={errors.occupied} onChange={(v) => set({ occupied: v === "yes" })}
                 options={[{ value: "yes", label: "사는 중" }, { value: "no", label: "빈 집" }]} />
@@ -219,7 +240,7 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
             <div className={s.cols}>
               <div className={s.f}>
                 <p className={s.fl} id="inf-start-l">공사 시작 희망일</p>
-                <button type="button" className={s.pick} aria-labelledby="inf-start-l inf-start-v" onClick={() => setSheet("date")}>
+                <button id={FOCUS_ID.start} type="button" className={s.pick} aria-labelledby="inf-start-l inf-start-v" onClick={() => setSheet("date")}>
                   <span id="inf-start-v" className={d.start ? "mj-num" : s.ph}>{d.start ? dateShort(d.start, today) : "날짜 고르기"}</span>
                   <Icon name="chevron-down" size={18} />
                 </button>

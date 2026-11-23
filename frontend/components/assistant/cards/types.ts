@@ -1,8 +1,10 @@
 // 대화 카드가 받는 것. 카드는 값을 계산하지 않고, 고른 것을 턴(send)이나 승인(approve)으로만 넘겨요.
-import type { ActionKind, ActionOut, CardKind, CardOut, TurnIn } from "@/lib/api/assistant";
+import type { ActionKind, ActionOut, CardKind, CardOut, HomeInfoData, TurnIn } from "@/lib/api/assistant";
 
 export type CardCtx = {
   projectId: string;
+  /** 지금 집 정보(보드를 다시 읽을 때마다 바뀜). 집 정보 카드는 보낸 때 값이 아니라 이 값으로 그려요. 못 읽었으면 null */
+  home: HomeInfoData | null;
   /** 서버 시각(기한 · 오늘 말에만) */
   now: string;
   /** 턴이 도는 중(새 턴은 기다려요) */

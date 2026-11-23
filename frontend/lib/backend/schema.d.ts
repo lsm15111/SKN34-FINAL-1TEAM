@@ -3521,6 +3521,8 @@ export interface components {
             step: number;
             /** Facts */
             facts: string[];
+            /** @description 지금 집 정보 카드 값(요약 줄 · 면적 · 철거 범위 · 잠김). 대화의 집 정보 카드가 보낸 때 값이 아니라 이 값으로 그려서, 저장 · 고치기 뒤 바로 바뀌어요 */
+            home?: components["schemas"]["HomeInfoData"] | null;
             /** Confirmed */
             confirmed: boolean;
             /** Todo */
@@ -4984,6 +4986,15 @@ export interface components {
              */
             now: string;
         };
+        /** FieldChange */
+        FieldChange: {
+            /** Label */
+            label: string;
+            /** Before */
+            before: string | null;
+            /** After */
+            after: string;
+        };
         /** FieldValue */
         FieldValue: {
             /** Label */
@@ -5210,6 +5221,60 @@ export interface components {
             day: string;
             /** Name */
             name: string;
+        };
+        /** HomeArea */
+        HomeArea: {
+            /** M2 */
+            m2: string;
+            /**
+             * Basis
+             * @enum {string}
+             */
+            basis: "supply" | "exclusive";
+            /**
+             * Pyeong
+             * @description 표시용 평(계산 엔진)
+             */
+            pyeong?: string | null;
+        };
+        /** HomeInfoData */
+        HomeInfoData: {
+            /**
+             * Phase
+             * @default confirm
+             * @constant
+             */
+            phase: "confirm";
+            /**
+             * Facts
+             * @description 집 요약 줄(코드 값)
+             */
+            facts: string[];
+            area?: components["schemas"]["HomeArea"] | null;
+            /**
+             * Demolition
+             * @description 철거 범위(모은 조건 demolition): full 전체 철거 · partial 부분 · none 안 함. 전체 철거면 표준견적서가 리모델링 기준이에요
+             */
+            demolition?: ("full" | "partial" | "none") | null;
+            /**
+             * Changes
+             * @description 제안한 바뀜(승인 전)
+             * @default []
+             */
+            changes: components["schemas"]["FieldChange"][];
+            /** Action Id */
+            action_id?: string | null;
+            /**
+             * Saved
+             * @default false
+             */
+            saved: boolean;
+            /**
+             * Locked
+             * @description 실측을 요청해 더 고칠 수 없음
+             * @default false
+             */
+            locked: boolean;
         };
         /**
          * HomeInfoIn

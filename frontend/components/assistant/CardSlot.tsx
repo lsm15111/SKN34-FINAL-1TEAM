@@ -1,6 +1,7 @@
 "use client";
 // 카드 자리: v3 경로가 그대로 카드를 열어요(알림 · 공유 링크 · 메일 링크가 맞게). 해시(#)는 쓰지 않아요.
-// /projects/{id} → 대화만 · /standard · /plan · /vendors · /visits · /quotes · /schedule · /docs · /review → 전체 화면 카드
+// /projects/{id} → 대화만 · /home(우리 집 정보 고치기) · /standard · /plan · /vendors · /visits · /quotes · /schedule · /docs ·
+// /review → 전체 화면 카드
 // /vendors/{vid}(/reviews) → 서랍 · /quotes/{vid}/confirm → 가운데 창.
 import { useSearchParams, useSelectedLayoutSegments } from "next/navigation";
 import type { ReactNode } from "react";
@@ -16,6 +17,8 @@ export function cardOf(segs: string[], view: string | null): { kind: SheetKind; 
   if (!a) return null;
   switch (a) {
     case "standard": return { kind: "sheet", title: "표준견적서" };
+    // 우리 집 정보 고치기: 폼이 웹 1024 이상에서 오른쪽 '넣은 내용' 칸(저장 단추)까지 두 칸이라 가운데 창(560)이 아니라 큰 창이에요
+    case "home": return { kind: "sheet", title: "우리 집 정보" };
     case "plan": return { kind: "sheet", title: "공정표" };
     case "vendors": return b ? { kind: "drawer", title: c === "reviews" ? "리뷰" : "업체 자세히" } : { kind: "sheet", title: "업체 보기" };
     case "visits": return { kind: "sheet", title: b === "new" ? "실측 일정 요청" : b ? "실측 날짜 고르기" : "실측 일정" };

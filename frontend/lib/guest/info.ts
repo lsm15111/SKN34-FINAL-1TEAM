@@ -2,7 +2,7 @@
 // 금액 · 수량은 여기서 만들지 않아요(서버 계산 엔진). 단위만 바꿔요: 평 → ㎡(넣기 도움, C03) · 만 원 → 원(예산 칸).
 // 칸 이름은 API HomeInfoIn과 같아요(dev-03 mj_guest_v3 info). 넣는 동안은 덜 찬 값도 두니 Draft로 따로 둬요.
 import type { Schemas } from "@/lib/backend/client";
-import { dateShort, won } from "@/lib/format";
+import { dateShort, decText, won } from "@/lib/format";
 
 export type HomeInfo = Schemas["HomeInfoIn"];
 export type HomeInfoSaved = Schemas["HomeInfoOut"];
@@ -234,7 +234,21 @@ export function fromSaved(h: HomeInfoSaved): InfoDraft {
   };
 }
 
-const placeOf = (d: Pick<InfoDraft, "sgg">) => d.sgg;
+/** 고치기(/start?edit= · 대화 안 '우리 집 정보' 창)의 처음 값. v2로 만든 공사(기본 정보 v3 칸이 비었음)는 옛 칸에서 모아요 */
+export function draftOfProject(p: Schemas["ProjectOut"]): InfoDraft {
+  if (p.home) return fromSaved(p.home);
+  return {
+    ...EMPTY_DRAFT,
+    sido: p.sido, sgg: p.sgg, emd: p.emd ?? "",
+    area: p.size.m2 ? decText(String(p.size.m2)) : "",
+    basis: p.size.basis === "exclusive" ? "exclusive" : "supply",
+    occupied: p.occupied, grade: p.trades.dobae?.grade ?? null,
+    budget: p.budget_won ? String(Math.round(p.budget_won / 10000)) : "",
+    start: p.when.kind === "date" ? p.when.start ?? null : null,
+  };
+}
+
+const placeOf =(d: Pick<InfoDraft, "sgg">) => d.sgg;
 const areaOf = (d: Pick<InfoDraft, "area" | "basis">) => (d.area.trim() ? `${d.basis === "exclusive" ? "전용" : "공급"} ${d.area.trim()}㎡` : "");
 
 /** 폰 아래 띠 요약 한 줄(C02): '도배 · 전체 · 벽 + 천장 · 아파트 · 상계동 공급 69.4㎡ · 빈 집 · 실크 · 예산 300만 원 · 1.4(월) 시작'. 안 넣은 칸은 빼요 */

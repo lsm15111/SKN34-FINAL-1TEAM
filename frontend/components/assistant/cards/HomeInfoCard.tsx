@@ -4,6 +4,8 @@
 // 주소 찾기는 범위 밖이라 첫 대화(/start)에서 글로만 받아요. 동 · 호는 받지 않아요.
 // 철거 범위(demolition: full · partial · none)는 백엔드 담당이 같은 키로 더해요. 고르면 그 말로 턴을 보내요(비서가 저장 제안을 만들어요).
 // 할 일이 끝난 줄의 카드(old)는 보낸 때 집 요약만 남겨요(저장 · 철거 칩 · 고치기 단추 없음).
+// 요약 줄 · 면적 · 철거 범위 · 잠김은 보낸 때 값이 아니라 지금 값(ctx.home, 보드가 다시 읽을 때마다)으로 그려요: 저장하거나
+// '우리 집 정보' 창에서 고치면 바로 바뀌어요(2026-11-23 사용자). 고치기는 대화 안 창(/projects/{id}/home)이에요.
 import Link from "next/link";
 import { DEMOLITION, type Demolition } from "@/lib/api/assistant";
 import { decText } from "@/lib/format";
@@ -18,14 +20,16 @@ const SAY: Record<Demolition, string> = { full: "철거는 전체 철거로 할�
 const CLOSED = new Set(["rejected", "expired", "failed"]);
 
 export function HomeInfoCard({ card, ctx, old }: CardProps<"home_info">) {
-  const d = card.data;
+  const live = !old && ctx.home ? ctx.home : null;
+  // 제안(바뀜 · 승인 행동)은 카드 값, 집 값(요약 줄 · 면적 · 철거 범위 · 잠김)은 지금 값
+  const d = live ? { ...card.data, facts: live.facts, area: live.area, demolition: live.demolition, locked: live.locked } : card.data;
   const act = d.action_id ? ctx.actionOf(d.action_id) : null;
   const handled = !!d.action_id && ctx.handledOf(d.action_id) && act?.status !== "executed";
   const saved = d.saved || act?.status === "executed";
   const closed = !!act && CLOSED.has(act.status);
   const pending = d.action_id ? ctx.pendingOf(d.action_id) : false;
   const asking = !old && !!d.action_id && !saved && !closed && !handled;
-  const editHref = `/start?edit=${encodeURIComponent(ctx.projectId)}`;
+  const editHref = `/projects/${encodeURIComponent(ctx.projectId)}/home`;
   // 면적은 아래 큰 상자로 보여요(요약 줄의 ㎡ · 평은 겹치지 않게 빼요)
   const facts = d.area ? d.facts.filter((f) => !/㎡|^\d+(\.\d+)?평$/.test(f)) : d.facts;
   const demo = d.demolition ?? null;
@@ -80,12 +84,12 @@ export function HomeInfoCard({ card, ctx, old }: CardProps<"home_info">) {
           <button type="button" className={`${k.btn} ${k.pri}`} disabled={pending || ctx.busy} aria-busy={pending || undefined} onClick={() => d.action_id && ctx.approve(d.action_id)}>
             {act?.summary.approve_label ?? "맞아요, 저장"}
           </button>
-          <Link className={`${k.text} ${k.gray}`} href={editHref}>직접 고칠게요</Link>
+          <Link className={`${k.text} ${k.gray}`} href={editHref} scroll={false}>직접 고칠게요</Link>
         </div>
       ) : d.locked || old ? null : (
         <div className={k.row}>
           {closed ? <span className={k.muted}>저장하지 않았어요</span> : null}
-          <Link className={`${k.btn} ${k.sm}`} href={editHref}>기본 정보 고치기</Link>
+          <Link className={`${k.btn} ${k.sm}`} href={editHref} scroll={false}>기본 정보 고치기</Link>
         </div>
       )}
     </section>

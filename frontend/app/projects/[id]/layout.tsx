@@ -22,8 +22,13 @@ export default async function ProjectLayout({ children, params }: { children: Re
   if (!shell) notFound();
   if ((await uiMode()) === "v4") {
     const { session, unread } = await getShellData();
-    // 비서 글의 '고객님'을 그릴 때만 이 이름으로 바꿔요(이름은 LLM에 보내지 않아요). locked: 처음 연 때 집 정보 잠김(실측 요청 뒤)
-    return <Shell projectId={shell.id} name={shell.name} me={session?.name ?? null} unread={unread} locked={shell.locked}>{children}</Shell>;
+    // 비서 글의 '고객님'을 그릴 때만 이 이름으로 바꿔요(이름은 LLM에 보내지 않아요). locked: 처음 연 때 집 정보 잠김(실측 요청 뒤).
+    // 웹 머리는 다른 화면과 같은 사이트 공통 머리예요(2026-11-23 사용자: 채팅에서 머리가 바뀌었어요). 폰은 비서 머리(‹ 공사 이름)
+    return (
+      <Shell projectId={shell.id} name={shell.name} me={session?.name ?? null} unread={unread} locked={shell.locked} siteHeader={<AppHeader only="web" />}>
+        {children}
+      </Shell>
+    );
   }
   const links = stepLinks(shell.id);
   const steps = PROJECT_STEPS.map((st, i) => ({ ...st, href: links[i] }));

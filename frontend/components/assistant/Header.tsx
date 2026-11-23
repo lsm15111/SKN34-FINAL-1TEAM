@@ -1,6 +1,9 @@
 "use client";
 // 머리: 웹은 로고 · 'AI 비서' · 공사 이름 ▾ · (목업이면 '예시 대본') · 종 · 나, 폰은 ‹ · 공사 이름 · 종.
 // 공사 이름 ▾ 메뉴: 내 공사 모두 보기 · 이 공사 서류 · 이전 화면(v3)으로.
+// site(위에 사이트 공통 머리가 있음, 2026-11-23 사용자 '채팅에선 헤더가 바뀌어'): 웹은 공통 머리 아래 얇은 공사 줄('AI 비서' ·
+// 공사 이름 ▾ · 예시)만 그리고 로고 · 종 · 나는 공통 머리에 맡겨요. 폰은 그대로(‹ · 공사 이름 · 종: 다른 화면의 뒤로형 머리와 같음).
+// 화면마다 머리(banner)가 하나만 보이게 웹 줄(div)과 폰 머리(header)를 따로 그려요.
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { MOCK_SCRIPTS, type MockScript } from "@/lib/mock/assistant/mode";
@@ -9,7 +12,7 @@ import { I, Logo } from "./kit/icons";
 import { UiSwitchButton } from "./UiSwitch";
 import s from "./assistant.module.css";
 
-export function Header({ projectId, name, unread, tick, mock, onMock }: {
+export function Header({ projectId, name, unread, tick, mock, onMock, site = false }: {
   projectId: string;
   name: string;
   unread: number;
@@ -17,33 +20,62 @@ export function Header({ projectId, name, unread, tick, mock, onMock }: {
   tick: number;
   mock: MockScript | null;
   onMock: (script: MockScript) => void;
+  /** 위에 사이트 공통 머리(웹)가 있어요 */
+  site?: boolean;
 }) {
   const base = `/projects/${encodeURIComponent(projectId)}`;
+  const projectMenu = (
+    <Pop button={<>{name}<I n="down" /></>} buttonClass={s.proj} left>
+      <Link href="/my">내 공사 모두 보기</Link>
+      <Link href={`${base}/docs`} scroll={false}>이 공사 서류</Link>
+      <UiSwitchButton to="v3">이전 화면으로 보기</UiSwitchButton>
+    </Pop>
+  );
+  const mockMenu = mock ? (
+    <Pop label="예시 대본 고르기" button={<><I n="sparkle" />예시</>} buttonClass={s.mockBtn}>
+      <p className={s.menuNote}>비서 API 전 예시 대본이에요</p>
+      {MOCK_SCRIPTS.map((x) => (
+        <button key={x.key} type="button" aria-current={mock === x.key ? "true" : undefined} onClick={() => onMock(x.key)}>{x.label}{mock === x.key ? " · 처음부터" : ""}</button>
+      ))}
+    </Pop>
+  ) : null;
+  if (site) {
+    return (
+      <>
+        <div className={`${s.top} ${s.topSub}`}>
+          <div className={s.topIn}>
+            <span className={s.pill}>AI 비서</span>
+            {projectMenu}
+            <span className={s.spacer} />
+            {mockMenu}
+          </div>
+        </div>
+        <header className={`${s.top} ${s.topPhone}`}>
+          <div className={s.topIn}>
+            <Link className={s.iconBtn} href="/my" aria-label="내 공사"><I n="back" /></Link>
+            <h1 className={s.title}>{name}</h1>
+            <span className={s.spacer} />
+            {mockMenu}
+            <Bell projectId={projectId} start={unread} tick={tick} />
+          </div>
+        </header>
+      </>
+    );
+  }
   return (
     <header className={s.top}>
       <div className={s.topIn}>
         <span className={s.webOnly}>
           <Link className={s.logo} href="/"><Logo />믿집</Link>
           <span className={s.pill}>AI 비서</span>
-          <Pop button={<>{name}<I n="down" /></>} buttonClass={s.proj} left>
-            <Link href="/my">내 공사 모두 보기</Link>
-            <Link href={`${base}/docs`} scroll={false}>이 공사 서류</Link>
-            <UiSwitchButton to="v3">이전 화면으로 보기</UiSwitchButton>
-          </Pop>
+          {projectMenu}
         </span>
         <span className={s.phoneOnly}>
           <Link className={s.iconBtn} href="/my" aria-label="내 공사"><I n="back" /></Link>
           <h1 className={s.title}>{name}</h1>
         </span>
         <span className={s.spacer} />
-        {mock ? (
-          <Pop label="예시 대본 고르기" button={<><I n="sparkle" />예시</>} buttonClass={s.mockBtn}>
-            <p className={s.menuNote}>비서 API 전 예시 대본이에요</p>
-            {MOCK_SCRIPTS.map((x) => (
-              <button key={x.key} type="button" aria-current={mock === x.key ? "true" : undefined} onClick={() => onMock(x.key)}>{x.label}{mock === x.key ? " · 처음부터" : ""}</button>
-            ))}
-          </Pop>
-        ) : null}
+        {mockMenu}
         <Bell projectId={projectId} start={unread} tick={tick} />
         <span className={s.webOnly}>
           <Pop label="내 메뉴" button={<span><I n="user" /></span>} buttonClass={s.meBtn}>
