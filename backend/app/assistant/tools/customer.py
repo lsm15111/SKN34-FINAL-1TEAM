@@ -92,7 +92,9 @@ class TradeIn(BaseModel):
     surface="customer",
     kind="read",
     status="집 정보를 보고 있어요",
-    description="이 공사의 집 정보(지역 · 면적 · 평 · 살면서 공사 · 벽지 · 방 · 공사 시작 희망 · 직접 할 일 · 잠김)를 읽어요.",
+    description="이 공사의 집 정보(지역 · 면적 · 평 · 살면서 공사 · 벽지 · 방 · 공사 시작 희망 · 직접 할 일 · 잠김)를 읽고 "
+    "집 정보 카드를 보여 줘요. 고객이 집 정보를 바꾸겠다 · 보여 달라고 하면(무엇을 바꿀지 아직 말하지 않았어도) 글로만 "
+    "되묻지 말고 먼저 이 도구로 카드를 보여 준 뒤 고칠 칸을 물어요. 고칠 값을 말하면 propose_home_info예요.",
     model=NoArgs,
     schema=obj({}),
 )
