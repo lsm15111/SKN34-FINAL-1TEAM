@@ -140,9 +140,18 @@
 .factsEdit a:hover > span { border-color: var(--mj-line-control); background: var(--mj-fill); }
 .factsEdit a:focus-visible { outline: none; }
 .factsEdit a:focus-visible > span { outline: 2px solid var(--mj-link); outline-offset: 1px; }
-.moneyEdit { color: inherit; text-decoration: none; }
-.moneyEdit:hover { border-color: var(--mj-line-control); background: var(--mj-fill); }
-.moneyEdit:focus-visible { outline: 2px solid var(--mj-link); outline-offset: 1px; }
+/* 보드 칸을 누르면 그 칸의 자세히(11-23): 금액 · 기간 상자(오른쪽 ›) · 업체 금액 범위 줄 · 업체 줄 */
+.boxLink { position: relative; padding-right: 36px; color: inherit; text-decoration: none; }
+.boxLink:hover { border-color: var(--mj-line-control); background: var(--mj-fill); }
+.boxLink:focus-visible { outline: 2px solid var(--mj-link); outline-offset: 1px; }
+.boxChev { position: absolute; right: 12px; top: 50%; width: 16px; height: 16px; transform: translateY(-50%); color: var(--mj-text-mute); }
+.rangeLine { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 8px; min-height: var(--mj-hit-min); margin: -6px 0 -8px; padding: 0 2px; font-size: var(--mj-type-caption); color: var(--mj-text-mute); text-decoration: none; }
+a.rangeLine { color: var(--mj-link); font-weight: var(--mj-weight-semibold); }
+a.rangeLine:hover { text-decoration: underline; text-underline-offset: 3px; }
+.vmini li:has(> a) { padding: 0; }
+.vmini li > a { display: flex; flex: 1; min-width: 0; justify-content: space-between; align-items: center; gap: 8px; min-height: var(--mj-hit-min); padding: 9px 12px; color: inherit; text-decoration: none; }
+.vmini li > a:hover { background: var(--mj-fill); }
+.vmini li > a:focus-visible { outline: 2px solid var(--mj-link); outline-offset: -2px; }
 .now2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .now2 > div { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); padding: 10px 12px; display: grid; }
 .now2 span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }

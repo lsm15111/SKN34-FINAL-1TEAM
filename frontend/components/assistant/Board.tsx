@@ -2,24 +2,25 @@
 // 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 지금(정할 일 · 기다리는 일) · 낼 금액 · 업체 · 공사 기간 · 서류 · 비서가 기억하는 것.
 // 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
 // 기억 칩은 GET /assistant/memory(다른 담당) 값이에요. API가 아직 없으면(404) 그 칸을 숨겨요. 칩을 누르고 있으면 내가 한 말이 보여요.
-// '우리 집' 줄 · '고치기' · 예상 공사를 누르면 대화 안 '우리 집 정보' 창(editHref)이 열리고 그 칸에 초점이 가요(2026-11-23 사용자).
-// 철거 범위 · 직접 할 일은 그 창 밖(대화)에서 정해서, 실측 요청 뒤(잠김)에는 고칠 수 없어서 누르지 않아요.
+// 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 · 고치기 → '우리 집 정보' 창
+// (그 칸에 초점, 실측 요청 뒤 잠기면 보기만) · 낼 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 ·
+// 업체 줄 → 그 업체 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류. 철거 범위 · 직접 할 일 줄은 대화에서 정해요.
 import Link from "next/link";
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import type { BoardOut, MemoryOut } from "@/lib/api/assistant";
 import { won } from "@/lib/format";
 import { StatusTag } from "./kit/StatusTag";
 import { I } from "./kit/icons";
 import s from "./assistant.module.css";
 
-export function Board({ board, memory, open, flash, editHref, onClose, onForget }: {
+export function Board({ board, memory, open, flash, base, onClose, onForget }: {
   board: BoardOut | null;
   /** 기억(undefined 읽는 중 · null API 없음) */
   memory: MemoryOut[] | null | undefined;
   open: boolean;
   flash: number;
-  /** 우리 집 정보 고치기 창(/projects/{id}/home). ?field=로 처음 초점 칸을 알려요 */
-  editHref: string;
+  /** 이 공사 주소(/projects/{id}). 칸의 자세히는 그 아래 카드 자리 경로예요 */
+  base: string;
   onClose: () => void;
   onForget: (id: string) => void;
 }) {
@@ -48,8 +49,8 @@ export function Board({ board, memory, open, flash, editHref, onClose, onForget 
           <button type="button" className={`${s.x} ${s.boardX}`} aria-label="보드 닫기" onClick={onClose}><I n="x" /></button>
         </div>
         {!board ? <p className={s.muted}>보드를 불러오고 있어요</p> : (
-          // 폰에서 보드(아래 시트)를 연 채 창으로 가면 보드는 닫아요
-          <Sections b={board} memory={memory === undefined ? board.memory : memory} editHref={editHref} onEdit={open ? onClose : undefined} onForget={onForget} />
+          // 폰에서 보드(아래 시트)를 연 채 자세히로 가면 보드는 닫아요
+          <Sections b={board} memory={memory === undefined ? board.memory : memory} base={base} onOpen={open ? onClose : undefined} onForget={onForget} />
         )}
       </aside>
     </>
@@ -68,24 +69,28 @@ export function factField(fact: string, i: number): string | null {
   return null;
 }
 
-function Sections({ b, memory, editHref, onEdit, onForget }: {
-  b: BoardOut; memory: MemoryOut[] | null; editHref: string; onEdit?: () => void; onForget: (id: string) => void;
+function Sections({ b, memory, base, onOpen, onForget }: {
+  b: BoardOut; memory: MemoryOut[] | null; base: string; onOpen?: () => void; onForget: (id: string) => void;
 }) {
-  const editable = !!b.facts.length && !b.home?.locked;
-  const to = (field: string | null) => (field ? `${editHref}?field=${field}` : editHref);
+  const homeHref = `${base}/home`;
+  // 실측 요청 뒤(잠김)에도 창은 열려요(보기만, 고치기는 막힌 화면). 초점 칸은 고칠 수 있을 때만
+  const locked = !!b.home?.locked;
+  const act = locked ? "보기" : "고치기";
+  const to = (field: string) => (locked ? homeHref : `${homeHref}?field=${field}`);
+  const go = { scroll: false, onClick: onOpen } as const;
   return (
     <>
       <section className={s.bsec}>
         <div className={s.bsecHead}>
           <h3 className={s.bsecT}>우리 집{b.confirmed ? "" : " · 확인 전"}</h3>
-          {editable ? <Link className={s.bsecEdit} href={editHref} scroll={false} onClick={onEdit}>고치기</Link> : null}
+          {b.facts.length ? <Link className={s.bsecEdit} href={homeHref} {...go}>{act}</Link> : null}
         </div>
         {b.facts.length ? (
-          <ul className={editable ? `${s.facts} ${s.factsEdit}` : s.facts}>
+          <ul className={`${s.facts} ${s.factsEdit}`}>
             {b.facts.map((f, i) => {
-              const field = editable ? factField(f, i) : null;
+              const field = factField(f, i);
               return field ? (
-                <li key={f}><Link href={to(field)} scroll={false} onClick={onEdit} aria-label={`${f} · 고치기`}><span>{f}</span></Link></li>
+                <li key={f}><Link href={to(field)} {...go} aria-label={`${f} · ${act}`}><span>{f}</span></Link></li>
               ) : <li key={f}><span>{f}</span></li>;
             })}
           </ul>
@@ -109,48 +114,73 @@ function Sections({ b, memory, editHref, onEdit, onForget }: {
       {b.money ? (
         <section className={s.bsec}>
           <h3 className={s.bsecT}>낼 금액</h3>
-          <div className={s.money}>
+          {/* 금액은 표준견적서(업체를 확정했으면 확정 · 공사 금액). 확정 전 업체 금액이 두 곳 이상이면 무엇의 범위인지 이름을 달아
+              아래 줄로 보여요(서버 값 그대로). 승인한 추가 금액은 공사 금액에 들어가요 */}
+          <Box href={b.money.href} go={go} label={`${b.money.label} ${b.money.won != null ? won(b.money.won) : ""} · 자세히`}>
             <small>{b.money.label}</small>
-            <b className={s.num}>{b.money.range ? `${won(b.money.range[0])} ~ ${won(b.money.range[1])}` : b.money.won != null ? won(b.money.won) : "—"}</b>
-            {/* 승인한 추가 금액은 공사 금액에 들어가요(서버 계산 값) */}
+            <b className={s.num}>{b.money.won != null ? won(b.money.won) : "—"}</b>
             {b.money.extra_won ? <small className={s.num}>승인한 추가 금액 {won(b.money.extra_won)} 포함</small> : null}
-          </div>
+          </Box>
+          {b.money.range ? (
+            b.money.range_href ? (
+              <Link className={s.rangeLine} href={b.money.range_href} {...go}>
+                <span>업체 {b.money.range_label ?? "금액"}</span>
+                <span className={s.num}>{won(b.money.range[0])} ~ {won(b.money.range[1])}</span>
+              </Link>
+            ) : (
+              <p className={s.rangeLine}>
+                <span>업체 {b.money.range_label ?? "금액"}</span>
+                <span className={s.num}>{won(b.money.range[0])} ~ {won(b.money.range[1])}</span>
+              </p>
+            )
+          ) : null}
         </section>
       ) : null}
       {b.vendors?.rows.length ? (
         <section className={s.bsec}>
-          <h3 className={s.bsecT}>{b.vendors.title}</h3>
+          <div className={s.bsecHead}>
+            <h3 className={s.bsecT}>{b.vendors.title}</h3>
+            <Link className={s.bsecEdit} href={`${base}/vendors`} {...go}>모두 보기</Link>
+          </div>
           <ul className={s.vmini}>
-            {/* 상태(공사 단계 · 닫힌 까닭 · 다음 할 일)와 금액(확정한 업체는 지금 공사 금액)을 같이 보여요 */}
-            {b.vendors.rows.map((r) => (
-              <li key={r.name}>
-                <b>{r.name}</b>
-                <span className={s.vstate}>
-                  <StatusTag tone={r.state}>{r.text}</StatusTag>
-                  {r.won != null ? <span className={`${s.num} ${s.muted}`}>{won(r.won)}</span> : null}
-                </span>
-              </li>
-            ))}
+            {/* 상태(공사 단계 · 닫힌 까닭 · 다음 할 일)와 금액(확정한 업체는 지금 공사 금액). 누르면 그 업체 내역(서버 href) */}
+            {b.vendors.rows.map((r) => {
+              const body = (
+                <>
+                  <b>{r.name}</b>
+                  <span className={s.vstate}>
+                    <StatusTag tone={r.state}>{r.text}</StatusTag>
+                    {r.won != null ? <span className={`${s.num} ${s.muted}`}>{won(r.won)}</span> : null}
+                  </span>
+                </>
+              );
+              return <li key={r.name}>{r.href ? <Link href={r.href} {...go}>{body}</Link> : body}</li>;
+            })}
           </ul>
+        </section>
+      ) : b.money ? (
+        // 아직 실측을 요청한 업체가 없으면 업체 목록(가견적 · 담기)으로
+        <section className={s.bsec}>
+          <h3 className={s.bsecT}>업체</h3>
+          <div className={s.links}><Link href={`${base}/vendors`} {...go}>업체 보기</Link></div>
         </section>
       ) : null}
       {b.period ? (
         <section className={s.bsec}>
           <h3 className={s.bsecT}>{b.period.label}</h3>
-          {/* 예상 공사(확정 전)는 시작 희망일로 정해져서 눌러 고쳐요. 확정한 공사 날짜는 업체와 정해요 */}
-          {editable && b.period.label === "예상 공사" ? (
-            <Link className={`${s.money} ${s.moneyEdit}`} href={to("start")} scroll={false} onClick={onEdit} aria-label={`${b.period.label} ${b.period.value} · 시작 희망일 고치기`}>
-              <b className={s.num}>{b.period.value}</b>{b.period.sub ? <small>{b.period.sub}</small> : null}
-            </Link>
-          ) : (
-            <div className={s.money}><b className={s.num}>{b.period.value}</b>{b.period.sub ? <small>{b.period.sub}</small> : null}</div>
-          )}
+          {/* 예상 공사(확정 전)는 예상 공정표, 공사 날짜를 수락했으면 확정 공정표. 시작 희망일은 '우리 집' 줄에서 고쳐요 */}
+          <Box href={`${base}/plan`} go={go} label={`${b.period.label} ${b.period.value} · 공정표 보기`}>
+            <b className={s.num}>{b.period.value}</b>{b.period.sub ? <small>{b.period.sub}</small> : null}
+          </Box>
         </section>
       ) : null}
       {b.docs.length ? (
         <section className={s.bsec}>
-          <h3 className={s.bsecT}>서류</h3>
-          <div className={s.links}>{b.docs.map((d) => <Link key={d.href + d.label} href={d.href} scroll={false}>{d.label}</Link>)}</div>
+          <div className={s.bsecHead}>
+            <h3 className={s.bsecT}>서류</h3>
+            <Link className={s.bsecEdit} href={`${base}/docs`} {...go}>모두 보기</Link>
+          </div>
+          <div className={s.links}>{b.docs.map((d) => <Link key={d.href + d.label} href={d.href} {...go}>{d.label}</Link>)}</div>
         </section>
       ) : null}
       {memory ? (
@@ -170,6 +200,19 @@ function Sections({ b, memory, editHref, onEdit, onForget }: {
         </section>
       ) : null}
     </>
+  );
+}
+
+/** 금액 · 기간 상자. href가 있으면 눌러 그 칸의 자세히를 열어요(오른쪽 ›) */
+function Box({ href, go, label, children }: {
+  href?: string | null; go: { scroll: false; onClick?: () => void }; label: string; children: ReactNode;
+}) {
+  if (!href) return <div className={s.money}>{children}</div>;
+  return (
+    <Link className={`${s.money} ${s.boxLink}`} href={href} {...go} aria-label={label}>
+      {children}
+      <I n="chev" className={s.boxChev} />
+    </Link>
   );
 }
 

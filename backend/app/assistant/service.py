@@ -1371,6 +1371,36 @@ def money_range(o, estimates: dict[uuid.UUID, int]) -> list[int] | None:
     return [min(got), max(got)] if len(got) >= 2 else None
 
 
+# 보드 칸을 누르면 여는 자세히(카드 자리 경로). 2026-11-23 사용자: 낼 금액은 표준견적서, 업체는 그 업체 내역
+VISITING = frozenset({"requested", "offered", "picked", "proposed", "booked", "visited"})
+
+
+def range_kind(o, estimates: dict[uuid.UUID, int]) -> tuple[str | None, bool]:
+    """money_range 값이 무엇에서 왔는지(실측 견적서 · 요청 때 고정한 가견적 · 둘 다)와 받은 견적서가 있는지."""
+    from app.assistant.tools.cards import ENDED
+
+    live = [v for v in o.vendors if v.status not in ENDED]
+    quoted = sum(v.total is not None for v in live)
+    fixed = sum(v.total is None and v.visit_id in estimates for v in live)
+    if quoted and fixed:
+        return "가견적 · 실측 견적서", True
+    return ("실측 견적서" if quoted else "가견적" if fixed else None), quoted > 0
+
+
+def vendor_href(pid: uuid.UUID, v) -> str:
+    """보드 업체 줄 → 그 업체 내역: 확정한 업체는 공사, 견적서를 받았으면 견적서 비교(확정하지 않은 견적서도),
+    실측 중이면 그 실측, 끝난 요청(기한 지남 · 취소 · 못 받음)은 업체 자세히(다시 담기)."""
+    from app.assistant.tools.cards import href
+
+    if v.status == "chosen":
+        return href(pid, "/schedule")
+    if v.status == "quoted" or (v.status == "closed" and v.total is not None):
+        return href(pid, "/quotes")
+    if v.status in VISITING:
+        return href(pid, f"/visits/{v.visit_id}")
+    return href(pid, f"/vendors/{v.vendor_id}" if v.vendor_id else "/visits")
+
+
 def memory_out(m) -> MemoryOut:
     from app.assistant import memory
 
@@ -1416,7 +1446,12 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         if dealt
         else "표준견적서 · 부가세 포함"
     )
-    rows = [cards.board_row(v, o, works, today) for v in o.vendors]
+    rows = [
+        cards.board_row(v, o, works, today).model_copy(update={"href": vendor_href(p.id, v)})
+        for v in o.vendors
+    ]
+    rng = money_range(o, estimates)
+    rng_label, quoted = range_kind(o, estimates) if rng else (None, False)
     final = o.period.kind == "final"
     docs = [
         LinkOut(label="표준견적서", href=cards.href(p.id, "/standard")),
@@ -1435,7 +1470,13 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         waiting=sum(1 for v in o.vendors if v.next.who == "vendor")
         + (1 if cards.todo_kind(o.todo) == "waiting" else 0),
         money=BoardMoneyOut(
-            label=label, won=total, range=money_range(o, estimates), extra_won=extra or None
+            label=label,
+            won=total,
+            range=rng,
+            extra_won=extra or None,
+            href=cards.href(p.id, "/quotes" if dealt else "/standard"),
+            range_label=rng_label,
+            range_href=cards.href(p.id, "/quotes") if quoted else None,
         )
         if m.by_trade
         else None,

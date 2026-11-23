@@ -170,7 +170,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
             <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => a.send(t)} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
           </div>
         </div>
-        <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} editHref={`${base}/home`} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />
+        <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} base={base} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />
       </div>
       <CardSlot onClose={close}>{children}</CardSlot>
     </div>

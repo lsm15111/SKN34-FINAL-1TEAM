@@ -3509,6 +3509,21 @@ export interface components {
              * @description won에 들어간 승인한 추가 금액(부가세 포함, 없으면 비움)
              */
             extra_won?: number | null;
+            /**
+             * Href
+             * @description won을 누르면 여는 자세히(카드 자리 경로): 확정 전 표준견적서, 업체를 확정했으면 실측 견적서
+             */
+            href?: string | null;
+            /**
+             * Range Label
+             * @description range가 무엇인지: 실측 견적서 · 가견적(요청 때 고정) · 둘이 섞이면 '가견적 · 실측 견적서'
+             */
+            range_label?: string | null;
+            /**
+             * Range Href
+             * @description range를 누르면 여는 견적서 비교. 받은 실측 견적서가 없으면 비움
+             */
+            range_href?: string | null;
         };
         /** BoardOut */
         BoardOut: {
@@ -3615,6 +3630,11 @@ export interface components {
             text: string;
             /** Won */
             won?: number | null;
+            /**
+             * Href
+             * @description 이 업체 자세히(카드 자리 경로): 실측 중이면 그 실측, 견적서를 받았으면 견적서 비교, 확정했으면 공사, 닫힌 요청은 업체 자세히
+             */
+            href?: string | null;
         };
         /** BoardVendors */
         BoardVendors: {

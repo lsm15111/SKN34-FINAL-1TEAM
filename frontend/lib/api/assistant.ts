@@ -375,10 +375,15 @@ export type BoardOut = {
   home?: HomeInfoData | null;
   confirmed: boolean;
   todo: number; waiting: number;
-  /** won: 확정한 공정은 지금 공사 금액(확정 + 승인한 추가 금액). extra_won: 그중 승인한 추가 금액 */
-  money: { label: string; won?: number | null; range?: number[] | null; extra_won?: number | null } | null;
-  /** 업체 줄: 상태 또는 가견적(won) */
-  vendors: { title: string; rows: { name: string; state: RowState; text: string; won?: number | null }[] } | null;
+  /** won: 확정한 공정은 지금 공사 금액(확정 + 승인한 추가 금액). extra_won: 그중 승인한 추가 금액.
+   *  href: won을 누르면 여는 자세히(확정 전 표준견적서 · 확정 뒤 실측 견적서). range_label: 범위가 무엇인지(가견적 · 실측 견적서),
+   *  range_href: 범위를 누르면 여는 견적서 비교(받은 견적서가 없으면 비움) */
+  money: {
+    label: string; won?: number | null; range?: number[] | null; extra_won?: number | null;
+    href?: string | null; range_label?: string | null; range_href?: string | null;
+  } | null;
+  /** 업체 줄: 상태 또는 가견적(won). href: 그 업체 내역(실측 · 견적서 비교 · 공사 · 업체 자세히) */
+  vendors: { title: string; rows: { name: string; state: RowState; text: string; won?: number | null; href?: string | null }[] } | null;
   period: { label: string; value: string; sub?: string | null } | null;
   docs: { label: string; href: string }[];
   plan_example: boolean;
