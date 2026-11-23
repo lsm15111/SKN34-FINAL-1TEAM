@@ -206,13 +206,13 @@ def test_engine_for_route_setting():
     assert answer.engine_for("material", "price=v2+v3") == "v3"
 
 
-def test_default_route_is_grounds_except_price_and_period():
-    """기본값(2026-11-23 사용자 결정 · 판정 j-route-terra): 지식 · 방법 · 자재 · 일반은 v2g+v3(공정 전문지식만 받아
-    비서가 한 번에 씀), 금액 · 기간은 v3(계산 엔진 값 근거)."""
-    route = "period=v3,price=v3,*=v2g+v3"
-    assert answer.engine_for("general", route) == "v2g+v3"
-    assert answer.engine_for("process", route) == "v2g+v3"
-    assert answer.engine_for("material", route) == "v2g+v3"
+def test_default_route_is_experts_except_price_and_period():
+    """기본값(2026-11-24 리드 · Opus 판정 짝 비교 143문항, docs/v4/13): 지식 · 방법 · 자재 · 일반은 expert+v3(코드가
+    도배 · 목공을 고르고 공정 전문가 결과를 비서가 한 번에 씀, 모르면 v2g), 금액 · 기간은 v3(계산 엔진 값 근거)."""
+    route = "period=v3,price=v3,*=expert+v3"
+    assert answer.engine_for("general", route) == "expert+v3"
+    assert answer.engine_for("process", route) == "expert+v3"
+    assert answer.engine_for("material", route) == "expert+v3"
     assert answer.engine_for("price", route) == "v3"
     assert answer.engine_for("period", route) == "v3"
     from app.config import Settings

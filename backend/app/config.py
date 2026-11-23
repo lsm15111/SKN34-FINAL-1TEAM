@@ -52,7 +52,9 @@ class Settings(BaseSettings):
     # 한 번에 정리한다(v2g, 2026-11-23 사용자 결정 · 판정 j-route-terra: 품질 비슷 · 턴 비용 41% 적고 35% 빠름).
     # expert · expert+v3: 코드가 공정(도배 · 목공 · 둘 다)을 고르고 공정 전문가(assistant/experts, LLM 구조화 답)가
     # 근거 번호 · 주의점 · 확인할 조건을 내면 비서가 받아 써요. 모르는 공정 · 실패는 v2g로 물러서요(docs/v4/13)
-    assistant_answer_route: str = "period=v3,price=v3,*=v2g+v3"
+    # 기본(2026-11-24 리드, 사용자 '오케스트레이터 - 목공 · 도배' · Opus 판정 짝 비교 143문항): expert+v3.
+    # 비교 67 +0.04 · 도배 · 목공 36 +0.56 [+0.14, +1.06] · K held-out 40 −0.20 [−0.60, +0.17] · 합 +0.10(같거나 나음)
+    assistant_answer_route: str = "period=v3,price=v3,*=expert+v3"
     # 공정 전문가 모델: main = 비서와 같은 모델 · 강도(기본), light = 'trade' 목적 기본(가벼운 모델)
     assistant_expert_model: Literal["main", "light"] = "main"
     # 비서 지시문 판 묶음(assistant/prompts SETS): v4(기본, customer_v4 · vendor_v4 · nudge_write_v3) · v3(옛 판).

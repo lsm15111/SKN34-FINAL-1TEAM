@@ -61,7 +61,7 @@ def test_search_words_spell_out_as(q, want):
 
 
 def test_warranty_period_question_skips_schedule_route(api, script, monkeypatch, repo_search):  # noqa: F811
-    """기본 길(period=v3 · price=v3 · 나머지 v2g+v3): AS 기간은 v2 근거, 공사 기간은 계산 엔진 값을 쓰는 v3예요."""
+    """답 길(period=v3 · price=v3 · 나머지는 v2g 근거): AS 기간은 v2 근거, 공사 기간은 계산 엔진 값을 쓰는 v3예요."""
     _, pid = home(api)
     monkeypatch.setattr(settings, "assistant_answer_route", "period=v3,price=v3,*=v2g+v3")
     _gate(monkeypatch, "trade")
