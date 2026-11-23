@@ -19,6 +19,7 @@
 import argparse
 import csv
 import json
+import math
 import os
 import random
 import re
@@ -61,6 +62,9 @@ CHAT_DIMS = (*DIMS, "progress")
 DIM_KO = {**jg.DIM_KO, "progress": "진행"}
 RETRY = 3
 TURN_MAX = 1200  # 대화: 비서 말 하나 글자 상한
+TOOL_FULL = 4000  # 판정기 기준 값: 도구 결과 하나 글자 상한(원본 seen에서)
+FACTS_FULL = 9000  # 판정기 기준 값 전체 글자 상한
+QUOTE_DAYS = 3  # sim/world.py QUOTE_DEFAULT 기간(시나리오에 기간이 없을 때)
 OUT_TOK = {"answer": 900, "control": 900, "chat": 1200}  # 어림 출력 토큰
 NULL_N = 3  # 빈 답 · 모름 대조군은 앞 3개 질문만
 LEVELS = ((8, 10, "내보낼 만함"), (5, 7, "쓸 만함"), (1, 4, "고쳐야 함"))
@@ -132,8 +136,23 @@ def answer_body(text: str, facts: str) -> str:
     body = (text or "").strip() or "(빈 답)"
     if len(body) > jg.ANSWER_MAX:
         body = body[: jg.ANSWER_MAX] + f"\n(이하 {len(body) - jg.ANSWER_MAX}자 생략)"
-    calc = (facts or jg.NO_FACTS)[: jg.FACTS_MAX]
+    calc = (facts or jg.NO_FACTS)[:FACTS_FULL]
     return f"## 답\n<answer>\n{body}\n</answer>\n이 답이 받은 계산 값: {calc}\n\n위 답을 루브릭대로 매겨 주세요."
+
+
+def full_facts(r: dict) -> str:
+    """판정기 기준 값: 턴 사실 + 도구 결과 원본(tool_rows의 seen = 모델이 받은 값). facts_given은 도구마다 900자에서
+    잘려 표준견적서 paper 칸(벽지를 직접 사면 바뀔 합계) 같은 계산 값이 빠졌어요(2026-11-23 set30:xd105 오판)."""
+    given = r.get("facts_given") or ""
+    head = given.split("\n", 1)[0] if given.startswith("턴 사실") else ""
+    tools = [t for t in r.get("tool_rows") or [] if t.get("seen") is not None]
+    if not tools:
+        return given or jg.NO_FACTS
+    body = [
+        f"{t['name']}: {json.dumps(t['seen'], ensure_ascii=False, separators=(',', ':'))[:TOOL_FULL]}"
+        for t in tools
+    ]
+    return "\n".join([head, *body] if head else body)[:FACTS_FULL]
 
 
 def load_answers(a) -> list[Item]:
@@ -144,7 +163,7 @@ def load_answers(a) -> list[Item]:
         q = sets.get(r["id"])
         if r.get("system") != a.system or r.get("error") or q is None:
             continue
-        facts = r.get("facts_given") or jg.NO_FACTS
+        facts = full_facts(r)
         x = jg.Item(
             id=r["id"], source=q["source"], split=q["split"], group=q["group"], kind=q.get("kind", ""),
             question=q["turns"][-1], history=q["turns"][:-1], home_text=r.get("home_text") or "",
@@ -188,7 +207,9 @@ def _who(r: dict) -> str:
 
 
 def world_lines(sc: dict, days: int) -> list[str]:
-    """시나리오가 대화 전에 만들어 둔 상태. 날짜는 시뮬레이터처럼 days만큼 옮겨요. 연락처 · 주소는 넣지 않아요."""
+    """시나리오가 대화 전에 만들어 둔 상태 중 시뮬레이터가 실제로 심는 것만(sim/world.py). 날짜는 시뮬레이터처럼 days만큼
+    옮겨요. 업체 별점 · 후기 · 빈 반나절은 심지 않아 빼고(2026-11-23 S05 오판), 견적서 기간은 정수 일로 올려 심어서
+    똑같이 올려요(S06 오판). 연락처 · 주소는 넣지 않아요."""
     w = simcheck.shift_obj(sc.get("world") or {}, days)
     names = {v.get("ref"): v.get("name") for v in w.get("vendors") or []}
     home = {k: v for k, v in (w.get("home") or {}).items() if v not in (None, "", [])}
@@ -198,21 +219,19 @@ def world_lines(sc: dict, days: int) -> list[str]:
     if (w.get("project") or {}).get("stage"):
         out.append(f"- 공사 단계: {w['project']['stage']}")
     for v in w.get("vendors") or []:
-        info = [f"{v.get('gu', '')} · 공정 {v.get('trades')}"]
-        info += (
-            [f"평점 {v['rating']} · 후기 {v.get('reviews')} · 시공 {v.get('done')}"]
-            if v.get("rating")
-            else []
+        info = [f"{v.get('gu', '')} · 공정 {v.get('trades')}"] + (
+            ["단가 확인함"] if v.get("price_confirmed") else []
         )
-        info += ["단가 확인함"] if v.get("price_confirmed") else []
-        info += [f"실측 가능 {v['free_halves']}"] if v.get("free_halves") else []
         out.append(f"- 업체 {v.get('name')}: " + " · ".join(info))
     for x in w.get("visits") or []:
         q = x.get("quote") or {}
         line = f"- 실측 요청 {names.get(x.get('vendor'), x.get('vendor'))}({x.get('trade')}): {x.get('status')}"
         line += f" · 희망 {x['wish']}" if x.get("wish") else ""
         if q:
-            line += f" · 견적 {q.get('version')}판 {q.get('total')}원(부가세 {q.get('vat')}) · {q.get('days')}일"
+            qd = math.ceil(q.get("days") or QUOTE_DAYS)  # sim/world.py가 심는 값(정수 일)
+            line += (
+                f" · 견적 {q.get('version')}판 {q.get('total')}원(부가세 {q.get('vat')}) · {qd}일"
+            )
         out.append(line)
     deals = {d.get("ref"): d for d in w.get("deals") or []}
     for d in deals.values():
@@ -242,14 +261,21 @@ def chat_head(sc: dict, r: dict) -> str:
     state = world_lines(sc, int(r.get("shift_days") or 0))
     if state:
         lines += ["", "## 대화 전 상태(시나리오가 미리 만든 것, 비서도 알고 시작해요)", *state]
+    if r.get("notes"):  # 시나리오와 실제로 심은 상태가 다른 점(빈 반나절 · 임시 면적 등)
+        lines += [
+            "",
+            "## 시뮬레이터 메모(위 상태보다 이것이 맞아요)",
+            *(f"- {n}" for n in r["notes"]),
+        ]
     if sc.get("judge"):
         lines += ["", "## 이 대화에서 특히 볼 것", *(f"- {h}" for h in sc["judge"])]
     return "\n".join(lines)
 
 
-def chat_body(r: dict) -> str:
-    """대화를 한 글로. 결정 · 바깥 일은 시뮬레이터처럼 대본 글 턴 번호로 묶어 그 턴 뒤에 붙여요
-    (sim/run.py: 단추 · 되묻기 턴은 번호에 안 들고, 턴마다 바깥 일을 먼저 일으킨 뒤 사람이 결정해요. 0번은 대화 전)."""
+def timeline(r: dict) -> list[dict]:
+    """시뮬레이터 기록 → 차례. {"kind": "before" | "turn" | "screen" | "marks", "n": 말 턴 번호, "turn": 기록, ...}.
+    결정 · 바깥 일은 시뮬레이터처럼 대본 글 턴 번호로 묶어 그 묶음의 마지막 기록 뒤에 둬요(sim/run.py: 단추 · 되묻기 턴은
+    번호에 안 들고, 턴마다 바깥 일을 먼저 일으킨 뒤 사람이 결정해요. 0번은 대화 전). 누르지 못한 단추 걸음은 빼요."""
     who = _who(r)
     marks: dict[int, list[str]] = defaultdict(list)
     for e in r.get("events") or []:
@@ -260,36 +286,54 @@ def chat_body(r: dict) -> str:
             f"({d['code']})" if d.get("code") else ""
         )
         marks[int(d.get("turn") or 0)].append(f"[{who}: {d.get('kind')} {did} → {res}]")
-    out = ["### 대화 전\n" + "\n".join(marks[0])] if marks.get(0) else []
+    out = [{"kind": "before", "marks": marks[0]}] if marks.get(0) else []
     n = script = 0
     for t in r.get("turns") or []:
         if t.get("kind") == "screen":
-            out.append(f"[화면: {t.get('screen')}]")
+            out.append({"kind": "screen", "screen": t.get("screen")})
             continue
-        if t.get("kind") == "press":  # 누르지 못한 단추 걸음은 빼요
+        if t.get("kind") == "press":
             continue
         if not t.get("press") and not t.get(
             "ask_for"
-        ):  # 대본 글 턴: 앞 턴 묶음의 결정 · 바깥 일을 먼저 붙여요
+        ):  # 대본 글 턴: 앞 묶음의 결정 · 바깥 일을 먼저
             if script and marks.get(script):
-                out.append("\n".join(marks[script]))
+                out.append({"kind": "marks", "marks": marks[script]})
             script += 1
         n += 1
-        text = (t.get("text") or "").strip() or "(글 없음)"
-        if len(text) > TURN_MAX:
-            text = text[:TURN_MAX] + " …(생략)"
-        said = f"{who}: {t.get('say', '')}"
-        if t.get("press"):
-            said += f" [카드 단추로 보냄: {t['press'].get('kind')}]"
-        lines = [f"### 턴 {n}", said, f"비서: {text}"]
-        shown = [f"[카드: {c}]" for c in dict.fromkeys(t.get("cards") or [])]  # 같은 카드는 한 번
-        shown += [f"[승인 카드: {x.get('kind')}]" for x in t.get("actions") or []]
-        if t.get("turn_status") not in (None, "done"):
-            shown.append(f"[턴 {t.get('turn_status')} · {t.get('reason')}]")
-        lines += [" ".join(shown)] if shown else []
-        out.append("\n".join(lines))
+        out.append({"kind": "turn", "n": n, "turn": t})
     if script and marks.get(script):
-        out.append("\n".join(marks[script]))
+        out.append({"kind": "marks", "marks": marks[script]})
+    return out
+
+
+def turn_lines(t: dict, n: int, who: str, cap: int = TURN_MAX) -> list[str]:
+    text = (t.get("text") or "").strip() or "(글 없음)"
+    if len(text) > cap:
+        text = text[:cap] + " …(생략)"
+    said = f"{who}: {t.get('say', '')}"
+    if t.get("press"):
+        said += f" [카드 단추로 보냄: {t['press'].get('kind')}]"
+    lines = [f"### 턴 {n}", said, f"비서: {text}"]
+    shown = [f"[카드: {c}]" for c in dict.fromkeys(t.get("cards") or [])]  # 같은 카드는 한 번
+    shown += [f"[승인 카드: {x.get('kind')}]" for x in t.get("actions") or []]
+    if t.get("turn_status") not in (None, "done"):
+        shown.append(f"[턴 {t.get('turn_status')} · {t.get('reason')}]")
+    return lines + ([" ".join(shown)] if shown else [])
+
+
+def chat_body(r: dict) -> str:
+    """대화를 한 글로(timeline 차례). 카드 · 승인 카드 · 결정 · 화면 · 일어난 일을 표시로 넣어요."""
+    who, out = _who(r), []
+    for s in timeline(r):
+        if s["kind"] == "before":
+            out.append("### 대화 전\n" + "\n".join(s["marks"]))
+        elif s["kind"] == "marks":
+            out.append("\n".join(s["marks"]))
+        elif s["kind"] == "screen":
+            out.append(f"[화면: {s['screen']}]")
+        else:
+            out.append("\n".join(turn_lines(s["turn"], s["n"], who)))
     return "## 대화\n" + "\n\n".join(out) + "\n\n위 대화의 비서 말 전체를 루브릭대로 매겨 주세요."
 
 

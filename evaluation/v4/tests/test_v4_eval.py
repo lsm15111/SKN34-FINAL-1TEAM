@@ -18,6 +18,7 @@ from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import agent_judge
 import apienv
 import budget
 import build_sets
@@ -817,17 +818,32 @@ class GradeTest(unittest.TestCase):
         self.assertEqual(body.count("[카드: vendor_brief]"), 1)
         self.assertNotIn("missed", body)
 
-    def test_world_lines_shift_dates_and_leave_out_contacts(self):
+    def test_world_lines_show_only_what_the_simulator_seeds(self):
+        # 시뮬레이터는 별점 · 빈 반나절을 심지 않고 견적서 기간은 정수 일로 올려 심어요(sim/world.py)
         sc = {"world": {
             "customer": {"phone": "010-5555-0101", "address": "101동 1203호"},
-            "vendors": [{"ref": "m", "name": "마루와벽", "gu": "마포구", "phone": "010-3333-4444"}],
+            "vendors": [{"ref": "m", "name": "마루와벽", "gu": "마포구", "phone": "010-3333-4444",
+                         "rating": 4.8, "free_halves": ["2027-01-16:am"]}],
+            "visits": [{"vendor": "m", "trade": "dobae", "status": "quoted",
+                        "quote": {"version": 1, "total": 3300000, "vat": "excluded", "days": 2.5}}],
             "deals": [{"ref": "d", "vendor": "m", "trade": "dobae", "status": "scheduled",
                        "start": "2027-01-13", "end": "2027-01-15"}],
         }}  # fmt: skip
         text = "\n".join(grade.world_lines(sc, -42))
         self.assertIn("업체 확정 마루와벽(dobae): scheduled · 공사 2026-12-02~2026-12-04", text)
-        self.assertNotIn("010-", text)
-        self.assertNotIn("1203", text)
+        self.assertIn("견적 1판 3300000원(부가세 excluded) · 3일", text)
+        for gone in ("010-", "1203", "4.8", "am"):
+            self.assertNotIn(gone, text)
+
+    def test_full_facts_keep_tool_values_cut_from_the_summary(self):
+        # facts_given은 도구마다 900자에서 잘려요. 판정기는 도구 결과 원본(seen)을 봐요(set30:xd105)
+        seen = {"total": 2952491, "lines": ["x" * 1200], "paper": {"rows": [{"won": 1947460}]}}
+        r = {"facts_given": "턴 사실: 집 공급 105.8㎡\nget_standard_quote: {\"total\":2952491,\"lines\":[\"xx",
+             "tool_rows": [{"name": "get_standard_quote", "seen": seen}]}  # fmt: skip
+        got = grade.full_facts(r)
+        self.assertTrue(got.startswith("턴 사실: 집 공급 105.8㎡\nget_standard_quote: "))
+        self.assertIn("1947460", got)
+        self.assertEqual(grade.full_facts({"facts_given": "옛 글"}), "옛 글")
 
     def test_dry_run_grades_controls_and_compares_with_itself(self):
         with tempfile.TemporaryDirectory() as d:
@@ -915,6 +931,73 @@ class GradeTest(unittest.TestCase):
                 )
             s = json.loads((d / "runs" / "t" / "summary.json").read_text("utf-8"))
             self.assertEqual((s["human"]["n"], s["human"]["exact"]), (2, 1.0))
+            self.assertIn("cost", s)
+
+
+class AgentJudgeTest(unittest.TestCase):
+    """판정 에이전트(agent_judge.py): 요구 사항 · 대화 개요 · 근거, 두 방식을 가짜 판정으로 끝까지(유료 호출 0회)."""
+
+    RUN: ClassVar[dict] = {
+        "scenario": "S05", "trial": 0, "surface": "customer", "shift_days": 0, "today": "2026-11-23",
+        "passed": True, "notes": ["업체 빈 반나절은 따로 심지 않았어요(예약이 없으면 모두 빈칸이에요)"],
+        "turns": [
+            {"kind": "say", "say": "업체 추천해 주세요", "text": "마루와벽 · 결도배를 추천해요.", "step": 1,
+             "tools": ["recommend_vendors"], "facts": "단계: 업체 고르기 / 집: 공급 105.8㎡", "cards": ["vendor_picks"],
+             "tool_args": [{"name": "recommend_vendors", "args": {"trade": "dobae"}}],
+             "tool_out": [{"name": "recommend_vendors", "seen": {"picks": ["마루와벽", "결도배"]}, "error": None}],
+             "card_data": [{"kind": "vendor_picks", "data": {"names": ["마루와벽", "결도배"]}}],
+             "actions": [{"kind": "visit_request", "status": "proposed"}]},
+            {"kind": "say", "say": "고마워요", "text": "천만에요!", "step": 2,
+             "tool_args": [{"name": "get_home", "args": {}}]},
+        ],
+        "decisions": [{"turn": 1, "kind": "visit_request", "do": "approve", "status": "executed"}],
+        "events": [],
+        "end": [{"what": "실측 dobae requested 2건", "ok": True, "na": False},
+                {"what": "승인 없이 실행 0건", "ok": False, "na": False}, {"what": "x", "ok": True, "na": True}],
+        "state": {"visits": [{"id": "v1", "trade": "dobae", "status": "requested"}]},
+    }  # fmt: skip
+
+    def test_requirements_take_hints_rules_and_code_checked_ends(self):
+        reqs = agent_judge.requirements(self.RUN, {"judge": ["고르는 건 고객이라고 했나"]})
+        self.assertEqual([q["id"] for q in reqs], ["H1", "R1", "R2", "R3", "E1", "E2"])
+        self.assertEqual([q["truth"] for q in reqs if q["source"] == "end"], [True, False])
+
+    def test_outline_and_evidence_read_tool_results_cards_and_states(self):
+        text = agent_judge.outline(self.RUN)
+        self.assertIn("턴 1 | 고객: 업체 추천해 주세요", text)
+        self.assertIn("  뒤: [고객: visit_request 승인 → 반영됨]", text)
+        ev = agent_judge.evidence(self.RUN, {"world": {}}, [1, 2], True, True)
+        self.assertIn(
+            '- 도구 recommend_vendors({"trade":"dobae"}) → {"picks":["마루와벽","결도배"]}', ev
+        )
+        self.assertIn('- 카드 vendor_picks: {"names":["마루와벽","결도배"]}', ev)
+        self.assertIn("이 턴 뒤: [고객: visit_request 승인 → 반영됨]", ev)
+        self.assertIn("- 도구 get_home({}) → (결과 기록 없음)", ev)  # 옛 기록: 입력만
+        self.assertIn("- 턴 사실: 단계: 업체 고르기 / 집: 공급 105.8㎡", ev)
+        self.assertIn("시뮬레이터 메모: 업체 빈 반나절", ev)
+        self.assertIn('"status":"requested"', ev)
+        self.assertNotIn('"id"', ev.split("## 끝 상태")[1])
+
+    def test_both_modes_run_dry_and_compare(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            (d / "sim.jsonl").write_text(json.dumps(self.RUN, ensure_ascii=False), "utf-8")
+            with (
+                mock.patch.object(agent_judge, "RUNS", d / "runs"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(
+                    agent_judge.main(["--tag", "a", "--sims", str(d / "sim.jsonl")]), 0
+                )
+                llm_args = ["--tag", "b", "--mode", "llm", "--sims", str(d / "sim.jsonl")]
+                self.assertEqual(agent_judge.main(llm_args), 0)
+                self.assertEqual(agent_judge.main(["--tag", "a", "--report", "--compare", "b"]), 0)
+            rows = jsonl(d / "runs" / "a" / "verdicts.jsonl")
+            n = len(json.loads((grade.SCEN / "S05.json").read_text("utf-8"))["judge"]) + 3 + 2
+            self.assertEqual(len(rows), n)
+            self.assertTrue(all(r["located"] is not None for r in rows))
+            s = json.loads((d / "runs" / "a" / "summary.json").read_text("utf-8"))
+            self.assertEqual((s["end_alignment"]["n"], s["compare"]["all"]["n"]), (2, n))
             self.assertIn("cost", s)
 
 

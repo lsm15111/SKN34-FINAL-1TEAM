@@ -88,27 +88,53 @@ def openai_mode() -> None:
 
 
 class ToolTap:
-    """비서 도구 호출 입력을 모아요. take(turn_id)로 그 턴 것만 가져가요."""
+    """비서 도구 호출 입력 · 결과(모델이 받은 값 seen · 오류 code)를 모아요. take(turn_id)로 그 턴 것만 가져가요."""
 
     def __init__(self) -> None:
         self.rows: list[dict] = []
+        self.facts: str | None = None  # 마지막 턴 사실(비서가 턴 시작에 받는 집 · 단계 · 기한 글)
 
     def install(self) -> None:
+        from app.assistant import service as svc
         from app.assistant import tools as tools_mod
 
+        def keep(real_facts):
+            async def facts(*args, **kwargs):
+                got = await real_facts(*args, **kwargs)
+                self.facts = got if isinstance(got, str) else None
+                return got
+
+            return facts
+
+        for name in ("_customer_facts", "_vendor_facts"):  # 판정 에이전트 근거: 턴 사실도 남겨요
+            setattr(svc, name, keep(getattr(svc, name)))
         real = tools_mod.run
 
         async def run(t, tc, args):
-            self.rows.append(
-                {
-                    "turn_id": str(getattr(tc, "turn_id", "") or ""),
-                    "name": getattr(t, "name", str(t)),
-                    "args": args if isinstance(args, dict) else {},
-                }
-            )
-            return await real(t, tc, args)
+            row = {
+                "turn_id": str(getattr(tc, "turn_id", "") or ""),
+                "name": getattr(t, "name", str(t)),
+                "args": args if isinstance(args, dict) else {},
+            }
+            self.rows.append(row)
+            try:
+                out = await real(t, tc, args)
+            except Exception as e:
+                row["error"] = getattr(e, "code", None) or type(e).__name__
+                raise
+            try:  # 판정 에이전트가 읽을 근거: 모델이 받은 값(policy.to_model). 기록이 실패해도 턴은 그대로
+                from app.assistant import policy
+
+                row["seen"] = policy.to_model(out.data)
+            except Exception:  # noqa: BLE001
+                row["seen"] = None
+            return out
 
         tools_mod.run = run
+
+    def take_facts(self) -> str | None:
+        got, self.facts = self.facts, None
+        return got
 
     def take(self, turn_id: str | None = None) -> list[dict]:
         got = [r for r in self.rows if turn_id is None or r["turn_id"] == turn_id]

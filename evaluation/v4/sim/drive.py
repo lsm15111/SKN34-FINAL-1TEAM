@@ -106,6 +106,8 @@ def turn(
     t = dict(row[0]) if row else {}
     trace = _trace(t.get("trace"))
     tokens = "".join(d.get("text") or "" for n, d in ev if n == "token")
+    taken = app.tap.take(tid) if tid else []
+    facts = app.tap.take_facts()  # 이 턴에 비서가 받은 턴 사실(판정 에이전트 근거)
     cards = [d for n, d in ev if n == "card"]
     answer = next(
         (
@@ -141,7 +143,12 @@ def turn(
         ],
         text=(tokens or answer)[:TEXT_KEEP],
         shown=shown_of(ev),
-        tool_args=app.tap.take(tid) if tid else [],
+        tool_args=[{k: v for k, v in x.items() if k not in ("seen", "error")} for x in taken],
+        # 도구 결과는 따로(시나리오 점검 no_tool_args가 입력만 보게): 판정 에이전트의 근거
+        tool_out=[
+            {"name": x["name"], "seen": x.get("seen"), "error": x.get("error")} for x in taken
+        ],
+        facts=facts,
     )
     return rec
 
