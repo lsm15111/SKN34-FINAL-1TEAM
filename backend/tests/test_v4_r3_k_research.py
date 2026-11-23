@@ -133,7 +133,8 @@ def test_start_says_about_a_minute_and_keeps_the_home_pyeong(api, script):
     assert got["state"] == "started" and got["message"] == research.STARTED
     assert "1분 안팎" in got["message"] and "몇 분" not in got["message"]
     (row,) = rows()
-    assert row["goal"] == "송파구 21.4평 실크 도배 업체" and row["title"] == row["goal"]
+    # 전용 59㎡ = 공급 23.5평(전용 → 공급 환산 한 값 1.315, ADR 0007. 앞 판 × 1.2는 21.4평)
+    assert row["goal"] == "송파구 23.5평 실크 도배 업체" and row["title"] == row["goal"]
 
 
 # ---- worker: 링크 거르기 · 찾은 만큼 · 안쪽 말 ----

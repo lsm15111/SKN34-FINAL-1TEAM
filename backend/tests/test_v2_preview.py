@@ -75,7 +75,11 @@ def test_preview_without_plan_matches_standard_dobae(api):
     vers = {
         r["trade"]: r["price_ver"] for r in query("select trade, price_ver from standard_quotes")
     }
-    assert pv_d["version"] == "2026H2" and vers == {"mokgong": "2026H2", "dobae": "2026.11b-market"}
+    # v2 미리보기는 옛 판 그대로, 저장한 표준견적서는 지금 판(ADR 0007: 목공 2026.11 · 도배 2026.11c-market)
+    assert pv_d["version"] == "2026H2" and vers == {
+        "mokgong": "2026.11",
+        "dobae": "2026.11c-market",
+    }
     assert st["trades"][1]["supply"] < old.subtotal
     mok = pv["trades"][0]
     assert {ln["key"] for ln in mok["lines"]} >= {"molding", "molding_mat", "base", "base_mat"}

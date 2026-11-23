@@ -1177,11 +1177,11 @@ async def home_pyeong(s: AsyncSession, user: User, project_id: uuid.UUID) -> Dec
     """집 정보의 공급 평형(계산 엔진, 표준견적서 · 집 정보 카드와 같은 값). 셀 수 없으면 None."""
     from app.calc.standard_quote import house_pyeong
     from app.project import service as project_service
-    from app.refprice.house import HOUSE_2026H2
+    from app.refprice.house import HOUSE_DEFAULT
 
     p = await project_service.get_for(s, user, project_id)
     try:
-        return house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+        return house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
     except (ValueError, AttributeError):
         return None
 

@@ -29,7 +29,7 @@ from app.files import service as files_service
 from app.files.models import File
 from app.notify import service as notify_service
 from app.refprice.book import DOBAE_2026H2, DOBAE_DEFAULT, MOKGONG_2026H2, dobae_prices_of
-from app.refprice.house import HOUSE_2026H2
+from app.refprice.house import HOUSE_DEFAULT
 from app.refprice.vendor_baseline import price_warning, vendor_base
 from app.refprice.wallpaper_market import paper_market
 from app.shared.clock import now_utc
@@ -869,7 +869,7 @@ def _estimate_v3_out(
 def _std_v3(h: dobae.HomeV3, dp: dobae.DobaePrices = DOBAE_DEFAULT) -> dobae.StandardV3:
     """v3 표준견적서 계산 (quote.service가 저장하는 값과 같은 계산 엔진 · 판). 판을 안 주면 공사 조건이
     없는 집의 기준(도배만 하는 공사, ADR 0004)"""
-    return dobae.standard_v3(h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2)
+    return dobae.standard_v3(h, dp, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_DEFAULT)
 
 
 def _std_keys(std: dobae.StandardV3) -> set[str]:
@@ -1232,7 +1232,7 @@ async def confirmed_prices(
 
 def _home_v3(p: "ProjectOut", grade: str | None) -> dobae.HomeV3:
     """공사 → v3 도배 계산 입력 (quote.service.home_v3와 같은 규칙: v2 공사는 전체 공사)"""
-    area, basis = house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    area, basis = house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
     h = p.home
     g = grade or (h.grade if h else None) or (p.trades.dobae.grade if p.trades.dobae else None)
     g = g or "basic"

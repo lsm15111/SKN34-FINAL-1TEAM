@@ -6,6 +6,7 @@
 기대값은 손으로 검산했다(24평 = 공급 79.3㎡ · 방 3개 → 벽 119.7㎡ · 천장 64.4㎡,
 표준품셈 품 = 119.7 × 0.024 + 64.4 × 0.0351 = 5.13324)."""
 
+from dataclasses import replace
 from decimal import Decimal
 
 import pytest
@@ -186,8 +187,14 @@ def test_hapji_material_row_matches_standard_material_line():
 
 
 def test_versions_are_fixed():
-    assert DOBAE_DEFAULT is DOBAE_MARKET_2026_11B
-    assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11b-market", "2026.11b-remodel"}
+    # 지금 판은 2026.11c-*(ADR 0007: 전용 → 공급 환산 한 값 · 전체 철거면 철거 줄 '안 함'). 같은 규칙 판 2026.11b-*와
+    # 줄 값 · 규칙이 같아요
+    assert DOBAE_DEFAULT is DOBAE_PROFILES["paper_only"]
+    assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11c-market", "2026.11c-remodel"}
+    for p in DOBAE_PROFILES.values():
+        b = dobae_prices_of(p.version.replace("2026.11c", "2026.11b"))
+        assert p.removal_by_demolition and not b.removal_by_demolition
+        assert replace(p, version=b.version, removal_by_demolition=False) == b
     assert all(len(p.version) <= 20 for p in DOBAE_PROFILES.values())  # price_ver varchar(20)
     # 이미 만든 견적의 판은 그 판 그대로 다시 셀 수 있어요(품 배수 · 같은 줄 규칙 없음)
     for old in (DOBAE_MARKET_2026_11, DOBAE_REMODEL_2026_11):

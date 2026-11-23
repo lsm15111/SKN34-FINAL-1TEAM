@@ -63,7 +63,8 @@ def test_v3_body_creates_a_member_project_with_home(api):
     st = api.get(f"/projects/{p['id']}/standard").json()
     # 9판 C07 집, 시장 평균 실크, 69.4 × 1.55 + 방 2 × 20.4. 도배만 하는 공사 기준(판 2026.11b-market,
     # ADR 0004 · 0006). 옛 판 2026H2-rooms는 1,802,374 · 2.5배 판은 2,060,625
-    assert st["total"] == 1_944_721 and st["price_ver"] == "2026.11b-market"
+    # 판 2026.11c-market(ADR 0007)은 공급으로 넣은 집이면 2026.11b와 같은 금액이에요
+    assert st["total"] == 1_944_721 and st["price_ver"] == "2026.11c-market"
     assert (st["scope"], st["spaces"], st["faces"], st["share_ver"]) == (
         "full",
         [],

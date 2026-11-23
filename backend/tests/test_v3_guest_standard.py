@@ -45,7 +45,7 @@ def test_guest_standard_without_login_writes_nothing(api):
     assert (g["market_ver"], g["share_ver"], g["price_ver"]) == (
         "paper-market-2026.11",
         None,
-        "2026.11b-market",
+        "2026.11c-market",  # 전용 → 공급 환산 한 값 판(ADR 0007, 공급으로 넣은 집은 금액 그대로)
     )
     assert g["rooms"] == 2
     assert g["formula_ver"] == "2026.11.2" and g["budget_fit"] is None
@@ -159,7 +159,7 @@ def test_room_rule_table(api):
     r = api.get("/guest/room-rule")
     assert r.status_code == 200, r.text
     g = r.json()
-    assert (g["min"], g["max"], g["fallback"], g["price_ver"]) == (1, 5, 3, "2026.11b-market")
+    assert (g["min"], g["max"], g["fallback"], g["price_ver"]) == (1, 5, 3, "2026.11c-market")
     supply = [(b["min_m2"], b["rooms"]) for b in g["bands"] if b["area_basis"] == "supply"]
     assert supply == [("0.0", 2), ("72.8", 3), ("132.3", 4)]
     assert g["room_kinds"] == ["master", "room1", "room2", "room3", "room4"]

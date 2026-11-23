@@ -7,7 +7,7 @@
 from dataclasses import replace
 from decimal import Decimal
 
-from app.calc.common import won
+from app.calc.common import SUPPLY_PER_EXCLUSIVE, won
 from app.calc.dobae import DobaePrices, ProfilePrices, WorkFacts, pick_profile
 from app.calc.mokgong import MokgongPrices
 from app.calc.precise_common import SilkPaper
@@ -169,10 +169,22 @@ def _same_rules(p: DobaePrices, version: str) -> DobaePrices:
 DOBAE_MARKET_2026_11B = _same_rules(DOBAE_MARKET_2026_11, "2026.11b-market")
 DOBAE_REMODEL_2026_11B = _same_rules(DOBAE_REMODEL_2026_11, "2026.11b-remodel")
 
+# ---- 전용 → 공급 환산 한 값 (2026-11-24, ADR docs/v4/adr/0007-전용-공급-환산-한-값.md) ----
+# 금액 줄 값 · 규칙은 2026.11b와 같아요. 두 가지만 달라요(이미 만든 견적은 앞 판 그대로 둬요)
+# - 전용으로 넣은 집의 '공급 평' 수량(부자재 · 퍼티 · 가견적)을 도배 면적과 같은 전용 × 1.315(집 크기 판 HOUSE_2026_11)로
+#   세요(앞 판은 전용 × 1.2)
+# - 전체 철거면 '기존 벽지 철거' 줄은 '안 함'(철거 공사 몫, 앞 판은 늘 '실측 후'). 합계는 같아요
+DOBAE_MARKET_2026_11C = replace(
+    DOBAE_MARKET_2026_11B, version="2026.11c-market", removal_by_demolition=True
+)
+DOBAE_REMODEL_2026_11C = replace(
+    DOBAE_REMODEL_2026_11B, version="2026.11c-remodel", removal_by_demolition=True
+)
+
 # 기준마다 지금 쓰는 판
 DOBAE_PROFILES: dict[str, DobaePrices] = {
-    "paper_only": DOBAE_MARKET_2026_11B,
-    "remodel": DOBAE_REMODEL_2026_11B,
+    "paper_only": DOBAE_MARKET_2026_11C,
+    "remodel": DOBAE_REMODEL_2026_11C,
 }
 # 공사 조건이 없는 계산(손님 · 평수만 물은 질문 · 업체 단가표 예시)의 판: 조건 없이 계산 엔진이 고른 기준
 DOBAE_DEFAULT = DOBAE_PROFILES[pick_profile(WorkFacts()).profile]
@@ -186,6 +198,8 @@ DOBAE_BY_VER: dict[str, DobaePrices] = {
         DOBAE_REMODEL_2026_11,
         DOBAE_MARKET_2026_11B,
         DOBAE_REMODEL_2026_11B,
+        DOBAE_MARKET_2026_11C,
+        DOBAE_REMODEL_2026_11C,
     )
 }
 
@@ -253,3 +267,9 @@ MOKGONG_2026H2 = MokgongPrices(
         "none": "공공 단가가 없어 업체 견적에서 확인해요",
     },
 )
+# 전용 → 공급 환산을 도배 · 집 크기와 같은 한 값으로 맞춘 판(ADR 0007). 단가는 2026H2와 같아요.
+# 옛 판(2026H2)은 v2 정밀 견적 · 업체 단가표 예시와 이미 만든 견적의 기록으로 남아요
+MOKGONG_2026_11 = replace(
+    MOKGONG_2026H2, version="2026.11", supply_per_exclusive=SUPPLY_PER_EXCLUSIVE
+)
+MOKGONG_DEFAULT = MOKGONG_2026_11  # 지금 쓰는 판
