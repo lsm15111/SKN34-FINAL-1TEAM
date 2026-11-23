@@ -41,14 +41,14 @@ export default async function MyPage() {
         <PageHead
           title="내 공사"
           desc={mine.length ? `${mine.length}건 · 최근에 바뀐 순서` : undefined}
-          action={mine.length ? <Button variant="text" arrow href="/start">표준견적서 새로 받기</Button> : undefined}
+          action={mine.length ? <Button variant="text" arrow href="/start">인테리어 새로 받기</Button> : undefined}
         />
         <div className={m.cols}>
           <div className={m.main}>
             {cards.length ? (
               <ProjectCards items={cards} />
             ) : (
-              <EmptyState icon="home" title="아직 만든 공사가 없어요" action={<Button href="/start">표준견적서 받기</Button>}>
+              <EmptyState icon="home" title="아직 만든 공사가 없어요" action={<Button href="/start">인테리어 받기</Button>}>
                 집 정보와 공정을 넣으면 표준견적서와 예상 공정표를 받아요
               </EmptyState>
             )}

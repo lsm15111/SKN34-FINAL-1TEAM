@@ -63,7 +63,7 @@ export function GuestStandard({ mock }: { mock: boolean }) {
   return (
     <>
       <Main>
-        <PageHead title="표준견적서" crumbs={[{ label: "표준견적서 받기", href: "/start" }, { label: "표준견적서" }]} />
+        <PageHead title="표준견적서" crumbs={[{ label: "인테리어 받기", href: "/start" }, { label: "표준견적서" }]} />
         <WithAside aside={<GuestAsk onJoin={openJoin} />}>
           {st.kind === "loading" ? <StandardSkeleton /> : null}
           {st.kind === "none" ? (

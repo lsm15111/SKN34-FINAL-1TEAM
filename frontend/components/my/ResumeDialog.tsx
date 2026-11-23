@@ -1,5 +1,5 @@
 "use client";
-// 이어 하기 확인 창(C41): 진행 중인 공사가 있는데 '표준견적서 받기'를 누르면 묻는 가운데 창이에요(조각만).
+// 이어 하기 확인 창(C41): 진행 중인 공사가 있는데 '인테리어 받기'를 누르면 묻는 가운데 창이에요(조각만).
 // 여는 곳(홈 · 시작 화면)이 open · 공사 이름 · 지금 단계 이름 · 이어 갈 화면을 넘겨요. 단계 이름은 API 값을 B4 단계 이름으로 바꿔서 넘겨요.
 import { Button } from "@/components/ui/Button";
 import { Dialog } from "@/components/ui/Dialog";
