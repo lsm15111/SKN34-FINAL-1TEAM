@@ -475,6 +475,39 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
     )
 
 
+@dataclass(frozen=True)
+class StandardBasis:
+    """비서 표준견적서 도구의 도배 근거(계산 엔진): 수량 · 품을 어떻게 셌나요 · 벽지 종류는 두고 줄이는 길."""
+
+    how: list[str]
+    save: list[dobae.SaveWay]
+
+
+async def standard_basis(
+    s: AsyncSession, user: User, project_id: uuid.UUID
+) -> StandardBasis | None:
+    """이 공사 도배 표준견적서를 저장할 때와 같은 입력(집 정보 · 모은 조건)으로 계산 엔진을 다시 돌려(저장 없음)
+    근거를 만든다. standard_for 뒤에 부르면 저장본과 같은 값이다. 도배가 없으면 None(남의 공사는 404).
+    줄이는 길: 벽지 직접 구매(아직 아니면) · 천장 빼고 벽만(벽 · 천장 둘 다면) · 빈 집에서(짐 있는 집이면)."""
+    p = await project_service.get_for(s, user, project_id)
+    if not p.trades.dobae:
+        return None
+    said = await project_service.conditions(s, p.id)
+    pick = dobae.pick_profile(work_facts(p, said))
+    own = project_diy.buys_paper(said or {})
+    h = home_v3(p)
+    v = standard_v3(h, None, pick, own_paper=own)
+    ways: dict[str, dobae.StandardV3] = {}
+    if not own:
+        ways["own_paper"] = standard_v3(h, None, pick, own_paper=True)
+    if set(FULL_FACES) <= set(h.faces):
+        ways["walls_only"] = standard_v3(replace(h, faces=("wall",)), None, pick, own_paper=own)
+    if h.occupied:
+        ways["empty_home"] = standard_v3(replace(h, occupied=False), None, pick, own_paper=own)
+    how = dobae.count_basis(h, DOBAE_PROFILES[pick.profile], HOUSE_2026H2, v)
+    return StandardBasis(how, dobae.save_ways(v, ways))
+
+
 # ---- 업체 실측 견적서: 업체 양식 파일 + 요약 칸. 실측 요청(visit) 확인 · 상태 바꾸기는 visit.service가 한다 ----
 
 MISSING = {
