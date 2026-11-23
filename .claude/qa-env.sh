@@ -1,6 +1,7 @@
 # 믿집 v4 비서 QA 환경 불러오기. run-qa-api.sh · run-qa-worker.sh · evaluation/v4/qa/make_db.sh가 같이 써요.
 # 사용: . .claude/qa-env.sh <qa | dev>   (값 · 키는 화면에 찍지 않아요)
-# - qa : DB mitjip_qa     · Redis db 13 · API 8050 · 화면 Origin 3050 · LLM 모드(메인 .env의 Anthropic 키만 살림)
+# - qa : DB mitjip_qa     · Redis db 13 · API 8050 · 화면 Origin 3050 · LLM 모드(메인 .env의 OpenAI 키만 살림,
+#        QA_PROVIDER=anthropic이면 Anthropic 키만)
 # - dev: DB mitjip_qa_dev · Redis db 6  · API 8051 · 화면 Origin 3051 · 무료 모드(LLM_LIVE=false, 키 비움)
 # 비용 상한은 운영 기본값(app/config.py) 그대로예요. 부르는 셸에 LLM_CAP_* 가 있어도 지워요.
 # 새 계정 몫(가입 7일 안 고객)은 qa에서 기본으로 꺼요(QA 페르소나는 모두 새 계정). 보안 M4를 다시 볼 땐
@@ -15,9 +16,16 @@ QA_CLAUDE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$QA_CLAUDE/env.sh"  # 메인 .env(DB 접속값) + LLM 키 비움 + LLM_LIVE=false
 unset LLM_CAP_USER_DAY_USD LLM_CAP_SERVICE_DAY_USD LLM_CAP_TOTAL_USD LLM_CAP_TURN_USD LLM_CAP_NEW_USER_DAY_USD LLM_CAP_NEW_POOL_DAY_USD LLM_NEW_USER_DAYS
 if [ "$QA_PROFILE" = qa ]; then
-  # run-api.sh live 갈래와 같은 방법: Anthropic 키만 살려요(OpenAI · 다른 키는 비운 그대로). 상한은 올리지 않아요
-  ANTHROPIC_API_KEY="$(sed -n 's/^ANTHROPIC_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
-  export ANTHROPIC_API_KEY LLM_LIVE=true ASSISTANT_PROMPT_SET="${QA_PROMPT_SET:-v4}"  # 지시문 판(QA 3차부터 v4, QA_PROMPT_SET=v3으로 되돌림)
+  # 공급자 하나의 키만 살려요(다른 키는 비운 그대로). 상한은 올리지 않아요. 기본은 보기용 도커와 같은 OpenAI 길(11-23),
+  # QA_PROVIDER=anthropic이면 예전처럼 Anthropic
+  if [ "${QA_PROVIDER:-openai}" = anthropic ]; then
+    ANTHROPIC_API_KEY="$(sed -n 's/^ANTHROPIC_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
+    export ANTHROPIC_API_KEY LLM_PROVIDER=anthropic
+  else
+    OPENAI_API_KEY="$(sed -n 's/^OPENAI_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
+    export OPENAI_API_KEY LLM_PROVIDER=openai
+  fi
+  export LLM_LIVE=true ASSISTANT_PROMPT_SET="${QA_PROMPT_SET:-v4}"  # 지시문 판(QA 3차부터 v4, QA_PROMPT_SET=v3으로 되돌림)
   # 새 계정 몫: QA_*를 하나라도 넘기면 켜요(안 넘긴 값은 운영 기본값), 아니면 꺼요
   if [ -n "${QA_NEW_USER_DAYS:-}${QA_CAP_NEW_USER_DAY_USD:-}${QA_CAP_NEW_POOL_DAY_USD:-}" ]; then
     if [ -n "${QA_NEW_USER_DAYS:-}" ]; then export LLM_NEW_USER_DAYS="$QA_NEW_USER_DAYS"; fi
