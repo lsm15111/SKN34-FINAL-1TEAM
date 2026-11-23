@@ -107,6 +107,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
               <Avatar name={name} size="l" warm />
               <div className={s.vtext}>
                 <p className={`${s.vname} ${s.phoneWord}`} aria-hidden="true">{name}</p>
+                {pr.intro ? <p className={s.vintro}>{pr.intro}</p> : null}
                 <p className={s.vmeta}>{line1}</p>
                 <p className={`${s.vmeta} mj-num`}>
                   {avg ? <><Stars value={Number(avg)} count={reviewCount} size="sm" /> · </> : null}

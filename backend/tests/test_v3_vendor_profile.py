@@ -64,11 +64,22 @@ def test_intro_is_one_line_kept_or_cleared(api):
 
     ok = api.put(URL, json=body(updated_at=gone.json()["updated_at"], intro="가" * 60))
     assert ok.status_code == 200 and ok.json()["intro"] == "가" * 60
-    # 공개 프로필(C11 · D07)에는 소개 칸이 없다 (contract 3장 · 9판 고객 화면에 없음)
-    assert "intro" not in PublicProfileOut.model_fields
-    assert "intro" not in public(vid).model_dump()
+    # 공개 프로필(C11 · D07)에도 소개가 보인다(리드 11-24, QA r6 M12: 업체가 쓴 소개가 고객에게 안 보였음.
+    # 예전 9판 고객 화면엔 칸이 없었어요). 연락처 · 계좌는 가려 보낸다(아래 시험)
+    assert "intro" in PublicProfileOut.model_fields
+    assert public(vid).model_dump()["intro"] == "가" * 60
     make_admin(api)
     assert api.get(f"/admin/vendors/{vid}").json()["intro"] == "가" * 60  # 관리자 심사 화면
+
+
+def test_public_profile_masks_contacts_in_vendor_text(api):
+    """고객에게 가는 한 줄 소개 · 자주 묻는 답의 전화번호는 가리고, 업체 본인 화면은 쓴 그대로예요(QA r6 M12)."""
+    approved_vendor(api)
+    vid = vendor_id()
+    r = api.put(URL, json=body(intro="문의 010-1234-5678 도배 전문"))
+    assert r.status_code == 200 and r.json()["intro"] == "문의 010-1234-5678 도배 전문"
+    shown = public(vid).model_dump()
+    assert "010-1234-5678" not in (shown["intro"] or "") and "도배 전문" in shown["intro"]
 
 
 def test_intro_needs_an_approved_vendor(api):

@@ -32,6 +32,7 @@
 .vtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .vname { font-size: var(--mj-type-title-s); font-weight: var(--mj-weight-bold); }
 .vmeta { font-size: var(--mj-type-label); color: var(--mj-text-sub); line-height: var(--mj-lh-body); }
+.vintro { font-size: var(--mj-type-label); color: var(--mj-text); line-height: var(--mj-lh-body); overflow-wrap: anywhere; }
 
 /* 이 화면 안 바로 가기(밑줄 탭 모양) */
 .tabs { display: flex; gap: 4px; margin: 0 calc(-1 * var(--mj-pad-group)) -10px; padding: 0 var(--mj-pad-group); border-top: 1px solid var(--mj-line); overflow-x: auto; scrollbar-width: none; }

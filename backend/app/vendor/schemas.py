@@ -452,6 +452,9 @@ class PublicProfileOut(PublicCardOut):
     links: list[LinkIn]
     portfolio: list[PortfolioOut]
     updated_at: datetime | None
+    intro: str | None = Field(
+        default=None, description="한 줄 소개 (V15, 비었으면 비어 있다). 업체 글이라 화면에만"
+    )
 
 
 class ProfileOut(PublicProfileOut):
@@ -465,7 +468,6 @@ class ProfileOut(PublicProfileOut):
     instant_default: bool | None = Field(default=None, description="'바로 확정' 처음 값")
     visit_capacity: int | None = Field(default=None, description="반나절 한 칸에 받는 실측 수")
     suspended_at: datetime | None = Field(default=None, description="관리자가 업체 기능을 멈춘 때")
-    intro: str | None = Field(default=None, description="한 줄 소개 (V15, 비었으면 비어 있다)")
 
 
 UNIT_PRICE_MAX = 10_000_000

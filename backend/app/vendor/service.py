@@ -512,6 +512,7 @@ async def _detail(s: AsyncSession, v: Vendor) -> dict:
         links=[LinkIn(label=link.label, url=link.url) for link in links],
         portfolio=[_photo(p) for p in photos],
         updated_at=v.updated_at,
+        intro=v.intro or None,
     )
 
 
@@ -528,7 +529,6 @@ async def get_profile(s: AsyncSession, vendor: User) -> ProfileOut:
         instant_default=v.instant_default,
         visit_capacity=v.visit_capacity,
         suspended_at=v.suspended_at,
-        intro=v.intro or None,
     )
 
 
@@ -640,11 +640,17 @@ async def remove_portfolio(s: AsyncSession, vendor: User, item_id: uuid.UUID) ->
 
 
 async def public_profile(s: AsyncSession, vendor_id: uuid.UUID) -> PublicProfileOut:
-    """고객이 보는 업체 자세히. 승인된 업체만, 휴대폰 · 채널 주소 · 상세 주소는 넣지 않는다."""
+    """고객이 보는 업체 자세히. 승인된 업체만, 휴대폰 · 채널 주소 · 상세 주소는 넣지 않는다.
+    업체가 쓴 한 줄 소개 · 자주 묻는 답은 연락처 · 계좌 · 주소를 가려 보낸다(pii.mask, 업체 본인 화면은 그대로)."""
+    from app.shared import pii
+
     v = await s.get(Vendor, vendor_id)
     if v is None or v.status != "approved":
         raise AppError(404, "not_found", "업체를 찾을 수 없어요.")
-    return PublicProfileOut(**await _detail(s, v))
+    d = await _detail(s, v)
+    d["intro"] = pii.mask(d["intro"]) if d.get("intro") else None
+    d["faqs"] = [FaqIn(key=f.key, answer=pii.mask(f.answer)) for f in d["faqs"]]
+    return PublicProfileOut(**d)
 
 
 async def listed(s: AsyncSession, vendor_id: uuid.UUID, trade: str, sido: str, sgg: str) -> bool:

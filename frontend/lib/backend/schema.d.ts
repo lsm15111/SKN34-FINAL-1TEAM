@@ -7196,6 +7196,11 @@ export interface components {
             portfolio: components["schemas"]["PortfolioOut"][];
             /** Updated At */
             updated_at: string | null;
+            /**
+             * Intro
+             * @description 한 줄 소개 (V15, 비었으면 비어 있다). 업체 글이라 화면에만
+             */
+            intro?: string | null;
             /** Phone */
             phone: string | null;
             /** Address */
@@ -7219,11 +7224,6 @@ export interface components {
              * @description 관리자가 업체 기능을 멈춘 때
              */
             suspended_at?: string | null;
-            /**
-             * Intro
-             * @description 한 줄 소개 (V15, 비었으면 비어 있다)
-             */
-            intro?: string | null;
         };
         /** ProjectCheckIn */
         ProjectCheckIn: {
@@ -7487,6 +7487,11 @@ export interface components {
             portfolio: components["schemas"]["PortfolioOut"][];
             /** Updated At */
             updated_at: string | null;
+            /**
+             * Intro
+             * @description 한 줄 소개 (V15, 비었으면 비어 있다). 업체 글이라 화면에만
+             */
+            intro?: string | null;
         };
         /**
          * QuoteBoardOut
