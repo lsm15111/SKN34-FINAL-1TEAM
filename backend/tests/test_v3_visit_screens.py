@@ -21,6 +21,7 @@ from tests.test_v3_visit_kit import (
     choose,
     customer,
     d,
+    day,
     handle,
     notes,
     picked,
@@ -222,10 +223,14 @@ def test_compare_gap_and_v3_fields(api):
         va: "booked",
         vb: "booked",
     }  # 견적서 기다림
+    # 실측 날 전엔 견적서를 못 보내요(QA r6 화면 M1)
+    query("update visits set booked_day = current_date")
     login(api, "maru@mitjip.test")
     send_quote(api, va, 3_080_000)
     login(api, "gyeol@mitjip.test")
     send_quote(api, vb, 3_487_000)
+    for v, n in ((va, 6), (vb, 7)):  # 실측 날을 되돌려 비교 칸(visit_day)을 봐요
+        query("update visits set booked_day = $1 where id = $2", day(n), uuid.UUID(v))
     use(api, token)
     got = api.get(f"/projects/{pid}/quotes", params={"trade": "dobae"}).json()
     assert got["gap_total"] == 407_000  # '두 곳이 40만 7,000원 차이 나요'

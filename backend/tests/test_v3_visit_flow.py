@@ -287,7 +287,9 @@ def test_quote_needs_a_booked_visit_and_requote(api):
     assert choose(api, f["pid"], f["visit"]).status_code == 200
     login(api, f["email"])
     assert api.put(qurl, json={"file_ids": [doc(api)], **FULL}).status_code == 200
-    assert api.post(f"{qurl}/send").status_code == 200  # 실측 확정에서 바로 보내기
+    assert code(api.post(f"{qurl}/send")) == (409, "before_visit")  # 실측 날 전(QA r6 화면 M1)
+    query("update visits set booked_day = current_date where id = $1", uuid.UUID(f["visit"]))
+    assert api.post(f"{qurl}/send").status_code == 200  # 실측 날부터는 확정 상태에서 바로 보내기
     use(api, f["token"])
     rq = f"/projects/{f['pid']}/visits/{f['visit']}/requote"
     assert code(api.post(rq)) == (409, "stale")  # 아직 유효기간 안
