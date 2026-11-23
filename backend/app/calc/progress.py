@@ -22,7 +22,7 @@ TODO_RANK = (
     "quotes_partial",  # 일부만 옴 → 비교하기
     "dates_overdue",  # 업체가 기한까지 날짜를 안 냄 → 확인하기
     "pick",  # 업체 고르기
-    "visit_requested",  # 실측 요청함 → 연락처 보기
+    "visit_requested",  # 실측 요청함 → 실측 일정 보기
     "before_work",  # 공사 전 (체크 목록)
     "dates_waiting",  # 업체가 날짜를 정하는 중
     "dates_requested",  # 다른 날짜를 요청함 · 업체 답 기다림

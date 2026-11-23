@@ -4,7 +4,7 @@ import Link from "next/link";
 import type { ApiMyProject } from "@/lib/api/schedule";
 import type { BoardRow } from "@/lib/api/visit";
 import { dateSeoul, dateShort, dueText, won } from "@/lib/format";
-import { gradeLabel, sizeLabel, todoView, visitState } from "@/lib/labels";
+import { gradeLabel, sizeLabel, visitState } from "@/lib/labels";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { StateTag } from "@/components/ui/StateTag";
@@ -63,7 +63,7 @@ function Card({ c }: { c: MyCard }) {
   const base = `/projects/${encodeURIComponent(p.id)}`;
   const current = Math.max(0, Math.min(PROJECT_STEPS.length - 1, p.current));
   const small = [sizeLabel(p.size), p.trades.includes("dobae") ? gradeLabel(p.grades.dobae) : null, `마지막 소식 ${dateShort(dateSeoul(p.updated_at))}`].filter(Boolean).join(" · ");
-  const todo = p.todo && p.todo.text ? todoView(p.todo) : null;
+  const todo = p.todo && p.todo.text ? p.todo : null;
   const todoHref = todo && inSite(todo.link) ? todo.link : null;
   const picked = p.vendors.length > 0;
   return (

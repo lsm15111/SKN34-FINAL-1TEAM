@@ -2009,10 +2009,10 @@ async def propose_dates(
         if not change:
             again = "다시 " if x is not None else ""
             body, link = f"{who} 공사 날짜를 {again}냈어요 · {label}", "schedule?trade=" + d.trade
-        elif r is not None:
-            body, link = f"{who} 새 {label} 날짜를 올렸어요", "plan"
+        elif r is not None:  # 바꾸기 답 · 바꾸자는 날짜는 공사 날짜 화면에서 바로 답해요(QA r6)
+            body, link = f"{who} 새 {label} 날짜를 올렸어요", "schedule?view=dates"
         else:
-            body, link = f"{who} {label} 날짜를 바꾸자고 했어요", "plan"
+            body, link = f"{who} {label} 날짜를 바꾸자고 했어요", "schedule?view=dates"
         await notify_service.add(
             s,
             user_id=owner,
@@ -2809,7 +2809,7 @@ def _todo_out(pid: uuid.UUID, code: str, trade: str, d: Deal | None, ctx: dict) 
             if x
             else "",
             "확인하기",
-            f"{base}/plan",
+            f"{base}/schedule?view=dates",
         ),
         "extra": (f"{who} 추가 금액을 알렸어요 · 확인해 주세요", "확인하기", f"{base}/plan"),
         "quotes_arrived": (
@@ -2836,8 +2836,8 @@ def _todo_out(pid: uuid.UUID, code: str, trade: str, d: Deal | None, ctx: dict) 
             f"{base}/vendors?trade={trade}",
         ),
         "visit_requested": (
-            f"업체에 연락할 차례예요 · {label}",
-            "연락처 보기",
+            f"업체와 실측 날짜를 맞추는 중이에요 · {label}",
+            "실측 일정 보기",
             f"{base}/visits?trade={trade}",
         ),
         "before_work": (

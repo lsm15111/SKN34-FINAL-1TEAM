@@ -239,7 +239,10 @@ def test_change_request_new_dates_then_accept(api):
     (n,) = query(
         "select body, link from notifications where kind = 'dates_proposed' order by created_at desc limit 1"
     )
-    assert (n["body"], n["link"]) == ("마루와벽이 새 도배 날짜를 올렸어요", f"/projects/{pid}/plan")
+    assert (n["body"], n["link"]) == (
+        "마루와벽이 새 도배 날짜를 올렸어요",
+        f"/projects/{pid}/schedule?view=dates",
+    )
 
     use(api, customer)
     assert (

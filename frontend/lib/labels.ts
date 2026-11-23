@@ -174,10 +174,3 @@ export function visitState(status: string, side: "customer" | "vendor"): StateTe
   const t = (side === "vendor" ? VISIT_STATE_VENDOR : VISIT_STATE_CUSTOMER)[status as VisitStatus];
   return t ?? { label: "확인 중", tone: "wait" };
 }
-
-/** 공사 '지금 할 일'(서버 TodoOut) 말 고치기. visit_requested는 고객이 업체에 직접 전화하던 때 말
- *  ('업체에 연락할 차례예요 · 연락처 보기')이 남아 연락처 없는 실측 일정으로 가요 → 실측 일정 말로 바꿔요(QA r6 M5).
- *  서버 말(schedule/service.py todo_out)을 고치면 지워요 */
-export function todoView<T extends { code: string; text: string; action: string }>(t: T): T {
-  return t.code === "visit_requested" ? { ...t, text: "업체와 실측 날짜를 맞추는 중이에요", action: "실측 일정 보기" } : t;
-}
