@@ -130,9 +130,15 @@ async def _project_scopes(s, tc: ToolCtx) -> tuple[str, ...]:
     return got or tuple(TRADE_KO.values())
 
 
+TERMS_MAX, TERM_CHARS = 3, 40
+
+
 class AskIn(BaseModel):
     question: str = Field(min_length=1, max_length=300)
     kind: Literal["general", "price", "period", "material", "process"] = "general"
+    # 자료를 찾을 표준 용어(비서가 고객 말을 시방서 말로 바꾼 것, 예: '도배 전 조명 기구 제거'). 공정 전문가 길이
+    # 질문과 함께 검색어로 써요(고객 말과 자료 말이 달라 못 찾던 조각, QA r6 c2 T11)
+    terms: list[str] = Field(default_factory=list, max_length=TERMS_MAX)
 
 
 def kind_of(kind: str, question: str) -> str:
@@ -167,7 +173,8 @@ def search_words(question: str) -> str:
     status="답을 찾고 있어요",
     description="도배 · 목공 일반 질문에 믿집 답 파이프라인으로 근거 문장을 찾아요(검증된 카드 · 자료 발췌). "
     "사실 · 숫자는 돌려준 문장 범위 안에서만 말해요. 앞 대화와 잇는 말 · 이 집 조건에 맞춘 권고 · 끝 질문은 붙여요. "
-    "kind price · period는 이 공사 금액 · 공사 기간(공정표)을 물을 때예요.",
+    "kind price · period는 이 공사 금액 · 공사 기간(공정표)을 물을 때예요. terms에는 자료를 찾을 표준 용어를 "
+    "1~3개 넣어요(고객 말을 시방서 · 업계 말로, 예: '떼 놔야 해요' → '조명 기구 제거').",
     model=AskIn,
     schema=obj(
         {
@@ -176,7 +183,13 @@ def search_words(question: str) -> str:
                 "type": "string",
                 "enum": ["general", "price", "period", "material", "process"],
             },
-        }
+            "terms": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "자료를 찾을 표준 용어 1~3개(개인정보 없이)",
+            },
+        },
+        required=["question", "kind"],
     ),
 )
 async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
@@ -185,7 +198,8 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     question = search_words(policy.mask_in(a.question))
     engine = engine_for(kind_of(a.kind, question))
     know = knowledge.other_trade_notes(question)
-    expert = engine in (EXPERT, HYBRID_E)
+    # 공정 전문가 길만 쓰는 검색 용어(None이면 전문가 길이 아님)
+    expert = terms_of(a.terms) if engine in (EXPERT, HYBRID_E) else None
     if engine in (HYBRID, HYBRID_G, HYBRID_E):
         out = await _hybrid(
             tc, question, ground=engine != HYBRID, expert=expert, know=know is not None
@@ -197,6 +211,12 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     if know is not None:  # 다른 공정 알아 두기(숫자 없음 · 출처)
         out.data["notes"] = know.data()
     return out
+
+
+def terms_of(raw: list[str]) -> tuple[str, ...]:
+    """비서가 준 검색 용어: 가리고 · 한 줄로 · 짧게 · 겹침 없이 TERMS_MAX개."""
+    got = (" ".join(policy.mask_in(t).split())[:TERM_CHARS] for t in raw)
+    return tuple(dict.fromkeys(t for t in got if t))[:TERMS_MAX]
 
 
 async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
@@ -223,14 +243,18 @@ async def _v3_answer(tc: ToolCtx, question: str) -> tuple[ToolOut, bool]:
 
 
 async def _v2_or_v3(
-    tc: ToolCtx, question: str, *, ground: bool = False, expert: bool = False
+    tc: ToolCtx,
+    question: str,
+    *,
+    ground: bool = False,
+    expert: tuple[str, ...] | None = None,
 ) -> ToolOut:
-    """v2 답(ground면 v2g 근거, expert면 공정 전문가). v2 길이 오류로 깨지면(공급자 · 임베딩 · 검색. QA r3: 빈 OpenAI
-    키의 OpenAIError로 도구가 실패해 지식 카드 0) v3 근거(무료 모드 · 키워드 검색)로 물러선다(engine v3 · v2_failed,
-    기록용). 도구 · 기능 오류(ToolError · AppError)는 그대로 낸다."""
+    """v2 답(ground면 v2g 근거, expert(검색 용어 묶음)가 있으면 공정 전문가). v2 길이 오류로 깨지면(공급자 · 임베딩 ·
+    검색. QA r3: 빈 OpenAI 키의 OpenAIError로 도구가 실패해 지식 카드 0) v3 근거(무료 모드 · 키워드 검색)로
+    물러선다(engine v3 · v2_failed, 기록용). 도구 · 기능 오류(ToolError · AppError)는 그대로 낸다."""
     try:
-        if expert:
-            out = await _expert_answer(tc, question)
+        if expert is not None:
+            out = await _expert_answer(tc, question, expert)
         elif ground:
             out = await _v2g_answer(tc, question)
             out.data["engine"] = out.data.get("engine") or GROUND
@@ -252,7 +276,7 @@ async def _hybrid(
     question: str,
     *,
     ground: bool = False,
-    expert: bool = False,
+    expert: tuple[str, ...] | None = None,
     know: bool = False,
 ) -> ToolOut:
     """v2+v3(ground면 v2g+v3, expert면 expert+v3): v2 입구 관문이 범위 밖으로 보고 v3가 실제로 답하면 v3 근거, 아니면
@@ -338,11 +362,21 @@ ORDER_LABEL = "공정 순서(앞에서부터, 믿집 안내)"
 ASK_LABEL = "확인할 조건(답이 갈리면 이것 하나만 물어요)"
 SPLIT_LABEL = "되물을 조건(공정마다 답이 갈려요, 하나만)"
 CALC_NOTE = "금액 · 수량 · 기간은 이 공사 표준견적서 · 공정표 값으로만 말해요."
+# 믿집이 잇지 않는 공정(목공)의 시공이 필요한 답: 연결 범위(고정 선 8)와 다음 걸음 하나(QA r6 c2 L2 '목공 업체에
+# 보여 주세요'만 하고 막다른 길). 비서가 대화에서 한 번 말해요
+CONNECT_LABEL = "믿집 연결 범위(대화에서 한 번만 말해요)"
+CONNECT_NEXT = {
+    True: "목공 금액은 이 공사 표준견적서에서 볼 수 있어요. 작은 손보기는 도배 실측 때 업체에 같이 할 수 "
+    "있는지 물어볼 수 있어요.",
+    False: "이 공사 표준견적서에는 목공이 없어요. 작은 손보기는 도배 실측 때 업체에 같이 할 수 있는지 물어볼 "
+    "수 있어요.",
+}
+CONNECTED = frozenset({"도배"})  # 믿집이 업체를 잇는 공정(policy.DOBAE_ONLY)
 EXPERT_SOURCES = 5  # 넘기는 출처 이름 수
 REST_PIECES = 4  # 전문가가 실패한 공정에서 대신 넘기는 조각 수
 
 
-async def _expert_answer(tc: ToolCtx, question: str) -> ToolOut:
+async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()) -> ToolOut:
     """공정 전문가: 공정 고르기(코드) → 도배 · 목공 전문가(LLM 구조화 답, 둘 다면 함께) → 비서가 받아 한 번에 써요.
     금액 · 기간 질문은 v2g처럼 v3(이 공사 계산 엔진 값). 고른 공정이 없으면(모름 · 다른 공정 · 갈림) v2g 근거로,
     갈림이면 어느 공정인지 되물을 조건 하나를 더해요. 무료 모드 · 전문가 실패 · 범위 밖 · 남은 줄 없음도 v2g로
@@ -363,7 +397,7 @@ async def _expert_answer(tc: ToolCtx, question: str) -> ToolOut:
     other = knowledge.other_trade_notes(question) is not None
     got = picking.pick(question, home.trades, other=other)
     if got.why == "unknown":
-        got = await experts.pick_unknown(question)
+        got = await experts.pick_unknown(question, terms)
     record: dict = {"pick": got.why, "trades": list(got.trades), "used": GROUND}
     notes: list = []
     if not got.trades:
@@ -372,7 +406,7 @@ async def _expert_answer(tc: ToolCtx, question: str) -> ToolOut:
         record["why_v2g"] = "free"
     else:
         try:
-            notes = await experts.consult(got.trades, question, home)
+            notes = await experts.consult(got.trades, question, home, terms)
         except (ToolError, AppError):
             raise
         except Exception as e:  # noqa: BLE001 - 종류 이름만 로그(질문 글은 남기지 않음)
@@ -394,13 +428,15 @@ async def _expert_answer(tc: ToolCtx, question: str) -> ToolOut:
         return out
     order = len(got.trades) > 1 or bool(ORDER_ASK.search(question))
     record.update(used=EXPERT, ms=int((time.monotonic() - t0) * 1000))
-    return ToolOut(data={**expert_data(ok, notes, order=order), "engine": EXPERT, "expert": record})
+    data = expert_data(ok, notes, order=order, own=home.trades)
+    return ToolOut(data={**data, "engine": EXPERT, "expert": record})
 
 
-def expert_data(ok: list, notes: list, *, order: bool) -> dict:
+def expert_data(ok: list, notes: list, *, order: bool, own: tuple[str, ...] = ()) -> dict:
     """전문가 메모 → 모델에 갈 값(policy.ALLOWED 칸만): 공정마다 핵심 답 · 주의점(줄 글은 자료 상자, 근거 이름),
-    둘 다거나 순서를 물으면 공정 순서, 확인할 조건 하나, 출처, 계산 엔진 안내. 전문가가 실패한 공정이 있으면 찾아 둔
-    조각을 v2g처럼 hits로 넘겨요."""
+    둘 다거나 순서를 물으면 공정 순서, 확인할 조건 하나, 믿집이 잇지 않는 공정의 시공이 필요하면 연결 범위와 다음
+    걸음(own = 이 공사 공정), 출처, 계산 엔진 안내. 전문가가 실패한 공정이 있으면 찾아 둔 조각을 v2g처럼 hits로
+    넘겨요."""
     from app.v2 import ask
 
     def lines(n, xs) -> list[dict]:
@@ -415,6 +451,10 @@ def expert_data(ok: list, notes: list, *, order: bool) -> dict:
         items.append({"label": ORDER_LABEL, "lines": [f"{a}: {b}" for a, b in ask.GUIDE]})
     if want := next((n.ask for n in ok if n.ask), ""):
         items.append({"label": ASK_LABEL, "lines": [policy.data(want)]})
+    if any(n.needs_vendor and n.trade not in CONNECTED for n in ok):
+        items.append(
+            {"label": CONNECT_LABEL, "lines": [policy.DOBAE_ONLY, CONNECT_NEXT["목공" in own]]}
+        )
     data: dict = {
         "route": EXPERT,
         "trades": [n.trade for n in ok],

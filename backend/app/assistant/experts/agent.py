@@ -35,6 +35,9 @@ log = logging.getLogger(__name__)
 PRIMER_DIR = Path(__file__).resolve().parents[2] / "knowledge" / "expert"
 SEARCH_K = 14  # 갈래로 거르기 전에 넉넉히 찾아요
 EVIDENCE_K = 8  # 전문가에게 주는 조각 수(그 공정 + 공통)
+# 비서가 준 표준 용어(terms)로 따로 찾은 조각 중 꼭 넣는 수. 질문 검색과 합쳐 순위를 매기면(RRF) 용어로만 잡힌
+# 조각이 밀려나서 자리를 따로 둬요(QA r6 c2 T11: KCS 41 51 05 3.3(3)① 조명 기구 조각)
+TERM_K = 3
 PIECE_CHARS = 520  # 조각 글 앞 몇 글자(조각 90%가 700자 안)
 EXPERT_SECONDS = 20.0  # 한 번 부르기 시간 상한(턴 45초 안에서 비서 두 번과 같이 돌아요)
 MAX_TOKENS = 2500  # 생각(reasoning) 토큰 포함
@@ -171,18 +174,28 @@ def piece_of(h: bm25.Hit) -> Piece:
     )
 
 
-def evidence(hits: list[bm25.Hit], trade: str) -> list[bm25.Hit]:
-    """검색 순서 그대로 그 공정 · 공통 갈래 조각만 EVIDENCE_K개(다른 공정 · 범위 밖 조각은 빼요)."""
+def evidence(
+    hits: list[bm25.Hit], trade: str, extra: list[bm25.Hit] | tuple = ()
+) -> list[bm25.Hit]:
+    """그 공정 · 공통 갈래 조각만 EVIDENCE_K개(다른 공정 · 범위 밖 조각은 빼요). 질문 검색 순서대로 채우되,
+    용어 검색(extra) 앞 TERM_K개는 자리를 따로 둬요. 겹치면 한 번만, 빈자리는 질문 검색 다음 것으로 채워요."""
     keep = {trade, bm25.COMMON}
-    return [h for h in hits if set(h.scope) & keep][:EVIDENCE_K]
+    main = [h for h in hits if set(h.scope) & keep]
+    more = [h for h in extra if set(h.scope) & keep][:TERM_K]
+    head = EVIDENCE_K - len(more)
+    out: dict[str, bm25.Hit] = {}
+    for h in [*main[:head], *more, *main[head:]]:
+        out.setdefault(h.ref, h)
+    return list(out.values())[:EVIDENCE_K]
 
 
-async def pick_unknown(question: str) -> Pick:
-    """질문 낱말 · 이 공사 공정으로 모를 때 지식 조각 갈래로 정해요(키워드 검색만, LLM · 임베딩 없음)."""
+async def pick_unknown(question: str, terms: tuple[str, ...] = ()) -> Pick:
+    """질문 낱말 · 이 공사 공정으로 모를 때 지식 조각 갈래로 정해요(키워드 검색만, LLM · 임베딩 없음).
+    terms는 비서가 준 표준 용어(검색어로 같이 써요)."""
     from app.knowledge import service as knowledge
 
     async with SessionLocal() as s:
-        res = await knowledge.search(s, question, k=SEARCH_K)
+        res = await knowledge.search(s, question, queries=list(terms), k=SEARCH_K)
     return infer(res.hits)
 
 
@@ -245,6 +258,9 @@ class ExpertOut(BaseModel):
         description="답이 갈리는데 이 집 사실 · 질문으로 모르는 조건 하나, 없으면 빈 글"
     )
     needs_calc: bool = Field(description="금액 · 수량 · 기간 숫자가 있어야 답이 되는 질문인지")
+    needs_vendor: bool = Field(
+        description="이 답대로 하려면 이 공정 시공 업체(사람)를 불러야 하는지(고객이 혼자 못 하는 일)"
+    )
     out_of_scope: bool = Field(description="이 공정 전문가가 답할 질문이 아닌지")
 
 
@@ -264,6 +280,9 @@ class Note:
     cautions: list[Line] = field(default_factory=list)
     ask: str = ""
     needs_calc: bool = False
+    needs_vendor: bool = (
+        False  # 시공 업체가 필요한 일(믿집이 잇지 않는 공정이면 비서가 연결 범위를 말해요)
+    )
     out: bool = False
     failed: str | None = None  # off · budget · time · bad · rejected · error
     dropped: Counter = field(default_factory=Counter)  # 버린 까닭별 수(cite · ref · number · long)
@@ -294,6 +313,7 @@ class Note:
             "pieces": len(self.pieces),
             "ask": bool(self.ask),
             "needs_calc": self.needs_calc,
+            "needs_vendor": self.needs_vendor,
             "dropped": dict(self.dropped),
             "ms": self.ms,
         }
@@ -362,6 +382,7 @@ def refine(trade: str, out: ExpertOut, pieces: dict[str, Piece], allowed: str) -
         cautions=cautions[:CAUTION_MAX],
         ask=ask,
         needs_calc=out.needs_calc,
+        needs_vendor=out.needs_vendor,
         out=out.out_of_scope,
         dropped=+drop,
     )
@@ -412,19 +433,25 @@ async def consult_one(trade: str, question: str, home: Home, hits: list[bm25.Hit
     return note
 
 
-async def consult(trades: tuple[str, ...], question: str, home: Home) -> list[Note]:
-    """고른 공정마다 조각을 찾고(임베딩은 세션 밖에서 한 번) 전문가를 함께 불러요. 결과는 도배 · 목공 순서."""
+async def consult(
+    trades: tuple[str, ...], question: str, home: Home, terms: tuple[str, ...] = ()
+) -> list[Note]:
+    """고른 공정마다 조각을 찾고(임베딩은 세션 밖에서 한 번) 전문가를 함께 불러요. 결과는 도배 · 목공 순서.
+    terms(비서가 준 표준 용어)는 따로 키워드로 찾아 앞 TERM_K개를 증거에 넣어요(고객 말과 자료 말이 다를 때,
+    QA r6 c2 T11)."""
     from app.knowledge import service as knowledge
 
     embedding = await llm.embed_query(question)
-    async with SessionLocal() as s:
-        found = {
-            t: await knowledge.search(s, question, trade=t, k=SEARCH_K, embedding=embedding)
-            for t in trades
-        }
     order = [t for t in ORDER if t in trades]
-    return list(
-        await asyncio.gather(
-            *(consult_one(t, question, home, evidence(found[t].hits, t)) for t in order)
-        )
-    )
+    found: dict[str, list[bm25.Hit]] = {}
+    async with SessionLocal() as s:
+        for t in order:
+            res = await knowledge.search(s, question, trade=t, k=SEARCH_K, embedding=embedding)
+            extra = []
+            if terms:
+                more = await knowledge.search(
+                    s, terms[0], queries=list(terms[1:]), trade=t, k=SEARCH_K
+                )
+                extra = more.hits
+            found[t] = evidence(res.hits, t, extra)
+    return list(await asyncio.gather(*(consult_one(t, question, home, found[t]) for t in order)))

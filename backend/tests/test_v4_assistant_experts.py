@@ -57,13 +57,14 @@ def _gate(monkeypatch, label: str = "trade"):
     monkeypatch.setattr(agent_gate, "classify", classify)
 
 
-def _out(*answer, cautions=(), ask_="", calc=False, out=False) -> dict:
+def _out(*answer, cautions=(), ask_="", calc=False, out=False, vendor=False) -> dict:
     """전문가 대본 답(ExpertOut 꼴). answer · cautions는 (글, [근거]) 짝."""
     return {
         "answer": [{"text": t, "refs": r} for t, r in answer],
         "cautions": [{"text": t, "refs": r} for t, r in cautions],
         "ask": ask_,
         "needs_calc": calc,
+        "needs_vendor": vendor,
         "out_of_scope": out,
     }
 
@@ -204,13 +205,77 @@ def test_expert_answer_falls_back_to_v2g(monkeypatch, repo_search):
     d = asyncio.run(answer._expert_answer(free, "초배지는 왜 발라요?")).data
     assert d["route"] == "v2g" and d["expert"]["why_v2g"] == "free"
 
-    async def split(_q):
+    async def split(_q, _terms=()):
         return picking.Pick((), "split")
 
     monkeypatch.setattr(experts, "pick_unknown", split)
     d = asyncio.run(answer._expert_answer(tc, "어떤 게 좋아요?")).data
     assert d["route"] == "v2g" and d["expert"]["pick"] == "split"
     assert {"label": answer.SPLIT_LABEL, "lines": [picking.SPLIT_ASK]} in d["items"]
+
+
+def test_expert_data_partial_failure_passes_found_pieces():
+    """둘 다 고른 질문에서 한 전문가만 실패하면 성공한 줄 + 실패한 공정의 찾아 둔 조각(hits)을 넘겨요."""
+    pieces = _pieces()
+    good = experts.refine(
+        "도배",
+        experts.ExpertOut.model_validate(_out(("초배지는 질긴 한지나 부직포를 써요.", ["K1"]))),
+        pieces,
+        "",
+    )
+    bad = experts.Note(
+        trade="목공", pieces={"K2": experts.Piece("K2", "표준시방서", "목공사", "", "각재")}
+    )
+    bad.failed = "time"
+    d = answer.expert_data([good], [good, bad], order=True)
+    assert d["trades"] == ["도배"] and d["sources"] == ["KCS 41 51 05 도배공사"]
+    assert [h["title"] for h in d["hits"]] == ["목공사"]
+    assert answer.ORDER_LABEL in [x["label"] for x in d["items"]]
+    seen = policy.to_model({**d, "engine": "expert", "expert": {"pick": "question"}})
+    assert "engine" not in seen and "expert" not in seen and seen["hits"]
+
+
+def test_mokgong_vendor_needed_adds_connection_scope():
+    """목공 시공이 필요한 답이면 믿집 연결 범위(도배만)와 다음 걸음 하나를 붙여요(QA r6 c2 L2). 도배는 붙이지 않아요."""
+    pieces = _pieces()
+    line = ("몰딩이 조금 들뜬 곳은 본드로 다시 붙여요.", ["G"])
+    mok = experts.refine(
+        "목공", experts.ExpertOut.model_validate(_out(line, vendor=True)), pieces, ""
+    )
+    d = answer.expert_data([mok], [mok], order=False, own=("도배",))
+    scope = next(x for x in d["items"] if x["label"] == answer.CONNECT_LABEL)
+    assert scope["lines"] == [policy.DOBAE_ONLY, answer.CONNECT_NEXT[False]]
+    d = answer.expert_data([mok], [mok], order=False, own=("도배", "목공"))
+    assert answer.CONNECT_NEXT[True] in json.dumps(d, ensure_ascii=False)
+    dobae = experts.refine(
+        "도배", experts.ExpertOut.model_validate(_out(line, vendor=True)), pieces, ""
+    )
+    plain = experts.refine("목공", experts.ExpertOut.model_validate(_out(line)), pieces, "")
+    for n in (dobae, plain):
+        labels = [x["label"] for x in answer.expert_data([n], [n], order=False)["items"]]
+        assert answer.CONNECT_LABEL not in labels
+    assert mok.record()["needs_vendor"] is True
+
+
+def test_terms_widen_expert_search(monkeypatch, repo_search):
+    """비서가 준 표준 용어(terms)를 검색어로 같이 써서 고객 말로는 안 잡히던 시방서 조각을 찾아요(QA r6 c2 T11:
+    '도배 전에 조명 떼 놔야 해요?' → KCS 41 51 05 3.3(3)① 조명 기구 제거)."""
+    sent: list[str] = []
+
+    async def fake(_p, _schema, _system, msg, **_k):
+        sent.append(msg)
+        raise llm.LLMError("기록만")
+
+    monkeypatch.setattr(llm, "claude_json", fake)
+    tc = SimpleNamespace(user=None, project_id=None, mode="llm")
+    q = "도배 전에 기존 조명을 떼 놔야 해요?"
+    asyncio.run(answer._expert_answer(tc, q))
+    asyncio.run(answer._expert_answer(tc, q, ("도배 전 조명 기구 제거",)))
+    assert "K2578" not in sent[0] and "K2578" in sent[1]
+    assert answer.terms_of(["  조명 기구   제거 ", "조명 기구 제거", "", "010-1234-5678 전화"]) == (
+        "조명 기구 제거",
+        policy.mask_in("010-1234-5678 전화"),
+    )
 
 
 # ---- 비서 턴(대본) ----
