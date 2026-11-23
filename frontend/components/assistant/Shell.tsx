@@ -232,7 +232,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
             <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => a.send(t)} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
           </div>
         </div>
-        <Board board={a.board} open={boardOpen} flash={a.flash} base={base} onClose={() => setBoardOpen(false)} />
+        <Board board={a.board} failed={a.boardFailed} onRetry={a.retryBoard} open={boardOpen} flash={a.flash} base={base} onClose={() => setBoardOpen(false)} />
       </div>
       <CardSlot step={step} onBack={back} onClose={close} hidden={closing}>{children}</CardSlot>
     </div>

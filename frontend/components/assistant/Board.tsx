@@ -13,8 +13,11 @@ import { StatusTag } from "./kit/StatusTag";
 import { I } from "./kit/icons";
 import s from "./assistant.module.css";
 
-export function Board({ board, open, flash, base, onClose }: {
+export function Board({ board, failed = false, onRetry, open, flash, base, onClose }: {
   board: BoardOut | null;
+  /** 보드를 읽지 못했어요(읽어 둔 보드가 없을 때만 실패 줄 · 다시 불러오기) */
+  failed?: boolean;
+  onRetry?: () => void;
   open: boolean;
   flash: number;
   /** 이 공사 주소(/projects/{id}). 칸의 자세히는 그 아래 카드 자리 경로예요 */
@@ -45,7 +48,11 @@ export function Board({ board, open, flash, base, onClose }: {
           <h2 id="board-t" tabIndex={-1}>내 공사 보드</h2>
           <button type="button" className={`${s.x} ${s.boardX}`} aria-label="보드 닫기" onClick={onClose}><I n="x" /></button>
         </div>
-        {!board ? <p className={s.muted}>보드를 불러오고 있어요</p> : (
+        {!board ? (
+          failed ? (
+            <p className={s.fail} role="alert"><I n="alert" />보드를 불러오지 못했어요{onRetry ? <button type="button" className={s.textBtn} onClick={onRetry}>다시 불러오기</button> : null}</p>
+          ) : <p className={s.muted}>보드를 불러오고 있어요</p>
+        ) : (
           // 폰에서 보드(아래 시트)를 연 채 자세히로 가면 보드는 닫아요
           <Sections b={board} base={base} onOpen={open ? onClose : undefined} />
         )}

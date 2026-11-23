@@ -82,6 +82,7 @@
 .ideas { display: flex; flex-wrap: wrap; gap: 8px; margin-top: -4px; }
 .ideas button { white-space: normal; text-align: left; line-height: 1.35; padding-block: 8px; max-width: 100%; }
 .fail { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0; font-size: var(--mj-type-label); color: var(--mj-danger); }
+.fail > svg { flex: none; width: 18px; height: 18px; }
 .day { display: flex; align-items: center; gap: 12px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); }
 .day::before, .day::after { content: ""; flex: 1; height: 1px; background: var(--mj-line); }
 .typing { display: inline-flex; gap: 4px; padding: 10px 0; }
