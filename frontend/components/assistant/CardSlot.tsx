@@ -21,7 +21,8 @@ export function cardOf(segs: string[], view: string | null): { kind: SheetKind; 
     case "home": return { kind: "sheet", title: "우리 집 정보" };
     case "plan": return { kind: "sheet", title: "공정표" };
     case "vendors": return b ? { kind: "drawer", title: c === "reviews" ? "리뷰" : "업체 자세히" } : { kind: "sheet", title: "업체 보기" };
-    case "visits": return { kind: "sheet", title: b === "new" ? "실측 일정 요청" : b ? "실측 날짜 고르기" : "실측 일정" };
+    // 실측 하나(visits/{id})는 날짜 고르기 · 업체가 낸 날 · 정해진 날을 같이 보여서 창 이름은 '실측 날짜'(안 제목이 지금 상태)
+    case "visits": return { kind: "sheet", title: b === "new" ? "실측 일정 요청" : b ? "실측 날짜" : "실측 일정" };
     case "quotes": return c === "confirm" ? { kind: "dialog", title: "업체 확정" } : { kind: "sheet", title: "실측 견적서" };
     case "schedule": return { kind: "sheet", title: (view && SCHEDULE[view]) || "공사" };
     case "docs": return { kind: "sheet", title: "서류" };
