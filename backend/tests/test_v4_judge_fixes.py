@@ -3,7 +3,7 @@
 - F1 · S07: 승인 카드의 판(견적서 n판)이 모델 값 줄에도 간다.
 - S10: 업체 체크리스트에 선택 · 실측 후 줄(퍼티 · 철거)도 올라간다.
 - S08: 지시문이 '도구 없이 못 한다고 하지 않기' · same은 '만들었어요'가 아님을 말한다.
-- S04: 집 정보 도구 설명이 기준을 말하지 않은 계약서 ㎡를 먼저 확인하게 한다.
+- S04: 집 정보 도구 설명이 기준을 말하지 않은 계약서 ㎡를 전용으로 카드에 넣고 기준을 밝혀 확인받게 한다.
 """
 
 from app.assistant import prompts
@@ -58,4 +58,5 @@ def test_customer_prompt_retries_tool_before_refusing():
 
 def test_home_info_description_confirms_contract_area_basis():
     text = REGISTRY["propose_home_info"].description
-    assert "계약서 ㎡처럼 고객이 기준을 말하지 않은 ㎡는 카드를 만들기 전에 한 번 확인해요" in text
+    assert "계약서 ㎡처럼 고객이 기준을 말하지 않은 ㎡는 보통 전용이라 exclusive로 카드를 만들고" in text
+    assert "공급면적이면 말해 주세요" in text
