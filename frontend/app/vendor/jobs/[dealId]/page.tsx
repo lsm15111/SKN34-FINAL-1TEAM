@@ -51,7 +51,7 @@ export default async function VendorJobPage({ params, searchParams }: { params: 
   return (
     <>
       <ProHeader me={me} phone={{ title: "공사 한 건", back: "/vendor?tab=jobs" }} />
-      <JobView job={job} log={log} />
+      <JobView job={job} log={log} now={vendorNow("job")} />
     </>
   );
 }
