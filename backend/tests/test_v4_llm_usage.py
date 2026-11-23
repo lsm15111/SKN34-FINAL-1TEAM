@@ -55,7 +55,15 @@ def test_prices_per_model():
     assert prices.cost("claude-haiku-5-5", input_tokens=1)[0] == 1  # 올림
     # 날짜가 붙은 이름은 앞부분으로 찾고, 모르는 모델은 가장 비싼 값으로 어림한다
     assert prices.cost("claude-haiku-5-5-20261101", input_tokens=10) == (1, ver)
-    assert prices.cost("gpt-6.1-terra", input_tokens=1_000_000) == (4_000_000, f"{ver}:fallback")
+    assert prices.cost("made-up-model", input_tokens=1_000_000) == (4_000_000, f"{ver}:fallback")
+    # OpenAI(공식 가격 문서 2026-11-23): terra 입력 $1 · 30분 쓰기 $1.25 · 읽기 $0.05 · 출력 $5, luna는 10분의 1.
+    # 입력이 27만 2천을 넘으면 비싼 표(terra 입력 $2 · 출력 $7.50)
+    assert prices.cost("gpt-6.1-terra", input_tokens=100_000) == (100_000, ver)
+    got = prices.cost("gpt-6.1-terra-2026-10-01", cache_read=100_000, cache_write_5m=100_000)
+    assert got == (5_000 + 125_000, ver)
+    assert prices.cost("gpt-6.1-terra", input_tokens=300_000, output_tokens=1000)[0] == 607_500
+    assert prices.cost("gpt-6-luna", input_tokens=100_000, output_tokens=100_000)[0] == 60_000
+    assert prices.cost("gpt-6-luna", output_tokens=1, web_searches=1)[0] == 10_001
 
 
 def test_service_day_cap_warns_at_80_and_blocks_at_90(monkeypatch, caplog):

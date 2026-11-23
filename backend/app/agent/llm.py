@@ -1,6 +1,8 @@
 """LLM SDK 호출은 이 파일 한 곳 (AGENTS.md 4절). LLM_LIVE=false면 스텁 · 대본만 써서 유료 호출 0회.
 
-- 공급자: LLM_PROVIDER=anthropic(기본, Claude) · openai(되돌리기용). 임베딩은 늘 OpenAI다.
+- 공급자: LLM_PROVIDER=anthropic(기본, Claude) · openai. 임베딩은 늘 OpenAI다. openai면 v4 비서 · 조사 · 기억 ·
+  먼저 권하기 · 업체 문장(claude_stream · claude_json)도 OpenAI Responses로 보낸다(도면 읽기만 Claude, 아래 OpenAI
+  Responses 길).
 - 유료 호출은 모두 _guard(usage.allow: 비용 상한) → 호출 → _sink(usage.record: 토큰 · 비용 장부)를 지난다.
   상한을 넘으면 OverBudget(LLMError)이라 부르는 쪽은 지금처럼 무료 · 실패 길로 간다. 임베딩 · Jev는 장부 밖이다.
   부르는 쪽 시간 제한으로 끊겨 usage를 못 받은 호출은 보수적 추정치로 남긴다(error ESTIMATED).
@@ -14,6 +16,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 import uuid
 import weakref
@@ -736,9 +739,15 @@ async def claude_json[T: BaseModel](
 
     messages가 글이면 user 한 줄로 보낸다. 꺼져 있으면 LLMOff, 상한이면 OverBudget,
     공급자 오류 · 거절 · 잘림 · 꼴 틀림이면 LLMError. 생각(thinking)도 max_tokens 안에서 쓴다.
+    공급자가 openai면 OpenAI Responses 구조화 출력으로 보낸다(_oa_json, 꼴 · 오류는 같다).
     """
-    name, eff = claude_model_for(purpose)
     msgs = [{"role": "user", "content": messages}] if isinstance(messages, str) else list(messages)
+    if _oa_route(purpose, purpose):
+        got, _, _ = await _oa_json(
+            purpose, schema, system, msgs, model=model, effort=effort, max_tokens=max_tokens
+        )
+        return got
+    name, eff = claude_model_for(purpose)
     out, _, _ = await _json_call(
         purpose,
         schema,
@@ -787,7 +796,22 @@ async def claude_stream(
     container: pause_turn을 이을 때 앞 응답의 코드 실행 컨테이너(웹 도구 동적 거르기). on_block: 블록이 시작될
     때마다 (블록 종류, 서버 도구 이름)을 넘긴다(조사 진행 단계). on_block_end: 블록이 끝날 때마다 다 모인 블록
     (dict, 서버 도구 입력 포함)을 넘긴다(조사 진행 기록: 검색어 · 읽은 곳). 두 알림의 오류도 그대로 낸다.
+    공급자가 openai면 도면 읽기 말고는 OpenAI Responses 스트림으로 보낸다(_oa_stream, 꼴 · 알림 · 오류는 같다).
     """
+    if _oa_route(purpose, "assistant"):
+        return await _oa_stream(
+            system,
+            messages,
+            tools=tools,
+            on_text=on_text,
+            purpose=purpose,
+            model=model,
+            effort=effort,
+            tool_choice=tool_choice,
+            max_tokens=max_tokens,
+            on_block=on_block,
+            on_block_end=on_block_end,
+        )
     client = _claude()
     call = await _guard(purpose, "assistant")
     default_model, default_effort = claude_model_for(call.purpose)
@@ -1119,6 +1143,652 @@ async def _openai_chat_tools(system: str, messages: list[dict], tools: list[dict
         "cost_micros": cost,
     }
     return {"text": text or "", "tool_calls": calls, "stop": stop, "usage": usage}
+
+
+# ── OpenAI Responses 길(LLM_PROVIDER=openai): 비서 · 조사 · 기억 · 먼저 권하기 · 업체 문장 ─────────
+# claude_stream · claude_json을 OpenAI Responses API로 보낸다(2026-11-23 사용자 결정 '도면 읽기 빼고 다'). 부르는 쪽은
+# Claude 꼴(messages · 도구 정의 · 답 블록)을 그대로 쓰고 여기서 두 꼴을 바꾼다. 도면 읽기(OPENAI_SKIP)는 옮기지 않아
+# OpenAI 길에서는 꺼진다(LLMOff → 공공 링크만).
+# - 웹 도구(Claude web_search · web_fetch)는 OpenAI web_search 하나로 바꾸고, 그 부름(web_search_call)을 Claude 서버
+#   도구 블록 꼴(server_tool_use + web_search_tool_result · web_fetch_tool_result)로 돌려준다(조사 진행 기록 · 링크
+#   뽑기가 그대로 읽는다). OpenAI는 막을 곳(blocked_domains)을 받지 않아 지시문에 적고, 링크 · 기록에서는 부르는 쪽
+#   코드가 거른다. 가져온 글은 오지 않는다(숫자 근거는 목표 · 집 조건뿐이라 근거 없는 숫자 문장은 빠진다).
+# - 생각(reasoning) 항목은 다음 요청에 보내지 않는다(store=false, 앞 응답 id를 쓰지 않음). 그림은 data URL로 보낸다.
+# - 꼴은 openai SDK 2.54.0 형(types/responses)을 따랐다. 가격은 usage/prices.py.
+OPENAI_SKIP = frozenset({"floorplan"})
+# 부르는 쪽이 준 Claude effort → OpenAI 추론 강도
+OPENAI_EFFORT = {"low": "low", "medium": "medium", "high": "high", "xhigh": "high", "max": "high"}
+OA_TIMEOUT = 90  # 초. 웹 검색이 도는 동안 조각이 뜸할 수 있다(부르는 쪽 시간 제한이 먼저 끊는다)
+OA_WEB_TOOL = {
+    "type": "web_search",
+    "search_context_size": "medium",
+    "user_location": {"type": "approximate", "country": "KR", "timezone": "Asia/Seoul"},
+}
+OA_INCLUDE = ["web_search_call.action.sources"]  # 검색이 본 페이지 주소(조사 진행 기록 · 링크)
+_OA_ROLES = frozenset({"user", "assistant", "system", "developer"})
+_OA_UTM = re.compile(r"([?&])utm_source=openai(&?)")
+_oa_clients: "weakref.WeakKeyDictionary[asyncio.AbstractEventLoop, Any]" = (
+    weakref.WeakKeyDictionary()
+)
+
+
+class _OaFailed(Exception):
+    """스트림이 response.failed · error로 끝났다(장부에는 이 종류 이름만 남긴다)."""
+
+
+def _oa_route(purpose: str | None, default: str) -> bool:
+    """이 호출을 OpenAI로 보낼지: 공급자가 openai이고 Claude 시험 대본이 꺼져 있고 옮기지 않은 목적이 아니면."""
+    if settings.llm_provider != "openai" or _SCRIPT.on:
+        return False
+    ctx = CALL_CTX.get()
+    return (purpose or (ctx.purpose if ctx else None) or default) not in OPENAI_SKIP
+
+
+def openai_model_for(purpose: str) -> tuple[str, str]:
+    """목적 → (OpenAI 모델, 추론 강도). Claude가 Sonnet · Opus를 쓰는 자리(비서 · 조사 · v2 대화 · 판정 · 무거운
+    역할)는 agent 모델, Haiku 자리(짧은 문장 · 분류 · 기억 · OPENAI_LIGHT_ROLES 역할)는 light 모델."""
+    light = {r.strip() for r in settings.openai_light_roles.split(",") if r.strip()}
+    heavy = (
+        purpose == "judge"
+        or purpose in MAIN_PURPOSES
+        or (purpose in get_args(Role) and purpose not in light)
+    )
+    if heavy or not settings.openai_light_model:
+        return settings.openai_agent_model, settings.openai_reasoning_effort
+    return settings.openai_light_model, settings.openai_light_effort
+
+
+def _oa_pick(purpose: str, model: str | None, effort: str | None) -> tuple[str, str]:
+    """목적의 기본 (모델, 강도)에 부르는 쪽 값을 얹는다. Claude 모델 이름은 OpenAI에 없어 쓰지 않는다."""
+    name, eff = openai_model_for(purpose)
+    if model and not model.startswith("claude"):
+        name = model
+    if effort:
+        eff = OPENAI_EFFORT.get(effort, eff)
+    return name, eff
+
+
+def _openai() -> Any:
+    """이 이벤트 루프의 OpenAI 클라이언트. 부를 수 없으면 LLMOff(시험은 이 함수를 바꿔 끼운다)."""
+    if not settings.llm_live:
+        raise LLMOff("LLM 꺼짐")
+    key = settings.openai_api_key.get_secret_value()
+    if not key:
+        raise LLMOff("OpenAI 키 없음")
+    from openai import AsyncOpenAI  # 실호출일 때만 SDK를 불러온다
+
+    loop = asyncio.get_running_loop()
+    client = _oa_clients.get(loop)
+    if client is None:
+        client = _oa_clients[loop] = AsyncOpenAI(api_key=key, timeout=OA_TIMEOUT, max_retries=1)
+    return client
+
+
+def _oa_clean(text: str) -> str:
+    """OpenAI가 인용 주소에 붙이는 utm_source=openai를 뗀다(검색 결과 주소와 같은 페이지로 맞추게)."""
+
+    def fix(m: re.Match[str]) -> str:
+        lead, tail = m.group(1), m.group(2)
+        return ("?" if tail else "") if lead == "?" else tail
+
+    return _OA_UTM.sub(fix, text)
+
+
+def _oa_instructions(system: str | Sequence[str] | Sequence[dict] | None) -> str:
+    """지시문(글 · 글 블록) → instructions 한 덩이."""
+    parts = [system] if isinstance(system, str) else list(system or [])
+    texts = [p if isinstance(p, str) else str(p.get("text") or "") for p in parts]
+    return "\n\n".join(t for t in texts if t.strip())
+
+
+def _oa_web_note(tools: Sequence[dict]) -> str:
+    """웹 도구를 OpenAI web_search 하나로 바꿀 때 지시문 끝에 붙이는 말: 도구 이름 · Claude 도구의 막은 곳."""
+    never: set[str] = set()
+    closed: set[str] = set()
+    for t in tools:
+        kind = str(t.get("type") or "")
+        if kind.startswith("web_search"):
+            never.update(t.get("blocked_domains") or ())
+        elif kind.startswith("web_fetch"):
+            closed.update(t.get("blocked_domains") or ())
+    note = "웹 도구: 검색과 페이지 열기는 모두 web_search 하나로 해(web_fetch는 따로 없어)."
+    if never:
+        note += f" 이 곳(하위 도메인 포함)은 열지도 인용하지도 마: {', '.join(sorted(never))}."
+    if closed - never:
+        note += f" 이 곳은 검색 결과로만 보고 열지는 마: {', '.join(sorted(closed - never))}."
+    return note
+
+
+def _oa_text(content: Any) -> str:
+    """도구 결과 content(글 · 글 블록 목록) → 글."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            str(b.get("text") or "")
+            for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return "" if content is None else json.dumps(content, ensure_ascii=False, default=str)
+
+
+def _oa_image(b: dict) -> dict | None:
+    src = b.get("source") if isinstance(b.get("source"), dict) else {}
+    if src.get("type") == "base64" and src.get("data"):
+        url = f"data:{src.get('media_type') or 'image/jpeg'};base64,{src['data']}"
+    elif src.get("type") == "url" and src.get("url"):
+        url = str(src["url"])
+    else:
+        return None
+    return {"type": "input_image", "image_url": url, "detail": "auto"}
+
+
+def _oa_flush(out: list[dict], role: str, parts: list[dict]) -> None:
+    """모은 글 · 그림 → 메시지 하나(assistant는 글만 한 덩이로)."""
+    if not parts:
+        return
+    if role == "assistant":
+        text = "".join(p["text"] for p in parts if p["type"] == "input_text")
+        if text.strip():
+            out.append({"role": role, "content": text})
+    else:
+        out.append({"role": role, "content": list(parts)})
+    parts.clear()
+
+
+def _oa_input(messages: Sequence[dict]) -> list[dict]:
+    """Claude 꼴 messages → Responses input 항목(차례 그대로).
+
+    글 · 그림은 메시지, tool_use는 function_call, tool_result는 function_call_output이다. 생각 블록 · 서버 도구
+    블록(검색 · 가져오기 · 코드 실행)은 OpenAI가 받지 않아 뺀다."""
+    out: list[dict] = []
+    for m in messages:
+        role = str(m.get("role")) if m.get("role") in _OA_ROLES else "user"
+        content = m.get("content")
+        if isinstance(content, str):
+            if content.strip():
+                out.append({"role": role, "content": content})
+            continue
+        parts: list[dict] = []
+        for b in content or []:
+            if not isinstance(b, dict):
+                continue
+            kind = b.get("type")
+            if kind == "text" and str(b.get("text") or "").strip():
+                parts.append({"type": "input_text", "text": str(b["text"])})
+            elif kind == "image" and role != "assistant":
+                img = _oa_image(b)
+                if img is not None:
+                    parts.append(img)
+            elif kind == "tool_use":
+                _oa_flush(out, role, parts)
+                out.append(
+                    {
+                        "type": "function_call",
+                        "call_id": str(b.get("id") or ""),
+                        "name": str(b.get("name") or ""),
+                        "arguments": json.dumps(b.get("input") or {}, ensure_ascii=False),
+                    }
+                )
+            elif kind == "tool_result":
+                _oa_flush(out, role, parts)
+                out.append(
+                    {
+                        "type": "function_call_output",
+                        "call_id": str(b.get("tool_use_id") or ""),
+                        "output": _oa_text(b.get("content")),
+                    }
+                )
+        _oa_flush(out, role, parts)
+    return out
+
+
+def _oa_tools(tools: Sequence[dict]) -> tuple[list[dict], int]:
+    """도구 정의(Claude · OpenAI 함수 꼴) → (Responses 도구, 웹 도구 부름 상한 합. 웹 도구가 없으면 0).
+
+    직접 만든 도구는 함수 도구로 둔다(strict 끔: 스키마를 OpenAI 엄격 꼴로 바꾸지 않고, 입력은 부르는 쪽이 검사한다).
+    Claude 웹 검색 · 가져오기는 OpenAI web_search 하나(한국 · 서울 시간대)로 바꾸고, 다른 서버 도구는 뺀다."""
+    out: list[dict] = []
+    web = 0
+    for t in sorted(tools, key=lambda t: str(t.get("name", ""))):
+        kind = str(t.get("type") or "")
+        if kind.startswith(("web_search", "web_fetch")):
+            web += int(t.get("max_uses") or 4)
+            continue
+        if kind and "input_schema" not in t and "parameters" not in t:
+            continue
+        schema = (
+            t.get("input_schema") or t.get("parameters") or {"type": "object", "properties": {}}
+        )
+        out.append(
+            {
+                "type": "function",
+                "name": str(t["name"]),
+                "description": str(t.get("description") or ""),
+                "parameters": schema,
+                "strict": False,
+            }
+        )
+    if web:
+        out.append(dict(OA_WEB_TOOL))
+    return out, web
+
+
+def _oa_choice(choice: dict | None) -> Any:
+    """Claude tool_choice → Responses tool_choice."""
+    c = choice or {}
+    if c.get("type") == "none":
+        return "none"
+    if c.get("type") == "any":
+        return "required"
+    if c.get("type") == "tool" and c.get("name"):
+        return {"type": "function", "name": str(c["name"])}
+    return "auto"
+
+
+def _oa_num(obj: Any, key: str) -> int:
+    """SDK 값 · dict(형에 없는 새 칸은 dict로 온다)에서 정수 칸 하나. 없으면 0."""
+    v = obj.get(key) if isinstance(obj, dict) else getattr(obj, key, None)
+    return int(v or 0)
+
+
+def _oa_usage(resp: Any, web_calls: int) -> dict[str, int]:
+    """Responses usage → 장부 토큰(Claude와 같은 뜻: input은 캐시 밖 입력). OpenAI 입력 토큰은 캐시 읽기 · 쓰기를
+    포함한다(2026-11-23 실측: 같은 요청 두 번의 input_tokens가 같고 쓰기 · 읽기만 바뀜). 캐시 쓰기는 30분 · 12시간
+    나눔(cache_write_tokens_details)을 짧은 · 긴 칸에 두고, 나눔이 없으면 모두 30분(기본 ttl)으로 본다.
+    웹 부름은 열기 · 찾기까지 모두 센다(상한 쪽으로 안전)."""
+    u = getattr(resp, "usage", None)
+    if u is None:
+        return {"web_searches": web_calls}
+    det = getattr(u, "input_tokens_details", None)
+    cached = _oa_num(det, "cached_tokens")
+    wrote = _oa_num(det, "cache_write_tokens")
+    split = det.get("cache_write_tokens_details") if isinstance(det, dict) else None
+    split = split or getattr(det, "cache_write_tokens_details", None)
+    long_ = min(_oa_num(split, "ttl_12h_tokens"), wrote) if split is not None else 0
+    od = getattr(u, "output_tokens_details", None)
+    return {
+        "input": max(_oa_num(u, "input_tokens") - cached - wrote, 0),
+        "cache_read": cached,
+        "cache_write_5m": wrote - long_,
+        "cache_write_1h": long_,
+        "output": _oa_num(u, "output_tokens"),
+        "web_searches": web_calls,
+        "thinking": _oa_num(od, "reasoning_tokens"),
+    }
+
+
+def _oa_estimate(req: dict, output: int = 0) -> dict[str, int]:
+    """끊긴 OpenAI 호출의 보수적 추정 토큰: 입력은 보낸 글자 수, 출력은 받은 글자 수(모르면 0)."""
+    sent = {
+        "system": req.get("instructions"),
+        "messages": req.get("input"),
+        "tools": req.get("tools"),
+        "output_config": req.get("text"),
+    }
+    return {"input": estimate(sent, output=False)["input"], "output": output}
+
+
+def _oa_failed(purpose: str, e: BaseException) -> LLMError:
+    """OpenAI 오류 → LLMError. 요청 자체가 틀렸으면(REJECTED_STATUS) LLMRejected. 입력값은 남기지 않는다."""
+    from openai import APIStatusError
+
+    if isinstance(e, APIStatusError) and e.status_code in REJECTED_STATUS:
+        return LLMRejected(f"{purpose} 요청 거절({e.status_code})")
+    return LLMError(f"{purpose} 호출 실패")
+
+
+def _oa_stop(resp: Any, refused: bool, called: bool) -> str:
+    """Responses 끝 → Claude stop 이름(refusal · max_tokens · tool_use · end_turn)."""
+    if refused:
+        return "refusal"
+    if getattr(resp, "status", None) == "incomplete":
+        why = getattr(getattr(resp, "incomplete_details", None), "reason", None)
+        return "refusal" if why == "content_filter" else "max_tokens"
+    return "tool_use" if called else "end_turn"
+
+
+def _oa_args(raw: Any) -> dict:
+    """함수 부름 인자(JSON 글) → dict. 깨졌으면 빈 dict(부르는 쪽 입력 검사가 고칠 칸을 알려 준다)."""
+    try:
+        got = json.loads(raw or "{}")
+    except (TypeError, ValueError):
+        return {}
+    return got if isinstance(got, dict) else {}
+
+
+def _oa_web_name(action: Any) -> str:
+    return (
+        "web_fetch"
+        if getattr(action, "type", None) in ("open_page", "find_in_page")
+        else "web_search"
+    )
+
+
+def _oa_web_blocks(item: Any) -> list[dict]:
+    """web_search_call 하나 → Claude 서버 도구 블록(부름 + 결과). find_in_page(연 쪽 안 찾기)는 블록이 없다.
+
+    검색은 검색어(여럿이면 ' / '로) + 본 페이지 주소(제목은 끝에 인용 제목으로 채운다), 페이지 열기는 주소만(OpenAI는
+    가져온 글을 주지 않는다). 실패한 부름은 오류 결과다(열기 실패는 열리지 않는 페이지로 센다)."""
+    ref = str(getattr(item, "id", "") or "")
+    action = getattr(item, "action", None)
+    kind = getattr(action, "type", None)
+    failed = getattr(item, "status", None) == "failed"
+    if kind == "search":
+        q = getattr(action, "query", None) or " / ".join(getattr(action, "queries", None) or [])
+        sources = getattr(action, "sources", None) or []
+        urls = [_oa_clean(str(getattr(s, "url", "") or "")) for s in sources]
+        found: Any = (
+            {"type": "web_search_tool_result_error", "error_code": "unavailable"}
+            if failed
+            else [{"type": "web_search_result", "url": u, "title": ""} for u in urls if u]
+        )
+        return [
+            {"type": "server_tool_use", "id": ref, "name": "web_search", "input": {"query": q}},
+            {"type": "web_search_tool_result", "tool_use_id": ref, "content": found},
+        ]
+    url = _oa_clean(str(getattr(action, "url", "") or "")) if kind == "open_page" else ""
+    if not url:
+        return []
+    got = (
+        {"type": "web_fetch_tool_error", "error_code": "unavailable"}
+        if failed
+        else {"type": "web_fetch_result", "url": url, "content": {"type": "document", "title": ""}}
+    )
+    return [
+        {"type": "server_tool_use", "id": ref, "name": "web_fetch", "input": {"url": url}},
+        {"type": "web_fetch_tool_result", "tool_use_id": ref, "content": got},
+    ]
+
+
+class _OaTurn:
+    """Responses 스트림 한 번 → Claude 꼴 블록 · 도구 부름. 블록 알림(on_block · on_block_end)은 Claude 스트림과 같은
+    차례(블록 시작 → 글 조각 → 블록 끝)로 낸다. 알림의 오류는 _CallbackError로 감싼다."""
+
+    def __init__(
+        self,
+        on_text: Callable[[str], Awaitable[None]] | None,
+        on_block: Callable[[str, str | None], Awaitable[None]] | None,
+        on_block_end: Callable[[dict], Awaitable[None]] | None,
+    ) -> None:
+        self.on_text, self.on_block, self.on_block_end = on_text, on_block, on_block_end
+        self.content: list[dict] = []
+        self.calls: list[dict] = []
+        self.refused = False
+        self.began = False
+        self.web = 0
+        self.out_chars = 0
+        self.final: Any = None
+        self.started: dict[str, str] = {}  # 웹 부름 id → 시작 때 알린 도구 이름
+        self.titles: dict[str, str] = {}  # 인용 주소 → 제목
+
+    async def _say(self, fn: Callable[..., Awaitable[None]] | None, *args: Any) -> None:
+        if fn is None:
+            return
+        try:
+            await fn(*args)
+        except Exception as e:
+            raise _CallbackError(e) from e
+
+    async def feed(self, ev: Any) -> None:
+        self.began = True
+        kind = getattr(ev, "type", "")
+        if kind == "response.output_text.delta":
+            delta = str(getattr(ev, "delta", "") or "")
+            self.out_chars += len(delta)
+            if delta:
+                await self._say(self.on_text, delta)
+        elif kind == "response.output_item.added":
+            await self._start(ev.item)
+        elif kind == "response.output_item.done":
+            await self._done(ev.item)
+        elif kind in ("response.completed", "response.incomplete"):
+            self.final = ev.response
+        elif kind == "response.failed":
+            self.final = ev.response
+            raise _OaFailed("response_failed")
+        elif kind == "error":
+            raise _OaFailed("stream_error")
+
+    async def _start(self, item: Any) -> None:
+        kind = getattr(item, "type", "")
+        if kind == "message":
+            await self._say(self.on_block, "text", None)
+        elif kind == "function_call":
+            await self._say(self.on_block, "tool_use", getattr(item, "name", None))
+        elif kind == "web_search_call":
+            name = _oa_web_name(getattr(item, "action", None))
+            self.started[str(getattr(item, "id", "") or "")] = name
+            await self._say(self.on_block, "server_tool_use", name)
+
+    async def _done(self, item: Any) -> None:
+        kind = getattr(item, "type", "")
+        if kind == "message":
+            await self._message(item)
+        elif kind == "function_call":
+            args = _oa_args(getattr(item, "arguments", None))
+            b = {"type": "tool_use", "id": str(item.call_id), "name": str(item.name), "input": args}
+            self.content.append(b)
+            self.calls.append({"id": b["id"], "name": b["name"], "input": args})
+            await self._say(self.on_block_end, b)
+        elif kind == "web_search_call":
+            self.web += 1
+            for b in _oa_web_blocks(item):
+                if b["type"] != "server_tool_use":
+                    await self._say(self.on_block, b["type"], None)
+                elif self.started.get(b["id"]) != b["name"]:  # 시작 때와 다른 일(열기)이었다
+                    await self._say(self.on_block, "server_tool_use", b["name"])
+                self.content.append(b)
+                await self._say(self.on_block_end, b)
+
+    async def _message(self, item: Any) -> None:
+        texts: list[str] = []
+        for part in getattr(item, "content", None) or []:
+            kind = getattr(part, "type", "")
+            if kind == "refusal":
+                self.refused = True
+            elif kind == "output_text":
+                texts.append(str(getattr(part, "text", "") or ""))
+                for a in getattr(part, "annotations", None) or []:
+                    if getattr(a, "type", "") == "url_citation" and getattr(a, "url", None):
+                        url = _oa_clean(str(a.url))
+                        self.titles.setdefault(url, str(getattr(a, "title", "") or ""))
+        text = _oa_clean("".join(texts))
+        if text:
+            b = {"type": "text", "text": text}
+            self.content.append(b)
+            await self._say(self.on_block_end, b)
+
+    def finish(self) -> None:
+        """인용 제목으로 웹 결과 블록의 빈 제목을 채우고, 결과에 없던 인용 주소는 마지막 웹 결과 뒤에 결과 블록 하나로
+        더한다(링크 뽑기용. 진행 기록에는 넣지 않고, 끝 정리 글은 여전히 마지막 서버 블록 뒤에 온다)."""
+        if not self.titles:
+            return
+        seen: set[str] = set()
+        last = -1
+        for i, b in enumerate(self.content):
+            c = b.get("content")
+            if b["type"] == "web_search_tool_result" and isinstance(c, list):
+                for r in c:
+                    seen.add(r["url"])
+                    r["title"] = r.get("title") or self.titles.get(r["url"], "")
+            elif b["type"] == "web_fetch_tool_result" and isinstance(c, dict):
+                doc = c.get("content")
+                if c.get("type") == "web_fetch_result" and isinstance(doc, dict):
+                    seen.add(str(c.get("url")))
+                    doc["title"] = doc.get("title") or self.titles.get(str(c.get("url")), "")
+            if b["type"] != "text":
+                last = i
+        extra = [
+            {"type": "web_search_result", "url": u, "title": t}
+            for u, t in self.titles.items()
+            if u not in seen
+        ]
+        if extra:
+            block = {"type": "web_search_tool_result", "tool_use_id": "oa_cited", "content": extra}
+            self.content.insert(last + 1, block)
+
+
+async def _oa_stream(
+    system: str | Sequence[str] | Sequence[dict] | None,
+    messages: list[dict],
+    *,
+    tools: Sequence[dict],
+    on_text: Callable[[str], Awaitable[None]] | None,
+    purpose: Purpose | None,
+    model: str | None,
+    effort: str | None,
+    tool_choice: dict | None,
+    max_tokens: int,
+    on_block: Callable[[str, str | None], Awaitable[None]] | None,
+    on_block_end: Callable[[dict], Awaitable[None]] | None,
+) -> ClaudeReply:
+    """claude_stream의 OpenAI 길(답 꼴 · 오류 · 장부는 Claude 길과 같다). thinking · container는 Claude 값이라 뺀다."""
+    client = _openai()
+    call = await _guard(purpose, "assistant")
+    name, eff = _oa_pick(call.purpose, model, effort)
+    oa_tools, web = _oa_tools(tools)
+    req: dict[str, Any] = {
+        "model": name,
+        "input": _oa_input(messages),
+        "max_output_tokens": max_tokens,
+        "reasoning": {"effort": eff},
+        "store": False,
+        "stream": True,
+        "prompt_cache_key": f"mitjip-{call.purpose}",
+    }
+    note = _oa_web_note(tools) if web else ""
+    instructions = "\n\n".join(x for x in (_oa_instructions(system), note) if x)
+    if instructions:
+        req["instructions"] = instructions
+    if oa_tools:
+        req["tools"] = oa_tools
+        req["tool_choice"] = _oa_choice(tool_choice)
+    if web:
+        req["include"] = OA_INCLUDE
+        req["max_tool_calls"] = web
+    turn = _OaTurn(on_text, on_block, on_block_end)
+    try:
+        stream = await client.responses.create(**req)
+        async with stream:
+            async for ev in stream:
+                await turn.feed(ev)
+    except _CallbackError as e:
+        await _sink(call, name, _oa_estimate(req, turn.out_chars), "callback")
+        raise e.error from None
+    except asyncio.CancelledError:  # 턴 시간 상한 등으로 끊김: 보수적 추정치를 남기고 그대로 끊는다
+        await asyncio.shield(_sink(call, name, _oa_estimate(req, turn.out_chars), ESTIMATED))
+        raise
+    except _OaFailed as e:
+        usage = getattr(turn.final, "usage", None)
+        used = _oa_usage(turn.final, turn.web) if usage else _oa_estimate(req, turn.out_chars)
+        await _sink(call, name, used, str(e))
+        raise LLMError(f"{call.purpose} 호출 실패") from None
+    except Exception as e:  # 공급자 오류 · 시간 초과 · 끊김. 입력값은 남기지 않음
+        used = _oa_estimate(req, turn.out_chars) if turn.began else {}
+        await _sink(call, name, used, _kind(e))
+        raise _oa_failed(call.purpose, e) from e
+    resp = turn.final
+    if resp is None:  # 끝 알림 없이 스트림이 닫혔다
+        await _sink(call, name, _oa_estimate(req, turn.out_chars), "no_final")
+        raise LLMError(f"{call.purpose} 호출 실패")
+    stop = _oa_stop(resp, turn.refused, bool(turn.calls))
+    error = stop if stop in BAD_STOPS else None
+    u = _oa_usage(resp, turn.web)
+    got = str(getattr(resp, "model", None) or name)
+    cost = await _sink(call, got, u, error)
+    turn.finish()
+    return ClaudeReply(
+        text="".join(b["text"] for b in turn.content if b["type"] == "text"),
+        content=turn.content,
+        tool_calls=[] if error else turn.calls,
+        stop=stop,
+        usage=u,
+        cost_micros=cost,
+        model=got,
+    )
+
+
+def _oa_format(schema: type[BaseModel]) -> dict:
+    """pydantic 모델 → Responses json_schema 꼴(엄격). 엄격 꼴로 못 바꾸면 꼴만 알려 주고 받은 뒤 검사한다."""
+    name = re.sub(r"[^A-Za-z0-9_-]", "_", schema.__name__)[:64] or "answer"
+    try:
+        # SDK의 responses.parse가 쓰는 바꾸기(모든 칸 required · additionalProperties false)
+        from openai.lib._pydantic import to_strict_json_schema
+
+        return {
+            "type": "json_schema",
+            "name": name,
+            "schema": to_strict_json_schema(schema),
+            "strict": True,
+        }
+    except Exception:  # noqa: BLE001 - 엄격 꼴이 안 되는 스키마도 꼴 검사(model_validate_json)는 한다
+        return {
+            "type": "json_schema",
+            "name": name,
+            "schema": schema.model_json_schema(),
+            "strict": False,
+        }
+
+
+async def _oa_json[T: BaseModel](
+    purpose: str,
+    schema: type[T],
+    system: str | Sequence[str] | None,
+    messages: list[dict],
+    *,
+    model: str | None,
+    effort: str | None,
+    max_tokens: int,
+) -> tuple[T, dict[str, int], int]:
+    """claude_json의 OpenAI 길: json_schema 구조화 출력 한 번 → (schema 값, 토큰, 비용).
+    거절 · 잘림 · 꼴 틀림은 LLMBadOutput, 공급자 실패(failed)는 LLMError."""
+    client = _openai()
+    call = await _guard(purpose, purpose)
+    name, eff = _oa_pick(call.purpose, model, effort)
+    req: dict[str, Any] = {
+        "model": name,
+        "input": _oa_input(messages),
+        "max_output_tokens": max_tokens,
+        "reasoning": {"effort": eff},
+        "store": False,
+        "text": {"format": _oa_format(schema)},
+        "prompt_cache_key": f"mitjip-{call.purpose}",
+    }
+    instructions = _oa_instructions(system)
+    if instructions:
+        req["instructions"] = instructions
+    try:
+        resp = await client.responses.create(**req)
+    except asyncio.CancelledError:
+        await asyncio.shield(_sink(call, name, _oa_estimate(req, max_tokens), ESTIMATED))
+        raise
+    except Exception as e:  # 공급자 오류 · 시간 초과. 입력값은 남기지 않음
+        await _sink(call, name, {}, _kind(e))
+        raise _oa_failed(call.purpose, e) from e
+    got = str(getattr(resp, "model", None) or name)
+    u = _oa_usage(resp, 0)
+    if getattr(resp, "status", None) == "failed":
+        await _sink(call, got, u, "response_failed")
+        raise LLMError(f"{call.purpose} 호출 실패")
+    refused = any(
+        getattr(p, "type", "") == "refusal"
+        for it in getattr(resp, "output", None) or []
+        if getattr(it, "type", "") == "message"
+        for p in getattr(it, "content", None) or []
+    )
+    stop = _oa_stop(resp, refused, False)
+    error = stop if stop in BAD_STOPS else None
+    out: T | None = None
+    if error is None:
+        try:
+            out = schema.model_validate_json(str(getattr(resp, "output_text", "") or ""))
+        except ValidationError:
+            error = "invalid_output"
+    cost = await _sink(call, got, u, error)
+    if out is None:
+        raise LLMBadOutput(f"{call.purpose} 답 꼴 틀림({error})")
+    return out, u, cost
 
 
 def _stub[T: BaseModel](role: Role, schema: type[T]) -> T:

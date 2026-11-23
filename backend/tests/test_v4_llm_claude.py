@@ -438,8 +438,14 @@ def test_claude_functions_are_off_without_script_or_key(monkeypatch):
         asyncio.run(llm.claude_json("memory", Nudge, "s", "q"))
     monkeypatch.setattr(settings, "anthropic_api_key", SecretStr("not-used"))
     monkeypatch.setattr(settings, "llm_provider", "openai")
-    with pytest.raises(llm.LLMOff):  # 되돌리기(OpenAI) 중에는 Claude 함수도 끈다
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr(""))
+    with pytest.raises(llm.LLMOff):  # OpenAI 길인데 OpenAI 키가 없다
         asyncio.run(llm.claude_stream("s", [{"role": "user", "content": "q"}]))
+    with pytest.raises(llm.LLMOff):
+        asyncio.run(llm.claude_json("memory", Nudge, "s", "q"))
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("not-used"))
+    with pytest.raises(llm.LLMOff):  # 도면 읽기는 OpenAI로 옮기지 않아 OpenAI 길에서는 꺼진다
+        asyncio.run(llm.claude_stream("s", [{"role": "user", "content": "q"}], purpose="floorplan"))
     assert rows() == []
 
 

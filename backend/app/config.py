@@ -18,7 +18,8 @@ class Settings(BaseSettings):
     api_root_path: str = ""
     # false면 LLM을 부르지 않고 스텁 응답을 쓴다 (유료 호출 0회)
     llm_live: bool = False
-    # LLM 공급자: anthropic(기본, Claude) · openai(되돌리기용). 임베딩은 공급자와 상관없이 OpenAI를 쓴다
+    # LLM 공급자: anthropic(기본, Claude) · openai. openai면 v4 비서 · 조사 · 기억 · 먼저 말 걸기도 OpenAI로 간다
+    # (agent/llm.py OpenAI Responses 길, 도면 읽기만 Claude라 꺼짐). 임베딩은 공급자와 상관없이 OpenAI를 쓴다
     llm_provider: Literal["anthropic", "openai"] = "anthropic"
     # Claude 키. agent/llm.py만 읽는다. 키는 repr·오류에 표시하지 않는다
     anthropic_api_key: SecretStr = SecretStr("")
