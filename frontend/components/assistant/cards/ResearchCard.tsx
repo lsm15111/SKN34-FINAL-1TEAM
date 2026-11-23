@@ -4,8 +4,9 @@
 // 조사했어요' · 검색 n번 · 페이지 n곳), 펼치면 왼쪽 세로선 타임라인(조사 담당의 말은 본문 글씨, 검색 · 읽기는 아이콘 줄,
 // 검색 줄은 찾은 페이지 목록을 펼침) · [멈추기]. 도는 동안 몇 초마다 다시 읽고, 끝난 것을 보면 대화를 새로 읽어 결과 줄이
 // 보이게 해요.
-// 결과(phase result): 요약 · 항목(이름 · 특징 · 주의할 점 · 판매가 · 제조사 그림, 링크 없음) · 맨 밑 링크(항목 페이지 먼저,
-// 새 탭) · 출처 도메인 · 글 날짜 · 믿집 밖 표시. 링크 · 그림은 서버가 뽑은 주소만 와요. 순위 · 연락처는 없어요.
+// 결과(phase result): 요약 · 항목 칸(그림과 출처 · 이름 · 특징 · 주의할 점 · 판매가, 칸 맨 아래 그 페이지 링크) · 카드 맨 밑에는
+// 어느 칸에도 없는 링크만(새 탭) · 글 날짜 · 믿집 밖 표시. 이름 같은 글에는 링크를 걸지 않아요(2026-11-23 사용자).
+// 링크 · 그림은 서버가 뽑은 주소만 와요(그림은 검증한 제조사 사이트만, linkimage.SITES). 순위 · 연락처는 없어요.
 import { useEffect, useId, useRef, useState } from "react";
 import { getResearch, stopResearch, type ResearchData, type ResearchStatus } from "@/lib/api/assistant";
 import { errorText } from "@/lib/backend/client";
@@ -215,8 +216,9 @@ function Step({ t }: { t: Trail }) {
         <I n="search" />
         <span className={s.toolText}>‘{t.text}’</span>
         {hits.length ? (
+          // 단추 수는 펼치면 보이는 수(옛 기록은 앞 5개만 남아 't.n'과 다를 수 있어요)
           <button type="button" className={s.res} aria-expanded={open} aria-controls={id} onClick={() => setOpen((v) => !v)}>
-            {t.n}개 결과
+            {hits.length}개 결과
             <I n={open ? "up" : "down"} />
           </button>
         ) : t.n != null ? (
@@ -256,37 +258,57 @@ function Step({ t }: { t: Trail }) {
   );
 }
 
-/** 결과 항목 그림: 제조사 페이지 대표 그림(그 사이트에서 바로 불러옴). 못 불러오면 그림 칸을 빼요. 링크는 맨 밑에만 둬요 */
+/** 결과 항목 그림: 검증한 제조사 페이지의 대표 그림(그 사이트에서 바로 불러옴) + 아래 출처. 못 불러오면 그림 칸을 빼요 */
 function Pic({ item }: { item: Item }) {
   const [gone, setGone] = useState(false);
   if (!item.image || gone || !isWeb(item.image)) return null;
   return (
-    <span className={s.pic} aria-hidden="true">
-      <img src={item.image} alt="" width={88} height={88} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setGone(true)} />
-    </span>
+    <figure className={s.picBox}>
+      <span className={s.pic}>
+        <img src={item.image} alt={`${item.name} 사진`} width={88} height={88} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setGone(true)} />
+      </span>
+      <figcaption className={s.picSrc}>출처 {siteOf(item)}</figcaption>
+    </figure>
   );
 }
 
-type Page = { href: string; title: string; source: string; day?: string | null; memo?: string | null };
-
-/** 맨 밑 링크 목록: 항목 페이지(이름 그대로) 먼저, 그다음 다른 자료. 같은 주소는 한 번만
- *  (2026-11-23 사용자: 이름에 링크를 걸지 말고 링크는 맨 밑에) */
-function pagesOf(items: Item[], links: ResearchData["links"]): Page[] {
-  const seen = new Set<string>();
-  const out: Page[] = [];
-  for (const p of [...items.map((x) => ({ href: x.href, title: x.name, source: x.source })), ...links]) {
-    if (!isWeb(p.href) || seen.has(p.href)) continue;
-    seen.add(p.href);
-    out.push(p);
+/** 출처 도메인(서버 값, 없으면 주소에서) */
+function siteOf(item: Item): string {
+  if (item.source) return item.source;
+  try {
+    return new URL(item.href).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
   }
-  return out;
+}
+
+/** 칸 맨 아래 링크: 그 항목 페이지(새 탭). 글자는 출처 도메인이에요(이름에는 링크를 걸지 않아요) */
+function ItemLink({ item }: { item: Item }) {
+  return (
+    <a className={`${s.lnk} ${s.itemLnk}`} href={item.href} target="_blank" rel="noopener noreferrer nofollow">
+      <span>{siteOf(item) || "페이지"}</span>
+      <I n="external" />
+      <span className="mj-sr">({item.name} 페이지, 새 창)</span>
+    </a>
+  );
+}
+
+/** 카드 맨 밑 링크: 어느 항목 칸에도 없는 자료만. 같은 주소는 한 번만
+ *  (2026-11-23 사용자: 링크는 업체마다 칸 안에, 아래로 다 빼지 말고) */
+function restOf(items: Item[], links: ResearchData["links"]): ResearchData["links"] {
+  const seen = new Set(items.map((x) => x.href));
+  return links.filter((l) => {
+    if (!isWeb(l.href) || seen.has(l.href)) return false;
+    seen.add(l.href);
+    return true;
+  });
 }
 
 function ResearchResult({ card, ctx }: CardProps<"research">) {
   const d = card.data;
   const today = ctx.now ? ctx.now.slice(0, 10) : undefined;
   const items = (d.items ?? []).filter((x) => isWeb(x.href));
-  const pages = pagesOf(items, d.links);
+  const pages = restOf(items, d.links);
   return (
     <section className={`${k.card} ${s.card}`} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
@@ -324,14 +346,15 @@ function ResearchResult({ card, ctx }: CardProps<"research">) {
                   </p>
                 ) : null}
                 {it.size?.checked ? <p className={s.price}><span>규격</span>{it.size.text}</p> : null}
+                <ItemLink item={it} />
               </div>
             </li>
           ))}
         </ul>
       ) : null}
-      {items.length && pages.length ? <p className={s.sub}>링크</p> : null}
+      {items.length && pages.length ? <p className={s.sub}>다른 링크</p> : null}
       {pages.length ? (
-        <ul className={s.links} aria-label={items.length ? "링크" : "찾은 링크"}>
+        <ul className={s.links} aria-label={items.length ? "다른 링크" : "찾은 링크"}>
           {pages.map((l) => (
             <li key={l.href}>
               <a className={s.lnk} href={l.href} target="_blank" rel="noopener noreferrer nofollow">

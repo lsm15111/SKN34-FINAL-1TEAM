@@ -8234,7 +8234,7 @@ export interface components {
             href?: string | null;
             /**
              * Hits
-             * @description 검색: 찾은 페이지(앞 5개)
+             * @description 검색: 찾은 페이지(앞 20개까지)
              * @default []
              */
             hits: components["schemas"]["TrailHit"][];

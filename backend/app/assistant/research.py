@@ -77,7 +77,9 @@ TRAIL_MAX = 40  # 진행 기록 줄 수(최근 것만)
 SAY_MAX = 60  # 진행 기록의 조사 담당 한 줄 말 글자 수
 QUERY_MAX = 60  # 진행 기록의 검색어 글자 수
 PAGE_TITLE_MAX = 40  # 진행 기록의 읽은 페이지 제목 글자 수
-TRAIL_HITS = 5  # 진행 기록 검색 줄에 남기는 찾은 페이지 수(펼치면 보임)
+# 진행 기록 검색 줄에 남기는 찾은 페이지 수(펼치면 보임). 'n개 결과'를 눌러 n개가 다 보이게 넉넉히 둬요
+# (2026-11-23 사용자: '18개 결과'를 누르면 5개만 보임)
+TRAIL_HITS = 20
 HIT_TITLE_MAX = 50  # 찾은 페이지 제목 글자 수
 DOC_CHARS = 20_000  # 가져온 글 한 쪽에서 숫자 근거로 읽는 글자 수
 FEED_MAX = 10
@@ -287,7 +289,7 @@ class ResearchTrail(BaseModel):
     n: int | None = Field(default=None, description="검색: 찾은 페이지 수")
     ok: bool | None = Field(default=None, description="읽기: 열었는지(null이면 아직 모름)")
     href: str | None = Field(default=None, description="읽기: 읽은 페이지 주소")
-    hits: list[TrailHit] = Field(default=[], description="검색: 찾은 페이지(앞 5개)")
+    hits: list[TrailHit] = Field(default=[], description="검색: 찾은 페이지(앞 20개까지)")
 
 
 class ResearchData(BaseModel):

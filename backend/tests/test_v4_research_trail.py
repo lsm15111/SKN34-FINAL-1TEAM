@@ -439,3 +439,16 @@ def test_real_sdk_stream_reports_finished_blocks_with_tool_input(monkeypatch):
     assert done[0]["text"] == "제조사 페이지부터 볼게요."
     assert done[1]["name"] == "web_search" and done[1]["input"] == {"query": "LX 실크벽지"}
     assert reply.stop == "pause_turn"
+
+
+def test_search_line_keeps_every_hit_it_counts():
+    # 'n개 결과'를 누르면 n개가 다 보여요(2026-11-23 사용자: '18개 결과'에 5개만 보임). 20개를 넘으면 앞 20개만 남아요
+    def block(n: int) -> dict:
+        return {"type": "web_search_tool_result", "tool_use_id": "s1", "content": [
+            {"type": "web_search_result", "url": f"https://a{i}.example.kr/p", "title": f"도배 자료 {i}"}
+            for i in range(n)]}  # fmt: skip
+
+    ((ev, got),) = research.trail_events(block(18))
+    assert ev == "found" and got["n"] == 18 and len(got["hits"]) == 18
+    ((_, many),) = research.trail_events(block(25))
+    assert many["n"] == 25 and len(many["hits"]) == research.TRAIL_HITS == 20
