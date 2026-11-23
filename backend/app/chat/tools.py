@@ -282,8 +282,8 @@ def _size_calc(m2v: float, basis: str, label: str) -> SizeCalcFact:
 
     from app.calc import dobae, mokgong
     from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
-    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_2026H2
-    from app.refprice.house import HOUSE_2026H2
+    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_DEFAULT
+    from app.refprice.house import HOUSE_DEFAULT
     from app.refprice.wallpaper_market import paper_market
 
     m2 = Decimal(str(m2v)).quantize(Decimal("0.1"))
@@ -291,11 +291,11 @@ def _size_calc(m2v: float, basis: str, label: str) -> SizeCalcFact:
     def std(grade: str, occupied: bool):
         h = dobae.HomeV3(m2, basis, grade, occupied)  # type: ignore[arg-type]
         return dobae.standard_v3(
-            h, DOBAE_DEFAULT, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+            h, DOBAE_DEFAULT, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_DEFAULT
         )
 
     basic, eco, occ = std("basic", False), std("economy", False), std("basic", True)
-    mk = mokgong.quote(mokgong.MokgongInput(m2, basis, ("molding", "base"), False), MOKGONG_2026H2)  # type: ignore[arg-type]
+    mk = mokgong.quote(mokgong.MokgongInput(m2, basis, ("molding", "base"), False), MOKGONG_DEFAULT)  # type: ignore[arg-type]
     return SizeCalcFact(
         label=label, pyeong=float(basic.pyeong), area_m2=float(m2), area_basis=basis,  # type: ignore[arg-type]
         rooms=basic.rooms or 0, dobae_total=basic.quote.total,
@@ -371,22 +371,22 @@ def _pair_plan(x: SizeCalcFact, start: date, off) -> PlanFacts | None:
 
     from app.calc import dobae, mokgong, schedule
     from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
-    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_2026H2
-    from app.refprice.house import HOUSE_2026H2
+    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_DEFAULT
+    from app.refprice.house import HOUSE_DEFAULT
     from app.refprice.wallpaper_market import paper_market
 
     m2 = Decimal(str(x.area_m2)).quantize(Decimal("0.1"))
     try:
         h = dobae.HomeV3(m2, x.area_basis, "basic", False)
         std = dobae.standard_v3(
-            h, DOBAE_DEFAULT, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_2026H2
+            h, DOBAE_DEFAULT, paper_market(h.grade), SPACE_SHARE_ROOMS_2026_11, HOUSE_DEFAULT
         )
         mk = mokgong.quote(
-            mokgong.MokgongInput(m2, x.area_basis, ("molding", "base"), False), MOKGONG_2026H2
+            mokgong.MokgongInput(m2, x.area_basis, ("molding", "base"), False), MOKGONG_DEFAULT
         )
         p = schedule.lay_out(
             [
-                schedule.TradePlan("mokgong", mk.steps, MOKGONG_2026H2.crew),
+                schedule.TradePlan("mokgong", mk.steps, MOKGONG_DEFAULT.crew),
                 schedule.TradePlan("dobae", std.quote.steps, DOBAE_DEFAULT.crew),
             ],
             start,
@@ -410,10 +410,10 @@ def _pair_plan(x: SizeCalcFact, start: date, off) -> PlanFacts | None:
 def _calc_area(p) -> tuple[float | None, str | None]:
     """표준견적서와 같은 면적(평형대면 대표 평형의 공급면적). 못 세면 (None, None)."""
     from app.calc.standard_quote import house_area
-    from app.refprice.house import HOUSE_2026H2
+    from app.refprice.house import HOUSE_DEFAULT
 
     try:
-        m2, basis = house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+        m2, basis = house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
     except (ValueError, KeyError):
         return None, None
     return float(m2), basis
@@ -453,7 +453,7 @@ def general_facts(text: str, today: date | None = None) -> GeneralFacts:
     from decimal import Decimal
 
     from app.calc import mokgong
-    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_2026H2
+    from app.refprice.book import DOBAE_DEFAULT, MOKGONG_DEFAULT
 
     area = asked_area(text)
     one = Decimal("79.3")  # 방문 값은 집 크기와 상관없어서 24평 집으로 센다(폐기물 등 최소 줄 포함)
@@ -461,7 +461,7 @@ def general_facts(text: str, today: date | None = None) -> GeneralFacts:
     def door(frame: bool) -> int:
         q = mokgong.quote(
             mokgong.MokgongInput(one, "supply", ("door",), False, doors=1, door_frame=frame),
-            MOKGONG_2026H2,
+            MOKGONG_DEFAULT,
         )
         return q.total
 

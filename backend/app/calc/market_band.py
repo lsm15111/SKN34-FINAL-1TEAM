@@ -9,7 +9,7 @@ from dataclasses import dataclass, replace
 from decimal import Decimal
 from typing import Literal
 
-from app.calc.common import PYEONG_M2, AreaBasis, m2, won
+from app.calc.common import PYEONG_M2, SUPPLY_PER_EXCLUSIVE, AreaBasis, m2, won
 from app.calc.plan_qty import PlanQty
 from app.calc.precise_common import Grade, SilkPaper, num, silk_amount
 
@@ -134,14 +134,12 @@ class MarketMokgongInput:
     extra_amount: int = 0  # 정해진 가격 목공 항목 합 (공공 기준과 같은 금액을 더한다)
 
 
-SUPPLY_PER_EXCLUSIVE = Decimal("1.2")
-
-
 def _r10k(x: Decimal) -> int:
     return won(x / 10000) * 10000
 
 
 def _supply(area: Decimal, basis: AreaBasis) -> Decimal:
+    """공급㎡. 전용이면 표준견적서 · 내 집 평과 같은 한 값으로 환산해요(calc.common, ADR 0007)."""
     if area <= 0:
         raise ValueError("면적은 0보다 커야 해요")
     return area if basis == "supply" else area * SUPPLY_PER_EXCLUSIVE

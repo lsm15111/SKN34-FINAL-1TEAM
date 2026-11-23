@@ -246,8 +246,9 @@ def test_versions_are_fixed_and_old_version_is_unchanged():
         "waste",
     }
     assert DOBAE_V3_2026_11.profile is None
-    # 지금 판은 같은 규칙 판(2026.11b-*, ADR 0006). 이 판들(2026.11-*)도 저장본대로 다시 셀 수 있어요
-    assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11b-market", "2026.11b-remodel"}
+    # 지금 판은 전용 → 공급 환산 한 값 판(2026.11c-*, ADR 0007, 줄 값 · 규칙은 2026.11b-*와 같음).
+    # 이 판들(2026.11-*)도 저장본대로 다시 셀 수 있어요
+    assert {p.version for p in DOBAE_PROFILES.values()} == {"2026.11c-market", "2026.11c-remodel"}
     assert dobae_prices_of("2026H2-rooms") is DOBAE_V3_2026_11
     assert dobae_prices_of("2026.11-remodel") is DOBAE_REMODEL_2026_11
     assert dobae_prices_of("2026.11-market") is DOBAE_MARKET_2026_11

@@ -106,7 +106,9 @@ def _m2(x: Decimal | float | None) -> str | None:
 
 async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, dict]:
     """집 정보 카드. 철거 범위(모은 조건 demolition, 코드 값)도 같이 보여 준다(전체 철거면 리모델링 기준).
-    직접 할 일(diy 칩)은 화면 이름으로 보인다: 아직 안 물었으면 빼고(모델 값 None), '없어요'면 빈 목록."""
+    직접 할 일(diy 칩)은 화면 이름으로 보인다: 아직 안 물었으면 빼고(모델 값 None), '없어요'면 빈 목록.
+    평은 지금 집 정보로 계산 엔진이 센 값이에요(저장한 표준견적서를 기다리지 않아요: 집 정보를 바꾼 직후 첫 보드에
+    옛 평이 보였어요, QA r6 c2)."""
     from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
     from app.project import diy as project_diy
     from app.project import service as project_service
@@ -114,7 +116,7 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
 
     p = await project_service.get_for(s, user, pid)
     h = p.home
-    std = next(iter((await quote_service.latest_of(s, [p.id])).values()), None)
+    py = quote_service.house_py(p)
     demo = (await project_service.conditions(s, p.id)).get(DEMOLITION_KEY)
     demo = demo if demo in DEMOLITION else None
     picked = await project_diy.diy_for(s, p.id)
@@ -124,8 +126,8 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
     facts = [p.region]
     if m2 is not None and basis:
         facts.append(f"{BASIS.get(basis, basis)} {_m2(m2)}")
-    if std is not None and std.pyeong:
-        facts.append(f"{Decimal(std.pyeong).normalize():f}평")
+    if py:
+        facts.append(f"{py.normalize():f}평")
     facts.append("살면서 공사" if p.occupied else "빈 집")
     if h is not None:
         facts.append(
@@ -142,7 +144,7 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
     if diy is not None:
         facts.append(f"직접 할 일 {', '.join(diy) or '없어요'}")
     area = (
-        HomeArea(m2=m2, basis=basis, pyeong=std.pyeong if std else None)
+        HomeArea(m2=m2, basis=basis, pyeong=py)
         if m2 is not None and basis in ("supply", "exclusive")
         else None
     )
@@ -152,7 +154,7 @@ async def home(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[CardOut, di
         "region": p.region,
         "area_m2": m2,
         "area_basis": basis,
-        "pyeong": std.pyeong if std else None,
+        "pyeong": py,
         "occupied": p.occupied,
         "grade": h.grade if h else None,
         "scope": h.scope if h else None,

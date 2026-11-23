@@ -608,8 +608,8 @@ async def again(
 async def answer_window(
     s: AsyncSession, vendor: User, visit_id: uuid.UUID, data: WindowIn, now: datetime
 ) -> WindowAnswerOut:
-    """requested → offered: 업체가 되는 기간 · 빼는 날 · 바로 확정. 답 기한 일을 거두고 고르기 기한(+7일)을
-    넣는다. 기한이 지났으면 409 expired, 고객이 먼저 취소했거나 이미 답했으면 409 stale."""
+    """requested → offered: 업체가 되는 기간 · 빼는 날 · 바로 확정. 답 기한 일을 거두고 고르기 기한(+7일, 기간
+    마지막 날이 오기 전까지)을 넣는다. 기한이 지났으면 409 expired, 고객이 먼저 취소했거나 이미 답했으면 409 stale."""
     v = await _vendor_visit(s, vendor, visit_id)
     if v.status == "expired":
         raise app_error("expired", "답 기한이 지났어요. 고객이 한 번 더 요청하면 답할 수 있어요.")
@@ -636,7 +636,7 @@ async def answer_window(
         excluded=sorted(data.excluded),
         instant=data.instant,
         answered_at=now,
-        pick_due_at=deadline.pick_due(now),
+        pick_due_at=deadline.pick_due(now, data.end),  # 기간 마지막 날이 오기 전까지(QA r6 화면 M6)
     )
     s.add(w)
     s.add(_event(v, "requested", "offered", vendor, "answered", now, data.start, None, data.end))
@@ -674,8 +674,8 @@ async def pick(
     data: SlotIn,
     now: datetime,
 ) -> PickOut:
-    """offered → booked(바로 확정) · picked(업체 수락 기다림, 48시간 잡아 둠). 같은 반나절을 다른 고객이
-    먼저 잡았으면 409 slot_taken, 고르기 기한이 지났으면 409 expired."""
+    """offered → booked(바로 확정) · picked(업체 수락 기다림, 48시간 · 고른 반나절 시작 전까지 잡아 둠).
+    같은 반나절을 다른 고객이 먼저 잡았으면 409 slot_taken, 고르기 기한이 지났으면 409 expired."""
     v = await _customer_visit(s, user, project_id, visit_id)
     if v.status != "offered":
         raise svc.visit_error(v, "날짜를 고를 수 있는 요청이 아니에요.")
@@ -694,7 +694,8 @@ async def pick(
         tid = await _book(s, v, hold, frm="offered", by=user, code="booked", now=now)
         status = "booked"
     else:
-        until = deadline.accept_due(now)
+        # 고른 반나절 시작 전까지(QA r6 화면 M6)
+        until = deadline.accept_due(now, data.day, data.half)
         hold = await take_seat(
             s, v, data.day, data.half, kind="hold", until=until, now=now, capacity=cap
         )

@@ -661,8 +661,12 @@ class MoneySumOut(BaseModel):
 class PeriodOut(BaseModel):
     kind: Literal["expected", "final"]
     start: date
-    end: date
+    end: date = Field(description="공정표 마지막 날(자연 건조 · 입주 청소까지)")
     work_days: int
+    work_end: date | None = Field(
+        default=None,
+        description="업체 공사가 끝나는 날(자연 건조 · 입주 청소 빼고). 공정표 화면 '공사 처음 ~ 끝'의 끝과 같아요",
+    )
 
 
 class VendorContactOut(BaseModel):

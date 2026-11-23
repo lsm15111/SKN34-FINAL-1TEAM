@@ -250,7 +250,13 @@ def test_tight_task_says_the_first_possible_day_like_the_plan():
 def test_paper_buy_task_is_due_the_day_before_dobae():
     dobae_days = {"dobae": (date(2026, 12, 7), date(2026, 12, 9))}  # 월 ~ 수
     (t,) = calc_diy.plan(["paper_buy"], dobae_days, date(2026, 12, 1))
-    assert (t.name, t.kind, t.rule_ver) == ("벽지 사서 받아 두기", "before", "diy_v3")
+    # 판은 diy_v4(페인트만 바뀜). 벽지 사 두기는 앞 판과 같이 오늘부터예요(목공을 기다리지 않아요)
+    assert (t.name, t.kind, t.rule_ver, t.after) == (
+        "벽지 사서 받아 두기",
+        "before",
+        "diy_v4",
+        None,
+    )
     assert (t.start, t.end, t.day, t.fit) == (
         date(2026, 12, 1),
         date(2026, 12, 6),

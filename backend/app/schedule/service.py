@@ -353,6 +353,23 @@ async def ensure_expected(s: AsyncSession, p: ProjectOut, today: date) -> Plan:
     return got
 
 
+async def _period(s: AsyncSession, plan: Plan) -> PeriodOut:
+    """공정표 행 → 기간(처음 · 마지막 날 · 일하는 날 수 · 업체 공사 끝날). 업체 공사 끝날은 공정표 화면의 '공사 처음 ~
+    끝'과 같은 값이에요(마지막 날은 자연 건조 · 입주 청소까지라 보드가 '공사'로 보이면 공정표와 달랐어요, QA r6 화면 M8)."""
+    work_end = await s.scalar(
+        select(func.max(PlanStep.end_date)).where(
+            PlanStep.plan_id == plan.id, PlanStep.kind == "work"
+        )
+    )
+    return PeriodOut(
+        kind=plan.kind,
+        start=plan.start_date,
+        end=plan.end_date,
+        work_days=plan.work_days,
+        work_end=work_end,
+    )
+
+
 async def period_now(s: AsyncSession, p: ProjectOut) -> PeriodOut | None:
     """지금 공정표 기간(읽기만, 저장하지 않음): 확정 공정표가 있으면 그것, 없으면 지금 공사 판(rev)으로 만든 예상
     공정표. 예상이 낡았거나(공사 정보가 바뀐 뒤 아직 다시 안 만듦) 없으면 None. 비서 턴 사실처럼 트랜잭션 중간에
@@ -362,9 +379,7 @@ async def period_now(s: AsyncSession, p: ProjectOut) -> PeriodOut | None:
         plan = await _latest(s, p.id, "expected")
         if plan is None or plan.project_rev != p.rev or plan.formula_ver != FORMULA_VERSION:
             return None
-    return PeriodOut(
-        kind=plan.kind, start=plan.start_date, end=plan.end_date, work_days=plan.work_days
-    )
+    return await _period(s, plan)
 
 
 async def _out(s: AsyncSession, plan: Plan) -> PlanOut:
@@ -470,11 +485,14 @@ def diy_day_name(t: calc_diy.DiyTask) -> str:
 
 # '고객이 직접' 줄 이름에 붙이는 표시(계산 엔진 why). 영어 값 대신 화면 말이에요(비서 diy WHY_NOTE와 같은 뜻)
 DIY_NOTE = {"short": "날이 빠듯해요", "no_free_day": "날이 빠듯해요", "late": "마감이 지났어요"}
+# 시작이 날짜 없는 앞 공사 뒤인 일(calc.diy after, diy_v4): 줄은 마감 날 하루라 '…뒤 · 마감'을 붙여요
+DIY_AFTER = {"mokgong": "목공이 끝난 뒤 · 마감"}
 
 
 def diy_label(t: calc_diy.DiyTask) -> str:
-    """'고객이 직접' 줄 이름: 빠듯하거나 마감이 지난 일은 표시를 붙여요('페인트(문틀 · 몰딩) 칠하기 · 날이 빠듯해요')."""
-    note = DIY_NOTE.get(t.why)
+    """'고객이 직접' 줄 이름: 빠듯하거나 마감이 지난 일은 표시를 붙여요('페인트(문틀 · 몰딩) 칠하기 · 날이 빠듯해요').
+    시작이 날짜 없는 목공 뒤인 일은 '페인트(문틀 · 몰딩) 칠하기 · 목공이 끝난 뒤 · 마감'(줄 날짜는 마감 날)이에요."""
+    note = DIY_NOTE.get(t.why) or (DIY_AFTER.get(t.after) if t.after else None)
     return f"{t.name} · {note}" if note else t.name
 
 
@@ -2988,9 +3006,14 @@ def _soonest(items: list[NextOut | None]) -> NextOut | None:
 async def overview_for(
     s: AsyncSession, user: User, project_id: uuid.UUID, today: date
 ) -> OverviewOut:
-    """GET /projects/{id}/overview: 지금 할 일 · 공정별 단계 · 낼 금액 · 공사 기간 · 연락처 · 체크"""
+    """GET /projects/{id}/overview: 지금 할 일 · 공정별 단계 · 낼 금액 · 공사 기간 · 연락처 · 체크.
+    공정표 기간은 값으로 먼저 꺼내요: 예상 공정표 · 표준견적서를 처음 만들 때 다른 요청과 겹치면 저장이 되돌려지고
+    (rollback) 이 세션의 ORM 칸이 모두 만료돼서, 그 전에 읽은 행을 다시 읽으면 MissingGreenlet 500이었어요(화면 QA H2:
+    가입 뒤 첫 보드). 표준견적서 · 확정은 공정표 뒤에 읽어 그 뒤에는 되돌리는 저장이 없어요."""
     p = await project_service.get_for(s, user, project_id)
     now = now_utc()
+    final = await _latest(s, p.id, "final")
+    period = await _period(s, final or await ensure_expected(s, p, today))
     rows, std, deals = await _progress_of(s, p, today, now)
     trades = [_trade_out(p.id, pr, d, ctx, today) for pr, d, ctx, _ in rows]
     top = first_todo([pr for pr, *_ in rows])
@@ -3007,8 +3030,6 @@ async def overview_for(
     if p.budget:
         status, over = budget_gap(total, p.budget)
         budget = BudgetOut(band=p.budget, status=status, over_by=over)
-    final = await _latest(s, p.id, "final")
-    plan = final or await ensure_expected(s, p, today)
     visits = await visit_service.visits_by_id(s, [d.visit_id for d in deals.values()])
     shown = {
         d.trade: d
@@ -3037,9 +3058,7 @@ async def overview_for(
             all_confirmed=bool(by_trade) and all(m.source == "deal" for m in by_trade),
             budget=budget,
         ),
-        period=PeriodOut(
-            kind=plan.kind, start=plan.start_date, end=plan.end_date, work_days=plan.work_days
-        ),
+        period=period,
         contacts=[
             VendorContactOut(
                 trade=t,

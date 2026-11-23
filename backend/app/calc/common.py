@@ -16,6 +16,10 @@ COUNTED = ("included", "separate")
 Basis = Literal["public", "market", "assumed", "none"]
 
 PYEONG_M2 = Decimal("3.3058")
+# 전용 → 공급 환산 한 값(ADR docs/v4/adr/0007): 공개 분양 · 임대 공고 평면 20곳 공급 ÷ 전용 가운데
+# (data/v3/area/area_rules.json). 내 집 평 · 도배 면적 · 목공 길이 · 시세 범위가 모두 이 값을 써요.
+# 바꿀 때는 이 값을 쓰는 판(refprice 집 크기 · 도배 · 목공)을 새로 만들어요(이미 만든 견적은 옛 판 그대로)
+SUPPLY_PER_EXCLUSIVE = Decimal("1.315")
 BASIS_LABEL = {"supply": "공급면적", "exclusive": "전용면적"}
 # 계산 산식 버전. 공정 계산 · 공정표 잇기 · 평 계산이 바뀌면 올린다. 저장한 표준견적서 · 공정표에 같이 남긴다
 # 2026.11.2: v3 표준견적서(도배지 줄 벽지 평 × 시장 평균 · 부분 공사 공간 몫)

@@ -134,6 +134,9 @@ class DobaePrices:
     md_mult: Mapping[str, Decimal] | None = None
     # 가견적도 이 판 표준견적서와 같은 줄 규칙: 표준에서 '선택'인 줄은 가견적에서도 합계 밖(ADR 0006)
     same_rules: bool = False
+    # 전체 철거(모은 조건 demolition=full)면 기존 벽지는 철거 공사가 떼서 '기존 벽지 철거' 줄을 '안 함'으로 둬요
+    # (2026.11c부터, ADR 0007. 앞 판은 늘 '실측 후'). 합계에는 어느 쪽도 안 들어가요
+    removal_by_demolition: bool = False
 
 
 def num(x: Decimal) -> str:
@@ -372,10 +375,14 @@ class DobaeV3Input:
     floor_py: Decimal | None = None
     # 벽지를 고객이 직접 사요(반셀프 '벽지 직접 구매'): 도배지 줄 '안 함' · 고객 구매
     own_paper: bool = False
+    # 전체 철거 공사가 기존 벽지를 떼요(removal_by_demolition 판): '기존 벽지 철거' 줄 '안 함'
+    demolished: bool = False
 
 
 # 반셀프 '벽지 직접 구매': 도배지 줄 까닭(줄 근거 글 앞머리) · 가정 줄
 OWN_PAPER = "고객 구매"
+# 전체 철거면 기존 벽지 떼기는 철거 공사 몫(서울 업체 실견적 235건: 철거 공사가 따로라 도배 소계에 없음)
+DEMOLISHED_REMOVAL = "전체 철거 공사에서 떼요(도배 견적 밖)"
 OWN_PAPER_ASSUMED = "벽지는 고객이 직접 사요(고객 구매). 도배지 줄은 합계에 넣지 않았어요."
 
 
@@ -646,6 +653,8 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
                 src["occupied"],
             )
         )
+    # 전체 철거 공사가 기존 벽지를 떼면(판 removal_by_demolition) '안 함', 아니면 실측 때 정해요(합계 밖은 같음)
+    gone = inp.demolished and p.removal_by_demolition
     lines.append(
         Line(
             "removal",
@@ -654,8 +663,8 @@ def quote_v3(inp: DobaeV3Input, p: DobaePrices, paper: PaperPrice) -> DobaeQuote
             "㎡",
             p.removal,
             won(paper_area * p.removal),
-            "after_visit",
-            src["removal"],
+            "excluded" if gone else "after_visit",
+            f"{DEMOLISHED_REMOVAL} · {src['removal']}" if gone else src["removal"],
         )
     )
     lines.append(
@@ -795,7 +804,8 @@ def standard_v3(
     """기본 정보 → v3 표준견적서 + 가견적 수량. 표준견적서 저장 · 손님 계산 · 가견적이 같은 값을 쓴다.
     부분 공사 몫은 방 개수에 맞는 표로 센다(방 개수에 없는 방 칩이면 ValueError).
     두 기준 판이면 고른 기준과 근거(why, pick_profile 결과)를 가정 첫 줄에 적는다.
-    own_paper(벽지 직접 구매)면 도배지 줄을 '안 함'(고객 구매)으로 합계에서 뺀다. 가견적 수량(qty)은 그대로다."""
+    own_paper(벽지 직접 구매)면 도배지 줄을 '안 함'(고객 구매)으로 합계에서 뺀다. 가견적 수량(qty)은 그대로다.
+    근거에 전체 철거가 있으면(모은 조건 demolition=full) 기존 벽지 철거 줄은 철거 공사 몫이에요(판이 그 규칙일 때)."""
     if h.area_m2 <= 0:
         raise ValueError("면적은 0보다 커야 해요")
     by_rooms = p.area_per_supply is not None
@@ -821,6 +831,7 @@ def standard_v3(
             rooms,
             floor if p.profile is not None else None,
             own_paper,
+            FULL_DEMOLITION in why,
         ),
         p,
         paper,
@@ -854,6 +865,8 @@ class ProfilePick:
 # 모은 조건 '철거 범위'(2026-11-21 리드 결정): 키 · 값은 코드 값이에요(단추 글 아님). 화면 · 비서가 같은 키를 써요
 DEMOLITION_KEY = "demolition"
 DEMOLITION = {"full": "전체 철거", "partial": "부분 철거", "none": "철거 안 함"}
+# 기준 고르기 근거 이름(REMODEL_SIGNALS) · 철거 줄(standard_v3)이 같이 봐요
+FULL_DEMOLITION = DEMOLITION["full"]
 
 # 리모델링 신호: (근거 이름, 목공 항목, 모은 조건 칸, 그 칸의 '한다' 값, '안 한다' 값).
 # 목공 두 줄의 값은 agent.v3.trades 되묻기 단추 글과 같아요(테스트가 본다). 모은 조건이 '한다' · '안 한다'면 그 답을,
@@ -862,7 +875,7 @@ DEMOLITION = {"full": "전체 철거", "partial": "부분 철거", "none": "철�
 REMODEL_SIGNALS: tuple[tuple[str, str | None, str, str, str], ...] = (
     ("문틀 교체", "door", "mokgong.doors", "문틀까지", "문짝만"),
     ("천장 평탄화", "flatten", "mokgong.ceiling", "네", "아니요"),
-    ("전체 철거", None, DEMOLITION_KEY, "full", "none"),
+    (FULL_DEMOLITION, None, DEMOLITION_KEY, "full", "none"),
 )
 SCOPE_KEY = "mokgong.molding_scope"  # '이번 공사는 어디까지 하세요?'
 SCOPE_ALL = "벽 · 천장까지 새로"  # 철거 뒤 벽 · 천장을 새로 마감하는 공사 → 리모델링

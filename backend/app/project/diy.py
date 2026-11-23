@@ -42,6 +42,15 @@ def buys_paper(said: Mapping[str, str]) -> bool:
     return said.get(f"{PREFIX}{PAPER_BUY}") == SELF
 
 
+def with_chips(said: Mapping[str, str], keys: Iterable[str]) -> dict[str, str]:
+    """모은 조건의 칩 줄을 keys로 바꾼 사본(저장하지 않음, 승인 카드 미리 보기). set_diy와 같은 줄 모양이에요:
+    고른 칩마다 diy.<키>, 빈 목록이면 diy.none."""
+    picked = [k for k in DIY if k in set(keys)]
+    out = {k: v for k, v in said.items() if not k.startswith(PREFIX)}
+    out.update({f"{PREFIX}{k}": SELF for k in picked} or {NONE_KEY: SELF})
+    return out
+
+
 def picked_of(keys: Iterable[str]) -> list[str] | None:
     """모은 조건 키(diy.*) → 고른 칩 키(DIY 순서). 줄이 없으면 None(아직 안 물음), '없어요'(diy.none)면 []."""
     got = set(keys)

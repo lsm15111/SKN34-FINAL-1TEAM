@@ -53,8 +53,8 @@ from app.quote.schemas import (
     StandardTradeOut,
     VendorQuoteOut,
 )
-from app.refprice.book import DOBAE_BY_VER, DOBAE_PROFILES, MOKGONG_2026H2, dobae_prices_of
-from app.refprice.house import HOUSE_2026H2
+from app.refprice.book import DOBAE_BY_VER, DOBAE_PROFILES, MOKGONG_DEFAULT, dobae_prices_of
+from app.refprice.house import HOUSE_DEFAULT
 from app.refprice.wallpaper_market import paper_market
 from app.shared.clock import SEOUL, now_utc
 from app.shared.errors import AppError
@@ -92,12 +92,21 @@ class TradeCalc:
     share_ver: str | None = None
     market_ver: str | None = None
     days: Decimal | None = None  # 이 공정만 했을 때 예상 일수 (계산 엔진, 반나절 단위)
-    price_ver: str = MOKGONG_2026H2.version  # 이 공정 단가 판 (도배는 고른 기준의 판)
+    price_ver: str = MOKGONG_DEFAULT.version  # 이 공정 단가 판 (도배는 고른 기준의 판)
     own_paper: bool = False  # 도배: 벽지 직접 구매(도배지 줄 '안 함' · 고객 구매)
 
 
 def _area(p: ProjectOut) -> tuple[Decimal, str]:
-    return house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    return house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
+
+
+def house_py(p: ProjectOut) -> Decimal | None:
+    """내 집 평(공급 기준, 계산 엔진 · 지금 집 크기 판). 표준견적서를 저장할 때와 같은 값이고, 저장본을 기다리지 않아
+    집 정보를 바꾼 직후에도 맞아요(집 정보 카드 · 보드). 셀 수 없으면 None."""
+    try:
+        return house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
+    except (ValueError, KeyError):
+        return None
 
 
 def home_v3(p: ProjectOut, grade: str | None = None) -> dobae.HomeV3:
@@ -137,7 +146,7 @@ def standard_v3(
         dp,
         paper_market(h.grade),
         SPACE_SHARE_ROOMS_2026_11,
-        HOUSE_2026H2,
+        HOUSE_DEFAULT,
         pick.why,
         own_paper=own_paper,
     )
@@ -153,7 +162,7 @@ def calc_trades(
     said(모은 조건)는 도배 기준 고르기 · 벽지 직접 구매(도배지 줄 고객 구매)에 쓴다. 품 · 기간은 기준 · 벽지 구매와
     상관없어 공정표는 비워도 같다."""
     crews = crews or {}
-    mp = replace(MOKGONG_2026H2, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG_2026H2
+    mp = replace(MOKGONG_DEFAULT, crew=crews["mokgong"]) if "mokgong" in crews else MOKGONG_DEFAULT
     pick = dobae.pick_profile(work_facts(p, said))
     dp = DOBAE_PROFILES[pick.profile]
     dp = replace(dp, crew=crews["dobae"]) if "dobae" in crews else dp
@@ -218,6 +227,12 @@ def calc_trades(
     return out
 
 
+def preview_total(p: ProjectOut, said: Mapping[str, str]) -> int:
+    """저장하지 않고 이 공사 · 모은 조건으로 센 표준견적서 합계(부가세 포함, 계산 엔진). ensure_standard와 같은 계산이에요.
+    승인 카드가 바꾸기 전 · 뒤 금액을 견줄 때 써요(바꾼 뒤 공사는 project.service.preview_home)."""
+    return sum_won(c.total for c in calc_trades(p, said=said))
+
+
 async def _latest(s: AsyncSession, project_id: uuid.UUID) -> dict[str, StandardQuote]:
     sub = (
         select(StandardQuote.trade, func.max(StandardQuote.version).label("v"))
@@ -253,7 +268,7 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
     if not stale:
         return {t: latest[t] for t in wanted}
     area, basis = _area(p)
-    pyeong = house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_2026H2)
+    pyeong = house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
     try:
         for trade in stale:
             c = wanted[trade]
@@ -505,7 +520,7 @@ async def standard_basis(
         ways["walls_only"] = standard_v3(replace(h, faces=("wall",)), None, pick, own_paper=own)
     if h.occupied:
         ways["empty_home"] = standard_v3(replace(h, occupied=False), None, pick, own_paper=own)
-    how = dobae.count_basis(h, DOBAE_PROFILES[pick.profile], HOUSE_2026H2, v)
+    how = dobae.count_basis(h, DOBAE_PROFILES[pick.profile], HOUSE_DEFAULT, v)
     return StandardBasis(how, dobae.save_ways(v, ways))
 
 

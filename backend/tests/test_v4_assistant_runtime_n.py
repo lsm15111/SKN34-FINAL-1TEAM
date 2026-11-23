@@ -593,16 +593,20 @@ def test_turn_facts_carry_the_expected_period_until_it_goes_stale(api, script):
     pid = home(api, "plan-facts@mitjip.test")
     assert api.get(f"/projects/{pid}/plan").status_code == 200  # 예상 공정표를 만든다
     (plan,) = query(
-        "select start_date, end_date, work_days from plans where project_id = $1 "
-        "and kind = 'expected' order by version desc limit 1",
+        "select p.start_date, p.end_date, p.work_days, max(s.end_date) filter (where s.kind = 'work')"
+        " as work_end from plans p join plan_steps s on s.plan_id = p.id where p.project_id = $1"
+        " and p.kind = 'expected' group by p.id order by p.version desc limit 1",
         uuid.UUID(pid),
     )
+    # 공사 기간은 업체 공사 끝날까지예요(공정표 화면 · 보드와 같은 값, 자연 건조 · 입주 청소 빼고, QA r6 화면 M8)
+    assert plan["work_end"] < plan["end_date"]
     want = assistant_service.period_line(
         SimpleNamespace(
             kind="expected",
             start=plan["start_date"],
             end=plan["end_date"],
             work_days=plan["work_days"],
+            work_end=plan["work_end"],
         ),
         today_seoul(),
     )

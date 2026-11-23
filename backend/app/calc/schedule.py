@@ -286,6 +286,59 @@ def start_choices(
     return out
 
 
+def start_choices_before(
+    target: date,
+    days: int,
+    n: int,
+    before: date,
+    floor: date,
+    days_off: Collection[date] = (),
+    weekend: Collection[int] = WEEKEND,
+    end_by: date | None = None,
+) -> list[tuple[date, date]]:
+    """앞당기기 시작일 후보 n개: before(지금 시작일) 전에 시작하고 floor보다 앞으로는 가지 않아요. target(바라는 날)부터
+    before 전까지 앞으로 찾고, 모자라면 target 앞 일하는 날을 거슬러 찾아요(QA r6 c4: '하루만 당겨'의 target이
+    일요일이면 금요일). 각각 일하는 날 days개면 끝나는 날, end_by가 있으면 그날까지 끝나는 후보만."""
+    if days < 1 or n < 0:
+        raise ValueError("일하는 날 수와 후보 수를 다시 확인해 주세요")
+    out: list[tuple[date, date]] = []
+
+    def add(d: date) -> None:
+        if is_off(d, days_off, weekend):
+            return
+        end = workdays(d, days, days_off, weekend)[-1]
+        if end_by is None or end <= end_by:
+            out.append((d, end))
+
+    d = max(target, floor)
+    while len(out) < n and d < before:
+        add(d)
+        d += timedelta(days=1)
+    d = min(target, before) - timedelta(days=1)
+    while len(out) < n and d >= floor:
+        add(d)
+        d -= timedelta(days=1)
+    return out
+
+
+EarlierBlock = Literal["soon", "prev", "wish", "off"]
+
+
+def no_earlier_why(
+    before: date, floor: date, tomorrow: date, start_from: date | None, wish: date | None = None
+) -> EarlierBlock:
+    """앞당길 후보(start_choices_before)가 없는 까닭: soon 지금 시작일이 내일이라 그 전이 없음 · prev 앞 공정이 끝난
+    다음 일하는 날이 지금 시작일 · wish 바라는 첫날이 지금 시작일보다 앞이 아님 · off floor부터 지금 시작일 전까지가
+    모두 쉬는 날(주말 · 공휴일)."""
+    if before <= tomorrow:
+        return "soon"
+    if start_from is not None and start_from >= before:
+        return "prev"
+    if wish is not None and wish >= before:
+        return "wish"
+    return "off"
+
+
 # ---- 같은 업체의 다른 공사와 겹침 ----
 
 

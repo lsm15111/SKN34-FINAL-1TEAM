@@ -22,7 +22,7 @@ from app.guest.schemas import (
 from app.project import diy as project_diy
 from app.project.schemas import HomeInfoIn, check_home
 from app.refprice.book import DOBAE_DEFAULT, DOBAE_PROFILES
-from app.refprice.house import HOUSE_2026H2
+from app.refprice.house import HOUSE_DEFAULT
 from app.refprice.wallpaper_market import paper_market
 
 
@@ -70,7 +70,7 @@ async def standard(data: HomeInfoIn, today: date) -> GuestStandardOut:
         p,
         paper_market(h.grade),
         SPACE_SHARE_ROOMS_2026_11,
-        HOUSE_2026H2,
+        HOUSE_DEFAULT,
         pick.why,
         own_paper=own,
     )

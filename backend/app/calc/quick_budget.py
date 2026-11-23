@@ -13,7 +13,7 @@ from decimal import Decimal
 from typing import Literal
 
 from app.calc import market_band
-from app.calc.common import PYEONG_M2, VAT_RATE, AreaBasis, won
+from app.calc.common import PYEONG_M2, SUPPLY_PER_EXCLUSIVE, VAT_RATE, AreaBasis, won
 from app.calc.plan_qty import PlanQty
 from app.calc.precise_common import Grade, SilkPaper, num
 
@@ -85,7 +85,7 @@ def _incl(x: int) -> int:
 def _doors(inp: QuickIn, book: market_band.MarketBook) -> tuple[int, str]:
     if inp.plan and inp.plan.doors:
         return inp.plan.doors, f"도면 {inp.plan_name}에서 센"
-    supply = inp.area_m2 if inp.area_basis == "supply" else inp.area_m2 * Decimal("1.2")
+    supply = inp.area_m2 if inp.area_basis == "supply" else inp.area_m2 * SUPPLY_PER_EXCLUSIVE
     p = book.mokgong
     return market_band.doors_for(
         supply / PYEONG_M2, p.doors_by_py, p.doors_count
@@ -154,7 +154,8 @@ def _choices(inp: QuickIn, book, key: str, opts: list[tuple[object, str]]) -> tu
 def quick(inp: QuickIn, book: market_band.MarketBook) -> QuickOut:
     if not (inp.dobae or inp.molding or inp.base or inp.door not in (None, "none")):
         raise ValueError("바꿀 것을 하나 이상 골라 주세요")
-    py = (inp.area_m2 if inp.area_basis == "supply" else inp.area_m2 * Decimal("1.2")) / PYEONG_M2
+    supply = inp.area_m2 if inp.area_basis == "supply" else inp.area_m2 * SUPPLY_PER_EXCLUSIVE
+    py = supply / PYEONG_M2
     assumed = []
     if inp.plan:
         what = "고른 공간만" if inp.part else "집 전체"

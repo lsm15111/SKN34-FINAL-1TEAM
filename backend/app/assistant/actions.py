@@ -363,8 +363,12 @@ async def _remake_request(
     s: AsyncSession, user: User, a: AssistantAction, keys: list[str], now: datetime
 ) -> AssistantAction | None:
     """실측 요청 카드 a를 같은 업체 · 같은 조건에 '업체에 알릴 것'만 keys(지금 칩)로 바꾼 새 판으로 만든다
-    (supersedes = a). 열린 옛 카드는 offer가 replaced로 닫는다. 새 판을 못 만들면 None. commit은 부르는 쪽."""
+    (supersedes = a). '가견적' 줄의 벽지 안내도 지금 칩(벽지 직접 구매)에 맞춰요. 열린 옛 카드는 offer가 replaced로
+    닫는다. 새 판을 못 만들면 None. commit은 부르는 쪽."""
     from app.assistant.tools import diy as diy_tools
+    from app.assistant.tools.propose import ESTIMATE_LABEL, estimate_row
+    from app.project.diy import PAPER_BUY
+    from app.quote.service import OWN_PAPER_NOTE
 
     if a.project_id is None or a.expires_at <= now:
         return None
@@ -373,7 +377,12 @@ async def _remake_request(
         payload["diy"] = keys
     payload["supersedes"] = str(a.id)
     summary = ActionSummary.model_validate(a.summary)
-    summary.rows = [r for r in summary.rows if r.label != diy_tools.TOLD_LABEL]
+    paper = estimate_row(OWN_PAPER_NOTE if PAPER_BUY in keys else None)
+    summary.rows = [
+        paper if r.label == ESTIMATE_LABEL else r
+        for r in summary.rows
+        if r.label != diy_tools.TOLD_LABEL
+    ]
     if (row := diy_tools.told_row(keys)) is not None:
         summary.rows.append(row)
     got = await offer(

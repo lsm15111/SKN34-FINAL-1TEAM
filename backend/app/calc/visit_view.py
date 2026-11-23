@@ -12,17 +12,16 @@
 import math
 import statistics
 from collections.abc import Collection, Mapping, Sequence
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Literal
 
 from app.calc import slots
-from app.calc.deadline import HALF_END
+from app.calc.deadline import HALF_END, HALF_START
 from app.shared.clock import SEOUL
 
 Half = Literal["am", "pm"]
-# 반나절이 시작하는 시각 (캘린더에 넣을 때만 쓴다. 실제 시각은 확정 뒤 채팅으로 정한다)
-HALF_START: dict[str, time] = {"am": time(9, 0), "pm": time(13, 0)}
+# 반나절이 시작하는 시각(HALF_START)은 deadline에 있어요(업체 수락 기한도 써요). 실제 시각은 확정 뒤 채팅으로 정한다
 BASIS_LABEL: dict[str, str] = {"supply": "공급", "exclusive": "전용"}  # area_basis → 화면 말
 
 

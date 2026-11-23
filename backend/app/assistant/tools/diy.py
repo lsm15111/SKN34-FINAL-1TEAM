@@ -117,6 +117,15 @@ WHY_NOTE = {
     "no_free_day": "그 사이에 주말 · 공휴일이 없어요. 업체와 날짜를 맞추거나 하루를 비워 보세요.",
     "late": "마감이 지났어요.",
 }
+# 시작이 날짜 없는 앞 공사 뒤인 일(calc.diy after, diy_v4): 카드 말 · 모델 값 note(QA r6 c2: 새 몰딩을 달기 전에
+# 칠하라는 꼴이었어요)
+AFTER_WORD = {"mokgong": "목공이 끝난 뒤"}
+AFTER_NOTE = {
+    "mokgong": (
+        "공정표에 목공 날짜가 없어 시작(start)은 '목공이 끝난 뒤'예요. 새 몰딩 · 걸레받이 · 문틀을 달면 그 목공이 끝난 "
+        "뒤에, 목공이 없으면 지금부터 마감(end)까지 칠해요."
+    )
+}
 ELECTRIC = ("outlet", "light")
 SAFETY = "전기 일은 분전함 차단기를 먼저 내리고 해요."
 # 무료 모드 정해 둔 글
@@ -172,6 +181,12 @@ def _when(t: calc_diy.DiyTask) -> str:
         return "공사 날짜가 정해지면 날짜를 알려 드려요"
     if t.late and t.end is not None:
         return f"{ko_day(t.end)}까지였어요"
+    # 시작이 날짜 없는 목공 뒤(diy_v4)
+    if t.after is not None and t.start is None and t.end is not None:
+        head = AFTER_WORD.get(t.after, t.after)
+        if t.why == "no_free_day":
+            return f"{head} ~ {ko_day(t.end)} 사이에 주말 · 공휴일이 없어요"
+        return f"{head} ~ {ko_day(t.end)} 사이에 해요"
     if t.why == "short":  # 공정표 줄과 같은 날: 할 수 있는 첫날(calc.diy diy_v2 day, 마감 날 아님)
         return f"{ko_day(t.day)}부터 할 수 있는데 날이 빠듯해요"
     if t.why == "no_free_day" and t.start is not None and t.end is not None:
@@ -364,7 +379,7 @@ def model_of(g: Got, focus: str | None = None) -> dict:
             "end": t.end,
             "day": t.day,
             "fit": t.fit,
-            "note": WHY_NOTE.get(t.why),
+            "note": WHY_NOTE.get(t.why) or (AFTER_NOTE.get(t.after) if t.after else None),
             "text": g.when(t),
             "when": it.when,
             "source": it.source_line(),

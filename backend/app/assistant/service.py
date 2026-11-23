@@ -266,7 +266,8 @@ def period_line(period, today) -> str | None:
     있는데 정해지지 않았다고 답함, QA r3 c2: 확정 뒤에 '지금 예상 공정표 기준'이라고 답함)."""
     if period is None:
         return None
-    days = kdate.long_range(period.start, period.end, today)
+    # 공사 처음 ~ 업체 공사 끝(공정표 화면 · 보드와 같은 값, 자연 건조 · 입주 청소 빼고, QA r6 화면 M8)
+    days = kdate.long_range(period.start, getattr(period, "work_end", None) or period.end, today)
     if period.kind == "final":
         return (
             f"공정표: 확정 공정표 · 공사 {days} · 일하는 날 {period.work_days}일(수락한 공사 날짜)"
@@ -1411,6 +1412,27 @@ def range_kind(o, estimates: dict[uuid.UUID, int]) -> tuple[str | None, bool]:
     return ("실측 견적서" if quoted else "가견적" if fixed else None), quoted > 0
 
 
+# 보드 금액 칸 이름 꼬리: 벽지 직접 구매라 표준견적서 도배지 줄이 합계 밖
+PAPER_OUT = " · 벽지 빼고"
+# 요청 때 고정한 가견적은 벽지 직접 구매여도 벽지 값이 든 값(calc.estimate)
+PAPER_IN = "가견적(벽지 포함)"
+
+
+def own_paper_in(own: bool, money) -> bool:
+    """금액 칸에 벽지를 뺀 도배 표준견적서가 들어 있나: 저장한 도배 표준견적서가 벽지 직접 구매(own)이고
+    도배를 아직 확정하지 않았어요(확정했으면 그 견적서 금액이에요)."""
+    return own and any(x.trade == "dobae" and x.source == "standard" for x in money.by_trade)
+
+
+def paper_basis(label: str, rng_label: str | None, own: bool) -> tuple[str, str | None]:
+    """벽지 직접 구매면 금액 칸 이름에 '벽지 빼고', 업체 금액 범위의 가견적에 '벽지 포함'을 붙여요. 아니면 그대로."""
+    if not own:
+        return label, rng_label
+    head, sep, tail = label.rpartition(" · ")  # 끝은 '부가세 포함'
+    out = f"{head}{PAPER_OUT}{sep}{tail}" if sep else label
+    return out, rng_label.replace("가견적", PAPER_IN) if rng_label else rng_label
+
+
 def vendor_href(pid: uuid.UUID, v) -> str:
     """보드 업체 줄 → 그 업체 내역: 확정한 업체는 공사, 견적서를 받았으면 견적서 비교(확정하지 않은 견적서도),
     실측 중이면 그 실측, 끝난 요청(기한 지남 · 취소 · 못 받음)은 업체 자세히(다시 담기)."""
@@ -1444,6 +1466,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     from app.assistant.tools import cards
     from app.assistant.tools import diy as diy_tools
     from app.project import service as project_service
+    from app.quote import service as quote_service
     from app.schedule import service as schedule_service
 
     today = today_seoul()
@@ -1454,6 +1477,10 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         works = {w.trade: w for w in await schedule_service.work_money(s, user, project_id)}
         opened = await repo.open_count(s, user.id, project_id)
         estimates = await _estimates(s, project_id)
+        # 표준견적서 저장본(overview_for가 새로 맞춘 뒤): 벽지 직접 구매면 도배지 줄이 합계 밖이에요. 값만 바로
+        # 꺼내 둬요(아래 commit · 세션 닫힘 뒤에 ORM 칸을 읽으면 지연 로딩 오류)
+        std = (await quote_service.latest_of(s, [project_id])).get((project_id, "dobae"))
+        own = bool(std is not None and std.own_paper)
         if await diy_tools.settle_memory(s, user, now_utc()):  # 화면에서 뺀 직접 할 일 기억 조각
             await s.commit()
         remembered = await repo.memories(s, user.id)
@@ -1478,6 +1505,9 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     ]
     rng = money_range(o, estimates)
     rng_label, quoted = range_kind(o, estimates) if rng else (None, False)
+    # 벽지 직접 구매(QA r6 c2): 금액 칸의 도배 표준견적서는 벽지를 뺀 값인데 요청 때 고정한 가견적은 벽지 값이 든 값이에요.
+    # 두 칸 이름에 기준을 밝혀요(가견적 '시공만' 값은 업체가 단가를 따로 넣어야 해서 뒤로, 리드 결정 11-22)
+    label, rng_label = paper_basis(label, rng_label, own_paper_in(own, m))
     final = o.period.kind == "final"
     docs = [
         LinkOut(label="표준견적서", href=cards.href(p.id, "/standard")),
@@ -1507,7 +1537,8 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         vendors=BoardVendors(title="업체", rows=rows) if rows else None,
         period=BoardPeriod(
             label="공사" if final else "예상 공사",
-            value=kdate.md_range(o.period.start, o.period.end, today),  # 화면 날짜 꼴(F2 · F5)
+            # 업체 공사 처음 ~ 끝(공정표 화면 '공사'와 같은 값, 자연 건조 · 입주 청소 빼고, QA r6 화면 M8). 화면 날짜 꼴(F2 · F5)
+            value=kdate.md_range(o.period.start, o.period.work_end or o.period.end, today),
             sub=f"일하는 날 {o.period.work_days}일",
         )
         if o.period.start

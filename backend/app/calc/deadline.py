@@ -29,6 +29,8 @@ VALID_SOON_DAYS = (3, 1)  # 견적서 유효기간 3일 · 1일 전 18:00 알림
 SOON_HOURS = 12  # 이 시간 안으로 남으면 화면이 '곧 지나요'를 보인다
 # 실측 시각 지남(L09): 오전 칸은 13:00, 오후 칸은 18:00이 지나면 '실측 받았어요'를 누를 수 있다
 HALF_END: dict[str, time] = {"am": time(13, 0), "pm": time(18, 0)}
+# 반나절이 시작하는 시각(캘린더 · 업체 수락 기한). 실제 시각은 확정 뒤 채팅으로 정한다
+HALF_START: dict[str, time] = {"am": time(9, 0), "pm": time(13, 0)}
 # 기한이 지난 뒤(D12 보류)의 최소 처리: 잡아 둔 반나절만 풀고 '날짜 고를 차례'로 (L10, 팀 확인)
 AFTER_ACCEPT_DUE = "release_hold"
 AFTER_PROPOSAL_DUE = "release_hold"
@@ -44,13 +46,22 @@ def reply_due(sent_at: datetime) -> datetime:
     return _aware(sent_at) + timedelta(hours=REPLY_HOURS)
 
 
-def pick_due(answered_at: datetime) -> datetime:
-    return _aware(answered_at) + timedelta(days=PICK_DAYS)
+def pick_due(answered_at: datetime, last_day: date | None = None) -> datetime:
+    """고객 날짜 고르기 기한: 업체 답 + 7일. 업체 기간의 마지막 날(last_day)이 오기 전(그날 0시, 서울)을 넘지 않아요.
+    고를 수 있는 날은 내일부터라 마지막 날은 그 전날까지 골라야 해요(QA r6 화면 M6: 기간 끝 11.28인데 기한 11.30)."""
+    due = _aware(answered_at) + timedelta(days=PICK_DAYS)
+    if last_day is None:
+        return due
+    return min(due, datetime.combine(last_day, time(0), SEOUL))
 
 
-def accept_due(picked_at: datetime) -> datetime:
-    """잡아 둔 반나절의 기한(visit_holds.until)과 같다."""
-    return _aware(picked_at) + timedelta(hours=ACCEPT_HOURS)
+def accept_due(picked_at: datetime, day: date | None = None, half: Half | None = None) -> datetime:
+    """업체 수락 기한(잡아 둔 반나절의 visit_holds.until과 같다): 고른 때 + 48시간. 고른 반나절(day · half)이
+    시작하기 전을 넘지 않아요(QA r6 화면 M6: 11.25 오후를 골랐는데 수락 기한 11.25 22:06)."""
+    due = _aware(picked_at) + timedelta(hours=ACCEPT_HOURS)
+    if day is None or half is None:
+        return due
+    return min(due, datetime.combine(day, HALF_START[half], SEOUL))
 
 
 def proposal_due(proposed_at: datetime) -> datetime:
