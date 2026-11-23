@@ -1,11 +1,11 @@
-"""v4 비서 새 판 갈래 N(런타임 · 숫자 · 사실): 턴 사실 '지금 · 올해 · 알림' · 날짜 공용 꼴(카피 가이드 F2) · v4 대화 숫자
+"""v4 비서 새 판 갈래 N(런타임 · 숫자 · 사실): 턴 사실 '지금 · 올해 · 미룬 알림' ·날짜 공용 꼴(카피 가이드 F2) · v4 대화 숫자
 검사 풀기(어림 · 원대 · 차액 · 합계 · 평당 · 날짜 꼴) · 누출 검사는 규칙 절만 · 이름은 LLM에 보내지 않음 · 지시문 판 고르기
 (ASSISTANT_PROMPT_SET) · 시간 제한으로 끊긴 호출의 장부 추정치 · 화면이 끊은 턴의 턴 자리. 유료 호출 0회(Claude 대본)."""
 
 import asyncio
 import json
 import uuid
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from v3_kb import repo_index
 
 from app.agent import llm
-from app.assistant import policy, proactive, prompts, runtime
+from app.assistant import proactive, prompts, runtime
 from app.assistant import service as assistant_service
 from app.assistant.runtime import SentenceGate
 from app.assistant.tools import cards
@@ -108,48 +108,63 @@ def test_time_words_come_from_one_table(hour, minute, want):
     assert kdate.hour_text(hour, minute) == want
 
 
-# ---- 2. 턴 사실: 지금 · 올해 · 알림(고객 · 업체) ----
+# ---- 2. 턴 사실: 지금 · 올해 · 미룬 알림(고객 · 업체) ----
 
 
-def test_time_lines_say_seoul_now_year_and_night_rule():
+def test_time_lines_say_seoul_now_and_year():
     at = datetime(2026, 11, 21, 17, 5, tzinfo=UTC)  # 서울 11-22(일) 02:05
-    assert assistant_service.time_lines(at) == [
-        "지금: 11월 22일(일) 새벽 2시 5분",
-        "올해: 2026년",
-        "알림: 밤 9시~아침 9시엔 아침에 보내요",
-    ]
+    assert assistant_service.time_lines(at) == ["지금: 11월 22일(일) 새벽 2시 5분", "올해: 2026년"]
     lines = assistant_service.time_lines
     assert lines(datetime(2026, 11, 21, 15, tzinfo=UTC))[0] == "지금: 11월 22일(일) 새벽 0시"
     assert lines(datetime(2026, 11, 22, 0, tzinfo=UTC))[0] == "지금: 11월 22일(일) 아침 9시"
-    assert lines(datetime(2026, 12, 31, 15, tzinfo=UTC))[:2] == [
+    assert lines(datetime(2026, 12, 31, 15, tzinfo=UTC)) == [
         "지금: 1월 1일(금) 새벽 0시",  # 서울은 벌써 새해
         "올해: 2027년",
     ]
 
 
-def test_night_line_reads_the_nudge_rule_values(monkeypatch):
-    monkeypatch.setattr(proactive, "RULES", policy.NudgeRules(night_from=22, night_to=8))
-    at = datetime(2026, 11, 21, 17, 5, tzinfo=UTC)
-    assert assistant_service.time_lines(at)[2] == "알림: 밤 10시~아침 8시엔 아침에 보내요"
+def test_deferred_line_only_when_a_nudge_was_put_off():
+    """QA r6 c1 M10: 밤 규칙 줄을 늘 넣으면 비서가 '밤 알림은 아침에 가요'를 붙였는데 종 · 대화 줄은 밤에도 바로 갔다.
+    실제로 미룬 알림이 있을 때만 수 · 보낼 때를 넣는다(오늘이 아니면 날짜도)."""
+    line = assistant_service.deferred_line
+    now = datetime(2026, 11, 21, 17, 5, tzinfo=UTC)  # 서울 11-22(일) 02:05
+    assert line(0, None, now) is None
+    assert (
+        line(2, datetime(2026, 11, 22, 0, tzinfo=UTC), now)
+        == "알림: 미룬 알림 2개는 아침 9시에 가요"
+    )
+    late = datetime(2026, 11, 21, 13, tzinfo=UTC)  # 서울 11-21(토) 22:00 → 다음 날 아침
+    assert line(1, datetime(2026, 11, 22, 0, tzinfo=UTC), late) == (
+        "알림: 미룬 알림 1개는 11월 22일(일) 아침 9시에 가요"
+    )
 
 
 def test_turn_facts_have_now_lines_and_no_name_for_customer_and_vendor(api, script):
+    from tests.test_v4_assistant_nudges import add_nudge
+
     pid = home(api, "jieun@mitjip.test", name="김지은")
     log = script([{"text": "지금은 새벽이 아니어도 바로 볼 수 있어요."}])
     ok(ask(api, pid, "안녕, 너 뭐 해 줄 수 있어?"))
     facts = log[0]["messages"][-1]
     assert facts["role"] == "system"
     assert facts["content"].startswith("지금: ") and "\n올해: 20" in facts["content"]
-    assert "\n알림: 밤 9시~아침 9시엔 아침에 보내요" in facts["content"]
+    assert "\n알림:" not in facts["content"]  # 미룬 알림이 없으면 알림 줄도 없다
     assert "오늘: 20" not in facts["content"] and "부를 이름" not in facts["content"]
     assert "김지은" not in json.dumps(log, ensure_ascii=False)  # 이름은 LLM에 보내지 않는다
+    # 밤 · 하루 상한으로 미룬 줄(pending · night)이 있으면 수와 보낼 때를 넣는다
+    (me,) = query("select owner_id from projects where id = $1", uuid.UUID(pid))
+    due = datetime.now(UTC) + timedelta(hours=5)
+    add_nudge(me["owner_id"], project_id=uuid.UUID(pid), reason="night", due_at=due)
+    log = script([{"text": "네, 알려 드릴게요."}])
+    ok(ask(api, pid, "알림은 언제 와요?"))
+    assert "\n알림: 미룬 알림 1개는 " in log[0]["messages"][-1]["content"]
     api.cookies.clear()
     approved_vendor(api, "facts-vendor@mitjip.test")
     log = script([{"text": "오늘 할 일을 정리했어요."}])
     body = {"client_key": uuid.uuid4().hex, "text": "오늘 할 일 알려 주세요"}
     ok(api.post("/vendor/assistant/turns", json=body))
     facts = log[0]["messages"][-1]["content"]
-    assert facts.startswith("지금: ") and "\n알림: " in facts and "\n화면: 업체 비서" in facts
+    assert facts.startswith("지금: ") and "\n알림:" not in facts and "\n화면: 업체 비서" in facts
 
 
 # ---- 3. v4 대화 숫자 검사 풀기(SentenceGate 길만) ----
@@ -176,7 +191,7 @@ def gate_said(text: str, allowed: str) -> str:
 FACTS = (
     "지금: 11월 22일(일) 새벽 2시 5분\n"
     "올해: 2026년\n"
-    "알림: 밤 9시~아침 9시엔 아침에 보내요\n"
+    "알림: 미룬 알림 1개는 아침 9시에 가요\n"
     "집: 서울 관악구 · 공급 105.8㎡ · 32평 · 빈 집 · 공사 시작 희망 12월 14일(월)"
 )
 TOOL = json.dumps(
@@ -268,9 +283,15 @@ def test_band_and_per_pyeong_and_difference_edges():
 def test_zero_and_nine_oclock_follow_the_now_line():
     zero = assistant_service.time_lines(datetime(2026, 11, 21, 15, 3, tzinfo=UTC))
     assert gate_said("0시가 넘었어요.", "\n".join(zero)) == "0시가 넘었어요."
-    two = "\n".join(assistant_service.time_lines(datetime(2026, 11, 21, 17, 5, tzinfo=UTC)))
+    at = datetime(2026, 11, 21, 17, 5, tzinfo=UTC)
+    two = "\n".join(assistant_service.time_lines(at))
     assert gate_said("0시가 넘었어요.", two) == ""
-    assert gate_said("아침 9시에 알려 드릴게요.", two) == "아침 9시에 알려 드릴게요."
+    # 아침 9시는 미룬 알림이 있을 때만 근거예요(QA r6 c1 M10: 늘 '밤 알림은 아침에 가요'를 붙임)
+    assert gate_said("아침 9시에 알려 드릴게요.", two) == ""
+    put_off = assistant_service.deferred_line(1, datetime(2026, 11, 22, 0, tzinfo=UTC), at)
+    assert (
+        gate_said("아침 9시에 알려 드릴게요.", f"{two}\n{put_off}") == "아침 9시에 알려 드릴게요."
+    )
 
 
 def test_v2_v3_answer_check_is_unchanged():
