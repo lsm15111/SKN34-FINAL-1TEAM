@@ -27,6 +27,7 @@ PRICES: dict[str, Price] = {
     "claude-opus-5-5": Price(4.00, 20.00, 0.20),
     "claude-sonnet-5-5": Price(2.00, 10.00, 0.10),
     "claude-haiku-5-5": Price(0.10, 0.50, 0.01, long_inp=0.50, long_out=2.50, long_from=100_000),
+    "gpt-6.1-sol": Price(2.00, 10.00, 0.10),  # OpenAI 가격 문서(2026-11-23 확인)
     "gpt-6.1-terra": Price(1.00, 5.00, 0.05),
     "gpt-6-luna": Price(0.10, 0.50, 0.01),
 }

@@ -242,14 +242,28 @@ def settings_mode() -> dict:
 
 
 def live_settings() -> dict:
-    """LLM 모드 meta에 남길 설정(모델 · effort · 상한 · Jev, 키 없음)."""
+    """LLM 모드 meta에 남길 설정(공급자 · 모델 · effort · 상한 · Jev, 키 없음)."""
     from app.config import settings
 
+    if settings.llm_provider == "openai":
+        models = {
+            "provider": "openai",
+            "model": settings.openai_agent_model,
+            "effort": settings.openai_reasoning_effort,
+            "light_model": settings.openai_light_model,
+            "light_effort": settings.openai_light_effort,
+            "light_roles": settings.openai_light_roles,
+        }
+    else:
+        models = {
+            "provider": "anthropic",
+            "model": settings.llm_claude_model,
+            "effort": settings.llm_claude_effort,
+            "light_model": settings.llm_claude_light_model,
+            "light_effort": settings.llm_claude_light_effort,
+        }
     return {
-        "model": settings.llm_claude_model,
-        "effort": settings.llm_claude_effort,
-        "light_model": settings.llm_claude_light_model,
-        "light_effort": settings.llm_claude_light_effort,
+        **models,
         "cap_turn_usd": settings.llm_cap_turn_usd,
         "cap_user_day_usd": settings.llm_cap_user_day_usd,
         "cap_new_user_day_usd": settings.llm_cap_new_user_day_usd,

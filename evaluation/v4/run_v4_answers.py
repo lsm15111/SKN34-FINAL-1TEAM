@@ -47,6 +47,8 @@ SYSTEMS = {
     "v4_v3": "v3",
     "v4_hybrid": "v2+v3",
     "v4_hybrid_g": "v2g+v3",
+    "v4_default": "period=v3,price=v3,*=v2+v3",  # 지금 기본값(config.assistant_answer_route)
+    "v4_default_g": "period=v3,price=v3,*=v2g+v3",  # 공정 지식 묶음만 받아 비서가 한 번에 써요
 }  # 이름 → ASSISTANT_ANSWER_ROUTE
 PICK = {"other_trade": 6, "multi_trade": 14, "knowledge": 16, "price_time": 4}
 SEED = 20261121
@@ -338,8 +340,8 @@ class OutTap:
         tools_mod.run = run
         real_facts = assistant_service._customer_facts
 
-        async def facts(s, user, pid, today, opened):
-            got = await real_facts(s, user, pid, today, opened)
+        async def facts(*args, **kwargs):  # 인자는 그대로 넘겨요(서비스가 인자를 더해도 깨지지 않게)
+            got = await real_facts(*args, **kwargs)
             self.facts = got
             return got
 
@@ -524,6 +526,12 @@ def parse_args(argv=None):
     ap.add_argument("--limit", type=int)
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--max-usd", type=float, help="--live에는 꼭 줘요(장부 합 기준)")
+    ap.add_argument(
+        "--provider",
+        choices=["anthropic", "openai"],
+        default="anthropic",
+        help="--live 공급자. openai는 OPENAI_API_KEY를 써요(모델 · effort는 OPENAI_* 환경변수)",
+    )
     ap.add_argument("--db", default="mitjip_eval_v4ans")
     ap.add_argument("--redis-db", type=int, default=9)
     ap.add_argument("--env-file", type=Path, help="DB 접속값을 읽을 .env(키는 읽지 않아요)")
@@ -554,7 +562,7 @@ def main(argv=None) -> int:
     import apienv
 
     if a.live:
-        apienv.live_mode()
+        apienv.openai_mode() if a.provider == "openai" else apienv.live_mode()
     else:
         apienv.free_mode()
     env = apienv.load_db_env(a.env_file)

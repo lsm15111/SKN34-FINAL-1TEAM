@@ -533,6 +533,12 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--max-usd", type=float, help="--live 상한(달러). 누적 + 다음 판 어림이 넘으면 멈춰요"
     )
+    ap.add_argument(
+        "--provider",
+        choices=["anthropic", "openai"],
+        default="anthropic",
+        help="--live 공급자. openai는 OPENAI_API_KEY를 써요(모델 · effort는 OPENAI_* 환경변수)",
+    )
     ap.add_argument("--resummarize", action="store_true", help="돌린 sim.jsonl로 요약만 다시 내요")
     ap.add_argument(
         "--no-worker", action="store_true", help="worker(기억 뽑기 · 먼저 말 걸기)를 돌리지 않아요"
@@ -561,7 +567,7 @@ def main(argv=None) -> int:
     if a.live and (a.max_usd is None or a.max_usd <= 0):
         ap.error("--live에는 --max-usd(0보다 큰 값)가 필요해요")
     if a.live:
-        apienv.live_mode()
+        apienv.openai_mode() if a.provider == "openai" else apienv.live_mode()
     else:
         apienv.free_mode()
     env = apienv.load_db_env(a.env_file)
