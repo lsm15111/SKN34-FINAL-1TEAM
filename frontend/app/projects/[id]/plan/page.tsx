@@ -1,6 +1,9 @@
 // /projects/{id}/plan — 공정표. 수락한 공사 날짜가 있으면 확정 공정표(C36 폰 · D19 웹), 없으면 예상 공정표(C08).
 // 날짜 · 일수 · 인원 · 금액은 모두 API(계산 엔진) 값이에요. 화면은 나누거나 올리지 않아요.
+// v4(비서 화면 카드 창)에서는 확정 공정표 옆 칸에 AI 채팅을 따로 두지 않아요(비서가 옆에 있어요).
+// 예상 공정표 아래 단추는 공사 '지금 할 일'(단계마다 다름, 없으면 업체 보기)이에요.
 import { notFound } from "next/navigation";
+import { uiMode } from "@/components/assistant/mode";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead, WithAside } from "@/components/site/Frame";
 import { ExpectedPlan } from "@/components/plan/ExpectedPlan";
@@ -23,14 +26,14 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
   const crumbs = (here: string) => [{ label: "내 공사", href: "/my" }, { label: shell.name, href: base }, { label: here }];
 
   if (plan.kind === "final") {
-    const checks = await getChecks(shell.id);
+    const [checks, ui] = await Promise.all([getChecks(shell.id), uiMode()]);
     const h = finalHead(plan);
     return (
       <>
         <AppHeader only="phone" phone={{ title: "확정 공정표", back: base }} />
         <Main>
           <PageHead title="확정 공정표" crumbs={crumbs("확정 공정표")} desc={<span className="mj-num">{h.made}</span>} badge={<Badge tone="ok">{h.badge}</Badge>} />
-          <WithAside label="공사 전 할 일" aside={<FinalPlanAside plan={plan} projectId={shell.id} checks={checks} mock={shell.mock} />}>
+          <WithAside label="공사 전 할 일" aside={<FinalPlanAside plan={plan} projectId={shell.id} checks={checks} mock={shell.mock} ai={ui !== "v4"} />}>
             <FinalPlanBody plan={plan} projectId={shell.id} checks={checks} mock={shell.mock} />
           </WithAside>
         </Main>
@@ -38,6 +41,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
     );
   }
 
+  const todo = shell.todo.find((t) => t.href);
   return (
     <>
       <AppHeader only="phone" phone={{ title: "예상 공정표", back: `${base}/standard` }} />
@@ -47,7 +51,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
         <ExpectedPlan plan={plan} />
       </Main>
       <BottomBar>
-        <Button size="lg" href={`${base}/vendors`}>업체 보기</Button>
+        <Button size="lg" href={todo?.href ?? `${base}/vendors`}>{todo?.label ?? "업체 보기"}</Button>
       </BottomBar>
     </>
   );

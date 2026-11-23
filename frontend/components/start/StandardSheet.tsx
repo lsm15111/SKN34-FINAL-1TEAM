@@ -9,7 +9,8 @@ import { QuoteLines } from "@/components/ui/QuoteLines";
 import { daysCaption, type StdView } from "@/lib/guest/standard";
 import s from "./standard.module.css";
 
-export function StandardSheet({ view, changeHref }: { view: StdView; changeHref: string }) {
+/** changeLabel: 실측 요청 뒤 집 정보가 잠겼으면 '집 정보 보기'(잠긴 화면으로 가는데 '바꾸기'라고 하지 않게, QA r6 L17) */
+export function StandardSheet({ view, changeHref, changeLabel = "조건 바꾸기" }: { view: StdView; changeHref: string; changeLabel?: string }) {
   const part = view.scope === "partial";
   return (
     <>
@@ -17,7 +18,7 @@ export function StandardSheet({ view, changeHref }: { view: StdView; changeHref:
         {part ? <Badge tone="wait" className={s.badge}>부분 · 실측 후 확정</Badge> : null}
         <div className={s.totalRow}>
           <BigFigure value={view.total} caption={daysCaption(view.days) || false} sub={view.budget ?? undefined} />
-          <Button variant="text" href={changeHref} aria-label={`조건 바꾸기 · 지금 조건: ${view.condition}`}>조건 바꾸기</Button>
+          <Button variant="text" href={changeHref} aria-label={`${changeLabel} · 지금 조건: ${view.condition}`}>{changeLabel}</Button>
         </div>
         {/* 벽지 직접 구매: 도배지 줄은 '고객 구매'로 합계 밖(계산 엔진). 업체 가견적은 벽지 값이 든 값이라 안내 한 줄(틀)을
             합계 바로 아래에 둬요(폰에서 줄 표 끝까지 내리지 않아도 보이게, QA r3 v1 L11) */}

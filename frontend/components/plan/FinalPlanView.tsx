@@ -99,13 +99,14 @@ export function FinalPlanBody({ plan, projectId, checks, mock }: { plan: ApiPlan
   );
 }
 
-/** 웹 오른쪽 칸(D19): 공사 전 할 일 · 날짜 바꾸기 · 캘린더 · 채팅 + AI 칸(B5 AiPanel, 칸 안에 끼움) */
-export function FinalPlanAside({ plan, projectId, checks, mock }: { plan: ApiPlan; projectId: string; checks: Check[]; mock: boolean }) {
+/** 웹 오른쪽 칸(D19): 공사 전 할 일 · 날짜 바꾸기 · 캘린더 · 채팅 + AI 칸(B5 AiPanel, 칸 안에 끼움).
+ *  ai=false(v4 비서 화면 카드 창): 비서가 이미 옆에 있어서 AI 칸을 따로 두지 않아요(QA r6 M16 'AI가 둘') */
+export function FinalPlanAside({ plan, projectId, checks, mock, ai = true }: { plan: ApiPlan; projectId: string; checks: Check[]; mock: boolean; ai?: boolean }) {
   const deal = plan.deals[0];
   const ics = `/api/projects/${encodeURIComponent(projectId)}/plan.ics`;
   const chat = deal?.thread_id ? `/chat/${encodeURIComponent(deal.thread_id)}` : "/chat";
   return (
-    <AsidePanel title="공사 전 할 일" listLabel="공사 전 할 일 · AI 채팅">
+    <AsidePanel title="공사 전 할 일" listLabel={ai ? "공사 전 할 일 · AI 채팅" : "공사 전 할 일"}>
       <PlanChecks projectId={projectId} checks={checks} mock={mock} />
       <p className={s.eb}>날짜를 바꿔야 하면</p>
       <p className={s.sm}>채팅으로 {gwaWa(deal?.vendor_name ?? "업체")} 이야기해요.</p>
@@ -113,9 +114,13 @@ export function FinalPlanAside({ plan, projectId, checks, mock }: { plan: ApiPla
         <FileLink href={ics} variant="secondary" size="sm">내 캘린더에 넣기</FileLink>
         <Button size="sm" href={chat}>채팅 열기</Button>
       </div>
-      <hr className={s.sep} />
-      <p className={s.eb}>AI 채팅</p>
-      <AiPanel screen="plan" projectId={projectId} context="확정 공정표 보는 중" embed />
+      {ai ? (
+        <>
+          <hr className={s.sep} />
+          <p className={s.eb}>AI 채팅</p>
+          <AiPanel screen="plan" projectId={projectId} context="확정 공정표 보는 중" embed />
+        </>
+      ) : null}
     </AsidePanel>
   );
 }
