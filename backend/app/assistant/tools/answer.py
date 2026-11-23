@@ -363,14 +363,9 @@ ASK_LABEL = "확인할 조건(답이 갈리면 이것 하나만 물어요)"
 SPLIT_LABEL = "되물을 조건(공정마다 답이 갈려요, 하나만)"
 CALC_NOTE = "금액 · 수량 · 기간은 이 공사 표준견적서 · 공정표 값으로만 말해요."
 # 믿집이 잇지 않는 공정(목공)의 시공이 필요한 답: 연결 범위(고정 선 8)와 다음 걸음 하나(QA r6 c2 L2 '목공 업체에
-# 보여 주세요'만 하고 막다른 길). 비서가 대화에서 한 번 말해요
+# 보여 주세요'만 하고 막다른 길). 비서가 대화에서 한 번 말해요(고객 지시문 '도배 밖 일'과 같은 걸음)
 CONNECT_LABEL = "믿집 연결 범위(대화에서 한 번만 말해요)"
-CONNECT_NEXT = {
-    True: "목공 금액은 이 공사 표준견적서에서 볼 수 있어요. 작은 손보기는 도배 실측 때 업체에 같이 할 수 "
-    "있는지 물어볼 수 있어요.",
-    False: "이 공사 표준견적서에는 목공이 없어요. 작은 손보기는 도배 실측 때 업체에 같이 할 수 있는지 물어볼 "
-    "수 있어요.",
-}
+CONNECT_NEXT = "도배와 맞물리는 손보기는 실측 때 도배 업체에 같이 할 수 있는지 물어볼 수 있어요."
 CONNECTED = frozenset({"도배"})  # 믿집이 업체를 잇는 공정(policy.DOBAE_ONLY)
 EXPERT_SOURCES = 5  # 넘기는 출처 이름 수
 REST_PIECES = 4  # 전문가가 실패한 공정에서 대신 넘기는 조각 수
@@ -430,15 +425,14 @@ async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()
         return out
     order = len(got.trades) > 1 or bool(ORDER_WORDS.search(question))
     record.update(used=EXPERT, ms=int((time.monotonic() - t0) * 1000))
-    data = expert_data(ok, notes, order=order, own=home.trades)
+    data = expert_data(ok, notes, order=order)
     return ToolOut(data={**data, "engine": EXPERT, "expert": record})
 
 
-def expert_data(ok: list, notes: list, *, order: bool, own: tuple[str, ...] = ()) -> dict:
+def expert_data(ok: list, notes: list, *, order: bool) -> dict:
     """전문가 메모 → 모델에 갈 값(policy.ALLOWED 칸만): 공정마다 핵심 답 · 주의점(줄 글은 자료 상자, 근거 이름),
     둘 다거나 순서를 물으면 공정 순서, 확인할 조건 하나, 믿집이 잇지 않는 공정의 시공이 필요하면 연결 범위와 다음
-    걸음(own = 이 공사 공정), 출처, 계산 엔진 안내. 전문가가 실패한 공정이 있으면 찾아 둔 조각을 v2g처럼 hits로
-    넘겨요."""
+    걸음 하나, 출처, 계산 엔진 안내. 전문가가 실패한 공정이 있으면 찾아 둔 조각을 v2g처럼 hits로 넘겨요."""
     from app.v2 import ask
 
     def lines(n, xs) -> list[dict]:
@@ -454,9 +448,7 @@ def expert_data(ok: list, notes: list, *, order: bool, own: tuple[str, ...] = ()
     if want := next((n.ask for n in ok if n.ask), ""):
         items.append({"label": ASK_LABEL, "lines": [policy.data(want)]})
     if any(n.needs_vendor and n.trade not in CONNECTED for n in ok):
-        items.append(
-            {"label": CONNECT_LABEL, "lines": [policy.DOBAE_ONLY, CONNECT_NEXT["목공" in own]]}
-        )
+        items.append({"label": CONNECT_LABEL, "lines": [policy.DOBAE_ONLY, CONNECT_NEXT]})
     data: dict = {
         "route": EXPERT,
         "trades": [n.trade for n in ok],

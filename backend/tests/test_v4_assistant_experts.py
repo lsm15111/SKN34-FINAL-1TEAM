@@ -246,11 +246,9 @@ def test_mokgong_vendor_needed_adds_connection_scope():
     mok = experts.refine(
         "목공", experts.ExpertOut.model_validate(_out(line, vendor=True)), pieces, ""
     )
-    d = answer.expert_data([mok], [mok], order=False, own=("도배",))
+    d = answer.expert_data([mok], [mok], order=False)
     scope = next(x for x in d["items"] if x["label"] == answer.CONNECT_LABEL)
-    assert scope["lines"] == [policy.DOBAE_ONLY, answer.CONNECT_NEXT[False]]
-    d = answer.expert_data([mok], [mok], order=False, own=("도배", "목공"))
-    assert answer.CONNECT_NEXT[True] in json.dumps(d, ensure_ascii=False)
+    assert scope["lines"] == [policy.DOBAE_ONLY, answer.CONNECT_NEXT]
     dobae = experts.refine(
         "도배", experts.ExpertOut.model_validate(_out(line, vendor=True)), pieces, ""
     )
