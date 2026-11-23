@@ -10,7 +10,7 @@ import { SampleQuote } from "@/components/home/SampleQuote";
 import { StartCta } from "@/components/home/StartCta";
 import { getSampleStandard } from "@/lib/api/guest";
 import type { Ongoing } from "@/lib/guest/api";
-import { listMyProjects, type ApiProjectItem } from "@/lib/api/project";
+import { listMyProjects, nextOf, type ApiProjectItem } from "@/lib/api/project";
 import { projectName, stepName } from "@/lib/guest/info";
 import { visitState } from "@/lib/labels";
 import { MOCK_V3A } from "@/lib/mock/v3a/mode";
@@ -18,16 +18,27 @@ import { MOCK_ONGOING } from "@/lib/mock/v3a/project";
 import { getSession } from "@/lib/session";
 import s from "@/components/home/home.module.css";
 
-/** 진행 중 공사 하나(가장 최근에 바뀐 것): 고객 차례인 업체가 있으면 그 일로 가요 */
-function ongoingOf(list: ApiProjectItem[]): (Ongoing & { status: string; href: string }) | null {
+type Resume = Ongoing & { status: string; href: string; lead?: string | null; current?: number };
+
+/** 진행 중 공사 하나(가장 최근에 바뀐 것): 고객이 지금 할 일이 있으면 그 일로, 없으면 기다리는 일을 보여요 */
+function ongoingOf(list: ApiProjectItem[]): Resume | null {
   const p = list.find((x) => x.phase !== "done");
   if (!p) return null;
+  const next = nextOf(p);
   const mine = p.vendors.find((v) => v.next.who === "customer") ?? p.vendors[0];
-  const status = mine ? `${mine.vendor_name} ${visitState(mine.status, "customer").label}` : p.todo?.text ?? stepName(p.current);
+  const state = mine ? `${mine.vendor_name} ${visitState(mine.status, "customer").label}` : p.todo?.text ?? stepName(p.current);
   const pick = mine && (mine.next.kind === "pick" || mine.next.kind === "proposal");
   const link = p.todo?.link && p.todo.link.startsWith("/") && !p.todo.link.startsWith("//") ? p.todo.link : `/projects/${p.id}`;
-  const href = pick ? `/projects/${p.id}/visits/${encodeURIComponent(mine.visit_id)}` : link;
-  return { id: p.id, name: projectName(p.emd, p.region, p.trades), step: stepName(p.current), status, href };
+  const fallback = pick ? `/projects/${p.id}/visits/${encodeURIComponent(mine.visit_id)}` : link;
+  return {
+    id: p.id,
+    name: projectName(p.emd, p.region, p.trades),
+    step: stepName(p.current),
+    status: next.task?.label ?? state,
+    lead: next.task ? (next.waiting ? "기다리는 중" : "지금 할 일") : null,
+    href: (!next.waiting && next.task?.href) || fallback,
+    current: next.current,
+  };
 }
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ bye?: string; mock?: string; resume?: string }> }) {
@@ -36,14 +47,14 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
   const member = session?.role === "customer";
   // 개발 예시: /?mock=member로 로그인 뒤 홈(C40 · C41) 모양을 미리 봐요(운영에서는 꺼져요)
   const preview = MOCK_V3A && mock === "member";
-  const ongoing = preview ? MOCK_ONGOING : member ? ongoingOf(await listMyProjects().catch(() => [])) : null;
+  const ongoing: Resume | null = preview ? MOCK_ONGOING : member ? ongoingOf(await listMyProjects().catch(() => [])) : null;
 
   return (
     <>
       <AppHeader />
       <Main>
         {bye ? <p className={s.bye} role="status">탈퇴했어요.</p> : null}
-        {ongoing ? <ResumeStrip name={ongoing.name} status={ongoing.status} href={ongoing.href} /> : null}
+        {ongoing ? <ResumeStrip name={ongoing.name} status={ongoing.status} lead={ongoing.lead ?? null} href={ongoing.href} /> : null}
         <div className={s.hero}>
           <section className={`${s.group} ${s.heroText}`} aria-labelledby="hero-t">
             <p className={s.eb}>업체를 만나기 전에</p>
@@ -55,7 +66,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ b
           </section>
           {std ? <SampleQuote std={std} /> : null}
         </div>
-        <div className={s.webBlock}><HowItWorks /></div>
+        <HowItWorks current={ongoing?.current} />
         <HomeLinks guest={!session && !preview} />
       </Main>
       <TabBar />

@@ -112,6 +112,13 @@ function bandOf(id: string, item: ApiProjectItem | undefined): Pick<ProjectShell
   return { current: stepIndex(item?.current), todo, waiting };
 }
 
+/** 홈 '진행 중' 띠: 고객이 지금 할 일(없으면 업체를 기다리는 일)과 지금 단계(0부터) */
+export function nextOf(item: ApiProjectItem): { task: BandTask | null; waiting: boolean; current: number } {
+  const b = bandOf(item.id, item);
+  if (b.todo[0]) return { task: b.todo[0], waiting: false, current: b.current };
+  return { task: b.waiting[0] ?? null, waiting: !!b.waiting[0], current: b.current };
+}
+
 type Overview = Schemas["OverviewOut"];
 const getOverviewOf = cache(async (id: string) => (isUuid(id) ? serverGet<Overview>(`/projects/${seg(id)}/overview`).catch(() => null) : null));
 

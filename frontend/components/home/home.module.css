@@ -30,6 +30,7 @@
 .stripText { display: flex; flex-direction: column; gap: 2px; flex: 1 1 auto; min-width: 0; }
 .stripText b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
 .stripText span { font-size: var(--mj-type-label); color: var(--mj-text-inverse-sub); }
+.lead { margin-right: 6px; font-style: normal; font-weight: var(--mj-weight-bold); color: var(--mj-text-inverse); }
 .strip > svg { flex: none; }
 
 /* 폰 자주 묻는 질문 줄 */
@@ -37,11 +38,13 @@
 .faqRow .stripText span { color: var(--mj-text-mute); }
 .faqRow > svg { flex: none; color: var(--mj-text-sub); }
 
-/* 이렇게 진행돼요(웹) */
+/* 이렇게 진행돼요(폰 · 웹) */
 .flow { gap: 16px; }
+.flowHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .flowList { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .flowList li { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
-.flowList b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.flowList b { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.flowNow .flowNo { background: var(--mj-primary); color: var(--mj-on-primary); }
 .flowList span:last-child { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 .flowNo { display: inline-grid; place-items: center; width: 28px; height: 28px; margin-bottom: 4px; border-radius: 50%; background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); }
 
@@ -78,4 +81,7 @@
 }
 @media (max-width: 1023px) {
   .flowList { grid-template-columns: repeat(3, minmax(0, 1fr)); row-gap: 16px; }
+}
+@media (max-width: 767px) {
+  .flowList { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
