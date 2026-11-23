@@ -1,4 +1,4 @@
-"""v4 조사 담당(09-research): 시작 → 대기 줄 · jobs · arq 큐, 같은 종류 바꾸기 · 다른 종류 거절 · 하루 3번 · 비용 상한,
+"""v4 조사 담당(09-research): 시작 → 대기 줄 · jobs · arq 큐, 같은 종류 바꾸기 · 다른 종류 거절 · 하루 수(기본 3 · 0이면 안 셈) · 비용 상한,
 worker 대본(서버 도구 블록이 섞인 응답 → 결과, 링크는 결과 블록에서만, 막은 곳 · 실행 파일 꼴 · 010 지움, 근거 없는
 숫자 문장 빠짐, pause_turn 잇기 · 컨테이너), 바꾸기 메모가 다음 왕복에 들어감, 멈춤 → 부분 결과, 비용 상한에서 끝,
 알림 한 번 · 밤에도 바로 대화에, 남의 조사 404 · 업체 403, 턴 사실 한 줄, 실제 SDK 스트림 꼴. 유료 호출 0회."""
@@ -227,10 +227,10 @@ def test_start_makes_queued_row_job_and_queue_then_steers_and_refuses(api, scrip
     assert busy["state"] == "busy" and len(rows()) == 1
 
 
-def test_day_limit_and_budget_refuse_without_new_row(api, script, monkeypatch):
-    _, pid = home(api)
+def done_rows_today(pid: str, n: int) -> None:
+    """오늘 끝난 조사 줄 n개(하루 수 세기용)."""
     owner = query("select owner_id from projects")[0]["owner_id"]
-    for _ in range(research.DAY_MAX):
+    for _ in range(n):
         query(
             "insert into assistant_research (id, user_id, project_id, kind, title, goal, status,"
             " result, ended_at) values ($1, $2, $3, 'general', '도배 풀', '도배 풀', 'done', '{}',"
@@ -239,8 +239,15 @@ def test_day_limit_and_budget_refuse_without_new_row(api, script, monkeypatch):
             owner,
             uuid.UUID(pid),
         )
+
+
+def test_day_limit_and_budget_refuse_without_new_row(api, script, monkeypatch):
+    _, pid = home(api)
+    day_max = research.settings.assistant_research_day_max
+    assert day_max == 3  # 기본값
+    done_rows_today(pid, day_max)
     _, got, _ = start_turn(api, script, pid)
-    assert got["state"] == "limit" and len(rows()) == research.DAY_MAX
+    assert got["state"] == "limit" and len(rows()) == day_max
     query("update assistant_research set created_at = now() - interval '2 days'")
     real_ok = llm.budget_ok
 
@@ -249,8 +256,17 @@ def test_day_limit_and_budget_refuse_without_new_row(api, script, monkeypatch):
 
     monkeypatch.setattr(llm, "budget_ok", over)
     _, got, _ = start_turn(api, script, pid)
-    assert got["state"] == "budget" and len(rows()) == research.DAY_MAX
+    assert got["state"] == "budget" and len(rows()) == day_max
     assert query("select count(*) as n from jobs where kind = 'assistant_research'")[0]["n"] == 0
+
+
+def test_day_limit_zero_does_not_count(api, script, monkeypatch):
+    """하루 수를 0으로 두면(보기용 Docker) 오늘 조사가 많아도 새로 시작한다."""
+    _, pid = home(api)
+    monkeypatch.setattr(research.settings, "assistant_research_day_max", 0)
+    done_rows_today(pid, 5)
+    _, got, _ = start_turn(api, script, pid)
+    assert got["state"] == "started" and len(rows()) == 6
 
 
 def test_goal_with_only_private_text_is_bad_input(api, script):
@@ -315,7 +331,9 @@ def test_worker_keeps_only_tool_result_links_and_gated_summary(api, script):
     assert res["summary"] == (
         "노원구에서 도배를 하는 공개 페이지를 찾았어요. 노원 도배 공방은 2019년부터 영업한다고 적혀 있어요."
     )  # 평점 · 순위 · 값 · 번호 · 근거 없는 숫자(2015년) 문장은 빠진다
-    assert res["outside"] and res["checks"] and res["note"] and res["partial"] is False
+    # '직접 확인하는 곳'은 뺐고 안내는 카드 위 한 줄만(2026-11-23 사용자)
+    assert res["outside"] and res["checks"] == [] and res["note"] == research.OUTSIDE_NOTE
+    assert res["partial"] is False
     steps = [s.get("step") or s.get("event") for s in json.loads(row["steps"])]
     assert steps[:2] == ["queued", "running"] and "read" in steps and steps[-1] == "done"
     usage = query("select purpose, model, cost_micros from llm_usage order by created_at")

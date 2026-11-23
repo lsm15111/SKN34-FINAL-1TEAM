@@ -1,8 +1,10 @@
-"""조사 담당 도구(docs/v4/09-research.md): start_research · change_research · get_research.
+"""조사 담당 도구(docs/v4/09-research.md): start_research · change_research · get_research · estimate_product.
 
 - 사용자 · 공사는 세션이 정한다(입력으로 받지 않는다). 목표 · 메모는 가려서(구 · 동 · 평형 · 도배 조건만) 남긴다.
 - 시작은 승인 카드가 아니다(바뀌는 업무 상태가 없다). 상한 · 하루 수 · 도는 조사는 도구 결과 state로 알린다.
 - 웹에서 온 글(요약 · 링크 제목 · 메모)은 자료 상자로만 모델에 간다. 링크 주소는 모델에 주지 않는다(카드에만).
+- estimate_product(A안 2026-11-23): 판매처 페이지에서 확인한 1롤 판매가로 이 집 도배 금액을 계산 엔진이 센다
+  (cards.product_estimate · calc.product_paper). 모델은 판매가를 곱하거나 더하지 않고 이 값을 말한다.
 """
 
 from typing import Literal
@@ -10,7 +12,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.assistant import research
-from app.assistant.tools import ToolCtx, ToolError, ToolOut, obj, tool
+from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import pid_of
 from app.db import SessionLocal
 
@@ -32,6 +34,10 @@ class GetIn(BaseModel):
     about: str = Field(default="", max_length=60)
 
 
+class EstimateIn(BaseModel):
+    name: str = Field(default="", max_length=60)
+
+
 @tool(
     "start_research",
     surface="customer",
@@ -39,7 +45,9 @@ class GetIn(BaseModel):
     status="조사를 맡기고 있어요",
     description="웹 자료가 필요한 부탁을 조사 담당에게 맡겨요(보통 1분 안팎, 승인 카드 아님). "
     "kind: outside_vendors(믿집 승인 업체가 없거나 모자란 지역의 믿집 밖 업체 공개 페이지) · materials(도배 자재 · "
-    "제품 라인, 제조사 공식 페이지 먼저) · general(도배 일반 자료). 업체 찾기는 recommend_vendors를 먼저 보고, 믿집 "
+    "제품 라인, 제조사 공식 페이지 먼저. 판매처 페이지에 적힌 1롤 판매가 · 규격도 찾아 확인한 것만 남겨요) · general(도배 일반 자료). "
+    "고객이 조사한 제품의 값 · 얼마를 물으면 판매가가 확인된 항목은 estimate_product로 이 집 금액을 세고, 없을 때만 "
+    "materials로 그 제품 이름 · 품번 · 판매가를 찾는 조사를 맡겨요. 업체 찾기는 recommend_vendors를 먼저 보고, 믿집 "
     "업체가 없거나 고객이 믿집 밖을 원할 때만 써요. goal에는 '송파구 32평 아파트 도배 업체'처럼 구 · 동 · 평형 · 도배 "
     "조건과 찾을 것만 넣고 동호수 · 이름 · 연락처는 넣지 마. 평은 코드가 집 정보의 평형으로 맞춰요. 공사마다 도는 "
     "조사는 하나라 같은 종류를 또 부탁하면 그 조사의 조건을 바꿔요. 시작하면 진행 카드가 뜨니 message처럼 '잠깐(1분 "
@@ -132,3 +140,55 @@ async def get_research(tc: ToolCtx, a: GetIn) -> ToolOut:
     async with SessionLocal() as s:
         rows = await research.of_today(s, tc.user.id, pid_of(tc), tc.now)
     return ToolOut(data=research.list_model(rows, research.pick(rows, a.about), tc.now))
+
+
+NO_PRICE = "조사 결과에 판매처 페이지에서 확인한 판매가가 없어요. 그 제품 판매가를 찾는 조사(materials)를 맡길지 물어요."
+NOT_PER_ROLL = (
+    "확인한 판매가가 1롤 값이 아니라 이 집 금액으로 셀 수 없어요. 판매가와 출처만 말해요."
+)
+
+
+@tool(
+    "estimate_product",
+    surface="customer",
+    kind="read",
+    status="판매가로 금액을 세고 있어요",
+    description="조사 결과에서 판매처 페이지로 확인한 벽지 1롤 판매가로 이 집 도배 금액을 계산 엔진이 다시 세요(저장 안 "
+    "함). 벽지 값 = 롤 수 × 판매가, 나머지는 같은 벽지 종류 표준견적서에서 벽지를 뺀 합계예요. 고객이 조사에서 본 "
+    "제품으로 하면 얼마인지 물으면 이 도구예요. name에는 제품 이름 낱말(예 '코지 린넨')을 넣고, 비우면 판매가가 확인된 "
+    "가장 최근 항목이에요. state가 no_price면 판매가를 찾는 조사를 맡길지 묻고, not_per_roll이면 판매가와 출처만 "
+    "말해요. 판매가를 글로 곱하거나 더하지 말고 total_won · paper_won · rest_won을 말해요.",
+    model=EstimateIn,
+    schema=obj(
+        {
+            "name": {
+                "type": "string",
+                "description": "제품 이름 낱말(비우면 판매가가 확인된 가장 최근 항목)",
+            }
+        },
+        required=[],
+    ),
+)
+async def estimate_product(tc: ToolCtx, a: EstimateIn) -> ToolOut:
+    pid = pid_of(tc)
+    async with SessionLocal() as s:
+        item = research.pick_item(await research.priced_items(s, tc.user.id, pid, tc.now), a.name)
+        if item is None:
+            return ToolOut(data={"state": "no_price", "message": NO_PRICE})
+        price = item["price"]
+        if not price.get("per_roll"):
+            return ToolOut(
+                data={
+                    "state": "not_per_roll",
+                    "message": NOT_PER_ROLL,
+                    "product": item.get("name"),
+                    "price": price.get("text"),
+                    "price_seen": f"판매처 표시 값 · {price.get('checked')} 확인",
+                    "source": item.get("source"),
+                }
+            )
+        try:
+            card, model = await cards.product_estimate(s, tc.user, pid, item)
+        except ValueError as e:
+            raise ToolError("no_dobae", "이 공사는 판매가로 셀 도배 계산이 없어요.") from e
+    return ToolOut(data={"state": "ok", **model}, cards=[card])

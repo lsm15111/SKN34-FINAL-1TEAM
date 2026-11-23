@@ -1,6 +1,6 @@
 """조사 담당(리서처, docs/v4/09-research.md): 비서가 맡긴 웹 조사를 worker가 Claude 웹 검색 · 가져오기로 돌린다.
 
-- 시작(start): 도구 start_research가 부른다. 비용 상한(사용자 하루 · 새 계정 · 서비스) · 공사당 하루 3번 · 공사마다
+- 시작(start): 도구 start_research가 부른다. 비용 상한(사용자 하루 · 새 계정 · 서비스) · 공사당 하루 수(설정, 기본 3) · 공사마다
   도는 조사 하나를 보고, 대기 줄 + jobs(멈춘 조사 감시) 한 트랜잭션 → commit 뒤 arq 큐에 넣는다. 같은 종류가 돌고
   있으면 새 일 대신 바꾸기 메모로 잇고, 다른 종류면 시작하지 않는다(busy). 승인 카드가 아니다(바뀌는 업무 상태 없음).
 - 바꾸기 · 멈추기(change · stop_out): 메모를 붙이거나 멈춤 요청을 남긴다. worker가 API 호출 사이마다 본다.
@@ -39,10 +39,11 @@ from app import queue
 from app.agent import llm
 from app.agent.v3 import check
 from app.agent.v3.schemas import Sentence
-from app.assistant import linkimage, policy, prompts, weblinks
+from app.assistant import linkimage, pagecheck, policy, prompts, weblinks
 from app.assistant.models import RESEARCH_LIVE, AssistantResearch
 from app.assistant.schemas import AssistantItem, CardOut, CardPart, TextPart
 from app.auth.models import User
+from app.config import settings
 from app.db import SessionLocal
 from app.shared.clock import SEOUL, now_utc
 from app.shared.errors import AppError
@@ -55,7 +56,6 @@ Status = Literal["queued", "running", "done", "failed", "stopped"]
 Step = Literal["search", "read", "write"]
 
 KIND_LABEL = {"outside_vendors": "믿집 밖 업체", "materials": "도배 자재", "general": "도배 자료"}
-DAY_MAX = 3  # 공사당 하루(서울 날짜) 시작 수
 CALL_MAX = 4  # API 왕복(pause_turn 잇기 · 바꾸기 포함)
 COST_CAP = 150_000  # 조사 하나 비용 상한(마이크로달러, $0.15). 넘으면 그때까지 찾은 것으로 끝낸다
 TIME_CAP = 240.0  # 조사 하나 시간(초, 4분)
@@ -118,12 +118,28 @@ OFFICIAL = (
     "gniwallpaper.com",
     "didwallpaper.com",
 )
-CHECKS = (  # 믿집 밖 업체를 직접 확인하는 곳(코드 링크)
-    ("국세청 홈택스 · 사업자 상태 조회", "https://www.hometax.go.kr"),
-    ("KISCON · 건설업 등록 조회", "https://www.kiscon.net"),
-)
-OUTSIDE_NOTE = (
-    "믿집이 확인하지 않은 곳이에요. 사업자 상태 · 등록 업종은 아래에서 직접 확인해 보세요."
+# 믿집 밖 업체 안내는 카드 위 한 줄만(2026-11-23 사용자: 링크마다 붙은 같은 말 · '직접 확인하는 곳'은 빼도 됨).
+# 결과 checks 칸은 옛 결과와 화면을 위해 남기고 비워요
+OUTSIDE_NOTE = "믿집이 확인하지 않은 곳이에요."
+# 찾을 수(고객이 말한 '5곳' · '다섯 군데'): 없으면 믿집 밖 업체는 기본 5곳, 많아야 링크 · 항목 상한(6)
+WANT_DEFAULT = 5
+_WANT_NUM = re.compile(r"(?<![\d.])(\d{1,2})\s*(?:곳|군데|개|업체)")
+_WANT_WORD = re.compile(r"(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:곳|군데|개)")
+_WANT_KO = {
+    "한": 1,
+    "두": 2,
+    "세": 3,
+    "네": 4,
+    "다섯": 5,
+    "여섯": 6,
+    "일곱": 7,
+    "여덟": 8,
+    "아홉": 9,
+    "열": 10,
+}
+# 제목에서 뗄 부탁 말 꼬리('… 믿집 밖에서 최대 5곳 조사' → '…'): 카드 제목이 '… 최대'로 잘리던 것
+_TITLE_TAIL_ASK = re.compile(
+    r"\s*(?:믿집\s*밖(?:에서)?\s*)?(?:최대\s*)?(?:\d{1,2}|한|두|세|네|다섯|여섯)?\s*(?:곳|군데|개)?\s*(?:조사|찾기|알아보기)$"
 )
 NO_SUMMARY = "요약을 만들지 못했어요."
 ENDED_LINE = {
@@ -165,6 +181,12 @@ _NO_CELL = frozenset({"-", "–", "—", "없음", "없어요", "해당 없음"}
 SUMMARY_PEEK = 12  # 글 앞 몇 글자로 끝 정리('요약:')인지 본다
 _MONEY = re.compile(r"\d[\d,.]*\s*(?:만\s*원|천\s*원|억\s*원|원)|가격|값이|비용이")
 _RATING = re.compile(r"평점|별점|후기\s*\d|리뷰\s*\d|\d+\s*위\b|1위|순위|추천")
+# 자재 판매가 · 규격 칸(A안 2026-11-23): 값은 코드가 숫자로 읽어 글을 다시 만들고, pagecheck가 페이지에서 확인해요
+_WON = re.compile(r"(?<![\d,.])(\d{1,3}(?:,\d{3})+|\d{3,7})\s*원")
+_PER_ROLL = re.compile(r"(?<!\d)1\s*롤|롤\s*당|/\s*롤")
+_MANY_ROLLS = re.compile(r"(?<![\d.])(?:[2-9]|\d{2,})\s*롤")
+PRICE_RANGE = (1_000, 2_000_000)  # 벽지 판매가로 받을 값(원). 밖이면 잘못 읽은 값으로 버려요
+PAPER_WORDS = {"합지": "합지", "실크": "실크"}
 # 요약 · 메모의 안쪽 사정(QA r3 s3: '도구 사용 한도가 차서 멈췄어요' · '결과를 읽는 코드에 오류가 나서'): 도구 · 검색 횟수
 # 상한, 코드 · 프로그램 오류, 도구 이름. 조사 결과는 고객에게 그대로 보여 이런 문장은 뺀다(덜 찾았으면 partial로 보인다)
 _INSIDE = re.compile(
@@ -194,6 +216,27 @@ class ResearchCheck(BaseModel):
     href: str
 
 
+class ItemPrice(BaseModel):
+    """판매가(자재): 조사 담당이 적은 값을 코드가 숫자로 읽고, 우리 서버가 그 항목 페이지(robots를 지킴)에서 같은 값을
+    찾았을 때만 남겨요(pagecheck). 판매처에 적힌 값이고 믿집 계산이 아니에요. 글은 코드가 만들어요."""
+
+    text: str = Field(description="보일 글(예 '1롤 32,000원')")
+    won: int = Field(description="값(원, 판매처 표시 값 그대로)")
+    per_roll: bool = Field(description="1롤 값인지(이 집 금액 다시 세기는 1롤 값일 때만)")
+    checked: date | None = Field(
+        default=None, description="판매처 페이지에서 같은 값을 찾은 날(서울)"
+    )
+
+
+class RollSize(BaseModel):
+    """롤 규격(자재): 판매처 페이지에서 같은 숫자를 찾았을 때만 남겨요. 롤 수 세기에 써요(calc.rolls.need_size)."""
+
+    text: str = Field(description="보일 글(예 '93cm × 35.5m')")
+    width_mm: int
+    length_mm: int
+    checked: bool = Field(default=False, description="판매처 페이지에서 확인했는지")
+
+
 class ResearchItem(BaseModel):
     """결과 항목 하나(조사 담당이 끝 정리에 적은 줄 + 코드 검사). 링크는 서버 도구 결과 블록의 주소만."""
 
@@ -204,6 +247,15 @@ class ResearchItem(BaseModel):
     source: str = Field(description="출처 도메인")
     image: str | None = Field(
         default=None, description="제조사 공식 페이지의 대표 그림 주소(https, 그 사이트 그림만)"
+    )
+    paper: Literal["합지", "실크"] | None = Field(
+        default=None, description="벽지 종류(이름 · 특징 · 페이지 제목에 적힌 말, 자재)"
+    )
+    price: ItemPrice | None = Field(
+        default=None, description="판매가(판매처 페이지에서 확인한 값만, 자재)"
+    )
+    size: RollSize | None = Field(
+        default=None, description="롤 규격(판매처 페이지에서 확인한 값만, 자재)"
     )
 
 
@@ -301,6 +353,7 @@ def title_of(goal: str) -> str:
     (QA r3 v1 M1: '노원구 32평 아파트 도배 업체 (실크벽지, 벽지' → '… 도배 업체 (실크벽지)'). 끝난 항목이 없으면
     괄호째 뺀다."""
     g = " ".join((goal or "").split())
+    g = _TITLE_TAIL_ASK.sub("", g).strip() or g  # 부탁 말 꼬리(최대 5곳 조사)는 제목에 두지 않는다
     if len(g) <= TITLE_MAX:
         return g
     cut = g[:TITLE_MAX]
@@ -424,10 +477,11 @@ def data_of(
         items=[ResearchItem.model_validate(x) for x in res.get("items") or []],
         links=[ResearchLink.model_validate(x) for x in res.get("links") or []],
         trail=trail_of(r.steps),  # 끝난 뒤 다시 읽는 진행 카드(GET은 result 꼴)도 기록을 보인다
-        checks=[ResearchCheck.model_validate(x) for x in res.get("checks") or []],
-        outside=bool(res.get("outside", r.kind == "outside_vendors")),
+        # '직접 확인하는 곳'은 뺐어요(2026-11-23 사용자). 예전 결과도 비우고, 믿집 밖 업체 안내는 지금 한 줄로 보여요
+        checks=[],
+        outside=(outside := bool(res.get("outside", r.kind == "outside_vendors"))),
         partial=bool(res.get("partial")),
-        note=res.get("note"),
+        note=OUTSIDE_NOTE if outside and res.get("note") else res.get("note"),
     )
 
 
@@ -456,6 +510,34 @@ def _elapsed(r: AssistantResearch, now: datetime) -> str:
     return f"{sec}초째" if sec < 60 else f"{sec // 60}분째"
 
 
+PRICE_SEEN = "판매처 표시 값 · {day} 확인"
+PRICE_NOTE = (
+    "판매가는 판매처 페이지에 적힌 값이에요(믿집 계산 아님). 이 판매가로 이 집 도배 금액을 물으면 estimate_product를 "
+    "불러요. 판매가로 직접 곱하거나 더하지 마."
+)
+
+
+def _item_model(x: dict) -> dict:
+    """get_research 항목 하나(모델 값). 판매가 · 규격은 확인한 것만(결과에는 확인한 것만 남아요)."""
+    out: dict[str, Any] = {
+        "name": x.get("name"),
+        "feature": x.get("feature"),
+        "caution": x.get("caution"),
+        "source": x.get("source"),
+    }
+    if x.get("paper"):
+        out["paper"] = x["paper"]
+    price = x.get("price") or {}
+    if price.get("checked"):
+        out["price"] = price.get("text")
+        out["price_seen"] = PRICE_SEEN.format(day=price["checked"])
+        out["per_roll"] = bool(price.get("per_roll"))
+    size = x.get("size") or {}
+    if size.get("checked"):
+        out["size"] = size.get("text")
+    return out
+
+
 def model_of(r: AssistantResearch | None, now: datetime) -> dict:
     """get_research 도구 결과(policy.to_model을 지남). 웹에서 온 글(요약 · 링크 제목 · 메모)은 자료 상자로만."""
     if r is None:
@@ -469,21 +551,15 @@ def model_of(r: AssistantResearch | None, now: datetime) -> dict:
     out.update(found=len(links), partial=bool(res.get("partial")), note=res.get("note"))
     out[policy.DATA_KEY] = {
         "summary": res.get("summary") or NO_SUMMARY,
-        "items": [
-            {
-                "name": x.get("name"),
-                "feature": x.get("feature"),
-                "caution": x.get("caution"),
-                "source": x.get("source"),
-            }
-            for x in res.get("items") or []
-        ],
+        "items": [_item_model(x) for x in res.get("items") or []],
         "links": [
             {"title": x.get("title"), "source": x.get("source"), "memo": x.get("memo")}
             for x in links
         ],
     }
     out["message"] = "링크 주소는 글에 쓰지 말고 결과 카드를 가리켜요."
+    if any((x.get("price") or {}).get("checked") for x in res.get("items") or []):
+        out["message"] += " " + PRICE_NOTE
     return out
 
 
@@ -558,6 +634,41 @@ async def of_today(
 
 def _squash(text: str | None) -> str:
     return re.sub(r"\s+", "", text or "")
+
+
+PRICED_MAX = 10  # 판매가 항목을 찾을 최근 자재 조사 수
+
+
+async def priced_items(
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID, now: datetime
+) -> list[dict]:
+    """이 공사의 최근 자재 조사(KEEP 안, 새것 먼저) 결과 항목 중 판매처 페이지에서 확인한 판매가가 있는 것."""
+    rows = await s.scalars(
+        select(AssistantResearch)
+        .where(
+            AssistantResearch.user_id == user_id,
+            AssistantResearch.project_id == project_id,
+            AssistantResearch.kind == "materials",
+            AssistantResearch.status.not_in(RESEARCH_LIVE),
+            AssistantResearch.created_at >= now - KEEP,
+        )
+        .order_by(AssistantResearch.created_at.desc(), AssistantResearch.id.desc())
+        .limit(PRICED_MAX)
+    )
+    return [
+        x
+        for r in rows
+        for x in (r.result or {}).get("items") or []
+        if isinstance(x, dict) and (x.get("price") or {}).get("checked")
+    ]
+
+
+def pick_item(items: list[dict], name: str) -> dict | None:
+    """판매가 항목 고르기: name(제품 이름 낱말, 띄어쓰기 무시)이 이름에 든 첫 항목(새 조사 먼저), name이 비면 첫 항목."""
+    word = _squash(name).lower()
+    if not word:
+        return items[0] if items else None
+    return next((x for x in items if word in _squash(str(x.get("name") or "")).lower()), None)
 
 
 def note_texts(r: AssistantResearch) -> list[str]:
@@ -715,10 +826,11 @@ async def start(
 ) -> Started:
     """조사를 맡긴다. goal은 clean_goal을 지난 글이다. 돌려주는 state:
     started(새 대기 줄 · 큐) · steered(같은 종류가 돌던 중 → 바꾸기 메모) · busy(다른 종류가 도는 중) ·
-    limit(공사당 하루 3번) · budget(비용 상한) · failed(큐에 넣지 못함)."""
+    limit(공사당 하루 수, 설정 assistant_research_day_max · 0이면 세지 않음) · budget(비용 상한) · failed(큐에 넣지 못함)."""
     from app.jobs import service as jobs_service
     from app.project import service as project_service
 
+    day_max = settings.assistant_research_day_max
     async with SessionLocal() as s:
         await project_service.get_for(s, user, project_id)  # 남의 공사 404
         live = await _live(s, project_id)
@@ -727,17 +839,19 @@ async def start(
                 await s.commit()
                 return Started("steered", live, STEERED)
             return Started("busy", live, BUSY)
-        n = await s.scalar(
-            select(func.count())
-            .select_from(AssistantResearch)
-            .where(
-                AssistantResearch.project_id == project_id,
-                AssistantResearch.created_at >= _day_start(now),
+        n = 0
+        if day_max > 0:
+            n = await s.scalar(
+                select(func.count())
+                .select_from(AssistantResearch)
+                .where(
+                    AssistantResearch.project_id == project_id,
+                    AssistantResearch.created_at >= _day_start(now),
+                )
             )
-        )
-    if int(n or 0) >= DAY_MAX:
+    if day_max > 0 and int(n or 0) >= day_max:
         return Started(
-            "limit", None, f"오늘은 이 공사로 조사를 {DAY_MAX}번 했어요. 내일 다시 할 수 있어요."
+            "limit", None, f"오늘은 이 공사로 조사를 {day_max}번 했어요. 내일 다시 할 수 있어요."
         )
     if not await llm.budget_ok(user.id, "research"):
         return Started("budget", None, "오늘 쓸 수 있는 AI 몫을 다 써서 조사를 시작하지 않았어요.")
@@ -1068,18 +1182,36 @@ def _steer_text(note: str) -> str:
     )
 
 
+def want_count(goal: str, notes: list[str] | tuple[str, ...] = ()) -> int | None:
+    """고객이 말한 찾을 수('5곳' · '다섯 군데'): 바꾸기 메모가 있으면 나중 말, 많아야 LINK_MAX. 없으면 None."""
+    for text in (*reversed(list(notes)), goal):
+        m = _WANT_NUM.search(text or "")
+        n = (
+            int(m.group(1))
+            if m
+            else (_WANT_KO[w.group(1)] if (w := _WANT_WORD.search(text or "")) else 0)
+        )
+        if n > 0:
+            return min(n, LINK_MAX)
+    return None
+
+
 def _first_message(kind: str, goal: str, terms: str, notes: list[str], today: date) -> str:
     """첫 왕복 user 글. 고객이 집과 다른 지역을 찾아 달라고 했으면(믿집 밖 업체) 집 조건에서 집 지역 · 동을 빼고 '찾을
-    지역' 줄을 둔다(QA r3 s3: '성남시 말고 용인시로' 조사에 집 조건 성남시가 같이 들어가 성남 · 분당 링크 3/5)."""
+    지역' 줄을 둔다(QA r3 s3: '성남시 말고 용인시로' 조사에 집 조건 성남시가 같이 들어가 성남 · 분당 링크 3/5).
+    찾을 수(고객이 말한 수, 믿집 밖 업체는 없으면 5곳)를 한 줄로 준다(사용자 11-23: 5곳 부탁에 1곳만)."""
     want = target_places(goal, notes)
     home = places(terms)
     other = kind == "outside_vendors" and bool(want) and not (want & home)
     shown = " · ".join(p for p in terms.split(" · ") if not _is_place(p)) if other else terms
+    count = want_count(goal, notes) or (WANT_DEFAULT if kind == "outside_vendors" else None)
     lines = [
         f"조사 종류: {kind}({KIND_LABEL.get(kind, kind)})",
         f"찾을 것(고객 부탁, 가린 글): {goal}",
         f"집 조건: {shown or '모름'}",
     ]
+    if count:
+        lines.append(f"찾을 수: {count}곳(서로 다른 곳으로, 모자라면 검색어를 바꿔 더 찾아 주세요)")
     if other:
         lines.append(
             f"찾을 지역: {' · '.join(sorted(want))}(집과 다른 지역이에요. 이 지역 페이지만 골라 주세요)"
@@ -1638,11 +1770,55 @@ def _item_cell(text: str, allowed: set[float], prompt: str, kind: str) -> str | 
     return ok if len(ok) <= CELL_MAX else ok[: CELL_MAX - 1] + "…"
 
 
+def price_cell(text: str | None) -> ItemPrice | None:
+    """판매가 칸 → 값. 숫자만 코드가 읽어 글을 다시 만든다(모델 글은 보이지 않음). 비운 칸 · 값 없음 · 벽지 값 범위
+    밖이면 None. '1롤' · '롤당'이 있고 여러 롤 묶음이 아니면 1롤 값이다. 아직 확인 전(pagecheck가 확인)."""
+    t = " ".join((text or "").split()).strip(" |[]")
+    if not t or t in _NO_CELL:
+        return None
+    m = _WON.search(t)
+    if not m:
+        return None
+    won = int(m.group(1).replace(",", ""))
+    lo, hi = PRICE_RANGE
+    if not lo <= won <= hi:
+        return None
+    per_roll = bool(_PER_ROLL.search(t)) and not _MANY_ROLLS.search(t)
+    return ItemPrice(
+        text=f"1롤 {won:,}원" if per_roll else f"{won:,}원", won=won, per_roll=per_roll
+    )
+
+
+def size_cell(text: str | None) -> RollSize | None:
+    """규격 칸 → 폭 · 길이(mm). 벽지 롤 범위(폭 30~150cm · 길이 3~60m) 밖이면 None. 아직 확인 전."""
+    t = " ".join((text or "").split()).strip(" |[]")
+    if not t or t in _NO_CELL:
+        return None
+    m = pagecheck.SIZE.search(pagecheck.no_commas(t))
+    if not m:
+        return None
+    w = pagecheck.to_mm(m.group(1), m.group(2), length=False)
+    ln = pagecheck.to_mm(m.group(3), m.group(4), length=True)
+    if w is None or ln is None or not (300 <= w <= 1500 and 3000 <= ln <= 60000):
+        return None
+    cm = format((Decimal(w) / 10).normalize(), "f")
+    meter = format((Decimal(ln) / 1000).normalize(), "f")
+    return RollSize(text=f"{cm}cm × {meter}m", width_mm=w, length_mm=ln)
+
+
+def paper_of(*texts: str | None) -> Literal["합지", "실크"] | None:
+    """벽지 종류: 이름 · 특징 · 페이지 제목에 '합지' · '실크' 중 하나만 나오면 그것(둘 다 · 없음은 None)."""
+    joined = " ".join(t for t in texts if t)
+    found = {v for k, v in PAPER_WORDS.items() if k in joined}
+    return found.pop() if len(found) == 1 else None  # type: ignore[return-value]
+
+
 def _items(
     final_text: str | None, every: list[weblinks.Hit], allowed: set[float], prompt: str, kind: str
 ) -> list[dict]:
-    """끝 정리의 항목 줄('- 이름 | 특징 | 주의할 점 | 주소') → 결과 항목. 주소는 서버 도구 결과 블록의 링크와 맞을
-    때만 쓰고(모델이 지어낸 주소 · 닫힌 페이지는 버림) 그 블록의 주소 그대로 보인다. 같은 페이지는 한 번만."""
+    """끝 정리의 항목 줄('- 이름 | 특징 | 주의할 점 | 주소', 자재는 '… | 주의할 점 | 판매가 | 규격 | 주소') → 결과 항목.
+    주소는 서버 도구 결과 블록의 링크와 맞을 때만 쓰고(모델이 지어낸 주소 · 닫힌 페이지는 버림) 그 블록의 주소 그대로
+    보인다. 같은 페이지는 한 번만. 자재 판매가 · 규격은 아직 확인 전 값이고 _finish에서 pagecheck가 확인한다."""
     hits = {weblinks.key(h.url): h for h in every if not h.dead}
     out: list[dict] = []
     seen: set[str] = set()
@@ -1658,6 +1834,11 @@ def _items(
         if not name:
             continue
         seen.add(weblinks.key(h.url))
+
+        def cell(i: int, cells: list[str] = cells) -> str | None:
+            return cells[i] if len(cells) > i else None
+
+        materials = kind == "materials"
         out.append(
             ResearchItem(
                 name=name,
@@ -1665,6 +1846,9 @@ def _items(
                 caution=_item_cell(cells[2], allowed, prompt, kind) if len(cells) > 2 else None,
                 href=h.url,
                 source=_source(h.host),
+                paper=paper_of(cell(0), cell(1), h.title) if materials else None,
+                price=price_cell(cell(3)) if materials else None,
+                size=size_cell(cell(4)) if materials else None,
             ).model_dump(mode="json")
         )
         if len(out) == ITEM_MAX:
@@ -1711,10 +1895,12 @@ def _order(kind: str, hits: list[weblinks.Hit]) -> list[weblinks.Hit]:
 
 
 def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict:
-    """결과 JSON(research.result): 요약 · 링크 6개 · 확인하는 곳 · 표시. 링크는 서버 도구 결과 블록에서만.
+    """결과 JSON(research.result): 요약 · 항목 · 링크 6개 · 표시. 링크는 서버 도구 결과 블록에서만.
 
     끝 글 메모 줄에 적힌 결과 블록 링크가 있으면 그것만(모델이 읽고 고른 곳, 지역이 다른 검색 결과를 뺀다),
-    없으면 바꾼 조건 뒤 결과 · 모든 결과 순. 순서는 _order(고른 것도 검색 결과 순서 그대로)."""
+    없으면 바꾼 조건 뒤 결과 · 모든 결과 순. 순서는 _order(고른 것도 검색 결과 순서 그대로).
+    믿집 밖 업체(2026-11-23 사용자 '5곳 찾아오라 했더니 하나만'): 고른 곳 먼저, 모자라면 다른 검색 결과로 채우고,
+    항목(업체 이름 · 한 줄)도 보인다(값 · 평점 · 순위 말은 검사로 뺌). 없는 페이지는 _finish의 pagecheck가 뺀다."""
     blocks = [b for _, b in run_.blocks]
     newest = [b for g, b in run_.blocks if g == run_.gen]  # 바꾼 조건 뒤에 찾은 것을 먼저 본다
     allowed = guard.numbers(_source_text(blocks, [run_.goal, run_.terms, *notes]))
@@ -1722,15 +1908,26 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
     dead = {weblinks.key(h.url) for h in every if h.dead}  # 열리지 않는 · 닫힌 페이지
     picked = _picked(run_.final_text)
     chosen = [h for h in every if weblinks.key(h.url) in picked]
-    hits = chosen or weblinks.hits(newest) or every
-    hits = [h for h in hits if weblinks.key(h.url) not in dead]
-    # 믿집 밖 업체: 찾을 지역(바꾼 조건 · 목표, 없으면 집 지역)과 다른 지역만 나온 링크는 뺀다
-    if run_.kind == "outside_vendors":
-        hits = in_region(hits, target_places(run_.goal, notes) or places(run_.terms))
-    memos = _memos(run_.final_text, allowed, prompt, run_.kind)
-    # 항목(이름 · 특징 · 주의할 점): 자재 · 일반만. 믿집 밖 업체는 평가 없이 링크만 둔다(항목 줄은 링크 고르기에만)
     outside = run_.kind == "outside_vendors"
-    items = [] if outside else _items(run_.final_text, every, allowed, prompt, run_.kind)
+    pool = (
+        [*chosen, *weblinks.hits(newest), *every]
+        if outside
+        else (chosen or weblinks.hits(newest) or every)
+    )
+    hits: list[weblinks.Hit] = []
+    for h in pool:  # 같은 페이지는 한 번, 열리지 않는 페이지는 뺀다
+        k = weblinks.key(h.url)
+        if k not in dead and all(weblinks.key(x.url) != k for x in hits):
+            hits.append(h)
+    # 믿집 밖 업체: 찾을 지역(바꾼 조건 · 목표, 없으면 집 지역)과 다른 지역만 나온 링크 · 항목은 뺀다
+    region = target_places(run_.goal, notes) or places(run_.terms)
+    if outside:
+        hits = in_region(hits, region)
+    memos = _memos(run_.final_text, allowed, prompt, run_.kind)
+    items = _items(run_.final_text, every, allowed, prompt, run_.kind)
+    if outside:
+        near = {weblinks.key(h.url) for h in in_region([h for h in every if not h.dead], region)}
+        items = [x for x in items if weblinks.key(str(x["href"])) in near]
     links: list[dict] = []
     for h in _order(run_.kind, hits):
         links.append(
@@ -1751,7 +1948,7 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
         "summary": _summary(run_.final_text, allowed, prompt, run_.kind),
         "items": items,
         "links": links,
-        "checks": [{"label": a, "href": b} for a, b in CHECKS] if outside else [],
+        "checks": [],  # '직접 확인하는 곳'은 뺐어요(2026-11-23 사용자). 옛 결과 모양 그대로 비워 둬요
         "outside": outside,
         "partial": run_.reason is not None or short,
         "note": OUTSIDE_NOTE if outside else None,
@@ -1774,9 +1971,15 @@ async def _finish(run_: _Run) -> str:
     except Exception as e:  # noqa: BLE001 - 결과를 못 만들면 실패로 끝낸다(지어내지 않음)
         log.warning("조사 결과 만들기 실패 (%s)", type(e).__name__)
         result = None
-    if result and result.get("items"):  # 제조사 대표 그림(트랜잭션 밖, 실패는 그림 없이)
-        await linkimage.add_images(result["items"])
-    found = bool(result and result["links"])
+    if (
+        result
+    ):  # 트랜잭션 밖: 없는 페이지 빼기 · 판매가 · 규격 확인(못 찾으면 지움) → 제조사 대표 그림
+        await pagecheck.check_result(
+            result, now_utc().astimezone(SEOUL).date(), (*weblinks.BLOCKED, *NO_FETCH)
+        )
+        if result.get("items"):
+            await linkimage.add_images(result["items"])
+    found = bool(result and (result["links"] or result["items"]))
     if run_.reason == "stop":
         status, error = "stopped", None
     elif result is None or (run_.reason in ("error", "budget", "off", "refusal") and not found):

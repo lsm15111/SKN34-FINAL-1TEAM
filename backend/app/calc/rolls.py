@@ -17,8 +17,12 @@ from typing import Literal
 from app.calc.common import PYEONG_M2
 
 VERSION = "rolls-2026.11"
-RollKey = Literal["silk", "hapji_wide", "hapji_narrow"]
+# product: 조사에서 판매처 페이지로 확인한 제품 규격(need_size)
+RollKey = Literal["silk", "hapji_wide", "hapji_narrow", "product"]
 HapjiWidth = Literal["wide", "narrow"]
+# 제품 규격으로 셀 때 받는 범위(벽지 롤이 아닌 값 · 잘못 읽은 값을 막아요)
+SIZE_WIDTH = (Decimal("0.3"), Decimal("1.5"))  # 폭 m
+SIZE_LENGTH = (Decimal(3), Decimal(60))  # 길이 m
 
 
 @dataclass(frozen=True)
@@ -96,15 +100,44 @@ class RollNeed:
         )
 
 
-def need(
-    key: RollKey, *, paper_py: Decimal | None = None, paper_m2: Decimal | None = None
-) -> RollNeed:
-    """벽지 양(벽지 평 또는 ㎡ 하나만) → 롤 수(올림). 여분은 셈에 넣지 않아요."""
+def _area(paper_py: Decimal | None, paper_m2: Decimal | None) -> Decimal:
+    """벽지 양(벽지 평 또는 ㎡ 하나만) → ㎡."""
     if (paper_py is None) == (paper_m2 is None):
         raise ValueError("벽지 양은 벽지 평이나 ㎡ 하나만 넣어요")
     area = paper_m2 if paper_m2 is not None else paper_py * PYEONG_M2  # type: ignore[operator]
     if area < 0:
         raise ValueError("벽지 양은 0 이상이어야 해요")
+    return area
+
+
+def _count(area: Decimal, spec: RollSpec) -> int:
+    return int((area / spec.area_m2).to_integral_value(rounding=ROUND_CEILING))
+
+
+def need(
+    key: RollKey, *, paper_py: Decimal | None = None, paper_m2: Decimal | None = None
+) -> RollNeed:
+    """벽지 양(벽지 평 또는 ㎡ 하나만) → 롤 수(올림). 여분은 셈에 넣지 않아요."""
+    area = _area(paper_py, paper_m2)
     spec = ROLLS[key]
-    count = int((area / spec.area_m2).to_integral_value(rounding=ROUND_CEILING))
-    return RollNeed(key, spec.name, spec.size, count, *SPARE)
+    return RollNeed(key, spec.name, spec.size, _count(area, spec), *SPARE)
+
+
+def need_size(
+    name: str,
+    width_m: Decimal,
+    length_m: Decimal,
+    *,
+    paper_py: Decimal | None = None,
+    paper_m2: Decimal | None = None,
+) -> RollNeed:
+    """제품 규격(폭 × 길이, 판매처 페이지에서 확인한 값)으로 센 롤 수(올림). 벽지 롤 범위 밖이면 ValueError.
+    같은 벽지 양이라도 긴 롤(예 광폭 합지 35.5m)이면 롤 수가 줄어요. 여분은 셈에 넣지 않아요."""
+    lo_w, hi_w = SIZE_WIDTH
+    lo_l, hi_l = SIZE_LENGTH
+    if not (lo_w <= width_m <= hi_w and lo_l <= length_m <= hi_l):
+        raise ValueError("롤 규격이 벽지 롤 범위 밖이에요")
+    spec = RollSpec("product", name, width_m, length_m, "판매처 페이지")
+    return RollNeed(
+        "product", spec.name, spec.size, _count(_area(paper_py, paper_m2), spec), *SPARE
+    )

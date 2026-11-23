@@ -305,6 +305,15 @@ function ResearchResult({ card, ctx }: CardProps<"research">) {
                     {it.caution}
                   </p>
                 ) : null}
+                {/* 판매가 · 규격: 서버가 판매처 페이지에서 같은 값을 찾은 것만 와요(판매처 표시 값, 믿집 계산 아님) */}
+                {it.price?.checked ? (
+                  <p className={s.price}>
+                    <span>판매가</span>
+                    <b className={k.num}>{it.price.text}</b>
+                    <span className={s.dim}>판매처 표시 값 · {dateShort(it.price.checked, today)} 확인</span>
+                  </p>
+                ) : null}
+                {it.size?.checked ? <p className={s.price}><span>규격</span>{it.size.text}</p> : null}
                 <span className={s.meta}>{it.source}</span>
               </div>
             </li>
@@ -321,10 +330,10 @@ function ResearchResult({ card, ctx }: CardProps<"research">) {
                 <I n="external" />
                 <span className="mj-sr">(새 창)</span>
               </a>
+              {/* 믿집 밖 업체 안내는 카드 위 한 줄만(2026-11-23 사용자: 링크마다 같은 말은 빼도 됨) */}
               <span className={s.meta}>
                 <span>{l.source}</span>
                 {l.day ? <span>{dateShort(l.day, today)}</span> : null}
-                {d.outside ? <span className={s.badge}>믿집이 확인하지 않은 곳이에요</span> : null}
               </span>
               {l.memo ? <p className={s.memo}>{l.memo}</p> : null}
             </li>
@@ -333,18 +342,6 @@ function ResearchResult({ card, ctx }: CardProps<"research">) {
       ) : items.length ? null : (
         <p className={k.muted}>찾은 링크가 없어요.</p>
       )}
-      {d.checks.length ? (
-        <div className={s.checks}>
-          <span>직접 확인하는 곳</span>
-          {d.checks.filter((c) => isWeb(c.href)).map((c) => (
-            <a key={c.href} className={s.lnk} href={c.href} target="_blank" rel="noopener noreferrer">
-              <span>{c.label}</span>
-              <I n="external" />
-              <span className="mj-sr">(새 창)</span>
-            </a>
-          ))}
-        </div>
-      ) : null}
     </section>
   );
 }

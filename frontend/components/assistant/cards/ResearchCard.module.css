@@ -16,10 +16,7 @@
 .lnk svg { width: 14px; height: 14px; flex: none; }
 .lnk:hover > span:first-child { text-decoration: underline; text-underline-offset: 3px; }
 .meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 8px; font-size: var(--mj-type-caption); color: var(--mj-text-mute); min-width: 0; overflow-wrap: anywhere; }
-.badge { font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); background: var(--mj-fill); border-radius: var(--mj-radius-badge); padding: 1px 8px; }
 .memo { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
-.checks { display: grid; gap: 0; padding-top: 4px; border-top: 1px solid var(--mj-line-soft); }
-.checks > span { padding-top: 8px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
 /* 진행 과정(Claude의 웹 검색 · 생각 과정 접기처럼): 머리 줄(지금 하는 일 · 시계 / 걸린 시간 · 셈) · 왼쪽 세로선 타임라인 */
 .steps { display: grid; gap: 6px; min-width: 0; }
 .head { margin: 0; display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0; min-height: var(--mj-hit-min); padding: 0; border: 0; background: none; font: inherit; font-size: var(--mj-type-label); color: var(--mj-text-sub); text-align: left; }
@@ -62,4 +59,8 @@ a.toolText:hover { text-decoration: underline; text-underline-offset: 3px; }
 .feat { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text); overflow-wrap: anywhere; }
 .caution { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
 .caution > span:first-child { font-weight: var(--mj-weight-semibold); margin-right: 6px; }
+/* 판매가 · 규격 줄(판매처 표시 값): 이름표 + 값 + 확인한 날, 좁은 폭에서는 줄을 바꿔요 */
+.price { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; font-size: var(--mj-type-label); color: var(--mj-text); min-width: 0; overflow-wrap: anywhere; }
+.price > span:first-child { font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); }
+.price .dim { white-space: normal; }
 .sub { margin: 0; padding-top: 8px; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }

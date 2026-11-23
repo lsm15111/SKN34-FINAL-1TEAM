@@ -14,7 +14,7 @@ export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
   | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
   | "extra" | "notice" | "research"
-  | "grade_compare" | "market_range" | "options";
+  | "grade_compare" | "market_range" | "options" | "product_estimate";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -211,9 +211,19 @@ export type MarketRangeData = {
 };
 /** 고르기 칩: 대상이 여럿일 때 하나를 골라요(누르면 say를 보내요) */
 export type OptionsData = { title: string; options: { label: string; say: string; sub?: string | null }[] };
-/** 09 조사 담당(진행 · 결과 카드, GET /assistant/research/{id}). 링크는 서버가 서버 도구 결과에서 뽑은 것만, 순위 · 금액 · 연락처는 없어요 */
+/** 09 조사 담당(진행 · 결과 카드, GET /assistant/research/{id}). 링크는 서버가 서버 도구 결과에서 뽑은 것만, 순위 · 연락처는 없어요.
+ *  자재 판매가 · 규격은 서버가 판매처 페이지에서 같은 값을 찾은 것만 와요(판매처 표시 값, 믿집 계산 아님) */
 export type ResearchStatus = Schemas["ResearchData"]["status"];
 export type ResearchData = Schemas["ResearchData"];
+/** 조사로 찾은 벽지 판매가로 센 이 집 도배 금액(계산 엔진, 저장 안 함). 벽지 값 = 롤 수 × 1롤 판매가, 나머지 = 같은 벽지
+ *  종류 표준견적서에서 벽지를 뺀 합계. 금액은 모두 부가세 포함 */
+export type ProductEstimateData = {
+  name: string; paper: "합지" | "실크";
+  price_text: string; price_seen: string; source: string; href: string;
+  rolls_text: string;
+  rows: { label: string; won: number }[];
+  total_won: number; label: string; assumed: string[]; href_standard: string;
+};
 
 export type CardData = {
   home_info: HomeInfoData; standard_quote: StandardQuoteData; vendor_picks: VendorPicksData; visit_slots: VisitSlotsData;
@@ -221,6 +231,7 @@ export type CardData = {
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
   extra: ExtraData; notice: NoticeData; research: ResearchData;
   grade_compare: GradeCompareData; market_range: MarketRangeData; options: OptionsData;
+  product_estimate: ProductEstimateData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 

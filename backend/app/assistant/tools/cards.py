@@ -34,6 +34,8 @@ from app.assistant.schemas import (
     NameWon,
     OptionOut,
     OptionsData,
+    ProductEstimateData,
+    ProductEstimateRow,
     QuoteCompareData,
     ScheduleData,
     ScheduleDay,
@@ -510,6 +512,110 @@ async def grade_compare(s: AsyncSession, user: User, pid: uuid.UUID) -> tuple[Ca
             "items": [{"grade": GRADE[g], "total": full[g]} for g in ("economy", "basic")],
             "diff_won": grade_diff(full["basic"], full["economy"]),
         }
+    return card, model
+
+
+# ---- 조사로 찾은 벽지 판매가로 다시 세기(A안 2026-11-23) ----
+
+PAPER_GRADE = {"합지": "economy", "실크": "basic"}
+PRODUCT_PRICE_ASSUMED = "판매가는 판매처 페이지에 적힌 값이에요(부가세 포함으로 봤어요). 업체가 사는 값과 다를 수 있어요."
+PRODUCT_SIZE_ASSUMED = "판매처 페이지에서 롤 규격을 확인하지 못해 {paper} 표준 롤({size})로 셌어요."
+PRODUCT_PAPER_ASSUMED = "제품의 벽지 종류를 몰라 지금 고른 벽지({paper})로 셌어요."
+PRODUCT_NOTE = (
+    "벽지 값은 판매가 × 롤 수(계산 엔진), 나머지는 같은 벽지 종류 표준견적서에서 벽지를 뺀 합계예요. 저장하지 않은 "
+    "계산이고 실제 금액은 실측 견적서로 정해져요. 판매가를 글로 곱하거나 더하지 말고 이 값을 말해요."
+)
+PRODUCT_REST_ROW = "시공 · 부자재 · 퍼티 등(표준견적서, 벽지 뺀 합계)"
+
+
+async def product_estimate(
+    s: AsyncSession, user: User, pid: uuid.UUID, item: dict
+) -> tuple[CardOut, dict]:
+    """조사 결과 항목(판매처 페이지에서 확인한 1롤 판매가 · 규격)으로 이 집 도배 금액을 센다(calc.product_paper,
+    저장하지 않음). 벽지 종류는 항목의 합지 · 실크(모르면 지금 고른 벽지), 기준(도배만 · 리모델링)은 표준견적서와 같은
+    고르기다. 롤 수는 확인한 규격(calc.rolls.need_size), 없으면 그 벽지 종류 표준 롤. 도배가 없거나 계산할 수 없으면
+    ValueError."""
+    from app.calc import dobae as dobae_calc
+    from app.calc import rolls as rolls_calc
+    from app.calc.product_paper import product_paper
+    from app.project import service as project_service
+    from app.quote import service as quote_service
+    from app.refprice.book import dobae_prices_of
+
+    price = item.get("price") or {}
+    if not price.get("checked") or not price.get("per_roll"):
+        raise ValueError("확인한 1롤 판매가 없음")
+    p = await project_service.get_for(s, user, pid)
+    if p.trades.dobae is None:
+        raise ValueError("도배 없음")
+    said = await project_service.conditions(s, p.id)
+    pick = dobae_calc.pick_profile(quote_service.work_facts(p, said))
+    current = (p.home.grade if p.home else None) or p.trades.dobae.grade or "basic"
+    assumed: list[str] = []
+    grade = PAPER_GRADE.get(item.get("paper") or "")
+    if grade is None:
+        grade = current
+        assumed.append(PRODUCT_PAPER_ASSUMED.format(paper=GRADE[grade]))
+    h = quote_service.home_v3(p, grade)
+    # 벽지까지 넣은 표준견적서(벽지 직접 구매 칩과 상관없이): 벽지 양 · 벽지를 뺀 합계를 여기서 읽는다
+    q = quote_service.standard_v3(h, None, pick).quote
+    paper_ln = next((ln for ln in q.lines if ln.key == "paper"), None)
+    if paper_ln is None or paper_ln.qty is None:
+        raise ValueError("벽지 줄 없음")
+    amount = (
+        {"paper_py": paper_ln.qty} if paper_ln.unit == "벽지 평" else {"paper_m2": paper_ln.qty}
+    )
+    size = item.get("size") or {}
+    if size.get("checked"):
+        need = rolls_calc.need_size(
+            GRADE[grade],
+            Decimal(int(size["width_mm"])) / 1000,
+            Decimal(int(size["length_mm"])) / 1000,
+            **amount,
+        )
+    else:
+        need = rolls_calc.need(rolls_calc.roll_key(grade), **amount)
+        assumed.append(PRODUCT_SIZE_ASSUMED.format(paper=GRADE[grade], size=need.size))
+    assumed.append(PRODUCT_PRICE_ASSUMED)
+    split = dobae_calc.paper_split(q.lines, dobae_prices_of(None).vat_rate)
+    est = product_paper(split, need, int(price["won"]))
+    seen = f"판매처 표시 값 · {price['checked']} 확인"
+    rows = [
+        ProductEstimateRow(label=f"벽지 값({price['text']} × {need.count}롤)", won=est.paper_won),
+        ProductEstimateRow(label=PRODUCT_REST_ROW, won=est.rest_won),
+    ]
+    data = ProductEstimateData(
+        name=str(item.get("name") or "제품"),
+        paper=GRADE[grade],  # type: ignore[arg-type]
+        price_text=str(price["text"]),
+        price_seen=seen,
+        source=str(item.get("source") or ""),
+        href=str(item.get("href") or ""),
+        rolls_text=need.text,
+        rows=rows,
+        total_won=est.total_won,
+        label=_home_label(h, "도배", GRADE[grade]),
+        assumed=assumed,
+        href_standard=href(pid, "/standard"),
+    )
+    key = re.sub(r"[^0-9a-z]+", "-", str(item.get("href") or "").lower())[-40:]
+    card = CardOut(
+        card_id=f"product-{key}", kind="product_estimate", data=data.model_dump(mode="json")
+    )
+    model = {
+        "product": data.name,
+        "paper": data.paper,
+        "price": data.price_text,
+        "price_seen": seen,
+        "source": data.source,
+        "rolls": {"count": need.count, "text": need.text},
+        "paper_won": est.paper_won,  # 벽지 값(롤 수 × 판매가)
+        "rest_won": est.rest_won,  # 벽지 뺀 표준견적서 합계(부가세 포함)
+        "total_won": est.total_won,  # 이 제품으로 센 합계(부가세 포함)
+        "standard_won": est.standard_won,  # 같은 벽지 종류 표준견적서 합계(벽지 포함, 부가세 포함)
+        "assumed": assumed,
+        "note": PRODUCT_NOTE,
+    }
     return card, model
 
 

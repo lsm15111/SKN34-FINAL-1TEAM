@@ -99,6 +99,46 @@ export function MarketRangeCard({ card }: CardProps<"market_range">) {
   );
 }
 
+/** 판매가로 센 금액(estimate_product): 조사로 찾은 1롤 판매가 × 롤 수 + 표준견적서에서 벽지를 뺀 합계. 숫자는 모두 서버 값이에요 */
+export function ProductEstimateCard({ card }: CardProps<"product_estimate">) {
+  const d = card.data;
+  return (
+    <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
+      <div className={k.top}>
+        <h3 id={`${card.card_id}-t`}>이 벽지로 하면</h3>
+        <SourceTag src="calc" />
+      </div>
+      <p className={k.muted}>{d.name}</p>
+      <div className={k.kpi}>
+        <span>{d.label}</span>
+        <b className={`${s.range} ${k.num}`}>{won(d.total_won)}</b>
+        <small>부가세 포함 · 실측 전 참고 금액이에요</small>
+      </div>
+      <ul className={s.rows} aria-label="나눈 금액">
+        {d.rows.map((r) => (
+          <li key={r.label}>
+            <span>{r.label}</span>
+            <span className={k.num}>{won(r.won)}</span>
+          </li>
+        ))}
+      </ul>
+      <p className={s.src}>{d.rolls_text}</p>
+      {d.assumed.length ? (
+        <ul className={c.basisList} aria-label="계산에 넣은 것">{d.assumed.map((x) => <li key={x}>{x}</li>)}</ul>
+      ) : null}
+      <div className={k.row}>
+        {d.href.startsWith("https://") ? (
+          <a className={k.text} href={d.href} target="_blank" rel="noopener noreferrer nofollow">
+            판매가 {d.price_text} · {d.source}<I n="external" /><span className="mj-sr">(새 창)</span>
+          </a>
+        ) : null}
+        <Link className={k.text} href={d.href_standard} scroll={false}>표준견적서 보기<I n="chev" /></Link>
+      </div>
+      <p className={s.src}>{d.price_seen}</p>
+    </section>
+  );
+}
+
 export function OptionsCard({ card, ctx, old }: CardProps<"options">) {
   const d = card.data;
   return (

@@ -3880,7 +3880,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options" | "research";
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options" | "research" | "product_estimate";
             /** Data */
             data: {
                 [key: string]: unknown;
@@ -5631,6 +5631,33 @@ export interface components {
              * @default 0
              */
             sched: number;
+        };
+        /**
+         * ItemPrice
+         * @description 판매가(자재): 조사 담당이 적은 값을 코드가 숫자로 읽고, 우리 서버가 그 항목 페이지(robots를 지킴)에서 같은 값을
+         *     찾았을 때만 남겨요(pagecheck). 판매처에 적힌 값이고 믿집 계산이 아니에요. 글은 코드가 만들어요.
+         */
+        ItemPrice: {
+            /**
+             * Text
+             * @description 보일 글(예 '1롤 32,000원')
+             */
+            text: string;
+            /**
+             * Won
+             * @description 값(원, 판매처 표시 값 그대로)
+             */
+            won: number;
+            /**
+             * Per Roll
+             * @description 1롤 값인지(이 집 금액 다시 세기는 1롤 값일 때만)
+             */
+            per_roll: boolean;
+            /**
+             * Checked
+             * @description 판매처 페이지에서 같은 값을 찾은 날(서울)
+             */
+            checked?: string | null;
         };
         /**
          * JobOut
@@ -8128,6 +8155,15 @@ export interface components {
              * @description 제조사 공식 페이지의 대표 그림 주소(https, 그 사이트 그림만)
              */
             image?: string | null;
+            /**
+             * Paper
+             * @description 벽지 종류(이름 · 특징 · 페이지 제목에 적힌 말, 자재)
+             */
+            paper?: ("합지" | "실크") | null;
+            /** @description 판매가(판매처 페이지에서 확인한 값만, 자재) */
+            price?: components["schemas"]["ItemPrice"] | null;
+            /** @description 롤 규격(판매처 페이지에서 확인한 값만, 자재) */
+            size?: components["schemas"]["RollSize"] | null;
         };
         /** ResearchLink */
         ResearchLink: {
@@ -8530,6 +8566,27 @@ export interface components {
              * @description 화면 말 '실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로'
              */
             text: string;
+        };
+        /**
+         * RollSize
+         * @description 롤 규격(자재): 판매처 페이지에서 같은 숫자를 찾았을 때만 남겨요. 롤 수 세기에 써요(calc.rolls.need_size).
+         */
+        RollSize: {
+            /**
+             * Text
+             * @description 보일 글(예 '93cm × 35.5m')
+             */
+            text: string;
+            /** Width Mm */
+            width_mm: number;
+            /** Length Mm */
+            length_mm: number;
+            /**
+             * Checked
+             * @description 판매처 페이지에서 확인했는지
+             * @default false
+             */
+            checked: boolean;
         };
         /**
          * RoomBandOut

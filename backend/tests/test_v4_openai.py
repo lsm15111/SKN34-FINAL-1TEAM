@@ -401,9 +401,11 @@ def test_research_runs_on_openai_web_search_with_the_same_rules(api, script, ope
     res = result_of(row)
     assert res["items"] == [
         {"name": "디아망 회벽/화이트 (PR002-01)", "feature": "회벽처럼 요철이 크고 두꺼워요",
-         "caution": "순백보다 살짝 회색이 돌아요", "href": LX, "source": "lxzin.com", "image": LX_IMG},
+         "caution": "순백보다 살짝 회색이 돌아요", "href": LX, "source": "lxzin.com", "image": LX_IMG,
+         "paper": None, "price": None, "size": None},
         {"name": "조용한 사색 (15053-1)", "feature": "요철이 얕고 매트해요", "caution": None,
-         "href": SH, "source": "shinhanwall.co.kr", "image": None},
+         "href": SH, "source": "shinhanwall.co.kr", "image": None,
+         "paper": None, "price": None, "size": None},
     ]  # fmt: skip
     assert res["summary"] == "많이 고르는 실크 벽지 두 가지를 찾았어요."
     assert "map.naver" not in json.dumps(res, ensure_ascii=False)

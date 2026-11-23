@@ -25,6 +25,7 @@ CardKind = Literal[
     "extra", "notice",  # 07 자동화: 추가 금액 · 이웃 안내문 초안
     "grade_compare", "market_range", "options",  # 벽지 두 종류 견주기 · 시세 범위 · 고르기 칩
     "research",  # 09 조사 담당: 진행 · 결과(data는 assistant/research.py ResearchData)
+    "product_estimate",  # 조사로 찾은 벽지 판매가로 센 이 집 도배 금액(A안)
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
@@ -539,6 +540,29 @@ class GradeCompareData(BaseModel):
         description="벽지를 바꿀 수 있음(실측 요청 전). 바꾸기는 집 정보 승인 카드(choice 'grade:<값>')"
     )
     href: str
+
+
+class ProductEstimateRow(BaseModel):
+    label: str = Field(description="줄 이름(벽지 값 · 시공 · 부자재 등)")
+    won: int = Field(description="금액(부가세 포함, 계산 엔진)")
+
+
+class ProductEstimateData(BaseModel):
+    """조사로 찾은 벽지 판매가로 센 이 집 도배 금액(calc.product_paper, 저장하지 않아요).
+    벽지 값 = 롤 수 × 1롤 판매가(판매처 표시 값), 나머지 = 같은 벽지 종류 표준견적서에서 벽지를 뺀 합계예요."""
+
+    name: str = Field(description="제품 이름(조사 결과 항목)")
+    paper: Literal["합지", "실크"] = Field(description="이 계산에 쓴 벽지 종류")
+    price_text: str = Field(description="판매가 글(예 '1롤 32,000원')")
+    price_seen: str = Field(description="'판매처 표시 값 · 2026-11-23 확인'")
+    source: str = Field(description="판매처 도메인")
+    href: str = Field(description="판매가가 적힌 판매처 페이지")
+    rolls_text: str = Field(description="롤 수 글(계산 엔진, 여분은 따로)")
+    rows: list[ProductEstimateRow] = Field(description="벽지 값 · 나머지(표준견적서)")
+    total_won: int = Field(description="합계(부가세 포함, 계산 엔진)")
+    label: str = Field(description="계산에 넣은 집 조건 한 줄")
+    assumed: list[str] = Field(default=[], description="계산에 넣은 가정(코드 글)")
+    href_standard: str = Field(description="표준견적서 화면")
 
 
 class MarketRangeData(BaseModel):

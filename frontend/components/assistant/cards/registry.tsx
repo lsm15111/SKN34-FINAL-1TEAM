@@ -7,7 +7,7 @@ import type { CardKind, CardOut } from "@/lib/api/assistant";
 import { BriefCard } from "@/components/pro/assistant/BriefCard";
 import { QuoteChecklist } from "@/components/pro/assistant/QuoteChecklist";
 import { TodayCard } from "../kit/TodayCard";
-import { GradeCompareCard, MarketRangeCard, OptionsCard } from "./ChoiceCards";
+import { GradeCompareCard, MarketRangeCard, OptionsCard, ProductEstimateCard } from "./ChoiceCards";
 import { ExtraCard } from "./ExtraCard";
 import { HomeInfoCard } from "./HomeInfoCard";
 import { NoticeCard } from "./NoticeCard";
@@ -40,6 +40,7 @@ export const CARDS: Registry = {
   grade_compare: GradeCompareCard,
   market_range: MarketRangeCard,
   options: OptionsCard,
+  product_estimate: ProductEstimateCard,
   research: ResearchCard,
 };
 

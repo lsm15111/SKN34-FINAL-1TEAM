@@ -53,6 +53,8 @@ class Settings(BaseSettings):
     # 비서 지시문 판 묶음(assistant/prompts SETS): v4(기본, customer_v4 · vendor_v4 · nudge_write_v3) · v3(옛 판).
     # 판마다 지시문 글이 달라 프롬프트 캐시도 판마다 따로 맞는다
     assistant_prompt_set: Literal["v3", "v4"] = "v4"
+    # 비서 조사 담당(assistant/research.py): 공사당 하루(서울 날짜) 조사 시작 수. 0이면 세지 않는다
+    assistant_research_day_max: int = 3
     # 수동 임베딩 CLI와 에이전트 LLM(agent/llm.py)이 쓴다. 키는 repr·오류에 표시하지 않는다.
     openai_api_key: SecretStr = SecretStr("")
     openai_embedding_model: str = "text-embedding-3-small"
