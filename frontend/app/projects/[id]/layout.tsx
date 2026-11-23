@@ -4,7 +4,7 @@
 // <AppHeader only="phone" phone={{ … }} />로 그려요(ui-components 1장). 옆 AI 칸은 화면마다 WithAside에 둬요(dev-08).
 import { notFound } from "next/navigation";
 import { Shell } from "@/components/assistant/Shell";
-import { UI_SWITCH_BAR, uiMode } from "@/components/assistant/mode";
+import { UI_SWITCH_BAR, uiChoseV3, uiMode } from "@/components/assistant/mode";
 import { UiSwitchBar } from "@/components/assistant/UiSwitch";
 import { AppHeader } from "@/components/site/AppHeader";
 import { ProjectBand } from "@/components/site/ProjectBand";
@@ -34,7 +34,7 @@ export default async function ProjectLayout({ children, params }: { children: Re
   const steps = PROJECT_STEPS.map((st, i) => ({ ...st, href: links[i] }));
   return (
     <>
-      {UI_SWITCH_BAR ? <UiSwitchBar /> : null}
+      {UI_SWITCH_BAR || (await uiChoseV3()) ? <UiSwitchBar /> : null}
       <AppHeader only="web" />
       <ProjectBand
         name={shell.name}
