@@ -49,13 +49,14 @@ a.toolText:hover { text-decoration: underline; text-underline-offset: 3px; }
   .shine { animation: none; background: none; -webkit-text-fill-color: currentColor; }
   .spin { animation: none; }
 }
-/* 결과 항목: 그림(제조사 페이지) · 이름 링크 · 특징 · 주의할 점 · 출처 */
+/* 결과 항목: 그림(제조사 페이지) · 이름 · 특징 · 주의할 점(링크 · 출처는 맨 밑 링크 목록에) */
 .items { list-style: none; margin: 0; padding: 0; display: grid; min-width: 0; }
 .item { display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-top: 1px solid var(--mj-line-soft); min-width: 0; }
 .item:first-child { border-top: 0; padding-top: 0; }
 .pic { flex: none; display: block; width: 88px; height: 88px; border-radius: var(--mj-radius-field); overflow: hidden; background: var(--mj-surface-sub); }
 .pic img { display: block; width: 100%; height: 100%; object-fit: cover; }
 .body { flex: 1; display: grid; gap: 2px; min-width: 0; }
+.name { margin: 0; font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-text); overflow-wrap: anywhere; }
 .feat { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text); overflow-wrap: anywhere; }
 .caution { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); overflow-wrap: anywhere; }
 .caution > span:first-child { font-weight: var(--mj-weight-semibold); margin-right: 6px; }

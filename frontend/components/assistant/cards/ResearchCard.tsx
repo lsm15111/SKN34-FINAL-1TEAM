@@ -4,8 +4,8 @@
 // 조사했어요' · 검색 n번 · 페이지 n곳), 펼치면 왼쪽 세로선 타임라인(조사 담당의 말은 본문 글씨, 검색 · 읽기는 아이콘 줄,
 // 검색 줄은 찾은 페이지 목록을 펼침) · [멈추기]. 도는 동안 몇 초마다 다시 읽고, 끝난 것을 보면 대화를 새로 읽어 결과 줄이
 // 보이게 해요.
-// 결과(phase result): 요약 · 항목(이름 · 특징 · 주의할 점 · 제조사 그림) · 다른 링크(새 탭) · 출처 도메인 · 글 날짜 ·
-// 믿집 밖 표시 · 직접 확인하는 곳. 링크 · 그림은 서버가 뽑은 주소만 와요. 순위 · 금액 · 연락처는 없어요.
+// 결과(phase result): 요약 · 항목(이름 · 특징 · 주의할 점 · 판매가 · 제조사 그림, 링크 없음) · 맨 밑 링크(항목 페이지 먼저,
+// 새 탭) · 출처 도메인 · 글 날짜 · 믿집 밖 표시. 링크 · 그림은 서버가 뽑은 주소만 와요. 순위 · 연락처는 없어요.
 import { useEffect, useId, useRef, useState } from "react";
 import { getResearch, stopResearch, type ResearchData, type ResearchStatus } from "@/lib/api/assistant";
 import { errorText } from "@/lib/backend/client";
@@ -256,23 +256,37 @@ function Step({ t }: { t: Trail }) {
   );
 }
 
-/** 결과 항목 그림: 제조사 페이지 대표 그림(그 사이트에서 바로 불러옴). 못 불러오면 그림 칸을 빼요 */
+/** 결과 항목 그림: 제조사 페이지 대표 그림(그 사이트에서 바로 불러옴). 못 불러오면 그림 칸을 빼요. 링크는 맨 밑에만 둬요 */
 function Pic({ item }: { item: Item }) {
   const [gone, setGone] = useState(false);
   if (!item.image || gone || !isWeb(item.image)) return null;
   return (
-    <a className={s.pic} href={item.href} target="_blank" rel="noopener noreferrer nofollow" tabIndex={-1} aria-hidden="true">
+    <span className={s.pic} aria-hidden="true">
       <img src={item.image} alt="" width={88} height={88} loading="lazy" decoding="async" referrerPolicy="no-referrer" onError={() => setGone(true)} />
-    </a>
+    </span>
   );
+}
+
+type Page = { href: string; title: string; source: string; day?: string | null; memo?: string | null };
+
+/** 맨 밑 링크 목록: 항목 페이지(이름 그대로) 먼저, 그다음 다른 자료. 같은 주소는 한 번만
+ *  (2026-11-23 사용자: 이름에 링크를 걸지 말고 링크는 맨 밑에) */
+function pagesOf(items: Item[], links: ResearchData["links"]): Page[] {
+  const seen = new Set<string>();
+  const out: Page[] = [];
+  for (const p of [...items.map((x) => ({ href: x.href, title: x.name, source: x.source })), ...links]) {
+    if (!isWeb(p.href) || seen.has(p.href)) continue;
+    seen.add(p.href);
+    out.push(p);
+  }
+  return out;
 }
 
 function ResearchResult({ card, ctx }: CardProps<"research">) {
   const d = card.data;
   const today = ctx.now ? ctx.now.slice(0, 10) : undefined;
   const items = (d.items ?? []).filter((x) => isWeb(x.href));
-  const shown = new Set(items.map((x) => x.href));
-  const links = d.links.filter((l) => isWeb(l.href) && !shown.has(l.href));
+  const pages = pagesOf(items, d.links);
   return (
     <section className={`${k.card} ${s.card}`} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
@@ -293,11 +307,7 @@ function ResearchResult({ card, ctx }: CardProps<"research">) {
             <li key={it.href} className={s.item}>
               <Pic item={it} />
               <div className={s.body}>
-                <a className={s.lnk} href={it.href} target="_blank" rel="noopener noreferrer nofollow">
-                  <span>{it.name}</span>
-                  <I n="external" />
-                  <span className="mj-sr">(새 창)</span>
-                </a>
+                <p className={s.name}>{it.name}</p>
                 {it.feature ? <p className={s.feat}>{it.feature}</p> : null}
                 {it.caution ? (
                   <p className={s.caution}>
@@ -314,16 +324,15 @@ function ResearchResult({ card, ctx }: CardProps<"research">) {
                   </p>
                 ) : null}
                 {it.size?.checked ? <p className={s.price}><span>규격</span>{it.size.text}</p> : null}
-                <span className={s.meta}>{it.source}</span>
               </div>
             </li>
           ))}
         </ul>
       ) : null}
-      {items.length && links.length ? <p className={s.sub}>다른 자료</p> : null}
-      {links.length ? (
-        <ul className={s.links} aria-label={items.length ? "다른 자료" : "찾은 링크"}>
-          {links.map((l) => (
+      {items.length && pages.length ? <p className={s.sub}>링크</p> : null}
+      {pages.length ? (
+        <ul className={s.links} aria-label={items.length ? "링크" : "찾은 링크"}>
+          {pages.map((l) => (
             <li key={l.href}>
               <a className={s.lnk} href={l.href} target="_blank" rel="noopener noreferrer nofollow">
                 <span>{l.title}</span>
