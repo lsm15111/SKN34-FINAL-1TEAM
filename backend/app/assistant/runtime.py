@@ -1086,6 +1086,39 @@ def chips_for(cards: list[dict], facts: Collection[str] = ()) -> list[str]:
     return []
 
 
+def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
+    """인테리어와 상관없는 부탁 · 잡담(음식 · 날씨 · 놀이 · 돈 · 다른 앱 일)이면 LLM을 부르지 않고 막는다
+    (2026-11-23 사용자: '치킨 먹고 싶다'에 맞장구). 판별은 무료 모드와 같은 코드(free.off_kind, 공사 낱말이 없을 때만
+    맞음)예요. 대신 전화 · 문자 부탁은 비서가 앱 안 알림으로 도울 수 있어 빼고, 비서가 바로 앞에서 물었으면 그 답일 수
+    있어('날씨 풀리면요') 막지 않아요."""
+    from app.assistant import free
+
+    if ctx.surface != "customer" or ctx.pressed or ctx.choice or note:
+        return False
+    got = free.off_kind(ctx.text)
+    return got is not None and got[0] != "call" and not asked_last(ctx.history)
+
+
+def asked_last(history: list[dict]) -> bool:
+    """지난 글 중 마지막 비서 글이 물음표로 끝났는지."""
+    for m in reversed(history):
+        if m.get("role") != "assistant":
+            continue
+        c = m.get("content")
+        blocks = c if isinstance(c, list) else []
+        text = (
+            c
+            if isinstance(c, str)
+            else " ".join(
+                str(b.get("text") or "")
+                for b in blocks
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+        )
+        return text.rstrip().endswith("?")
+    return False
+
+
 def said(ctx: TurnCtx, note: str | None = None) -> str:
     """모델에 보낼 이번 고객 글: 가린 글 + 카드에서 고른 것 + 코드가 처리한 한 줄. 비면 ''(빈 글 블록은 보내지 않는다)."""
     text = ctx.text
@@ -1531,6 +1564,9 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
         await free_turn(ctx, emit, res, why, note)
     elif not said(ctx, note):  # 가린 뒤 빈 말 · 고른 것 없음: 빈 글 블록을 보내지 않는다(400)
         await free_turn(ctx, emit, res, "empty", EMPTY_TEXT)
+    elif off_topic(ctx, note):
+        # 인테리어와 상관없는 말은 LLM 없이 막아요(무료 모드의 범위 밖 답 틀)
+        await free_turn(ctx, emit, res, "off_topic")
     else:
         turn = _Turn(ctx, emit, res, note, seen)
         try:
