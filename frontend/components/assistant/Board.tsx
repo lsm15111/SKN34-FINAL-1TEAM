@@ -1,6 +1,7 @@
 "use client";
-// 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 지금(정할 일 · 기다리는 일) · 금액(표준견적서 → 확정 금액) · 업체 ·
-// 공사 기간 · 서류 · 비서가 기억하는 것(있을 때만). 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
+// 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 금액(표준견적서 → 확정 금액) · 업체 · 공사 기간 · 서류 ·
+// 비서가 기억하는 것(있을 때만). 정할 일 수는 대화 위 '오늘 정할 일 n'(웹) · 입력 칸 위 '보드 · 정할 일 n'(폰)에만 둬요(2026-11-23 사용자).
+// 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
 // 기억 칩은 GET /assistant/memory(다른 담당) 값이에요. API가 아직 없으면(404) 그 칸을 숨겨요. 칩을 누르고 있으면 내가 한 말이 보여요.
 // 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 → '우리 집 정보' 창(그 칸에 초점,
 // 실측 요청 뒤 잠기면 보기만) · 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 · 업체 줄 → 그 업체
@@ -99,15 +100,6 @@ function Sections({ b, memory, base, onOpen, onForget }: {
         <section className={s.bsec}>
           <h3 className={s.bsecT}>대표 평면 · 예시</h3>
           <PlanExample />
-        </section>
-      ) : null}
-      {b.step > 0 ? (
-        <section className={s.bsec}>
-          <h3 className={s.bsecT}>지금</h3>
-          <div className={s.now2}>
-            <div className={b.todo ? s.need : undefined}><span>정할 일</span><b className={s.num}>{b.todo}</b></div>
-            <div><span>기다리는 일</span><b className={s.num}>{b.waiting}</b></div>
-          </div>
         </section>
       ) : null}
       {b.money ? (

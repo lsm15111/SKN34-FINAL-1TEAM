@@ -153,11 +153,6 @@ a.rangeLine:hover { text-decoration: underline; text-underline-offset: 3px; }
 .vmini li > a { display: flex; flex: 1; min-width: 0; justify-content: space-between; align-items: center; gap: 8px; min-height: var(--mj-hit-min); padding: 9px 12px; color: inherit; text-decoration: none; }
 .vmini li > a:hover { background: var(--mj-fill); }
 .vmini li > a:focus-visible { outline: 2px solid var(--mj-link); outline-offset: -2px; }
-.now2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.now2 > div { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); padding: 10px 12px; display: grid; }
-.now2 span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
-.now2 b { font-size: var(--mj-type-title); line-height: 1.3; }
-.now2 .need b { color: var(--mj-primary); }
 .money { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); padding: 12px 14px; display: grid; }
 .money b { font-size: var(--mj-type-title); font-weight: var(--mj-weight-heavy); letter-spacing: var(--mj-track-title); line-height: 1.3; }
 .money small { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }

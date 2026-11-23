@@ -3540,10 +3540,11 @@ export interface components {
             home?: components["schemas"]["HomeInfoData"] | null;
             /** Confirmed */
             confirmed: boolean;
-            /** Todo */
+            /**
+             * Todo
+             * @description 정할 일 수(입력 칸 위 '보드 · 정할 일 n'). 보드 안 '지금' 숫자 칸 · 기다리는 일 수는 뺐어요(2026-11-23 사용자)
+             */
             todo: number;
-            /** Waiting */
-            waiting: number;
             money: components["schemas"]["BoardMoneyOut"] | null;
             vendors: components["schemas"]["BoardVendors"] | null;
             period: components["schemas"]["BoardPeriod"] | null;

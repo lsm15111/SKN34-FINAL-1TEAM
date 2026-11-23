@@ -1469,8 +1469,6 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         home=HomeInfoData.model_validate(home_card.data),
         confirmed=p.home is not None,
         todo=opened + (1 if cards.todo_kind(o.todo) == "todo" else 0),
-        waiting=sum(1 for v in o.vendors if v.next.who == "vendor")
-        + (1 if cards.todo_kind(o.todo) == "waiting" else 0),
         money=BoardMoneyOut(
             label=label,
             won=total,

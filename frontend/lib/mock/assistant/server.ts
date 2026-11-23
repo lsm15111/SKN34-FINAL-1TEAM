@@ -405,9 +405,8 @@ function boardOf(s: State): BoardOut {
   const docs = [{ label: "표준견적서", href: href(s, "/standard") }, { label: s.stage === "final" ? "확정 공정표" : "예상 공정표", href: href(s, "/plan") },
     ...(i >= 4 ? [{ label: "실측 견적서", href: href(s, "/quotes") }] : [])];
   const open = Object.values(s.actions).filter((a) => a.status === "proposed").length;
-  const waiting = ({ standard: 0, vendors: 0, requested: picked.length, slots: 1, booked: 3, compare: 0, confirmed: 1, dates: 0, final: 0 } as Record<Stage, number>)[s.stage];
   return {
-    project_name: "노원구 아파트 도배", step: i, facts, confirmed: true, todo: open, waiting, money, vendors, period, docs,
+    project_name: "노원구 아파트 도배", step: i, facts, confirmed: true, todo: open, money, vendors, period, docs,
     plan_example: s.stage !== "final", memory: [], today_pin: s.script === "today" && !s.todayDismissed ? 2 : 0,
   };
 }

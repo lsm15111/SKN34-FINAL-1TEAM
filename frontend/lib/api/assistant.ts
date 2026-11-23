@@ -385,7 +385,8 @@ export type BoardOut = {
   /** 지금 집 정보 카드 값. 대화의 집 정보 카드는 보낸 때 값이 아니라 이 값으로 그려요(저장 · 고치기 뒤 바로 바뀌게) */
   home?: HomeInfoData | null;
   confirmed: boolean;
-  todo: number; waiting: number;
+  /** 정할 일 수(입력 칸 위 '보드 · 정할 일 n', 폰). 보드 안 '지금' 숫자 칸은 뺐어요(2026-11-23 사용자) */
+  todo: number;
   /** won: 확정한 공정은 지금 공사 금액(확정 + 승인한 추가 금액). extra_won: 그중 승인한 추가 금액.
    *  href: won을 누르면 여는 자세히(확정 전 표준견적서 · 확정 뒤 실측 견적서). range_label: 범위가 무엇인지(가견적 · 실측 견적서),
    *  range_href: 범위를 누르면 여는 견적서 비교(받은 견적서가 없으면 비움) */

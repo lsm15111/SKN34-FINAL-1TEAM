@@ -944,8 +944,9 @@ class BoardOut(BaseModel):
         "이 값으로 그려서, 저장 · 고치기 뒤 바로 바뀌어요",
     )
     confirmed: bool
-    todo: int
-    waiting: int
+    todo: int = Field(
+        description="정할 일 수(입력 칸 위 '보드 · 정할 일 n'). 보드 안 '지금' 숫자 칸 · 기다리는 일 수는 뺐어요(2026-11-23 사용자)"
+    )
     money: BoardMoneyOut | None
     vendors: BoardVendors | None
     period: BoardPeriod | None
