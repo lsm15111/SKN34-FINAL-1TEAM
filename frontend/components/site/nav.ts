@@ -12,12 +12,14 @@ export type TabItem = NavItem & { icon: IconName; count?: "notify" };
 export const NAV: Record<HeaderKind, NavItem[]> = {
   guest: [
     { id: "start", href: "/start", label: "표준견적서 받기" },
+    { id: "guide", href: "/guide", label: "백과" },
     { id: "faq", href: "/faq", label: "자주 묻는 질문" },
   ],
   customer: [
     { id: "start", href: "/start", label: "표준견적서 받기" },
     { id: "my", href: "/my", label: "내 공사" },
     { id: "chat", href: "/chat", label: "채팅" },
+    { id: "guide", href: "/guide", label: "백과" },
   ],
   // W6 B: 일정은 작업함 탭이라 머리에 따로 두지 않아요
   vendor: [
@@ -53,6 +55,7 @@ export const TABS: Partial<Record<HeaderKind, TabItem[]>> = {
 export const ACCOUNT: Record<Role, NavItem[]> = {
   customer: [
     { id: "account", href: "/account", label: "내 정보" },
+    { id: "guide", href: "/guide", label: "믿집 백과" },
     { id: "faq", href: "/faq", label: "자주 묻는 질문" },
   ],
   vendor: [{ id: "account", href: "/account", label: "내 정보" }],

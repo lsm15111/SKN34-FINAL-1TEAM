@@ -19,6 +19,12 @@ type Aside = { layer: boolean; close: () => void; titleId: string };
 const Ctx = createContext<Aside>({ layer: false, close: () => {}, titleId: "" });
 export const useAside = () => useContext(Ctx);
 
+/** 옆 칸 밖 창(백과 'AI 채팅에 묻기')에서 AsidePanel을 쓸 때: 머리에 ×를 두고 onClose로 닫아요 */
+export function AsideHost({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+  const titleId = useId();
+  return <Ctx.Provider value={{ layer: true, close: onClose, titleId }}>{children}</Ctx.Provider>;
+}
+
 /** 폰 · 태블릿에서 옆 칸을 전체 화면 층으로 열어요(주소 ?ai=1) */
 export function openAside() {
   const u = new URL(window.location.href);
