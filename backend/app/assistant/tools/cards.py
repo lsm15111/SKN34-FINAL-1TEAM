@@ -229,9 +229,10 @@ async def standard(
         ],
         "version": out.price_ver,
     }
-    # 합계 밖 줄(선택 · 실측 후): '퍼티는 꼭 해야 해요?'에 이 집 줄 상태로 답해요. 벽지 직접 구매 도배지 줄은 paper 칸
+    # 합계 밖 줄(선택 · 실측 후): '퍼티는 꼭 해야 해요?'에 이 집 줄 상태로 답해요(source: 줄 근거 글, 왜 선택인지).
+    # 벽지 직접 구매 도배지 줄은 paper 칸
     outside = [
-        {"name": ln.name, "state": OUTSIDE[ln.state], "trade": t.trade}
+        {"name": ln.name, "state": OUTSIDE[ln.state], "trade": t.trade, "source": ln.source}
         | ({"공급가": ln.amount} if ln.amount else {})
         | ({"text": x} if (x := qty_text(ln)) else {})
         for t in trades

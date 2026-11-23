@@ -36,6 +36,30 @@ def test_kind_of_sends_warranty_questions_to_general(kind, q, want):
     assert answer.kind_of(kind, q) == want
 
 
+@pytest.mark.parametrize(
+    ("q", "want"),
+    [
+        ("AS기간은 보통 어떻게돼?", "하자 보수(A/S)기간은 보통 어떻게돼?"),
+        (
+            "도배 시공 AS 기간은 보통 어떻게 되나요?",
+            "도배 시공 하자 보수(A/S) 기간은 보통 어떻게 되나요?",
+        ),
+        ("A/S는 몇 년이에요?", "하자 보수(A/S)는 몇 년이에요?"),
+        ("as 기간 알려 줘", "하자 보수(A/S) 기간 알려 줘"),
+        ("하자 AS 기간은요?", "하자 AS 기간은요?"),  # 이미 '하자'가 있으면 그대로
+        ("GAS 배관 옮겨요?", "GAS 배관 옮겨요?"),  # 영어 낱말 안의 as는 아니에요
+        ("도배 기간은 며칠이에요?", "도배 기간은 며칠이에요?"),
+    ],
+)
+def test_search_words_spell_out_as(q, want):
+    """'AS'만 쓴 질문은 '하자 보수(A/S)'로 바꿔 넘겨요(지식 조각이 '하자 · 보수'로 적혀 있어요). 바꾼 말도 하자 질문이라
+    기간 · 금액 종류를 일반으로 돌려요."""
+    got = answer.search_words(q)
+    assert got == want
+    if got != q:
+        assert answer.kind_of("period", got) == "general"
+
+
 def test_warranty_period_question_skips_schedule_route(api, script, monkeypatch, repo_search):  # noqa: F811
     """기본 길(period=v3 · price=v3 · 나머지 v2g+v3): AS 기간은 v2 근거, 공사 기간은 계산 엔진 값을 쓰는 v3예요."""
     _, pid = home(api)
@@ -73,7 +97,9 @@ def test_standard_tool_gives_how_save_and_outside_lines(api, script):  # noqa: F
     assert "식대를 따로 줄로 두지 않아요" in how  # 도배만 하는 공사 기준
     lines = {x["name"]: x for x in got["lines"]}
     assert lines["벽 도배 시공 (풀 포함)"]["text"] == "96.5㎡ × 5,993원(공급가)"
-    assert lines["부자재 (풀 · 부직포 · 네바리 · 실리콘 등)"]["text"] == "21 공급 평 × 6,900원(공급가)"
+    assert (
+        lines["부자재 (풀 · 부직포 · 네바리 · 실리콘 등)"]["text"] == "21 공급 평 × 6,900원(공급가)"
+    )
     outside = {x["name"]: x for x in got["excluded"]}
     assert outside["퍼티작업 (사전퍼티 · 밑작업)"]["state"] == "선택(합계 밖)"
     assert outside["기존 벽지 철거"]["state"] == "실측 후(합계 밖)"

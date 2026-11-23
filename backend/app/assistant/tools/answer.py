@@ -17,6 +17,7 @@
 
 import hashlib
 import logging
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -137,6 +138,20 @@ def kind_of(kind: str, question: str) -> str:
     return kind
 
 
+# 'AS' · 'A/S' · '에이에스'(영어 낱말 안의 as는 아님)
+AS_WORD = re.compile(r"A\s?/\s?S|(?<![A-Za-z])AS(?![A-Za-z])|에이에스", re.IGNORECASE)
+AS_ASK = "하자 보수(A/S)"
+
+
+def search_words(question: str) -> str:
+    """답 길에 넘길 질문: '하자 · 보수' 없이 'AS'만 쓴 질문은 'AS'를 '하자 보수(A/S)'로 바꿔요. 지식 조각(표준계약서 ·
+    건설산업기본법 하자담보 1년)이 '하자 · 보수'로 적혀 있어 'AS'만으로는 잘 안 잡혔어요(2026-11-23 qa10: '도배 시공 AS
+    기간은?' 두 번 중 한 번 '자료로 확인되지 않아요', 바꾼 말은 두 번 다 1년)."""
+    if "하자" in question or "보수" in question:
+        return question
+    return AS_WORD.sub(AS_ASK, question, count=1)
+
+
 @tool(
     "answer_question",
     surface="customer",
@@ -158,7 +173,7 @@ def kind_of(kind: str, question: str) -> str:
 async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     from app.knowledge import service as knowledge
 
-    question = policy.mask_in(a.question)
+    question = search_words(policy.mask_in(a.question))
     engine = engine_for(kind_of(a.kind, question))
     know = knowledge.other_trade_notes(question)
     if engine in (HYBRID, HYBRID_G):
