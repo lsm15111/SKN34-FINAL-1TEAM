@@ -502,6 +502,30 @@ async def sent_count(
     return int(await s.scalar(q) or 0)
 
 
+DEFERRED = ("night", "cap")  # 밤 · 하루 상한으로 미룬 줄의 까닭(policy.NudgeRules.check)
+
+
+async def deferred_nudges(
+    s: AsyncSession,
+    user_id: uuid.UUID,
+    surface: str,
+    project_id: uuid.UUID | None,
+    now: datetime,
+) -> tuple[int, datetime | None]:
+    """밤 · 하루 상한으로 미뤄 아직 기다리는 먼저 말 걸기 줄: (수, 가장 이른 보낼 때). 고객은 그 공사 줄만 센다."""
+    q = select(func.count(), func.min(AssistantNudge.due_at)).where(
+        AssistantNudge.user_id == user_id,
+        AssistantNudge.surface == surface,
+        AssistantNudge.status == "pending",
+        AssistantNudge.reason.in_(DEFERRED),
+        AssistantNudge.due_at > now,
+    )
+    if project_id is not None:
+        q = q.where(AssistantNudge.project_id == project_id)
+    n, due = (await s.execute(q)).one()
+    return int(n or 0), due
+
+
 async def dismissals(
     s: AsyncSession, user_id: uuid.UUID, since: datetime
 ) -> list[tuple[str, datetime, uuid.UUID]]:

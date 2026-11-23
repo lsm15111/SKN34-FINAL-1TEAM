@@ -204,17 +204,34 @@ def decided_line(rows: list, label_of=None) -> str | None:
 
 
 def time_lines(now: datetime) -> list[str]:
-    """턴 사실의 시각 줄(고객 · 업체 같음): 지금 서울 시각 · 올해(다른 해 날짜를 가르게) · 밤 알림 규칙. 알림 때는
-    먼저 말 걸기 규칙 값(proactive.RULES)에서 읽는다(글에 손으로 적지 않는다). 때 말은 표 하나(kdate.PERIODS)."""
-    from app.assistant import proactive
+    """턴 사실의 시각 줄(고객 · 업체 같음): 지금 서울 시각 · 올해(다른 해 날짜를 가르게). 때 말은 표 하나(kdate.PERIODS)."""
+    return [f"지금: {kdate.now_text(now)}", f"올해: {now.astimezone(SEOUL).year}년"]
 
-    r = proactive.RULES
-    night = f"{kdate.hour_text(r.night_from)}~{kdate.hour_text(r.night_to)}"
-    return [
-        f"지금: {kdate.now_text(now)}",
-        f"올해: {now.astimezone(SEOUL).year}년",
-        f"알림: {night}엔 {kdate.period(r.night_to)}에 보내요",
-    ]
+
+# 미룬 알림 줄(QA r6 c1 M10): 밤 규칙 줄을 늘 넣었더니 비서가 '밤 알림은 아침에 가요'를 30턴 중 8턴에 붙였는데, 업체 답
+# 같은 종 알림 · 대화 줄은 밤에도 바로 가요(policy.NudgeRules.check는 notify 길만 미뤄요). 실제로 미룬 알림이 있을 때만
+# 넣어요
+DEFERRED = "알림: 미룬 알림 {n}개는 {at}에 가요"
+
+
+def deferred_line(count: int, due: datetime | None, now: datetime) -> str | None:
+    """턴 사실 '알림:' 줄(미룬 알림 수 · 가장 이른 보낼 때, 오늘이 아니면 날짜도). 미룬 알림이 없으면 None."""
+    if count <= 0 or due is None:
+        return None
+    at, day = due.astimezone(SEOUL), now.astimezone(SEOUL).date()
+    when = kdate.hour_text(at.hour, at.minute)
+    if at.date() != day:
+        when = f"{kdate.md_long(at.date(), day)} {when}"
+    return DEFERRED.format(n=count, at=when)
+
+
+async def deferred_lines(
+    s, user_id: uuid.UUID, surface: str, project_id: uuid.UUID | None, now: datetime
+) -> list[str]:
+    """턴 사실에 넣을 미룬 알림 줄(없으면 빈 목록)."""
+    n, due = await repo.deferred_nudges(s, user_id, surface, project_id, now)
+    line = deferred_line(n, due, now)
+    return [line] if line else []
 
 
 # 실측 요청 뒤(집 정보 잠김)에는 공사 시작 희망을 집 정보 카드로 바꿀 수 없다: '아직 몰라요' 대신 업체와 정한다는 사실
@@ -287,7 +304,9 @@ DATES_WORDS = {
     "change_proposed": "업체가 바뀐 공사 날짜를 올림(수락할 차례)",
 }
 BEFORE_CHAT = ("requested", "offered", "picked", "proposed")  # 채팅이 열리기 전(업체 수락 전)
-CHAT_WAIT = "업체가 실측 시간을 수락하면 열려요"
+# 요청함 · 기간 답 옴 · 고름(업체 수락 기다림)은 모두 실측 날짜가 정해질 때 열려요. '업체가 수락하면'은 아직 기간 답 전인
+# 바로 확정 업체에 맞지 않았어요(QA r6 c3 t13)
+CHAT_WAIT = "실측 날짜가 정해지면 열려요"
 CHAT_PICK = "실측 시간을 고르면 바로 열려요"  # 바로 확정 기간 · 업체가 낸 다른 날(고르면 정해진다)
 LIVE_VISITS = ("requested", "offered", "picked", "proposed", "booked", "visited", "quoted")
 NO_DOBAE = "표준견적서 · 상담(업체 연결은 도배만이라 이 공사는 업체 단계가 없어요)"
@@ -385,8 +404,8 @@ def vendors_line(
 
 
 def chat_line(rows: list, deal, opened: set) -> str:
-    """턴 사실 '채팅:' 줄: 믿집 채팅이 열린 업체 · 아직 안 열린 업체(업체가 실측 시간을 수락하면 열려요, 고르면 바로
-    정해지는 차례면 고르면 열려요)."""
+    """턴 사실 '채팅:' 줄: 믿집 채팅이 열린 업체 · 아직 안 열린 업체(실측 날짜가 정해지면 열려요, 고르면 바로 정해지는
+    차례면 고르면 열려요)."""
     names = [(r.vendor_id, r.vendor_name, r.status, picks_now(r)) for r in rows]
     if deal is not None and all(v != deal.vendor_id for v, _, _, _ in names):
         names.append((deal.vendor_id, deal.vendor_name, "chosen", False))
@@ -492,6 +511,7 @@ async def _customer_facts(
         w = WorkNow(UNKNOWN_STAGE, None)
     lines = [
         *time_lines(now),
+        *await deferred_lines(s, user.id, "customer", p.id, now),
         "화면: 고객 비서",
         "단계: " + w.stage + (" · 집 정보 잠김(실측 요청 뒤)" if home["locked"] else ""),
         "집: " + " · ".join(home_facts(home)),
@@ -663,7 +683,11 @@ async def _vendor_facts(
     except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 요청 줄 없이
         log.warning("업체 턴 사실 작업함 읽기 실패 (%s)", type(e).__name__)
         book = VendorBook([], {})
-    lines = [*time_lines(now), "화면: 업체 비서"]
+    lines = [
+        *time_lines(now),
+        *await deferred_lines(s, vendor.id, "vendor", None, now),
+        "화면: 업체 비서",
+    ]
     if visit_ref:
         name = book.names.get(visit_id) if visit_id else None
         lines.append(f"지금 보는 요청: {visit_ref}" + (f"({name})" if name else ""))

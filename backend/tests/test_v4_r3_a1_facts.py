@@ -138,10 +138,10 @@ def test_chat_line_only_names_open_chats():
     open_one = row("booked", "결도배", booked=SAT)
     rows = [open_one, row("requested", "마루와벽"), row("declined", "한결")]
     assert S.chat_line(rows, None, {open_one.vendor_id}) == (
-        "채팅: 결도배 열림 / 마루와벽 아직 안 열림(업체가 실측 시간을 수락하면 열려요)"
+        "채팅: 결도배 열림 / 마루와벽 아직 안 열림(실측 날짜가 정해지면 열려요)"
     )
     assert S.chat_line([row("declined")], None, set()) == (
-        "채팅: 열린 채팅 없음(업체가 실측 시간을 수락하면 열려요)"
+        "채팅: 열린 채팅 없음(실측 날짜가 정해지면 열려요)"
     )
 
 
@@ -281,7 +281,7 @@ def test_turn_facts_follow_each_vendor_from_booked_to_deal(api, script):
         f"업체: 마루와벽(m1) 실측 날짜 정해짐({slot}) / 결도배(m2) 실측 요청함(업체 답 기다림)"
         in facts
     )
-    assert "채팅: 마루와벽 열림 / 결도배 아직 안 열림(업체가 실측 시간을 수락하면 열려요)" in facts
+    assert "채팅: 마루와벽 열림 / 결도배 아직 안 열림(실측 날짜가 정해지면 열려요)" in facts
     assert "단계: 실측(요청한 업체 2곳 · 견적서 전)" in facts
     # 견적서가 오면 판 · 금액(부가세 포함)과 견적 견주기 단계
     login(api, f["email"])
@@ -310,7 +310,7 @@ def test_cancelled_request_turns_the_stage_back_to_picking(api, script):
     facts = turn_facts(api, script, f["pid"])
     assert "업체: 마루와벽 닫힘(고객 취소)" in facts
     assert "단계: 업체 고르기(보낸 실측 요청이 모두 닫힘)" in facts
-    assert "채팅: 열린 채팅 없음(업체가 실측 시간을 수락하면 열려요)" in facts
+    assert "채팅: 열린 채팅 없음(실측 날짜가 정해지면 열려요)" in facts
 
 
 def test_turn_facts_before_any_request_and_open_card_names(api, script):
@@ -323,7 +323,7 @@ def test_turn_facts_before_any_request_and_open_card_names(api, script):
     assert "단계: 업체 고르기(실측 요청 전)" in facts and "집 정보 잠김" not in facts
     assert "공급 105.8㎡ · 32평형(공급)" in facts  # 공급 면적 집은 평형으로
     assert "업체:" not in facts
-    assert "채팅: 열린 채팅 없음(업체가 실측 시간을 수락하면 열려요)" in facts
+    assert "채팅: 열린 채팅 없음(실측 날짜가 정해지면 열려요)" in facts
     _, pid = home(api, "card@mitjip.test")  # 집 정보를 저장한 공사(방 수 고치기 카드가 열린다)
     a = propose_home(api, script, pid, {"rooms": 3})
     facts = turn_facts(api, script, pid, "카드 아직 있어요?")
