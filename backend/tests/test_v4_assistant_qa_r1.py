@@ -109,6 +109,10 @@ def test_approved_extra_counts_in_board_and_tool_money(api, script):
         "won": grand,
         "range": None,
         "extra_won": extra,
+        # 보드 칸 → 자세히(2026-11-23): 확정한 공사 금액은 실측 견적서, 확정 뒤에는 업체 금액 범위가 없어요
+        "href": f"/projects/{pid}/quotes",
+        "range_label": None,
+        "range_href": None,
     }
     log = script(
         [

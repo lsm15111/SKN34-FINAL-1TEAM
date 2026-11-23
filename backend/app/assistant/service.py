@@ -1439,10 +1439,12 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
     m = o.money
     dealt = any(x.source == "deal" for x in m.by_trade)
     total, extra = cards.work_total(m, works)  # 승인한 추가 금액은 공사 금액에 들어가요(계산 엔진)
+    # 보드 금액 칸 이름(앞쪽): 확정 전 표준견적서 · 공정 일부만 확정이면 예상 금액(확정 + 나머지 표준견적서) · 모두 확정이면
+    # 확정 금액(추가 금액이 있으면 공사 금액). '낼 금액'은 확정 전에는 낼 돈이 아니어서 쓰지 않아요(2026-11-23 사용자)
     label = (
         ("공사 금액 · 부가세 포함" if extra else "확정 금액 · 부가세 포함")
         if m.all_confirmed
-        else "낼 금액 · 부가세 포함"
+        else "예상 금액 · 부가세 포함"
         if dealt
         else "표준견적서 · 부가세 포함"
     )

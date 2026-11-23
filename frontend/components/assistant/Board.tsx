@@ -1,10 +1,10 @@
 "use client";
-// 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 지금(정할 일 · 기다리는 일) · 낼 금액 · 업체 · 공사 기간 · 서류 · 비서가 기억하는 것.
-// 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
+// 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 지금(정할 일 · 기다리는 일) · 금액(표준견적서 → 확정 금액) · 업체 ·
+// 공사 기간 · 서류 · 비서가 기억하는 것(있을 때만). 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
 // 기억 칩은 GET /assistant/memory(다른 담당) 값이에요. API가 아직 없으면(404) 그 칸을 숨겨요. 칩을 누르고 있으면 내가 한 말이 보여요.
-// 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 · 고치기 → '우리 집 정보' 창
-// (그 칸에 초점, 실측 요청 뒤 잠기면 보기만) · 낼 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 ·
-// 업체 줄 → 그 업체 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류. 철거 범위 · 직접 할 일 줄은 대화에서 정해요.
+// 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 → '우리 집 정보' 창(그 칸에 초점,
+// 실측 요청 뒤 잠기면 보기만) · 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 · 업체 줄 → 그 업체
+// 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류 모음. 철거 범위 · 직접 할 일 줄은 대화에서 정해요.
 import Link from "next/link";
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { BoardOut, MemoryOut } from "@/lib/api/assistant";
@@ -73,18 +73,17 @@ function Sections({ b, memory, base, onOpen, onForget }: {
   b: BoardOut; memory: MemoryOut[] | null; base: string; onOpen?: () => void; onForget: (id: string) => void;
 }) {
   const homeHref = `${base}/home`;
-  // 실측 요청 뒤(잠김)에도 창은 열려요(보기만, 고치기는 막힌 화면). 초점 칸은 고칠 수 있을 때만
+  // 실측 요청 뒤(잠김)에도 창은 열려요(보기만, 고치기는 막힌 화면). 초점 칸은 고칠 수 있을 때만. 따로 '고치기' 단추는 두지 않아요
   const locked = !!b.home?.locked;
   const act = locked ? "보기" : "고치기";
   const to = (field: string) => (locked ? homeHref : `${homeHref}?field=${field}`);
   const go = { scroll: false, onClick: onOpen } as const;
+  // 금액 칸 이름은 서버 말 앞쪽(확정 전 '표준견적서', 확정 뒤 '확정 금액' · 추가 금액이 있으면 '공사 금액'), 뒤쪽은 '부가세 포함'
+  const [moneyTitle, ...moneyTail] = b.money ? b.money.label.split(" · ") : [""];
   return (
     <>
       <section className={s.bsec}>
-        <div className={s.bsecHead}>
-          <h3 className={s.bsecT}>우리 집{b.confirmed ? "" : " · 확인 전"}</h3>
-          {b.facts.length ? <Link className={s.bsecEdit} href={homeHref} {...go}>{act}</Link> : null}
-        </div>
+        <h3 className={s.bsecT}>우리 집{b.confirmed ? "" : " · 확인 전"}</h3>
         {b.facts.length ? (
           <ul className={`${s.facts} ${s.factsEdit}`}>
             {b.facts.map((f, i) => {
@@ -113,12 +112,12 @@ function Sections({ b, memory, base, onOpen, onForget }: {
       ) : null}
       {b.money ? (
         <section className={s.bsec}>
-          <h3 className={s.bsecT}>낼 금액</h3>
+          <h3 className={s.bsecT}>{moneyTitle}</h3>
           {/* 금액은 표준견적서(업체를 확정했으면 확정 · 공사 금액). 확정 전 업체 금액이 두 곳 이상이면 무엇의 범위인지 이름을 달아
               아래 줄로 보여요(서버 값 그대로). 승인한 추가 금액은 공사 금액에 들어가요 */}
           <Box href={b.money.href} go={go} label={`${b.money.label} ${b.money.won != null ? won(b.money.won) : ""} · 자세히`}>
-            <small>{b.money.label}</small>
             <b className={s.num}>{b.money.won != null ? won(b.money.won) : "—"}</b>
+            {moneyTail.length ? <small>{moneyTail.join(" · ")}</small> : null}
             {b.money.extra_won ? <small className={s.num}>승인한 추가 금액 {won(b.money.extra_won)} 포함</small> : null}
           </Box>
           {b.money.range ? (
@@ -175,28 +174,26 @@ function Sections({ b, memory, base, onOpen, onForget }: {
         </section>
       ) : null}
       {b.docs.length ? (
+        // 서류 하나하나(표준견적서 · 공정표 · 견적서)는 위 칸에서 열려서 여기는 서류 모음 하나만
         <section className={s.bsec}>
           <div className={s.bsecHead}>
             <h3 className={s.bsecT}>서류</h3>
             <Link className={s.bsecEdit} href={`${base}/docs`} {...go}>모두 보기</Link>
           </div>
-          <div className={s.links}>{b.docs.map((d) => <Link key={d.href + d.label} href={d.href} {...go}>{d.label}</Link>)}</div>
         </section>
       ) : null}
-      {memory ? (
+      {memory?.length ? (
+        // 기억한 것이 있을 때만(빈 칸 안내 · 내 정보 링크는 두지 않아요, 2026-11-23 사용자: 화면 문구는 최소로)
         <section className={s.bsec}>
           <h3 className={s.bsecT}>비서가 기억하는 것</h3>
-          {memory.length ? (
-            <ul className={s.mem}>
-              {memory.map((m) => (
-                <li key={m.id} title={`내가 한 말: ${m.evidence_quote}`}>
-                  {m.value}
-                  <button type="button" aria-label={`'${m.value}' 지우기`} onClick={() => onForget(m.id)}><I n="x" /></button>
-                </li>
-              ))}
-            </ul>
-          ) : <p className={s.muted}>내가 말한 것만 기억해요</p>}
-          <div className={s.links}><Link href="/account">내 정보에서 모두 보기</Link></div>
+          <ul className={s.mem}>
+            {memory.map((m) => (
+              <li key={m.id} title={`내가 한 말: ${m.evidence_quote}`}>
+                {m.value}
+                <button type="button" aria-label={`'${m.value}' 지우기`} onClick={() => onForget(m.id)}><I n="x" /></button>
+              </li>
+            ))}
+          </ul>
         </section>
       ) : null}
     </>
