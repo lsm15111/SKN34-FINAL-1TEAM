@@ -67,7 +67,8 @@ export function HomeLinks({ guest }: { guest: boolean }) {
         <span className={s.stripText}><b>자주 묻는 질문</b><span>가견적 · 실측 · 업체 확인</span></span>
         <Icon name="chevron-right" size={20} />
       </Link>
-      {guest ? <p className={`${s.meta} ${s.phoneOnly}`}>업체이신가요? <Button variant="inline" href="/signup/vendor">업체로 가입</Button></p> : null}
+      {/* 폰에서 누를 곳 높이를 44로(글 속 밑줄 링크는 16이라 손가락으로 누르기 어려워요, QA r6 L26) */}
+      {guest ? <p className={`${s.meta} ${s.phoneOnly}`}>업체이신가요? <Button variant="text" href="/signup/vendor">업체로 가입</Button></p> : null}
       <footer className={s.foot}>
         <Link href="/guide">믿집 백과</Link>
         <Link href="/faq">자주 묻는 질문</Link>

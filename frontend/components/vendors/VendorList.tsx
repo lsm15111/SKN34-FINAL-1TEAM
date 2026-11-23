@@ -106,7 +106,8 @@ export function VendorList({ projectId, list, shortlist, next, mock, head, aside
     />
   );
 
-  const ready = list.local.filter((c) => c.state !== "no_estimate");
+  // 가견적 낮은 순(서버 순서)은 그대로 두고, 담을 수 있는 업체를 먼저 보여요(이 벽지는 안 해요 · 다시 요청 못 함이 맨 위에 오지 않게, QA r6 L28)
+  const ready = list.local.filter((c) => c.state !== "no_estimate").sort((a, b) => Number(a.state !== "ok") - Number(b.state !== "ok"));
   const preparing = list.local.filter((c) => c.state === "no_estimate");
   const zero = list.local.length === 0;
   // 담은 업체의 요청 상태(서버 담은 목록 값): 확정한 업체 · 이미 요청한 업체

@@ -32,7 +32,7 @@ export function WithdrawSheet({ vendor, ongoing = [] }: { vendor: boolean; ongoi
     try {
       await send("POST", "/me/withdraw", { password });
       writeDraft(null); // 이 브라우저에 남은 쓰던 기본 정보도 지워요
-      router.push("/");
+      router.push("/?bye=1"); // 홈 맨 위에 '탈퇴했어요'를 보여요(QA r6 L8)
       router.refresh();
     } catch (x) {
       setErr(errorText(x));
