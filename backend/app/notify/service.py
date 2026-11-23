@@ -2,6 +2,7 @@
 v3: commit 뒤에 push_unread()로 안 읽은 수를 실시간 줄기에 보낸다. kind · link 목록은 notify/catalog.py."""
 
 import uuid
+from datetime import datetime
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert
@@ -100,3 +101,28 @@ async def mark_all_read(s: AsyncSession, user_id: uuid.UUID) -> None:
         .values(read_at=now_utc())
     )
     await s.commit()
+
+
+async def unread_since(
+    s: AsyncSession, since: datetime, limit: int = 500
+) -> list[tuple[uuid.UUID, uuid.UUID]]:
+    """since 뒤에 온 안 읽은 알림(알림 id, 받는 사람 id), 새것부터. 끝난 일 소식 정리가 읽는다."""
+    rows = await s.execute(
+        select(Notification.id, Notification.user_id)
+        .where(Notification.read_at.is_(None), Notification.created_at >= since)
+        .order_by(Notification.created_at.desc())
+        .limit(limit)
+    )
+    return [(i, u) for i, u in rows.all()]
+
+
+async def mark_read_ids(s: AsyncSession, ids: list[uuid.UUID], at: datetime) -> int:
+    """알림 여럿을 읽음으로(이미 읽은 것은 그대로). 바꾼 수. commit은 부르는 쪽이 한다."""
+    if not ids:
+        return 0
+    res = await s.execute(
+        update(Notification)
+        .where(Notification.id.in_(ids), Notification.read_at.is_(None))
+        .values(read_at=at)
+    )
+    return int(res.rowcount or 0)

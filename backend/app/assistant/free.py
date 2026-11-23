@@ -266,12 +266,14 @@ NOW = {
     "dates": "지금은 확정한 업체의 공사 날짜를 챙길 차례예요.",
     "work": "지금은 공사 전에 챙길 일을 볼 차례예요.",
 }
-# 실측 단계는 업체 요청 상태로 나눠 말한다(위에서부터 처음 맞는 것)
+# 실측 단계는 업체 요청 상태로 나눠 그 상태 업체 이름과 말한다(위에서부터 처음 맞는 것): 고객 차례(반나절 고르기)
+# → 정해진 실측 → 업체 수락 기다림 → 기간 답 기다림. QA r6 c3 M6 · c1: 한 곳은 실측이 잡혔는데 답 기다림이 먼저라
+# '업체가 실측 기간을 답하기를 기다리는 중'이라고 했어요. {names}는 그 상태 업체 이름(' · '로 이음)
 NOW_VISIT = (
-    (("offered", "proposed"), "지금은 업체가 답한 기간에서 실측 시간을 고를 차례예요."),
-    (("requested",), "지금은 업체가 실측 기간을 답하기를 기다리는 중이에요."),
-    (("picked",), "지금은 고른 실측 시간에 업체가 답하기를 기다리는 중이에요."),
-    (("booked", "visited"), "지금은 실측과 실측 견적서를 기다리는 중이에요."),
+    (("offered", "proposed"), "지금은 {names} 실측 시간을 고를 차례예요."),
+    (("booked", "visited"), "지금은 {names} 실측과 실측 견적서를 기다리는 중이에요."),
+    (("picked",), "지금은 {names} 실측 시간 수락을 기다리는 중이에요."),
+    (("requested",), "지금은 {names} 실측 기간 답을 기다리는 중이에요."),
 )
 # 돈 질문(비싸요 · 바가지 · 빠진 것, 리드 결정 2 · QA 3차 f1 8 · f1x 9): 정해 둔 글만으로 끝내지 않고 계산 사실을
 # 넣어요. 화난 말 · '왜 비싸요'엔 공감 한마디, 받은 견적서가 있으면 견적서끼리 다른 포함 칸(빠진 줄), 없으면 표준견적서에서
@@ -664,8 +666,11 @@ def now_of(o) -> str:
     tr = next((t for t in o.trades if t.trade == "dobae"), o.trades[0] if o.trades else None)
     key = next((x.key for x in tr.steps if x.state == "now"), "house") if tr else "house"
     if key == "visit":
-        live = {v.status for v in o.vendors if v.status not in cards.ENDED}
-        return next((line for sts, line in NOW_VISIT if live & set(sts)), NOW["visit"])
+        live = [v for v in o.vendors if v.status not in cards.ENDED]
+        for sts, line in NOW_VISIT:
+            if names := list(dict.fromkeys(v.vendor_name for v in live if v.status in sts)):
+                return line.format(names=" · ".join(names))
+        return NOW["visit"]
     return NOW.get(key, "")
 
 
@@ -714,19 +719,22 @@ async def guard(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     return join(head, await now_tail(tc)), ToolOut(data={})
 
 
-# 지금 할 일 한 줄들(상태마다 하나). 상태가 그대로면 같은 줄을 다시 붙이지 않는다(QA 3차 f1 9~15: 일곱 턴 이어짐)
-NOW_LINES = frozenset((*NOW.values(), *(line for _, line in NOW_VISIT), NOW_NONE, VENDOR_NOW))
+# 지금 할 일 한 줄들(상태마다 하나, 실측 줄은 업체 이름 자리가 있는 틀). 상태가 그대로면 같은 줄을 다시 붙이지 않는다
+# (QA 3차 f1 9~15: 일곱 턴 이어짐)
+NOW_LINES = (*NOW.values(), *(line for _, line in NOW_VISIT), NOW_NONE, VENDOR_NOW)
+NOW_RX = tuple(
+    re.compile(re.escape(line).replace(re.escape("{names}"), r"\S.*?")) for line in NOW_LINES
+)
 
 
 def now_said(now: str, recent: list[str]) -> bool:
-    """지금 할 일 줄을 가장 최근에 붙인 답이 같은 줄이었는지(그 뒤로 상태가 그대로). 처음이거나 상태가 바뀌었으면
-    False(붙인다)."""
+    """지금 할 일 줄을 가장 최근에 붙인 답이 같은 줄이었는지(그 뒤로 상태 · 그 상태 업체가 그대로). 처음이거나 상태가
+    바뀌었으면 False(붙인다)."""
     if not now:
         return False
     for x in reversed(recent):
-        hit = [line for line in NOW_LINES if line and line in x]
-        if hit:
-            return now in hit
+        if any(rx.search(x) for rx in NOW_RX):
+            return now in x
     return False
 
 

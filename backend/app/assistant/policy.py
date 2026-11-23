@@ -218,11 +218,13 @@ BUTTONS: dict[str, frozenset[str]] = {
 
 def buttons_of(kind: str, data: dict) -> frozenset[str]:
     """화면 카드 단추가 만드는 행동 종류. 공사 날짜 카드는 수락 단추(proposal_ref)가 있을 때만, 벽지 견주기 카드는
-    벽지를 바꿀 수 있을 때(can_change)만."""
+    벽지를 바꿀 수 있을 때(can_change)만. 화면 링크 단추가 있는 답 카드는 'link'(누르라는 말이 맞다)."""
     if kind == "schedule" and not data.get("proposal_ref"):
         return frozenset()
     if kind == "grade_compare" and not data.get("can_change"):
         return frozenset()
+    if kind == "answer" and data.get("links"):  # 화면으로 가는 단추(리뷰 쓰기 등, QA r6 c4 4)
+        return frozenset({"link"})
     return BUTTONS.get(kind, frozenset())
 
 

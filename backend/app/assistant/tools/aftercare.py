@@ -23,11 +23,13 @@ from app.assistant import policy
 from app.assistant.schemas import (
     ActionSummary,
     AmountRow,
+    AnswerData,
     CardOut,
     CheckItem,
     DiffOut,
     ExtraData,
     KnowledgeData,
+    LinkOut,
     NoticeData,
     SummaryRow,
 )
@@ -108,6 +110,24 @@ async def deal_of(s: AsyncSession, user: User, pid: uuid.UUID, deal_id: uuid.UUI
 def review_said(deals, ended: dict) -> list[str]:
     """끝난 공사 중 아직 리뷰를 안 쓴 공사가 있으면 리뷰 안내 한 줄(QA 2차 t1 X4: 자동으로 끝난 뒤 리뷰 안내 없음)."""
     return [REVIEW_SAID] if any(d.review_open for d in deals if d.id in ended) else []
+
+
+REVIEW_HREF = "/projects/{pid}/review"
+REVIEW_LABEL = "리뷰 쓰기"
+REVIEW_MODEL = "리뷰는 카드의 [리뷰 쓰기] 단추(공사 화면의 리뷰 쓰기)에서 써요"
+
+
+def review_card(pid: uuid.UUID, deals) -> CardOut | None:
+    """끝난 공사 중 아직 리뷰를 안 쓴 공사가 있으면 리뷰 쓰기 화면 단추 카드(QA r6 c4 4: '리뷰는 어디서 써요?'에 위치를
+    모름, 링크가 끝 확인 승인 결과에만 있었어요). 없으면 None."""
+    if not any(getattr(d, "review_open", False) for d in deals):
+        return None
+    data = AnswerData(
+        text=REVIEW_SAID,
+        src="guide",
+        links=[LinkOut(label=REVIEW_LABEL, href=REVIEW_HREF.format(pid=pid))],
+    )
+    return CardOut(card_id=f"review-{pid}", kind="answer", data=data.model_dump(mode="json"))
 
 
 def auto_line(d) -> str | None:
@@ -785,8 +805,9 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
         elif a.stage == "before" and d.status == "scheduled" and d.start_date:
             if d.start_date > tc.today:
                 lines.append(f"{trade_ko(d.trade)} 공사가 {ko_day(d.start_date)}에 시작해요.")
-    # 끝난 공사에 리뷰를 쓸 수 있으면 리뷰 안내 한 줄(QA 2차 t1 X4)
+    # 끝난 공사에 리뷰를 쓸 수 있으면 리뷰 안내 한 줄(QA 2차 t1 X4) + 리뷰 쓰기 단추 카드(QA r6 c4 4)
     lines += review_said([t.deal for t in sch.trades], ended)
+    review = review_card(pid, [t.deal for t in sch.trades if t.deal.id in ended])
     card = check_card(f"{a.stage}-{pid}", a.stage, [a.trade], [*lines, *more], extra, home)
     model = {
         "title": card.data["title"],
@@ -796,7 +817,9 @@ async def check_list(tc: ToolCtx, a: CheckListIn) -> ToolOut:
         "source": card.data["source"],
         "deals": deals,
     }
-    return ToolOut(data=model, cards=[card])
+    if review is not None:  # 리뷰 쓰는 곳은 카드의 [리뷰 쓰기] 단추예요
+        model["note"] = REVIEW_MODEL
+    return ToolOut(data=model, cards=[card, *([review] if review else [])])
 
 
 @tool(
@@ -1094,7 +1117,9 @@ async def _free_work(
         trades = [t.deal.trade for t in sch.trades] or ["dobae"]
         card = check_card(f"after-{pid}", "after", trades, [])
         lines = [*list(ended.values())[:2], *review_said([t.deal for t in sch.trades], ended)]
-        return " ".join(lines) or NO_CHECKING, ToolOut(data={}, cards=[card])  # 세 문장 안
+        review = review_card(pid, [t.deal for t in sch.trades if t.deal.id in ended])
+        got = [card, *([review] if review else [])]
+        return " ".join(lines) or NO_CHECKING, ToolOut(data={}, cards=got)  # 세 문장 안
     d = checking[0]
     card = done_card(d, pid, tc.refs)
     note = " ".join(text.split())[:300] if fix else None

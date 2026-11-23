@@ -2,13 +2,15 @@
 
 - 읽기 도구는 기능 service 공개 함수를 부르고, 결과는 runtime이 policy.to_model을 지나 모델에 보낸다.
 - 제안 도구는 대기 행동 행만 만든다(actions.propose). 실행은 사람이 승인한 뒤 actions.execute가 한다.
+  제안 도구마다 asked_again 칸이 붙는다(ASKED_AGAIN): 고객이 이번 턴 말로 거절 · 거둔 같은 제안을 다시 해 달라고
+  했는지는 모델이 정하고, 코드는 이번 턴 고객 말이 있는지와 같은 제안인지만 본다(propose._offer · actions.offer).
 - 도구마다 DB 세션을 짧게 열고 닫는다(LLM을 기다리는 동안 세션을 쥐지 않는다).
 - 정의는 이름순으로 고정한다(프롬프트 캐시 앞부분이 바뀌지 않게). 입력은 strict 스키마 + pydantic 검사.
 """
 
 import uuid
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -48,6 +50,9 @@ class ToolCtx:
     text: str = ""  # 이번 턴 고객 글(가린 것). 고객 말에서만 받는 칸(공사 끝 남은 일)을 견준다
     # 이 턴에 도구가 남긴 표시(턴마다 새 ToolCtx). 같은 고르기 칩을 한 턴에 되풀이하지 않게(QA r4 s1 C1)
     marks: set[str] = field(default_factory=set)
+    # 이 제안 도구 부름의 asked_again(모델이 정함: 고객이 이번 턴 말로 거절 · 거둔 같은 제안을 다시 해 달라고 함).
+    # 부름마다 run이 넣는다(같은 턴의 다른 부름에 넘어가지 않게)
+    asked_again: bool = False
 
 
 @dataclass
@@ -76,6 +81,21 @@ class Tool:
 
 REGISTRY: dict[str, Tool] = {}
 
+# 제안 도구마다 붙는 칸(QA r6 c1 H2: 거절 직후 '아 그냥 그거 다시 해 줘'를 낱말 규칙이 못 읽어 막음, 카드 단추로는 바로
+# 다시 만들어져 말과 어긋남). 다시 해 달라는 뜻인지는 모델이 고객 말로 정하고, 코드는 이번 턴 고객 말이 있는지와 거절한
+# 같은 제안인지만 본다(propose.fresh). 켜도 승인 카드를 만들 뿐 실행은 고객이 눌러야 한다(고정 선 1)
+ASKED_AGAIN = "asked_again"
+ASKED_AGAIN_DEF = {
+    "type": "boolean",
+    "description": "고객이 이번 턴 말로, 거절했거나 거둔 같은 제안을 다시 해 달라고 했으면 true(예: '아까 그거 다시 해 "
+    "줘' · '실수로 거절했어요, 다시요'). 비서가 스스로 다시 권하는 것이면 false예요. 켜도 카드는 고객이 눌러야 실행돼요",
+}
+
+
+def with_again(schema: dict) -> dict:
+    """제안 도구 입력 스키마에 asked_again 칸을 더한다(고르지 않아도 되는 칸, required는 그대로)."""
+    return {**schema, "properties": {**schema.get("properties", {}), ASKED_AGAIN: ASKED_AGAIN_DEF}}
+
 
 def tool(
     name: str,
@@ -90,7 +110,8 @@ def tool(
     def deco(fn: Runner) -> Runner:
         if name in REGISTRY:
             raise ValueError(f"도구 이름이 겹쳐요: {name}")
-        REGISTRY[name] = Tool(name, surface, kind, description, schema, model, status, fn)
+        got = with_again(schema) if kind == "propose" else schema
+        REGISTRY[name] = Tool(name, surface, kind, description, got, model, status, fn)
         return fn
 
     return deco
@@ -147,12 +168,15 @@ def input_hint(e: ValidationError) -> str:
 
 
 async def run(t: Tool, tc: ToolCtx, args: Any) -> ToolOut:
-    """입력을 검사하고(틀리면 bad_input) 도구를 부른다."""
+    """입력을 검사하고(틀리면 bad_input) 도구를 부른다. 제안 도구의 asked_again은 떼어 이 부름의 ToolCtx에 넣는다
+    (참일 때만 켠다, 도구 입력 모델은 모른다)."""
+    raw = dict(args) if isinstance(args, dict) else {}
+    again = raw.pop(ASKED_AGAIN, None) is True and t.kind == "propose"
     try:
-        parsed = t.model.model_validate(args if isinstance(args, dict) else {})
+        parsed = t.model.model_validate(raw)
     except ValidationError as e:
         raise ToolError("bad_input", "도구 입력이 맞지 않아요.", hint=input_hint(e)) from e
-    return await t.run(tc, parsed)
+    return await t.run(replace(tc, asked_again=again), parsed)
 
 
 # 도구 모듈을 불러 REGISTRY를 채운다(정의 순서와 상관없이 defs는 이름순)

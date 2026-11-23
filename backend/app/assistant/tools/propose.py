@@ -4,7 +4,9 @@
 - 제안할 수 없는 상태(잠김 · 견적서 없음 · 겹침 …)는 도구 오류로 돌려준다(행을 만들지 않음).
 - 같은 대상의 열린 제안은 하나(서로 바꾸는 묶음, actions.swap_kinds): 새로 만들면 옛 것은 만료(replaced)되고 그
   action 이벤트도 보낸다. 같은 제안이 열려 있으면 그 행을 쓰고(state same), 고객이 거절한 같은 제안이면 오류 대신 모델
-  값으로 알린다(state rejected). 단, 사람이 이번 턴에 분명히 해 달라고 했으면(asks_again) 새 결정으로 보고 만든다.
+  값으로 알린다(state rejected). 단, 사람이 새로 정한 제안은 만든다(fresh): 카드 단추로 고름, 또는 LLM 턴에서 모델이
+  asked_again(고객이 이번 턴 말로 다시 해 달라고 함)을 켜고 이번 턴 고객 말이 있음. 말뜻은 모델이 읽고 코드는 낱말을 보지
+  않는다(QA r6 c1 H2, docs/v4/08-rules.md 리드 결정 11-24).
 - 승인 카드 글의 날짜는 한국어 글이다: 비서도 읽는 제목 · 오류 글은 긴 꼴(cards.md_long · long_range, 문장 숫자
   검사가 월 · 일을 보게), 요약 줄 · 판 글은 짧은 꼴(md_week · md_range). payload(실행할 값)는 ISO 날짜 그대로다.
 """
@@ -78,34 +80,23 @@ def summary_rows(sm: ActionSummary) -> list[dict]:
     return rows
 
 
-# 이번 턴에 사람이 분명히 해 달라고 한 말: 하는 말(저장 · 바꿔 · 요청 · 수락 …) 뒤에 부탁 · 다짐 끝말(주세요 · 줘 ·
-# 부탁 · 할게요 …), 또는 '…로 해 주세요'. 하지 말라는 말은 빼요. 거절한 제안을 다시 만들 새 결정으로 본다
-ASK_DO = re.compile(
-    r"(?:저장|바꿔|바꾸어|변경|수정|고쳐|반영|적용|넣어|빼|만들어|요청|보내|수락|확정|진행|미뤄|당겨|옮겨|골라|"
-    r"잡아|승인|거절|답해|올려|취소|그걸로|그것으로|이걸로|이것으로|그대로|그렇게|직접)"
-    r"\S{0,3}\s{0,2}(?:좀\s{0,2})?(?:해\s{0,2})?"
-    r"(?:주세요|주십시오|주실래요|주시겠어요|주실\s{0,2}수\s{0,2}있|줘요|줘|주라|줄래요|줄래|부탁|할게요|할께요|"
-    r"할래요|하겠습니다)"
-    r"|로\s{0,2}(?:해|바꿔)\s{0,2}(?:주세요|주십시오|주실래요|주시겠어요|줘요|줘|주라|줄래요|줄래)"
-)
-NOT_DO = re.compile(
-    r"(?:하|되)?지\s{0,2}(?:마|말)|안\s{0,2}(?:해도|하셔도)|필요\s{0,2}없|그만\s{0,2}(?:해|두)"
-)
-
-
-def asks_again(text: str) -> bool:
-    """사람이 이번 턴 말로 분명히 해 달라고 했는지('32평 맞아요. 저장해 주세요'). 거절 막기는 먼저 말 걸기 · 비서가
-    스스로 낸 제안에만 걸고, 이렇게 새로 부탁한 턴에는 거절한 같은 제안도 다시 만든다(계약서 '거절한 것을 다시 밀지
-    않는다'의 예외: 사람이 새로 정함)."""
-    t = text or ""
-    return bool(ASK_DO.search(t)) and not NOT_DO.search(t)
+def fresh(tc: ToolCtx) -> bool:
+    """사람이 새로 정한 제안인지(거절 · 거둔 같은 제안도 다시 만든다): 카드 단추로 고름(pressed), 또는 LLM 턴에서
+    모델이 asked_again을 켜고 이번 턴 고객 말이 있음. 말뜻은 모델이 읽는다(QA r6 c1 H2: '아 그냥 그거 다시 해 줘' ·
+    '실수로 거절했어요 다시 해 줘요'를 낱말 규칙 ASK_DO가 못 읽어 막음, 카드 단추로는 바로 다시 만들어졌다). 먼저 말
+    걸기 · 비서가 스스로 낸 제안(고객 말 없음) · 무료 모드(모델 없음)는 거절한 같은 제안을 다시 밀지 않는다. 같은 제안인지는
+    actions.offer가 본다(거절한 행과 대상 판 · 값 · 금액이 같을 때만 막으니, 다른 제안은 켜지 않아도 새로 만든다)."""
+    if tc.pressed:
+        return True
+    return tc.mode == "llm" and tc.asked_again and bool((tc.text or "").strip())
 
 
 def rejected_note(surface: str) -> str:
-    who = "고객이" if surface == "customer" else "업체가"
+    who = "고객" if surface == "customer" else "업체"
     return (
-        f"{who} 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. 다시 원하면 카드 단추로 직접 "
-        "고르거나 해 달라고 분명히 말해 달라고 안내해요(그렇게 말한 턴에는 새로 만들어요)."
+        f"{who}이 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. 이번 턴 {who} 말이 거절 · 거둔 "
+        "이 제안을 다시 해 달라는 뜻이면 같은 도구를 asked_again=true로 다시 불러요(새 승인 카드를 만들어요, 누르기 전엔 "
+        "실행되지 않아요). 그런 뜻이 아니면 다시 밀지 말고, 카드 단추로 직접 고를 수 있다고만 알려요."
     )
 
 
@@ -133,10 +124,8 @@ def _show(key: str, v) -> str:
 
 async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
     """행동 행을 만들고 commit한다. (도구 결과, 모델용 요약). 새 행 · 열린 같은 행만 승인 카드(action)로 보내고,
-    거절한 같은 제안 · 닫힌 행은 보내지 않는다(모델 값 state · note로만 알림). 사람이 새로 정한 제안(카드 단추 ·
-    LLM 턴에서 분명히 해 달라고 한 말)은 거절한 같은 제안도 다시 만든다. 무료 모드는 낱말 규칙이 말을 잘못 읽을 수
-    있어 말로는 다시 만들지 않는다."""
-    fresh = tc.pressed or (tc.mode == "llm" and asks_again(tc.text))
+    거절한 같은 제안 · 닫힌 행은 보내지 않는다(모델 값 state · note로만 알림). 사람이 새로 정한 제안(fresh: 카드 단추 ·
+    LLM 턴의 asked_again + 이번 턴 고객 말)은 거절한 같은 제안도 다시 만든다. 무료 모드는 말로는 다시 만들지 않는다."""
     async with SessionLocal() as s:
         got = await actions.offer(
             s,
@@ -144,7 +133,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
             surface=tc.surface,
             now=tc.now,
             turn_id=tc.turn_id,
-            pressed=fresh,
+            pressed=fresh(tc),
             **kw,
         )
         await s.commit()
@@ -527,7 +516,8 @@ def estimate_row(paper_note: str | None) -> SummaryRow:
     surface="customer",
     kind="propose",
     status="실측 요청을 준비하고 있어요",
-    description="고른 업체(v1…, 1~3곳)에 보낼 실측 요청을 승인 카드로 만들어요. 희망 기간은 wish_ref(r1…)이고, "
+    description="고른 업체(v1…, 1~3곳)에 보낼 실측 요청을 승인 카드로 만들어요. 업체 이름표는 recommend_vendors "
+    "결과나 턴 사실 '담은 업체' 줄(업체 보기에서 고객이 담은 곳)의 v…예요. 희망 기간은 wish_ref(r1…)이고, "
     "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
     "빈 목록으로 두고 pick=top으로 불러요: 믿집 점수 1위 업체를 믿집이 넣고, 결과의 why가 까닭이에요(따로 고르지 "
     "않아요). 요청은 집 지역 업체에만 보낼 수 있어요.",
@@ -679,6 +669,10 @@ def slot_offer(v, slot: dict) -> dict:
     }
 
 
+SLOT_CLASH = "같은 반나절에 다른 업체 실측이 잡혀 있거나 그 시간 카드가 열려 있어요."
+SLOT_CLASH_HINT = "그 요청의 vendor_free_slots(ref m…)를 다시 불러요. 다른 업체가 잡았거나 열린 카드로 고른 반나절은 빠진 후보가 와요"
+
+
 @tool(
     "propose_visit_slot",
     surface="customer",
@@ -689,6 +683,7 @@ def slot_offer(v, slot: dict) -> dict:
     schema=obj({"slot_ref": REF}),
 )
 async def propose_visit_slot(tc: ToolCtx, a: SlotIn) -> ToolOut:
+    from app.assistant import repository as repo
     from app.visit import service as visit_service
 
     pid = pid_of(tc)
@@ -696,6 +691,11 @@ async def propose_visit_slot(tc: ToolCtx, a: SlotIn) -> ToolOut:
     visit_id = uuid.UUID(slot["visit_id"])
     async with SessionLocal() as s:
         v = await visit_service.pick_view(s, tc.user, pid, visit_id, tc.now)
+        other = await repo.open_slot_halves(s, tc.user.id, pid, visit_id)
+    # 같은 집 다른 업체가 잡았거나 열린 카드로 고른 반나절이면 카드를 만들지 않는다(누르면 409 slot_clash, QA r6 c4 1)
+    half = (date.fromisoformat(slot["day"]), slot["half"])
+    if half in other | {(m.day, m.half) for m in v.mine}:
+        raise ToolError("slot_clash", SLOT_CLASH, hint=SLOT_CLASH_HINT)
     got = slot_offer(v, slot)
     out, _ = await _offer(tc, project_id=pid, **got)
     if out.actions:  # 누른 뒤 일: 바로 확정인지 업체 수락을 기다리는지(QA r3 s4 6턴 '정해졌어요')

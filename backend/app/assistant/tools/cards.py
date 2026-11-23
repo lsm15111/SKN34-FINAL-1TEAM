@@ -777,6 +777,31 @@ def estimate_range(picks: list[VendorPick]) -> dict:
     return {"estimate_low_won": min(wons), "estimate_high_won": max(wons)}
 
 
+# 추천할 곳이 0곳인 까닭(모델 값 why). 0곳이면 카드를 보내지 않는다(QA r6 c3 H1: 빈 추천 카드를 다섯 번 내고 '두 업체
+# 카드를 다시 보여 드렸어요'라고 함). 까닭은 고를 수 있던 업체(단가 확인)를 무엇이 뺐는지로 나눈다
+NONE_AREA = "{area}에는 믿집이 단가를 확인한 {trade} 업체가 아직 없어요"
+NONE_LIVE = "고를 수 있는 업체 중 {names}에는 이미 실측을 요청해 진행 중이에요"
+NONE_OUT = "이 공사에서 빠진 업체({names})는 다시 추천하지 않아요(못 받음 · 답 없음 · 멈춤)"
+NONE_ASKED = "이미 요청하거나 확정한 업체({names})는 뺐어요"
+
+
+def none_why(ok: list, live: set, out: set, asked: set, area: str, trade: str) -> list[str]:
+    """0곳 까닭(모델 값 why): 단가를 확인한 업체(ok)가 없으면 지역에 없음, 있으면 뺀 까닭(진행 중 · 빠짐 · 이미 요청)."""
+    if not ok:
+        return [NONE_AREA.format(area=area, trade=TRADE.get(trade, trade))]
+    names = {c.vendor_id: c.name for c in ok}
+
+    def of(ids: set) -> str:
+        return " · ".join(sorted(names[v] for v in ids if v in names))
+
+    got = [
+        rx.format(names=n)
+        for rx, ids in ((NONE_LIVE, live), (NONE_OUT, out - live), (NONE_ASKED, asked - live - out))
+        if (n := of(ids))
+    ]
+    return got or [NONE_AREA.format(area=area, trade=TRADE.get(trade, trade))]
+
+
 async def vendor_picks(
     s: AsyncSession,
     user: User,
@@ -788,14 +813,17 @@ async def vendor_picks(
     """업체 고르기 화면과 같은 카드에서 계산 엔진 점수로 3곳(calc.vendor_pick). 사유는 틀 글(표준 대비 % 뗌).
     exclude: 고르지 않을 업체(07 업체가 빠짐: 이미 요청 · 확정한 업체). 이 공사에서 빠진 업체(못 받음 · 무응답 ·
     멈춤)와 이미 실측을 요청해 진행 중인 업체는 늘 뺀다(다시 [실측 요청] 단추로 넣지 않게, 진행 중인 업체는 모델 값
-    note로 알린다). 열린 실측 요청 승인 카드에 든 업체는 모델 값에 proposed로 알린다(새로 만들지 않게)."""
+    note로 알린다). 열린 실측 요청 승인 카드에 든 업체는 모델 값에 proposed로 알린다(새로 만들지 않게).
+    0곳이면 모델 값 why에 까닭을 넣는다. 빈 카드는 부르는 쪽이 보내지 않는다(QA r6 c3 H1)."""
     from app.assistant import aftercare
     from app.assistant import repository as repo
     from app.calc import vendor_pick
     from app.visit import service as visit_service
 
     live = {v for _p, t, v in await repo.live_visits(s, [pid]) if t == trade and v is not None}
-    exclude = exclude | live | await aftercare.out_vendors(s, pid, trade)
+    out_ids = await aftercare.out_vendors(s, pid, trade)
+    asked = set(exclude)
+    exclude = exclude | live | out_ids
     opened = [
         a
         for a in await repo.open_on(s, user.id, "project", pid)
@@ -883,6 +911,9 @@ async def vendor_picks(
         notes.append(f"{' · '.join(going)}에는 이미 실측을 요청해 진행 중이라 추천에서 뺐어요.")
     if notes:
         model["note"] = " ".join(notes)
+    if not picks:
+        ok = [c for c in (*lst.local, *lst.nearby) if c.state == "ok"]
+        model["why"] = none_why(ok, live, out_ids, asked, lst.area_name, trade)
     return card, model
 
 
@@ -973,14 +1004,19 @@ async def visit_slots(
 ) -> tuple[CardOut, dict]:
     """요청 뒤: 날짜 고르기 화면(pick_view)의 열린 반나절 → calc.slots.candidates → s1~s3.
     업체가 다른 날을 냈으면(proposed) 그 날들이 후보다(고르면 바로 확정). skip(이미 보인 반나절, 비서 '다른 시간')은
-    업체 기간 후보에서 뺀다."""
+    업체 기간 후보에서 뺀다. 같은 집 다른 업체 실측이 잡은 반나절과 다른 요청의 열린 실측 시간 카드가 고른 반나절도
+    뺀다(QA r6 c4 1: '두 업체 다 토요일로'에 두 카드 모두 11.28 오전, 둘째 승인이 409 slot_clash)."""
+    from app.assistant import repository as repo
     from app.calc import slots
     from app.refprice.holidays import days_off
     from app.visit import service as visit_service
 
     v = await visit_service.pick_view(s, user, pid, visit_id, now)
     today = visit_service.today_of(now)
-    taken = {(m.day, m.half) for m in v.mine}  # 같은 집 다른 업체 실측이 잡은 반나절은 빼요(P8)
+    # 같은 집 다른 업체 실측이 잡은 반나절(P8) · 다른 요청의 열린 실측 시간 카드가 고른 반나절은 빼요
+    taken = {(m.day, m.half) for m in v.mine} | await repo.open_slot_halves(
+        s, user.id, pid, visit_id
+    )
     picks: list[tuple[date, str, list[str], str]] = []
     if v.status == "proposed" and v.proposal is not None:
         for x in [x for x in v.proposal.slots if slots.free_at_home(x.day, x.half, taken)][:3]:
@@ -1033,7 +1069,15 @@ async def visit_slots(
         ],
         "vendor_note": data.vendor_note is not None,  # 업체 글은 카드 칸에만(모델에는 있는지만)
     }
+    if taken:  # 나눈 까닭을 한 줄로 말할 수 있게(같은 반나절에 두 업체를 잡을 수 없어요)
+        model["note"] = SLOT_SPLIT
     return card, model
+
+
+SLOT_SPLIT = (
+    "같은 집의 다른 업체 실측(잡힌 시간 · 열린 실측 시간 카드)과 같은 반나절은 후보에 넣지 않아요. 같은 반나절에 두 "
+    "업체 실측을 잡을 수 없어요."
+)
 
 
 # ---- 견적서 비교 ----
@@ -1464,6 +1508,16 @@ def visit_task(pid: uuid.UUID, o, now: datetime) -> "TaskOut | None":
         at=now,
         rows=rows,
         link=LinkOut(label="실측 일정 보기", href=href(pid, "/visits")),
+    )
+
+
+def visits_next(o) -> str | None:
+    """진행 중인 실측 요청의 다음 일(업체마다, 고객 차례 먼저): '결도배 날짜 고를 차례 · 마루와벽 답 기다림'.
+    공사 요약(schedule.overview_for)의 vendors 그대로. 진행 중인 요청이 없으면 None."""
+    live = [v for v in o.vendors if v.status not in ENDED and v.next.kind != "none"]
+    live.sort(key=lambda v: v.next.who != "customer")  # 고객 차례 먼저(같으면 요청한 순)
+    return (
+        " · ".join(f"{v.vendor_name} {NEXT_TEXT.get(v.next.kind, '진행 중')}" for v in live) or None
     )
 
 

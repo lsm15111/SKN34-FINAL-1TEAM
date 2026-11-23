@@ -27,7 +27,7 @@ import re
 import time
 import uuid
 from collections import Counter
-from collections.abc import Awaitable, Callable, Collection
+from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from typing import ClassVar
@@ -94,6 +94,8 @@ BEAT_EVERY = 10.0  # heartbeat를 이보다 자주 쓰지 않는다(초)
 TOOL_MIN = 5.0
 DROPPED_MAX = 12  # 흔적(trace)에 남기는 버린 문장 까닭 수
 MADE_NOW = "이번 턴에 승인 카드를 만들었어요. 사람이 카드 버튼을 눌러야 실행돼요."
+# 이 턴에 똑같이 보낸 카드를 도구가 다시 냈을 때 모델 값 note에 붙이는 말(카드는 다시 보내지 않는다)
+SAME_CARD = "같은 카드를 이번 턴에 이미 보였어요(다시 보내지 않았어요)."
 # 문장 끝: 마침표 · 물음표 · 느낌표 뒤 빈칸, 또는 줄 바꿈('필요 없어요'의 '요 '는 끝으로 보지 않는다). 목록 번호(줄
 # 머리 · 빈칸 뒤 한두 자리 수 + 점, '1. ')는 문장 끝이 아니다(고침 3차 A2 결정 2, QA r3 c5 19턴 '2.'에서 끊김)
 SENT_END = re.compile(r"(?<!\s\d\.)(?<!\s\d\d\.)(?<!^\d\.)(?<!^\d\d\.)(?<=[.!?。])[ \t]+|\n+")
@@ -377,6 +379,17 @@ def recent_said(history: list[dict], turns: int = policy.REPEAT_TURNS) -> list[s
     return out
 
 
+# 되풀이로 빠질 다음 할 일 문장을 살리는 한도: 같은 안내가 바로 앞 두 답에 다 있었으면(세 번째 연속) 살리지 않는다
+# (QA r4 c5 9~12턴 '열린 카드 안내 네 턴 연속'과 QA r6 c3 t19 '다음 할 일 없이 끝남'을 같이 지킴)
+SPARE_RUN = 2
+
+
+def said_turns(history: list[dict], turns: int = SPARE_RUN) -> list[list[str]]:
+    """지난 비서 답 turns개의 문장들(답마다, 가장 가까운 답부터). 카드만 보낸 턴은 빈 목록."""
+    said = [m.get("content") for m in history if m.get("role") == "assistant"][-turns:]
+    return [recent_said([{"role": "assistant", "content": t}], 1) for t in reversed(said)]
+
+
 def told_before(history: list[dict], turns: int = TOLD_TURNS) -> str:
     """지난 비서 말 turns개(가장 가까운 것부터 셈)의 글: 이미 검사를 지나 보낸 글이라 숫자 근거다(앞 턴에 말한 가견적을
     '만 원 단위로'처럼 다시 말할 수 있게, QA r5 C s5-4). 카드만 보낸 턴의 기록 글은 세기만 한다. 대화 기록은 최근
@@ -549,7 +562,9 @@ class SentenceGate:
     권유 · 묻는 말 · 약속(policy.guide · near_same), 같은 카드 · 채팅 · 약속을 새 대상 없이 다시 가리키는 안내
     (policy.same_aim, 대상 이름은 names)는 뺀다. 첫 문장 · 이 턴에 만든 카드와 보인 카드 단추를 가리키는 말 · 지난 일 ·
     묶음 안 문장은 두고, 그 문장뿐이면 둔다. 고객이 금액 · 날짜를 물은 턴(asked 'fact')은 숫자가 든 사실 답을, 카드 ·
-    할 일을 물은 턴('how')은 같은 카드 안내도 둔다.
+    할 일을 물은 턴('how')은 같은 카드 안내도 둔다. 되풀이로 뺀 다음 할 일 문장(policy.points: 카드 · 채팅 · 누를 것)은
+    한 문장만 남겨 뒀다가, 턴 끝에 답에 다른 다음 할 일 · 묻는 말이 없고 이 턴에 만든 · 보인 카드 단추도 없으면 끝에
+    살린다(QA r6 c3 t19: [채팅] 안내가 '지난 턴과 같은 안내'로 빠져 상태 문장만 남음).
     본문이 빠짐: 검사 · 묶음으로 답의 본문이 빠져 보낸 글이 없거나 가리키는 말뿐이면 턴 끝(mend)에 정직한 한 줄을 보낸다."""
 
     def __init__(
@@ -562,6 +577,7 @@ class SentenceGate:
         long_ok: bool = False,
         names: Collection[str] = (),
         asked: Collection[str] = (),
+        turns: Sequence[Collection[str]] | None = None,
     ) -> None:
         self._emit = emit
         self._prompt = prompt  # 누출 견주기 글(prompts.rules: 지시문의 규칙 절만)
@@ -594,6 +610,10 @@ class SentenceGate:
         self.asked = frozenset(asked)  # 이 턴 고객 말이 묻는 것(policy.asked: fact · how)
         self._gone = 0  # 검사 · 묶음으로 빠진 본문 문장 수(외국어 속말 · 한자는 세지 않는다)
         self._back = False  # 바로 앞 문장이 내용 까닭으로 빠졌다(되가리키는 다음 문장도 뺀다)
+        # 되풀이로 뺀 다음 할 일 문장(마지막 하나): 답에 다른 다음 할 일이 없으면 턴 끝에 살린다(settle)
+        self._spare: _Piece | None = None
+        # 바로 앞 비서 답들의 문장(답마다, 가까운 것부터, SPARE_RUN개). 주지 않으면 said 하나를 바로 앞 답으로 본다
+        self.turns = [list(t) for t in turns] if turns is not None else [self.said]
 
     @property
     def text(self) -> str:
@@ -662,6 +682,7 @@ class SentenceGate:
             self._last_row,
             self._gone,
             self._back,
+            self._spare,
         )
         return len(self._out), keep, len(self.dropped), self.cut
 
@@ -684,6 +705,7 @@ class SentenceGate:
             self._last_row,
             self._gone,
             self._back,
+            self._spare,
         ) = keep
         del self.dropped[dropped:]
         self.cut = cut
@@ -860,19 +882,26 @@ class SentenceGate:
         # 카드 종류를 읽을 수 있는 안내('실측 시간 카드가 열려 있어요')
         return bool(policy.aims(text) & new)
 
-    def _repeat(self, text: str) -> bool:
+    def _repeat(self, text: str, said: Collection[str] | None = None) -> bool:
         """지난 비서 턴에 보낸 안내 · 권유 · 묻는 말 · 약속과 거의 같은 문장, 같은 카드 · 채팅 · 약속을 새 대상 없이 다시
         가리키는 안내(고침 4차 G, QA r4 c5 9~12턴 · c1 8~10턴). 새 안내(이 턴 카드) · 지난 일 · 새 소식은 아니고, 고객이
-        금액 · 날짜를 물은 턴은 숫자가 든 사실 답을, 카드 · 할 일을 물은 턴은 같은 카드 안내를 둔다."""
+        금액 · 날짜를 물은 턴은 숫자가 든 사실 답을, 카드 · 할 일을 물은 턴은 같은 카드 안내를 둔다. said를 주면 그
+        문장들과만 견준다(답 하나)."""
+        said = self.said if said is None else said
         if self._fresh(text) or not policy.guide(text, numbers=not self.asked):
             return False
-        if any(policy.near_same(text, x) for x in self.said):
+        if any(policy.near_same(text, x) for x in said):
             return True
         return (
             "how" not in self.asked
             and not policy.past(text)
-            and any(policy.same_aim(text, x, self.names) and not policy.past(x) for x in self.said)
+            and any(policy.same_aim(text, x, self.names) and not policy.past(x) for x in said)
         )
+
+    def _twice(self, text: str) -> bool:
+        """같은 안내가 바로 앞 두 답(SPARE_RUN)에 다 있었다: 살리면 세 번째 연속이다."""
+        last = self.turns[:SPARE_RUN]
+        return len(last) >= SPARE_RUN and all(self._repeat(text, t) for t in last)
 
     async def _send(self, p: _Piece) -> None:
         """검사를 지난 문장 하나를 보낸다. 이 턴에 보낸 문장과 같으면 빼고, 첫 문장이 아닌 지난 턴 안내 되풀이도 뺀다
@@ -882,10 +911,22 @@ class SentenceGate:
             self.cut += 1
             return
         if self._out and not p.member and self._repeat(p.text):
+            if policy.points(
+                p.text
+            ):  # 가리키는 다음 할 일(카드 · 채팅 · 누를 것): 다른 게 없으면 끝에 살린다(settle)
+                self._spare = p
+                return
             self.dropped.append("지난 턴과 같은 안내")
             self.cut += 1
             return
         await self._put(p.sep, p.text, p.item)
+
+    def _needs_next(self) -> bool:
+        """보낸 답에 가리키는 다음 할 일(카드 · 채팅 · 누를 것, policy.points) · 묻는 말이 없고, 이 턴에 만든 승인 카드 ·
+        보인 카드 단추도 없다. '고르지 않거나'처럼 낱말만 닮은 문장은 다음 할 일로 보지 않는다."""
+        if self.made or self.buttons:
+            return False
+        return not any(policy.points(s) or policy.asks(s) for s in self.sent)
 
     async def _put(self, sep: str, text: str, item: bool = False) -> None:
         if not self._out and self._lost:  # 앞 문장이 빠져 첫 문장이 됐다: '다만 · 대신 …'을 뗀다
@@ -936,6 +977,13 @@ class SentenceGate:
         last = self._tail()
         if last is not None:
             await self._put(last.sep, last.text)
+        # 다음 할 일이 되풀이로 뺀 이 문장뿐이면 남긴다(QA r6 c3 t19). 바로 앞 두 답에도 있었으면 세 번째라 뺀다
+        spare, self._spare = self._spare, None
+        if spare is not None and self._needs_next() and not self._twice(spare.text):
+            await self._put(spare.sep, spare.text, spare.item)
+        elif spare is not None:
+            self.dropped.append("지난 턴과 같은 안내")
+            self.cut += 1
 
     async def mend(self, cards: bool) -> None:
         """LLM 턴 끝(settle 뒤): 검사 · 묶음으로 답의 본문이 빠져 보낸 글이 없거나 가리키는 말(카드 · 단추 · 채팅 · 앞으로
@@ -1099,7 +1147,6 @@ def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
     return got is not None and got[0] != "call" and not asked_last(ctx.history)
 
 
-KNOW_TOOLS = frozenset({"answer_question", "search_knowledge"})
 # 다음 일로 이끄는 카드(집 정보 · 업체 추천 · 실측 시간 · 견적서 비교 · 공사 날짜 · 오늘 할 일 …): 이 카드가 나온 턴에는 한
 # 줄을 붙이지 않아요. 표준견적서 카드는 금액을 보여 줄 뿐 다음 할 일을 알려 주지 않아 빼요(2026-11-23 평가: 실측 · 공사
 # 단계에서 표준견적서 카드가 다음 단계 줄을 막음)
@@ -1107,17 +1154,19 @@ STEP_CARDS = frozenset(CARD_NAME) - {"knowledge", "answer", "standard_quote"}
 
 
 async def next_step(turn: "_Turn", res: TurnResult) -> str:
-    """지식 답 뒤 다음 할 일 한 줄(2026-11-23 사용자: 쓰면서 다음 흐름으로 이끌기, 지식 답 40개 중 3개만 다음 단계를
-    말함). 이번 턴이 지식 도구로 답했고, 다음 일 카드 · 승인 카드가 없고, 답이 물음으로 끝나지 않았을 때만 코드가 지금 할
-    일 줄(free.now_tail: 범위 밖 답과 같은 줄)을 붙여요. 같은 단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만)."""
+    """다음 할 일 없이 끝난 답 뒤 지금 할 일 한 줄(2026-11-23 사용자: 쓰면서 다음 흐름으로 이끌기, 지식 답 40개 중 3개만
+    다음 단계를 말함 · QA r6 c3 M8 · c1 M12: 막는 답 · 범위 밖 답 · '사람이야?' 답이 다음 할 일 없이 끝남). 답에 가리키는
+    다음 할 일(카드 · 채팅 · 누를 것, policy.points) · 묻는 말이 없고, 다음 일 카드 · 승인 카드가 없을 때 코드가 지금
+    할 일 줄(free.now_tail: 무료 · 범위 밖 답과 같은 줄)을 붙여요. 막는 답인지는 낱말로 가르지 않고 답 꼴로 봐요. 같은
+    단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만). 인사 · 고마움만 한 턴(chat_only)은 붙이지 않아요."""
     from app.assistant import free
 
     ctx = turn.ctx
-    if ctx.surface != "customer" or ctx.pressed or ctx.choice or res.actions:
-        return ""
-    if not KNOW_TOOLS & {t["name"] for t in res.tools if t.get("ok")}:
+    if ctx.surface != "customer" or ctx.pressed or ctx.choice or res.actions or turn.chat_only:
         return ""
     if STEP_CARDS & {c["kind"] for c in res.cards} or res.text.rstrip().endswith("?"):
+        return ""
+    if any(policy.points(s) or policy.asks(s) for s in turn.gate.sent):
         return ""
     try:
         line = await free.now_tail(turn.tc)
@@ -1125,6 +1174,31 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
         log.warning("다음 할 일 줄 실패 (%s)", type(e).__name__)
         return ""
     return line if line and line not in res.text else ""
+
+
+async def first_card(ctx: TurnCtx, res: TurnResult, emit: Emit) -> None:
+    """대화 첫 말에 한글이 없고(이모지 · 다른 말만) 첫 답에 카드가 없으면 오늘 정할 일 카드를 붙여요(QA r6 c3: 첫 말이
+    '🏠🔨🤯❓'면 열린 질문만 하고 이끌 카드 · 칩이 없었어요. 지시문 예시 1 '처음 인사'와 같은 꼴). 뜻을 읽을 수 있는 첫
+    말은 모델이 정해요. 정할 일 · 기다리는 일이 없으면 붙이지 않아요."""
+    from app.assistant.tools import cards
+    from app.db import SessionLocal
+
+    if ctx.surface != "customer" or ctx.project_id is None or ctx.pressed or ctx.choice:
+        return
+    if (
+        res.cards
+        or HANGUL.search(ctx.text)
+        or any(m.get("role") == "assistant" for m in ctx.history)
+    ):
+        return
+    try:
+        async with SessionLocal() as s:
+            card, _ = await cards.today(s, ctx.user, ctx.project_id, ctx.today, ctx.now, ctx.refs)
+    except Exception as e:  # noqa: BLE001 - 못 읽으면 붙이지 않아요(종류 이름만 로그)
+        log.warning("첫 답 오늘 카드 실패 (%s)", type(e).__name__)
+        return
+    if any(card.data.get(k) for k in ("todo", "waiting", "know")):
+        await send_card(res, emit, card)
 
 
 def asked_last(history: list[dict]) -> bool:
@@ -1193,6 +1267,7 @@ class _Turn:
             f"{ctx.text}\n{ctx.facts}\n{said_before}",
             made=res.made,
             said=recent_said(ctx.history),
+            turns=said_turns(ctx.history),
             # 대화 첫 답은 소개 · 첫인사라 길게 둔다(08-rules '소개 답은 예외', 상한은 LONG_*)
             long_ok=not any(m.get("role") == "assistant" for m in ctx.history),
             # 같은 카드 · 채팅인지 가리는 업체 이름(턴 사실 업체 줄 · 이 대화 이름표 표, 열린 카드 업체는 run에서 더함)
@@ -1267,6 +1342,11 @@ class _Turn:
         await send_card(self.res, self.emit, card)
         await self.gate.shown(card)
         self.done.add(card.kind)
+
+    def _sent_same(self, card: CardOut) -> bool:
+        """이 턴에 같은 카드(같은 id · 같은 값)를 이미 보냈는지."""
+        data = card.model_dump(mode="json")
+        return any(c == data for c in self.res.cards if c.get("card_id") == card.card_id)
 
     async def _open_kinds(self) -> set[str]:
         """턴 앞에 열려 있는 승인 카드 종류(카드를 눌러 달라는 말이 맞는지 본다). 못 읽으면 빈 집합. 그 카드의 업체
@@ -1476,6 +1556,11 @@ class _Turn:
             trace["ms"] = int((time.monotonic() - t0) * 1000)
             return self._error(cid, "tool_failed", "도구를 쓰지 못했어요."), "tool_failed"
         given = out.data
+        # 이 턴에 똑같이 보낸 카드는 다시 보내지 않고 모델에 알린다(QA r6 c3 H1: 업체 추천 뒤 show_card로 같은 카드
+        # 두 번). 값이 달라진 같은 카드(제안 도구가 바뀜 칸을 단 집 정보 카드)는 화면이 그 자리에서 바꿔 끼운다
+        shown = [c for c in out.cards if not self._sent_same(c)]
+        if len(shown) < len(out.cards):
+            given = {**given, "note": " ".join(x for x in (given.get("note"), SAME_CARD) if x)}
         ids = {str(a.action_id) for a in out.actions}
         if t.kind == "propose" and ids:
             # 같은 턴에 단추 고르기 · 앞 제안이 이미 만든 카드면 도구는 'same'이지만 고객에게는 방금 만든 카드다
@@ -1493,7 +1578,7 @@ class _Turn:
             self.gate.allow(summary_ground(a.summary.model_dump(mode="json")))
         for a in out.closed:
             await self.emit("action", a.model_dump(mode="json"))
-        for c in out.cards:
+        for c in shown:
             await self.card(c)
         for a in out.actions:  # 행을 commit한 뒤에 보낸다(도구가 commit했다)
             if str(a.action_id) not in self.res.actions:
@@ -1607,9 +1692,12 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
             if not res.text and not res.cards:
                 res.text = FAIL_TEXT
                 await emit("token", {"text": FAIL_TEXT})
-            elif tail := await next_step(turn, res):  # 지식 답 뒤 다음 할 일 한 줄(코드 글)
+            elif tail := await next_step(
+                turn, res
+            ):  # 다음 할 일 없는 답 뒤 지금 할 일 한 줄(코드 글)
                 res.text = f"{res.text}\n\n{tail}"
                 await emit("token", {"text": f"\n\n{tail}"})
+            await first_card(ctx, res, emit)  # 대화 첫 답에 카드가 없으면 오늘 정할 일 카드
         except _Fallback as f:
             await turn.gate.settle()
             kept = turn.gate.text
