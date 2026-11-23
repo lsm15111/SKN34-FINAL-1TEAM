@@ -118,6 +118,8 @@ def test_build_follows_spec_is_idempotent_and_undo_removes_only_mine(api):
 
     assert VENDORS[16]["calendar"] == "full" and asyncio.run(free(16)) == 0
     assert VENDORS[7]["calendar"] is None and asyncio.run(free(7)) == 28 * 2
+    # 반쯤 찬 업체(온새벽지 v4m-01, 반나절에 2칸): 반나절의 반쯤은 칸이 다 차서 닫힌다
+    assert VENDORS[1]["calendar"] == "half" and 15 <= asyncio.run(free(1)) <= 41
 
     # 두 번 돌려도 같다
     before = _counts()

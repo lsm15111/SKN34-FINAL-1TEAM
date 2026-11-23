@@ -674,19 +674,16 @@ def _review(x, v, did, pid, vendor, cust, sgg, done_at, texts, replies) -> list:
 
 
 def _cal_want(v: dict, today: date) -> list[tuple[date, str, int]]:
-    """잡을 칸(날, 반나절, 칸 번호). full: 4주는 모든 칸 · 그 뒤 반, half: 1번 칸의 반. 날마다 같은 값(멱등)"""
+    """잡을 칸(날, 반나절, 칸 번호). 고른 반나절은 칸을 모두 채운다(고객 달력에서 그 반나절이 닫히게).
+    full: 4주는 모든 반나절 · 그 뒤 2주는 반, half: 반나절의 반. 날 · 반나절마다 같은 값(멱등)"""
     kind, cap = v["calendar"], v["capacity"]
     out = []
     for n in range(1, CAL_DAYS + 1):
         day = today + timedelta(days=n)
         for half in ("am", "pm"):
-            for seat in range(1, cap + 1):
-                if kind == "full":
-                    p = 1.0 if n <= CAL_FULL_DAYS else 0.5
-                else:
-                    p = 0.5 if seat == 1 else 0.0
-                if random.Random(f"v4m-{v['no']}-{day}-{half}-{seat}").random() < p:
-                    out.append((day, half, seat))
+            p = 1.0 if kind == "full" and n <= CAL_FULL_DAYS else 0.5
+            if random.Random(f"v4m-{v['no']}-{day}-{half}-1").random() < p:
+                out += [(day, half, seat) for seat in range(1, cap + 1)]
     return out
 
 
