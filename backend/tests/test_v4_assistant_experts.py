@@ -6,7 +6,7 @@ import json
 from types import SimpleNamespace
 
 import pytest
-from v3_kb import repo_index
+from v3_kb import eval_index, expert_datasets, repo_index
 
 from app.agent import llm
 from app.assistant import policy
@@ -378,3 +378,11 @@ def test_asks_skip_known_conditions():
     asks = experts.asks_for(experts.SPECS["도배"], home_)
     assert "사는 채로 하는지" not in asks and "벽지 종류(합지 · 실크)" not in asks
     assert "천장까지 하는지" in asks
+
+
+def test_eval_index_adds_expert_pack():
+    """평가 색인(run_v4_answers · 무료 비교)은 저장소 지식 + 공정 지식 묶음이에요. 시험 색인은 그대로예요."""
+    ((key, rows),) = expert_datasets()
+    ix, base = eval_index(), repo_index()
+    assert key == "expert_pack_rag" and rows and ix.n == base.n + len(rows)
+    assert all(r["ref"] in ix.by_ref and r["ref"] not in base.by_ref for r in rows)

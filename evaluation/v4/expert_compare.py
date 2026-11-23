@@ -174,12 +174,12 @@ def pick_eval() -> dict:
     다른 공정 → 지식 조각 갈래). 맞음: 도배 · 목공 질문이 그 공정(둘 다 포함)으로, 공통 질문이 공통(모름 · 다른 공정)으로."""
     sys.path.insert(0, str(ROOT / "backend"))
     sys.path.insert(0, str(ROOT / "backend/tests"))
-    from v3_kb import repo_index
+    from v3_kb import eval_index
 
     from app.assistant.experts import pick as picking
     from app.knowledge import bm25, other_trades
 
-    ix = repo_index()
+    ix = eval_index()
     qs = [json.loads(x) for p in RAG_SETS for x in p.read_text(encoding="utf-8").splitlines() if x]
     out: dict = {}
     for split in ("dev", "heldout"):
@@ -231,19 +231,12 @@ def gold_found(gold: list[str], text: str) -> list[bool]:
 
 
 def kb_index():
-    """저장소 지식(tests/v3_kb.datasets) + 공정 지식 묶음(app.knowledge.expert_pack, 병합된 갈래에만 있어요)."""
+    """평가 색인(tests/v3_kb.eval_index: 저장소 지식 + 공정 지식 묶음). run_v4_answers와 같아요."""
     sys.path.insert(0, str(ROOT / "backend"))
     sys.path.insert(0, str(ROOT / "backend/tests"))
-    from v3_kb import datasets
+    from v3_kb import eval_index
 
-    from app.knowledge import bm25, expert_pack  # expert_pack: 공정 지식 묶음(병합된 갈래)
-    from app.knowledge.sources import assemble
-
-    data, problems = expert_pack.check()
-    if problems:
-        raise SystemExit(f"공정 지식 묶음 검사 실패: {problems[0]}")
-    chunks, docs = assemble([*datasets(), (expert_pack.KEY, expert_pack.rows(data))])
-    return bm25.build(chunks, docs, "repo+expert")
+    return eval_index()
 
 
 def kb_eval(sets: list[Path]) -> dict:

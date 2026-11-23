@@ -12,8 +12,8 @@
 - 앱: apienv.App(평가 DB mitjip_eval_v4ans · Redis 9). 질문 × 시스템마다 표 · Redis를 비우고 다시 심어요(app.reset)
 - 심기(공개 API): 고객 가입 → 공사 만들기(지금 화면 몸통: 공급 105.8㎡ · 도배 기본형 + 목공 몰딩 · 걸레받이 · 빈 집 ·
   시작 희망 2027-01-04 · 서울 마포구) → 표준견적서 한 번 열기(화면처럼. 턴 사실의 평형이 이 값에서 나와요)
-- 지식: 저장소 색인(tests/v3_kb). apienv는 knowledge.index만 바꿔서 knowledge.search(search_knowledge · v2 근거)는 빈 색인이에요.
-  여기서는 _index도 바꿔요. 임베딩은 부르지 않아요(OpenAI 키를 비움 · 평가 DB에 벡터 없음, run_compare --kb repo와 같음)
+- 지식: 평가 색인(tests/v3_kb.eval_index: 저장소 지식 + 공정 지식 묶음 expert_pack, 두 시스템이 같은 색인). apienv와 여기서
+  knowledge.index · _index를 바꿔요. 임베딩은 부르지 않아요(OpenAI 키를 비움 · 평가 DB에 벡터 없음). meta.json knowledge에 남겨요
 - 보이는 글(text): 토큰 글 + 카드 글 + 승인 카드 요약(run_compare 판정용 글과 같은 꼴: 인용 번호 · 꾸밈 지움).
   상태 글 · 칩 · 이어 묻기는 빼요. 같은 card_id는 마지막 것만 둬요(화면이 바꿔 끼워요)
 - 받은 계산 값(facts_given): 턴 사실(집) + 도구 결과(모델에 간 값, policy.to_model) 요약. 판정기의 숫자 일치용
@@ -377,14 +377,14 @@ class OutTap:
         return got, facts
 
 
-def patch_knowledge() -> None:
-    """knowledge._index(→ search · verify_cites · 이어 묻기)도 저장소 색인으로, 임베딩은 부르지 않아요."""
-    from v3_kb import repo_index
+def patch_knowledge() -> dict:
+    """knowledge._index(→ search · verify_cites · 이어 묻기)도 평가 색인으로, 임베딩은 부르지 않아요."""
+    from v3_kb import eval_index
 
     from app.agent import llm
     from app.knowledge import service as knowledge
 
-    ix = repo_index()
+    ix = eval_index()
 
     async def _index(_s):
         return ix, []
@@ -394,6 +394,7 @@ def patch_knowledge() -> None:
 
     knowledge._index = _index
     llm.embed_texts = no_embed
+    return {"index": ix.version, "chunks": ix.n}
 
 
 def seed(app, h: homes.Home, today: date) -> dict:
@@ -628,7 +629,7 @@ def main(argv=None) -> int:
             else "LLM이 켜져 있어 멈춰요."
         )
         return 2
-    patch_knowledge()
+    meta["knowledge"] = patch_knowledge()
     tap = OutTap()
     tap.install()
     from app.shared.clock import today_seoul

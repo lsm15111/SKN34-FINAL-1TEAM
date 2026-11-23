@@ -43,10 +43,27 @@ def datasets() -> list[tuple[str, list[dict[str, str]]]]:
     return out
 
 
+def expert_datasets() -> list[tuple[str, list[dict[str, str]]]]:
+    """공정 지식 묶음(app/knowledge/expert/*.jsonl). 운영은 expert_pack ingest로 DB에 넣어요."""
+    from app.knowledge import expert_pack
+
+    data, problems = expert_pack.check()
+    if problems:
+        raise ValueError(f"공정 지식 묶음 검사 실패: {problems[0]}")
+    return [(expert_pack.KEY, expert_pack.rows(data))]
+
+
 @cache
 def repo_index() -> bm25.Index:
     chunks, docs = assemble(datasets())
     return bm25.build(chunks, docs, "repo")
+
+
+@cache
+def eval_index() -> bm25.Index:
+    """평가 색인: 저장소 지식 + 공정 지식 묶음(운영 DB와 같은 자료). 백엔드 시험은 repo_index 그대로예요."""
+    chunks, docs = assemble([*datasets(), *expert_datasets()])
+    return bm25.build(chunks, docs, "repo+expert")
 
 
 def repo_kb() -> KB:

@@ -7,7 +7,7 @@
 - 판마다 새로 가입하니 두 모드 모두 새 계정 몫(LLM_NEW_USER_DAYS=0)을 꺼요. 상한 동작은 백엔드 시험이 지켜요.
 - 시험 DB는 따로 써요(기본 mitjip_eval_sim · Redis 12번). 백엔드 pytest(mitjip_test · 15번)와 섞이지 않아요.
 - 앱은 backend/tests/conftest.py와 같은 방법으로 올려요: DB 새로 만들기 → Alembic head → 판마다 표 비우기.
-- 시험 DB에는 지식 자료가 없어서, 백엔드 시험처럼 저장소 CSV 색인(tests/v3_kb.repo_index)을 넘겨요.
+- 시험 DB에는 지식 자료가 없어서 평가 색인(tests/v3_kb.eval_index: 저장소 지식 + 공정 지식 묶음)을 넘겨요.
 - ToolTap: 비서 도구 입력(args)을 턴마다 모아요(누출 확인용). 운영 코드는 바꾸지 않고 이 프로세스에서만 감싸요.
 """
 
@@ -186,14 +186,14 @@ class App:
         return self
 
     def _patch_knowledge(self) -> None:
-        """시험 DB에는 지식이 없어 저장소 색인을 넘겨요. index뿐 아니라 _index(search · 인용 확인 · 이어 묻기)도
+        """시험 DB에는 지식이 없어 평가 색인을 넘겨요. index뿐 아니라 _index(search · 인용 확인 · 이어 묻기)도
         바꿔요(전에는 index만 바꿔 LLM 모드 search_knowledge가 늘 0건이었어요). 임베딩은 부르지 않아요."""
-        from v3_kb import repo_index
+        from v3_kb import eval_index
 
         from app.agent import llm
         from app.knowledge import service as knowledge
 
-        ix = repo_index()
+        ix = eval_index()
 
         async def index(_s):
             return ix
