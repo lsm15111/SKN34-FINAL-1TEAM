@@ -407,7 +407,8 @@ def run(args) -> None:
     if args.out:
         out = Path(args.out)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(report, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+        text = json.dumps(report, ensure_ascii=False, indent=1) + "\n"
+        out.write_text(text, encoding="utf-8", newline="\n")  # 저장소 줄 끝(LF)과 같게
         print(f"저장: {out}")
 
 
