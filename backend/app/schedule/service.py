@@ -470,11 +470,14 @@ def diy_day_name(t: calc_diy.DiyTask) -> str:
 
 # '고객이 직접' 줄 이름에 붙이는 표시(계산 엔진 why). 영어 값 대신 화면 말이에요(비서 diy WHY_NOTE와 같은 뜻)
 DIY_NOTE = {"short": "날이 빠듯해요", "no_free_day": "날이 빠듯해요", "late": "마감이 지났어요"}
+# 시작이 날짜 없는 앞 공사 뒤인 일(calc.diy after, diy_v4): 줄은 마감 날 하루라 '…뒤 · 마감'을 붙여요
+DIY_AFTER = {"mokgong": "목공이 끝난 뒤 · 마감"}
 
 
 def diy_label(t: calc_diy.DiyTask) -> str:
-    """'고객이 직접' 줄 이름: 빠듯하거나 마감이 지난 일은 표시를 붙여요('페인트(문틀 · 몰딩) 칠하기 · 날이 빠듯해요')."""
-    note = DIY_NOTE.get(t.why)
+    """'고객이 직접' 줄 이름: 빠듯하거나 마감이 지난 일은 표시를 붙여요('페인트(문틀 · 몰딩) 칠하기 · 날이 빠듯해요').
+    시작이 날짜 없는 목공 뒤인 일은 '페인트(문틀 · 몰딩) 칠하기 · 목공이 끝난 뒤 · 마감'(줄 날짜는 마감 날)이에요."""
+    note = DIY_NOTE.get(t.why) or (DIY_AFTER.get(t.after) if t.after else None)
     return f"{t.name} · {note}" if note else t.name
 
 

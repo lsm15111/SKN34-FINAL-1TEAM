@@ -1,12 +1,15 @@
 """반셀프 직접 할 일 날짜: 업체 공사 날짜(공정표 블록) + 고객이 고른 칩 → 할 일마다 '언제부터 · 언제까지'.
 
 - 순수 함수예요(DB · HTTP · 시계 없음). 오늘 날짜 · 공휴일 · 입주일은 인자로 받아요.
-- 규칙은 판 이름을 붙인 상수(RULES_V3)예요. 결과에 판(rule_ver)을 적고, 바꿀 때는 새 판을 더해 RULES를 옮겨요.
+- 규칙은 판 이름을 붙인 상수(RULES_V4)예요. 결과에 판(rule_ver)을 적고, 바꿀 때는 새 판을 더해 RULES를 옮겨요.
   · diy_v2(2026-11-22, QA r1 D5 · D10): 페인트 마감은 도배 시작 − (PAINT_DRY_DAYS + 1)일이라 칠을 끝내고 사흘을
     통째로 비워요(v1은 − 3일이라 빈 날이 이틀). 빠듯한 일(short)의 공정표 날은 할 수 있는 첫날이에요(v1은 전에 할 일이면
     마감 날이라 목공 바로 뒤 도배인 공정표에서 페인트가 목공 시작 전에 놓였어요).
   · diy_v3(2026-11-22, QA r2 c3): 사는 집(occupied)이면 입주 청소가 마감이 아니라서, 뒤에 할 일(입주 청소 빼고)의
     마감을 공사 뒤 첫 주말(일요일)까지 늘려요(lived). 빈 집은 v2와 같아요.
+  · diy_v4(2026-11-24, QA r6 c2): 페인트(문틀 · 몰딩)는 목공 → 칠 → 도배 순서예요. 공정표에 목공 날짜가 없으면
+    (믿집은 목공을 잇지 않아 고객이 따로 하는 새 몰딩 · 걸레받이 · 문틀은 날짜를 몰라요) 시작을 오늘로 열지 않고
+    날짜 없이 '목공이 끝난 뒤'(after)로 둬요. 마감 · 공정표에 둘 날은 v3와 같아요(v3은 목공이 없으면 오늘부터).
 - 기준 블록: 목공 · 도배 공사(공정 이름), 업체 공사 전체(all: 첫날 ~ 마지막 날), 도배 뒤 자연 건조(dry),
   입주 청소(clean), 입주일(move_in). 없는 기준은 다음 후보로 넘어가고, 후보가 모두 없으면 그쪽 끝은 비워요.
   · 전에 할 일(before): 그 공사 시작 전까지 끝내요. 페인트는 칠을 끝내고 PAINT_DRY_DAYS일을 비워요
@@ -69,9 +72,11 @@ class Rule:
     ver: str = "diy_v2"  # 이 규칙의 판(할 일 rule_ver에 적어요)
     # 사는 집이면 마감을 업체 공사 뒤 첫 주말(일요일)까지 늘려요(입주 청소가 마감이 아니에요, diy_v3)
     lived: bool = False
+    # 시작 기준 공사가 공정표에 없으면 시작을 오늘로 열지 않고 날짜 없이 '그 공사가 끝난 뒤'로 둬요(diy_v4: 페인트 · 목공)
+    wait: str | None = None
 
 
-RULE_VER = "diy_v3"
+RULE_VER = "diy_v4"
 RULES_V2: tuple[Rule, ...] = (
     # 페인트(문틀 · 몰딩): 목공이 끝난 뒤, 도배 전에 칠하고 사흘을 비워 말린다
     Rule("paint", "", "before", (("mokgong", "end", 1),),
@@ -106,7 +111,11 @@ RULES_V1: tuple[Rule, ...] = tuple(
 RULES_V3: tuple[Rule, ...] = tuple(
     replace(r, ver="diy_v3", lived=r.kind == "after" and r.key != "clean") for r in RULES_V2
 )
-RULES = RULES_V3
+# 판 diy_v4(2026-11-24, QA r6 c2): v3 + 페인트는 공정표에 목공 날짜가 없으면 시작이 '목공이 끝난 뒤'(날짜 없음)
+RULES_V4: tuple[Rule, ...] = tuple(
+    replace(r, ver="diy_v4", wait="mokgong" if r.key == "paint" else None) for r in RULES_V3
+)
+RULES = RULES_V4
 
 
 @dataclass(frozen=True)
@@ -121,6 +130,8 @@ class DiyTask:
     late: bool  # 마감이 오늘보다 앞
     why: Why
     rule_ver: str = RULE_VER
+    # 시작이 날짜 없는 앞 공사 뒤예요(start None): 'mokgong'이면 목공이 끝난 뒤부터 마감(end)까지(diy_v4)
+    after: str | None = None
 
     @property
     def name(self) -> str:
@@ -174,6 +185,21 @@ def first_sunday(d: date) -> date:
     return d + timedelta(days=(6 - d.weekday()) % 7)
 
 
+def _after_undated(r: Rule, end: date | None, today: date, ok: Callable[[date], bool]) -> DiyTask:
+    """시작이 '날짜 없는 앞 공사(r.wait)가 끝난 뒤'인 일: 시작은 비우고(start None · after) 마감만 세요. 공정표에 둘 날은
+    마감 쪽 할 수 있는 마지막 날이에요(전에 할 일과 같아요). 그런 날이 오늘부터 마감까지 없으면 no_free_day예요."""
+    if end is None:  # 마감도 없으면 날짜 없이 순서만
+        return DiyTask(r.key, r.step, r.kind, None, None, None, True, False, "", r.ver, r.wait)
+    if end < today:
+        return DiyTask(r.key, r.step, r.kind, None, end, end, False, True, "late", r.ver, r.wait)
+    last = _scan(today, end, ok, back=True)
+    if last is None:
+        return DiyTask(
+            r.key, r.step, r.kind, None, end, end, False, False, "no_free_day", r.ver, r.wait
+        )
+    return DiyTask(r.key, r.step, r.kind, None, last, last, True, False, "", r.ver, r.wait)
+
+
 def _task(
     r: Rule,
     table: Mapping[str, tuple[date, date]],
@@ -188,6 +214,8 @@ def _task(
     raw_start, end = _bound(table, r.start), _bound(table, r.end)
     if occupied and r.lived and end is not None:  # 사는 집: 공사 뒤 첫 주말까지(diy_v3)
         end = max(end, first_sunday(table["all"][1] + timedelta(days=1)))
+    if raw_start is None and r.wait is not None:  # 앞 공사(목공) 날짜가 공정표에 없어요(diy_v4)
+        return _after_undated(r, end, today, ok)
     start = max(raw_start, today) if raw_start is not None else today
     if end is not None and end < today:
         return DiyTask(r.key, r.step, r.kind, raw_start, end, end, False, True, "late", r.ver)

@@ -7,6 +7,7 @@
 - c2 고칠 것 6: 집 정보를 바꾼 직후 첫 보드에도 새 평(계산 엔진, 저장본을 기다리지 않음).
 - c2 고칠 것 7 · 8: 집 정보 승인 카드 메모는 표준견적서 금액이 실제로 바뀔 때만 '새로 계산해요', 바뀌면 차액(계산 엔진)을
   카드에 보여요(살면서 ↔ 빈 집도).
+- c2 페인트 날짜 창: 공정표에 목공 날짜가 없으면 시작은 '목공이 끝난 뒤'(calc.diy diy_v4).
 - 화면 M9 전체 철거 철거 줄.
 """
 
@@ -21,6 +22,7 @@ from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant import service as assistant_service
+from app.assistant.tools import diy as diy_tools
 from app.assistant.tools import propose
 from app.calc import dobae, market_band, mokgong, quick_budget
 from app.calc.common import SUPPLY_PER_EXCLUSIVE
@@ -41,7 +43,7 @@ from tests.conftest import query
 from tests.helpers import signup
 from tests.test_v3_project_home import HOME, create
 from tests.test_v4_assistant_actions import acts, approve
-from tests.test_v4_assistant_diy import chips
+from tests.test_v4_assistant_diy import block, chips, plan
 from tests.test_v4_assistant_free import cards_of, two_vendors
 from tests.test_v4_assistant_turns import ask, ok
 
@@ -308,6 +310,34 @@ def test_date_or_partial_demolition_card_keeps_the_amount(api, script):
     assert c["summary"]["diff"]["diff_won"] > 0 and "리모델링 기준" in c["summary"]["note"]
     (dob,) = standard(api, pid)["trades"]
     assert dob["version"] == 1  # 카드만 만들었어요(저장 전)
+
+
+# ---- 5. 페인트 날짜 창: 목공 날짜가 없으면 '목공이 끝난 뒤' (calc.diy diy_v4) ----
+
+
+def test_paint_waits_for_carpentry_in_the_plan_and_the_tool(api, script):
+    signup(api)
+    pid = create(api, HOME).json()["id"]
+    chips(api, pid, ["paint"])
+    p = plan(api, pid)
+    dob = block(p, "work", "dobae")
+    (row,) = [b for b in p["blocks"] if b["kind"] == "diy"]
+    due = d(dob["start"]) - timedelta(days=4)  # 칠하고 사흘 비움(diy_v2 마감 그대로)
+    assert row["label"] == "페인트(문틀 · 몰딩) 칠하기 · 목공이 끝난 뒤 · 마감"
+    assert row["start"] == row["end"] == due.isoformat()
+    log = script(
+        [
+            {"tool_calls": [{"id": "d", "name": "diy_plan", "input": {"item": "paint"}}]},
+            {"text": "목공이 끝난 뒤에 칠해요."},
+        ]
+    )
+    ok(ask(api, pid, "문틀 페인트는 언제 칠해요?"))
+    (item,) = tool_result(log, 1)["items"]
+    assert (
+        item.get("start") is None and item["end"] == due.isoformat()
+    )  # 빈 칸은 모델 값에서 빠져요
+    assert item["text"] == f"목공이 끝난 뒤 ~ {diy_tools.ko_day(due)} 사이에 해요"
+    assert item["note"] == diy_tools.AFTER_NOTE["mokgong"]
 
 
 # ---- 9. 전체 철거면 기존 벽지 철거 줄 '안 함' (화면 M9) ----

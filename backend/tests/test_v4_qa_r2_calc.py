@@ -189,17 +189,19 @@ DOBAE = {"dobae": (date(2026, 12, 7), date(2026, 12, 9))}  # 월 ~ 수
 
 
 def test_d10_paint_leaves_three_empty_days_before_dobae():
-    # 판은 diy_v3(QA r2 c3 사는 집)로 옮겼어요. 페인트 규칙은 diy_v2와 같아요
-    assert calc_diy.RULE_VER == "diy_v3" and calc_diy.RULES is calc_diy.RULES_V3
+    # 판은 diy_v4(QA r6 c2 목공 날짜 없음)로 옮겼어요. 페인트 마감 규칙은 diy_v2와 같아요
+    assert calc_diy.RULE_VER == "diy_v4" and calc_diy.RULES is calc_diy.RULES_V4
     (paint,) = calc_diy.plan(["paint"], DOBAE, date(2026, 12, 1))
-    assert (paint.start, paint.end, paint.day) == (
-        date(2026, 12, 1),
+    # 도배만 맡긴 집이라 목공 날짜가 없어 시작은 '목공이 끝난 뒤'(날짜 없음)예요
+    assert (paint.start, paint.end, paint.day, paint.after) == (
+        None,
         date(2026, 12, 3),
         date(2026, 12, 3),
+        "mokgong",
     )
     # 목요일까지 칠하면 금 · 토 · 일 사흘(72시간 넘게)을 비우고 월요일에 도배해요
     empty = (DOBAE["dobae"][0] - paint.end).days - 1
-    assert empty == calc_diy.PAINT_DRY_DAYS == 3 and paint.rule_ver == "diy_v3"
+    assert empty == calc_diy.PAINT_DRY_DAYS == 3 and paint.rule_ver == "diy_v4"
 
 
 def test_d5_tight_paint_is_placed_after_mokgong():

@@ -166,12 +166,16 @@ def test_expected_plan_gets_self_rows_without_duplicate_clean(api):
     dobae = block(p, "work", "dobae")
     start, end = D(dobae["start"]), D(dobae["end"])
     diy = [b for b in p["blocks"] if b["kind"] == "diy"]
+    # 도배만 맡긴 집은 목공 날짜가 없어 페인트 시작이 '목공이 끝난 뒤'(calc.diy diy_v4)라 줄은 마감 날 하루예요
     assert [b["label"] for b in diy] == [
-        "페인트(문틀 · 몰딩) 칠하기", "콘센트 · 스위치 덮개 떼기", "콘센트 · 스위치 새 커버 달기",
+        "페인트(문틀 · 몰딩) 칠하기 · 목공이 끝난 뒤 · 마감", "콘센트 · 스위치 덮개 떼기",
+        "콘센트 · 스위치 새 커버 달기",
     ]  # fmt: skip
     paint, off, on = diy
     # 칠하고 사흘을 비우게 도배 나흘 전까지(calc.diy diy_v2)
-    assert D(paint["end"]) == start - timedelta(days=calc_diy.PAINT_DRY_DAYS + 1)
+    assert (
+        D(paint["start"]) == D(paint["end"]) == start - timedelta(days=calc_diy.PAINT_DRY_DAYS + 1)
+    )
     assert (D(off["start"]), D(off["end"])) == (
         start - timedelta(days=3),
         start - timedelta(days=1),
@@ -220,8 +224,9 @@ def test_final_plan_card_today_rows_and_prep_lists(api):
 
     prep = as_owner(api, pid, lambda s, u: aftercare_tools.prep_card(s, u, uuid.UUID(pid), TODAY))
     labels = [x["label"] for x in prep.data["checklist"]]
+    # 목공 날짜가 없는 집이라 시작은 '목공이 끝난 뒤'(calc.diy diy_v4)예요
     assert (
-        f"페인트(문틀 · 몰딩) 칠하기 · {diy_tools.ko_day(TODAY)} ~ {diy_tools.ko_day(paint_end)} 사이에 해요 · {SELF}"
+        f"페인트(문틀 · 몰딩) 칠하기 · 목공이 끝난 뒤 ~ {diy_tools.ko_day(paint_end)} 사이에 해요 · {SELF}"
         in labels
     )
     assert any(x.startswith("조명 교체 · ") and x.endswith(SELF) for x in labels)
@@ -393,12 +398,15 @@ def test_diy_plan_tool_weekend_and_model_values(api, script):
     assert (got["state"], got["phase"]) == ("chips", "expected")
     (item,) = got["items"]
     assert item["kind"] == "paint" and "사포" in item["prep"] and item["when"].startswith("목공이")
-    # 날짜는 공정표 '고객이 직접' 줄과 같은 값이고(QA r2 c3), 주말 · 공휴일 값은 weekend에 따로 와요
+    # 날짜는 공정표 '고객이 직접' 줄과 같은 값이고(QA r2 c3), 주말 · 공휴일 값은 weekend에 따로 와요. 도배만 맡긴
+    # 집이라 시작은 '목공이 끝난 뒤'(빈 칸, calc.diy diy_v4)이고 공정표 줄은 마감 날 하루예요
     p = plan(api, pid)
     (row,) = [b for b in p["blocks"] if b["kind"] == "diy" and b["label"].startswith("페인트")]
-    assert (item["start"], item["end"]) == (row["start"], row["end"])
-    start, end = D(item["weekend"]["start"]), D(item["weekend"]["end"])
-    assert start.weekday() >= 5 and end.weekday() >= 5 and start <= end  # 주말만
+    assert "start" not in item and item["end"] == row["start"] == row["end"]
+    assert item["note"] == diy_tools.AFTER_NOTE["mokgong"]
+    assert "start" not in item["weekend"]
+    end = D(item["weekend"]["end"])
+    assert end.weekday() >= 5 and D(item["weekend"]["day"]) == end  # 주말만
     dobae = block(p, "work", "dobae")
     assert end <= D(dobae["start"]) - timedelta(days=calc_diy.PAINT_DRY_DAYS)
     assert got["days"] == "weekend" and diy_tools.DAYS_NOTE["asked"] in got["basis"]
