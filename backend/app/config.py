@@ -48,8 +48,9 @@ class Settings(BaseSettings):
     # 비서 answer_question이 질문 종류별로 부를 답 파이프라인: v3(chat.service.answer_only) · v2(v2.ask.answer_only)
     # · v2g(v2.ask.grounds: v2 근거만, LLM 없이) · v2+v3 · v2g+v3(v2 먼저, v2 관문이 범위 밖으로 보고 v3가 답하면 v3).
     # 'v3'처럼 하나면 모두, 'price=v3,*=v2+v3'처럼
-    # 종류=엔진을 쉼표로 적으면 그 종류만(* = 나머지, 없으면 v3). 기본값은 v4 턴 판정(2026-11-21, j-v4route1)으로 골랐다
-    assistant_answer_route: str = "period=v3,price=v3,*=v2+v3"
+    # 종류=엔진을 쉼표로 적으면 그 종류만(* = 나머지, 없으면 v3). 기본값: 공정 에이전트는 전문지식만 넘기고 비서가 받아
+    # 한 번에 정리한다(v2g, 2026-11-23 사용자 결정 · 판정 j-route-terra: 품질 비슷 · 턴 비용 41% 적고 35% 빠름)
+    assistant_answer_route: str = "period=v3,price=v3,*=v2g+v3"
     # 비서 지시문 판 묶음(assistant/prompts SETS): v4(기본, customer_v4 · vendor_v4 · nudge_write_v3) · v3(옛 판).
     # 판마다 지시문 글이 달라 프롬프트 캐시도 판마다 따로 맞는다
     assistant_prompt_set: Literal["v3", "v4"] = "v4"

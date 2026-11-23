@@ -326,7 +326,8 @@
   - 2026-11-21 고침: 표는 7일(저장할 때마다 늘림, 30분이면 지난 카드 · 며칠 뒤 먼저 말 걸기 카드 단추가 조용히 버려졌어요). 턴 · 먼저 말 걸기 · 업체 브리핑(REST)이 한 대화의 표를 같이 써요(대화가 없으면 만들어요).
   - 번호는 머리글자마다 쓴 가장 큰 번호(`…:num`, 30일) 다음이라, 표가 지워지거나 오래된 것을 버려도 같은 이름이 다른 대상을 가리키지 않아요.
   - 저장은 Redis 표와 합쳐요(WATCH). 두 곳이 같은 번호를 다른 대상에 썼으면 그 이름을 버리고 다시 살리지 않아요(그 단추는 카드를 새로 불러와요).
-- `answer_question`은 질문 종류(kind: general · price · period · material · process)별 설정 `ASSISTANT_ANSWER_ROUTE`(기본 `v3`)로 엔진을 골라요(0042 담당 반영).
+- `answer_question`은 질문 종류(kind: general · price · period · material · process)별 설정 `ASSISTANT_ANSWER_ROUTE`(기본 `period=v3,price=v3,*=v2g+v3`)로 엔진을 골라요(0042 담당 반영).
+  - 기본값(2026-11-23 사용자 결정): 공정 에이전트(도배 · 목공)는 전문지식(근거 조각 · 순서 · 주의점 · 실측 때 정할 것 · 준비물 · 되물을 조건)만 넘기고, 비서가 받아 한 번에 정리해요(v2g). 판정 j-route-terra(terra 40문항): 종합 승률 0.54 · 턴 비용 중앙 $0.0072 → $0.0042 · 턴 시간 중앙 13.0초 → 8.5초.
   - 값: `v3` · `v2`(모두), 또는 `price=v2,material=v2`(적은 종류만, 나머지 v3, `*=`는 기본값). 모르는 값은 v3예요.
   - v3: `chat.service.answer_only(mode="free")`로 근거 문장만 받아요(겹친 LLM 호출 없음).
   - v2: `v2.ask.answer_only`(새). v2 일반 상담 파이프라인에서 저장 · 화면 도구 · Redis 턴 · 입구 관문 · 요청 제한을 뺀 함수예요. 서버 도구(price_reference · search_knowledge)만 주고, 턴이 LLM이면 v2도 LLM(v2_chat 장부, 같은 턴 비용)으로 답해요. 무료 모드면 근거 제목만이에요.

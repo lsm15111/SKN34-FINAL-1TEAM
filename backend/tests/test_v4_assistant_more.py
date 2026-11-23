@@ -206,12 +206,13 @@ def test_engine_for_route_setting():
     assert answer.engine_for("material", "price=v2+v3") == "v3"
 
 
-def test_default_route_is_hybrid_except_price_and_period():
-    """기본값(v4 턴 판정 j-v4route1): 지식 · 방법 · 자재 · 일반은 v2+v3, 금액 · 기간은 v3(계산 엔진 값 근거)."""
-    route = "period=v3,price=v3,*=v2+v3"
-    assert answer.engine_for("general", route) == "v2+v3"
-    assert answer.engine_for("process", route) == "v2+v3"
-    assert answer.engine_for("material", route) == "v2+v3"
+def test_default_route_is_grounds_except_price_and_period():
+    """기본값(2026-11-23 사용자 결정 · 판정 j-route-terra): 지식 · 방법 · 자재 · 일반은 v2g+v3(공정 전문지식만 받아
+    비서가 한 번에 씀), 금액 · 기간은 v3(계산 엔진 값 근거)."""
+    route = "period=v3,price=v3,*=v2g+v3"
+    assert answer.engine_for("general", route) == "v2g+v3"
+    assert answer.engine_for("process", route) == "v2g+v3"
+    assert answer.engine_for("material", route) == "v2g+v3"
     assert answer.engine_for("price", route) == "v3"
     assert answer.engine_for("period", route) == "v3"
     from app.config import Settings
