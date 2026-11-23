@@ -1099,6 +1099,32 @@ def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
     return got is not None and got[0] != "call" and not asked_last(ctx.history)
 
 
+KNOW_TOOLS = frozenset({"answer_question", "search_knowledge"})
+# 다음 일로 이끄는 카드(집 정보 · 표준견적서 · 업체 추천 · 오늘 할 일 …): 이 카드가 나온 턴에는 한 줄을 붙이지 않아요
+STEP_CARDS = frozenset(CARD_NAME) - {"knowledge", "answer"}
+
+
+async def next_step(turn: "_Turn", res: TurnResult) -> str:
+    """지식 답 뒤 다음 할 일 한 줄(2026-11-23 사용자: 쓰면서 다음 흐름으로 이끌기, 지식 답 40개 중 3개만 다음 단계를
+    말함). 이번 턴이 지식 도구로 답했고, 다음 일 카드 · 승인 카드가 없고, 답이 물음으로 끝나지 않았을 때만 코드가 지금 할
+    일 줄(free.now_tail: 범위 밖 답과 같은 줄)을 붙여요. 같은 단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만)."""
+    from app.assistant import free
+
+    ctx = turn.ctx
+    if ctx.surface != "customer" or ctx.pressed or ctx.choice or res.actions:
+        return ""
+    if not KNOW_TOOLS & {t["name"] for t in res.tools if t.get("ok")}:
+        return ""
+    if STEP_CARDS & {c["kind"] for c in res.cards} or res.text.rstrip().endswith("?"):
+        return ""
+    try:
+        line = await free.now_tail(turn.tc)
+    except Exception as e:  # noqa: BLE001 - 할 일 줄을 못 읽으면 붙이지 않아요(종류 이름만 로그)
+        log.warning("다음 할 일 줄 실패 (%s)", type(e).__name__)
+        return ""
+    return line if line and line not in res.text else ""
+
+
 def asked_last(history: list[dict]) -> bool:
     """지난 글 중 마지막 비서 글이 물음표로 끝났는지."""
     for m in reversed(history):
@@ -1579,6 +1605,9 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
             if not res.text and not res.cards:
                 res.text = FAIL_TEXT
                 await emit("token", {"text": FAIL_TEXT})
+            elif tail := await next_step(turn, res):  # 지식 답 뒤 다음 할 일 한 줄(코드 글)
+                res.text = f"{res.text}\n\n{tail}"
+                await emit("token", {"text": f"\n\n{tail}"})
         except _Fallback as f:
             await turn.gate.settle()
             kept = turn.gate.text
