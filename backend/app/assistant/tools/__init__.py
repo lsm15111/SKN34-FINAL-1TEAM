@@ -88,13 +88,19 @@ ASKED_AGAIN = "asked_again"
 ASKED_AGAIN_DEF = {
     "type": "boolean",
     "description": "고객이 이번 턴 말로, 거절했거나 거둔 같은 제안을 다시 해 달라고 했으면 true(예: '아까 그거 다시 해 "
-    "줘' · '실수로 거절했어요, 다시요'). 비서가 스스로 다시 권하는 것이면 false예요. 켜도 카드는 고객이 눌러야 실행돼요",
+    "줘' · '실수로 거절했어요, 다시요'). 그 밖에는 늘 false예요(비서가 스스로 다시 권할 때도). 켜도 카드는 고객이 눌러야 "
+    "실행돼요",
 }
 
 
 def with_again(schema: dict) -> dict:
-    """제안 도구 입력 스키마에 asked_again 칸을 더한다(고르지 않아도 되는 칸, required는 그대로)."""
-    return {**schema, "properties": {**schema.get("properties", {}), ASKED_AGAIN: ASKED_AGAIN_DEF}}
+    """제안 도구 입력 스키마에 asked_again 칸을 꼭 넣는 칸으로 더한다. 선택 칸으로 두면 엄격 도구의 선택 칸 합이 Claude
+    한도(24, 넘으면 400)를 넘어요(고객 제안 도구 11개). 모델이 빠뜨려도(대본 · 다른 공급자) run이 false로 본다."""
+    return {
+        **schema,
+        "properties": {**schema.get("properties", {}), ASKED_AGAIN: ASKED_AGAIN_DEF},
+        "required": [*schema.get("required", []), ASKED_AGAIN],
+    }
 
 
 def tool(

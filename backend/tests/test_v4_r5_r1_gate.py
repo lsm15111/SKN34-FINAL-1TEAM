@@ -76,7 +76,8 @@ def test_numbers_in_the_last_two_answers_are_grounds(api, script):
     none = "평당으로는 1,234,567원이에요."  # 지난 비서 말에도 없는 숫자
     script([{"text": f"{rough} {far} {none}"}])
     ev = ok(ask(api, pid, "만 원 단위로 대충 말하면 얼마부터 얼마예요?"))
-    assert tokens(ev) == rough
+    # 다음 걸음 없는 답이라 끝에 지금 할 일 줄이 같은 단계에서 한 번 붙어요(QA r6 c3 M8)
+    assert tokens(ev).split("\n\n")[0] == rough
     got = trace(ev)
     assert got["tools"] == [] and got["dropped"] == ["계산 결과 · 자료에 없는 숫자"] * 2
     # 숫자 없는 답 두 턴 뒤(가견적을 말한 답은 셋째 · 넷째 전): 그 숫자는 근거가 아니다

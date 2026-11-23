@@ -198,8 +198,10 @@ def test_failure_before_any_text_is_retried_without_the_old_attempt(api, script)
     )
     ev = ok(ask(api, pid, "실측 요청해 줘"))
     assert len(log) == 2 and ev[-1][1]["mode"] == "llm"
-    # 앞 시도에서 붙잡아 둔 카드 말(보내지 않은 글)은 거둔다: 정직한 한 줄로 남지 않는다
-    assert tokens(ev) == "다시 쓴 답이에요."
+    # 앞 시도에서 붙잡아 둔 카드 말(보내지 않은 글)은 거둔다: 정직한 한 줄로 남지 않는다(다음 걸음 없는 답이라 끝에
+    # 지금 할 일 줄이 붙어요, QA r6 c3 M8)
+    got = tokens(ev)
+    assert got.startswith("다시 쓴 답이에요.") and "카드를 만들었어요" not in got, got
 
 
 # ---- R12: 도구 시간 상한 ----

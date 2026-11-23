@@ -922,11 +922,13 @@ class SentenceGate:
         await self._put(p.sep, p.text, p.item)
 
     def _needs_next(self) -> bool:
-        """보낸 답에 가리키는 다음 할 일(카드 · 채팅 · 누를 것, policy.points) · 묻는 말이 없고, 이 턴에 만든 승인 카드 ·
-        보인 카드 단추도 없다. '고르지 않거나'처럼 낱말만 닮은 문장은 다음 할 일로 보지 않는다."""
-        if self.made or self.buttons:
+        """보낸 답에 다음 걸음(policy.leads: 가리키는 말 · 묻는 말 · 고르기 · 누르기 같은 할 일을 하라는 말)이 없고, 이 턴에
+        만든 승인 카드 · 보인 카드 단추 · 열려 있는 승인 카드도 없다. 열린 승인 카드가 있으면 그 카드가 화면의 다음 걸음이라 '눌러 주세요'
+        되풀이는 살리지 않는다(QA r2 · r4 c5: 같은 재촉이 턴마다 끝에 붙음). '고르지 않거나'처럼 낱말만 닮은 문장은 다음
+        할 일로 보지 않는다."""
+        if self.made or self.buttons or self.opened:
             return False
-        return not any(policy.points(s) or policy.asks(s) for s in self.sent)
+        return not any(policy.leads(s) for s in self.sent)
 
     async def _put(self, sep: str, text: str, item: bool = False) -> None:
         if not self._out and self._lost:  # 앞 문장이 빠져 첫 문장이 됐다: '다만 · 대신 …'을 뗀다
@@ -1158,8 +1160,8 @@ STEP_ROOM = 4
 
 async def next_step(turn: "_Turn", res: TurnResult) -> str:
     """다음 할 일 없이 끝난 답 뒤 지금 할 일 한 줄(2026-11-23 사용자: 쓰면서 다음 흐름으로 이끌기, 지식 답 40개 중 3개만
-    다음 단계를 말함 · QA r6 c3 M8 · c1 M12: 막는 답 · 범위 밖 답 · '사람이야?' 답이 다음 할 일 없이 끝남). 답에 가리키는
-    다음 할 일(카드 · 채팅 · 누를 것, policy.points) · 묻는 말이 없고, 다음 일 카드 · 승인 카드가 없을 때 코드가 지금
+    다음 단계를 말함 · QA r6 c3 M8 · c1 M12: 막는 답 · 범위 밖 답 · '사람이야?' 답이 다음 할 일 없이 끝남). 답에 다음
+    걸음(policy.leads: 가리키는 말 · 묻는 말 · 할 일을 하라는 말)이 없고, 다음 일 카드 · 승인 카드가 없을 때 코드가 지금
     할 일 줄(free.now_tail: 무료 · 범위 밖 답과 같은 줄)을 붙여요. 막는 답인지는 낱말로 가르지 않고 답 꼴로 봐요. 같은
     단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만). 인사 · 고마움만 한 턴(chat_only)은 붙이지 않아요."""
     from app.assistant import free
@@ -1169,7 +1171,7 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
         return ""
     if STEP_CARDS & {c["kind"] for c in res.cards} or res.text.rstrip().endswith("?"):
         return ""
-    if any(policy.points(s) or policy.asks(s) for s in turn.gate.sent):
+    if any(policy.leads(s) for s in turn.gate.sent):
         return ""
     if len(turn.gate.sent) >= STEP_ROOM:  # 붙이면 많아야 네 문장을 넘어요
         return ""

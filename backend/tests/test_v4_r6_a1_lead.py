@@ -83,11 +83,12 @@ def test_now_line_names_the_booked_visit_before_waiting_replies():
 # ---- 되풀이로 빠진 다음 할 일 살리기(QA r6 c3 t19) ----
 
 
-def gate_run(said_before: list[str], text: str) -> str:
+def gate_run(said_before: list[str], text: str, opened=(), turns=None) -> str:
     async def emit(name: str, data: dict) -> None:
         return None
 
-    g = SentenceGate(emit, "너는 믿집 비서야.", "", said=said_before)
+    g = SentenceGate(emit, "너는 믿집 비서야.", "", said=said_before, turns=turns)
+    g.opened |= set(opened)
 
     async def go():
         await g.feed(text)
@@ -101,11 +102,15 @@ def gate_run(said_before: list[str], text: str) -> str:
 def test_chat_pointer_is_kept_when_it_is_the_only_next_step():
     chat = "견적서를 받으신 뒤 메뉴의 [채팅]에서 업체와 직접 이야기해 보세요."
     before = recent_said([{"role": "assistant", "content": f"흥정은 제가 못 해요. {chat}"}])
-    got = gate_run(before, f"송금은 제가 할 수 없어요. 아직 실측 견적서가 나오기 전이에요. {chat}")
-    assert got.endswith(chat)  # 다음 할 일이 이 문장뿐이라 남겨요
+    text = f"송금은 제가 할 수 없어요. 아직 실측 견적서가 나오기 전이에요. {chat}"
+    assert gate_run(before, text).endswith(chat)  # 다음 할 일이 이 문장뿐이라 남겨요
     # 다른 다음 할 일(묻는 말)이 있으면 되풀이는 빼요
     got = gate_run(before, f"송금은 제가 할 수 없어요. {chat} 실측은 언제가 편하세요?")
     assert chat not in got
+    # 열린 승인 카드가 있으면 그 카드가 다음 걸음이라 되풀이는 빼요(QA r2 · r4 c5 재촉 되풀이)
+    assert chat not in gate_run(before, text, opened={"visit_slot"})
+    # 바로 앞 두 답에 다 있었으면(세 번째 연속) 빼요
+    assert chat not in gate_run(before, text, turns=[before, before])
 
 
 # ---- 먼저 말 건 줄을 턴 사실에(QA r6 c1 M11) ----

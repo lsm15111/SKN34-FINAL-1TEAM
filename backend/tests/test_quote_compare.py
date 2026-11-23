@@ -29,9 +29,24 @@ def quote(api, v: str, amount: int, mode: str = "excluded", name: str = "견적.
         **over,
     }
     assert api.put(url(v), json=body).status_code == 200
-    r = api.post(f"{url(v)}/send")
+    r = send_on_visit_day(api, v)
     assert r.status_code == 200, r.text
     return r.json()
+
+
+def send_on_visit_day(api, v: str):
+    """실측 날이 된 것처럼 보내기: 정해진 실측 날 전엔 서버가 409 before_visit라(QA r6 화면 M1), 실측 날이 오늘 뒤면
+    보내는 동안만 오늘로 옮기고 되돌려요(다른 시험이 보는 실측 날 칸은 그대로)."""
+    vid, today = uuid.UUID(v), today_seoul()
+    day = query("select booked_day from visits where id = $1", vid)[0]["booked_day"]
+    later = day is not None and day > today
+    if later:
+        query("update visits set booked_day = $1 where id = $2", today, vid)
+    try:
+        return api.post(f"{url(v)}/send")
+    finally:
+        if later:
+            query("update visits set booked_day = $1 where id = $2", day, vid)
 
 
 def three(api):

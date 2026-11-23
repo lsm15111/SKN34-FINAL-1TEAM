@@ -230,17 +230,26 @@ def _busy_value(key: str, value: str, message: str) -> bool:
 
 # 반려동물 값에서 인용에 없는 꾸밈말('키움' · '있음')만 떼고 남길 때 막는 뜻을 뒤집는 낱말(값 · 인용 어디에 있어도)
 NEGATE = re.compile(r"(?<![가-힣])(?:안|못)(?![가-힣])|없|아니|않")
+# 반려동물 이름: 바꿔 쓴 값에서는 이 낱말만 근거를 보고 남긴다('고양이 두 마리'의 '마리'처럼 셈 말만 남지 않게)
+PET_NAME = re.compile(
+    r"강아지|반려견|애견|개|푸들|말티즈|고양이|냥이|반려묘|햄스터|토끼|앵무새|새|물고기|금붕어|거북이|고슴도치|반려동물"
+)
+
+
+def _pet_name(word: str) -> str | None:
+    """낱말이 반려동물 이름이면 그 이름(조사를 뗀 꼴도 본다: '강아지가' → '강아지'). 아니면 None."""
+    return next((w for w in (word, JOSA.sub("", word)) if PET_NAME.fullmatch(w)), None)
 
 
 def _pet_part(value: str, quote: str) -> str | None:
-    """반려동물 값('강아지 키움')에서 낱말 뿌리가 인용에 있는 낱말만 남긴 값('강아지'). 뜻을 뒤집는 말이 있거나 남는 게
-    없으면 None(QA r6 c3 M9: 하소연 말의 '강아지 키움'이 인용 밖 낱말 하나로 통째로 빠짐)."""
+    """반려동물 값('강아지 키움')에서 뿌리가 인용에 있는 반려동물 이름만 남긴 값('강아지'). 뜻을 뒤집는 말이 있거나 남는
+    이름이 없으면 None(QA r6 c3 M9: 하소연 말의 '강아지 키움'이 인용 밖 낱말 하나로 통째로 빠짐)."""
     if NEGATE.search(value) or NEGATE.search(quote):
         return None
     q = _squash(quote)
     words = [w for w in re.split(r"[\s,·/()]+", FILLER.sub(" ", value)) if w]
-    kept = [w for w in words if any(r in q for r in _roots(w))]
-    return " ".join(kept) or None
+    kept = [n for w in words if (n := _pet_name(w)) and any(r in q for r in _roots(n))]
+    return " ".join(dict.fromkeys(kept)) or None
 
 
 def validate(items: list[Item], message: str, why: list[str] | None = None) -> list[Item]:

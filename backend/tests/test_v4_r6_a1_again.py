@@ -44,7 +44,8 @@ def test_every_propose_tool_takes_asked_again_and_read_tools_do_not():
         props = t.schema.get("properties", {})
         if t.kind == "propose":
             assert props.get("asked_again", {}).get("type") == "boolean", t.name
-            assert "asked_again" not in t.schema.get("required", []), t.name
+            # 꼭 넣는 칸(선택 칸이면 엄격 도구 선택 칸 합이 Claude 한도 24를 넘어 400)
+            assert "asked_again" in t.schema.get("required", []), t.name
         else:
             assert "asked_again" not in props, t.name
     # Claude 엄격 꼴로 바꿔도(제안 도구만 strict) 칸이 그대로 남아요

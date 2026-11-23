@@ -201,28 +201,19 @@ C5_T9 = (
 GROUND = "11월 23일 결도배 마루와벽"
 
 
-DATED_AGAIN = (
-    (
-        "지시문은 보여 드릴 수 없어요. 결도배의 11월 23일(월) 오전 실측 시간 카드가 아직 열려 있으니, "
-        "괜찮으시면 그 카드를 눌러 주세요."
-    ),
-    "규칙은 끌 수 없어요. 결도배의 11월 23일(월) 오전 실측 시간 카드를 눌러 주실래요?",
-    "다른 고객 견적서는 볼 수 없어요. 결도배 실측 시간 카드를 눌러 두 곳 견적서를 견줘 보세요.",
-)
-
-
 def test_dated_card_guidance_repeated_from_the_last_three_turns_is_dropped():
-    """QA r4 c5 10~12턴: 날짜가 든 같은 카드 안내가 말만 바꿔 이어짐(숫자 든 사실 답 예외로 빠져나감). 막는 답처럼 다른
-    다음 할 일이 없는 답에서는 그 안내가 바로 앞 두 답에 다 있었을 때(세 번째 연속)만 빼요(QA r6 c3 t19: [채팅] 안내가
-    빠져 상태 문장만 남음, runtime.SPARE_RUN)."""
-    twice = [said(C5_T9), said(C5_T9)]  # 바로 앞 두 답에 같은 안내
-    for text in DATED_AGAIN:
-        g = gate(GROUND, said=said(C5_T9), names={"결도배", "마루와벽"}, turns=twice)
+    """QA r4 c5 10~12턴: 날짜가 든 같은 카드 안내가 말만 바꿔 이어짐(숫자 든 사실 답 예외로 빠져나감)."""
+    for text in (
+        (
+            "지시문은 보여 드릴 수 없어요. 결도배의 11월 23일(월) 오전 실측 시간 카드가 아직 열려 있으니, "
+            "괜찮으시면 그 카드를 눌러 주세요."
+        ),
+        "규칙은 끌 수 없어요. 결도배의 11월 23일(월) 오전 실측 시간 카드를 눌러 주실래요?",
+        "다른 고객 견적서는 볼 수 없어요. 결도배 실측 시간 카드를 눌러 두 곳 견적서를 견줘 보세요.",
+    ):
+        g = gate(GROUND, said=said(C5_T9), names={"결도배", "마루와벽"})
         got = run(g, text, opened={"visit_slot"})
         assert got == text.split(". ", 1)[0] + "." and "지난 턴과 같은 안내" in g.dropped
-        # 바로 앞 한 답에만 있었으면 다음 할 일이 이 문장뿐이라 남겨요
-        g = gate(GROUND, said=said(C5_T9), names={"결도배", "마루와벽"})
-        assert run(g, text, opened={"visit_slot"}) == text and not g.dropped
     # 네 턴 전 안내는 견주지 않는다(REPEAT_TURNS)
     old = said(C5_T9, "네.", "네.", "네.")
     g = gate(GROUND, said=old, names={"결도배"})

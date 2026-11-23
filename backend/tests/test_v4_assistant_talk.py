@@ -232,4 +232,6 @@ def test_turn_trims_a_long_answer_and_a_repeated_ending(api, script):
         [{"text": "관리사무소에 공사 신고를 해요. 공사 전 할 일 카드에서 하나씩 확인해 보세요."}]
     )
     again = tokens(ok(ask(api, pid, "또 뭐가 있어요?")))
-    assert again == "관리사무소에 공사 신고를 해요."  # 지난 세 턴에 보낸 안내는 뺀다(첫 턴 끝 문장)
+    # 지난 세 턴에 보낸 안내(첫 턴 끝 문장)는 되풀이지만, 이 답의 다음 걸음이 그 안내뿐이라 살려요(QA r6 c3 t19,
+    # 열린 승인 카드가 없고 바로 앞 두 답에 다 있지는 않음)
+    assert again == "관리사무소에 공사 신고를 해요. 공사 전 할 일 카드에서 하나씩 확인해 보세요."

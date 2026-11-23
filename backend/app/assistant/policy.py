@@ -384,6 +384,14 @@ def points(text: str) -> bool:
     return bool(UI_POINT.search(t)) and bool(SUGGEST.search(t) or asks(t) or _PRESS.search(t))
 
 
+def leads(text: str) -> bool:
+    """다음 걸음을 말하는 문장인지: 가리키는 말(points) · 묻는 말 · 부탁(asks) · 할 일(고르기 · 누르기 · 수락 · 채팅 …)을
+    하라는 말('업체 추천에서 다시 골라 주세요'). '고르지 않거나 …'처럼 낱말만 닮은 설명은 아니다. 지금 할 일 줄 붙이기 ·
+    되풀이로 뺀 다음 걸음 살리기가 답에 다음 걸음이 있는지 볼 때 쓴다."""
+    t = (text or "").strip()
+    return points(t) or asks(t) or (next_step(t) and bool(SUGGEST.search(t)))
+
+
 # '…오면 알려 드릴게요' 꼴 약속(업체 답 · 견적서가 오면 알린다): 숫자가 있어도 되풀이를 본다(고침 4차 G, QA r4 c5 3 · 5 · 7턴)
 PROMISE = re.compile(
     r"알려\s*드릴(?:게요|께요|\s*거예요)|알려\s*드리겠|(?:면|때|대로)\s+(?:\S+\s+){0,2}알려\s*드려요"

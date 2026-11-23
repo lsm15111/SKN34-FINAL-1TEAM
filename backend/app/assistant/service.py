@@ -616,15 +616,19 @@ def nudge_item(n, a) -> str:
 
 async def nudge_facts(s, user: User, project_id: uuid.UUID, rows: list[ChatMessage]) -> str | None:
     """턴 사실 '먼저 말 건 줄': 고객이 마지막으로 말한 뒤(대화가 없으면 처음부터) 보낸 고객 먼저 말 걸기 줄(보이는 것,
-    새것 NUDGE_FACT_MAX개, 오래된 것부터). 없으면 None. 읽기만 한다."""
+    새것 NUDGE_FACT_MAX개, 오래된 것부터). 없거나 못 읽으면 None(덧붙이는 사실이라 턴을 막지 않는다). 읽기만 한다."""
     last = next((m.created_at for m in reversed(rows) if m.role == "user"), None)
-    shown = await repo.shown_nudges(
-        s, user.id, "customer", project_id, since=last, limit=NUDGE_FACT_MAX
-    )
-    shown = [n for n in shown if n.sent_at is not None and (last is None or n.sent_at > last)]
-    if not shown:
+    try:
+        shown = await repo.shown_nudges(
+            s, user.id, "customer", project_id, since=last, limit=NUDGE_FACT_MAX
+        )
+        shown = [n for n in shown if n.sent_at is not None and (last is None or n.sent_at > last)]
+        if not shown:
+            return None
+        acts = await repo.actions_by_id(s, user.id, [n.action_id for n in shown if n.action_id])
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 줄 없이
+        log.warning("턴 사실 먼저 말 건 줄 읽기 실패 (%s)", type(e).__name__)
         return None
-    acts = await repo.actions_by_id(s, user.id, [n.action_id for n in shown if n.action_id])
     items = [nudge_item(n, acts.get(n.action_id)) for n in reversed(shown)]
     return NUDGE_FACT.format(items=" / ".join(items))
 
