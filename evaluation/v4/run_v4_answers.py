@@ -8,7 +8,7 @@
   (expert+v3, docs/v4/13-trade-experts.md). --systems로 골라 돌려요
 - 세트(pick): sets/compare.jsonl dev에서 묶음마다 씨앗 고정 순서(kit.stable_int(seed, id) 오름차순)로 앞에서 고른 40문항
   (다른 공정 6 · 여러 공정 14 · 지식 16 · 금액 · 기간 4 = PICK). --split heldout · both는 held-out을 모두 더해요(최종 확인용).
-  --split all은 고르지 않고 세트 모두(sets/trade_expert30.jsonl 같은 작은 세트). --only는 고른 것 안에서만 걸러요
+  --split all은 고르지 않고 세트 모두(sets/trade_expert36.jsonl 같은 작은 세트). --only는 고른 것 안에서만 걸러요
 - 앱: apienv.App(평가 DB mitjip_eval_v4ans · Redis 9). 질문 × 시스템마다 표 · Redis를 비우고 다시 심어요(app.reset)
 - 심기(공개 API): 고객 가입 → 공사 만들기(지금 화면 몸통: 공급 105.8㎡ · 도배 기본형 + 목공 몰딩 · 걸레받이 · 빈 집 ·
   시작 희망 2027-01-04 · 서울 마포구) → 표준견적서 한 번 열기(화면처럼. 턴 사실의 평형이 이 값에서 나와요)
@@ -580,7 +580,7 @@ def pick_rows(a) -> list[dict]:
     rows = pick(every, seed=a.seed) if a.split in ("dev", "both") else []
     if a.split in ("heldout", "both"):  # held-out은 고르지 않고 모두 써요
         rows += [r for r in every if r["split"] == "heldout"]
-    if a.split == "all":  # 작은 세트(trade_expert30 등): 고르지 않고 모두
+    if a.split == "all":  # 작은 세트(trade_expert36 등): 고르지 않고 모두
         rows = list(every)
     if a.only:
         want = a.only.split(",")
