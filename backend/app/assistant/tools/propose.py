@@ -58,6 +58,8 @@ def summary_rows(sm: ActionSummary) -> list[dict]:
     rows: list[dict] = [
         {"label": r.label, "value": r.value, **({"sub": r.sub} if r.sub else {})} for r in sm.rows
     ]
+    if sm.version:  # 어느 판(견적서 2판 · 공정표 3판)인지: 카드에 보이는 그대로
+        rows.insert(0, {"label": "판", "value": sm.version})
     rows += [{"label": x.label, "won": x.won} for x in sm.amounts]
     if sm.amount_won is not None:
         rows.append({"label": "금액", "won": sm.amount_won})
@@ -279,7 +281,9 @@ def locked_text(live: int, quoted: bool) -> str:
     "있어요). 기준을 되묻기만 하지 말고 고객이 말한 값으로 카드를 만들어요. 지역이 틀렸거나 다른 구로 바꾸면 "
     "sgg(시 · 군 · 구, 예 노원구)를 넣어요(같은 이름이 여러 시 · 도에 있으면 '부산 중구'처럼). "
     "평형('34평')은 pyeong에 넣으면 믿집이 공급 ㎡로 바꿔요. ㎡를 area_m2에 넣을 때는 area_basis를 같이 넣어요: "
-    "계약서 · 등기 · 'nn 타입'('84 타입' = 전용 84㎡)의 ㎡는 exclusive, 분양 면적이라고 한 ㎡는 supply예요. "
+    "'nn 타입'('84 타입' = 전용 84㎡) · 등기의 ㎡는 exclusive, 분양 면적이라고 한 ㎡는 supply예요. "
+    "계약서 ㎡처럼 고객이 기준을 말하지 않은 ㎡는 카드를 만들기 전에 한 번 확인해요(예: '84㎡는 보통 전용면적이에요. "
+    "전용 84㎡로 넣을까요?'). 기준에 따라 표준견적서가 크게 달라져요. "
     "평형과 타입을 같이 말하면 타입(전용 ㎡)을 넣어요. "
     "철거 범위는 전체 철거(full) · 부분 철거(partial) · 철거 안 함(none)이고, 전체 철거면 표준견적서가 "
     "리모델링 기준으로 바뀌어요. 직접 할 일(diy)은 고객이 업체 없이 직접 하는 일의 바뀐 뒤 전체 목록이고, 빈 목록이면 "

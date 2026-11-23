@@ -491,6 +491,12 @@ async def brief_sentence(data: VendorBriefData, user_id: uuid.UUID, *, call: boo
 # 계산 엔진 줄 이름은 그대로 둔다: '실크벽지 시장 평균 가격' → '실크벽지', '벽 도배 시공 (풀 포함)' → '벽 도배 시공'
 LINE_NOTE_KEYS = frozenset({"wall", "ceiling", "material", "putty", "meal", "truck"})
 LINE_PAPER = re.compile(r"도배지 \((합지|실크)\)")
+# 체크리스트에 올릴 표준견적서 줄 상태 → 업체에게 보일 말. 합계 밖이어도 선택 · 실측 후 줄은 넣었는지 뺐는지 적게 한다
+CHECK_HINT = {
+    **{st: "표준견적서에 있는 줄이에요. 견적서에 넣었는지 확인해요" for st in COUNTED},
+    "optional": "선택 줄이에요. 넣는지 빼는지 견적서에 적어요",
+    "after_visit": "실측 뒤 정하는 줄이에요. 본 대로 넣거나 빼고 견적서에 적어요",
+}
 LINE_MARKET = re.compile(r"(\S+벽지) 시장 평균 가격")
 
 
@@ -528,15 +534,16 @@ async def checklist(
     lines = got[1] if got else []
     board = await visit_service.quote_board(s, vendor, visit_id)
     cur = board.draft or (board.sent[0] if board.sent else None)
+    # 합계에 든 줄 + 선택 · 실측 후 줄(퍼티 · 철거처럼 넣었는지 뺐는지가 나중 추가금 다툼이 되는 줄)
     items = [
         ChecklistRow(
             key=ln.key,
             label=line_name(ln.key, ln.name),
             state="check",
-            hint="표준견적서에 있는 줄이에요. 견적서에 넣었는지 확인해요",
+            hint=CHECK_HINT[ln.state],
         )
         for ln in lines
-        if ln.state in COUNTED
+        if ln.state in CHECK_HINT
     ]
     fields = [
         FieldValue(
