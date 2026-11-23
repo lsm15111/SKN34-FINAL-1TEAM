@@ -17,8 +17,9 @@
 .dim, .dim b, .dim .colName { color: var(--mj-text-mute); }
 .colName { display: block; }
 .colAside { display: block; margin-top: 2px; font-size: var(--mj-type-caption); font-weight: 400; color: var(--mj-text-mute); }
-.emptyCol { color: var(--mj-text-mute); font-weight: 500; }
-.table thead th.emptyCol { font-size: var(--mj-type-label); font-weight: 500; color: var(--mj-text-mute); }
+/* 담을 수 있는 곳이 남았을 때 표(카드) 아래 한 줄: 글 + 다음 길 */
+.more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding: 12px; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+.more p { margin: 0; }
 
 /* 카드(좁은 칸) */
 .cards { display: flex; flex-direction: column; gap: var(--mj-gap-group); margin: 0; padding: 0; list-style: none; }
@@ -35,7 +36,6 @@
 .kvBig dd { text-align: left; }
 .cardAct { display: flex; }
 .cardAct > * { flex: 1 1 auto; }
-.cardEmpty { align-items: flex-start; color: var(--mj-text-sub); background: var(--mj-surface-sub); box-shadow: none; }
 
 @container (min-width: 600px) {
   .tblBox { display: block; }

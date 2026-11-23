@@ -1,7 +1,9 @@
 // 비교표(W4 A · design-system 3.3 CompareTable): 업체를 열로(최대 3), 첫 열 170 라벨.
 // 쓰는 곳: 실측 일정(상태 · 날짜 · 다음 할 일 · 기한 · D03) · 실측 견적서(합계 · 차이 · 공사 기간 · 포함됐나요 · 유효기간 · 파일 · 확정 · D18).
 // 담긴 칸이 600px보다 좁으면(폰) 업체마다 카드를 세로로, 줄 순서는 같게 그려요(C14 · C33).
-// 할 일 있는 열은 옅은 파랑, 유효기간 지난 열은 회색 글자, 빈 열은 '1곳 더 담을 수 있어요' + 다음 길.
+// 할 일 있는 열은 옅은 파랑, 유효기간 지난 열은 회색 글자. 담을 수 있는 곳이 남으면 표 아래 한 줄('1곳 더 담을 수
+// 있어요' + 다음 길)만 두고 빈 열 · 빈 카드는 그리지 않아요(2026-11-23 사용자: 한 곳만 담았을 때 '빈 칸' 줄이 보임).
+// 첫 열 머리는 '업체명'(열 머리가 업체 이름이라서, 2026-11-23 사용자: '견줄 것'은 맞지 않음).
 import type { ReactNode } from "react";
 import s from "./CompareTable.module.css";
 
@@ -12,11 +14,11 @@ export function CompareTable({ caption, columns, rows, empty, max = 3 }: {
   caption: string;
   columns: CompareCol[];
   rows: CompareRow[];
-  /** 빈 열(담을 수 있는 곳이 남았을 때) */
+  /** 표 아래 한 줄(담을 수 있는 곳이 남았을 때) */
   empty?: { title: string; action?: ReactNode };
   max?: number;
 }) {
-  const showEmpty = empty && columns.length < max;
+  const more = columns.length < max ? empty : undefined;
   return (
     <div className={s.wrap}>
       {/* 넓은 칸: 표 */}
@@ -25,13 +27,12 @@ export function CompareTable({ caption, columns, rows, empty, max = 3 }: {
           <caption className="mj-sr">{caption}</caption>
           <thead>
             <tr>
-              <th scope="col" className={s.lab}>견줄 것</th>
+              <th scope="col" className={s.lab}>업체명</th>
               {columns.map((c) => (
                 <th key={c.key} scope="col" className={[c.highlight ? s.hl : null, c.dim ? s.dim : null].filter(Boolean).join(" ") || undefined}>
                   <span className={s.colName}>{c.name}</span>{c.aside ? <span className={s.colAside}>{c.aside}</span> : null}
                 </th>
               ))}
-              {showEmpty ? <th scope="col" className={s.emptyCol}>빈 칸</th> : null}
             </tr>
           </thead>
           <tbody>
@@ -41,7 +42,6 @@ export function CompareTable({ caption, columns, rows, empty, max = 3 }: {
                 {columns.map((c) => (
                   <td key={c.key} className={[c.highlight ? s.hl : null, c.dim ? s.dim : null].filter(Boolean).join(" ") || undefined}>{r.cells[c.key] ?? "—"}</td>
                 ))}
-                {showEmpty ? <td className={s.emptyCol}>{r.key === rows[0]?.key ? empty!.title : r.action ? empty!.action ?? "—" : "—"}</td> : null}
               </tr>
             ))}
           </tbody>
@@ -64,13 +64,13 @@ export function CompareTable({ caption, columns, rows, empty, max = 3 }: {
             {rows.filter((r) => r.action).map((r) => <div key={r.key} className={s.cardAct}>{r.cells[c.key]}</div>)}
           </li>
         ))}
-        {showEmpty ? (
-          <li className={`${s.card} ${s.cardEmpty}`}>
-            <p>{empty!.title}</p>
-            {empty!.action}
-          </li>
-        ) : null}
       </ul>
+      {more ? (
+        <div className={s.more}>
+          <p>{more.title}</p>
+          {more.action}
+        </div>
+      ) : null}
     </div>
   );
 }
