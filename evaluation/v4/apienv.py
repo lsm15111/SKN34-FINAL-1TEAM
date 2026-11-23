@@ -73,6 +73,20 @@ def live_mode() -> None:
     os.environ["LLM_NEW_USER_DAYS"] = NEW_USER_DAYS
 
 
+def openai_mode() -> None:
+    """OpenAI 길 LLM 모드(유료, LLM_PROVIDER=openai): 환경변수에 LLM_LIVE=true와 OPENAI_API_KEY가 있어야 해요(키 값은
+    찍지 않아요). Anthropic · OpenRouter · Voyage 키는 비우고 Jev는 꺼요(도면 읽기는 꺼져요). 앱을 불러오기 전에 불러요."""
+    if os.environ.get("LLM_LIVE", "").strip().lower() != "true":
+        raise SystemExit("LLM 모드에는 환경변수 LLM_LIVE=true가 필요해요.")
+    if not os.environ.get("OPENAI_API_KEY", "").strip():
+        raise SystemExit("OpenAI 길에는 환경변수 OPENAI_API_KEY가 필요해요.")
+    for k in ("ANTHROPIC_API_KEY", "OPENROUTER_API_KEY", "VOYAGE_API_KEY"):
+        os.environ[k] = ""
+    os.environ["JEV_ENABLED"] = "false"
+    os.environ["LLM_PROVIDER"] = "openai"
+    os.environ["LLM_NEW_USER_DAYS"] = NEW_USER_DAYS
+
+
 class ToolTap:
     """비서 도구 호출 입력을 모아요. take(turn_id)로 그 턴 것만 가져가요."""
 
