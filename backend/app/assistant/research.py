@@ -39,7 +39,7 @@ from app import queue
 from app.agent import llm
 from app.agent.v3 import check
 from app.agent.v3.schemas import Sentence
-from app.assistant import linkimage, pagecheck, policy, prompts, weblinks
+from app.assistant import asks, linkimage, pagecheck, policy, prompts, weblinks
 from app.assistant.models import RESEARCH_LIVE, AssistantResearch
 from app.assistant.schemas import AssistantItem, CardOut, CardPart, TextPart
 from app.auth.models import User
@@ -123,8 +123,8 @@ OFFICIAL = (
 OUTSIDE_NOTE = "믿집이 확인하지 않은 곳이에요."
 # 찾을 수(고객이 말한 '5곳' · '다섯 군데'): 없으면 믿집 밖 업체는 기본 5곳, 많아야 링크 · 항목 상한(6)
 WANT_DEFAULT = 5
-_WANT_NUM = re.compile(r"(?<![\d.])(\d{1,2})\s*(?:곳|군데|개|업체)")
-_WANT_WORD = re.compile(r"(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:곳|군데|개)")
+_WANT_NUM = re.compile(r"(?<![\d.])(\d{1,2})\s*(?:곳|군데|개|업체|가지|종류)(?!월)")
+_WANT_WORD = re.compile(r"(한|두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:곳|군데|개|가지|종류)")
 _WANT_KO = {
     "한": 1,
     "두": 2,
@@ -141,6 +141,8 @@ _WANT_KO = {
 _TITLE_TAIL_ASK = re.compile(
     r"\s*(?:믿집\s*밖(?:에서)?\s*)?(?:최대\s*)?(?:\d{1,2}|한|두|세|네|다섯|여섯)?\s*(?:곳|군데|개)?\s*(?:조사|찾기|알아보기)$"
 )
+# 요청 점검(asks.research_goal)이 목표 끝에 붙인 부탁(' · 5곳' · ' · 판매가')도 제목에는 두지 않는다
+_TITLE_TAIL_ADDED = re.compile(r"(?:\s*·\s*(?:\d{1,2}\s*(?:곳|가지)|판매가))+$")
 NO_SUMMARY = "요약을 만들지 못했어요."
 ENDED_LINE = {
     "done": "{title} 조사를 마쳤어요.",
@@ -353,6 +355,7 @@ def title_of(goal: str) -> str:
     (QA r3 v1 M1: '노원구 32평 아파트 도배 업체 (실크벽지, 벽지' → '… 도배 업체 (실크벽지)'). 끝난 항목이 없으면
     괄호째 뺀다."""
     g = " ".join((goal or "").split())
+    g = _TITLE_TAIL_ADDED.sub("", g).strip() or g
     g = _TITLE_TAIL_ASK.sub("", g).strip() or g  # 부탁 말 꼬리(최대 5곳 조사)는 제목에 두지 않는다
     if len(g) <= TITLE_MAX:
         return g
@@ -491,13 +494,51 @@ def card_of(r: AssistantResearch, phase: Literal["progress", "result"] = "progre
     return CardOut(card_id=cid, kind="research", data=data_of(r, phase).model_dump(mode="json"))
 
 
+def count_unit(kind: str) -> str:
+    """찾을 수의 단위: 믿집 밖 업체는 '곳', 자재 · 일반은 '가지'."""
+    return "곳" if kind == "outside_vendors" else "가지"
+
+
+def found_count(kind: str, res: dict) -> int:
+    """찾은 수: 업체 · 자재는 항목(이름 줄), 일반 조사는 링크."""
+    return len(res.get("links") or []) if kind == "general" else len(res.get("items") or [])
+
+
+def short_line(r: AssistantResearch) -> str:
+    """요청 점검(2026-11-23): 고객이 말한 찾을 수보다 덜 찾았거나, 값을 물었는데 확인한 판매가가 하나도 없으면 정직한 한
+    문장(' 부탁하신 5곳 중 3곳을 찾았어요.' · ' 판매가는 판매처 페이지에서 확인하지 못했어요.'). 없으면 ''."""
+    # ended_line은 상태 · 제목 · 결과만 든 값으로도 불러요(목표 · 종류 · 메모가 없으면 덜 찾음을 따지지 않아요)
+    res = r.result or {}
+    goal, kind = getattr(r, "goal", None) or "", getattr(r, "kind", None) or "general"
+    notes = note_texts(r)
+    out = ""
+    want, got = want_count(goal, notes), found_count(kind, res)
+    if want and 0 < got < want:
+        unit = count_unit(kind)
+        out += f" 부탁하신 {want}{unit} 중 {got}{unit}{'을' if unit == '곳' else '를'} 찾았어요."
+    items = res.get("items") or []
+    if (
+        kind == "materials"
+        and items
+        and asks.asked_price(" ".join([goal, *notes]))
+        and not any(x.get("price") for x in items)
+    ):
+        out += PRICE_MISSING
+    return out
+
+
+PRICE_MISSING = " 판매가는 판매처 페이지에서 확인하지 못했어요."
+
+
 def ended_line(r: AssistantResearch) -> str:
     """대화에 올리는 정해 둔 한 문장(멈춤은 찾은 게 있으면 그것만 정리했다고, 덜 찾고 마쳤으면 찾은 만큼이라고
-    덧붙인다. 안쪽 사정(도구 상한 · 오류)은 말하지 않는다)."""
+    덧붙인다. 부탁한 수 · 판매가를 못 채웠으면 그것을 말한다(short_line). 안쪽 사정(도구 상한 · 오류)은 말하지 않는다)."""
     res = r.result or {}
     line = ENDED_LINE.get(r.status, ENDED_LINE["done"]).format(title=r.title)
     if r.status == "stopped" and res.get("links"):
         line += STOPPED_FOUND
+    elif r.status == "done" and (short := short_line(r)):
+        line += short
     elif r.status == "done" and res.get("partial"):
         line += DONE_PARTIAL
     return line
@@ -673,7 +714,9 @@ def pick_item(items: list[dict], name: str) -> dict | None:
 
 def note_texts(r: AssistantResearch) -> list[str]:
     """조사에 붙은 바꾸기 메모 글(붙인 순)."""
-    return [str(n.get("text") or "") for n in r.notes or [] if isinstance(n, dict)]
+    return [
+        str(n.get("text") or "") for n in getattr(r, "notes", None) or [] if isinstance(n, dict)
+    ]
 
 
 def pick(rows: list[AssistantResearch], about: str) -> AssistantResearch | None:
@@ -1211,7 +1254,15 @@ def _first_message(kind: str, goal: str, terms: str, notes: list[str], today: da
         f"집 조건: {shown or '모름'}",
     ]
     if count:
-        lines.append(f"찾을 수: {count}곳(서로 다른 곳으로, 모자라면 검색어를 바꿔 더 찾아 주세요)")
+        unit = count_unit(kind)
+        to = "으로" if unit == "곳" else "로"
+        lines.append(
+            f"찾을 수: {count}{unit}(서로 다른 {unit}{to}, 모자라면 검색어를 바꿔 더 찾아 주세요)"
+        )
+    if kind == "materials" and asks.asked_price(" ".join([goal, *notes])):
+        lines.append(
+            "판매가: 고객이 값을 물었어요. 항목마다 판매처 상세 페이지의 1롤 판매가 · 규격을 찾아 적어 주세요"
+        )
     if other:
         lines.append(
             f"찾을 지역: {' · '.join(sorted(want))}(집과 다른 지역이에요. 이 지역 페이지만 골라 주세요)"
