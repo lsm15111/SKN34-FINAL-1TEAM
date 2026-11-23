@@ -391,7 +391,8 @@ def test_vendor_sees_picked_half_in_brief_today_and_tool(api, script):
     assert req["picked"]["half"] == "오전" and "요청 화면" in req["picked"]["note"]
     sent = json.dumps(got, ensure_ascii=False)
     assert "+00:00" not in sent and "T0" not in sent  # UTC 시각을 그대로 넘기지 않아요
-    assert req["due_at"] is None or ("오전" in req["due_at"] or "오후" in req["due_at"])
+    # 서울 시각 글(새벽 · 아침 · 오전 · 낮 · 오후 · 저녁 · 밤): 자정 무렵이면 '밤 12시 40분'이에요
+    assert req["due_at"] is None or any(w in req["due_at"] for _, w in kdate.PERIODS)
 
 
 def test_today_and_my_jobs_follow_customer_date_request(api, script):
