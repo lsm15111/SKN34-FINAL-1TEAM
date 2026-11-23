@@ -11,7 +11,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from app.assistant import research
+from app.assistant import asks, research
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import pid_of
 from app.db import SessionLocal
@@ -76,6 +76,8 @@ async def start_research(tc: ToolCtx, a: StartIn) -> ToolOut:
     ):  # 평은 집 정보의 공급 평형 그대로(QA r3 c4b: 모델이 21.4평 집을 '21평'으로 적음)
         pyeong = await research.home_pyeong(s, tc.user, pid)
     goal = research.fit_pyeong(goal, pyeong)
+    # 요청 점검: 고객 말의 찾을 수 · 판매가를 모델이 목표에서 뺐으면 붙인다(asks.research_goal, 목표 상한 안에서)
+    goal = asks.research_goal(goal, tc.text, a.kind, research.GOAL_MAX)
     got = await research.start(tc.user, pid, a.kind, goal, tc.turn_id, tc.now)
     data: dict = {"state": got.state, "message": got.message}
     if got.research is not None:

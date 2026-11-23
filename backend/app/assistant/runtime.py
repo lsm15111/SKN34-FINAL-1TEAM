@@ -36,6 +36,7 @@ from app import queue
 from app.agent import llm
 from app.agent.v3 import check
 from app.agent.v3.schemas import Sentence
+from app.assistant import asks as asks_mod
 from app.assistant import choices, policy, prompts
 from app.assistant import tools as tools_mod
 from app.assistant.schemas import AnswerData, CardOut
@@ -1014,9 +1015,13 @@ class TurnResult:
     dropped: list[str] = field(default_factory=list)
     # 무료 모드로 넘어가기 전에 화면에 보낸 LLM 글의 길이(저장한 답 글 앞부분). 다시 열 때 AI 글로 보인다
     kept: int = 0
+    # 요청 점검(asks.py): 고객 말에서 뽑은 부탁 이름 · 턴 끝에 못 채운 것 · 한 번 더 기회를 줬는지(글 없음)
+    asks: list[str] = field(default_factory=list)
+    unmet: list[str] = field(default_factory=list)
+    asks_retry: bool = False
 
     def trace(self, rev: int, ms: int) -> dict:
-        return {
+        out = {
             "rev": rev,
             "llm": self.llm_calls,
             "tools": self.tools,
@@ -1028,6 +1033,9 @@ class TurnResult:
             "dropped": self.dropped[:DROPPED_MAX],
             "kept": self.kept,
         }
+        if self.asks:  # 부탁이 있던 턴만(요청 점검 평가가 읽는다)
+            out["asks"] = {"want": self.asks, "unmet": self.unmet, "retry": self.asks_retry}
+        return out
 
 
 class _Fallback(Exception):
@@ -1148,6 +1156,12 @@ class _Turn:
                 self.gate.allow(summary_ground(data.get("summary") or {}))
         # 인사 · 고마움만 한 턴: 도구를 부르지 못하게(도구 정의는 그대로 보내 캐시를 지킨다)
         self.chat_only = policy.small_talk(ctx.text) and not ctx.choice and not ctx.stale
+        # 요청 점검(asks.py): 고객 비서에서 고객이 직접 쓴 말만(카드 단추가 만든 말 · 인사는 아님)
+        plain = ctx.surface == "customer" and not self.chat_only and not ctx.pressed
+        self.asks = asks_mod.extract(ctx.text) if plain else asks_mod.NONE
+        # 이 턴에 보인 카드 · 만든 승인 카드 · 부른 카드 도구의 카드 종류(요청 점검이 견준다)
+        self.done: set[str] = {str(d.get("kind")) for _, d in seen if d.get("kind")}
+        self.rechecked = False
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -1164,10 +1178,13 @@ class _Turn:
         )
 
     def _messages(self) -> list[dict]:
+        facts = self.ctx.facts
+        if want := asks_mod.line(self.asks):  # 요청 점검: 이번 부탁(코드가 고객 말에서 뽑음)
+            facts = f"{facts}\n{want}" if facts else want
         return [
             *self.ctx.history,
             {"role": "user", "content": [{"type": "text", "text": said(self.ctx, self.note)}]},
-            {"role": "system", "content": self.ctx.facts},
+            {"role": "system", "content": facts},
         ]
 
     async def _beat(self, force: bool = False) -> None:
@@ -1188,6 +1205,7 @@ class _Turn:
     async def card(self, card: CardOut) -> None:
         await send_card(self.res, self.emit, card)
         await self.gate.shown(card)
+        self.done.add(card.kind)
 
     async def _open_kinds(self) -> set[str]:
         """턴 앞에 열려 있는 승인 카드 종류(카드를 눌러 달라는 말이 맞는지 본다). 못 읽으면 빈 집합. 그 카드의 업체
@@ -1222,6 +1240,23 @@ class _Turn:
                 self.res.cost_micros = cc.spent_micros
                 self.res.llm_calls = self.budget.llm
                 self.res.tool_calls = self.budget.tools
+                self.res.asks = self.asks.keys()
+                self.res.unmet = [f"show:{k}" for k in asks_mod.missing(self.asks, self.done)]
+                self.res.asks_retry = self.rechecked
+
+    def _recheck(self, messages: list[dict], wrap: bool) -> bool:
+        """요청 점검: 모델이 도구 없이 답을 마쳤는데 보여 달라 · 바꾸겠다고 한 카드를 이 턴에 보이지도 부르지도 않았으면,
+        상한 안에서 한 번만 점검 글을 붙여 다시 부른다(앞 글은 이미 보냈고 이어서 쓴다). 점검 글은 모델에만 간다."""
+        if self.rechecked or wrap or self.chat_only:
+            return False
+        miss = asks_mod.missing(self.asks, self.done)
+        if not miss or not self.budget.can_call() or not self.budget.tool_ok():
+            return False
+        self.rechecked = True
+        text = asks_mod.nudge(miss)
+        self.gate.hint(text)
+        messages.append({"role": "user", "content": [{"type": "text", "text": text}]})
+        return True
 
     async def _loop(self, cc: llm.CallCtx) -> None:
         messages = self._messages()
@@ -1293,6 +1328,8 @@ class _Turn:
                     break
                 continue  # 서버 도구를 이어 가게 같은 요청을 다시 보낸다(새 말 없이)
             if reply.stop != "tool_use" or not reply.tool_calls:
+                if self._recheck(messages, wrap):
+                    continue
                 break
             if wrap:  # 마무리 한 번에도 도구를 부르면 카드만으로 끝낸다
                 self.res.status = "stopped"
@@ -1352,6 +1389,8 @@ class _Turn:
         t0 = time.monotonic()
         trace = {"name": name, "ok": False, "size": 0, "ms": 0}
         self.res.tools.append(trace)
+        # 요청 점검: 카드 도구를 불렀으면 '해 봄'(실패해도 다시 부르지 않게)
+        self.done |= asks_mod.tried(name, args)
         try:
             t = tools_mod.get(name, self.ctx.surface)  # type: ignore[arg-type]
             await self.emit("status", {"text": t.status})
@@ -1398,6 +1437,7 @@ class _Turn:
         for a in out.actions:  # 행을 commit한 뒤에 보낸다(도구가 commit했다)
             if str(a.action_id) not in self.res.actions:
                 self.res.actions.append(str(a.action_id))
+            self.done.add(a.kind)
             await self.emit("action", a.model_dump(mode="json"))
         if t.kind == "propose" and out.actions:  # 카드 말(만들었어요 · 눌러 주세요)을 놓아준다
             fresh = given.get("state") == "new"
