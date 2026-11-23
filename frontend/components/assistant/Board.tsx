@@ -1,29 +1,25 @@
 "use client";
-// 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 금액(표준견적서 → 확정 금액) · 업체 · 공사 기간 · 서류 ·
-// 비서가 기억하는 것(있을 때만). 정할 일 수는 대화 위 '오늘 정할 일 n'(웹) · 입력 칸 위 '보드 · 정할 일 n'(폰)에만 둬요(2026-11-23 사용자).
-// 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만). 기억은 고객 말에서만 오고 × 로 지워요.
-// 기억 칩은 GET /assistant/memory(다른 담당) 값이에요. API가 아직 없으면(404) 그 칸을 숨겨요. 칩을 누르고 있으면 내가 한 말이 보여요.
+// 내 공사 보드(웹 오른쪽 340 · 1024 아래는 아래 시트 84%): 우리 집 · 금액(표준견적서 → 확정 금액) · 업체 · 공사 기간 · 서류.
+// 이 공사가 어디까지 왔는지만 봐요. 정할 일 수는 대화 위 '오늘 정할 일 n'(웹) · 입력 칸 위 '보드 · 정할 일 n'(폰)에만,
+// 비서가 기억한 것은 내 정보 '비서가 기억한 것'에만 둬요(2026-11-23 사용자). 값은 서버가 준 그대로예요(금액 범위도 두 값을 받아 모양만).
 // 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 → '우리 집 정보' 창(그 칸에 초점,
 // 실측 요청 뒤 잠기면 보기만) · 금액 → 표준견적서(업체를 확정했으면 실측 견적서) · 업체 금액 범위 → 견적서 비교 · 업체 줄 → 그 업체
 // 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류 모음. 철거 범위 · 직접 할 일 줄은 대화에서 정해요.
 import Link from "next/link";
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
-import type { BoardOut, MemoryOut } from "@/lib/api/assistant";
+import type { BoardOut } from "@/lib/api/assistant";
 import { won } from "@/lib/format";
 import { StatusTag } from "./kit/StatusTag";
 import { I } from "./kit/icons";
 import s from "./assistant.module.css";
 
-export function Board({ board, memory, open, flash, base, onClose, onForget }: {
+export function Board({ board, open, flash, base, onClose }: {
   board: BoardOut | null;
-  /** 기억(undefined 읽는 중 · null API 없음) */
-  memory: MemoryOut[] | null | undefined;
   open: boolean;
   flash: number;
   /** 이 공사 주소(/projects/{id}). 칸의 자세히는 그 아래 카드 자리 경로예요 */
   base: string;
   onClose: () => void;
-  onForget: (id: string) => void;
 }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -51,7 +47,7 @@ export function Board({ board, memory, open, flash, base, onClose, onForget }: {
         </div>
         {!board ? <p className={s.muted}>보드를 불러오고 있어요</p> : (
           // 폰에서 보드(아래 시트)를 연 채 자세히로 가면 보드는 닫아요
-          <Sections b={board} memory={memory === undefined ? board.memory : memory} base={base} onOpen={open ? onClose : undefined} onForget={onForget} />
+          <Sections b={board} base={base} onOpen={open ? onClose : undefined} />
         )}
       </aside>
     </>
@@ -70,9 +66,7 @@ export function factField(fact: string, i: number): string | null {
   return null;
 }
 
-function Sections({ b, memory, base, onOpen, onForget }: {
-  b: BoardOut; memory: MemoryOut[] | null; base: string; onOpen?: () => void; onForget: (id: string) => void;
-}) {
+function Sections({ b, base, onOpen }: { b: BoardOut; base: string; onOpen?: () => void }) {
   const homeHref = `${base}/home`;
   // 실측 요청 뒤(잠김)에도 창은 열려요(보기만, 고치기는 막힌 화면). 초점 칸은 고칠 수 있을 때만. 따로 '고치기' 단추는 두지 않아요
   const locked = !!b.home?.locked;
@@ -172,20 +166,6 @@ function Sections({ b, memory, base, onOpen, onForget }: {
             <h3 className={s.bsecT}>서류</h3>
             <Link className={s.bsecEdit} href={`${base}/docs`} {...go}>모두 보기</Link>
           </div>
-        </section>
-      ) : null}
-      {memory?.length ? (
-        // 기억한 것이 있을 때만(빈 칸 안내 · 내 정보 링크는 두지 않아요, 2026-11-23 사용자: 화면 문구는 최소로)
-        <section className={s.bsec}>
-          <h3 className={s.bsecT}>비서가 기억하는 것</h3>
-          <ul className={s.mem}>
-            {memory.map((m) => (
-              <li key={m.id} title={`내가 한 말: ${m.evidence_quote}`}>
-                {m.value}
-                <button type="button" aria-label={`'${m.value}' 지우기`} onClick={() => onForget(m.id)}><I n="x" /></button>
-              </li>
-            ))}
-          </ul>
         </section>
       ) : null}
     </>

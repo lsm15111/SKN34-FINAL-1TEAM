@@ -1,6 +1,6 @@
 "use client";
 // 비서 대화 상태 한 곳: 다시 열기(threads/latest · feed · board · today) · 턴(SSE) 이어 붙이기 · 끊기면 같은 client_key로 다시 잇기 ·
-// 승인(멱등 키 · 본 판 · 409 · 만료) · 먼저 말 걸기(nudges) · 기억 · 무료 모드 · 전체 화면 카드 안 v3 단추 뒤 다시 읽기.
+// 승인(멱등 키 · 본 판 · 409 · 만료) · 먼저 말 걸기(nudges) · 무료 모드 · 전체 화면 카드 안 v3 단추 뒤 다시 읽기.
 // 대화 원본은 서버 feed예요. 카드 값은 서버가 바꿔 보내요(화면은 계산하지 않아요).
 // 실시간: 이 공사 상태 소식(state) · 다시 이음(resync)이 오면 대화 기록을 다시 읽어요. 먼저 말 걸기를 보내거나 닫아도 대화 번호표(rev)는
 // 그대로라 번호표만 보면 문장 · 카드를 놓쳐요. 턴이 도는 중에 온 소식은 턴이 끝난 뒤 읽어요.
@@ -9,11 +9,11 @@
 // 그 자리에 보인 오늘 정할 일 · 첫 인사는 첫 말을 보낸 뒤에도 그 자리에 그대로 둬요(같은 날 카드가 턴으로 와도 값만 바꿔요).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, forgetMemory, getBoard, getFeed, getHealth,
-  getLatestThread, getMemory, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
+  actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, getBoard, getFeed, getHealth,
+  getLatestThread, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
   rejectAction, replaceAction, resetMock, resetTurn, sayable, seqFilter, settledNudges, streamTurn, subscribeTurns, takeToday, targetOfWrite,
   turnErrorText, BUSY_TEXT, TURN_RETRY_MS, TurnBusy,
-  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type MemoryOut, type TodayData, type TurnEvent, type TurnIn,
+  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { useStream } from "@/lib/backend/stream";
@@ -50,7 +50,6 @@ export function useAssistant(projectId: string) {
   const [kept, setKept] = useState<Record<string, ActionOut>>({});
   const [handled, setHandled] = useState<Record<string, true>>({});
   const [health, setHealth] = useState<HealthOut | null>(null);
-  const [memory, setMemory] = useState<MemoryOut[] | null | undefined>(undefined);
   const [gone, setGone] = useState<Record<string, true>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
@@ -74,11 +73,9 @@ export function useAssistant(projectId: string) {
   const genRef = useRef(0);
   const itemsRef = useRef<FeedItem[]>([]);
   const openRef = useRef<ActionOut[]>([]);
-  const memoryRef = useRef<MemoryOut[] | null | undefined>(undefined);
   nowRef.current = now;
   itemsRef.current = items;
   openRef.current = open;
-  memoryRef.current = memory;
 
   const fail = (id: string, msg: string | null) => setErrors((x) => { const { [id]: _, ...rest } = x; return msg ? { ...rest, [id]: msg } : rest; });
 
@@ -111,14 +108,13 @@ export function useAssistant(projectId: string) {
     } catch { /* 보드는 다음 소식 때 다시 읽어요 */ }
   }, [projectId]);
 
-  /** 보드 · 오늘 정할 일 · 열린 대기 행동 · 무료 모드 · 기억(대화 옆 값들) */
+  /** 보드 · 오늘 정할 일 · 열린 대기 행동 · 무료 모드(대화 옆 값들) */
   const refreshSide = useCallback(async () => {
     await Promise.all([
       refreshBoard(),
       getToday(projectId).then(setToday).catch(() => undefined),
       listActions(projectId, "proposed").then(setOpen).catch(() => undefined),
       getHealth().then(setHealth),
-      getMemory().then(setMemory).catch(() => undefined),
     ]);
   }, [projectId, refreshBoard]);
 
@@ -437,20 +433,6 @@ export function useAssistant(projectId: string) {
     void refreshSide();
   }, [projectId, loadFeed, refreshSide, toast]);
 
-  /** 기억 지우기: 칩을 먼저 빼고, 서버에서 못 지웠으면 되살려 알려요(지웠다고 믿은 기억이 다음 턴에 쓰이지 않게) */
-  const forget = useCallback(async (memoryId: string) => {
-    const prev = memoryRef.current;
-    setMemory((m) => (m ? m.filter((x) => x.id !== memoryId) : m));
-    try {
-      await forgetMemory(memoryId);
-    } catch {
-      setMemory(prev);
-      toast.show("기억을 지우지 못했어요. 잠시 뒤 다시 해 주세요.", { tone: "error" });
-    } finally {
-      void refreshSide();
-    }
-  }, [refreshSide, toast]);
-
   /** 앞 대화 더 보기(턴 번호 커서) */
   const loadOlder = useCallback(async () => {
     if (!before || olderBusy) return;
@@ -529,13 +511,13 @@ export function useAssistant(projectId: string) {
   }, [items, open, kept, today, todayFirst, firstToday, pin, anchor, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled: handledAll, ended, health, memory,
+    projectId, items: view, chips, now, loaded, loadError, running, board, pending, errors, flash, handled: handledAll, ended, health,
     gone: shut, settled,
     /** 처음 열 때 대화가 비었어요(첫 인사). 이 화면에서는 첫 말을 보낸 뒤에도 그대로 보여요 */
     fresh: greet,
     /** 기록의 마지막 말(화면이 만든 말 빼고): 입력 중 표시 · 답 기다림 줄은 이 말로 정해요 */
     tail: items[items.length - 1] ?? null,
     hasOlder: !!before, olderBusy, loadOlder,
-    send, approve, reject, openNudge, dismissNudge, forget, reset, reload: load, actionOf,
+    send, approve, reject, openNudge, dismissNudge, reset, reload: load, actionOf,
   };
 }

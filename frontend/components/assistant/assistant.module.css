@@ -164,11 +164,6 @@ a.rangeLine:hover { text-decoration: underline; text-underline-offset: 3px; }
 .links { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .links a { display: inline-flex; align-items: center; min-height: var(--mj-hit-min); color: var(--mj-link); font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-label); text-decoration: none; }
 .links a:hover { text-decoration: underline; text-underline-offset: 3px; }
-.mem { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
-.mem li { display: inline-flex; align-items: center; font-size: var(--mj-type-caption); background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-pill); padding: 0 0 0 12px; min-height: var(--mj-hit-min); }
-.mem button { display: grid; place-items: center; width: 40px; height: 40px; margin: -1px -1px -1px 0; border: 0; border-radius: 50%; background: none; color: var(--mj-text-mute); cursor: pointer; }
-.mem button:hover { background: var(--mj-fill); color: var(--mj-text); }
-.mem svg { width: 14px; height: 14px; }
 .planSvg { width: 100%; height: auto; max-height: 120px; background: var(--mj-bg); border-radius: var(--mj-radius-badge); }
 .planSvg rect, .planSvg line { fill: none; stroke: var(--mj-fill-strong); stroke-width: 1.6; }
 .planSvg .wall { stroke-width: 3; stroke: var(--mj-text-sub); }
