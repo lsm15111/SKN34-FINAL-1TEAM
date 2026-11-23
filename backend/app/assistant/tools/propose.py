@@ -18,9 +18,17 @@ from typing import Literal
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from app.assistant import actions
-from app.assistant.schemas import ActionSummary, AmountRow, CardOut, LinkOut, SummaryRow
+from app.assistant.schemas import (
+    ActionSummary,
+    AmountRow,
+    CardOut,
+    DiffOut,
+    LinkOut,
+    SummaryRow,
+)
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import TRADE, dobae_only, pid_of, region_of
+from app.calc import visit_view
 from app.db import SessionLocal
 from app.project import diy as project_diy
 from app.project.diy import DIY as DIY_LABELS
@@ -54,7 +62,7 @@ REPLACED_NOTE = (
 
 
 def summary_rows(sm: ActionSummary) -> list[dict]:
-    """승인 카드 요약 → 모델 값 줄: 칸(이름 · 값 · 덧말) · 업체별 금액 · 합계 금액(계산 엔진 값 그대로)."""
+    """승인 카드 요약 → 모델 값 줄: 칸(이름 · 값 · 덧말) · 업체별 금액 · 합계 금액 · 차액(계산 엔진 값 그대로)."""
     rows: list[dict] = [
         {"label": r.label, "value": r.value, **({"sub": r.sub} if r.sub else {})} for r in sm.rows
     ]
@@ -63,6 +71,10 @@ def summary_rows(sm: ActionSummary) -> list[dict]:
     rows += [{"label": x.label, "won": x.won} for x in sm.amounts]
     if sm.amount_won is not None:
         rows.append({"label": "금액", "won": sm.amount_won})
+    if sm.diff is not None:  # 카드 위 차액 칸(부가세 포함): 승인하면 이 금액이 이렇게 바뀌어요
+        d = sm.diff
+        rows.append({"label": f"{d.label}(지금)", "won": d.from_won})
+        rows.append({"label": f"{d.label}(승인 뒤)", "won": d.to_won, "diff_won": d.diff_won})
     return rows
 
 
@@ -215,11 +227,14 @@ def home_note(
     live: bool = False,
     dealt: bool = False,
     who: str = REQUESTED,
+    moved: bool | None = None,
 ) -> str:
     """집 정보 승인 카드 메모: 바뀌는 것에 맞춰요. 직접 할 일만 바꾸면 표준견적서는 그대로예요(실행은 칩 저장만).
     벽지 직접 구매(paper_buy)를 켜거나 끄면 표준견적서 도배지 줄이 고객 구매로 빠지거나 돌아와요(before: 지금 칩).
     실측을 요청한 뒤면 확정 전 요청 · 공사 시작 전 확정(live, who: 그 업체를 부르는 말 told_whom)의 '업체에 알릴 것'도
-    같이 고쳐 업체에 알리고(visit.flow.sync_diy), 공사가 시작된 확정 업체(dealt)에는 채팅으로 따로 알려야 해요(QA r2 c2)."""
+    같이 고쳐 업체에 알리고(visit.flow.sync_diy), 공사가 시작된 확정 업체(dealt)에는 채팅으로 따로 알려야 해요(QA r2 c2).
+    moved는 저장 전에 계산 엔진으로 견준 표준견적서 합계가 달라지는지예요(False면 '금액은 그대로', 모르면 None).
+    공사 시작 희망일을 바꾸면 예상 공정표 날짜가 바뀐다고 적어요(QA r6 c2: 날짜 · 부분 철거만 바꿔도 '새로 계산해요')."""
     from app.calc.dobae import DEMOLITION_KEY
 
     if set(changes) == {"diy"}:
@@ -238,15 +253,42 @@ def home_note(
         ]
         said = [std] if paper or not tell else []
         return ". ".join(["저장하면 공정표에 직접 할 일 날짜가 들어가요", *said, *tell])
-    std = (
-        "저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
-        if changes.get(DEMOLITION_KEY) == "full"
-        else "저장하면 표준견적서를 새로 계산해요"
-    )
-    # 지역 바꾸기(QA r3 s1): 업체 추천 · 실측 요청이 그 지역으로
-    if "sgg" in changes or "sido" in changes:
-        return f"{std}. 업체 추천도 바뀐 지역 업체로 바뀌어요"
-    return std
+    if moved is False:
+        std = "표준견적서 금액은 그대로예요"
+    elif changes.get(DEMOLITION_KEY) == "full":
+        std = "표준견적서를 리모델링 기준으로 새로 계산해요"
+    else:
+        std = "표준견적서를 새로 계산해요"
+    parts = [
+        *(["예상 공정표 날짜가 바뀌어요"] if "start_date" in changes else []),
+        std,
+        # 지역 바꾸기(QA r3 s1): 업체 추천 · 실측 요청이 그 지역으로
+        *(
+            ["업체 추천도 바뀐 지역 업체로 바뀌어요"]
+            if "sgg" in changes or "sido" in changes
+            else []
+        ),
+    ]
+    return "저장하면 " + ". ".join(parts)
+
+
+def standard_change(p, said: dict, changes: dict, merged) -> tuple[int, int] | None:
+    """집 정보 승인 카드 미리 보기: (지금, 바꾼 뒤) 표준견적서 합계(부가세 포함, 계산 엔진, 저장 안 함). 바꾼 뒤는 집
+    정보(merged, 없으면 그대로) · 철거 범위 · 직접 할 일 칩을 넣어 다시 세요. 셀 수 없으면 None."""
+    from app.calc.dobae import DEMOLITION_KEY
+    from app.project import service as project_service
+    from app.quote import service as quote_service
+
+    after = dict(said)
+    if DEMOLITION_KEY in changes:
+        after[DEMOLITION_KEY] = changes[DEMOLITION_KEY]
+    if "diy" in changes:
+        after = project_diy.with_chips(after, changes["diy"])
+    home = project_service.preview_home(p, merged) if merged is not None else p
+    try:
+        return quote_service.preview_total(p, said), quote_service.preview_total(home, after)
+    except (ValueError, KeyError):
+        return None
 
 
 NEED_BASIS = (
@@ -357,6 +399,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         p = await project_service.get_for(s, tc.user, pid)
         card, _ = await cards.home(s, tc.user, pid)
         diy_now = await project_diy.diy_for(s, pid)
+        said = await project_service.conditions(s, pid)  # 모은 조건(철거 범위 · 직접 할 일 칩)
         reach = await visit_flow.diy_reach(s, pid)  # 직접 할 일을 바꾸면 닿는 업체(QA r2 c2)
         who = told_whom(reach.live, await chosen_names(s, pid)) if reach.live else REQUESTED
         hold = await visit_service.lock_hold(s, pid) if p.locked else (0, False)
@@ -378,12 +421,25 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     if p.locked and set(changes) != {"diy"}:  # 직접 할 일만 바꾸는 건 요청 뒤에도 된다
         raise ToolError("locked", locked_text(*hold), hint=LOCKED_HINT if hold[0] else None)
     home_changes = {k: v for k, v in changes.items() if k not in (DEMOLITION_KEY, "diy")}
+    merged = None
     if home_changes:  # 철거 범위만 바꾸면 집 정보는 그대로라 다시 검사하지 않는다
         try:
             merged = HomeInfoIn.model_validate({**home_now, **home_changes})
             check_home(merged, tc.today)
         except (ValidationError, AppError) as e:
             raise ToolError("bad_input", "집 정보 칸을 다시 확인해 주세요.") from e
+    # 저장 전 표준견적서 금액 · 차액(계산 엔진, 저장 안 함): 살면서 ↔ 빈 집 같은 바뀜도 누르기 전에 보이고, 금액이
+    # 그대로인 바뀜(날짜 · 부분 철거)은 메모가 '그대로'라고 말해요(QA r6 c2)
+    money = standard_change(p, said, changes, merged)
+    moved = None if money is None else money[0] != money[1]
+    diff = None
+    if money is not None and moved:
+        diff = DiffOut(
+            label="표준견적서",
+            from_won=money[0],
+            to_won=money[1],
+            diff_won=visit_view.grade_diff(money[1], money[0]),
+        )
 
     def after(k: str, v) -> str:  # 평형으로 받은 면적은 고객이 말한 평을 같이 보인다
         got = _show(k, v)
@@ -411,6 +467,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         payload={"fields": changes},
         summary=ActionSummary(
             title="직접 할 일 저장" if set(changes) == {"diy"} else "집 정보 저장",
+            diff=diff,
             rows=rows,
             note=home_note(
                 changes,
@@ -419,6 +476,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
                 live=bool(reach.live),
                 dealt=bool(reach.dealt),
                 who=who,
+                moved=moved,
             ),
             approve_label="맞아요, 저장",
         ),
@@ -455,6 +513,13 @@ class VisitReqIn(BaseModel):
 
 
 TOP_WHY = "고객이 맡겨서 믿집 점수 1위(별점 · 끝낸 공사 · 가견적을 합친 점수)를 넣었어요"
+ESTIMATE_LABEL = "가견적"
+
+
+def estimate_row(paper_note: str | None) -> SummaryRow:
+    """실측 요청 승인 카드 '가견적' 줄. 벽지 직접 구매면 가견적은 벽지 값이 든 값이라는 안내(틀 quote.service
+    OWN_PAPER_NOTE, 업체 고르기 카드와 같은 글)를 덧말로 달아요(QA r6 c2)."""
+    return SummaryRow(label=ESTIMATE_LABEL, value="업체가 확인한 단가로 고정돼요", sub=paper_note)
 
 
 @tool(
@@ -529,7 +594,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         rows=[
             SummaryRow(label="지역", value=p.region),  # 어느 집 지역으로 가는 요청인지(QA r3 s1)
             SummaryRow(label="희망 기간", value=cards.md_range(start, end)),
-            SummaryRow(label="가견적", value="업체가 확인한 단가로 고정돼요"),
+            estimate_row(lst.paper_note),
             *([told] if told else []),
         ],
         note="업체마다 48시간 안에 갈 수 있는 기간을 답해요. 연락은 믿집 채팅으로 이어져요",

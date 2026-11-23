@@ -100,6 +100,15 @@ def _area(p: ProjectOut) -> tuple[Decimal, str]:
     return house_area(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
 
 
+def house_py(p: ProjectOut) -> Decimal | None:
+    """내 집 평(공급 기준, 계산 엔진 · 지금 집 크기 판). 표준견적서를 저장할 때와 같은 값이고, 저장본을 기다리지 않아
+    집 정보를 바꾼 직후에도 맞아요(집 정보 카드 · 보드). 셀 수 없으면 None."""
+    try:
+        return house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
+    except (ValueError, KeyError):
+        return None
+
+
 def home_v3(p: ProjectOut, grade: str | None = None) -> dobae.HomeV3:
     """저장한 공사 → v3 도배 계산 입력. v2 공사(기본 정보가 없음)는 전체 공사(벽 + 천장)로 본다.
     grade를 주면 그 벽지로 바꿔 센다(다른 벽지 미리 보기)."""
@@ -216,6 +225,12 @@ def calc_trades(
             )
         )
     return out
+
+
+def preview_total(p: ProjectOut, said: Mapping[str, str]) -> int:
+    """저장하지 않고 이 공사 · 모은 조건으로 센 표준견적서 합계(부가세 포함, 계산 엔진). ensure_standard와 같은 계산이에요.
+    승인 카드가 바꾸기 전 · 뒤 금액을 견줄 때 써요(바꾼 뒤 공사는 project.service.preview_home)."""
+    return sum_won(c.total for c in calc_trades(p, said=said))
 
 
 async def _latest(s: AsyncSession, project_id: uuid.UUID) -> dict[str, StandardQuote]:

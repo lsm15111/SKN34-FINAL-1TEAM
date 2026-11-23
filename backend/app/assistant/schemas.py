@@ -904,7 +904,8 @@ class BoardMoneyOut(BaseModel):
     )
     range_label: str | None = Field(
         default=None,
-        description="range가 무엇인지: 실측 견적서 · 가견적(요청 때 고정) · 둘이 섞이면 '가견적 · 실측 견적서'",
+        description="range가 무엇인지: 실측 견적서 · 가견적(요청 때 고정) · 둘이 섞이면 '가견적 · 실측 견적서'. "
+        "벽지 직접 구매면 가견적은 '가견적(벽지 포함)'(금액 칸 이름은 '표준견적서 · 벽지 빼고 · 부가세 포함')",
     )
     range_href: str | None = Field(
         default=None, description="range를 누르면 여는 견적서 비교. 받은 실측 견적서가 없으면 비움"

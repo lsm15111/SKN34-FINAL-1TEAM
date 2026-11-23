@@ -2,22 +2,31 @@
 
 - c2 고칠 것 1: 전용 → 공급 환산 한 값(1.315, ADR 0007). 내 집 평 · 도배 '공급 평' 수량 · 목공 · 시세 범위가 같은 값이고,
   새 판(집 크기 2026.11 · 도배 2026.11c-* · 목공 2026.11)으로 쌓아요. 이미 만든 견적은 옛 판 그대로예요.
+- c2 고칠 것 2: 벽지 직접 구매면 보드 금액 칸 '표준견적서 · 벽지 빼고', 업체 범위 '가견적(벽지 포함)', 실측 요청 승인
+  카드 '가견적' 줄에 안내 한 줄(틀).
+- c2 고칠 것 6: 집 정보를 바꾼 직후 첫 보드에도 새 평(계산 엔진, 저장본을 기다리지 않음).
+- c2 고칠 것 7 · 8: 집 정보 승인 카드 메모는 표준견적서 금액이 실제로 바뀔 때만 '새로 계산해요', 바뀌면 차액(계산 엔진)을
+  카드에 보여요(살면서 ↔ 빈 집도).
 - 화면 M9 전체 철거 철거 줄.
 """
 
 import json
 from dataclasses import replace
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
+from app.assistant import service as assistant_service
+from app.assistant.tools import propose
 from app.calc import dobae, market_band, mokgong, quick_budget
 from app.calc.common import SUPPLY_PER_EXCLUSIVE
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
 from app.calc.standard_quote import house_pyeong
+from app.quote.service import OWN_PAPER_NOTE
 from app.refprice.book import (
     DOBAE_MARKET_2026_11B,
     DOBAE_PROFILES,
@@ -31,6 +40,10 @@ from app.refprice.wallpaper_market import paper_market
 from tests.conftest import query
 from tests.helpers import signup
 from tests.test_v3_project_home import HOME, create
+from tests.test_v4_assistant_actions import acts, approve
+from tests.test_v4_assistant_diy import chips
+from tests.test_v4_assistant_free import cards_of, two_vendors
+from tests.test_v4_assistant_turns import ask, ok
 
 D = Decimal
 d = date.fromisoformat
@@ -162,6 +175,139 @@ def test_standard_stacks_a_new_version_and_keeps_the_old_record(api):
         (1, "2026.11b-market", D("30.5")),
         (2, "2026.11c-market", D("33.4")),
     ]
+
+
+# ---- 2. 집 정보를 바꾼 직후 첫 보드의 평 (c2 고칠 것 6) ----
+
+
+def test_first_board_after_an_area_change_shows_the_new_pyeong(api):
+    signup(api)
+    pid = create(api, {**HOME, "area_m2": "105.8"}).json()["id"]
+    first = board(api, pid)
+    assert "32평" in first["facts"]
+    # 표준견적서를 다시 열기 전(저장본은 아직 32평)에 보드를 읽어도 새 집 정보로 센 평이에요
+    r = api.patch(f"/projects/{pid}", json={**HOME, "area_m2": "84.0", "area_basis": "exclusive"})
+    assert r.status_code == 200, r.text
+    b = board(api, pid)
+    assert "전용 84.0㎡" in b["facts"] and "33.4평" in b["facts"] and "32평" not in b["facts"]
+    assert D(b["home"]["area"]["pyeong"]) == D("33.4")
+
+
+# ---- 3. 벽지 직접 구매: 보드 금액 칸 기준 · 실측 요청 승인 카드 (c2 고칠 것 2) ----
+
+
+def test_paper_buy_names_the_basis_on_the_board_and_the_request_card(api):
+    pid, _ = two_vendors(api)
+    chips(api, pid, ["paper_buy"])
+    ev = ok(ask(api, pid, "업체 추천해 주세요"))
+    (picks,) = cards_of(ev, "vendor_picks")
+    refs = ",".join(p["ref"] for p in picks["data"]["picks"])
+    ev = ok(ask(api, pid, "두 곳에 요청할래요", context={"choice": f"visit_request:{refs}"}))
+    (a,) = [x for x in acts(ev) if x["status"] == "proposed"]
+    row = next(r for r in a["summary"]["rows"] if r["label"] == "가견적")
+    assert (row["value"], row["sub"]) == ("업체가 확인한 단가로 고정돼요", OWN_PAPER_NOTE)
+    assert approve(api, a["action_id"]).json()["status"] == "executed"
+    m = board(api, pid)["money"]
+    # 표준견적서는 벽지를 뺀 값, 요청 때 고정한 가견적은 벽지 값이 든 값(부가세 포함 그대로)
+    assert m["label"] == "표준견적서 · 벽지 빼고 · 부가세 포함"
+    assert m["range_label"] == "가견적(벽지 포함)" and len(m["range"]) == 2
+    fixed = sorted(r["estimate_total"] for r in query("select estimate_total from visits"))
+    assert m["range"] == fixed
+    dob = next(t for t in standard(api, pid)["trades"] if t["trade"] == "dobae")
+    assert m["won"] == dob["total"] and dob["own_paper"]
+
+
+def test_paper_basis_words():
+    label, rng = assistant_service.paper_basis(
+        "표준견적서 · 부가세 포함", "가견적 · 실측 견적서", True
+    )
+    assert (label, rng) == (
+        "표준견적서 · 벽지 빼고 · 부가세 포함",
+        "가견적(벽지 포함) · 실측 견적서",
+    )
+    assert assistant_service.paper_basis("표준견적서 · 부가세 포함", "가견적", False) == (
+        "표준견적서 · 부가세 포함",
+        "가견적",
+    )
+    money = SimpleNamespace(by_trade=[SimpleNamespace(trade="dobae", source="deal")])
+    assert not assistant_service.own_paper_in(True, money)  # 확정했으면 그 견적서 금액이에요
+
+
+# ---- 4. 집 정보 승인 카드: 메모 · 차액 (c2 고칠 것 7 · 8) ----
+
+
+def test_home_note_says_new_standard_only_when_the_amount_moves():
+    when = {"start_date": "2027-01-11"}
+    assert propose.home_note(when, False, moved=False) == (
+        "저장하면 예상 공정표 날짜가 바뀌어요. 표준견적서 금액은 그대로예요"
+    )
+    assert propose.home_note({"demolition": "partial"}, False, moved=False) == (
+        "저장하면 표준견적서 금액은 그대로예요"
+    )
+    assert (
+        propose.home_note({"occupied": True}, False, moved=True)
+        == "저장하면 표준견적서를 새로 계산해요"
+    )
+    assert propose.home_note({"demolition": "full"}, False, moved=True) == (
+        "저장하면 표준견적서를 리모델링 기준으로 새로 계산해요"
+    )
+    # 계산을 못 하면(None) 앞 말 그대로 · 지역 바꾸기 꼬리도 그대로
+    assert propose.home_note({"sgg": "중구", "sido": "seoul"}, False) == (
+        "저장하면 표준견적서를 새로 계산해요. 업체 추천도 바뀐 지역 업체로 바뀌어요"
+    )
+
+
+def _home_card(api, script, pid: str, fields: dict, text: str) -> tuple[dict, dict]:
+    log = script(
+        [
+            {"tool_calls": [{"id": "p", "name": "propose_home_info", "input": {"fields": fields}}]},
+            {"text": "카드를 확인해 주세요."},
+        ]
+    )
+    ev = ok(ask(api, pid, text))
+    (a,) = [x for x in acts(ev) if x["status"] == "proposed"]
+    return a, tool_result(log, 1)
+
+
+def test_occupied_change_card_shows_the_engine_difference(api, script):
+    signup(api)
+    pid = create(api, HOME).json()["id"]
+    before = standard(api, pid)["total"]
+    a, model = _home_card(api, script, pid, {"occupied": True}, "살면서 공사해야 할 것 같아요")
+    diff = a["summary"]["diff"]
+    assert diff["label"] == "표준견적서" and diff["from_won"] == before
+    assert diff["diff_won"] == diff["to_won"] - before > 0
+    assert a["summary"]["note"] == "저장하면 표준견적서를 새로 계산해요"
+    # 모델 값에도 카드와 같은 금액(부가세 포함): 저장 전에도 '얼마나 달라져요?'에 답해요(QA r6 c2 T4)
+    rows = {r["label"]: r for r in model["summary"]["rows"]}
+    assert rows["표준견적서(지금)"]["won"] == before
+    assert (rows["표준견적서(승인 뒤)"]["won"], rows["표준견적서(승인 뒤)"]["diff_won"]) == (
+        diff["to_won"],
+        diff["diff_won"],
+    )
+    assert approve(api, a["action_id"], seen=a["target_ver"]).json()["status"] == "executed"
+    assert standard(api, pid)["total"] == diff["to_won"]  # 저장한 표준견적서와 같은 값
+
+
+def test_date_or_partial_demolition_card_keeps_the_amount(api, script):
+    signup(api)
+    pid = create(api, HOME).json()["id"]
+    later = (d(HOME["start_date"]) + timedelta(days=7)).isoformat()
+    a, _ = _home_card(api, script, pid, {"start_date": later}, "공사는 일주일 뒤로 할게요")
+    assert a["summary"]["diff"] is None
+    assert (
+        a["summary"]["note"] == "저장하면 예상 공정표 날짜가 바뀌어요. 표준견적서 금액은 그대로예요"
+    )
+    b, _ = _home_card(api, script, pid, {"demolition": "partial"}, "벽지만 뜯을게요")
+    assert (
+        b["summary"]["diff"] is None
+        and b["summary"]["note"] == "저장하면 표준견적서 금액은 그대로예요"
+    )
+    # 전체 철거는 리모델링 기준이라 금액이 바뀌어요(차액을 같이 보여요)
+    c, _ = _home_card(api, script, pid, {"demolition": "full"}, "전체 철거할게요")
+    assert c["summary"]["diff"]["diff_won"] > 0 and "리모델링 기준" in c["summary"]["note"]
+    (dob,) = standard(api, pid)["trades"]
+    assert dob["version"] == 1  # 카드만 만들었어요(저장 전)
 
 
 # ---- 9. 전체 철거면 기존 벽지 철거 줄 '안 함' (화면 M9) ----

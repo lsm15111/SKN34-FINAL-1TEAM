@@ -389,6 +389,45 @@ def _home(
     )
 
 
+def preview_home(p: ProjectOut, data: HomeInfoIn) -> ProjectOut:
+    """집 정보를 저장하면 될 공사 모습(저장하지 않음): 승인 카드가 바꾼 뒤 표준견적서를 미리 셀 때 써요.
+    update(_fill_home · _write_home_parts)와 같은 칸만 바꿔요. 공정은 도배 한 줄, 철거 범위(모은 조건)는 그대로예요."""
+    home = HomeInfoOut(
+        trade=data.trade,
+        scope=data.scope,
+        spaces=list(data.spaces),
+        faces=[f for f in FACES if f in data.faces],
+        rooms=data.rooms,
+        housing=data.housing,
+        sido=data.sido,
+        sgg=data.sgg,
+        emd=data.emd,
+        area_m2=data.area_m2,
+        area_basis=data.area_basis,
+        occupied=data.occupied,
+        grade=data.grade,
+        budget_won=data.budget_won,
+        start_date=data.start_date,
+        demolition=p.home.demolition if p.home else None,
+    )
+    spaces = p.trades.dobae.spaces if p.trades.dobae else []
+    return p.model_copy(
+        update={
+            "sido": data.sido,
+            "sgg": data.sgg,
+            "emd": data.emd,
+            "region": region_label(data.sido, data.sgg),
+            "size": SizeIn(basis=data.area_basis, m2=data.area_m2),
+            "balcony_ext": False,
+            "occupied": data.occupied,
+            "budget_won": data.budget_won,
+            "when": WhenIn(kind="date" if data.start_date else "unknown", start=data.start_date),
+            "home": home,
+            "trades": TradesOut(dobae=DobaeOut(spaces=spaces, grade=data.grade)),
+        }
+    )
+
+
 async def _out(s: AsyncSession, p: Project) -> ProjectOut:
     from app.calc.dobae import DEMOLITION_KEY
 
