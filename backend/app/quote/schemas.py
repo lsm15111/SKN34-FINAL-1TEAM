@@ -52,6 +52,10 @@ class StandardTradeOut(BaseModel):
     man_day: Decimal
     crew: int
     notes: list[str]
+    days: Decimal | None = Field(
+        default=None,
+        description="이 공정만 했을 때 예상 일수(반나절 단위 · 계산 엔진). 전체 days는 공정별 일수의 합",
+    )
     profile: Profile | None = Field(
         default=None,
         description="도배 금액 기준(계산 엔진이 공사 조건으로 고름): paper_only 도배만 하는 공사 · "

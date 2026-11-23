@@ -406,6 +406,8 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
     rows = await ensure_standard(s, p)
     order = [t for t in ("mokgong", "dobae") if t in rows]
     lines = await _lines(s, [rows[t].id for t in order])
+    # 예상 일수는 저장 칸이 없어 같은 집 정보로 계산 엔진을 다시 돌린다(저장 행과 같은 판 · 같은 값)
+    calc_days = {c.trade: c.days for c in calc_trades(p)}
     trades = [
         StandardTradeOut(
             trade=t,
@@ -431,6 +433,7 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
             man_day=rows[t].man_day,
             crew=rows[t].crew,
             notes=list(rows[t].notes),
+            days=calc_days.get(t),
             **profile_out(rows[t]),
             own_paper=rows[t].own_paper,
             rolls=rolls_of(rows[t], lines[rows[t].id]),
@@ -447,8 +450,6 @@ async def standard_for(s: AsyncSession, user: User, project_id: uuid.UUID) -> St
         budget = BudgetOut(band=p.budget, status=status, over_by=over)
     first = rows[order[0]]
     main = rows.get("dobae", first)  # v3 범위 · 면 · 판은 도배 줄에서
-    # 예상 일수는 저장 칸이 없어 같은 집 정보로 계산 엔진을 다시 돌린다(위 저장 행과 같은 판 · 같은 값)
-    calc_days = {c.trade: c.days for c in calc_trades(p)}
     days = sum_days(calc_days[t] or Decimal(0) for t in order)
     return StandardOut(
         project_id=p.id,

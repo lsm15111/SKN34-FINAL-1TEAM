@@ -185,10 +185,13 @@ async def standard(
         if ln.state in COUNTED and ln.amount is not None and ln.amount > 0
     ]
     top = sorted(counted, key=lambda x: -x[1].amount)[:6]
-    # 한 공정이면 그 공정 합계, 아니면 전체 합계(둘 다 계산 엔진 값)
+    # 한 공정이면 그 공정 합계 · 기간, 아니면 전체 합계 · 기간(모두 계산 엔진 값). 기간은 2026-11-23 판정에서
+    # 도배 카드에 목공+도배 합친 기간이 붙은 것을 고쳤어요
     total, supply, vat = (
         (one.total, one.supply, one.vat) if one else (out.total, out.supply, out.vat)
     )
+    own_days = one is not None and one.days is not None
+    days = one.days if own_days else out.days
     grade = next((GRADE.get(t.grade or "") for t in trades if t.grade), None)
     # 벽지 직접 구매: 도배지 줄 고객 구매(합계 밖)
     own = next((t for t in trades if t.own_paper), None)
@@ -207,7 +210,7 @@ async def standard(
         total_won=total,
         label=label,
         lines=[NameWon(name=ln.name, won=ln.amount) for _, ln in top],
-        days=out.days,
+        days=days,
         partial=out.scope == "partial",
         href=href(pid, "/standard"),
     )
@@ -219,8 +222,9 @@ async def standard(
         "total": total,  # 고객이 낼 금액(부가세 포함)
         "공급가": supply,  # 합계 칸 나눔: 공급가 + vat(부가세 몫) = total
         "vat": vat,
-        "days": out.days,
-        "days_for": [TRADE.get(t.trade, t.trade) for t in out.trades],  # 예상 일수는 이 공정들의 합
+        "days": days,
+        # 예상 일수는 이 공정들의 합(한 공정 카드면 그 공정만)
+        "days_for": [TRADE.get(t.trade, t.trade) for t in (trades if own_days else out.trades)],
         "area_m2": out.area_m2,
         "area_basis": out.area_basis,
         "pyeong": out.pyeong,
