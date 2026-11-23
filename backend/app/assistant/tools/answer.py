@@ -17,6 +17,7 @@
 
 import hashlib
 import logging
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -126,13 +127,39 @@ class AskIn(BaseModel):
     kind: Literal["general", "price", "period", "material", "process"] = "general"
 
 
+def kind_of(kind: str, question: str) -> str:
+    """모델이 고른 질문 종류 → 답 길을 고를 종류. 금액 · 기간 종류라도 하자 · A/S · 보증 · 환불 질문이면 이 공사
+    공정표 · 견적 값이 답이 아니라 general이에요(v3 policy WARRANTY · REFUND와 같은 말. 2026-11-23 도커 'AS기간은 보통
+    어떻게돼?'가 period로 와 v3 길에서 타일 글 조각만 받았어요)."""
+    from app.agent.v3.policy import REFUND, WARRANTY
+
+    if kind in ("price", "period") and (WARRANTY.search(question) or REFUND.search(question)):
+        return "general"
+    return kind
+
+
+# 'AS' · 'A/S' · '에이에스'(영어 낱말 안의 as는 아님)
+AS_WORD = re.compile(r"A\s?/\s?S|(?<![A-Za-z])AS(?![A-Za-z])|에이에스", re.IGNORECASE)
+AS_ASK = "하자 보수(A/S)"
+
+
+def search_words(question: str) -> str:
+    """답 길에 넘길 질문: '하자 · 보수' 없이 'AS'만 쓴 질문은 'AS'를 '하자 보수(A/S)'로 바꿔요. 지식 조각(표준계약서 ·
+    건설산업기본법 하자담보 1년)이 '하자 · 보수'로 적혀 있어 'AS'만으로는 잘 안 잡혔어요(2026-11-23 qa10: '도배 시공 AS
+    기간은?' 두 번 중 한 번 '자료로 확인되지 않아요', 바꾼 말은 두 번 다 1년)."""
+    if "하자" in question or "보수" in question:
+        return question
+    return AS_WORD.sub(AS_ASK, question, count=1)
+
+
 @tool(
     "answer_question",
     surface="customer",
     kind="read",
     status="답을 찾고 있어요",
     description="도배 · 목공 일반 질문에 믿집 답 파이프라인으로 근거 문장을 찾아요(검증된 카드 · 자료 발췌). "
-    "돌려준 문장 범위 안에서만 답해요.",
+    "사실 · 숫자는 돌려준 문장 범위 안에서만 말해요. 앞 대화와 잇는 말 · 이 집 조건에 맞춘 권고 · 끝 질문은 붙여요. "
+    "kind price · period는 이 공사 금액 · 공사 기간(공정표)을 물을 때예요.",
     model=AskIn,
     schema=obj(
         {
@@ -147,8 +174,8 @@ class AskIn(BaseModel):
 async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     from app.knowledge import service as knowledge
 
-    question = policy.mask_in(a.question)
-    engine = engine_for(a.kind)
+    question = search_words(policy.mask_in(a.question))
+    engine = engine_for(kind_of(a.kind, question))
     know = knowledge.other_trade_notes(question)
     if engine in (HYBRID, HYBRID_G):
         out = await _hybrid(tc, question, ground=engine == HYBRID_G, know=know is not None)

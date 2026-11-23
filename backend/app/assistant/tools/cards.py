@@ -224,10 +224,25 @@ async def standard(
         "pyeong": out.pyeong,
         "lines": [
             {"name": ln.name, "공급가": ln.amount, "state": ln.state, "trade": t}
+            | ({"text": x} if (x := qty_text(ln)) else {})
             for t, ln in counted
         ],
         "version": out.price_ver,
     }
+    # 합계 밖 줄(선택 · 실측 후): '퍼티는 꼭 해야 해요?'에 이 집 줄 상태로 답해요(source: 줄 근거 글, 왜 선택인지).
+    # 벽지 직접 구매 도배지 줄은 paper 칸
+    outside = [
+        {"name": ln.name, "state": OUTSIDE[ln.state], "trade": t.trade, "source": ln.source}
+        | ({"공급가": ln.amount} if ln.amount else {})
+        | ({"text": x} if (x := qty_text(ln)) else {})
+        for t in trades
+        for ln in t.lines
+        if ln.state in OUTSIDE and not (ln.key == "paper" and ln.state == "excluded")
+    ]
+    if outside:
+        model["excluded"] = outside
+    if any(t.trade == "dobae" for t in trades):  # 수량 · 품을 어떻게 셌나요 · 줄이는 길(계산 엔진)
+        model |= await _dobae_basis(s, user, pid)
     # 벽지(칸 이름은 policy.ALLOWED 안): 롤 수(계산 엔진, 보이기용) · 벽지 값(부가세 포함 몫) · 넣은 합계 · 뺀 합계 ·
     # 벽지 직접 구매면 합계 밖 도배지 줄 · 가견적 안내(틀)
     rolled = next((t for t in trades if t.rolls is not None), None)
@@ -243,6 +258,64 @@ async def standard(
             f"위 값은 {' · '.join(model['trades'])} 값이에요."
         )
     return card, model
+
+
+# 합계 밖 줄 상태(모델 값). 벽지 직접 구매 도배지 줄('안 함' · 고객 구매)은 paper 칸이 말해요
+OUTSIDE = {"optional": "선택(합계 밖)", "after_visit": "실측 후(합계 밖)", "excluded": "안 함"}
+# 줄이는 길(calc.dobae.SaveWay key) → 이름 · 뜻(틀). 금액은 계산 엔진 값(바꾼 합계 · 줄어드는 돈, 부가세 포함)
+SAVE = {
+    "own_paper": (
+        "벽지 직접 구매",
+        "벽지를 직접 사면 합계에서 벽지 값이 빠져요. 벽지 값은 따로 들어요.",
+    ),
+    "walls_only": (
+        "천장 빼고 벽만",
+        "천장 도배를 빼면 천장 시공 · 천장 벽지 · 품이 빠져요. 실측 요청 전이면 집 정보 '면'에서 바꿀 수 있어요.",
+    ),
+    "empty_home": ("빈 집에서 공사", "짐을 빼고 빈 집에서 하면 짐 있는 집 할증이 빠져요."),
+}
+# 금액 없이 말할 수 있는 길(틀): 계산하려면 고를 공간 · 업체가 있어야 해요
+SAVE_MORE = (
+    {"name": "부분 공사", "text": "방 몇 곳만 하면 고른 공간 몫만큼 줄어요(집 정보 '공간')."},
+    {
+        "name": "업체 견주기",
+        "text": "업체마다 단가가 달라 가견적이 달라요. 업체 가견적을 견줘 보세요.",
+    },
+)
+
+
+def qty_text(ln) -> str | None:
+    """표준견적서 줄 수량 × 단가 글('21.6 공급 평 × 6,900원(공급가)'). 수량이나 단가가 없으면 None. 값은 계산 엔진
+    그대로이고, 단가는 줄 금액처럼 공급가라 꼬리표를 붙여요(숫자 검사가 부가세 포함 합계와 섞지 않게)."""
+    from app.calc.dobae import num
+
+    if ln.qty is None or ln.unit_price is None:
+        return None
+    # 두 낱말 단위(공급 평 · 벽지 평)는 띄워요(화면과 같음)
+    unit = f" {ln.unit}" if " " in ln.unit else ln.unit
+    return f"{num(Decimal(ln.qty))}{unit} × {ln.unit_price:,}원(공급가)"
+
+
+async def _dobae_basis(s: AsyncSession, user: User, pid: uuid.UUID) -> dict:
+    """도배 표준견적서 모델 값 칸: how(수량 · 품을 어떻게 셌나요, 계산 엔진 글) · save(벽지 종류는 두고 줄이는 길)."""
+    from app.quote import service as quote_service
+
+    b = await quote_service.standard_basis(s, user, pid)
+    if b is None:
+        return {}
+    got: dict = {}
+    if b.how:
+        got["how"] = b.how
+    got["save"] = [
+        {
+            "name": SAVE[w.key][0],
+            "total": w.total,  # 바꾸면 합계(부가세 포함)
+            "diff_won": w.less,  # 줄어드는 돈(부가세 포함)
+            "text": f"바꾸면 합계 {w.total:,}원(부가세 포함)으로 {w.less:,}원 줄어요. {SAVE[w.key][1]}",
+        }
+        for w in b.save
+    ] + list(SAVE_MORE)
+    return got
 
 
 # 벽지 칸 rows 이름(모델 값). 금액은 모두 부가세 포함(계산 엔진 calc.dobae.paper_split · 공정 합계 더하기)

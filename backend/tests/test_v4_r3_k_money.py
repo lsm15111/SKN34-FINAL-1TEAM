@@ -115,7 +115,9 @@ def test_standard_money_is_vat_included_and_supply_fields_say_so(api, project):
     q = _quote("basic", False)
     assert (model["total"], model["공급가"], model["vat"]) == (q.total, q.subtotal, q.vat)
     assert {"supply", "amount"}.isdisjoint(_keys(model))  # 꼬리표 없는 공급가 칸이 없어요
-    assert all(set(ln) == {"name", "공급가", "state", "trade"} for ln in model["lines"])
+    assert all(set(ln) <= {"name", "공급가", "state", "trade", "text"} for ln in model["lines"])
+    # 줄 글(수량 × 단가)의 단가도 공급가 꼬리표가 붙어요(11-23 표준견적서 근거)
+    assert all(ln["text"].endswith("원(공급가)") for ln in model["lines"] if "text" in ln)
     assert sum(ln["공급가"] for ln in model["lines"]) == model["공급가"]  # 줄은 공급가끼리 더해요
     # 벽지 칸: 부가세 포함 몫 · 벽지를 직접 사면 바뀔 합계(계산 엔진). 공급가 줄을 합계에서 빼지 않아도 돼요
     paper_line = next(ln for ln in q.lines if ln.key == "paper")

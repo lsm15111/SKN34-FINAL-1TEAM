@@ -70,6 +70,7 @@ ALLOWED = frozenset(
         "survey", "dates_state", "proposal", "proposals", "change", "conflicts", "fits",
         "money", "period", "decided", "days_off", "vendor_note", "diy",
         "missing", "days_for", "basis", "vat_way", "weekend",
+        "how", "save",  # 표준견적서: 수량 · 품을 어떻게 셌나요 · 줄이는 길(계산 엔진)
         # 금액 기준 꼬리표 칸(guard.basis가 읽는다): 도구 결과의 돈은 부가세 포함이 기본이고, 공급가(부가세 별도)
         # 금액은 이 이름으로 넘긴다(부가세 몫은 vat, 고침 3차 A2 · K)
         "공급가", "supply_won", "won_supply", "amount_supply",

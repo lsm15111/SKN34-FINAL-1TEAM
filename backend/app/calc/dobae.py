@@ -20,7 +20,7 @@
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from decimal import ROUND_CEILING, Decimal
+from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Literal, Protocol
 
 from app.calc.common import (
@@ -893,3 +893,129 @@ def profile_note(pf: ProfilePrices, lines: Sequence[Line], why: Sequence[str] = 
     optional = [ln.name.split(" (")[0] for ln in lines if ln.state == "optional"]
     tail = f" {' · '.join(optional)}는 '선택' 줄이라 합계에 넣지 않았어요." if optional else ""
     return f"{head}. 값은 {pf.source}이에요.{tail}"
+
+
+# ---- 비서 근거: 어떻게 셌나요 · 줄이는 길 (2026-11-23 고객 질문 '인건비 5품 · 21.6평은 어떻게 나와요') ----
+
+
+def _r2(x: Decimal) -> Decimal:
+    """글에 보일 중간 값(소수 둘째 자리 반올림). 보이기만 하고 수량 · 금액에는 쓰지 않아요."""
+    return x.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _won(x: int) -> str:
+    return f"{x:,}원"
+
+
+def count_basis(h: HomeV3, p: DobaePrices, house: HouseRules, v: StandardV3) -> list[str]:
+    """표준견적서(standard_v3 결과 v)의 수량 · 품을 어떻게 셌는지 글 줄. 숫자는 quote_v3와 같은 식으로 다시 낸 값이고,
+    다시 낸 면적 · 벽지 평 · 품이 v와 다르면 빈 목록이에요(틀린 근거를 말하지 않게).
+    업체 가견적 수량(공급 평 · 벽지 평 · 품)도 같은 값이라 가견적 줄 물음('인건비 5품은 어떻게')의 근거도 된다.
+    면적을 방 개수 회귀식으로 세는 판(area_per_supply)만 센다."""
+    if p.area_per_supply is None or p.area_per_room is None or v.rooms is None:
+        return []
+    q, pf = v.quote, p.profile
+    # 도배 면적: quote_v3와 같은 식(공급㎡ × 계수 + 방 × ㎡ → 천장 몫 → 공간 몫 → 고른 면)
+    sup = supply_m2(h.area_m2, h.area_basis, p)
+    gross = sup * p.area_per_supply + v.rooms * p.area_per_room
+    if h.balcony_ext and p.balcony_factor != 1:
+        gross *= p.balcony_factor
+    ceiling = m2(gross * p.ceiling_share)
+    wall = m2(gross) - ceiling
+    if v.share is not None:
+        wall, ceiling = m2(wall * v.share), m2(ceiling * v.share)
+    wall_used = wall if "wall" in h.faces else Decimal(0)
+    ceil_used = ceiling if "ceiling" in h.faces else Decimal(0)
+    ratio = pf.paper_ratio[h.grade] if pf else p.paper_ratio
+    need = m2((wall_used + ceil_used) * ratio)
+    paper = next((ln for ln in q.lines if ln.key == "paper"), None)
+    md = wall_used * p.md_wall + ceil_used * p.md_ceiling
+    terms = [
+        f"{name} {num(area)}㎡ × {num(per)}"
+        for name, area, per in (("벽", wall_used, p.md_wall), ("천장", ceil_used, p.md_ceiling))
+        if area
+    ]
+    steps = [f"{' + '.join(terms)} = 약 {num(_r2(md))}품(표준품셈)"]
+    if p.md_mult is not None:
+        md *= p.md_mult[h.grade]
+        steps.append(f"시장 품 비 × {num(p.md_mult[h.grade])} = 약 {num(_r2(md))}품")
+    if h.occupied:
+        md = md / p.occupied_output
+        steps.append(f"짐 있는 집 ÷ {num(p.occupied_output)} = 약 {num(_r2(md))}품")
+    same = (
+        (wall_used, ceil_used) == (q.wall_m2, q.ceiling_m2)
+        and paper is not None
+        and paper.qty == paper_py(need)
+        and m2(half_up(md)) == q.man_days
+    )
+    if not same:
+        return []
+    out: list[str] = []
+    if h.area_basis == "supply":
+        out.append(
+            f"내 집 평수는 공급 {num(h.area_m2)}㎡ ÷ {num(PYEONG_M2)} = 공급 {num(v.pyeong)}평이에요."
+        )
+    else:
+        out.append(
+            f"내 집 평수는 공급 기준이라 전용 {num(h.area_m2)}㎡(전용 {num(m2(h.area_m2 / PYEONG_M2))}평)에 "
+            f"전용 → 공급 환산 {num(house.supply_per_exclusive)}배를 곱해 공급 {num(v.pyeong)}평이에요."
+        )
+    if pf is not None and v.share is None:
+        out.append(f"부자재 · 퍼티 수량(공급 평)은 이 {num(v.qty.floor_py)}평이에요.")
+    elif pf is not None:
+        out.append(
+            f"부자재 · 퍼티 수량(공급 평)은 공급 {num(v.pyeong)}평 × 고른 공간 몫 {num(v.share)} = "
+            f"{num(v.qty.floor_py)}평이에요."
+        )
+    conv = "" if h.area_basis == "supply" else f"(전용 × {num(p.supply_per_exclusive)})"
+    out.append(
+        f"도배 면적(벽 + 천장)은 공급 {num(m2(sup))}㎡{conv} × {num(p.area_per_supply)} + 방 {v.rooms}개 × "
+        f"{num(p.area_per_room)}㎡ = {num(m2(gross))}㎡로 어림했어요(공개 평면도 20곳으로 만든 식). 그중 천장이 "
+        f"{int(p.ceiling_share * 100)}%예요."
+    )
+    if v.share is not None:
+        out.append(f"고른 공간 몫 × {num(v.share)} = 벽 {num(wall)}㎡ · 천장 {num(ceiling)}㎡예요.")
+    face = {("wall",): "천장은 빼고 벽만", ("ceiling",): "벽은 빼고 천장만"}.get(tuple(h.faces))
+    if face:
+        out.append(f"{face} 셌어요.")
+    out.append(
+        f"벽지는 도배 면적 {num(wall_used + ceil_used)}㎡ × 소요량 {num(ratio)} = {num(need)}㎡를 벽지 1평"
+        f"({num(PYEONG_M2)}㎡)으로 나눠 {num(paper.qty)} 벽지 평이에요."
+    )
+    out.append(
+        f"품(기능공 1명이 하루 하는 일)은 {', '.join(steps)}이고, 0.5 단위로 올려 {num(q.man_days)}품이에요. "
+        "업체 가견적의 인건비 · 식대 수량(품)도 이 값이에요."
+    )
+    around = "짐 정리 · 보양, 마감 · 청소" if h.occupied else "마감 · 청소"
+    out.append(
+        f"하루 도배공 {p.crew}명이 나눠 벽지 바르기는 {num(Decimal(half_days(q.man_days, p.crew)) / 2)}일이고, "
+        f"{around}를 더해 예상 {num(q.days)}일이에요(반나절 단위)."
+    )
+    if pf is not None and pf.meal_md is not None:
+        meal = next((ln for ln in q.lines if ln.key == "meal"), None)
+        if meal is not None and meal.amount is not None:
+            out.append(
+                f"식대는 {num(q.man_days)}품 × {_won(pf.meal_md)} = {_won(meal.amount)}(공급가)이에요"
+                f"({pf.name}: {pf.source})."
+            )
+    elif pf is not None:
+        out.append(
+            f"{pf.name}은 식대를 따로 줄로 두지 않아요(일당에 포함으로 봐요). 업체 가견적에 식대 줄이 있으면 "
+            "그 업체가 따로 받는 값이에요."
+        )
+    return out
+
+
+@dataclass(frozen=True)
+class SaveWay:
+    """벽지 종류(실크 · 합지)는 그대로 두고 조건 하나만 바꾼 표준견적서."""
+
+    key: str  # own_paper 벽지 직접 구매 · walls_only 천장 빼고 벽만 · empty_home 빈 집에서
+    total: int  # 바꾸면 표준견적서 합계(부가세 포함)
+    less: int  # 지금 합계보다 줄어드는 돈(부가세 포함)
+
+
+def save_ways(base: StandardV3, variants: Mapping[str, StandardV3]) -> list[SaveWay]:
+    """지금 표준견적서와, 조건 하나만 바꿔 다시 센 표준견적서들의 합계 차(부가세 포함). 줄지 않으면 빼고 많이 주는 순."""
+    got = [SaveWay(k, x.quote.total, base.quote.total - x.quote.total) for k, x in variants.items()]
+    return sorted((w for w in got if w.less > 0), key=lambda w: -w.less)
