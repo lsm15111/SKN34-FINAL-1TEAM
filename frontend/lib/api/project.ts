@@ -5,6 +5,7 @@ import { serverGet, type Schemas } from "@/lib/backend/server";
 import type { BandTask } from "@/components/site/ProjectBand";
 import { dueText } from "@/lib/format";
 import { ROOM_RULE_EMPTY, diyOfKeys, projectName, stepIndex, type DiyKey } from "@/lib/guest/info";
+import { todoView } from "@/lib/labels";
 import { mockKeyOf } from "@/lib/mock/v3a/mode";
 import { MOCK_CHECKS, mockPlan, mockProject } from "@/lib/mock/v3a/project";
 import { SIDO } from "@/lib/mock/regions";
@@ -108,7 +109,10 @@ function bandOf(id: string, item: ApiProjectItem | undefined): Pick<ProjectShell
       waiting.push({ label: `${v.vendor_name} ${VENDOR_NEXT[v.next.kind]}`, due });
     }
   }
-  if (!todo.length && item?.todo) todo.push({ label: item.todo.action || item.todo.text, href: safeHref(item.todo.link) });
+  if (!todo.length && item?.todo) {
+    const t = todoView(item.todo);
+    todo.push({ label: t.action || t.text, href: safeHref(t.link) });
+  }
   return { current: stepIndex(item?.current), todo, waiting };
 }
 

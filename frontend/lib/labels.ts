@@ -136,6 +136,8 @@ export const DECLINE_LABEL: Record<"full" | "out_of_area" | "other", string> = {
 // copy-guide에 말이 없는 상태(취소 · 안 옴)는 W13 꼴(짧은 명사)로 붙인 잠정 말이에요.
 export type StateTone = "todo" | "wait" | "ok" | "done" | "late";
 export type VisitStatus = "requested" | "offered" | "picked" | "proposed" | "booked" | "visited" | "quoted" | "chosen" | "declined" | "expired" | "cancelled" | "no_show" | "closed";
+/** 보낸 뒤 아직 살아 있는 요청(확정 · 닫힘 전). 업체 보기 · 요청서가 다음 단추를 고를 때 써요 */
+export const ASKED_VISIT: ReadonlySet<string> = new Set<VisitStatus>(["requested", "offered", "picked", "proposed", "booked", "visited", "quoted"]);
 type StateText = { label: string; tone: StateTone };
 export const VISIT_STATE_CUSTOMER: Record<VisitStatus, StateText> = {
   requested: { label: "답 기다림", tone: "wait" },
@@ -171,4 +173,11 @@ export const VISIT_STATE_VENDOR: Record<VisitStatus, StateText> = {
 export function visitState(status: string, side: "customer" | "vendor"): StateText {
   const t = (side === "vendor" ? VISIT_STATE_VENDOR : VISIT_STATE_CUSTOMER)[status as VisitStatus];
   return t ?? { label: "확인 중", tone: "wait" };
+}
+
+/** 공사 '지금 할 일'(서버 TodoOut) 말 고치기. visit_requested는 고객이 업체에 직접 전화하던 때 말
+ *  ('업체에 연락할 차례예요 · 연락처 보기')이 남아 연락처 없는 실측 일정으로 가요 → 실측 일정 말로 바꿔요(QA r6 M5).
+ *  서버 말(schedule/service.py todo_out)을 고치면 지워요 */
+export function todoView<T extends { code: string; text: string; action: string }>(t: T): T {
+  return t.code === "visit_requested" ? { ...t, text: "업체와 실측 날짜를 맞추는 중이에요", action: "실측 일정 보기" } : t;
 }
