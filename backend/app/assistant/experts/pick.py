@@ -16,6 +16,11 @@ from app.knowledge import bm25
 
 ORDER = bm25.SCOPES  # ("도배", "목공")
 Why = Literal["question", "other", "project", "knowledge", "split", "unknown"]
+# 전문가 고르기에만 더 보는 공정 낱말(지식 검색 낱말 · 공정 설정 증상 낱말에 없는 목공 일). 전기 · 가구 낱말과
+# 겹쳐도 목공이 맡는 몫(박스 · 철거)이 있어 목공 전문가를 불러요(QA r6 c2 T23 '우물천장 간접조명'이 다른 공정으로 감)
+EXTRA_WORDS: dict[str, tuple[str, ...]] = {
+    "목공": ("우물천장", "등박스", "간접조명", "아트월", "붙박이장"),
+}
 INFER_TOP = 6  # 갈래를 셀 조각 수(주제가 맞는 것만, bm25.on_topic)
 INFER_MIN = 2  # 한 공정으로 볼 때 그 공정 조각 수 하한
 SPLIT_ASK = "도배 · 목공 중 어느 공사 얘기인지"
@@ -31,6 +36,7 @@ def named(question: str) -> tuple[str, ...]:
     """질문 낱말로 알아본 공정(도배 · 목공 순서). 일상어 낱말(실크 · 테두리)도 비서 안에서는 공정 낱말로 봐요."""
     hit = set(bm25.trades_of(question))
     hit |= {c.name for c in TRADES.values() if any(w in question for w in c.symptom_words)}
+    hit |= {t for t, words in EXTRA_WORDS.items() if any(w in question for w in words)}
     return tuple(t for t in ORDER if t in hit)
 
 

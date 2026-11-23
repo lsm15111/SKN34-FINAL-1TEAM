@@ -374,6 +374,9 @@ CONNECT_NEXT = {
 CONNECTED = frozenset({"도배"})  # 믿집이 업체를 잇는 공정(policy.DOBAE_ONLY)
 EXPERT_SOURCES = 5  # 넘기는 출처 이름 수
 REST_PIECES = 4  # 전문가가 실패한 공정에서 대신 넘기는 조각 수
+# 공정 순서 줄을 붙일 물음(전문가 길). v3 ORDER_ASK는 '전에 · 뒤에 · 같이'까지 넓어 '도배 전에 뭘 해요?'에도 열두 줄
+# 순서를 붙였어요(QA r6 c2 파일럿). 둘 다 고른 질문은 늘 붙여요
+ORDER_WORDS = re.compile(r"순서|뭐부터|무엇부터|어느\s*(?:것|거|걸|쪽)\s*부터|먼저|나중")
 
 
 async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()) -> ToolOut:
@@ -381,7 +384,6 @@ async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()
     금액 · 기간 질문은 v2g처럼 v3(이 공사 계산 엔진 값). 고른 공정이 없으면(모름 · 다른 공정 · 갈림) v2g 근거로,
     갈림이면 어느 공정인지 되물을 조건 하나를 더해요. 무료 모드 · 전문가 실패 · 범위 밖 · 남은 줄 없음도 v2g로
     물러서요(가짜 설명 없음). expert 칸(기록, 모델에 안 감): 고른 길 · 전문가마다 줄 수 · 근거 · 버린 까닭 · 시간."""
-    from app.agent.v3.orchestrator import ORDER_ASK
     from app.agent.v3.policy import policy_of
     from app.assistant.experts import agent as experts
     from app.assistant.experts import pick as picking
@@ -426,7 +428,7 @@ async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()
         record["ms"] = int((time.monotonic() - t0) * 1000)
         out.data.update(engine=out.data.get("engine") or GROUND, expert=record)
         return out
-    order = len(got.trades) > 1 or bool(ORDER_ASK.search(question))
+    order = len(got.trades) > 1 or bool(ORDER_WORDS.search(question))
     record.update(used=EXPERT, ms=int((time.monotonic() - t0) * 1000))
     data = expert_data(ok, notes, order=order, own=home.trades)
     return ToolOut(data={**data, "engine": EXPERT, "expert": record})

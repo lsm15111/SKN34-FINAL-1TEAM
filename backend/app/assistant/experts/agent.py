@@ -46,6 +46,10 @@ LINE_CHARS, ASK_CHARS = 200, 80
 GUIDE_REF = "G"  # 전문가 지시문 · 입문서의 전문 지식
 REF = re.compile(r"K\d{1,6}|G")
 TRADE_CODES = {"도배": "dobae", "목공": "mokgong"}
+# 이 집 사실 줄: 믿집 공사에 없는 공정(바닥을 안 바꾸는 집이면 붙박이장 뗀 자리 바닥 마감이 문제, QA r6 c2 T24)
+OUTSIDE_LINE = (
+    "믿집 공사 범위 밖(고객이 따로 하지 않으면 그대로): 바닥 · 욕실 · 타일 · 전기 · 필름 · 도장"
+)
 
 
 @dataclass(frozen=True)
@@ -139,7 +143,7 @@ async def home_of(user, project_id) -> Home:
         parts.append(f"목공({' · '.join(items)})" if items else "목공")
         if items:
             known.add("items")
-    lines = [f"이 공사 공정: {' · '.join(parts) or '아직 정하지 않음'}"]
+    lines = [f"이 공사 공정: {' · '.join(parts) or '아직 정하지 않음'}", OUTSIDE_LINE]
     if h.get("area_m2") is not None and h.get("area_basis"):
         area = f"면적: {cards.BASIS.get(h['area_basis'], h['area_basis'])} {_num(h['area_m2'])}㎡"
         lines.append(area + (f" · {_num(h['pyeong'])}평" if h.get("pyeong") else ""))

@@ -104,6 +104,10 @@ def test_pick_by_words_project_other_and_unknown():
     # 다른 공정 낱말만 있으면 이 공사 공정으로 넘기지 않아요(알아 두기가 맡아요)
     other = picking.pick("보일러 배관 손보고 장판도 새로 하려는데요?", ("도배",), other=True)
     assert other == picking.Pick((), "other")
+    # 목공이 맡는 몫이 있는 일(우물천장 · 간접조명 박스 · 붙박이장)은 다른 공정 낱말이 같이 있어도 목공 전문가(QA r6 T23)
+    ceiling = picking.pick("거실 우물천장에 간접조명을 넣고 싶은데 직접 달 수 있어요?", other=True)
+    assert ceiling == picking.Pick(("목공",), "question")
+    assert picking.pick("붙박이장 떼고 바로 도배해도 돼요?").trades == ("도배", "목공")
 
 
 def test_infer_from_knowledge_scopes():
