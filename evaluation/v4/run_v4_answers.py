@@ -4,10 +4,11 @@
     bash eval-live.sh mitjip_eval_v4ans 9 -- uv run python ../evaluation/v4/run_v4_answers.py --live --max-usd 2 --tag v4ans1
 
 - 시스템(이 프로세스의 settings.assistant_answer_route만 바꿔요): v4_v3 = v3 · v4_hybrid = v2+v3 ·
-  v4_hybrid_g = v2g+v3(v2 근거만 받아 비서가 한 번에 써요, v2 안의 LLM 답 없음). --systems로 골라 돌려요
+  v4_hybrid_g = v2g+v3(v2 근거만 받아 비서가 한 번에 써요, v2 안의 LLM 답 없음) · v4_expert = 공정 전문가
+  (expert+v3, docs/v4/13-trade-experts.md). --systems로 골라 돌려요
 - 세트(pick): sets/compare.jsonl dev에서 묶음마다 씨앗 고정 순서(kit.stable_int(seed, id) 오름차순)로 앞에서 고른 40문항
   (다른 공정 6 · 여러 공정 14 · 지식 16 · 금액 · 기간 4 = PICK). --split heldout · both는 held-out을 모두 더해요(최종 확인용).
-  --only는 고른 것 안에서만 걸러요
+  --split all은 고르지 않고 세트 모두(sets/trade_expert30.jsonl 같은 작은 세트). --only는 고른 것 안에서만 걸러요
 - 앱: apienv.App(평가 DB mitjip_eval_v4ans · Redis 9). 질문 × 시스템마다 표 · Redis를 비우고 다시 심어요(app.reset)
 - 심기(공개 API): 고객 가입 → 공사 만들기(지금 화면 몸통: 공급 105.8㎡ · 도배 기본형 + 목공 몰딩 · 걸레받이 · 빈 집 ·
   시작 희망 2027-01-04 · 서울 마포구) → 표준견적서 한 번 열기(화면처럼. 턴 사실의 평형이 이 값에서 나와요)
@@ -18,8 +19,8 @@
 - 받은 계산 값(facts_given): 턴 사실(집) + 도구 결과(모델에 간 값, policy.to_model) 요약. 판정기의 숫자 일치용
 - 비용 · 지연: 장부(llm_usage) 합. reset 전에 읽어요. 턴 시간 = assistant_turns.trace.ms, 호출 지연 = latency_ms.
   --max-usd: 누적 + 다음 어림(같은 시스템 지난 최댓값 × 1.25, 처음은 $0.06)이 넘으면 새 답을 시작하지 않아요
-- 기록: answer_question 결과의 engine · v2_out(새 길이 어느 길로 갔는지: v2 · v2g · v3 · know)을 도구마다 남겨요
-  (모델에는 안 가는 칸)
+- 기록: answer_question 결과의 engine · v2_out(새 길이 어느 길로 갔는지: v2 · v2g · v3 · know · expert)과 expert(공정
+  고르기 · 전문가마다 줄 수 · 버린 까닭 · 물러선 까닭)를 도구마다 남겨요(모델에는 안 가는 칸)
 - 저장(runs/<tag>/): answers.jsonl(judge.py --answers --a v4_v3 --b v4_hybrid) · errors.jsonl · cost.csv(장부 호출마다) ·
   summary.json · meta.json. 같은 --tag면 이미 받은 (질문, 시스템)은 건너뛰어요
 """
@@ -50,6 +51,7 @@ SYSTEMS = {
     "v4_hybrid_g": "v2g+v3",
     "v4_default": "period=v3,price=v3,*=v2+v3",  # 지금 기본값(config.assistant_answer_route)
     "v4_default_g": "period=v3,price=v3,*=v2g+v3",  # 공정 지식 묶음만 받아 비서가 한 번에 써요
+    "v4_expert": "period=v3,price=v3,*=expert+v3",  # 공정 전문가(도배 · 목공 하위 에이전트)
 }  # 이름 → ASSISTANT_ANSWER_ROUTE
 PICK = {"other_trade": 6, "multi_trade": 14, "knowledge": 16, "price_time": 4}
 SEED = 20261121
@@ -253,8 +255,27 @@ def answer_paths(tools: list[dict]) -> list[dict]:
             continue
         d = t.get("data") or {}
         out.append({"route": d.get("route"), "engine": d.get("engine"), "v2_out": d.get("v2_out"),
-                    "found": d.get("found"), "error": t.get("error")})  # fmt: skip
+                    "found": d.get("found"), "error": t.get("error"), "expert": d.get("expert")})  # fmt: skip
     return out
+
+
+def expert_stats(paths: list[dict]) -> dict:
+    """공정 전문가 기록 모음: 고른 길 · 쓴 길 · 물러선 까닭 · 전문가 호출 · 실패 · 줄 · 버린 까닭 · 시간."""
+    recs = [p["expert"] for p in paths if p.get("expert")]
+    notes = [n for r in recs for n in r.get("notes") or []]
+    dropped: Counter = Counter()
+    for n in notes:
+        dropped.update(n.get("dropped") or {})
+    ms = [n["ms"] for n in notes if isinstance(n.get("ms"), int)]
+    return {
+        "pick": dict(Counter(r.get("pick") for r in recs)),
+        "used": dict(Counter(r.get("used") for r in recs)),
+        "why_v2g": dict(Counter(r["why_v2g"] for r in recs if r.get("why_v2g"))),
+        "calls": len(notes), "failed": dict(Counter(n["failed"] for n in notes if n.get("failed"))),
+        "out": sum(bool(n.get("out")) for n in notes), "lines": sum(n.get("lines", 0) for n in notes),
+        "guide_only": sum(n.get("guide_only", 0) for n in notes), "asks": sum(bool(n.get("ask")) for n in notes),
+        "dropped": dict(dropped), "ms_median": _r(drive.pctl(ms, 0.5), 0), "ms_p90": _r(drive.pctl(ms, 0.9), 0),
+    }  # fmt: skip
 
 
 def summarize(rows: list[dict], errors: list[dict]) -> dict:
@@ -284,6 +305,7 @@ def summarize(rows: list[dict], errors: list[dict]) -> dict:
             "to_v3": sum(any(p.get("engine") == "v3" and p.get("v2_out") for p in r.get("answer_paths") or [])
                          for r in rs),  # 새 길이 v3로 넘긴 턴
             "by_purpose": _by_purpose(rs),
+            "expert": expert_stats(paths),
         }  # fmt: skip
     return out
 
@@ -527,9 +549,9 @@ def parse_args(argv=None):
     ap.add_argument("--only", help="쉼표로 질문 id(고른 문항 안에서)")
     ap.add_argument(
         "--split",
-        choices=("dev", "heldout", "both"),
+        choices=("dev", "heldout", "both", "all"),
         default="dev",
-        help="dev = 고른 40문항 · heldout = held-out 모두(최종 확인용) · both = 둘 다",
+        help="dev = 고른 40문항 · heldout = held-out 모두(최종 확인용) · both = 둘 다 · all = 세트 모두(고르지 않음)",
     )
     ap.add_argument("--limit", type=int)
     ap.add_argument("--seed", type=int, default=SEED)
@@ -558,6 +580,8 @@ def pick_rows(a) -> list[dict]:
     rows = pick(every, seed=a.seed) if a.split in ("dev", "both") else []
     if a.split in ("heldout", "both"):  # held-out은 고르지 않고 모두 써요
         rows += [r for r in every if r["split"] == "heldout"]
+    if a.split == "all":  # 작은 세트(trade_expert30 등): 고르지 않고 모두
+        rows = list(every)
     if a.only:
         want = a.only.split(",")
         miss = [x for x in want if x not in {r["id"] for r in rows}]
