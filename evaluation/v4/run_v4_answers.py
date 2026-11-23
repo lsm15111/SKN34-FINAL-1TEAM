@@ -6,7 +6,8 @@
 - 시스템(이 프로세스의 settings.assistant_answer_route만 바꿔요): v4_v3 = v3 · v4_hybrid = v2+v3 ·
   v4_hybrid_g = v2g+v3(v2 근거만 받아 비서가 한 번에 써요, v2 안의 LLM 답 없음). --systems로 골라 돌려요
 - 세트(pick): sets/compare.jsonl dev에서 묶음마다 씨앗 고정 순서(kit.stable_int(seed, id) 오름차순)로 앞에서 고른 40문항
-  (다른 공정 6 · 여러 공정 14 · 지식 16 · 금액 · 기간 4 = PICK). held-out은 쓰지 않아요. --only는 고른 것 안에서만 걸러요
+  (다른 공정 6 · 여러 공정 14 · 지식 16 · 금액 · 기간 4 = PICK). --split heldout · both는 held-out을 모두 더해요(최종 확인용).
+  --only는 고른 것 안에서만 걸러요
 - 앱: apienv.App(평가 DB mitjip_eval_v4ans · Redis 9). 질문 × 시스템마다 표 · Redis를 비우고 다시 심어요(app.reset)
 - 심기(공개 API): 고객 가입 → 공사 만들기(지금 화면 몸통: 공급 105.8㎡ · 도배 기본형 + 목공 몰딩 · 걸레받이 · 빈 집 ·
   시작 희망 2027-01-04 · 서울 마포구) → 표준견적서 한 번 열기(화면처럼. 턴 사실의 평형이 이 값에서 나와요)
@@ -340,7 +341,8 @@ class OutTap:
         tools_mod.run = run
         real_facts = assistant_service._customer_facts
 
-        async def facts(*args, **kwargs):  # 인자는 그대로 넘겨요(서비스가 인자를 더해도 깨지지 않게)
+        # 인자는 그대로 넘겨요(서비스가 인자를 더해도 깨지지 않게)
+        async def facts(*args, **kwargs):
             got = await real_facts(*args, **kwargs)
             self.facts = got
             return got
@@ -522,7 +524,13 @@ def parse_args(argv=None):
     ap.add_argument("--tag", required=True)
     ap.add_argument("--set", type=Path, default=SETS / "compare.jsonl")
     ap.add_argument("--systems", default=",".join(SYSTEMS))
-    ap.add_argument("--only", help="쉼표로 질문 id(고른 40문항 안에서)")
+    ap.add_argument("--only", help="쉼표로 질문 id(고른 문항 안에서)")
+    ap.add_argument(
+        "--split",
+        choices=("dev", "heldout", "both"),
+        default="dev",
+        help="dev = 고른 40문항 · heldout = held-out 모두(최종 확인용) · both = 둘 다",
+    )
     ap.add_argument("--limit", type=int)
     ap.add_argument("--seed", type=int, default=SEED)
     ap.add_argument("--max-usd", type=float, help="--live에는 꼭 줘요(장부 합 기준)")
@@ -546,12 +554,15 @@ def parse_args(argv=None):
 
 
 def pick_rows(a) -> list[dict]:
-    rows = pick(jsonl(a.set), seed=a.seed)
+    every = jsonl(a.set)
+    rows = pick(every, seed=a.seed) if a.split in ("dev", "both") else []
+    if a.split in ("heldout", "both"):  # held-out은 고르지 않고 모두 써요
+        rows += [r for r in every if r["split"] == "heldout"]
     if a.only:
         want = a.only.split(",")
         miss = [x for x in want if x not in {r["id"] for r in rows}]
         if miss:
-            raise SystemExit(f"고른 40문항에 없는 id예요: {miss}")
+            raise SystemExit(f"고른 문항에 없는 id예요: {miss}")
         rows = [r for r in rows if r["id"] in want]
     return rows[: a.limit] if a.limit else rows
 
@@ -573,7 +584,7 @@ def main(argv=None) -> int:
     out.mkdir(parents=True, exist_ok=True)
     meta = {
         "tag": a.tag, "mode": "live" if a.live else "dry-run", "set": str(a.set), "systems": SYSTEMS,
-        "run_systems": systems, "pick": {"quotas": PICK, "seed": a.seed, "split": "dev",
+        "run_systems": systems, "pick": {"quotas": PICK, "seed": a.seed, "split": a.split,
         "rule": "묶음마다 kit.stable_int(seed, id) 오름차순 앞에서 n개"}, "rows": len(rows),
         "ids": [r["id"] for r in rows], "home": h.id, "project_body": project_body(h), "db": a.db,
         "redis_db": a.redis_db, "max_usd": a.max_usd, "head": _git("rev-parse", "HEAD"),

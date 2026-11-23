@@ -4,7 +4,9 @@ cd backend && uv run python ../evaluation/v4/tests/test_v4_eval.py
 """
 
 import contextlib
+import csv
 import io
+import json
 import os
 import sys
 import tempfile
@@ -19,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import apienv
 import budget
 import build_sets
+import grade
 import judge
 import kappa
 import prices
@@ -753,17 +756,166 @@ class V4AnswersTest(unittest.TestCase):
     def test_ground_system_and_paths(self):
         """v4_hybrid_g = v2g+v3(v2 근거만). 길 기록에는 v2g · v3(금액 · 기간) · know(알아 두기만)가 남아요."""
         self.assertEqual(v4ans.SYSTEMS["v4_hybrid_g"], "v2g+v3")
-        self.assertEqual(v4ans.parse_args(["--tag", "t", "--systems", "v4_hybrid_g"]).systems, "v4_hybrid_g")
+        self.assertEqual(
+            v4ans.parse_args(["--tag", "t", "--systems", "v4_hybrid_g"]).systems, "v4_hybrid_g"
+        )
 
         def tool(engine, v2_out):
-            return {"name": "answer_question", "data": {"route": "v2g", "engine": engine, "v2_out": v2_out}}
+            return {
+                "name": "answer_question",
+                "data": {"route": "v2g", "engine": engine, "v2_out": v2_out},
+            }
 
         rows = [
             {"system": "v4_hybrid_g", "cost_usd": 0.01, "ms": 5000, "answer_paths": v4ans.answer_paths([tool(e, o)])}
             for e, o in (("v2g", False), ("v3", False), ("know", True))
         ]  # fmt: skip
         g = v4ans.summarize(rows, [])["v4_hybrid_g"]
-        self.assertEqual((g["engine"], g["v2_out"], g["to_v3"]), ({"v2g": 1, "v3": 1, "know": 1}, 1, 0))
+        self.assertEqual(
+            (g["engine"], g["v2_out"], g["to_v3"]), ({"v2g": 1, "v3": 1, "know": 1}, 1, 0)
+        )
+
+
+class GradeTest(unittest.TestCase):
+    """한 답 점수 판정기(grade.py): 대조군 · 대화 글 · 가짜 점수로 끝까지(유료 호출 0회)."""
+
+    def test_pad_repeats_the_same_sentences_as_a_list(self):
+        t = "몰딩을 먼저 달아요. 그다음 도배해요."
+        p = grade.pad(t)
+        self.assertTrue(p.startswith(t))
+        self.assertTrue(p.endswith("- 몰딩을 먼저 달아요.\n- 그다음 도배해요."))
+
+    def test_chat_body_follows_the_simulator_turn_numbers(self):
+        # sim/run.py: 결정 · 바깥 일의 턴 번호는 대본 글 턴만 세요(단추 턴 빼고, 0번은 대화 전)
+        r = {
+            "surface": "vendor",
+            "turns": [
+                {"kind": "say", "say": "정리해 줘", "text": "새 요청이에요.", "step": 1,
+                 "cards": ["vendor_brief", "vendor_brief"], "actions": [{"kind": "decline"}]},
+                {"kind": "screen", "screen": "vendor_brief", "step": 2},
+                {"kind": "press", "press": {"kind": "dates", "status": "missed"}, "step": 3},
+                {"kind": "say", "say": "못 받아요", "text": "알렸어요.", "press": {"kind": "decline"}, "step": 4},
+                {"kind": "say", "say": "고마워", "text": "네.", "step": 5},
+            ],
+            "decisions": [
+                {"turn": 0, "kind": "window_answer", "do": "reject", "status": "rejected"},
+                {"turn": 1, "kind": "decline", "do": "approve", "status": None, "code": "stale"},
+                {"turn": 1, "kind": "decline", "do": "approve", "status": "executed"},
+            ],
+            "events": [{"after_turn": 1, "do": "customer_confirm_deal"}],
+        }  # fmt: skip
+        body = grade.chat_body(r)
+        at = body.index
+        self.assertLess(at("[업체: window_answer 거절 → 거절됨]"), at("### 턴 1"))
+        self.assertLess(at("### 턴 1"), at("[화면: vendor_brief]"))
+        self.assertIn("업체: 못 받아요 [카드 단추로 보냄: decline]", body)
+        self.assertLess(at("### 턴 2"), at("[일어난 일: customer_confirm_deal]"))
+        self.assertLess(
+            at("[일어난 일: customer_confirm_deal]"), at("[업체: decline 승인 → 반영 안 됨(stale)]")
+        )
+        self.assertLess(at("[업체: decline 승인 → 반영됨]"), at("### 턴 3"))
+        self.assertEqual(body.count("[카드: vendor_brief]"), 1)
+        self.assertNotIn("missed", body)
+
+    def test_world_lines_shift_dates_and_leave_out_contacts(self):
+        sc = {"world": {
+            "customer": {"phone": "010-5555-0101", "address": "101동 1203호"},
+            "vendors": [{"ref": "m", "name": "마루와벽", "gu": "마포구", "phone": "010-3333-4444"}],
+            "deals": [{"ref": "d", "vendor": "m", "trade": "dobae", "status": "scheduled",
+                       "start": "2027-01-13", "end": "2027-01-15"}],
+        }}  # fmt: skip
+        text = "\n".join(grade.world_lines(sc, -42))
+        self.assertIn("업체 확정 마루와벽(dobae): scheduled · 공사 2026-12-02~2026-12-04", text)
+        self.assertNotIn("010-", text)
+        self.assertNotIn("1203", text)
+
+    def test_dry_run_grades_controls_and_compares_with_itself(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            sets = [
+                {
+                    "id": "q1",
+                    "source": "core",
+                    "split": "dev",
+                    "group": "knowledge",
+                    "turns": ["도배 순서?"],
+                },
+                {
+                    "id": "q2",
+                    "source": "core",
+                    "split": "heldout",
+                    "group": "price_time",
+                    "turns": ["얼마예요?"],
+                },
+            ]
+            answers = [
+                {"id": "q1", "system": "v4_default_g", "text": "몰딩 먼저예요. 그다음 도배해요.", "facts_given": "없음"},
+                {"id": "q2", "system": "v4_default_g", "text": "표준견적서는 2,734,134원이에요.", "facts_given": "2,734,134원"},
+                {"id": "q1", "system": "v4_v3", "text": "다른 시스템 답"},
+            ]  # fmt: skip
+            (d / "set.jsonl").write_text(
+                "\n".join(json.dumps(r, ensure_ascii=False) for r in sets), "utf-8"
+            )
+            (d / "ans.jsonl").write_text(
+                "\n".join(json.dumps(r, ensure_ascii=False) for r in answers), "utf-8"
+            )
+            args = [
+                "--tag",
+                "t",
+                "--answers",
+                str(d / "ans.jsonl"),
+                "--set",
+                str(d / "set.jsonl"),
+                "--controls",
+                "2",
+            ]
+            with (
+                mock.patch.object(grade, "RUNS", d / "runs"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(grade.main(args), 0)
+                self.assertEqual(grade.main(["--tag", "t", "--report", "--compare", "t"]), 0)
+            rows = jsonl(d / "runs" / "t" / "grades.jsonl")
+            kinds = sorted((r["kind"], r["variant"]) for r in rows)
+            self.assertEqual(
+                kinds,
+                sorted(
+                    [("answer", "real")] * 2
+                    + [("control", v) for v in ("pad", "empty", "dunno")] * 2
+                ),
+            )
+            s = json.loads((d / "runs" / "t" / "summary.json").read_text("utf-8"))
+            self.assertEqual((s["answer"]["n"], s["null"]["ok"], s["pad"]["n"]), (2, 4, 2))
+            self.assertEqual((s["compare"]["all"]["exact"], s["compare"]["all"]["n"]), (1.0, 8))
+            self.assertIn("cost", s)
+
+            # 사람 확인 표본: 판정기 점수는 열쇠에만. 사람이 판정기와 같게 채우면 일치 1
+            with (
+                mock.patch.object(grade, "RUNS", d / "runs"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(grade.main(["--tag", "t", "--report", "--human", "2"]), 0)
+            sheet = d / "runs" / "t" / "human_2.csv"
+            key = grade.read_csv_any(sheet.with_name("human_2_key.csv"))
+            rows = grade.read_csv_any(sheet)
+            self.assertEqual(len(rows), 2)
+            self.assertNotIn(key[0]["판정기 종합"], rows[0]["종합(1~10)"] or "-")
+            for r, k in zip(rows, key, strict=True):
+                r["종합(1~10)"] = k["판정기 종합"]
+            with sheet.open("w", encoding="utf-8-sig", newline="") as f:
+                w = csv.DictWriter(f, fieldnames=grade.HUMAN)
+                w.writeheader()
+                w.writerows(rows)
+            with (
+                mock.patch.object(grade, "RUNS", d / "runs"),
+                contextlib.redirect_stdout(io.StringIO()),
+            ):
+                self.assertEqual(
+                    grade.main(["--tag", "t", "--report", "--human-file", str(sheet)]), 0
+                )
+            s = json.loads((d / "runs" / "t" / "summary.json").read_text("utf-8"))
+            self.assertEqual((s["human"]["n"], s["human"]["exact"]), (2, 1.0))
+            self.assertIn("cost", s)
 
 
 if __name__ == "__main__":

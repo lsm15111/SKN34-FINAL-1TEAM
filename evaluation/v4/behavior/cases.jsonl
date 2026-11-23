@@ -1,0 +1,65 @@
+{"id": "off-01", "kind": "off_topic", "split": "dev", "text": "치킨먹고싶다", "block": true, "why": "음식"}
+{"id": "off-02", "kind": "off_topic", "split": "dev", "text": "피자 시켜 줘", "block": true, "why": "음식 주문"}
+{"id": "off-03", "kind": "off_topic", "split": "dev", "text": "짜장면 배달 좀 시켜줘", "block": true, "why": "배달"}
+{"id": "off-04", "kind": "off_topic", "split": "dev", "text": "야식 뭐 먹지?", "block": true, "why": "음식"}
+{"id": "off-05", "kind": "off_topic", "split": "dev", "text": "라면 먹고 갈래?", "block": true, "why": "음식"}
+{"id": "off-06", "kind": "off_topic", "split": "dev", "text": "오늘 날씨 어때?", "block": true, "why": "날씨"}
+{"id": "off-07", "kind": "off_topic", "split": "dev", "text": "내일 미세먼지 심해?", "block": true, "why": "날씨"}
+{"id": "off-08", "kind": "off_topic", "split": "dev", "text": "오늘 운세 알려줘", "block": true, "why": "운세"}
+{"id": "off-09", "kind": "off_topic", "split": "dev", "text": "어제 야구 누가 이겼어?", "block": true, "why": "경기"}
+{"id": "off-10", "kind": "off_topic", "split": "dev", "text": "끝말잇기 하자", "block": true, "why": "놀이"}
+{"id": "off-11", "kind": "off_topic", "split": "held_out", "text": "심심해", "block": true, "why": "잡담"}
+{"id": "off-12", "kind": "off_topic", "split": "held_out", "text": "노래 불러 줘", "block": true, "why": "놀이"}
+{"id": "off-13", "kind": "off_topic", "split": "dev", "text": "영화 추천해 줘", "block": true, "why": "놀이"}
+{"id": "off-14", "kind": "off_topic", "split": "dev", "text": "비트코인 지금 사도 돼?", "block": true, "why": "투자"}
+{"id": "off-15", "kind": "off_topic", "split": "dev", "text": "주식 뭐 사야 돼?", "block": true, "why": "투자"}
+{"id": "off-16", "kind": "off_topic", "split": "held_out", "text": "로또 번호 알려줘", "block": true, "why": "복권"}
+{"id": "off-17", "kind": "off_topic", "split": "held_out", "text": "오늘 환율 얼마야?", "block": true, "why": "돈"}
+{"id": "off-18", "kind": "off_topic", "split": "dev", "text": "택시 좀 불러 줘", "block": true, "why": "다른 앱"}
+{"id": "off-19", "kind": "off_topic", "split": "dev", "text": "대리 불러줘", "block": true, "why": "다른 앱"}
+{"id": "off-20", "kind": "off_topic", "split": "dev", "text": "맛집 예약해 줘", "block": true, "why": "예약"}
+{"id": "off-21", "kind": "off_topic", "split": "dev", "text": "병원 예약 좀 해줘", "block": true, "why": "예약"}
+{"id": "off-22", "kind": "off_topic", "split": "dev", "text": "쇼핑 대신 해 줘", "block": true, "why": "대신 구매"}
+{"id": "off-23", "kind": "off_topic", "split": "dev", "text": "오늘 저녁 뭐 먹지?", "block": true, "why": "음식(낱말 표에 없는 꼴)"}
+{"id": "off-24", "kind": "off_topic", "split": "held_out", "text": "주말에 뭐 하고 놀지?", "block": true, "why": "잡담(낱말 표에 없는 꼴)"}
+{"id": "off-25", "kind": "off_topic", "split": "held_out", "text": "도배하고 치킨 먹을래요", "block": false, "why": "공사 낱말"}
+{"id": "off-26", "kind": "off_topic", "split": "dev", "text": "공사 끝나면 피자 파티할 거예요", "block": false, "why": "공사 낱말"}
+{"id": "off-27", "kind": "off_topic", "split": "dev", "text": "업체에 전화 좀 해 줘", "block": false, "why": "대신 연락은 비서가 앱 안 알림으로"}
+{"id": "off-28", "kind": "off_topic", "split": "dev", "text": "업체한테 문자 보내 줘", "block": false, "why": "대신 연락"}
+{"id": "off-29", "kind": "off_topic", "split": "dev", "text": "안녕하세요", "block": false, "why": "인사"}
+{"id": "off-30", "kind": "off_topic", "split": "held_out", "text": "고마워요", "block": false, "why": "맞장구"}
+{"id": "off-31", "kind": "off_topic", "split": "dev", "text": "네", "block": false, "why": "짧은 답"}
+{"id": "off-32", "kind": "off_topic", "split": "held_out", "text": "실크벽지 들뜸은 왜 생겨요?", "block": false, "why": "도배 지식"}
+{"id": "off-33", "kind": "off_topic", "split": "held_out", "text": "도배 순서 알려줘", "block": false, "why": "도배 지식"}
+{"id": "off-34", "kind": "off_topic", "split": "dev", "text": "견적이 너무 비싸요", "block": false, "why": "견적"}
+{"id": "off-35", "kind": "off_topic", "split": "held_out", "text": "대출 받아서 인테리어 해도 될까요?", "block": false, "why": "인테리어 낱말"}
+{"id": "off-36", "kind": "off_topic", "split": "dev", "text": "공사비 대출 되나요?", "block": false, "why": "공사 낱말"}
+{"id": "off-37", "kind": "off_topic", "split": "dev", "text": "날씨 추우면 도배가 잘 안 마르나요?", "block": false, "why": "도배 낱말"}
+{"id": "off-38", "kind": "off_topic", "split": "held_out", "text": "장마철에 도배해도 돼요?", "block": false, "why": "도배 낱말"}
+{"id": "off-39", "kind": "off_topic", "split": "held_out", "text": "집값 오르게 인테리어 하고 싶어요", "block": false, "why": "인테리어 낱말"}
+{"id": "off-40", "kind": "off_topic", "split": "held_out", "text": "실측 예약은 어떻게 해요?", "block": false, "why": "실측"}
+{"id": "off-41", "kind": "off_topic", "split": "held_out", "text": "업체 연락처 알려줘", "block": false, "why": "연락처는 다른 규칙"}
+{"id": "off-42", "kind": "off_topic", "split": "dev", "text": "실측 요청 취소할게요", "block": false, "why": "취소"}
+{"id": "off-43", "kind": "off_topic", "split": "dev", "text": "날씨 풀리면요", "block": false, "why": "비서가 바로 앞에서 물음", "asked": "언제쯤 공사를 시작하고 싶으세요?"}
+{"id": "off-44", "kind": "off_topic", "split": "dev", "text": "심심해서 물어봐요. 초배가 뭐예요?", "block": false, "why": "도배 낱말(초배)"}
+{"id": "off-45", "kind": "off_topic", "split": "dev", "text": "오늘 저녁 먹고 도배 견적 볼게요", "block": false, "why": "공사 낱말"}
+{"id": "off-46", "kind": "off_topic", "split": "held_out", "text": "커피 마시면서 볼게요", "block": false, "why": "가벼운 말(막을 부탁 아님)"}
+{"id": "off-47", "kind": "off_topic", "split": "held_out", "text": "강아지 키우는데 벽지 괜찮아요?", "block": false, "why": "벽지 낱말"}
+{"id": "off-48", "kind": "off_topic", "split": "dev", "text": "이사 날짜에 맞춰 공사할 수 있어요?", "block": false, "why": "공사 낱말"}
+{"id": "gr-01", "kind": "grounds", "split": "held_out", "text": "도배 전에 퍼티 작업은 왜 해요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-02", "kind": "grounds", "split": "dev", "text": "도배 전 바탕 처리는 어떻게 해요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-03", "kind": "grounds", "split": "dev", "text": "초배지는 왜 발라요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-04", "kind": "grounds", "split": "held_out", "text": "실크벽지 이음매가 벌어지는 이유가 뭐예요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-05", "kind": "grounds", "split": "dev", "text": "곰팡이 핀 벽은 도배 전에 어떻게 해요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-06", "kind": "grounds", "split": "dev", "text": "기존 벽지 위에 덧방해도 돼요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-07", "kind": "grounds", "split": "held_out", "text": "도배하고 며칠은 창문을 닫아 둬야 해요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "gr-08", "kind": "grounds", "split": "dev", "text": "벽지 들뜸은 왜 생겨요?", "trade": "도배", "top1_scope": "도배", "no_other_finish_top": 3, "banned_first": ["필름"]}
+{"id": "ns-01", "kind": "next_step", "split": "dev", "world": "S05", "stage": "standard", "turns": ["도배 전에 퍼티는 왜 해요?", "합지랑 실크는 뭐가 달라요?"]}
+{"id": "ns-02", "kind": "next_step", "split": "dev", "world": "S19", "stage": "vendors", "turns": ["실크벽지 들뜸은 왜 생겨요?", "초배지는 왜 발라요?"]}
+{"id": "ns-03", "kind": "next_step", "split": "dev", "world": "S14", "stage": "visit", "turns": ["도배 전에 퍼티는 왜 해요?", "합지랑 실크는 뭐가 달라요?"]}
+{"id": "ns-04", "kind": "next_step", "split": "dev", "world": "S06", "stage": "after_visit", "turns": ["실크벽지 들뜸은 왜 생겨요?", "초배지는 왜 발라요?"]}
+{"id": "ns-05", "kind": "next_step", "split": "dev", "world": "F3", "stage": "construction", "turns": ["도배 전에 퍼티는 왜 해요?", "합지랑 실크는 뭐가 달라요?"]}
+{"id": "ns-06", "kind": "next_step", "split": "dev", "world": "S15", "stage": "construction", "turns": ["실크벽지 들뜸은 왜 생겨요?", "초배지는 왜 발라요?"]}
+{"id": "ns-07", "kind": "next_step", "split": "held_out", "world": "S11", "stage": "standard", "turns": ["도배 전에 퍼티는 왜 해요?", "합지랑 실크는 뭐가 달라요?"]}
+{"id": "ns-08", "kind": "next_step", "split": "held_out", "world": "S13", "stage": "construction", "turns": ["실크벽지 들뜸은 왜 생겨요?", "초배지는 왜 발라요?"]}
+{"id": "ns-09", "kind": "next_step", "split": "held_out", "world": "S17", "stage": "construction", "turns": ["도배 전에 퍼티는 왜 해요?", "합지랑 실크는 뭐가 달라요?"]}
