@@ -1,14 +1,17 @@
 "use client";
 // 비서 대화 한 화면(v4 고객): 머리 · 단계 띠 · 대화 · 입력 칸 · 내 공사 보드 · 카드 자리.
 // app/projects/[id]/layout.tsx가 그리고, 아래 경로(page.tsx)는 카드 자리에 들어와요. 레이아웃이라 카드를 열고 닫아도
-// 대화 · 스크롤 · 연결이 그대로예요. 닫기는 대화에서 열었으면 뒤로 가기, 링크로 바로 왔으면 이 공사 대화로 바꿔 가요.
+// 대화 · 스크롤 · 연결이 그대로예요. 카드 창 안에서 주소를 옮기면 창은 그대로 두고 길(trail)에 적어요: '앞 화면으로'는 한 칸 뒤로,
+// 닫기(바탕 · X · Esc)는 대화에서 열었으면 쌓인 칸만큼 한 번에 뒤로(history.go), 링크로 바로 왔으면 처음 카드 칸을 대화로 바꿔요.
 // 알림 링크에 ?nudge={id}가 붙어 오면 먼저 말 건 제안을 '열었어요'로 알리고 주소에서 떼요.
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { lastActionIn, lastCardIn, lockedNow, mockScriptOf, type ActionOut } from "@/lib/api/assistant";
+import { canBack, closePlan, EMPTY_TRAIL, walk, type Move, type Trail } from "@/lib/assistant/trail";
 import type { MockScript } from "@/lib/mock/assistant/mode";
 import { Board } from "./Board";
 import { CardSlot } from "./CardSlot";
+import type { WindowStep } from "./CardWindow";
 import { Composer } from "./Composer";
 import { Feed } from "./Feed";
 import { Header } from "./Header";
@@ -39,21 +42,76 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
     return refs ? { ...rest, [cardId]: refs } : rest;
   }), []);
 
-  // 이 공사 안에서 다닌 길(닫기 = 뒤로 가기가 이 화면 안에 머무는지 알려고)
-  const stack = useRef<string[]>([]);
+  // 이 공사 화면이 뜬 뒤 다닌 길(브라우저 기록과 같은 차례, lib/assistant/trail). 주소가 바뀐 까닭은 popstate · Shell의 replace로 알아요
+  const here = path.replace(/\/$/, "");
+  const cardOpen = here !== base;
+  const [trail, setTrail] = useState<Trail>(EMPTY_TRAIL);
+  const popTo = useRef<string | null>(null); // 뒤로 · 앞으로가 온 주소
+  const replaceTo = useRef<string | null>(null); // Shell이 바꿔 가는 주소
+  const goTo = useRef<number | null>(null); // 닫기의 history.go가 갈 길 자리
+  const [closing, setClosing] = useState(false);
+  const closingRef = useRef(false);
   const opener = useRef<HTMLElement | null>(null);
-  const cardOpen = path.replace(/\/$/, "") !== base;
-  useEffect(() => {
-    const st = stack.current;
-    if (st.length >= 2 && st[st.length - 2] === path) st.pop();
-    else if (st[st.length - 1] !== path) st.push(path);
-    // 카드를 닫고 대화로 오면 카드를 연 단추로 초점을 돌려요
-    if (!cardOpen && opener.current?.isConnected) { opener.current.focus({ preventScroll: true }); opener.current = null; }
-  }, [path, cardOpen]);
-  const close = useCallback(() => {
-    if (stack.current.length > 1) router.back();
-    else router.replace(base, { scroll: false });
+  const shown = useRef(here); // 그려 둔 주소(popstate가 같은 주소로 왔는지 보려고)
+  const toChat = useCallback(() => {
+    replaceTo.current = base;
+    router.replace(base, { scroll: false });
   }, [router, base]);
+  useEffect(() => {
+    const onPop = () => {
+      const p = window.location.pathname.replace(/\/$/, "");
+      popTo.current = p;
+      // 닫는 중 지금과 같은 주소 칸에 닿으면(목록 → 업체 → 목록 · ?view= 같은 얕은 칸) 아래 효과가 돌지 않아서 여기서 길을 옮기고,
+      // 라우터가 뒤로 가기를 받은 뒤 그 칸을 대화 주소로 바꿔요
+      if (closingRef.current && p !== base && p === shown.current) {
+        const to = goTo.current;
+        goTo.current = null;
+        setTrail((t) => walk(t, p, "pop", to));
+        window.setTimeout(toChat, 0);
+      }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [base, toChat]);
+  // 그리기 전에 길을 적어요(창 머리 '앞 화면으로' · 스크롤 자리가 한 박자 늦게 바뀌지 않게)
+  useLayoutEffect(() => {
+    shown.current = here;
+    const move: Move = replaceTo.current === here ? "replace" : popTo.current === here ? "pop" : "push";
+    const to = goTo.current;
+    if (move === "replace") replaceTo.current = null; // 바꾸기는 그 주소에 닿을 때만 떼요(사이에 뒤로 가기 칸이 끼어도)
+    popTo.current = null;
+    goTo.current = null;
+    setTrail((t) => walk(t, here, move, to));
+    if (cardOpen) {
+      // 닫는 중인데 카드 칸에 닿았으면(링크로 바로 연 창의 처음 카드 · 기록이 길보다 길었음) 그 칸을 대화 주소로 바꿔요
+      if (closingRef.current) toChat();
+      return;
+    }
+    closingRef.current = false;
+    setClosing(false);
+    // 카드를 닫고 대화로 오면 카드를 연 칸(대화 · 보드)으로 초점을 돌려요
+    if (opener.current?.isConnected) { opener.current.focus({ preventScroll: true }); opener.current = null; }
+  }, [here, cardOpen, toChat]);
+  // 창 전체 닫기: 대화 자리까지 한 번에 돌아가요. 닫는 사이에는 창을 그리지 않아요(지나가는 카드가 비치지 않게)
+  const close = useCallback(() => {
+    const plan = closePlan(trail, base);
+    closingRef.current = true;
+    setClosing(true);
+    if (plan.back > 0) {
+      goTo.current = trail.at - plan.back;
+      window.history.go(-plan.back);
+    } else toChat();
+  }, [trail, base, toChat]);
+  // 1초 안에 대화 자리에 닿지 못하면(기록이 길과 달라 history.go가 움직이지 않음) 지금 칸을 대화 주소로 바꿔요
+  useEffect(() => {
+    if (!closing) return;
+    const t = window.setTimeout(() => {
+      if (closingRef.current && window.location.pathname.replace(/\/$/, "") !== base) toChat();
+    }, 1000);
+    return () => window.clearTimeout(t);
+  }, [closing, base, toChat]);
+  const step: WindowStep = { at: trail.at, path: trail.list[trail.at] ?? here, pop: trail.move === "pop" };
+  const back = canBack(trail, base) ? () => router.back() : undefined;
   const markOpener = (target: EventTarget) => {
     const t = (target as HTMLElement).closest<HTMLElement>("a[href^='/projects/'], button");
     if (t) opener.current = t;
@@ -176,7 +234,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
         </div>
         <Board board={a.board} memory={a.memory} open={boardOpen} flash={a.flash} base={base} onClose={() => setBoardOpen(false)} onForget={(id) => { void a.forget(id); }} />
       </div>
-      <CardSlot onClose={close}>{children}</CardSlot>
+      <CardSlot step={step} onBack={back} onClose={close} hidden={closing}>{children}</CardSlot>
     </div>
   );
 }

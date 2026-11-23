@@ -2,17 +2,14 @@
 // 카드 자리: v3 경로가 그대로 카드를 열어요(알림 · 공유 링크 · 메일 링크가 맞게). 해시(#)는 쓰지 않아요.
 // /projects/{id} → 대화만 · /home(우리 집 정보 고치기) · /standard · /plan · /vendors · /visits · /quotes · /schedule · /docs ·
 // /review → 전체 화면 카드
-// /vendors/{vid}(/reviews) → 서랍 · /quotes/{vid}/confirm → 가운데 창.
+// /vendors/{vid}(/reviews) → 서랍 · /quotes/{vid}/confirm → 가운데 창. 모두 창 하나(CardWindow)라 주소를 옮겨도 창은 그대로예요.
 import { useSearchParams, useSelectedLayoutSegments } from "next/navigation";
 import type { ReactNode } from "react";
-import { Drawer } from "./Drawer";
-import { StepSheet } from "./StepSheet";
-
-type SheetKind = "sheet" | "drawer" | "dialog";
+import { CardWindow, type WindowKind, type WindowStep } from "./CardWindow";
 
 const SCHEDULE: Record<string, string> = { dates: "공사 날짜", extra: "추가 금액", done: "공사 끝 확인" };
 
-export function cardOf(segs: string[], view: string | null): { kind: SheetKind; title: string } | null {
+export function cardOf(segs: string[], view: string | null): { kind: WindowKind; title: string } | null {
   const [a, b, c] = segs;
   if (!a) return null;
   switch (a) {
@@ -31,11 +28,13 @@ export function cardOf(segs: string[], view: string | null): { kind: SheetKind; 
   }
 }
 
-export function CardSlot({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+/** step: 창 안 지금 단계(Shell의 길). onBack: 창 안 앞 단계가 있을 때만. hidden: 닫는 중(대화 자리로 돌아가는 사이 안 그려요) */
+export function CardSlot({ step, onBack, onClose, hidden, children }: {
+  step: WindowStep; onBack?: () => void; onClose: () => void; hidden: boolean; children: ReactNode;
+}) {
   const segs = useSelectedLayoutSegments().filter((x) => !x.startsWith("__") && !x.startsWith("("));
   const view = useSearchParams().get("view");
   const card = cardOf(segs, view);
-  if (!card) return null;
-  if (card.kind === "drawer") return <Drawer title={card.title} onClose={onClose}>{children}</Drawer>;
-  return <StepSheet title={card.title} dialog={card.kind === "dialog"} onClose={onClose}>{children}</StepSheet>;
+  if (!card || hidden) return null;
+  return <CardWindow kind={card.kind} title={card.title} step={step} onBack={onBack} onClose={onClose}>{children}</CardWindow>;
 }
