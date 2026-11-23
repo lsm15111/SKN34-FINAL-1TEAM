@@ -126,6 +126,17 @@ class AskIn(BaseModel):
     kind: Literal["general", "price", "period", "material", "process"] = "general"
 
 
+def kind_of(kind: str, question: str) -> str:
+    """모델이 고른 질문 종류 → 답 길을 고를 종류. 금액 · 기간 종류라도 하자 · A/S · 보증 · 환불 질문이면 이 공사
+    공정표 · 견적 값이 답이 아니라 general이에요(v3 policy WARRANTY · REFUND와 같은 말. 2026-11-23 도커 'AS기간은 보통
+    어떻게돼?'가 period로 와 v3 길에서 타일 글 조각만 받았어요)."""
+    from app.agent.v3.policy import REFUND, WARRANTY
+
+    if kind in ("price", "period") and (WARRANTY.search(question) or REFUND.search(question)):
+        return "general"
+    return kind
+
+
 @tool(
     "answer_question",
     surface="customer",
@@ -148,7 +159,7 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     from app.knowledge import service as knowledge
 
     question = policy.mask_in(a.question)
-    engine = engine_for(a.kind)
+    engine = engine_for(kind_of(a.kind, question))
     know = knowledge.other_trade_notes(question)
     if engine in (HYBRID, HYBRID_G):
         out = await _hybrid(tc, question, ground=engine == HYBRID_G, know=know is not None)
