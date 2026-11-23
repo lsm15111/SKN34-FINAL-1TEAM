@@ -17,6 +17,7 @@ type Key = "email" | "password" | "name" | "phone" | "terms";
 type Errors = Partial<Record<Key | "form", string>>;
 const ORDER: Key[] = ["email", "password", "name", "phone", "terms"];
 const ID: Record<Key, string> = { email: "su-email", password: "su-pw", name: "su-name", phone: "su-phone", terms: "su-tos" };
+// 약관 '보기'는 새 창으로 열어요: 같은 창으로 가면 돌아왔을 때 넣은 칸이 모두 사라져요(QA r6 M14)
 const TERMS = [
   { key: "tos", label: "[필수] 이용약관", see: "/legal?tab=terms", seeLabel: "이용약관 보기" },
   { key: "privacy", label: "[필수] 개인정보 수집 · 이용", see: "/legal?tab=privacy", seeLabel: "개인정보 수집 · 이용 보기" },
@@ -31,6 +32,8 @@ export function SignupForm({ next, mock }: { next?: string; mock: boolean }) {
   const [errors, setErrors] = useState<Errors>({});
   const [busy, setBusy] = useState(false);
   const [carry, setCarry] = useState(false);
+  /** 이미 가입한 이메일: 칸 아래 로그인 길을 줘요(QA r6 L6) */
+  const [taken, setTaken] = useState(false);
   const allRef = useRef<HTMLInputElement>(null);
   const all = TERMS.every((t) => agree[t.key]);
   const some = TERMS.some((t) => agree[t.key]);
@@ -62,7 +65,7 @@ export function SignupForm({ next, mock }: { next?: string; mock: boolean }) {
       await call("POST", "/auth/signup", { email: v.email.trim(), password: v.password, name: v.name.trim(), phone: v.phone.trim() });
     } catch (er) {
       const got: Errors = {};
-      if (er instanceof ApiError && er.code === "email_taken") got.email = er.message;
+      if (er instanceof ApiError && er.code === "email_taken") { got.email = er.message; setTaken(true); }
       else if (er instanceof ApiError && er.fields?.length) {
         for (const fe of er.fields) {
           const k = (["name", "phone", "email", "password"] as Key[]).find((x) => x === fe.loc[fe.loc.length - 1] || x === fe.loc[0]);
@@ -84,26 +87,34 @@ export function SignupForm({ next, mock }: { next?: string; mock: boolean }) {
   }
 
   const fieldErr = (k: Key) => errors[k] ?? null;
+  // 칸을 고치면 그 칸의 오류 글은 바로 지워요(고친 뒤에도 빨간 글이 남지 않게, QA r6 L4). 다시 검사는 보낼 때 한 번이에요
+  const edit = (k: Exclude<Key, "terms">, val: string) => {
+    setV((x) => ({ ...x, [k]: val }));
+    setErrors((x) => (x[k] ? { ...x, [k]: undefined } : x));
+    if (k === "email") setTaken(false);
+  };
+  const agreeTo = (value: Record<TermKey, boolean>) => { setAgree(value); setErrors((x) => (x.terms ? { ...x, terms: undefined } : x)); };
   const label = carry ? "가입하고 업체 보기" : "가입하기";
 
   return (
     <form className={s.card} onSubmit={onSubmit} noValidate aria-label="이메일로 가입">
       <section className={s.group}>
-        <Field id={ID.email} label="이메일" type="email" autoComplete="email" maxLength={254} value={v.email} error={fieldErr("email")} onChange={(e) => setV({ ...v, email: e.target.value })} />
-        <Field id={ID.password} label="비밀번호" type="password" autoComplete="new-password" maxLength={128} value={v.password} error={fieldErr("password")} hint="8자 이상" onChange={(e) => setV({ ...v, password: e.target.value })} />
-        <Field id={ID.name} label="이름" autoComplete="name" maxLength={50} value={v.name} error={fieldErr("name")} onChange={(e) => setV({ ...v, name: e.target.value })} />
-        <Field id={ID.phone} label="휴대폰" optional type="tel" inputMode="tel" autoComplete="tel" maxLength={20} placeholder="010-0000-0000" value={v.phone} error={fieldErr("phone")} hint="업체에는 가지 않아요." onChange={(e) => setV({ ...v, phone: e.target.value })} />
+        <Field id={ID.email} label="이메일" type="email" autoComplete="email" maxLength={254} value={v.email} error={fieldErr("email")} onChange={(e) => edit("email", e.target.value)} />
+        {taken ? <p className={s.note}>이미 회원이에요 · <Button variant="text" href={next ? `/login?next=${encodeURIComponent(next)}` : "/login"}>로그인</Button></p> : null}
+        <Field id={ID.password} label="비밀번호" type="password" autoComplete="new-password" maxLength={128} value={v.password} error={fieldErr("password")} hint="8자 이상" onChange={(e) => edit("password", e.target.value)} />
+        <Field id={ID.name} label="이름" autoComplete="name" maxLength={50} value={v.name} error={fieldErr("name")} onChange={(e) => edit("name", e.target.value)} />
+        <Field id={ID.phone} label="휴대폰" optional type="tel" inputMode="tel" autoComplete="tel" maxLength={20} placeholder="010-0000-0000" value={v.phone} error={fieldErr("phone")} hint="업체에는 가지 않아요." onChange={(e) => edit("phone", e.target.value)} />
       </section>
       <section className={s.group}>
         <fieldset className={s.terms} aria-describedby={errors.terms ? "su-terms-e" : undefined}>
           <legend className="mj-sr">약관 동의</legend>
           <div className={`${s.term} ${s.all}`}>
-            <label><input ref={allRef} id="su-all" type="checkbox" className={s.ck} checked={all} onChange={(e) => setAgree({ tos: e.target.checked, privacy: e.target.checked, age: e.target.checked })} />모두 동의해요</label>
+            <label><input ref={allRef} id="su-all" type="checkbox" className={s.ck} checked={all} onChange={(e) => agreeTo({ tos: e.target.checked, privacy: e.target.checked, age: e.target.checked })} />모두 동의해요</label>
           </div>
           {TERMS.map((t) => (
             <div key={t.key} className={s.term}>
-              <label><input id={`su-${t.key}`} type="checkbox" className={s.ck} checked={agree[t.key]} onChange={(e) => setAgree({ ...agree, [t.key]: e.target.checked })} />{t.label}</label>
-              {"see" in t ? <Button variant="text" gray href={t.see} aria-label={t.seeLabel}>보기</Button> : null}
+              <label><input id={`su-${t.key}`} type="checkbox" className={s.ck} checked={agree[t.key]} onChange={(e) => agreeTo({ ...agree, [t.key]: e.target.checked })} />{t.label}</label>
+              {"see" in t ? <Button variant="text" gray href={t.see} external aria-label={`${t.seeLabel} · 새 창`}>보기</Button> : null}
             </div>
           ))}
         </fieldset>
