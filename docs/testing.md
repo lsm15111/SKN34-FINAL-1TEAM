@@ -96,6 +96,18 @@ v3 `POST /ai/turns`는 답·저장 완료 후 `token`(완성된 문장)·`card`�
 
 ## CI와 승인
 
+### 병렬 테스트와 필수 검사
+
+`Backend tests (1/8)`부터 `(8/8)`까지 독립 GitHub 호스팅 VM에서 실행한다. 각 작업은 PostgreSQL·Redis를 따로 가지며 기존 DB 재생성, 마이그레이션 올림·내림, 테스트별 초기화를 유지한다. 같은 DB·Redis에 여러 pytest를 동시에 연결하지 않는다.
+
+[분배 스크립트](../.github/scripts/ci_backend.py)는 전체 pytest collection의 node ID를 정렬해 8개 작업에 번갈아 배정한다. 새 테스트와 파라미터화 사례도 포함된다. UUID처럼 매번 바뀌는 입력은 `pytest.mark.parametrize`의 `ids`를 지정해 수집 ID를 일정하게 유지한다. ruff, migration head 하나 검사, pytest, `alembic check`는 각 작업에서 실행한다.
+
+필수 `Backend`는 항상 실행하여 먼저 8개 작업의 성공을 확인한다. 실패·취소·건너뜀은 실패로 처리한다. 이어 현재 workflow run·커밋의 결과를 검증하여 collection 불일치, 잘못된 분배, 실행 누락·중복, 0개 테스트, skip·xfail을 차단한다. 결과 파일이 없으면 업로드도 실패한다. 실패한 작업만 재실행하면 해당 결과를 교체하며, 작업 상태가 실패하면 이전 결과로 통과할 수 없다.
+
+`Frontend`는 같은 checkout과 `backend/uv.lock`으로 OpenAPI를 직접 생성하고 기존 타입 비교·typecheck·lint·build를 병렬 실행한다. 명세 생성 실패는 필수 Frontend 실패로 이어진다. 기존 필수 검사 이름, 보안 검사와 main 배포 조건을 유지한다. 백엔드와 OpenAPI 생성은 uv `0.13.9`와 전용 캐시 키를 함께 쓴다. 캐시는 의존성 다운로드만 줄이며 `uv sync --locked`와 모든 검사는 항상 실행한다.
+
+로컬 전체 검사 명령은 기존 `uv run pytest -q`다. CI 분배 재현은 격리된 테스트 서비스를 준비한 뒤 backend에서 `uv run python ../.github/scripts/ci_backend.py run --shard 1 --shards 8 --report ../backend-reports/shard-1.json`을 실행한다. shard는 1부터 8까지다. 여덟 결과를 모은 뒤 루트에서 `python3 .github/scripts/ci_backend.py verify --shards 8 --reports backend-reports`로 검증한다. 속도는 가장 느린 작업과 runner 대기 시간에 좌우되므로 실제 CI 시간으로 비교한다.
+
 [CI](../.github/workflows/ci.yml)는 저장소 검사, backend, frontend, 컨테이너 빌드를 실행한다. [Security](../.github/workflows/security.yml)는 CodeQL · Dependency Review · Audit(`pip-audit`·`pnpm audit`·`bandit`·`semgrep`)를 실행한다. 유료 모델 호출은 하지 않는다.
 
 리뷰는 최종 PR head 기준으로 남긴다. 수정이 필요한 재현 오류는 원인 파일·입력·실제 결과·수정 방향을 적고 Request changes로 남긴다. 범위와 검증이 충족되면 승인한다. CI 통과와 업무 동작의 승인 판단은 별개다.

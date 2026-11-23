@@ -2,8 +2,9 @@ name: CI
 
 # PR과 통합 브랜치에 올라온 코드를 확인한다. 유료 API(LLM)는 부르지 않는다 (LLM_LIVE=false).
 # - repository-checks: 저장소 공통 점검 (JSON 문법, 충돌 표시, 줄 끝 공백, .env 추적)
-# - backend: ruff, migration head 단일 검증, pytest(실제 PostgreSQL · Redis), 스키마 차이 검사, API 명세 저장
-# - frontend: API 타입이 명세와 같은지, typecheck, lint, build
+# - backend-tests: 독립 PostgreSQL · Redis로 전체 테스트를 8등분, ruff와 마이그레이션 검사 유지
+# - backend: 모든 분할 작업의 성공과 전체 테스트 누락·중복 여부를 확인하는 필수 검사
+# - frontend: 같은 커밋의 API 명세 생성·타입 비교, typecheck, lint, build
 # - containers: Compose 설정, 운영용 API · 웹 이미지 빌드, 컨테이너 실행 확인
 
 on:
@@ -25,6 +26,9 @@ on:
 permissions:
   contents: read
 
+env:
+  LLM_LIVE: "false"
+
 concurrency:
   # 수동 CI가 자동 CI의 실행·대기 항목을 취소하거나 대체하지 않게 분리한다.
   group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ github.event_name }}
@@ -45,10 +49,14 @@ jobs:
           python3 .github/scripts/development_flow.py pr
           python3 -m unittest discover -s .github/scripts/tests -v
 
-  backend:
-    name: Backend
+  backend-tests:
+    name: Backend tests (${{ matrix.shard }}/8)
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7, 8]
     services:
       postgres:
         image: pgvector/pgvector:0.8.7-pg17-bookworm
@@ -75,43 +83,85 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v10.3.3
         with:
+          version: "0.13.9"
           enable-cache: true
+          cache-suffix: backend-uv-0.13.9-v1
       - run: uv sync --locked
       - name: ruff
         run: uv run ruff check . && uv run ruff format --check .
+      - name: 테스트 분배 실패 경로 검사
+        if: ${{ matrix.shard == 1 }}
+        run: uv run python ../.github/scripts/tests/test_ci_backend.py --integration
       - name: migration head가 하나인지 (둘이면 rebase 뒤 내 revision의 down_revision을 최신 head로 바꾼다)
         run: |
           heads=$(uv run alembic heads | wc -l)
           echo "heads: $heads"
           test "$heads" -eq 1
       - name: pytest
-        run: uv run pytest -q
+        run: >-
+          uv run python ../.github/scripts/ci_backend.py run
+          --shard ${{ matrix.shard }} --shards 8
+          --report ../backend-reports/shard-${{ matrix.shard }}.json
       - name: DB 모델과 마이그레이션 일치 검사
         env:
           APP_ENV: test
         run: |
           export DATABASE_URL="postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@127.0.0.1:${DB_HOST_PORT}/mitjip_test"
           uv run alembic check
-      # 서버를 띄우지 않고 앱에서 바로 뽑는다. 백그라운드 서버가 남으면 setup-uv의 캐시 정리가 잠금을 기다리다 실패한다
-      - name: API 명세 저장 (프런트 타입 비교용)
-        env:
-          APP_ENV: local
-        run: uv run python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > ../openapi.json
-      - uses: actions/upload-artifact@v7.0.2
+      - name: 테스트 실행 결과 저장
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7.0.2
         with:
-          name: openapi
-          path: openapi.json
+          name: backend-tests-${{ matrix.shard }}
+          path: backend-reports/shard-${{ matrix.shard }}.json
+          if-no-files-found: error
+          # 같은 커밋에서 실패한 작업만 재실행할 때 해당 결과를 교체한다.
+          overwrite: true
+
+  backend:
+    name: Backend
+    needs: backend-tests
+    # 의존 작업이 실패·취소·건너뜀이더라도 필수 검사를 성공으로 처리하지 않는다.
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: 모든 백엔드 작업 성공 확인
+        env:
+          BACKEND_RESULT: ${{ needs.backend-tests.result }}
+        run: test "$BACKEND_RESULT" = success
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8.0.2
+        with:
+          pattern: backend-tests-*
+          path: backend-reports
+          merge-multiple: true
+      - name: 전체 테스트 누락·중복 확인
+        run: python3 .github/scripts/ci_backend.py verify --shards 8 --reports backend-reports
 
   frontend:
     name: Frontend
     runs-on: ubuntu-24.04
-    needs: backend
     timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          version: "0.13.9"
+          enable-cache: true
+          cache-suffix: backend-uv-0.13.9-v1
+      - name: API 명세 생성 환경 준비
+        working-directory: backend
+        run: uv sync --locked
+      # 같은 checkout에서 직접 생성한다. 실패하면 필수 Frontend 검사도 실패한다.
+      - name: API 명세 생성
+        working-directory: backend
+        env:
+          APP_ENV: local
+        run: uv run python -c "import json; from app.main import app; print(json.dumps(app.openapi()))" > ../openapi.json
       - uses: pnpm/action-setup@v6.1.0
         with:
           package_json_file: frontend/package.json
@@ -121,10 +171,6 @@ jobs:
           cache: pnpm
           cache-dependency-path: frontend/pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
-      - uses: actions/download-artifact@v8.0.2
-        with:
-          name: openapi
-          path: .
       - name: API 타입이 명세와 같은지 (API를 바꾸고 pnpm gen:api를 안 돌리면 실패)
         run: |
           pnpm exec openapi-typescript ../openapi.json -o lib/backend/schema.d.ts

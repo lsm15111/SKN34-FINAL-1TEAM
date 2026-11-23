@@ -23,6 +23,8 @@ X = str(uuid.uuid4())
         ("get", "/admin/reports"),
         ("get", "/admin/members"),
     ],
+    # 작업마다 생성되는 UUID가 테스트 수집 ID를 바꾸지 않게 한다.
+    ids=lambda value: value.replace(X, "{id}"),
 )
 def test_new_routes_need_login(api, method, path):
     api.cookies.clear()
