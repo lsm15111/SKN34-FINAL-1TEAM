@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/ui/EmptyState";
 import { Menu } from "@/components/ui/Menu";
 import { StateLegend, StateTag } from "@/components/ui/StateTag";
 import type { InboxRowV3, InboxSort, InboxTab, VendorInboxPage, VendorInboxSummary, VendorSchedule, VendorVisitV3 } from "@/lib/api/vendor";
-import { dateShort, listStamp, rangeText, timeSeoul, won } from "@/lib/format";
+import { dateShort, halfDayText, listStamp, rangeText, timeSeoul, won } from "@/lib/format";
 import { gradeLabel, type StateTone } from "@/lib/labels";
 import { LOC_NOTE } from "../text";
 import { Tabs, type TabOption } from "@/components/ui/Tabs";
@@ -167,6 +167,9 @@ function Side({ r, v, now }: { r: InboxRowV3; v: VendorVisitV3 | null; now: stri
         {R.isJob(r) && R.jobDays(r) ? <Row label="공사 날짜" value={R.jobDays(r)} /> : null}
         {R.isJob(r) && r.deal_total != null ? <Row label="확정 금액" sub="부가세 포함" value={won(r.deal_total)} /> : null}
         {!R.isJob(r) && r.wish_start && r.wish_end ? <Row label="희망 기간" value={rangeText(r.wish_start, r.wish_end, { weekday: true })} /> : null}
+        {/* 기다림 탭에서도 내가 보낸 기간 · 고객이 고른 날이 보여요(QA r6 L18) */}
+        {!R.isJob(r) && v?.window && (r.status === "offered" || r.status === "proposed") ? <Row label="보낸 기간" value={rangeText(v.window.start, v.window.end, { weekday: true })} /> : null}
+        {!R.isJob(r) && v?.booked && (r.status === "picked" || r.status === "booked") ? <Row label={r.status === "picked" ? "고객이 고른 날" : "실측 날짜"} value={halfDayText(v.booked.day, v.booked.half)} /> : null}
         {!R.isJob(r) && r.work_wish_on ? <Row label="공사 시작 희망" value={dateShort(r.work_wish_on)} /> : null}
         {!R.isJob(r) && r.estimate_total != null ? <Row label="가견적" sub={gradeLabel(r.grade)} value={won(r.estimate_total)} /> : null}
         {!R.isJob(r) && r.budget_won != null ? <Row label="예산" sub="고객이 넣었어요" value={won(r.budget_won)} /> : null}
