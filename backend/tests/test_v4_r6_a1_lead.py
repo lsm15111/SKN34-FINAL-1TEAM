@@ -62,11 +62,13 @@ def cards_of(ev, kind: str) -> list[dict]:
 # ---- 지금 할 일 줄: 정해진 실측 먼저 · 업체 이름(QA r6 c3 M6) ----
 
 
-def overview(*vendors: tuple[str, str]) -> SimpleNamespace:
+def overview(*vendors: tuple[str, str], code: str = "visit_requested") -> SimpleNamespace:
     step = SimpleNamespace(key="visit", state="now")
+    todo = SimpleNamespace(code=code, trade="dobae")
     return SimpleNamespace(
         phase="progress",
-        trades=[SimpleNamespace(trade="dobae", steps=[step])],
+        todo=todo,
+        trades=[SimpleNamespace(trade="dobae", steps=[step], todo=todo, vendor_name=None)],
         vendors=[SimpleNamespace(vendor_name=n, status=st) for n, st in vendors],
     )
 
@@ -78,6 +80,34 @@ def test_now_line_names_the_booked_visit_before_waiting_replies():
     assert free.now_of(o) == "지금은 한결도배 실측 시간을 고를 차례예요."  # 고객 차례가 먼저
     o = overview(("마루와벽", "requested"), ("결도배", "requested"), ("닫힌도배", "cancelled"))
     assert free.now_of(o) == "지금은 마루와벽 · 결도배 실측 기간 답을 기다리는 중이에요."
+
+
+def test_now_line_after_quotes_and_on_customer_turn():
+    """견적서가 다 오면 견줘 정할 차례(r7 S06), 고객 차례 할 일(바뀐 공사 날짜 · 추가 금액)은 단계 줄보다 먼저(r7 F3)."""
+    deal = "지금은 받은 실측 견적서를 견줘 업체를 정할 차례예요."
+    o = overview(("마루와벽", "quoted"), ("결도배", "quoted"), code="quotes_arrived")
+    assert free.now_of(o) == deal
+    o = overview(("마루와벽", "quoted"), ("닫힌도배", "cancelled"), code="quotes_partial")
+    assert free.now_of(o) == deal  # 남은 요청이 다 견적서면
+    o = overview(("마루와벽", "quoted"), ("결도배", "booked"), code="quotes_partial")
+    assert free.now_of(o) == "지금은 결도배 실측과 실측 견적서를 기다리는 중이에요."
+
+    work = SimpleNamespace(code="dates_change", trade="dobae")
+    o = SimpleNamespace(
+        phase="work",
+        todo=work,
+        trades=[SimpleNamespace(trade="dobae", steps=[], todo=work, vendor_name="결도배")],
+        vendors=[],
+    )
+    assert free.now_of(o) == "지금은 결도배가 바꾸자고 한 공사 날짜에 답할 차례예요."
+    o.todo = o.trades[0].todo = SimpleNamespace(code="extra", trade="dobae")
+    assert free.now_of(o) == "지금은 결도배가 알린 추가 금액에 답할 차례예요."
+    o.todo = o.trades[0].todo = SimpleNamespace(code="before_work", trade="dobae")
+    assert free.now_of(o) == free.NOW["work"]
+    said = ["좋아요. 지금은 결도배가 알린 추가 금액에 답할 차례예요."]
+    assert free.now_said(
+        "지금은 결도배가 알린 추가 금액에 답할 차례예요.", said
+    )  # 같은 줄은 다시 안 붙임
 
 
 # ---- 되풀이로 빠진 다음 할 일 살리기(QA r6 c3 t19) ----

@@ -275,6 +275,14 @@ NOW_VISIT = (
     (("picked",), "지금은 {names} 실측 시간 수락을 기다리는 중이에요."),
     (("requested",), "지금은 {names} 실측 기간 답을 기다리는 중이에요."),
 )
+# 고객 차례 맨 위 할 일(공사 요약 todo, calc TODO_RANK 순)은 단계 줄보다 먼저 말해요(에이전트 판정 r7 F3: 바뀐 공사 날짜
+# 수락 카드가 기다리는데 '공사 전에 챙길 일을 볼 차례'라고만 했어요). {names}는 그 공정 확정 업체 이름 + 이/가
+NOW_TURN = {
+    "check": "지금은 {names} 끝냈다고 알린 공사를 확인할 차례예요.",
+    "dates_received": "지금은 {names} 낸 공사 날짜를 보고 수락할 차례예요.",
+    "dates_change": "지금은 {names} 바꾸자고 한 공사 날짜에 답할 차례예요.",
+    "extra": "지금은 {names} 알린 추가 금액에 답할 차례예요.",
+}
 # 돈 질문(비싸요 · 바가지 · 빠진 것, 리드 결정 2 · QA 3차 f1 8 · f1x 9): 정해 둔 글만으로 끝내지 않고 계산 사실을
 # 넣어요. 화난 말 · '왜 비싸요'엔 공감 한마디, 받은 견적서가 있으면 견적서끼리 다른 포함 칸(빠진 줄), 없으면 표준견적서에서
 # 금액이 큰 줄 이름(계산 엔진 값 순, 숫자 없이)
@@ -661,16 +669,24 @@ def now_of(o) -> str:
         return NOW_NONE
     if o.phase == "done":
         return ""
+    if o.todo is not None and o.todo.code in NOW_TURN:
+        t = next((t for t in o.trades if t.trade == o.todo.trade), None)
+        if t is not None and t.vendor_name:
+            return NOW_TURN[o.todo.code].format(names=i_ga(t.vendor_name))
     if o.phase == "work":
         return NOW["work"]
     tr = next((t for t in o.trades if t.trade == "dobae"), o.trades[0] if o.trades else None)
     key = next((x.key for x in tr.steps if x.state == "now"), "house") if tr else "house"
     if key == "visit":
+        # 견적서가 다 왔으면 견줘 정할 차례(r7 S06: 두 곳 다 quoted인데 '실측 날짜를 챙길 차례'라고 했어요).
+        # 실측 단계는 업체를 확정해야 끝나서(calc progress) 견적서가 와도 지금 단계 열쇠는 visit이에요
+        if tr.todo.code == "quotes_arrived":
+            return NOW["deal"]
         live = [v for v in o.vendors if v.status not in cards.ENDED]
         for sts, line in NOW_VISIT:
             if names := list(dict.fromkeys(v.vendor_name for v in live if v.status in sts)):
                 return line.format(names=" · ".join(names))
-        return NOW["visit"]
+        return NOW["deal"] if any(v.status == "quoted" for v in live) else NOW["visit"]
     return NOW.get(key, "")
 
 
@@ -721,7 +737,13 @@ async def guard(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
 
 # 지금 할 일 한 줄들(상태마다 하나, 실측 줄은 업체 이름 자리가 있는 틀). 상태가 그대로면 같은 줄을 다시 붙이지 않는다
 # (QA 3차 f1 9~15: 일곱 턴 이어짐)
-NOW_LINES = (*NOW.values(), *(line for _, line in NOW_VISIT), NOW_NONE, VENDOR_NOW)
+NOW_LINES = (
+    *NOW.values(),
+    *(line for _, line in NOW_VISIT),
+    *NOW_TURN.values(),
+    NOW_NONE,
+    VENDOR_NOW,
+)
 NOW_RX = tuple(
     re.compile(re.escape(line).replace(re.escape("{names}"), r"\S.*?")) for line in NOW_LINES
 )
