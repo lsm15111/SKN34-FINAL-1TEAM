@@ -50,14 +50,16 @@ CARD_KO = {
     "knowledge": "알아 두기", "answer": "답", "floorplan_links": "도면 찾기", "today": "오늘 정할 일",
     "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트", "extra": "추가 금액",
     "notice": "이웃 안내문", "grade_compare": "벽지 견주기", "market_range": "시세 범위",
-    "options": "고르기", "research": "조사",
+    "options": "고르기", "research": "조사", "product_estimate": "벽지 금액",
+    "prework_check": "도배 전 점검", "outside_quote": "받은 견적서 점검",
 }  # fmt: skip
 ACTION_KO = {
     "home_info": "집 정보 고치기", "visit_request": "실측 요청", "visit_slot": "실측 날짜 고르기",
     "vendor_confirm": "업체 확정", "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락",
     "date_change": "날짜 바꾸기 요청", "window_answer": "기간 답하기", "decline": "못 받아요",
     "dates": "공사 날짜 보내기", "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인",
-    "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소",
+    "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소", "budget": "희망 예산",
+    "prework": "도배 전 앞 공사 답",
 }  # fmt: skip
 STATUS_KO = {
     "proposed": "승인 기다림", "approved": "처리 중", "executed": "실행함", "rejected": "거절함",
