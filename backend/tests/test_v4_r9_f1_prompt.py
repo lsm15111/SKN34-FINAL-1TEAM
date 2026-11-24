@@ -1,14 +1,19 @@
 """v4 QA 9차 고침 F1 지시문(customer_v4 · nudge_write_v3, QA r9 c1 · c2): 첫 답 안내가 누출로 빠지지 않기 · 도배 밖 일 끝도
 지금 단계 · 단추 이름 · '표준견적서' · 가림 말 · 첫 견적서만 왔을 때 확정 권하지 않기. 유료 호출 0회."""
 
+import pytest
 
-def test_first_answer_line_is_not_a_leak():
+
+@pytest.mark.parametrize("prompt_set", ["v4", "v5"])
+def test_first_answer_line_is_not_a_leak(prompt_set, monkeypatch):
     """M4: 첫 답의 '도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기' 안내를 지시문 예시 그대로 써도 누출로 빠지지
-    않아요(c1 · c2 T1 trace '지시문 누출'). 지시문의 다른 규칙 글은 그대로 걸러요."""
+    않아요(c1 · c2 T1 trace '지시문 누출'). 지시문의 다른 규칙 글은 그대로 걸러요. v5(11-25)도 같아요."""
     from app.agent.v3 import check
     from app.agent.v3.schemas import Sentence
     from app.assistant import prompts
+    from app.config import settings
 
+    monkeypatch.setattr(settings, "assistant_prompt_set", prompt_set)
     rules = prompts.rules("customer")
     for line in (
         "도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물어보세요.",
