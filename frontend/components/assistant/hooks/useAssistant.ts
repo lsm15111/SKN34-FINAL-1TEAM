@@ -23,8 +23,8 @@ import { useToast } from "@/components/ui/Toast";
 
 export type Assistant = ReturnType<typeof useAssistant>;
 
-/** 처음 대화(기록 없음)일 때 빠른 답 칩 */
-const FIRST_CHIPS = ["표준견적서 금액 풀이해 줘", "업체 추천해 줘", "공사는 어떤 순서로 해요?"];
+/** 처음 대화(기록 없음)일 때 빠른 답 칩: 업체 추천 + 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기(QA r7 첫 인사) */
+const FIRST_CHIPS = ["업체 추천해 줘", "공사는 어떤 순서로 해요?", "직접 할 수 있는 일 있어요?", "집 정보 바꾸고 싶어요"];
 const LOST = "연결이 끊겼어요. 대화를 다시 불러올게요.";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const handledKey = (pid: string) => `mj_v4_handled:${pid}`;

@@ -104,7 +104,7 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
             <div className={s.av} aria-hidden="true">AI</div>
             <div className={s.msgBody}>
               <span className={s.aiTag}><SourceTag src="guide" /></span>
-              <p className={`${s.bubble} ${s.say}`}>공사를 끝까지 챙기는 믿집 비서예요.{"\n"}표준견적서 풀이, 업체 추천, 실측 일정까지 물어보세요.</p>
+              <p className={`${s.bubble} ${s.say}`}>공사를 끝까지 챙기는 믿집 비서예요. 업체 추천부터 실측 일정까지 챙겨 드려요.{"\n"}도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물어보세요.</p>
             </div>
           </div>
         ) : null}

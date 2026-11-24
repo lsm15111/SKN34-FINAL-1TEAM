@@ -5,6 +5,7 @@
 - 2. 값이 섞인 견주기(c2 L27) · v3 빈 답(c2 L21)은 공정 전문가로. 기본 경로(period=v3,price=v3,*=expert+v3)는 그대로예요.
 - 3. 전문가 답(c1 6 · 10 · 13 · 25턴 · c2 18문항 중 12): 근거 조각 · 출처 이름 알아 두기 카드, 확인할 조건 끝 물음
   (아는 칸을 되묻는 조건은 버림), 카드 인용 '-다'체는 '-요'체로(못 바꾸면 원문 인용).
+- 4. 첫 인사 · 첫 칩 · 지시문 첫 답이 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기를 알려요.
 """
 
 import asyncio
@@ -357,3 +358,22 @@ def test_expert_turn_sends_the_card_and_ends_with_the_ask(api, script, monkeypat
         )
         is None
     )  # '…지' 꼴이 아니면 붙이지 않아요
+
+
+# ---- 4. 첫 인사 · 첫 칩이 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기를 알려요 ----
+
+
+def test_first_greeting_and_chips_name_the_three():
+    """처음 화면 인사(두세 문장) · 첫 칩과 지시문 첫 답 규칙이 지식 질문 · 직접 할 일 · 집 조건 바꾸기를 알려요(QA r7
+    c1 · c2 · c4 그대로). 칩이 무료 모드에서 가는 길은 test_v4_assistant_free_qa CHIP_PATH가 봐요."""
+    from tests.test_v4_assistant_free_qa import ROOT, first_chips
+
+    feed = (ROOT / "frontend/components/assistant/Feed.tsx").read_text(encoding="utf-8")
+    assert "도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물어보세요." in feed
+    chips = first_chips()
+    assert {"직접 할 수 있는 일 있어요?", "집 정보 바꾸고 싶어요", "업체 추천해 줘"} <= set(chips)
+    from app.assistant import prompts
+
+    assert "도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물을 수 있다고" in prompts.rules(
+        "customer"
+    )

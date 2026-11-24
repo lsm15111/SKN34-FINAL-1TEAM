@@ -310,6 +310,9 @@ CHIP_PATH = {
     "공사 전에 할 일 알려 줘": "aftercare",
     "표준견적서 금액 풀이해 줘": "standard",
     "공사는 어떤 순서로 해요?": "order",
+    # 첫 화면 칩(QA r7 첫 인사): 직접 할 일은 지식 답, 집 조건 바꾸기는 집 정보 카드
+    "직접 할 수 있는 일 있어요?": "knowledge",
+    "집 정보 바꾸고 싶어요": "home",
     **{f"{v} 언제 · 어떻게 해요?": "diy" for v in diy_tools.DIY.values()},
 }
 
