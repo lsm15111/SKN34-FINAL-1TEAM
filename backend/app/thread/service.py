@@ -8,6 +8,7 @@
 """
 
 import uuid
+from collections.abc import Collection
 from datetime import date, datetime, timedelta
 from typing import Literal
 
@@ -323,14 +324,21 @@ async def close_for_vendor(s: AsyncSession, vendor_id: uuid.UUID, at: datetime) 
     return [tuple(r) for r in (await s.execute(q)).all()]
 
 
-async def reopen_for_vendor(s: AsyncSession, vendor_id: uuid.UUID) -> Parties:
-    """업체 멈춤 풀기: 멈춤(admin)으로 닫았던 대화를 다시 연다. 고객이 차단한 대화는 그대로."""
+async def reopen_for_vendor(
+    s: AsyncSession, vendor_id: uuid.UUID, live_visits: Collection[uuid.UUID]
+) -> Parties:
+    """업체 멈춤 풀기: 멈춤(admin)으로 닫았던 대화 중 그 요청(visit_id)이 아직 살아 있는 것만 다시 연다
+    (live_visits, visit.service가 준다). 멈춤 때 닫힌 요청 · 그사이 끝난 요청의 대화는 읽기만 그대로(dev-05,
+    점검 R4#4). 고객이 차단한 대화도 그대로."""
+    if not live_visits:
+        return []
     q = (
         update(Thread)
         .where(
             Thread.vendor_id == vendor_id,
             Thread.ro_reason == "admin",
             Thread.blocked_at.is_(None),
+            Thread.visit_id.in_(list(live_visits)),
         )
         .values(status="open", ro_reason=None, closed_at=None)
         .returning(*_PARTIES)

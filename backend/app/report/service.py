@@ -238,6 +238,30 @@ async def _suspend(
     return out, parties
 
 
+async def _hide_reported(
+    s: AsyncSession, admin: User, vendor_id: uuid.UUID, url: str | None, now: datetime
+) -> None:
+    """링크 신고 '링크 숨김': 신고한 주소(evidence)의 링크만 숨긴다. 그사이 업체가 링크를 빼거나 고쳐 다른 링크가
+    그 자리로 당겨져도 그 링크는 숨기지 않고, 신고한 주소를 다른 자리로 옮겼으면 거기서 숨긴다(점검 R3#4).
+    숨긴 링크가 없으면 되돌리고 409(신고는 열린 채 — 다른 처리를 고른다)."""
+    rows = await repo.links_by_url(s, vendor_id, url) if url else []
+    already = any(x.status == "hidden" for x in rows)
+    changed = False
+    for x in rows:
+        got = await vendor_service.set_review_link_status(
+            s, vendor_id, x.sort, "hidden", by=admin.id, at=now, url=x.url
+        )
+        changed = changed or got is not None
+    if changed:
+        return
+    await s.rollback()
+    if already:
+        raise app_error("already", "신고한 링크는 이미 숨겼어요. 다른 처리를 골라 주세요.")
+    raise app_error(
+        "stale", "그사이 업체가 신고한 링크를 빼거나 고쳤어요. 다른 처리를 골라 주세요."
+    )
+
+
 async def resolve(
     s: AsyncSession, admin: User, report_id: uuid.UUID, data: ResolveIn
 ) -> ReportDetailOut:
@@ -284,9 +308,7 @@ async def resolve(
         _, parties = await _suspend(s, admin, vendor_id, scope, data.note, now, r.id)
     elif data.action == "hide_link":
         if vendor_id is not None and r.link_sort is not None:
-            await vendor_service.set_review_link_status(
-                s, vendor_id, r.link_sort, "hidden", by=admin.id, at=now
-            )
+            await _hide_reported(s, admin, vendor_id, r.evidence, now)
             record("link_hidden")
             await _tell_vendor(s, vendor_id, "link_checked", key)
         else:
@@ -330,7 +352,8 @@ async def unsuspend_vendor(
         raise _not_found("업체를")
     if not await vendor_service.unsuspend(s, vendor_id):
         raise app_error("already", "멈추지 않은 업체예요.")
-    parties = await thread_service.reopen_for_vendor(s, vendor_id)
+    live = await visit_service.live_ids_of_vendor(s, vendor_id)
+    parties = await thread_service.reopen_for_vendor(s, vendor_id, live)
     repo.add_action(
         s,
         admin_id=admin.id,

@@ -213,6 +213,9 @@ async def on_reminder(s: AsyncSession, job: Job, now: datetime) -> bool | Outcom
     at = deadline.reminder_at(v.booked_day)
     if job.run_at != at or not deadline.is_over(now, at):  # 일정이 바뀌었으면 옛 알림은 하지 않는다
         return False
+    # worker가 늦게 돌아 실측 날이 됐으면 '내일 … 실측이에요'는 틀린 말이라 보내지 않아요(점검 R4#11)
+    if svc.today_of(now) >= v.booked_day:
+        return False
     owner = await _owner(s, v)
     key = f"visit_reminder:{v.id}:{v.booked_day:%Y%m%d}{v.booked_half}"
     if await repo.noticed(s, owner, key):

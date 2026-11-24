@@ -131,7 +131,7 @@ from app.schedule.schemas import (
 from app.shared.clock import SEOUL, now_utc
 from app.shared.errors import AppError, app_error
 from app.shared.ids import uuid7
-from app.shared.korean import i_ga
+from app.shared.korean import euro, i_ga
 from app.thread import service as thread_service
 from app.vendor import service as vendor_service
 from app.visit import service as visit_service
@@ -322,6 +322,8 @@ def _add_parts(
 async def _save(
     s: AsyncSession, p: ProjectOut, start: date, weekend_work: bool, prev: Plan | None
 ) -> None:
+    """예상 공정표 새 버전을 저장하고 commit한다. 동시에 두 번 만들다 지면 이 저장(savepoint)만 되돌리고
+    부르는 쪽이 이긴 쪽 판을 다시 읽는다(세션 전체를 되돌리지 않아 먼저 읽은 객체가 만료되지 않음, 점검 R4#1)."""
     plan, man_days = _compute(p, start, weekend_work)
     row = Plan(
         project_id=p.id,
@@ -334,13 +336,16 @@ async def _save(
         work_days=plan.work_days,
         weekend_work=weekend_work,
     )
-    s.add(row)
     try:
-        await s.flush()
-        _add_parts(s, row, plan, man_days)
-        await s.commit()
-    except IntegrityError:  # 동시에 두 번 만들면 먼저 저장한 버전을 쓴다
-        await s.rollback()
+        async with s.begin_nested():
+            s.add(row)
+            await s.flush()
+            _add_parts(s, row, plan, man_days)
+    except IntegrityError as exc:  # 동시에 두 번 만들면 먼저 저장한 버전을 쓴다
+        if "uq_plans_version" not in str(exc.orig):
+            raise
+        return
+    await s.commit()
 
 
 async def ensure_expected(s: AsyncSession, p: ProjectOut, today: date) -> Plan:
@@ -2831,7 +2836,7 @@ def _todo_out(pid: uuid.UUID, code: str, trade: str, d: Deal | None, ctx: dict) 
             f"{base}/schedule?trade={trade}",
         ),
         "dates_change": (
-            f"{who} {label} 날짜를 {_md(x.start_date)} ~ {_md(x.end_date)}으로 바꾸자고 했어요"
+            f"{who} {label} 날짜를 {euro(f'{_md(x.start_date)} ~ {_md(x.end_date)}')} 바꾸자고 했어요"
             if x
             else "",
             "확인하기",
@@ -3015,9 +3020,8 @@ async def overview_for(
     s: AsyncSession, user: User, project_id: uuid.UUID, today: date
 ) -> OverviewOut:
     """GET /projects/{id}/overview: 지금 할 일 · 공정별 단계 · 낼 금액 · 공사 기간 · 연락처 · 체크.
-    공정표 기간은 값으로 먼저 꺼내요: 예상 공정표 · 표준견적서를 처음 만들 때 다른 요청과 겹치면 저장이 되돌려지고
-    (rollback) 이 세션의 ORM 칸이 모두 만료돼서, 그 전에 읽은 행을 다시 읽으면 MissingGreenlet 500이었어요(화면 QA H2:
-    가입 뒤 첫 보드). 표준견적서 · 확정은 공정표 뒤에 읽어 그 뒤에는 되돌리는 저장이 없어요."""
+    예상 공정표 · 표준견적서를 처음 만들 때 다른 요청과 겹치면 그 저장만(savepoint) 되돌려 세션 객체가 만료되지 않아요
+    (화면 QA H2 · 점검 R4#1)."""
     p = await project_service.get_for(s, user, project_id)
     now = now_utc()
     final = await _latest(s, p.id, "final")

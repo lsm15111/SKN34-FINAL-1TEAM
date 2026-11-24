@@ -177,6 +177,16 @@ async def link(s: AsyncSession, vendor_id: uuid.UUID, sort: int) -> VendorReview
     return (await s.execute(q)).scalar_one_or_none()
 
 
+async def links_by_url(s: AsyncSession, vendor_id: uuid.UUID, url: str) -> list[VendorReviewLink]:
+    """그 업체 링크 중 이 주소인 것(신고한 주소를 업체가 다른 자리로 옮겼어도 찾는다)"""
+    q = (
+        select(VendorReviewLink)
+        .where(VendorReviewLink.vendor_id == vendor_id, VendorReviewLink.url == url)
+        .order_by(VendorReviewLink.sort)
+    )
+    return list((await s.execute(q.execution_options(populate_existing=True))).scalars())
+
+
 # ---- 회원 (A03) ----
 
 

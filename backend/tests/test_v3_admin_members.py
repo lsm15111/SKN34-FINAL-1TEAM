@@ -1,6 +1,6 @@
 """관리자 회원 · 업체 멈춤 · 탈퇴 때 대화 (B1b, A03 · D26 · C53 · b7.md W6): 회원 찾기 · 상태 · 공사 수 · 쪽 나누기,
 정지하면 세션이 바로 끊김 · 로그인 막힘 · 관리자 계정은 못 정지 · 이미면 409, 업체 멈춤 새 요청만 · 진행 중도 ·
-풀기(멈춤으로 닫은 대화만 다시 열림), 탈퇴하면 대화는 읽기만(withdrawn) · 글 · 이름표는 남음."""
+풀기(멈춤으로 닫은 대화 중 요청이 살아 있는 것만 다시 열림), 탈퇴하면 대화는 읽기만(withdrawn) · 글 · 이름표는 남음."""
 
 import uuid
 
@@ -95,7 +95,9 @@ def test_suspend_member_cuts_sessions_and_blocks_login(api):
 
 
 def test_vendor_suspend_new_then_all_then_unsuspend(api):
-    p = pair(api)
+    # 확정한 공사(요청 chosen)는 멈춤(all)으로 닫히지 않아 멈춤을 풀면 대화가 다시 열린다.
+    # 멈춤으로 닫힌 요청의 대화는 풀어도 읽기만이다(test_v4_audit_flow, 점검 R4#4)
+    p = pair(api, status="chosen")
     admin = make_admin(api)
     use(api, admin)
     url = f"/admin/vendors/{p.vid}"

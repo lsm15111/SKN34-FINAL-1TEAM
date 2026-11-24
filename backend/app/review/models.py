@@ -97,3 +97,17 @@ class ReviewReply(Base):
     body: Mapped[str] = mapped_column(String(BODY_MAX))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     edited_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class ReviewHold(Base):
+    """관리자가 숨긴 리뷰를 쓴 사람이 지운 공사(점검 R4#3). 그 공사에 다시 쓰면 숨긴 채(같은 기준)로 시작하고,
+    관리자가 그 공사 리뷰를 다시 보이게 하면 지운다. 지우고 다시 써서 숨김을 푸는 길을 막는다."""
+
+    __tablename__ = "review_holds"
+    __table_args__ = (CheckConstraint(f"hidden_code in {_in(HIDDEN_CODES)}", name="hidden_code"),)
+
+    deal_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("deals.id", ondelete="CASCADE"), primary_key=True
+    )
+    hidden_code: Mapped[str] = mapped_column(String(12))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
