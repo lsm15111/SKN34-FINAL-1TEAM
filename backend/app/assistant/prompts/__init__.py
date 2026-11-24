@@ -22,6 +22,8 @@ from app.config import settings
 SETS: dict[str, dict[str, str]] = {
     "v3": {"customer": "customer_v3", "vendor": "vendor_v3", "nudge_write": "nudge_write_v2"},
     "v4": {"customer": "customer_v4", "vendor": "vendor_v4", "nudge_write": "nudge_write_v3"},
+    # 고객 지시문만 원칙으로 합쳐 줄인 판(11-25). 업체 · 먼저 말 걸기는 v4와 같다
+    "v5": {"customer": "customer_v5", "vendor": "vendor_v4", "nudge_write": "nudge_write_v3"},
 }
 # 판 묶음과 상관없이 같은 지시문
 BASE: dict[str, str] = {
