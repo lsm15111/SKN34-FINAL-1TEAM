@@ -1,6 +1,7 @@
 "use client";
-// 실측 취소 · 요청 취소(C30). 채팅 ⋯ 메뉴와 실측 일정 카드가 같은 창을 열어요. 취소는 기록에 남아요.
+// 실측 취소 · 요청 취소(C30). 채팅 ⋯ 메뉴 · 실측 일정 카드 · 표 · 날짜 고르기 화면이 같은 창을 열어요. 취소는 기록에 남아요.
 // POST /projects/{id}/visits/{vid}/cancel {code} → 업체에 알림 · 담은 업체에서 빠짐 · 대화는 읽기만(서버). 되돌리지 않아요.
+// 아래 글은 copy-guide W11(무엇이 바뀌는지 · 누구에게 알리는지 · 되돌릴 수 있는지). '한 번 더 요청'은 두 번째 요청이면 못 해서 쓰지 않아요.
 import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { errorText } from "@/lib/backend/client";
@@ -70,7 +71,7 @@ export function CancelSheet({ open, onClose, projectId, visitId, vendorName, slo
         ))}
       </div>
       {err ? <p id={errId} className={s.err} role="alert"><Icon name="error" size={16} />{err}</p> : null}
-      <p className={s.sheetNote}>{vendorName}에 알려요. 담은 업체에서 빠지고, {vendorName}에는 한 번 더 요청할 수 있어요.</p>
+      <p className={s.sheetNote}>{vendorName}에 알려요. 담은 업체에서 빠지고 되돌릴 수 없어요.</p>
     </Sheet>
   );
 }

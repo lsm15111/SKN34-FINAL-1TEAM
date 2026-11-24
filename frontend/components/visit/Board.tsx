@@ -1,6 +1,8 @@
 // 실측 일정 상태판(C14 · C15 · C18 · C20 · C32 · D03). 서버 화면이에요.
 // 폰 · 태블릿(<1024): 흰 띠(요청 머리) → 업체 카드 → 흰 띠(담은 업체 수). 웹(≥1024): 업체를 열로 둔 비교표(W4 A · CompareTable).
 // 두 배치는 CSS로만 갈라요(dev-08). 상태 · 기한 · 남은 칸은 모두 API 값이고, 화면은 말만 붙여요(copy-guide 1.9 · F4).
+// 취소(C30)는 can.cancel인 모든 상태에서 카드 맨 아래 · 표 단추 아래 회색 글자 단추예요(요청 취소 · 실측 취소, cancelAct).
+import type { ReactNode } from "react";
 import type { BoardRow, VisitBoard, VisitProject } from "@/lib/api/visit";
 import { dateShort, dueText, eulReul, won } from "@/lib/format";
 import { Button } from "@/components/ui/Button";
@@ -8,10 +10,10 @@ import { CompareTable, type CompareCol, type CompareRow } from "@/components/ui/
 import { EmptyState } from "@/components/ui/EmptyState";
 import { StateTag } from "@/components/ui/StateTag";
 import { Eyebrow, Group, GroupHead, InfoChips, Name, Quote, Small, Strip, Sub, Title } from "@/components/project/Kit";
-import { AgainButton, CancelRequestButton, VisitedButtons } from "./BoardActions";
+import { AgainButton, CancelButton, VisitedButtons } from "./BoardActions";
 import { DueChip } from "./Due";
 import { RequestSheetButton } from "./RequestSheet";
-import { boardState, cancelLabel, dayCell, dueCell, eunNeun, headText, iGa, nextText, PROPOSAL_REASON, slotText, windowText } from "./text";
+import { boardState, cancelAct, cancelLabel, dayCell, dueCell, eunNeun, headText, iGa, nextText, PROPOSAL_REASON, slotText, windowText } from "./text";
 import s from "./visit.module.css";
 
 const ACTIVE = new Set(["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen"]);
@@ -35,12 +37,7 @@ function CardBody({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
   const v = r.vendor_name;
   switch (r.status) {
     case "requested":
-      return (
-        <>
-          {r.next.due_at ? <Sub>{dueText(r.next.due_at)} 답해요</Sub> : null}
-          {r.can.cancel ? <div className={s.cardFoot}><CancelRequestButton projectId={pid} visitId={r.visit_id} vendorName={v} /></div> : null}
-        </>
-      );
+      return r.next.due_at ? <Sub>{dueText(r.next.due_at)} 답해요</Sub> : null;
     case "offered":
       return (
         <>
@@ -144,17 +141,16 @@ function CardBody({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
   }
 }
 
-/** 표 단추 줄(D03): 카드와 같은 일을 작게 */
-function TableAction({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
+/** 표 단추 줄(D03): 카드와 같은 일을 작게. 없으면 null */
+function tableMain(r: BoardRow, pid: string, L: Links): ReactNode {
   const v = r.vendor_name;
   switch (r.status) {
-    case "requested": return r.can.cancel ? <CancelRequestButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : <>—</>;
     case "offered": return <Button size="sm" href={L.pick(r.visit_id)}>날짜 고르기</Button>;
     case "proposed": return <Button size="sm" href={L.pick(r.visit_id)}>제안한 날 보기</Button>;
     case "booked":
       if (r.can.visited) return <VisitedButtons projectId={pid} visitId={r.visit_id} />;
-      return r.thread_id ? <Button variant="text" arrow href={L.chat(r.thread_id)}>채팅 열기</Button> : <>—</>;
-    case "visited": return r.thread_id ? <Button variant="text" arrow href={L.chat(r.thread_id)}>채팅 열기</Button> : <>—</>;
+      return r.thread_id ? <Button variant="text" arrow href={L.chat(r.thread_id)}>채팅 열기</Button> : null;
+    case "visited": return r.thread_id ? <Button variant="text" arrow href={L.chat(r.thread_id)}>채팅 열기</Button> : null;
     case "quoted": return <Button variant="text" arrow href={L.quotes}>견적서 비교</Button>;
     case "chosen": return <Button variant="text" arrow href={L.schedule}>공사 날짜 보기</Button>;
     case "expired":
@@ -164,11 +160,20 @@ function TableAction({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
           {r.can.again ? <AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : null}
         </div>
       );
-    case "cancelled": return r.can.again ? <AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : <>—</>;
+    case "cancelled": return r.can.again ? <AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : null;
     case "declined":
     case "no_show": return <Button variant="text" arrow href={L.vendors}>다른 업체 담기</Button>;
-    default: return <>—</>;
+    default: return null;
   }
+}
+
+/** 표 '할 수 있는 일' 칸: 할 일 단추 아래 취소(회색 글자 단추) */
+function TableAction({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
+  const main = tableMain(r, pid, L);
+  const x = cancelAct(r);
+  const cancel = x ? <CancelButton projectId={pid} visitId={r.visit_id} vendorName={r.vendor_name} act={x} /> : null;
+  if (main && cancel) return <div className={s.actStack}>{main}{cancel}</div>;
+  return main ?? cancel ?? <>—</>;
 }
 
 export function Board({ board, project, shortlisted }: {
@@ -228,6 +233,7 @@ export function Board({ board, project, shortlisted }: {
           {rows.map((r) => {
             const st = boardState(r);
             const due = dueBadge(r);
+            const x = cancelAct(r);
             return (
               <Group key={r.visit_id} as="li" hi={r.next.who === "customer" && r.status !== "proposed"} warn={r.status === "proposed"}>
                 <GroupHead>
@@ -236,6 +242,7 @@ export function Board({ board, project, shortlisted }: {
                   {due ? <DueChip due={due} overdue={r.next.overdue} soon={r.next.soon} /> : null}
                 </GroupHead>
                 <CardBody r={r} pid={pid} L={L} />
+                {x ? <div className={s.cardFoot}><CancelButton projectId={pid} visitId={r.visit_id} vendorName={r.vendor_name} act={x} /></div> : null}
               </Group>
             );
           })}

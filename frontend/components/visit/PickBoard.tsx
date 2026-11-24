@@ -4,6 +4,7 @@
 // - offered + 겹치는 날 없음: 길 3개(C22)
 // - proposed: 업체가 제안한 반나절만 골라 바로 확정, 안 맞으면 '업체 기간에서 고르기'(C21 · D17 · CF-05)
 // - booked: 실측 확정됨(C17) · picked: 수락 기다림(C19 덧그림) · 그 밖: 짧은 상태
+// - 취소(C30): 서버가 받는 상태마다 상태판과 같은 회색 글자 단추(요청 취소 · 실측 취소, cancelAct)
 // 열린 반나절 · 마감 · 내 다른 실측 · 기한은 모두 API(계산 엔진) 값이에요. 같은 반나절을 거의 같이 누르면 늦은 쪽은 409 slot_taken.
 // inCard(v4 비서 화면 카드 창 안): 창이 옆 AI 칸을 숨겨서, 웹은 고른 날 칸(반나절 · 보내기)을 본문 오른쪽에 둬요(QA r6 H1).
 import Link from "next/link";
@@ -27,7 +28,8 @@ import { Icon } from "@/components/ui/Icon";
 import { StateTag } from "@/components/ui/StateTag";
 import { useToast } from "@/components/ui/Toast";
 import { Eyebrow, Group, GroupHead, Name, Notice, Quote, Row, Rows, Small, Sub, Title } from "@/components/project/Kit";
-import { dayOnly, eunNeun, gwaWa, iGa, pickTitle, PROPOSAL_REASON, rangeLong, slotText, windowText } from "./text";
+import { CancelButton } from "./BoardActions";
+import { cancelAct, dayOnly, eunNeun, gwaWa, iGa, pickTitle, PROPOSAL_REASON, rangeLong, slotText, windowText } from "./text";
 import s from "./visit.module.css";
 
 type PickOut = Schemas["PickOut"];
@@ -61,6 +63,8 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
   const mode = status === "booked" ? "done" : status === "picked" ? "waiting" : proposal ? "proposal" : status === "offered" ? (pick.overlap || showCal ? "pick" : "nooverlap") : "other";
   const title = justBooked ? "실측 일정" : pickTitle(pick);
   const crumbs = [{ label: "내 공사", href: "/my" }, { label: project.name, href: `/projects/${pid}` }, { label: "실측 일정", href: board }, { label: title }];
+  const x = cancelAct({ status, booked: justBooked?.slot ?? pick.booked });
+  const cancel = x ? <CancelButton projectId={project.id} visitId={pick.visit_id} vendorName={v} act={x} /> : null;
 
   // ── 달력 값(모두 API 값을 모양으로만 옮겨요)
   const cal = useMemo(() => {
@@ -200,6 +204,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
                 />
               </Rows>
             </Group>
+            {cancel ? <div className={s.cardLink}>{cancel}</div> : null}
           </WithAside>
         </Main>
         <BottomBar>
@@ -220,6 +225,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
             <GroupHead><Name>{v}</Name><StateTag tone="wait">수락 기다림</StateTag></GroupHead>
             {pick.booked ? <Sub>{eulReul(slotText(pick.booked))} 보냈어요</Sub> : null}
             {pick.next.due_at ? <Small>{dueText(pick.next.due_at)} {iGa(v)} 답해요 · 그때까지 이 날짜를 잡아 둬요</Small> : null}
+            {cancel ? <div className={s.cardFoot}>{cancel}</div> : null}
           </Group>
           <div className={s.cardLink}><Button variant="text" arrow href={board}>실측 일정 보기</Button></div>
         </WithAside>
@@ -259,6 +265,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
               ))}
             </ul>
           </Group>
+          {cancel ? <div className={s.cardLink}>{cancel}</div> : null}
         </WithAside>
       </Main>
     );
@@ -275,6 +282,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
             <GroupHead><Name>{v}</Name><StateTag tone={st.tone}>{st.label}</StateTag></GroupHead>
             {status === "requested" && pick.next.due_at ? <Sub>{dueText(pick.next.due_at)} 답해요</Sub> : null}
             {status === "expired" && pick.next.due_at ? <Sub>{dueText(pick.next.due_at)} 답하지 않았어요</Sub> : null}
+            {cancel ? <div className={s.cardFoot}>{cancel}</div> : null}
           </Group>
           <div className={s.cardLink}><Button variant="text" arrow href={board}>실측 일정 보기</Button></div>
         </WithAside>
@@ -365,6 +373,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
               </Group>
             </div>
           ) : null}
+          {cancel ? <div className={s.cardLink}>{cancel}</div> : null}
         </WithAside>
       </Main>
       <div className={s.phoneOnly}>
