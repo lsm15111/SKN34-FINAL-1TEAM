@@ -137,3 +137,52 @@ def test_change_reason_hides_contacts_from_the_customer(api):
     got = api.get(f"/projects/{pid}/schedule").json()
     (x,) = [t["proposal"] for t in got["trades"] if t["proposal"] and t["proposal"]["reason"]]
     assert "010-1234-5678" not in x["reason"] and "전화 주세요" in x["reason"]
+
+
+# ---- 날짜 바꾸기 후보는 지금 시작일에 가까운 바란 날부터(QA r7 c4: '하루만 당겨'가 닷새 당김) ----
+
+
+def test_change_candidates_start_with_the_wish_closest_to_the_current_start():
+    import uuid
+    from datetime import date, timedelta
+    from types import SimpleNamespace
+
+    from app.assistant.tools import aftercare as aftercare_tools
+    from tests.test_v4_assistant_qa_r1 import TODAY, FakeJob, _clear_monday
+
+    mon = _clear_monday()
+    wishes = [
+        mon - timedelta(days=n) for n in (3, 4, 5)
+    ]  # 앞 주 금 · 목 · 수(가까운 순, 요청 카드 순서)
+    req = SimpleNamespace(id=uuid.uuid4(), wish_dates=sorted(wishes))  # 서버는 날짜순으로 저장해요
+    job = FakeJob(plan_start=mon, start_date=mon, request=req)
+    got = aftercare_tools.request_candidates(job, uuid.uuid4(), TODAY)
+    starts = [date.fromisoformat(c["start"]) for c in got]
+    assert starts and starts == sorted(starts, key=lambda d: abs((d - mon).days))
+    assert starts[0] == max(starts)  # 당기기: 가장 늦은(가까운) 날이 첫 후보
+    # 아직 수락 전(다른 날짜 요청)은 날짜순 그대로
+    first = FakeJob(status="confirmed", plan_start=mon, request=req)
+    got = aftercare_tools.request_candidates(first, uuid.uuid4(), TODAY)
+    starts = [date.fromisoformat(c["start"]) for c in got]
+    assert starts == sorted(starts)
+
+
+# ---- 화면 단추 길 안내는 승인 카드 말이 아니에요(QA r7 c4 T20 · V22) ----
+
+
+@pytest.mark.parametrize(
+    ("text", "kind"),
+    [
+        ("공사 한 건 화면의 [공사 끝 알리기]를 눌러 주세요.", None),
+        ("[리뷰 쓰기]를 눌러 주세요.", None),
+        ("공사 화면에서 [날짜 바꾸기] 버튼을 눌러 주세요.", None),
+        ("카드에서 [리뷰 쓰기]를 눌러 주세요.", "press"),  # 카드를 가리키면 카드 말
+        ("카드를 확인하고 눌러 주세요.", "press"),
+        ("[맞아요, 저장]을 눌러 주세요.", "press"),
+    ],
+)
+def test_screen_button_guidance_is_not_a_card_claim(text, kind):
+    from app.assistant import policy
+
+    got = policy.card_claim(text)
+    assert (got[0] if got else None) == kind

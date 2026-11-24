@@ -464,6 +464,7 @@ class FakeJob:
 
     status: str = "scheduled"
     plan_start: date | None = None
+    start_date: date | None = None  # 수락한 공사 날짜(날짜 바꾸기 후보 순서)
     busy_days: list = field(default_factory=list)
     weekend_work: bool = False
     request: object = None

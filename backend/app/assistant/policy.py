@@ -150,6 +150,11 @@ _PRESS = re.compile(
 )
 # 승인 카드가 아닌 것을 누르라는 말(채팅 열기 · 조사 링크 · 사진)은 카드 말이 아니다
 _NOT_CARD = re.compile(r"채팅\s*열기|링크|사진|파일|지도")
+# 화면 단추 길 안내('공사 한 건 화면의 [공사 끝 알리기]' · '[리뷰 쓰기]' · '[날짜 바꾸기]')도 승인 카드 말이 아니다. '카드'
+# 낱말이 같이 있으면 카드 말로 본다(QA r7 c4 T20 · V22: 화면 길 안내를 '지금 누를 승인 카드는 없어요'로 바꿈)
+_SCREEN = re.compile(
+    r"화면|메뉴|작업함|\[(?:리뷰\s*쓰기|공사\s*끝\s*알리기|추가\s*금액\s*올리기|날짜\s*바꾸기)\]"
+)
 # 앞날 · 조건에 맞춰 누르라는 말('견적서가 오면 … 눌러 주세요' · '실측이 끝나고 …' · '나중에' · '그때')은 지금 누를 카드가
 # 없어도 틀린 말이 아니다(고침 4차 G, QA r4 s4 8턴: 정직한 한 줄이 끼어 다음 문장 '그때'가 가리킬 말이 사라짐). 누르라는
 # 말 앞의 조건 · 때 말만 본다('누르시면'은 누르라는 말 자체다)
@@ -241,6 +246,7 @@ def card_claim(text: str) -> tuple[str, set[str]] | None:
         press
         and (_CARD.search(t) or _LABEL.search(t) or kinds)
         and not _NOT_CARD.search(t)
+        and not (_SCREEN.search(t) and "카드" not in t)
         and not later(t[: press.start()])
     ):
         return "press", kinds

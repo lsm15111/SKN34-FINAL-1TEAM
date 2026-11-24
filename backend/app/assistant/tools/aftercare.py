@@ -627,6 +627,10 @@ def request_candidates(
         return []
     kind = "change" if job.status == "scheduled" else "initial"
     wishes = sorted(w for w in set(r.wish_dates) if w > today)
+    if kind == "change" and job.start_date is not None:
+        # 날짜 바꾸기는 지금 시작일에 가까운 바란 날부터(비서 요청 카드가 가까운 순으로 후보를 만들어요). QA r7 c4:
+        # '하루만 당겨' 후보 12.11 · 12.10 · 12.9가 날짜순으로 놓여 업체 카드가 12.9를 '고객이 고른 날'로 냈어요(닷새 당김)
+        wishes.sort(key=lambda w: abs((w - job.start_date).days))
 
     def wished(keep: Collection[date]) -> list[dict]:
         got: list[dict] = []
