@@ -76,12 +76,17 @@ TRIGGERS: tuple[dict, ...] = (
         "notify": "{vendor} 공사가 곧 자동으로 끝나요. 점검표로 확인해 주세요.",
     },
     {
-        # 대화 줄(feed)로 보내요: 알림(notify)은 점수 50이라 판정에 기대고 무료 모드에서는 늘 기록만 됐어요
+        # 대화 줄(feed)로 보내요: 알림(notify)은 점수 50이라 판정에 기대고 무료 모드에서는 늘 기록만 됐어요.
+        # 줄은 시작 4~7일 전에 생겨요: 글은 남은 날({left}: 일주일 · n일)대로(R1b #13 '4일 남았는데 일주일 남았어요')
         "name": "prep_week", "surface": "customer", "decision": True, "state": "deal",
-        "say": "공사 전에 할 일 알려 줘", "why": "공사가 일주일 남았어요",
+        "say": "공사 전에 할 일 알려 줘", "why": "공사 시작이 일주일 안이에요",
         "ask": "공사 전에 할 일을 볼까요?",
-        "feed": "{trade} 공사가 일주일 남았어요. 미리 할 일과 이웃 안내문 초안을 준비했어요.",
-        "notify": "{trade} 공사가 일주일 남았어요. 미리 할 일을 챙겨 볼까요?",
+        "feed": "{trade} 공사가 곧 시작돼요. 미리 할 일과 이웃 안내문 초안을 준비했어요.",
+        "notify": "{trade} 공사가 곧 시작돼요. 미리 할 일을 챙겨 볼까요?",
+        "more": (
+            ("feed", ("left",), "{trade} 공사가 {left} 남았어요. 미리 할 일과 이웃 안내문 초안을 준비했어요."),
+            ("notify", ("left",), "{trade} 공사가 {left} 남았어요. 미리 할 일을 챙겨 볼까요?"),
+        ),
     },
     {
         # {next}: 카드를 만든 뒤 사실로 채워요(고객이 고른 날 후보 · 바란 날이 겹쳐 가장 가까운 빈 날 · 후보 없음)
@@ -323,8 +328,15 @@ def _key_day(dedup_key: str) -> date | None:
         return None
 
 
+def _left(today: date, start: date) -> str:
+    """공사 시작까지 남은 날 글: 7일이면 '일주일', 아니면 'n일'."""
+    days = (start - today).days
+    return "일주일" if days == PREP_DAYS else f"{days}일"
+
+
 async def _prep_ctx(s: AsyncSession, n: AssistantNudge, today: date):
-    """확정이 그대로(scheduled)이고 시작일이 줄을 만든 때와 같고 아직 시작 전일 때만. 기한은 공사 시작일."""
+    """확정이 그대로(scheduled)이고 시작일이 줄을 만든 때와 같고 아직 시작 전일 때만. 기한은 공사 시작일.
+    문장 사실 left: 시작까지 남은 날(줄은 4~7일 전에 생겨요)."""
     d, p = await _owned_deal(s, n.ref_id, n.user_id, vendor=False)
     start = _key_day(n.dedup_key)
     if d is None or d.status != "scheduled" or d.start_date is None or d.start_date != start:
@@ -332,7 +344,8 @@ async def _prep_ctx(s: AsyncSession, n: AssistantNudge, today: date):
     if d.start_date <= today:
         return None
     due = datetime.combine(d.start_date, time(0), SEOUL)
-    return _ctx(p.id, _deal_names(d, p, vendor=False), due)
+    names = {**_deal_names(d, p, vendor=False), "left": _left(today, d.start_date)}
+    return _ctx(p.id, names, due)
 
 
 async def _request_ctx(s: AsyncSession, n: AssistantNudge):
@@ -388,6 +401,17 @@ async def context(s: AsyncSession, t, n: AssistantNudge, now: datetime, *, check
     if t.name == "dates_requested":
         return await _request_ctx(s, n)
     return await _quote_ctx(s, n)
+
+
+async def lapsed(s: AsyncSession, t, n: AssistantNudge, today: date) -> bool:
+    """07 줄의 할 일이 사람이 한 일이 아니라 날이 지나 끝났는지(proactive.lapsed가 부른다, R1b #10): 1주 전 줄의 공사
+    날이 옴, 공사 끝 줄의 공사가 고객 확인 없이 자동으로 끝남."""
+    if t.name == "prep_week":
+        start = _key_day(n.dedup_key)
+        return start is not None and start <= today
+    if t.name == "work_done":
+        return (await done_how(s, n.ref_id))[0] == "auto"
+    return False
 
 
 # ---- 무료 모드가 찾는 대상 ----
@@ -690,3 +714,13 @@ async def moved_ids(s: AsyncSession, rows: list[AssistantAction]) -> list[uuid.U
         if not ok:
             gone.append(a.id)
     return gone
+
+
+async def lapsed_ids(s: AsyncSession, rows: list[AssistantAction]) -> set[uuid.UUID]:
+    """닫는 07 행동 중 대상이 날이 지나 끝난 것(그 행동을 단 줄을 '완료'로 닫지 않게, R1b #10): 공사 끝 확인 카드인데
+    공사가 고객 확인 없이 자동으로 끝남."""
+    out: set[uuid.UUID] = set()
+    for a in rows:
+        if a.kind == "work_check" and (await done_how(s, a.target_id))[0] == "auto":
+            out.add(a.id)
+    return out

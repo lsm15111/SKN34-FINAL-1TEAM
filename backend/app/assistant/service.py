@@ -1197,8 +1197,9 @@ async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
 
 
 async def _answer_text(s, turn: AssistantTurn) -> str | None:
+    """턴이 저장한 답 글(trace.rev의 비서 줄). 실패한 턴은 저장하지 못해 없어요: 같은 rev는 다음 턴의 글이에요(R1a B6)."""
     rev = (turn.trace or {}).get("rev")
-    if rev is None:
+    if rev is None or turn.status == "failed":
         return None
     return await s.scalar(
         select(ChatMessage.text).where(
@@ -1768,10 +1769,13 @@ async def memory_for(user: User) -> list[MemoryOut]:
 
 
 async def forget(user: User, memory_id: uuid.UUID) -> None:
-    """기억 한 줄 지우기(내 것만, 남의 것 · 없는 것은 404). 다음 턴부터 쓰지 않는다."""
+    """기억 한 줄 지우기(내 것만, 남의 것 · 없는 것은 404). 다음 턴부터 쓰지 않는다. 지운 때를 그 칸에 남겨, 지우기
+    전에 한 말을 늦게 뽑아도(미룬 · 다시 하는 기억 뽑기) 다시 생기지 않게 한다(R1b #8)."""
     async with SessionLocal() as s:
-        if not await repo.delete_memory(s, user.id, memory_id):
+        key = await repo.delete_memory(s, user.id, memory_id)
+        if key is None:
             raise AppError(404, "not_found", "기억을 찾을 수 없어요.")
+        await repo.mark_memory(s, user.id, key, now_utc())
         await s.commit()
 
 

@@ -269,7 +269,7 @@ def test_work_done_checklist_then_remind_notify_and_approve(api, monkeypatch):
         "done",
         "checking",
     )
-    # 4일 뒤 '자동으로 끝나요' 알림 → 알림 채널 줄(앞 줄을 바꿈)
+    # 4일 뒤 '자동으로 끝나요' 알림 → 새 줄(앞 줄을 바꿈)
     query(
         "update assistant_nudges set sent_at = sent_at - interval '4 days' where id = $1", n["id"]
     )
@@ -279,8 +279,10 @@ def test_work_done_checklist_then_remind_notify_and_approve(api, monkeypatch):
         deal_job("deal_done_remind", did, deal["done_posted_at"] + timedelta(days=4, minutes=1)),
     )
     tick(api)
-    remind = [x for x in nudges(trigger="work_done") if x["channel"] == "notify"]
+    remind = [x for x in nudges(trigger="work_done") if x["id"] != n["id"]]
     assert len(remind) == 1 and remind[0]["status"] == "sent"
+    # 근원 done_remind 알림이 이미 울려 비서는 종 없이 대화 줄로 보내요(하루 알림 상한에 세지 않음, 점검 R1b #17)
+    assert remind[0]["channel"] == "feed"
     assert remind[0]["body"] == "마루와벽 공사가 곧 자동으로 끝나요. 점검표로 확인해 주세요."
     assert line(n["id"]) == ("expired", "replaced")
     # 같은 사건 종 알림은 하나: 시스템 done_remind 알림이 이미 울려 비서 알림은 더하지 않는다(QA edge P17)

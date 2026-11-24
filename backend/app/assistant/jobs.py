@@ -10,8 +10,10 @@
   (상한이 다시 차요, 그날도 상한이면 또 미뤄요), 그 밖(꺼짐 · 전체 상한 · 셀 수 없음)이면 30분 · 2시간 · 6시간 ·
   12시간 뒤, 말한 때부터 3일을 넘으면 더 미루지 않는다. 말마다 몇 분씩 늦춰 한꺼번에 몰리지 않게 한다.
   같은 말은 한 번만 뽑는다(열린 일은 늘 한 줄: 이번 줄을 끝내는 트랜잭션에 다음 줄을 넣고, dedup_key가 차례마다
-  달라요). 미뤘다 뽑은 말은 그 뒤에 바뀐 기억 줄을 덮지 않고, 그 뒤에 직접 할 일을 저장 · 정한 공사면 직접 할 일
-  조각은 버린다(옛 말이 새 결정을 이기지 않게).
+  달라요). 미뤘다 뽑은 말 · 공급자 오류로 다시 하는 일은 그 뒤에 직접 할 일을 저장 · 정한 공사면 직접 할 일 조각을
+  버린다(옛 말이 새 결정을 이기지 않게).
+- 모든 기억 뽑기 일은 그 말을 한 때(메시지 created_at)를 memory.save에 넘긴다: 그 뒤에 바뀐 칸(나중 말 · 고객이
+  지움 · 칩으로 줄임)은 덮지 않는다(R1b #8 지운 기억이 미룬 일로 되살아남 · #9 다시 하는 일이 새 기억을 덮음).
 """
 
 import logging
@@ -66,7 +68,7 @@ async def remember(s: AsyncSession, job: Job, now: datetime) -> bool:
     # 어디서 빠지는지 보이게(QA r6 c3 M9: 강아지를 두 번 말해도 기억 없음, 뽑기 · 검사 중 어디인지 기록이 없었어요).
     # 키 · 까닭 코드만 남기고 값 · 고객 글은 남기지 않아요
     log.info("기억 뽑기: 뽑음 %d · 남김 %d · 뺌 %s", len(got), len(items), ",".join(why) or "-")
-    late = LATER in job.dedup_key
+    late = LATER in job.dedup_key or job.attempts > 0  # 미룬 일 · 공급자 오류로 다시 하는 일
     settled = late and await _diy_settled(s, user_id, project_id, said_at)
     if settled:  # 미룬 사이 직접 할 일을 저장 · 정했어요: 옛 말의 직접 할 일은 버려요(칩이 원본)
         items = [it for it in items if it.key != "diy"]
@@ -77,7 +79,7 @@ async def remember(s: AsyncSession, job: Job, now: datetime) -> bool:
         items,
         now,
         said=None if settled else text,
-        said_at=said_at if late else None,
+        said_at=said_at,  # 그 말 뒤에 바뀐 칸(나중 말 · 지움 · 칩으로 줄임)은 덮지 않아요
     )
     return saved > 0
 

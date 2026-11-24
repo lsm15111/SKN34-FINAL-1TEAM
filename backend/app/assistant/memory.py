@@ -11,7 +11,9 @@
 - save: 같은 키는 새 말로 덮어쓴다. 목록 칸(LISTS: 직접 할 일 · 반려동물)은 앞 값에 새 것을 더한다(인용도 잇고, 근거
   메시지는 새 말). '실리콘만'처럼 '만'으로 말하면 덮어쓰고(only), 직접 할 일을 '업체에 맡길래요'라고 하면 앞 값에서
   뺀다(without, 다 빠지면 그 기억을 지운다). 사람마다 새것부터 MEMORY_MAX(12)줄만 남긴다. commit은 부르는 쪽이 한다.
-  미뤘다 뽑은 말(said_at)은 그 말 뒤에 바뀐 기억 줄을 덮지 않는다(옛 말이 새 말을 이기지 않게).
+  칸마다 바뀐 때(assistant_memory_marks: 그 값을 말한 때 · 고객이 지운 때 · 칩으로 줄인 때)를 남기고, 기억 뽑기 일은
+  그 말을 한 때(said_at)보다 뒤에 바뀐 칸을 덮지 않는다(미뤘다 · 다시 하는 옛 말이 나중 말을 이기거나, 지운 기억이
+  지우기 전 말로 다시 생기지 않게, R1b #8 · #9). 저장한 때가 아니라 말한 때로 견준다(같은 차례의 앞 말 · 뒤 말).
 - 미루기(리드 결정 11-22, QA r3 f1): LLM이 꺼졌거나 비용 상한이면 extract가 Later를 낸다. 기억 뽑기 일(assistant.jobs)은
   같은 말로 뒤 시각의 일을 한 줄 더 넣어 LLM이 돌아오면 한 번 뽑는다(무료 모드에 한 말도 기억이 돼요).
 - drop_parts: 목록 칸에서 조각을 뺀다(고객이 직접 할 일 카드를 거두거나 줄이거나 '없어요'로 저장, tools.diy.forget).
@@ -87,16 +89,38 @@ HANDED_SPAN = r"\S*\s+(?:\S+\s+){0,2}"
 # 바꿔 쓴 값 검사: Haiku가 붙이는 말(고객이 안 한 말)은 빼고, 남은 낱말의 뿌리가 모두 인용에 있어야 한다
 FILLER = re.compile(r"(?:시간\s?)?가능|선호|희망|예정|원함")
 JOSA = re.compile(r"(?:에만|에는|에서|으로|하고|이랑|랑|에|은|는|이|가|을|를|만|도|과|와|로)$")
-# 버리는 것: 건강 · 연락처 · 금액(값 · 인용 어디에 있어도)
+# 버리는 것: 건강 · 연락처 · 금액(값 · 인용 어디에 있어도). 인용에만 있으면 인용을 값으로 줄여 남기지 않는다(validate)
+# 건강: 병 · 몸 상태 낱말. '암'은 낱말 머리에서 조사 · 띄어쓰기가 붙을 때('암이라' · '암 환자')와 암 이름('폐암')만이다
+# ('암막' · '화강암'은 아니다). '아파트' · '아프리카'는 아니다(R1b #2)
 HEALTH = re.compile(
-    r"건강|아토피|천식|알레르기|알러지|비염|임신|임산부|질환|질병|병원|환자|수술|장애|(?<![예절계])약\s?(?:을|먹)|"
-    r"투병|암\b|치료"
+    r"건강|아토피|천식|알레르기|알러지|비염|임신|임산부|출산|산모|산후|질환|질병|병원|환자|수술|장애|"
+    r"(?<![예절계])약\s?(?:을|먹)|투병|치료|항암|입원|퇴원|요양|간병|투석|"
+    r"(?<![가-힣])암(?:[이으에을은도과와]|환자|투병|수술|진단|치료|(?![가-힣]))|"
+    r"(?:폐|위|간|유방|갑상선|대장|직장|췌장|자궁|난소|전립선|혈액|피부|뇌|골|방광|신장|식도|담낭)암|"
+    r"기관지|호흡기|폐렴|기침|독감|코로나|감기\s?(?:에\s?)?걸|우울증|우울감|공황|불면|치매|당뇨|혈압|심장|"
+    r"뇌졸중|중풍|디스크|관절|척추|무릎|허리(?:가|를)?\s?(?:아프|아파|안\s?좋|다쳐|다친|수술)|"
+    r"아파(?:서|요|하)|아프(?:다|고|면|셔|신|시)|아픈|통증|두통|염증|피부염|[장위]염|자폐|ADHD|adhd|"
+    r"휠체어|거동|몸이\s?(?:약|안\s?좋|불편)"
 )
 CONTACT = re.compile(
     r"\d{2,3}[\s.-]?\d{3,4}[\s.-]?\d{4}|@|카톡|카카오|오픈채팅|전화|연락처|번호|주소|\d+\s?동\s?\d+\s?호|"
     r"\[[^\]]*(?:번호|전화|주소|이메일|동호)[^\]]*\]"
 )
-MONEY = re.compile(r"\d[\d,.]*\s?(?:원|만|천|억)|₩|예산|가격|금액|비용|견적가|얼마")
+# 금액: 숫자 + 원 · 단위('300만 원' · '3백만' · '1.5억'), 한글 수 + 단위('삼백만' · '백만원대' · '만오천원' · '오만 원'),
+# 단위 뒤 금액 말('삼백 안쪽' · '천 이하' · '삼만 정도'), '몇백' · '몇만', 돈 낱말. '천장' · '천천히' · '이만큼' · '만족'은
+# 아니다(R1b #1)
+_NUM = "[일이삼사오육칠팔구]"
+_UNIT = "[십백천]"
+_CAP = r"(?:대|선|쯤|정도|안쪽|안팎|이하|이상|이내|넘|내외|까지|언저리)"
+MONEY = re.compile(
+    r"\d[\d,.]*\s?(?:원|십|백|천|만|억)"
+    rf"|(?:{_NUM}?{_UNIT})*{_NUM}?[십백천만억]\s?원"
+    rf"|(?:{_NUM}?{_UNIT})+\s?[만억]"
+    rf"|{_NUM}억|[삼사오육칠팔구]만\s?{_CAP}"
+    rf"|{_NUM}[백천](?![가-힣])|{_NUM}?[백천]\s?{_CAP}"
+    r"|몇\s?(?:백|천|만|억)"
+    r"|₩|예산|가격|금액|비용|견적가|얼마"
+)
 
 
 class Later(Exception):
@@ -425,17 +449,20 @@ async def save(
 ) -> int:
     """검사한 기억을 저장하고 MEMORY_MAX줄만 남긴다. 같은 키는 덮어쓰고, 목록 칸(LISTS)은 앞 값에 더한다(인용도
     잇고, 근거 메시지는 새 말). '만'으로 줄인 말(only)은 덮어쓴다. said(그 고객 말)가 직접 할 일을 업체에 넘기면
-    앞 값에서 빼고(without), 다 빠지면 그 기억을 지운다. said_at(미뤘다 뽑은 말의 때)을 주면 그 뒤에 바뀐 기억
-    줄은 건드리지 않는다(옛 말로 새 말을 덮지 않게). 바꾼 줄 수. commit은 부르는 쪽."""
+    앞 값에서 빼고(without), 다 빠지면 그 기억을 지운다. said_at(그 말을 한 때)을 주면 그 뒤에 바뀐 칸(말한 때 ·
+    지운 때 · 칩으로 줄인 때, repo.memory_marks)은 건드리지 않는다(옛 말로 새 말을 덮거나 지운 기억을 되살리지
+    않게). 바꾼 칸은 said_at(없으면 now)으로 적는다. 바꾼 줄 수. commit은 부르는 쪽."""
     old = (
         {m.key: m for m in await repo.memories(s, user_id)}
         if said or said_at or any(it.key in LISTS for it in items)
         else {}
     )
+    marks = await repo.memory_marks(s, user_id) if said_at is not None else {}
+    at = said_at or now
 
-    def newer(key: str) -> bool:  # 미룬 말보다 뒤에 바뀐 줄
-        row = old.get(key)
-        return said_at is not None and row is not None and row.updated_at > said_at
+    def newer(key: str) -> bool:  # 그 말을 한 뒤에 바뀐 칸(나중 말 · 지움 · 칩으로 줄임)
+        mark = marks.get(key)
+        return said_at is not None and mark is not None and mark > said_at
 
     items = [it for it in items if not newer(it.key)]
     changed = 0
@@ -455,6 +482,7 @@ async def save(
             quote=quote,
             now=now,
         )
+        await repo.mark_memory(s, user_id, it.key, at)
         changed += 1
     prev = old.get("diy")
     if said and prev is not None and not newer("diy") and all(it.key != "diy" for it in items):
@@ -465,6 +493,7 @@ async def save(
                     AssistantMemory.user_id == user_id, AssistantMemory.key == "diy"
                 )
             )
+            await repo.mark_memory(s, user_id, "diy", at)
             changed += 1
         elif rest != prev.value:  # 남은 일의 근거는 앞 말 그대로
             await repo.upsert_memory(
@@ -476,6 +505,7 @@ async def save(
                 quote=prev.evidence_quote,
                 now=now,
             )
+            await repo.mark_memory(s, user_id, "diy", at)
             changed += 1
     await repo.trim_memory(s, user_id, MEMORY_MAX)
     return changed
@@ -489,8 +519,8 @@ async def drop_parts(
     now: datetime,
 ) -> int:
     """목록 칸(LISTS) 기억에서 keep이 False인 조각을 뺀다. 인용도 keep인 조각만 남기고(남는 것이 없으면 앞 인용
-    그대로), 근거 메시지는 그대로예요. 다 빠지면 그 줄을 지운다(기억 화면에서도 빠져요). 바꾼 줄 수(0 · 1).
-    commit은 부르는 쪽."""
+    그대로), 근거 메시지는 그대로예요. 다 빠지면 그 줄을 지운다(기억 화면에서도 빠져요). 바꾼 칸은 now로 적는다
+    (그 전에 한 말을 늦게 뽑아도 뺀 조각을 되살리지 않게). 바꾼 줄 수(0 · 1). commit은 부르는 쪽."""
     prev = next((m for m in await repo.memories(s, user_id) if m.key == key), None)
     if prev is None:
         return 0
@@ -498,6 +528,7 @@ async def drop_parts(
     rest = [p for p in parts if keep(p)]
     if len(rest) == len(parts):
         return 0
+    await repo.mark_memory(s, user_id, key, now)
     if not rest:
         await s.execute(delete(AssistantMemory).where(AssistantMemory.id == prev.id))
         return 1

@@ -454,8 +454,10 @@ def test_p17_done_remind_rings_once(api, monkeypatch):
     remind_at = deal["done_posted_at"] + timedelta(days=4, minutes=1)
     run(api, deal_job("deal_done_remind", did, remind_at))
     tick(api)
-    remind = [x for x in nudges(trigger="work_done") if x["channel"] == "notify"]
+    remind = [x for x in nudges(trigger="work_done") if x["id"] != n["id"]]
     assert len(remind) == 1 and remind[0]["status"] == "sent"
+    # 종 없는 대화 줄(하루 알림 상한에 세지 않음, 점검 R1b #17)
+    assert remind[0]["channel"] == "feed"
     owner = query("select owner_id from projects where id = $1", uuid.UUID(pid))[0]["owner_id"]
     bells = query(
         "select kind from notifications where user_id = $1"

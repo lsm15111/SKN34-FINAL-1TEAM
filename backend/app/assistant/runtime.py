@@ -75,12 +75,15 @@ BACK_WHY = "앞 문장을 가리킴"
 NUM_MARK = re.compile(r"^(\d{1,2})([.)])\s")  # 번호 목록 줄 머리('1. ')
 TOOL_FAIL = "같은 문제가 두 번 나서 멈췄어요. 화면에서 직접 이어서 해 주세요."
 EMPTY_TEXT = "말씀이 비어 있어요. 궁금한 것을 적어 주세요."
-# 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글)
+# 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글 · 먼저 말 건 줄 턴 사실). schemas.CardKind 모두(R1a B7)
 CARD_NAME = {
     "home_info": "집 정보", "standard_quote": "표준견적서", "vendor_picks": "업체 추천",
     "visit_slots": "실측 일정", "quote_compare": "견적서 비교", "schedule": "공사 날짜",
     "knowledge": "자료", "answer": "답", "floorplan_links": "평면도 찾기", "today": "오늘 할 일",
     "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트",
+    "extra": "추가 금액", "notice": "이웃 안내문", "grade_compare": "벽지 두 종류 비교",
+    "market_range": "시세 범위", "options": "고르기", "research": "조사",
+    "product_estimate": "벽지 금액",
 }  # fmt: skip
 CARDS_ONLY = "(카드를 보여 줬어요"  # 카드만 보낸 턴의 기록 글 머리(끝 문장으로 보지 않는다)
 BREAKER_KEY = "assistant:breaker"
@@ -110,11 +113,14 @@ def spacing(sep: str) -> str:
     return "\n\n" if n >= 2 else "\n" if n else " "
 
 
-# 승인이 있어야 하는 일을 한 것처럼 끝맺는 말('확정했어요' · '요청을 보냈어요' · '결제를 완료'). 비서는 실행하지 않는다
+# 승인이 있어야 하는 일을 한 것처럼 끝맺는 말('확정했어요' · '요청을 보냈어요' · '결제를 완료'). 비서는 실행하지 않는다.
+# 실측 요청 취소(visit_cancel 0051)와 '해 놨어요 · 끝냈어요 · 잡아 뒀어요 · 보내 놨어요' 꼴도(R1a B1). '넣었어요'는
+# 카드에 넣은 말이라 빼요
 CLAIM = re.compile(
-    r"(?:확정|수락|승인|거절|결제|예약|저장|실행|처리|요청|신청|접수|전송)(?:을|를|으로|로)?\s*"
-    r"(?:했어요|했습니다|했고|했으니|해\s*드렸|해\s*뒀|완료|바꿨)"
-    r"|보냈어요|보냈습니다|보내\s*드렸|보내\s*뒀"
+    r"(?:확정|수락|승인|거절|취소|결제|예약|저장|실행|처리|요청|신청|접수|전송)(?:을|를|으로|로)?\s*"
+    r"(?:했어요|했습니다|했고|했으니|해\s*드렸|해\s*뒀|해\s*두었|해\s*놨|해\s*놓았|완료|바꿨|끝냈|마쳤|"
+    r"잡아\s*(?:드렸|뒀|두었|놨|놓았))"
+    r"|보냈어요|보냈습니다|보내\s*(?:드렸|뒀|두었|놨|놓았)"
 )
 SUBJECT = re.compile(r"([가-힣A-Za-z0-9]+?)(?:이|가|께서|에서(?:는|도)?)\s")
 FIRST = frozenset({"제", "저", "저희", "AI", "비서", "믿집", "내"})
@@ -219,6 +225,9 @@ class RefTable:
         self.top: dict[str, int] = dict(top or {})  # 머리글자마다 쓴 가장 큰 번호
         self.touched: set[str] = set()  # 이 표에서 넣거나 고친 이름(저장할 때 우리 값이 이긴다)
         self.fresh: set[str] = set()  # 이 표가 새 번호로 만든 이름(저장할 때 DB 번호와 견준다)
+        # 이 표가 DB 번호를 올린 머리글자 → 올리기 전 번호(_durable). 두 번 저장해도 이 표가 올린 번호를 '지난 번호'로
+        # 보지 않게(R1a B4)
+        self._raised: dict[str, int] = {}
 
     @classmethod
     def ident(cls, it: dict) -> tuple:
@@ -227,17 +236,20 @@ class RefTable:
 
     def put(self, kind: str, value: dict) -> str:
         want = self.ident({**value, "kind": kind})
-        for ref, it in self.items.items():
-            if self.ident(it) == want:
-                it.update({k: v for k, v in value.items() if k != "kind"})
-                self.touched.add(ref)
-                return ref
+        ref = next((r for r, it in self.items.items() if self.ident(it) == want), None)
+        if ref is not None:
+            # 다시 쓴 이름표는 뒤로: 표가 차면 오래 안 쓴 것부터 버린다(R1a B3)
+            it = self.items.pop(ref)
+            it.update({k: v for k, v in value.items() if k != "kind"})
+            self.items[ref] = it
+            self.touched.add(ref)
+            return ref
         prefix = self.PREFIX[kind]
         used = [int(r[1:]) for r in self.items if r[0] == prefix and r[1:].isdigit()]
         n = max([*used, self.top.get(prefix, 0)]) + 1
         self.top[prefix] = n
         ref = f"{prefix}{n}"
-        if len(self.items) >= self.MAX:  # 가장 오래된 것부터 버린다(번호는 top이 기억한다)
+        if len(self.items) >= self.MAX:  # 가장 오래 안 쓴 것부터 버린다(번호는 top이 기억한다)
             self.items.pop(next(iter(self.items)))
         self.items[ref] = {**value, "kind": kind}  # 값의 칸이 종류 이름을 덮지 않게
         self.touched.add(ref)
@@ -279,7 +291,7 @@ class RefTable:
     ) -> tuple[dict, dict]:
         """Redis에 있는 표(theirs) · 번호 기록(meta)과 이 표를 합친다. (새 표, 새 번호 기록)
         durable(DB에 남은 번호, 이 표가 올리기 전)보다 크지 않은 새 번호가 Redis에 없으면 버린다(표가 지워진 뒤 다시
-        쓴 번호)."""
+        쓴 번호). 이 표에서 넣거나 고친 이름은 뒤로 옮겨, 넘치면 오래 안 쓴 것부터 버린다(R1a B3)."""
         durable = durable or {}
         dead = set(meta.get("dead") or ()) | self.dead
         out = {
@@ -298,7 +310,10 @@ class RefTable:
             if old is None and ref in self.fresh and int(ref[1:]) <= durable.get(ref[0], 0):
                 dead.add(ref)  # 지난 카드의 같은 이름이 다른 대상일 수 있다: 모르는 이름표로
                 continue
-            if old is None or ref in self.touched:
+            if ref in self.touched:
+                out.pop(ref, None)  # 이 표에서 쓴 이름표는 뒤로(가장 최근에 쓴 것)
+                out[ref] = it
+            elif old is None:
                 out[ref] = it
         while len(out) > self.MAX:
             out.pop(next(iter(out)))
@@ -309,7 +324,9 @@ class RefTable:
 
     async def _durable(self) -> dict[str, int]:
         """DB에 남긴 번호(머리글자 → 가장 큰 번호)를 읽고 이 표의 번호로 올린다(늘기만). 돌려주는 값: 올리기 전 번호.
-        DB를 못 쓰면 {}(Redis만으로 합친다)."""
+        이 표가 앞서 올린 머리글자는 처음 올리기 전 번호다(R1a B4: 턴마다 두 번 저장하는데 첫 저장의 Redis가 실패하면,
+        둘째 저장이 이 표가 올린 번호를 '지난 번호'로 보고 이 턴의 새 이름표를 버렸다). DB를 못 쓰면 {}(Redis만으로
+        합친다)."""
         from sqlalchemy import func, select
         from sqlalchemy.dialects.postgresql import insert
 
@@ -341,7 +358,11 @@ class RefTable:
         except Exception as e:  # noqa: BLE001 - 번호 기록 실패는 Redis만으로 합친다(종류 이름만 로그)
             log.warning("비서 이름표 번호 저장 실패 (%s)", type(e).__name__)
             return {}
-        return before
+        # 이번에 올린 머리글자는 올리기 전 번호를 기억한다(처음 한 번)
+        for p, n in self.top.items():
+            if p not in self._raised and n > before.get(p, 0):
+                self._raised[p] = before.get(p, 0)
+        return {**before, **self._raised}
 
     async def save(self) -> None:
         """Redis 표와 합쳐 저장한다. 이 표가 새 번호를 썼으면 먼저 DB 번호를 올리고 그 앞 번호로 견준다(merged)."""
@@ -1184,8 +1205,12 @@ def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
 
 # 다음 일로 이끄는 카드(집 정보 · 업체 추천 · 실측 시간 · 견적서 비교 · 공사 날짜 · 오늘 할 일 …): 이 카드가 나온 턴에는 한
 # 줄을 붙이지 않아요. 표준견적서 카드는 금액을 보여 줄 뿐 다음 할 일을 알려 주지 않아 빼요(2026-11-23 평가: 실측 · 공사
-# 단계에서 표준견적서 카드가 다음 단계 줄을 막음)
-STEP_CARDS = frozenset(CARD_NAME) - {"knowledge", "answer", "standard_quote"}
+# 단계에서 표준견적서 카드가 다음 단계 줄을 막음). 카드 이름 표에 더한 07 · 고르기 · 조사 카드는 그대로 빼요(이름만
+# 더했어요, R1a B7)
+STEP_CARDS = frozenset(CARD_NAME) - {
+    "knowledge", "answer", "standard_quote",
+    "extra", "notice", "grade_compare", "market_range", "options", "research", "product_estimate",
+}  # fmt: skip
 # 지금 할 일 줄을 붙여도 답이 이 문장 수를 넘지 않을 때만 붙여요(지시문 '많아야 네 문장', QA r6 · FA2: 코드가 붙인 줄로
 # 다섯 문장 넘는 답이 생김). 넘으면 이번 턴은 붙이지 않고 같은 단계의 다음 답에 붙어요(now_said는 붙인 줄만 셈)
 STEP_ROOM = 4
