@@ -8,6 +8,7 @@
 //   방 개수 표를 못 읽었으면 미리 고르지 않고, 고객이 안 골랐으면 비워 보내요(서버가 면적 기본값으로 세요).
 // - 손님: 답은 이 기기에만(mj_guest_v3) → 표준견적서 요약 · 직접 할 일 → 가입 카드. 가입하면 같은 답으로 내 공사가 만들어져요(auth/after).
 //   직접 할 일로 '벽지 직접 구매'를 고르거나 빼면 표준견적서를 다시 세어(서버 계산 엔진) 가입 뒤 공사와 같은 금액을 보여요.
+//   어디까지 했는지(표준견적서 · 직접 할 일 답)는 이 탭에 둬서 [견적서 열기] 뒤 뒤로 와도 이어 가요(QA r7 N8). 금액은 두지 않고 다시 물어요.
 // - 로그인한 고객: 직접 할 일까지 고르면 POST /projects(Idempotency-Key = 기기 답 key, 직접 할 일도 한 번에) → /projects/{id}/standard.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -60,6 +61,24 @@ const shownRooms = (d: InfoDraft, rule: RoomRule): number | null => d.rooms ?? (
 /** 보이는 방 개수를 답에 넣어요(면적 기본값으로 미리 골라 둔 칩도 고객이 보고 넘긴 값이에요). 비었으면 서버가 면적 기본값으로 세요
  *  (표를 못 읽은 fallback 3을 고른 값으로 보내 서버 기본값을 덮지 않게) */
 const withRooms = (d: InfoDraft, rule: RoomRule): InfoDraft => ({ ...d, rooms: shownRooms(d, rule) });
+
+/** 손님 첫 대화를 어디까지 했는지(이 탭에만): 그때 기기 답 key(조건이 바뀌면 key도 바뀌어요) · 직접 할 일을 답했는지 */
+const STEP_KEY = "mj_start_step";
+type StartStep = { key: string; answered: boolean };
+function readStep(): StartStep | null {
+  try {
+    const x: unknown = JSON.parse(window.sessionStorage.getItem(STEP_KEY) ?? "null");
+    return x && typeof x === "object" && typeof (x as StartStep).key === "string" && typeof (x as StartStep).answered === "boolean" ? (x as StartStep) : null;
+  } catch {
+    return null;
+  }
+}
+function writeStep(step: StartStep | null) {
+  try {
+    if (step) window.sessionStorage.setItem(STEP_KEY, JSON.stringify(step));
+    else window.sessionStorage.removeItem(STEP_KEY);
+  } catch { /* 편의 기능이라 넘어가요 */ }
+}
 
 type Errors = Partial<Record<"region" | "area" | "occupied" | "grade" | "demolition" | "when", string>>;
 function errorsOf(d: InfoDraft, today: string): Errors {
@@ -124,10 +143,14 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
       if (wish) start = wish.start_date;
       else { when = null; start = null; }
     }
-    setD({ ...saved, rooms, when, start });
+    const next = { ...saved, rooms, when, start };
+    setD(next);
     setManual(!!saved.area && !PYEONG.some((p) => pyeongToM2(p) === saved.area && saved.basis === "supply"));
     setResumed(true);
-  }, [wishes, roomRule, today]);
+    // 손님이 [견적서 열기] 뒤 뒤로 왔으면 하던 데까지 이어 가요(조건이 그대로일 때만, QA r7 N8)
+    const step = mode === "guest" ? readStep() : null;
+    if (step && step.key === g.key && !Object.keys(errorsOf(next, today)).length) void resume(next, step.answered);
+  }, [wishes, roomRule, today, mode]);
   // 고칠 때마다 이 기기에 저장해요(손님 답 옮기기와 같은 저장소). 방 개수는 보이는 값으로 둬요
   useEffect(() => { if (dirty) writeGuest(withRooms(d, roomRule)); }, [d, dirty, roomRule]);
   // 새 말이 붙으면 아래로
@@ -142,12 +165,28 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
     setTried(true);
     if (Object.keys(errorsOf(d, today)).length || phase !== "confirm") return;
     setErr(null);
-    writeGuest(withRooms(d, roomRule));
+    const g = writeGuest(withRooms(d, roomRule));
     setPhase("calc");
     try {
       setStd(await calcGuest(toHomeInfo(withRooms(d, roomRule)), mock));
       setPick(d.diy ? (d.diy.length ? d.diy : ["none"]) : []);
       setAnswered(false);
+      setPhase("done");
+      if (mode === "guest") writeStep({ key: g.key, answered: false });
+    } catch (e) {
+      setErr(errorText(e));
+      setPhase("confirm");
+    }
+  }
+
+  /** [견적서 열기] 뒤 뒤로 왔어요: 표준견적서(서버 계산 엔진에 다시 물어요) · 고른 직접 할 일 · 가입 카드까지 이어 그려요.
+   *  못 세면 확인 카드로 돌아가요 */
+  async function resume(draft: InfoDraft, answeredBefore: boolean) {
+    setPhase("calc");
+    try {
+      setStd(await calcGuest(toHomeInfo(withRooms(draft, roomRule)), mock));
+      setPick(draft.diy ? (draft.diy.length ? draft.diy : ["none"]) : []);
+      setAnswered(answeredBefore && !!draft.diy);
       setPhase("done");
     } catch (e) {
       setErr(errorText(e));
@@ -176,6 +215,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
     const g = writeGuest(withRooms(next, roomRule));
     setAnswered(true);
     if (mode === "guest") {
+      writeStep({ key: g.key, answered: true });
       // 예시(mock)는 직접 할 일을 계산하지 않아요
       if (!mock && std && buysPaper(next.diy) !== !!std.own_paper) void recount(next);
       return;
@@ -204,6 +244,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
     setAgain(null);
     setAnswered(false);
     setErr(null);
+    writeStep(null);
   }
 
   const sgs = sido ? sido.groups.flatMap((g) => g.items.map((x) => ({ key: x, label: g.label ? `${g.prefix} ${x}` : x }))) : [];
