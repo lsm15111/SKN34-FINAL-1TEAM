@@ -589,7 +589,7 @@ const PREWORK_ROWS: { key: PreworkKey; label: string; why: string }[] = [
   { key: "mokgong", label: "목공", why: "문틀 · 몰딩을 바꾸면 벽에 틈이 생겨, 메우고 덮은 뒤에 도배해요." },
   { key: "electric", label: "전기", why: "도배한 뒤에 배선을 옮기면 벽을 다시 뜯어야 해서, 전기 공사를 먼저 끝내요." },
   { key: "film", label: "필름", why: "필름은 목공 뒤 도배 전에 붙여요. 순서가 어긋나면 비용이 겹치고 하자가 생길 수 있어요." },
-  { key: "floor", label: "바닥", why: "장판은 보통 도배 뒤, 마루는 도배 전에 까는 경우가 많아 실측 때 업체와 순서를 정해요." },
+  { key: "floor", label: "바닥", why: "마루는 도배 전에, 장판은 도배 뒤에 까는 게 보통이에요. 업체마다 다를 수 있어 실측 때 순서를 맞춰요." },
 ];
 function preworkCard(s: State): CardOut<"prework_check"> {
   const saved = s.prework ?? {};

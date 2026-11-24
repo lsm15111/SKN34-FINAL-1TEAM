@@ -27,7 +27,7 @@ from tests.test_v4_assistant_diy import as_owner, chips
 from tests.test_v4_assistant_free import cards_of, said
 from tests.test_v4_assistant_new_tools import call, results
 from tests.test_v4_assistant_nudges import run
-from tests.test_v4_assistant_turns import ask, ok
+from tests.test_v4_assistant_turns import ask, home, ok
 
 D = Decimal
 Check = asyncpg.exceptions.CheckViolationError
@@ -177,6 +177,18 @@ def test_unknown_button_values_are_dropped_and_words_are_not_saved(api, script):
     assert "승인 카드를 만들었어요" in sent
 
 
+def test_pressed_turn_gives_the_model_the_card_why_for_pending_trades(api, script):
+    # QA r10 c3 T2: 단추 턴 모델은 카드 근거를 못 받아 '바닥 공사는 도배 전에 마쳐야 해요'로 단정했어요
+    why = prework_tools.WHY["floor"]
+    assert "마루는 도배 전" in why and "장판은 도배 뒤" in why and "\n" not in why
+    _, pid = customer(api)
+    log = script([{"text": "카드를 확인하고 눌러 주세요."}])
+    press(api, pid, "prework.mokgong:done", "prework.floor:todo")
+    sent = json.dumps(log[0]["messages"], ensure_ascii=False)
+    assert why in sent  # 아직인 공정은 카드 근거 그대로
+    assert prework_tools.WHY["mokgong"] not in sent  # 끝난 공정은 고른 값만
+
+
 def test_old_card_is_stale_when_answers_changed_on_screen(api):
     _, pid = customer(api)
     (a,) = proposed(press(api, pid, "prework.mokgong:todo"))
@@ -291,6 +303,33 @@ def test_brief_tool_card_rows_tasks_paper_and_model_values(api, script):
         "부직포": "포함",
     }
     assert [x["title"] for x in got["items"]] == [x for x, _ in want]
+
+
+def test_paper_rolls_show_before_paper_buy_is_saved(api, script):
+    # QA r10 c3 T1: '벽지는 제가 사요' 턴의 점검 카드에 롤 수가 없었어요(벽지 직접 구매 승인 전)
+    _, pid = home(api)  # 집 정보가 있는 공사(직접 할 일 승인 카드를 만들 수 있어요)
+    std = api.get(f"/projects/{pid}/standard").json()
+    rolls = next(x for x in std["trades"] if x["trade"] == "dobae")["rolls"]["count"]
+    ev, log = call(
+        script,
+        api,
+        pid,
+        "실측 요청하기 전에 뭘 챙겨야 해요? 벽지는 제가 사요",
+        ("prework_brief", {}),
+    )
+    (card,) = cards_of(ev, "prework_check")
+    assert card["data"]["paper"]["count"] == rolls  # 계산 엔진 값(표준견적서 롤 수와 같음)
+    assert results(log)[0]["paper"]["count"] == rolls
+    # 벽지를 직접 산다는 말이 없으면 그대로 없어요
+    ev, _ = call(script, api, pid, "도배 전 점검 보여 줘", ("prework_brief", {}))
+    assert cards_of(ev, "prework_check")[0]["data"]["paper"] is None
+    # 벽지 직접 구매를 넣는 집 정보 승인 카드가 열려 있으면 보여요(저장 전)
+    diy = {"fields": {"diy": ["paper_buy"]}}
+    call(script, api, pid, "벽지 직접 구매로 넣어 주세요", ("propose_home_info", diy))
+    ev, _ = call(script, api, pid, "도배 전 점검 보여 줘", ("prework_brief", {}))
+    assert cards_of(ev, "prework_check")[0]["data"]["paper"]["count"] == rolls
+    got = query("select status from assistant_actions where kind = 'home_info'")
+    assert [r["status"] for r in got] == ["proposed"]
 
 
 def test_brief_without_chips_mokgong_project_and_no_dobae(api, script):

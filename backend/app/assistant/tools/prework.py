@@ -10,7 +10,7 @@
     누를 때만이에요(고정 선 1, actions._prework). 고객 글로 받은 답은 저장하지 않아요(단추 값만, LLM 제안 도구 없음).
 - 벽지 직접 구매(직접 할 일 paper_buy)면 살 롤 수 · 자투리 몫 · 여분 · 부자재(풀 · 초배지 · 부직포) 포함 상태를 같이
   보여요. 숫자는 계산 엔진(calc.dobae_rolls) 값만이고, 소요량은 이 집 표준견적서 판 값이라 표준견적서 화면 롤 수와 같아요
-  (고정 선 2).
+  (고정 선 2). 저장 전이어도 이번 고객 말이 벽지를 직접 산다고 하거나 그 집 정보 승인 카드가 열려 있으면 보여요.
 - 다음 걸음 한 줄: 실측 요청 전이면 업체 고르기 · 실측 요청, 요청 뒤면 실측 때 업체와 맞추기.
 """
 
@@ -43,7 +43,8 @@ from app.project import prework
 
 log = logging.getLogger(__name__)
 
-# 왜 도배 전에 끝내는지(정해 둔 글, 숫자 없음). 바닥은 업체마다 순서가 달라 그 말 그대로 둬요(지어내지 않아요)
+# 왜 도배 전에 끝내는지(정해 둔 글, 숫자 없음). 바닥은 마루 · 장판 순서가 반대라 둘을 한 줄에 같이 적어요. 아직인
+# 공정은 단추 턴에도 이 글을 모델에 같이 줘요(choices.text_of, QA r10 c3 T2)
 WHY = {
     # 믿집 공정 순서(목공 → 도배) · LX Z:IN 시공 가이드 K178(문틀 · 몰딩을 바꾸면 벽에 틈이 생겨 메운 뒤 덮어요)
     "mokgong": "문틀 · 몰딩을 바꾸면 벽에 틈이 생겨, 메우고 덮은 뒤에 도배해요.",
@@ -52,7 +53,7 @@ WHY = {
     # 믿집 공정 순서(목공 → 필름 → 도배) · K1360(순서가 어긋나면 비용이 겹치고 하자가 생길 수 있어요)
     "film": "필름은 목공 뒤 도배 전에 붙여요. 순서가 어긋나면 비용이 겹치고 하자가 생길 수 있어요.",
     # 공정 쌍 글(도배 → 바닥) · 다른 공정 알아 두기(바닥재)
-    "floor": "장판은 보통 도배 뒤, 마루는 도배 전에 까는 경우가 많아 실측 때 업체와 순서를 정해요.",
+    "floor": "마루는 도배 전에, 장판은 도배 뒤에 까는 게 보통이에요. 업체마다 다를 수 있어 실측 때 순서를 맞춰요.",
 }
 MOKGONG_PLAN = "이 공사 공정표에서 도배 전에 잡혀 있어요"
 MOKGONG_PICKED = "이 공사에 목공을 골랐어요"
@@ -167,8 +168,29 @@ async def _paper(s: AsyncSession, user: User, pid: uuid.UUID) -> dobae_rolls.Dob
     return r
 
 
-async def brief(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> tuple[CardOut, dict]:
-    """도배 전 점검 카드 · 모델 값. 남의 공사면 AppError(404), 도배가 없는 공사면 ToolError(no_dobae)."""
+async def _buying(s: AsyncSession, user: User, pid: uuid.UUID, text: str) -> bool:
+    """벽지 직접 구매를 저장하기 전에도 롤 수를 보일지(QA r10 c3 T1: '벽지는 제가 사요' 턴 카드에 롤 수가 없었어요).
+    이번 고객 말이 벽지를 직접 산다고 하거나(무료 모드 직접 할 일 말과 같은 낱말), 직접 할 일에 벽지 직접 구매를 넣는
+    집 정보 승인 카드가 열려 있을 때."""
+    from app.assistant import repository as repo
+    from app.assistant.tools import diy as diy_tools
+    from app.project.diy import PAPER_BUY
+
+    if PAPER_BUY in diy_tools.keys_in(text) and diy_tools.SELF_SAID.search(text):
+        return True
+    rows = await repo.actions_of(s, user.id, "customer", project_id=pid, status="proposed")
+    for a in rows:
+        fields = (a.payload or {}).get("fields") or {}
+        if a.kind == "home_info" and PAPER_BUY in (fields.get("diy") or ()):
+            return True
+    return False
+
+
+async def brief(
+    s: AsyncSession, user: User, pid: uuid.UUID, today: date, text: str = ""
+) -> tuple[CardOut, dict]:
+    """도배 전 점검 카드 · 모델 값(text: 이번 고객 말). 남의 공사면 AppError(404), 도배가 없는 공사면
+    ToolError(no_dobae)."""
     from app.assistant.tools import diy as diy_tools
     from app.project import service as project_service
 
@@ -191,7 +213,7 @@ async def brief(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> tup
     tasks = [PreworkTask(label=t.name, when=g.when(t)) for t in before]
     paper = None
     paper_model = None
-    if "paper_buy" in g.keys:
+    if "paper_buy" in g.keys or await _buying(s, user, pid, text):
         got = await _paper(s, user, pid)
         if got is not None:
             paper, paper_model = paper_part(got)
@@ -249,7 +271,7 @@ async def brief(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> tup
 )
 async def prework_brief(tc: ToolCtx, _: NoArgs) -> ToolOut:
     async with SessionLocal() as s:
-        card, model = await brief(s, tc.user, pid_of(tc), tc.today)
+        card, model = await brief(s, tc.user, pid_of(tc), tc.today, tc.text)
     return ToolOut(data=model, cards=[card])
 
 
