@@ -34,22 +34,51 @@
 .vmeta { font-size: var(--mj-type-label); color: var(--mj-text-sub); line-height: var(--mj-lh-body); }
 .vintro { font-size: var(--mj-type-label); color: var(--mj-text); line-height: var(--mj-lh-body); overflow-wrap: anywhere; }
 
-/* 이 화면 안 바로 가기(밑줄 탭 모양) */
-.tabs { display: flex; gap: 4px; margin: 0 calc(-1 * var(--mj-pad-group)) -10px; padding: 0 var(--mj-pad-group); border-top: 1px solid var(--mj-line); overflow-x: auto; scrollbar-width: none; }
+/* 이 화면 안 바로 가기(밑줄 탭 모양, DetailTabs). 머리 묶음(.headTop) 아래에 붙여 한 카드로 보이고, 내리면 위에 붙어요.
+   붙는 자리: 화면은 붙는 머리 · 공사 띠 아래(--mj-sticky-top), 카드 창은 창 몸통 맨 위(창이 0으로 바꿔요). 1px 위로 올려
+   띠 윗줄이 머리 아랫줄 · 창 머리 줄과 겹쳐 한 줄로 보여요. 띠 뒤 바탕은 붙었을 때 둥근 아래 모서리 뒤로 내용이 비치지 않게 가려요 */
+.headTop { padding-bottom: 14px; border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+.tabsBar { position: sticky; top: calc(var(--mj-sticky-top) - 1px); z-index: var(--mj-z-sticky); margin-top: calc(-1px - var(--mj-gap-group)); background: var(--mj-bg); }
+.tabs { position: relative; display: flex; gap: 4px; padding: 0 var(--mj-pad-group); border-radius: 0 0 var(--mj-radius-group) var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); overflow-x: auto; scrollbar-width: none; }
+.tabs::before { content: ""; position: absolute; inset: 0 0 auto; height: 1px; background: var(--mj-line); }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { flex: none; display: inline-flex; align-items: center; min-height: var(--mj-hit); padding: 0 10px; border-bottom: 2px solid transparent; color: var(--mj-text-sub); font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); text-decoration: none; white-space: nowrap; }
 .tab:hover { color: var(--mj-text); }
 .tab[aria-current="true"] { border-bottom-color: var(--mj-text); color: var(--mj-text); font-weight: var(--mj-weight-bold); }
+/* 띠는 가로 넘김 칸이라 바깥 초점선이 위아래로 잘려요. 탭 안쪽에 그려요 */
+.tab:focus-visible { outline-offset: -4px; border-radius: var(--mj-radius-chip); }
+/* 띠가 있는 화면: 초점 · 옮겨 간 묶음이 붙은 띠에 가리지 않게 스크롤 칸 위를 띠 높이만큼 더 비워요(WCAG 2.4.11). 화면은 html, 카드 창은 창 몸통 */
+:global(html):has(.tabsBar), :global(div):has(> main .tabsBar) { scroll-padding-top: calc(var(--mj-sticky-top) + var(--mj-hit) + 8px); }
+/* 붙은 띠는 그 비운 자리 안에 있어서 탭에 초점이 오면 브라우저가 화면을 300px쯤 밀었어요.
+   탭의 스크롤 영역만 아래로 64px 옮겨(위 -64 · 아래 +64) 이미 보이는 것으로 쳐요(탭 크기 · 모양은 그대로) */
+.tab { scroll-margin-top: -64px; scroll-margin-bottom: 64px; }
+/* 띠로 옮겨 가는 묶음: 위 여백 + 12px 아래에 제목이 와요(띠 아래 21px쯤). 초점이 와도 묶음 모서리는 그대로 */
+.spot { scroll-margin-top: 12px; }
+.spot:focus-visible { border-radius: var(--mj-radius-group); }
 
 /* 가견적 */
 .none { font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); }
 
-/* 시공 사례: B4 PhotoGrid를 폰 3장 · 웹 4칸으로 */
-@media (max-width: 767px) { .caseGrid > li:nth-child(n + 4) { display: none; } }
-@media (min-width: 768px) { .caseGrid.caseGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* 시공 사례: B4 PhotoGrid를 묶음 너비로 3장 · 4칸으로. 화면 너비가 아니라 묶음 너비로 봐요:
+   웹이어도 카드 창 서랍(480) 안이면 4칸이 86px이라 사진 이름이 '작은방 · …'으로 잘렸어요 */
+.cases { container: cases / inline-size; }
+.caseGrid.caseGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@container cases (max-width: 439.98px) { .caseGrid > li:nth-child(n + 4) { display: none; } }
+@container cases (min-width: 440px) { .caseGrid.caseGrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+/* 사진 칸 hover · 키보드 초점: 칸이 둥근 모서리 + overflow hidden이라 단추 바깥선은 네 모서리가 잘렸어요.
+   테두리를 사진 위 층(::after, 칸 모서리를 따라감)에 그려 네 변 · 모서리가 다 보여요(백과 용어 카드와 같은 방식). 그림자는 칸 밖이라 안 잘려요 */
+.caseGrid > li { transition: box-shadow var(--mj-dur-fast) var(--mj-ease-out); }
+.caseGrid > li::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px transparent; pointer-events: none; transition: box-shadow var(--mj-dur-fast) var(--mj-ease-out); }
+.caseGrid > li:hover { box-shadow: var(--mj-shadow-raise); }
+.caseGrid > li:hover::after { box-shadow: inset 0 0 0 2px var(--mj-line-control); }
+.caseGrid > li:has(:focus-visible)::after { box-shadow: inset 0 0 0 var(--mj-focus-w) var(--mj-focus); }
+.caseGrid > li :focus-visible { outline: none; }
 
-/* 리뷰 요약 · 외부 링크 */
+/* 리뷰 요약 · 미리 보기(별점 높은 순 몇 개) · 외부 링크 */
 .quote { font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+.rvSort { flex: none; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); white-space: nowrap; }
+.rvList { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.rvList > li + li { border-top: 1px solid var(--mj-line); }
 .links { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
 .links li { display: flex; align-items: center; justify-content: space-between; gap: 0 8px; min-height: 52px; border-top: 1px solid var(--mj-line); }
 .extLinks { display: flex; flex-direction: column; gap: 4px; }
