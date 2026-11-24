@@ -21,13 +21,15 @@ export type QuoteLine = {
   unitPrice?: number | null;
   amount: number | null;
   state?: LineState;
+  /** 상태 말 대신 보일 까닭(계산 엔진 줄 근거 글). 예: 전체 철거면 '기존 벽지 철거' 줄은 '안 함' 대신 '전체 철거 공사에서 떼요(도배 견적 밖)' */
+  stateText?: string;
 };
 export type QuoteTotals = { supply?: number; vat?: number; total: number };
 
 const qtyText = (l: QuoteLine) => (l.qty == null ? "" : `${typeof l.qty === "string" ? decText(l.qty) : l.qty.toLocaleString("ko-KR", { maximumFractionDigits: 1 })}${l.unit ?? ""}`);
 const isOut = (l: QuoteLine) => (l.state ? outsideTotal(l.state) : false);
 const isDash = (l: QuoteLine) => l.state === "excluded" || l.state === "bundled" || l.amount == null;
-const stateWord = (l: QuoteLine) => (l.state && l.state !== "included" && l.state !== "separate" ? LINE_STATES[l.state] : "");
+const stateWord = (l: QuoteLine) => l.stateText ?? (l.state && l.state !== "included" && l.state !== "separate" ? LINE_STATES[l.state] : "");
 
 function detail(l: QuoteLine) {
   const q = qtyText(l);
