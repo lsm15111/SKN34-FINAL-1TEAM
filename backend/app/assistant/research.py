@@ -66,6 +66,7 @@ RECENT = timedelta(hours=12)  # 턴 사실 '방금 끝난 조사'를 보여 주�
 KEEP = timedelta(days=30)  # 결과를 두는 기간(새 조사를 시작할 때 그 사람의 더 오래된 줄을 지운다)
 LINK_MAX = 6
 TITLE_MAX = 30
+TITLE_HARD = 40  # 꾸밈말을 마저 붙인 제목 상한(DB 제약 1~40자)
 GOAL_MAX = 200
 NOTE_MAX = 200
 MEMO_MAX = 40
@@ -153,8 +154,9 @@ ENDED_LINE = {
 }
 STOPPED_FOUND = " 그때까지 찾은 것만 정리했어요."
 DONE_PARTIAL = " 찾은 만큼 정리했어요."
-# 자재 결과 카드 뒤 끝 질문(피클 표본처럼 고를 것을 묻고 끝낸다)
-ASK_PICK = "어느 쪽이 끌리세요? 고르시면 그걸로 이어서 알아볼게요."
+# 자재 결과 카드 뒤 끝 줄(고를 것을 묻고 끝낸다). 고른 뒤 실제로 되는 일만 말해요: 비서가 그 항목을 읽어 답하고, 고객은
+# 업체에 그 제품으로 견적을 물어봐요(QA r9 c2 T21: '이어서 알아볼게요'라고 했지만 조사를 잇지 않음)
+ASK_PICK = "마음에 드는 제품이 있으면 알려 주세요. 업체에 그 제품으로 견적을 받을 수 있는지 물어볼 수 있어요."
 STEERED = "돌던 조사에 바꾼 조건을 전했어요."
 NO_SUCH = "그 낱말이 든 조사가 없어요. 오늘 조사 목록의 제목 낱말로 다시 읽어요."
 # 걸리는 시간 말(QA r3 s3 · v1: 실제 16~56초인데 '몇 분 걸려요'). 비서가 고객에게 이 말 그대로 알려요
@@ -350,12 +352,56 @@ def clean_goal(text: str | None, limit: int = GOAL_MAX) -> str:
 
 
 _ITEM_SEP = re.compile(r"[,·/]")
+# 제목 끝에 오면 뒤 낱말을 기다리는 말: 꾸밈말('받은' · '하는' · '위한') · 이음말('친절하고' · '꼼꼼하게' · '마감해') ·
+# 조사('인증을' · '가지와'). 잘린 제목이 이런 낱말로 끝나면 '…받은 조사를 마쳤어요'가 돼요(QA r9 c2)
+_DANGLING = re.compile(
+    r"(?:[은는을를의에와과한된할될던른해]|에서|으로|에게|까지|부터|처럼|보다|이나|이랑"
+    r"|하고|되고|있고|없고|좋고|하게|되게|하며|면서|하면|되면|지만|거나|도록|려고|및|또는|그리고)$"
+)
+# 위 끝을 가졌지만 이름씨인 낱말(꾸밈말이 아니에요)
+_NOUN_END = frozenset(
+    {"주의", "편의", "합의", "유의", "논의", "회의", "결과", "효과", "기한", "제한", "상한",
+     "기와", "마을", "가을", "역할", "어른", "피해", "이해", "손해", "방해", "올해"}
+)  # fmt: skip
+# 떼면 이름씨가 남는 조사(앞에 두 글자 이상: '인증을' → '인증', '받을'은 아님)
+_PARTICLE = re.compile(r"(?<=[가-힣]{2})(?:를|을|의|에서|에게|에|으로|와|과)$")
+
+
+def _dangling(word: str) -> bool:
+    w = word.strip(" ,·/")
+    return bool(w) and w not in _NOUN_END and bool(_DANGLING.search(w))
+
+
+def _whole(cut: str, g: str) -> str:
+    """잘린 제목(cut)이 꾸밈말 · 이음말 · 조사로 끝나면 꾸밈을 받는 말까지 TITLE_HARD 안에서 마저 붙이고(괄호는 넘지
+    않음), 안 되면 그런 낱말을 뒤에서부터 떼요(조사만 붙은 낱말은 조사만 떼요)."""
+    words = cut.split()
+    if not words or not _dangling(words[-1]):
+        return cut
+    if g.startswith(cut) and g[len(cut) : len(cut) + 1] in ("", " ", ","):
+        for m in re.finditer(r"\S+", g[len(cut) :]):
+            w = m.group(0).strip(",·/")
+            if not w:
+                continue
+            more = (cut + g[len(cut) : len(cut) + m.end()]).rstrip(" ,·/")
+            if len(more) > TITLE_HARD or "(" in w or ")" in w:
+                break
+            if not _dangling(w):
+                return more
+    while len(words) > 1 and _dangling(words[-1]):
+        last = words[-1].strip(" ,·/")
+        bare = _PARTICLE.sub("", last)
+        if bare != last and not _dangling(bare):
+            words[-1] = bare
+            break
+        words.pop()
+    return " ".join(words).rstrip(" ,·/")
 
 
 def title_of(goal: str) -> str:
     """카드 · 턴 사실 제목: 목표 앞 30자(낱말 끝에서). 괄호 안에서 잘리면 괄호 안의 끝난 항목까지만 두고 닫는다
     (QA r3 v1 M1: '노원구 32평 아파트 도배 업체 (실크벽지, 벽지' → '… 도배 업체 (실크벽지)'). 끝난 항목이 없으면
-    괄호째 뺀다."""
+    괄호째 뺀다. 꾸밈말 · 이음말 · 조사로 끝나면 꾸밈을 받는 말까지 40자 안에서 붙이거나 그 말을 뗀다(_whole)."""
     g = " ".join((goal or "").split())
     g = _TITLE_TAIL_ADDED.sub("", g).strip() or g
     g = _TITLE_TAIL_ASK.sub("", g).strip() or g  # 부탁 말 꼬리(최대 5곳 조사)는 제목에 두지 않는다
@@ -372,7 +418,7 @@ def title_of(goal: str) -> str:
         kept = inner[: done[-1]].strip(" ,·/") if done else ""
         head = cut[:open_].rstrip()
         cut = f"{head} ({kept})" if kept else head
-    return cut.strip() or g[:TITLE_MAX]
+    return _whole(cut, g).strip() or g[:TITLE_MAX]
 
 
 def fit_pyeong(goal: str, pyeong: object | None) -> str:

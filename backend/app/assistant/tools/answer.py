@@ -145,7 +145,8 @@ class AskIn(BaseModel):
 def kind_of(kind: str, question: str) -> str:
     """모델이 고른 질문 종류 → 답 길을 고를 종류. 금액 · 기간 종류라도 하자 · A/S · 보증 · 환불 질문이면 이 공사
     공정표 · 견적 값이 답이 아니라 general이에요(v3 policy WARRANTY · REFUND와 같은 말. 2026-11-23 도커 'AS기간은 보통
-    어떻게돼?'가 period로 와 v3 길에서 타일 글 조각만 받았어요). 견주기 · 장단 질문(COMPARE)도 general이에요."""
+    어떻게돼?'가 period로 와 v3 길에서 타일 글 조각만 받았어요). 견주기 · 장단 질문(COMPARE) · 마르는 · 환기 기간 같은
+    지식 기간 질문(care_period)도 general이에요."""
     from app.agent.v3.policy import REFUND, WARRANTY
 
     if kind in ("price", "period") and (
@@ -153,6 +154,7 @@ def kind_of(kind: str, question: str) -> str:
         or REFUND.search(question)
         or COMPARE.search(question)
         or NEED.search(question)
+        or care_period(question)
     ):
         return "general"
     return kind
@@ -181,15 +183,119 @@ MONEY_NOTE = (
 )
 
 
+# 공사 뒤 마르는 · 굳는 · 창을 닫아 둘 · 입주해도 되는 기간(일반 지식): '며칠'이 있어도 이 공사 공정표가 아니라 공정
+# 지식이 답이라 전문가 길로 가요(QA r9 c2 T18 '도배하고 나서 며칠은 창문 열면 안 된다던데'가 v3 길에서 '며칠인지는 업체에
+# 확인'으로 끝남). '도배 며칠 걸려요?' 같은 공사 기간은 v3(계산 엔진 공정표) 그대로예요
+CARE = re.compile(
+    r"마르|마를|말라|말리|말려|건조|굳(?:는|을|어|기|히)|양생|환기|창문|창을\s*(?:열|닫)|문을\s*(?:열|닫)|냄새"
+    r"|베이크\s*아웃|난방|보일러|입주해도|입주하면|들어가\s*(?:살아도|자도|지내도)"
+    r"|가구를?\s*(?:들여도|넣어도|붙여도|옮겨도)"
+)
+# 지식 기간 질문 전문가 답에 붙이는 모델 값 note(계산 엔진 기간만 말하라는 CALC_NOTE 대신)
+CARE_NOTE = (
+    "마르는 · 창을 닫아 둘 기간 같은 일반 기준은 전문가 답 · 자료에 있는 숫자로만 말해요(없으면 숫자 없이). "
+    "이 공사 날짜는 get_schedule 값이에요."
+)
+
+
+def care_period(question: str) -> bool:
+    """마르는 · 환기 · 입주까지 같은 일반 지식 기간 질문인지: v3 정책 표시가 period(금액은 아님)이고 CARE 낱말이 있어요."""
+    from app.agent.v3.policy import policy_of
+    from app.v2 import ask
+
+    flags = set(policy_of(ask.clean_message(question)))
+    return "period" in flags and "price" not in flags and bool(CARE.search(question))
+
+
 def money_first(question: str) -> bool:
-    """이 공사 금액 · 공정표 값이 먼저인 질문인지: v3 정책 표시 price · period이고 견주기 · 장단 질문이 아니에요."""
+    """이 공사 금액 · 공정표 값이 먼저인 질문인지: v3 정책 표시 price · period이고 견주기 · 장단 · 지식 기간 질문이
+    아니에요."""
     from app.agent.v3.policy import policy_of
     from app.v2 import ask
 
     flags = set(policy_of(ask.clean_message(question)))
     return bool({"price", "period"} & flags) and not (
-        COMPARE.search(question) or NEED.search(question)
+        COMPARE.search(question) or NEED.search(question) or care_period(question)
     )
+
+
+# 예산 물음('예산이 삼백만 원뿐인데' · '300만 원으로 될까요?'): 이 공사 금액(표준견적서 · 업체 가견적)을 같이 넘겨 그 값으로
+# 견줘 답하게 해요(QA r9 c2 T16: 300만 원 안인 가견적 258만~268만 원을 두고 '실측 견적을 확인해야 해요'만 함)
+BUDGET = re.compile(
+    r"예산|(?:\d[\d,.]*\s*[백천]?|[일이삼사오육칠팔구십백천]+)\s*만\s*원?\s*"
+    r"(?:이면|면|안|이내|아래|밑|이하|까지|으로|로|정도|뿐|밖에|선에서|넘|초과|내외)"
+    r"|(?:가진|쓸\s*수\s*있는|모아\s*둔|준비한)\s*돈"
+)
+MONEY_LABEL = "이 공사 금액(부가세 포함, 계산 엔진 · 서버 값 그대로)"
+BUDGET_NOTE = (
+    "고객이 예산을 말했어요. money의 이 공사 금액과 견줘 먼저 답하고 새 금액을 만들지 말아요. "
+    "집 정보로 아는 조건은 다시 묻지 말아요."
+)
+NO_VENDOR_MONEY = "아직 실측을 요청한 업체가 없어 업체 금액이 없어요. 업체별 가견적은 recommend_vendors 결과로 말해요."
+
+
+def budget_asked(text: str | None) -> bool:
+    return bool(BUDGET.search(text or ""))
+
+
+async def money_of(tc: ToolCtx) -> dict | None:
+    """예산 물음에 줄 이 공사 금액(모델 값 money): 표준견적서(확정한 공정은 확정 금액 + 승인한 추가 금액, 보드 금액 칸과
+    같은 값) · 살아 있는 실측 요청 업체마다 받은 실측 견적서 합계(없으면 요청 때 고정한 가견적) · 두 곳 이상이면 가장
+    낮은 · 높은 값. 모두 계산 엔진 · 서버 값 그대로이고 새로 세지 않아요. 업체 금액이 없으면 업체 추천 가견적으로 말하라는
+    note. 공사가 없거나 못 읽으면 None."""
+    from sqlalchemy import select
+
+    from app.schedule import service as schedule_service
+    from app.visit.models import Visit
+
+    if tc.project_id is None:
+        return None
+    try:
+        async with SessionLocal() as s:
+            o = await schedule_service.overview_for(s, tc.user, tc.project_id, tc.today)
+            works = {
+                w.trade: w for w in await schedule_service.work_money(s, tc.user, tc.project_id)
+            }
+            fixed = dict(
+                (
+                    await s.execute(
+                        select(Visit.id, Visit.estimate_total).where(
+                            Visit.project_id == tc.project_id, Visit.estimate_total.is_not(None)
+                        )
+                    )
+                ).all()
+            )
+    except AppError:
+        return None
+    m = o.money
+    total, _extra = cards.work_total(m, works)
+    dealt = any(x.source == "deal" for x in m.by_trade)
+    name = (
+        "확정 금액"
+        if m.all_confirmed
+        else "예상 금액(확정 + 나머지 표준견적서)"
+        if dealt
+        else "표준견적서"
+    )
+    rows = [{"name": name, "won": total}]
+    wons: list[int] = []
+    for v in o.vendors:
+        if v.status in cards.ENDED or v.status == "chosen":  # 확정한 업체는 위 금액에 들어 있어요
+            continue
+        won, kind = (
+            (v.total, "실측 견적서")
+            if v.total is not None
+            else (fixed.get(v.visit_id), "가견적(요청 때 고정)")
+        )
+        if won is not None:
+            rows.append({"name": f"{v.vendor_name} {kind}", "won": won})
+            wons.append(won)
+    out: dict = {"label": MONEY_LABEL, "rows": rows}
+    if len(wons) >= 2:
+        out |= {"estimate_low_won": min(wons), "estimate_high_won": max(wons)}
+    if not wons and not m.all_confirmed:
+        out["note"] = NO_VENDOR_MONEY
+    return out
 
 
 # 'AS' · 'A/S' · '에이에스'(영어 낱말 안의 as는 아님)
@@ -252,6 +358,15 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
             out = await _after_empty(tc, question, terms_of(a.terms), out)
     if know is not None:  # 다른 공정 알아 두기(숫자 없음 · 출처)
         out.data["notes"] = know.data()
+    if budget_asked(question) or budget_asked(tc.text):  # 예산 물음: 이 공사 금액(QA r9 c2 T16)
+        try:
+            money = await money_of(tc)
+        except Exception as e:  # noqa: BLE001 - 금액을 못 읽어도 답은 가요(종류 이름만 로그)
+            log.warning("예산 물음 이 공사 금액 읽기 실패 (%s)", type(e).__name__)
+            money = None
+        if money is not None:
+            out.data["money"] = money
+            out.data["note"] = " ".join(x for x in (out.data.get("note"), BUDGET_NOTE) if x)
     return out
 
 
@@ -375,25 +490,29 @@ async def _v2g_answer(tc: ToolCtx, question: str) -> ToolOut:
     """v2 근거만(LLM 없이, v2.ask.grounds). 비서가 이 근거로 글을 한 번에 쓴다.
     금액 · 기간 질문은 v2 평형 금액 대신 이 공사 계산 엔진 값(표준견적서 · 공정표)을 쓰는 v3로 넘긴다(engine v3).
     조각 글 · 제목 앞 이름표('[생활법령정보 요약]' · '[초급]')와 안쪽 메모 · 파일 이름 줄은 뗀다(모델이 답에 옮기지
-    않게, cards.clean_source_text · clean_name)."""
+    않게, cards.clean_source_text · clean_name). 되물을 조건에서 이 집 사실로 아는 칸(벽지 종류 · 천장 · 사는 채로 …)은
+    빼고(experts.known_ask, QA r9 c2 T16), 마르는 · 환기 기간 같은 지식 기간 질문은 v3로 넘기지 않아요(care_period)."""
+    from app.assistant.experts import agent as experts
     from app.v2 import ask
 
-    living = ""
-    if tc.project_id is not None:
-        async with SessionLocal() as s:
-            _, home = await cards.home(s, tc.user, tc.project_id)
-        living = "살면서 공사" if home.get("occupied") else "빈 집"
+    home = (
+        await experts.home_of(tc.user, tc.project_id)
+        if tc.project_id is not None
+        else experts.Home()
+    )
+    living = "" if home.occupied is None else "살면서 공사" if home.occupied else "빈 집"
     g = await ask.grounds(question, living=living, mode=tc.mode)
-    if g.money:
+    if g.money and not care_period(question):
         out, _ = await _v3_answer(tc, question)
         out.data["engine"] = "v3"
         return out
+    asks = [x for x in g.ask if not experts.known_ask(x, home.known)]
     named = (
         ("공정 순서(앞에서부터, 믿집 안내)", g.order),
         (f"{g.trade or '공정'} 주의점", g.cautions),
         ("실측 때 정할 것", g.survey),
         ("고객 준비", g.prep),
-        ("되물을 조건(답이 갈리는데 모르면 하나만)", g.ask),
+        ("되물을 조건(답이 갈리는데 모르면 하나만)", asks),
     )
     found = g.enough and bool(g.hits)
     data: dict = {
@@ -492,6 +611,9 @@ async def _expert_answer(
     order = len(got.trades) > 1 or bool(ORDER_WORDS.search(question))
     record.update(used=EXPERT, ms=int((time.monotonic() - t0) * 1000))
     data = expert_data(ok, notes, order=order)
+    # 마르는 · 환기 기간: 계산 엔진 기간만 말하라는 CALC_NOTE 대신(QA r9 c2 T18)
+    if care_period(question):
+        data["note"] = CARE_NOTE
     # 값이 섞인 견주기 · 빈 답 뒤(QA r7 c2 L27): 값은 이 공사 계산 값으로만
     if "price" in policy_of(ask.clean_message(question)):
         data["note"] = " ".join(x for x in (data.get("note"), MONEY_NOTE) if x)
@@ -521,6 +643,60 @@ def ask_tail(data: dict) -> str | None:
     if not text.endswith("지") or not HANGUL.search(text):
         return None
     return ASK_TAIL.format(ask=text)
+
+
+# 지식 답 끝 다음 걸음 한 줄(QA r9 c2 T19: 지식 답이 다음 걸음 없이 끝남). 지금 할 일 줄을 이 단계에서 이미 말해 런타임이
+# 그 줄을 붙이지 않을 때, 답에 업체 · 실측에 물어보라는 말이 없으면 붙여요(runtime.next_step). 단계마다 실제로 할 수 있는
+# 일만: 요청 전 · 실측 전 · 믿집 채팅이 열린 뒤(실측 날짜가 정해진 뒤) · 확정 뒤. 지식 답 길은 전문가 · v2 근거예요(금액 ·
+# 기간(v3) · 다른 공정 알아 두기는 아님)
+KNOW_ROUTES = frozenset({EXPERT, GROUND})
+KNOW_NEXT = {
+    "before": "업체에 실측을 요청하면 이 부분은 실측 때 같이 물어볼 수 있어요.",
+    "visit": "실측 때 업체에 이 부분을 같이 물어보세요.",
+    "chat": "믿집 채팅으로 업체에 이 부분을 물어보세요.",
+    "chosen": "확정한 업체에 믿집 채팅으로 이 부분을 물어보세요.",
+}
+# 믿집 채팅이 열린 요청(cards.CHAT_STATES에서 확정 뺌)
+CHAT_OPEN = frozenset({"booked", "visited", "quoted"})
+# 답이 이미 업체 · 실측 · 견적 쪽 다음 걸음을 권하는 문장('실측 때 업체에 물어보세요' · '업체에 물어볼 수 있어요')
+FLOW_STEP = re.compile(
+    r"(?:업체|실측|견적|채팅|요청)[^.!?]*(?:세요|드릴게요|드려요|까요|수\s*있어요)[.!~?]*\s*$"
+)
+
+
+def knows(data: dict) -> bool:
+    """answer_question 결과가 지식 답(전문가 · v2 근거)인지."""
+    return data.get("route") in KNOW_ROUTES
+
+
+def flow_step(text: str) -> bool:
+    return bool(FLOW_STEP.search((text or "").strip()))
+
+
+def know_stage(o) -> str | None:
+    """공사 요약 → 지식 답 다음 걸음 단계(KNOW_NEXT 열쇠). 업체를 잇지 않는 공사(도배 없음) · 끝난 공사는 None."""
+    if o.phase == "done" or not any(t.trade == "dobae" for t in o.trades):
+        return None
+    live = {v.status for v in o.vendors if v.status not in cards.ENDED}
+    if o.phase == "work" or "chosen" in live:
+        return "chosen"
+    if live & CHAT_OPEN:
+        return "chat"
+    return "visit" if live else "before"
+
+
+async def know_next(tc: ToolCtx) -> str:
+    """지식 답 끝 다음 걸음 한 줄(지금 단계에 맞춘 코드 글). 고객 비서 · 공사가 있을 때만, 끝난 공사 · 못 읽으면 ''."""
+    from app.schedule import service as schedule_service
+
+    if tc.surface != "customer" or tc.project_id is None:
+        return ""
+    try:
+        async with SessionLocal() as s:
+            o = await schedule_service.overview_for(s, tc.user, tc.project_id, tc.today)
+    except AppError:
+        return ""
+    return KNOW_NEXT.get(know_stage(o) or "", "")
 
 
 def expert_card(ok: list):
