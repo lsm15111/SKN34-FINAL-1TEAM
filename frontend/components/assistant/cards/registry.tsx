@@ -11,6 +11,7 @@ import { GradeCompareCard, MarketRangeCard, OptionsCard, ProductEstimateCard } f
 import { ExtraCard } from "./ExtraCard";
 import { HomeInfoCard } from "./HomeInfoCard";
 import { NoticeCard } from "./NoticeCard";
+import { OutsideQuoteCard } from "./OutsideQuoteCard";
 import { QuoteCompareCard } from "./QuoteCompareCard";
 import { ResearchCard } from "./ResearchCard";
 import { ScheduleCard } from "./ScheduleCard";
@@ -41,6 +42,7 @@ export const CARDS: Registry = {
   market_range: MarketRangeCard,
   options: OptionsCard,
   product_estimate: ProductEstimateCard,
+  outside_quote: OutsideQuoteCard,
   research: ResearchCard,
 };
 

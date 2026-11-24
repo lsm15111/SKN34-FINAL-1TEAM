@@ -15,7 +15,7 @@ export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
   | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
   | "extra" | "notice" | "research"
-  | "grade_compare" | "market_range" | "options" | "product_estimate";
+  | "grade_compare" | "market_range" | "options" | "product_estimate" | "outside_quote";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -229,13 +229,36 @@ export type ProductEstimateData = {
   total_won: number; label: string; assumed: string[]; href_standard: string;
 };
 
+/** 받은 견적서 점검(check_outside_quote): 믿집 밖에서 받은 도배 견적서(글 · 가린 사진)를 이 집 표준견적서와 줄마다 견준 값.
+ *  받은 금액은 고객이 준 값이고, 부가세 맞추기 · 합 · 차이 · 판정은 서버(계산 엔진) 값이에요. 화면은 계산하지 않아요. 표준 대비 %는 없어요 */
+export type OutsideRowState = "missing" | "more" | "same" | "less" | "extra" | "discount" | "noprice";
+export type OutsideRow = {
+  key: string; name: string; state: OutsideRowState;
+  /** 받은 금액(부가세 포함으로 맞춘 값) · 표준 금액(부가세 포함) · 차이(받은 − 표준) */
+  outside_won: number | null; standard_won: number | null; diff_won: number | null;
+  lines: string[]; note?: string | null;
+};
+export type OutsideQuoteData = {
+  source: "text" | "photo" | "both";
+  rows: OutsideRow[];
+  /** 같은 범위로 견준 합계(표준에 없는 줄은 뺌) */
+  outside_won: number; standard_won: number; diff_won: number;
+  state: "more" | "same" | "less";
+  basis: string; notes: string[];
+  putty: { need: "need" | "check" | "no"; label: string; why: string; found: "full" | "part" | "none"; found_label: string };
+  /** 그 업체에 물을 것(틀 글) · 다음 걸음 한 줄 */
+  asks: string[]; next: string;
+  budget?: { state: "within" | "over" | "under"; label: string; gap_won: number | null } | null;
+  href: string;
+};
+
 export type CardData = {
   home_info: HomeInfoData; standard_quote: StandardQuoteData; vendor_picks: VendorPicksData; visit_slots: VisitSlotsData;
   quote_compare: QuoteCompareData; schedule: ScheduleData; knowledge: KnowledgeData; answer: AnswerData;
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
   extra: ExtraData; notice: NoticeData; research: ResearchData;
   grade_compare: GradeCompareData; market_range: MarketRangeData; options: OptionsData;
-  product_estimate: ProductEstimateData;
+  product_estimate: ProductEstimateData; outside_quote: OutsideQuoteData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 
@@ -349,7 +372,22 @@ export type TurnIn = {
   text: string;
   /** 카드에서 고른 것(choice 꼴은 아래 CHOICE). 이름표는 이 대화에서 도구 · 카드가 준 것만 서버가 받아요 */
   context?: { card_id?: string; choice?: string | string[] } | null;
+  /** 붙인 받은 견적서 사진(가린 그림을 uploadQuotePhoto로 올린 id, 세 장까지). 서버는 내 사진만 받아요(남의 것 404) */
+  files?: string[];
 };
+
+/** 받은 견적서 사진 올리기(POST /files kind=chat_photo). 화면이 개인정보를 가린 그림만 올려요. 위치 정보는 서버가 지워요.
+ *  목업이면 올리지 않고 잠깐 뒤 id만 돌려줘요 */
+export async function uploadQuotePhoto(blob: Blob): Promise<{ id: string }> {
+  if (ASSISTANT_MOCK) {
+    await new Promise((r) => setTimeout(r, 300));
+    return { id: `mock-photo-${Date.now()}` };
+  }
+  const fd = new FormData();
+  fd.append("kind", "chat_photo");
+  fd.append("file", blob, "quote.jpg");
+  return call<{ id: string }>("POST", "/files", fd);
+}
 
 /**
  * 카드 단추 → 계약 꼴 choice(backend assistant/choices.py, 계약서 4장 11). 이 꼴이면 무료 모드에서도 코드가 승인 카드를 만들어요.
