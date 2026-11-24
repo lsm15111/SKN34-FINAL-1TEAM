@@ -130,3 +130,11 @@ def test_vendor_rules_point_to_real_screen_paths():
     assert "[날짜 바꾸기]에서 새 날짜와 까닭을 보내 주세요" in r and "propose_dates" in r
     assert "바로 바꿀 수 없어요" not in r
     assert "알림은 밤에도 바로 가고" in r and "밤 9시~아침 9시 알림은 아침에 가" not in r
+
+
+def test_card_made_words_say_what_pressing_does():
+    """판정 에이전트 r8(S15 · S18): 카드를 만들고 누르면 무엇이 되는지 · 누르기 전엔 그대로인지를 말하지 않았어요."""
+    r = rules("customer_v4")
+    assert "다음 걸음은 누르면 무엇이 되는지로 말해" in r and "note에 없는 조건은 만들지 마" in r
+    assert "누르기 전에는 마루와벽에 답이 가지 않아요" in r
+    assert "바닥 · 욕실 · 전기는 믿집이 금액 · 기간도 세지 않으니" in r  # S11(목공은 표준견적서가 있어요)
