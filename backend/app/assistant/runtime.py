@@ -1244,6 +1244,10 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
         return ""
     try:
         line = await free.now_tail(turn.tc)
+        # 지식 답: 지금 할 일 줄을 이 단계에서 이미 말했으면 지식 다음 걸음 한 줄(답이 업체 · 실측 쪽을 권하지 않을 때,
+        # QA r9 c2 T19 막다른 지식 답)
+        if not line and turn.know and not any(answer_tools.flow_step(s) for s in turn.gate.sent):
+            line = await answer_tools.know_next(turn.tc)
     except Exception as e:  # noqa: BLE001 - 할 일 줄을 못 읽으면 붙이지 않아요(종류 이름만 로그)
         log.warning("다음 할 일 줄 실패 (%s)", type(e).__name__)
         return ""
@@ -1374,6 +1378,8 @@ class _Turn:
         self.rechecked = False
         # 이 턴 전문가 답의 확인할 조건 끝 물음(answer.ask_tail): 답에 묻는 말 · 다음 걸음이 없으면 끝에 붙여요(next_step)
         self.ask: str | None = None
+        # 이 턴에 지식 답(answer.knows)을 받았는지: 지금 할 일 줄을 이미 말한 단계면 지식 다음 걸음 한 줄(next_step)
+        self.know = False
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -1635,6 +1641,8 @@ class _Turn:
         given = out.data
         if name == "answer_question" and (tail := answer_tools.ask_tail(given)):
             self.ask = tail
+        if name == "answer_question":
+            self.know = self.know or answer_tools.knows(given)
         # 이 턴에 똑같이 보낸 카드는 다시 보내지 않고 모델에 알린다(QA r6 c3 H1: 업체 추천 뒤 show_card로 같은 카드
         # 두 번). 값이 달라진 같은 카드(제안 도구가 바뀜 칸을 단 집 정보 카드)는 화면이 그 자리에서 바꿔 끼운다
         shown = [c for c in out.cards if not self._sent_same(c)]

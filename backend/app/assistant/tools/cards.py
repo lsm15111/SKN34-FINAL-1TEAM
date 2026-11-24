@@ -1803,12 +1803,25 @@ def clean_name(text: str | None) -> str:
     return _INNER_PAREN.sub("", brief.unlabel(text or "")).strip()
 
 
+# 법령 원문의 한자(괄호 속 한자 풀이 '용기(한자)' · 홀로 쓴 한자)와 가운뎃점 'ㆍ'(QA r9 c2 T9 알아 두기 카드): 한자는
+# 떼고 'ㆍ'는 ' · '로 써요(카드 · 모델 값 모두 한글로). 범위는 한중일 부수 · 확장 A · 통합 한자 · 호환 한자
+_HANJA = "".join(
+    f"{chr(a)}-{chr(b)}"
+    for a, b in ((0x2E80, 0x2FDF), (0x3400, 0x4DBF), (0x4E00, 0x9FFF), (0xF900, 0xFAFF))
+)
+_HANJA_PAREN = re.compile(rf"\s*[(（][{_HANJA}\s·ㆍ,]+[)）]")
+_HANJA_WORD = re.compile(rf"[{_HANJA}]+")
+_ARAEA_DOT = re.compile(r"\s*ㆍ\s*")
+_SPACES = re.compile(r"[ \t]{2,}")
+
+
 def clean_source_text(text: str | None) -> str:
-    """조각 글 → 보일 글: 이름표만 있는 줄 · PDF 파일 이름 줄을 빼고, 줄 앞 이름표와 안쪽 괄호 메모를 뗀다."""
+    """조각 글 → 보일 글: 이름표만 있는 줄 · PDF 파일 이름 줄을 빼고, 줄 앞 이름표와 안쪽 괄호 메모 · 한자를 뗀다."""
     from app.agent.v3 import brief
 
     lines = [brief.unlabel(x) for x in (text or "").split("\n") if not _INNER_LINE.match(x)]
-    return _INNER_PAREN.sub("", "\n".join(lines)).strip()
+    out = _HANJA_WORD.sub("", _HANJA_PAREN.sub("", _INNER_PAREN.sub("", "\n".join(lines))))
+    return _SPACES.sub(" ", _ARAEA_DOT.sub(" · ", out)).strip()
 
 
 def quoted(line: str) -> str:

@@ -31,12 +31,16 @@ def said(ev) -> str:
 
 
 def test_knowledge_answer_gets_the_next_step_once(api, script):
+    """지금 할 일 줄은 같은 단계에서 한 번만 붙이고, 그 뒤 지식 답은 지식 다음 걸음 한 줄로 끝나요(QA r9 c2 T19)."""
+    from app.assistant.tools import answer
+
     _, pid = home(api)
     script([{"tool_calls": [ASK]}, {"text": SAID}, {"tool_calls": [ASK]}, {"text": SAID}])
     first = said(ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?")))
     assert first.startswith(SAID) and first.rstrip().endswith("차례예요.")
-    again = said(ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?")))  # 같은 단계: 다시 붙이지 않아요
-    assert again.strip() == SAID
+    # 같은 단계: 지금 할 일 줄은 다시 붙이지 않아요
+    again = said(ok(ask(api, pid, "실크벽지 들뜸은 왜 생겨요?")))
+    assert again.strip() == f"{SAID}\n\n{answer.KNOW_NEXT['before']}"
 
 
 def test_no_next_step_when_the_answer_asks_back(api, script):

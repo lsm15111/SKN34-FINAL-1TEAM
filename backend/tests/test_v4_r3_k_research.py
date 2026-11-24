@@ -66,9 +66,9 @@ def script():
             "노원구 32평 아파트 도배 업체 (실크벽지 벽지 직접 구매 주의할 점)",
             "노원구 32평 아파트 도배 업체",
         ),
-        (
+        (  # 이음말('친절하고')에서 끊지 않고 꾸밈을 받는 말(곳)까지 40자 안에서 붙여요(QA r9 c2)
             "노원구 32평 아파트 도배 업체 (실크) 친절하고 꼼꼼하게 하는 곳",
-            "노원구 32평 아파트 도배 업체 (실크) 친절하고",
+            "노원구 32평 아파트 도배 업체 (실크) 친절하고 꼼꼼하게 하는 곳",
         ),
         (
             "성남시 분당구 정자동 32평 아파트 실크벽지 도배 업체 찾기",
@@ -79,7 +79,7 @@ def script():
 )
 def test_title_never_ends_inside_parentheses(goal, title):
     got = research.title_of(goal)
-    assert got == title and len(got) <= research.TITLE_MAX
+    assert got == title and len(got) <= research.TITLE_HARD
     assert got.count("(") == got.count(")")
 
 

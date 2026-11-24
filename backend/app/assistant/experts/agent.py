@@ -60,7 +60,7 @@ class Spec:
     name: str  # 도배 · 목공(지식 색인 공정 이름)
     prompt: str  # 지시문 이름(assistant/prompts BASE)
     primer: str  # 입문서 파일 이름(PRIMER_DIR, 없으면 건너뜀)
-    # (조건, 알면 빼는 칸: living · grade · demolition · items · '')
+    # (조건, 알면 빼는 칸: living · grade · demolition · items · faces · '')
     asks: tuple[tuple[str, str], ...]
 
 
@@ -71,7 +71,7 @@ SPECS: dict[str, Spec] = {
         "dobae_primer.md",
         (
             ("벽지 종류(합지 · 실크)", "grade"),
-            ("천장까지 하는지", ""),
+            ("천장까지 하는지", "faces"),
             ("지금 벽 상태(들뜸 · 곰팡이 · 결로 · 요철)", ""),
             ("기존 벽지를 뜯는지(철거)", "demolition"),
             ("사는 채로 하는지", "living"),
@@ -96,11 +96,12 @@ SPECS: dict[str, Spec] = {
 
 @dataclass(frozen=True)
 class Home:
-    """이 집 사실(개인정보 · 지역 · 날짜 없이)과 이 공사 공정 · 이미 아는 조건 칸."""
+    """이 집 사실(개인정보 · 지역 · 날짜 없이)과 이 공사 공정 · 이미 아는 조건 칸 · 살면서 공사(모르면 None)."""
 
     lines: tuple[str, ...] = ()
     trades: tuple[str, ...] = ()
     known: frozenset[str] = frozenset()
+    occupied: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -139,22 +140,28 @@ async def home_of(user, project_id) -> Home:
     known = {"living"}
     own: list[str] = []
     parts: list[str] = []
+    # 도배할 면 · 공간(집 정보 v3 칸, QA r9 c2 T16: 아는 천장 도배 여부를 되물음)
+    done: list[str] = []
     if p.trades.dobae is not None:
         own.append("도배")
         grade = cards.GRADE.get(h.get("grade") or "", "벽지 미정")
         parts.append(f"도배({grade} · {cards.SCOPE.get(h.get('scope') or '', '범위 미정')})")
         if h.get("grade"):
             known.add("grade")
+        if p.home is not None:
+            done = faces_lines(p.home.scope, p.home.faces, p.home.spaces)
+            known |= {"scope", *(["faces"] if p.home.faces else [])}
     if p.trades.mokgong is not None:
         own.append("목공")
         items = [cards.MOK_ITEMS.get(x, x) for x in p.trades.mokgong.items]
         parts.append(f"목공({' · '.join(items)})" if items else "목공")
         if items:
             known.add("items")
-    lines = [f"이 공사 공정: {' · '.join(parts) or '아직 정하지 않음'}", OUTSIDE_LINE]
+    lines = [f"이 공사 공정: {' · '.join(parts) or '아직 정하지 않음'}", *done, OUTSIDE_LINE]
     if h.get("area_m2") is not None and h.get("area_basis"):
         area = f"면적: {cards.BASIS.get(h['area_basis'], h['area_basis'])} {_num(h['area_m2'])}㎡"
         lines.append(area + (f" · {_num(h['pyeong'])}평" if h.get("pyeong") else ""))
+        known.add("area")
     lines.append("살면서 공사" if h.get("occupied") else "빈 집(비우고 공사)")
     if h.get("rooms"):
         lines.append(f"방 {h['rooms']}개")
@@ -167,7 +174,27 @@ async def home_of(user, project_id) -> Home:
         known.add("demolition")
     if isinstance(h.get("diy"), list) and h["diy"]:
         lines.append(f"고객이 직접 할 일: {', '.join(h['diy'])}")
-    return Home(tuple(lines), tuple(own), frozenset(known))
+    return Home(tuple(lines), tuple(own), frozenset(known), bool(h.get("occupied")))
+
+
+FACE_TEXT = {
+    frozenset({"wall", "ceiling"}): "벽 · 천장",
+    frozenset({"wall"}): "벽만(천장은 하지 않아요)",
+    frozenset({"ceiling"}): "천장만(벽은 하지 않아요)",
+}
+
+
+def faces_lines(scope: str | None, faces, spaces) -> list[str]:
+    """집 정보의 도배할 면 · 공간 → 이 집 사실 줄('도배할 면: 벽 · 천장', 부분 공사면 '도배할 공간: 거실 · 주방')."""
+    from app.project import service as project_service
+
+    out = []
+    if text := FACE_TEXT.get(frozenset(faces or ())):
+        out.append(f"도배할 면: {text}")
+    if scope == "partial" and spaces:
+        names = (project_service.SPACE_NAMES.get(x, x) for x in spaces)
+        out.append(f"도배할 공간: {' · '.join(names)}")
+    return out
 
 
 def _num(v) -> str:
@@ -378,11 +405,22 @@ def _line(x: ExpertLine, pieces: dict[str, Piece], allowed: str, drop: Counter) 
 
 
 # 확인할 조건이 이 집 사실로 이미 아는 칸(Home.known)을 묻는지: 비서가 끝 물음으로 쓰니 아는 것을 되묻지 않게 버려요
-# (QA r7 c1 · c2: 전문가 답 끝은 확인할 조건 하나를 묻는 말)
+# (QA r7 c1 · c2: 전문가 답 끝은 확인할 조건 하나를 묻는 말). 천장 도배 여부 · 범위 · 면적도 집 정보로 알아요(QA r9 c2
+# T16 '천장까지 도배하는지'). 천장 평탄화(목공) · 천장 곰팡이(벽 상태)는 다른 조건이라 걸리지 않게 좁혀요
 KNOWN_ASK: dict[str, re.Pattern[str]] = {
     "living": re.compile(r"사는\s*채로|살면서|거주\s*중|비우고|빈\s*집"),
     "grade": re.compile(r"합지|실크|벽지\s*종류"),
     "demolition": re.compile(r"철거|뜯는지|뜯을지"),
+    "faces": re.compile(
+        r"천장(?:까지|도|을|\s*포함|\s*도배(?:도|를|까지)?)\s*(?:도배\s*)?"
+        r"(?:하는지|할지|하실지|하시는지|여부|포함하는지)|벽만\s*(?:하는지|할지|도배)"
+    ),
+    "scope": re.compile(
+        r"(?:전체|부분)\s*(?:도배|공사)?\s*(?:인지|하는지|할지)"
+        r"|어느\s*(?:방|공간)(?:을|만|까지)\s*(?:도배|하)|어디까지\s*(?:도배|하)"
+    ),
+    "area": re.compile(r"평수|몇\s*평|집\s*(?:면적|크기)|(?:공급|전용)\s*면적"),
+    "items": re.compile(r"바꿀\s*것"),
 }
 
 
