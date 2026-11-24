@@ -819,6 +819,7 @@ async def vendor_picks(
     from app.assistant import repository as repo
     from app.calc import vendor_pick
     from app.visit import service as visit_service
+    from app.visit.models import SLOTS
 
     live = {v for _p, t, v in await repo.live_visits(s, [pid]) if t == trade and v is not None}
     out_ids = await aftercare.out_vendors(s, pid, trade)
@@ -898,6 +899,9 @@ async def vendor_picks(
             for x in picks
         ],
         "count": len(picks),
+        # 이 공정 실측 요청 칸(3곳)이 다 찼는지: 차면 부르는 쪽이 카드를 보내지 않아요(QA r7 c1: 다 찬 뒤 추천 카드
+        # → 요청 카드 승인이 409 slots_full로 실패)
+        "full": len(live) >= SLOTS,
     } | estimate_range(picks)
     notes = []
     if opened:

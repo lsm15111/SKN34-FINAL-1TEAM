@@ -1134,7 +1134,13 @@ def _holidays(today: date) -> list[HolidayOut]:
     return [HolidayOut(day=d, name=n) for d, n in sorted(HOLIDAYS.items()) if today <= d <= end]
 
 
-def _proposal_out(x: DateProposal, changed: bool, weekend: tuple[int, ...]) -> ProposalOut:
+def _proposal_out(
+    x: DateProposal, changed: bool, weekend: tuple[int, ...], *, own: bool = False
+) -> ProposalOut:
+    """업체가 낸 날짜 한 건. 날짜 바꾸기 이유는 업체가 쓴 글이라 고객에게는 연락처 · 계좌 · 주소를 가려 보내고(QA r7 화면
+    N1, 업체 소개와 같은 pii.mask), 업체 본인 화면(own)은 쓴 그대로예요."""
+    from app.shared import pii
+
     return ProposalOut(
         id=x.id,
         start=x.start_date,
@@ -1147,7 +1153,7 @@ def _proposal_out(x: DateProposal, changed: bool, weekend: tuple[int, ...]) -> P
         method=x.method,
         call_on=x.call_on,
         kind=x.kind,
-        reason=x.reason,
+        reason=x.reason if own or not x.reason else pii.mask(x.reason),
         status=x.status,
         request_id=x.request_id,
         changed=changed,
@@ -1880,7 +1886,9 @@ async def job_for(s: AsyncSession, vendor: User, deal_id: uuid.UUID, today: date
         weekend_work=plan.weekend_work,
         holidays=_holidays(today),
         dates_state=_state(d, x, r),
-        proposal=_proposal_out(x, d.id in await _changed(s, [d.id]), weekend) if x else None,
+        proposal=_proposal_out(x, d.id in await _changed(s, [d.id]), weekend, own=True)
+        if x
+        else None,
         request=_request_out(r, now) if r else None,
         requests_left=REQUESTS_MAX - d.date_request_count,
         request_options=_request_options(d, r, weekend),

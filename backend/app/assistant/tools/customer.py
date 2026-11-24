@@ -223,6 +223,8 @@ async def recommend_vendors(tc: ToolCtx, a: RecommendIn) -> ToolOut:
             if region != (p.sido, p.sgg):
                 return await _elsewhere(s, tc, p, a.trade, *region)
         card, model = await cards.vendor_picks(s, tc.user, pid, a.trade, tc.refs)
+        if model["full"]:
+            return await no_picks(s, tc, pid, {**model, "picks": [], "count": 0}, FULL_NOTE)
         if not model["picks"]:
             return await no_picks(s, tc, pid, model)
     left_to_us(model)
@@ -236,13 +238,20 @@ NONE_NOTE = (
     "추천할 업체가 0곳이라 업체 추천 카드는 보이지 않았어요(카드를 보였다고 말하지 마요). 까닭(why)과 다음 할 일"
     "(next) 하나를 짧게 말해요."
 )
+# 실측 요청 칸 3곳이 다 찼을 때(QA r7 c1 높음: 다른 3곳 카드를 내고 '골라 주세요' → 승인하면 409 slots_full)
+FULL_NOTE = (
+    "이 공정 실측 요청 3곳이 다 차서 새 업체에 요청할 수 없어요. 그래서 업체 추천 카드는 보이지 않았어요(카드를 "
+    "보였다고 말하지 마요). 진행 중인 요청의 다음 할 일(next) 하나를 짧게 말하고, 다른 업체를 원하면 요청 한 곳을 "
+    "취소하면 된다고 한 문장으로 알려요."
+)
 NEXT_LIVE = "진행 중인 실측 요청을 이어 가요: {steps}"
 NEXT_OUTSIDE = "믿집 밖 공개 페이지에서 찾아볼지 한 번 물어요(start_research). 고객이 말하지 않은 다른 지역은 먼저 권하지 않아요"
 NEXT_LOOKED = "믿집 밖 업체 조사를 이미 맡겼어요(진행 · 결과는 get_research)"
 
 
-async def no_picks(s, tc: ToolCtx, pid: uuid.UUID, model: dict) -> ToolOut:
-    """0곳 업체 추천의 도구 결과: 카드 없이 까닭 · 다음 할 일(진행 중인 요청이 있으면 작업 카드도)."""
+async def no_picks(s, tc: ToolCtx, pid: uuid.UUID, model: dict, lead: str = NONE_NOTE) -> ToolOut:
+    """0곳(또는 요청 칸이 다 찬) 업체 추천의 도구 결과: 카드 없이 까닭 · 다음 할 일(진행 중인 요청이 있으면 작업
+    카드도). lead는 모델에 줄 앞말(0곳 NONE_NOTE · 다 참 FULL_NOTE)."""
     from app.assistant import research
     from app.schedule import service as schedule_service
 
@@ -254,7 +263,7 @@ async def no_picks(s, tc: ToolCtx, pid: uuid.UUID, model: dict) -> ToolOut:
         nxt = NEXT_LOOKED
     else:
         nxt = NEXT_OUTSIDE
-    note = " ".join(x for x in (model.get("note"), NONE_NOTE) if x)
+    note = " ".join(x for x in (model.get("note"), lead) if x)
     task = cards.visit_task(pid, o, tc.now) if steps else None
     return ToolOut(data={**model, "next": nxt, "note": note}, task=task)
 
@@ -526,7 +535,11 @@ async def show_card(tc: ToolCtx, a: ShowIn) -> ToolOut:
             card, model = await cards.standard(s, tc.user, pid)
         elif a.kind == "vendor_picks":
             card, model = await cards.vendor_picks(s, tc.user, pid, "dobae", tc.refs)
-            if not model["picks"]:  # 0곳: 빈 카드 대신 까닭 · 다음 할 일(QA r6 c3 H1)
+            # 0곳 · 요청 칸이 다 참: 빈 카드 · 누를 수 없는 카드 대신 까닭 · 다음 할 일(QA r6 c3 H1 · r7 c1)
+            if model["full"]:
+                out = await no_picks(s, tc, pid, {**model, "picks": [], "count": 0}, FULL_NOTE)
+                return ToolOut(data={"shown": None, **out.data}, task=out.task)
+            if not model["picks"]:
                 out = await no_picks(s, tc, pid, model)
                 return ToolOut(data={"shown": None, **out.data}, task=out.task)
         elif a.kind == "quote_compare":

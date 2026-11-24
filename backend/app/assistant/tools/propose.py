@@ -38,6 +38,7 @@ from app.project.diy import DiyKey
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 from app.shared.korean import euro
+from app.visit.models import SLOTS
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 HALF = {"am": "오전", "pm": "오후"}
@@ -511,6 +512,15 @@ def estimate_row(paper_note: str | None) -> SummaryRow:
     return SummaryRow(label=ESTIMATE_LABEL, value="업체가 확인한 단가로 고정돼요", sub=paper_note)
 
 
+def slots_full_said(n: int, room: int) -> str:
+    """요청 칸이 모자랄 때 도구 오류 글: 진행 중 n곳, 더 요청할 수 있는 곳 room."""
+    more = f"{room}곳만 더 요청할 수 있어요" if room > 0 else "새 업체에 요청할 수 없어요"
+    return (
+        f"실측 요청은 공정마다 {SLOTS}곳까지예요. 지금 {n}곳이 진행 중이라 {more}. "
+        "진행 중인 요청 한 곳을 취소하면 다른 업체에 요청할 수 있어요."
+    )
+
+
 @tool(
     "propose_visit_request",
     surface="customer",
@@ -541,6 +551,7 @@ def estimate_row(paper_note: str | None) -> SummaryRow:
     ),
 )
 async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
+    from app.assistant import repository as assistant_repo
     from app.assistant.tools import diy as diy_tools
     from app.calc import slots
     from app.project import service as project_service
@@ -561,6 +572,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         p = await project_service.get_for(s, tc.user, pid)
         lst = await visit_service.vendors_for(s, tc.user, pid, a.trade)
         told, diy_keys = await diy_tools.offer_part(s, tc.user.id, pid)  # 반셀프: 업체에 알릴 것
+        live = {v for _p, t, v in await assistant_repo.live_visits(s, [pid]) if t == a.trade}
     cards_by_id = {str(c.vendor_id): c for c in (*lst.local, *lst.nearby)}
     rows = []
     for vid in picked:
@@ -568,6 +580,10 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         if c is None or c.state != "ok" or c.estimate_total is None:
             raise ToolError("unavailable", "고른 업체 중 지금 요청할 수 없는 곳이 있어요.")
         rows.append(c)
+    # 요청 칸(공정마다 3곳)이 모자라면 승인 카드를 만들지 않아요(QA r7 c1: 만든 카드를 승인하면 409 slots_full)
+    room = SLOTS - len(live)
+    if len([c for c in rows if c.vendor_id not in live]) > room:
+        raise ToolError("slots_full", slots_full_said(len(live), room))
     if a.wish_ref is not None:
         w = tc.refs.get(a.wish_ref, "wish")
         start, end = date.fromisoformat(w["start"]), date.fromisoformat(w["end"])

@@ -29,7 +29,7 @@ import uuid
 from collections import Counter
 from collections.abc import Awaitable, Callable, Collection, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import ClassVar
 
 from app import queue
@@ -59,6 +59,8 @@ CUT_TEXT = "이번에는 답을 다 만들지 못했어요. 다시 말씀해 주
 NOISE = frozenset({"외국어 속말", "한글 없는 외국어 글", "한자 섞인 글"})
 # 숫자 근거로 쓰는 지난 비서 말 수(가장 가까운 것부터, 이미 검사를 지나 보낸 글, 고침 5차 R1 · QA r5 C s5-4)
 TOLD_TURNS = 2
+# 앞 턴 승인 카드로 볼 때(시간): 이 안에 만든 카드를 두고 한 "만들었어요"는 반대 말로 바꾸지 않는다
+BEFORE_HOURS = 2
 # 앞 문장을 되가리키며 여는 말('이 값은 …' · '그 금액에 …' · '둘 다 …' · '그건 …' · '그중 …'). 내용 까닭으로 뺀 문장
 # 바로 뒤에 오면 가리킬 말이 없어 같이 뺀다(고침 5차 R1, QA r5 C s5-4: 숫자 문장이 빠지고 '이 값은 벽지 값이 들어간
 # 값이라, …'만 남음). '이중 도배' · '그 중간' · '둘 다른'은 아니다
@@ -590,6 +592,9 @@ class SentenceGate:
         self._out: list[str] = []
         self.made: set[str] = set(made)  # 이 턴에 새로 만든 승인 카드 종류
         self.opened: set[str] = set()  # 열려 있는 승인 카드 종류(턴 앞 · 이 턴에 다시 쓴 카드)
+        # 앞 턴에 만들어 이제 닫힌(승인 · 거절 · 만료) 승인 카드 종류(BEFORE_HOURS 안): 그 카드를 두고 '만들었어요'라고
+        # 하면 이 턴 기준으로는 틀려도 '아직 만들지 않았어요'로 바꾸지 않고 뺀다(QA r7 c1 9턴: 방금 승인한 카드에 반대 말)
+        self.before: set[str] = set()
         self.buttons: set[str] = set()  # 이 턴에 보인 화면 카드 단추가 만드는 행동 종류
         self._held: list[_Piece] = []  # 카드 말이 맞게 될 때까지 붙잡아 둔 문장(뒤 문장도 순서대로)
         self._fixed = False  # 정직한 한 줄을 이미 썼다
@@ -973,6 +978,8 @@ class SentenceGate:
                 await self._send(p)
                 continue
             self.dropped.append("카드 없이 카드를 말함")
+            if p.claim[0] == "made" and self.before:
+                continue
             if not self._fixed:
                 self._fixed = True
                 await self._send(_Piece(p.sep, policy.honest(p.claim, self.opened | self.made)))
@@ -1368,15 +1375,16 @@ class _Turn:
                     self.ctx.user.id,
                     self.ctx.surface,
                     project_id=self.ctx.project_id,
-                    status="proposed",
                     limit=20,
                 )
         except Exception as e:  # noqa: BLE001 - 못 읽으면 열린 카드가 없는 것으로 본다(말이 더 정직해진다)
             log.warning("비서 열린 카드 읽기 실패 (%s)", type(e).__name__)
             return set()
-        live = [a for a in rows if a.expires_at > self.ctx.now]
+        live = [a for a in rows if a.status == "proposed" and a.expires_at > self.ctx.now]
         for a in live:
             self.gate.names |= card_vendors(a.summary)
+        since = self.ctx.now - timedelta(hours=BEFORE_HOURS)
+        self.gate.before = {a.kind for a in rows if a not in live and a.created_at > since}
         return {a.kind for a in live}
 
     async def run(self) -> None:
