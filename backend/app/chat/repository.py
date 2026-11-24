@@ -12,7 +12,7 @@ from app.chat.models import Chat, ChatMessage
 async def insert_chat(
     s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None = None, kind: str = "ai"
 ) -> Chat:
-    """project_id는 service가 세션 기준으로 본인 공사인지 확인한 값만 넘긴다. kind: ai · assistant(v4 비서)."""
+    """project_id는 service가 세션 기준으로 본인 공사인지 확인한 값만 넘긴다. kind: ai · assistant(v4 비서) · v2."""
     chat = Chat(user_id=user_id, project_id=project_id, kind=kind)
     s.add(chat)
     await s.flush()  # id · rev를 바로 쓰려고 DB에 먼저 보낸다

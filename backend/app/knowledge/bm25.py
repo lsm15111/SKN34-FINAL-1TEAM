@@ -301,7 +301,8 @@ def search(
     ranked = [(s + bonus(x), x) for x, s in fused.items()]
     ranked.sort(key=lambda p: -p[0])
     ranked = ranked[:k]
-    best = max(_coverage(qq, ranked[0][1]) for qq in qs_all) if ranked else 0.0
+    # 빈 질문이면 qs_all도 비고 의미 검색 결과만 남을 수 있다(점검 R6 B6: max에 빈 목록)
+    best = max((_coverage(qq, ranked[0][1]) for qq in qs_all), default=0.0) if ranked else 0.0
     words = topic_grams(main)
     hits: list[Hit] = []
     for s, x in ranked:

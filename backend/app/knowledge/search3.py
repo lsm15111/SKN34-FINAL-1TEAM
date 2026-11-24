@@ -5,23 +5,31 @@ bm25.search는 도배 · 목공 두 공정만 알아서 다른 공종 조각을 
 같은 공종 +, 공통 +, 다른 공종만 −로 무게를 준다(무게 값은 bm25.CONF 그대로).
 """
 
+import weakref
 from collections.abc import Mapping
 
 from app.knowledge import bm25
 
-_scope_cache: dict[int, tuple[Mapping[str, str], dict[str, frozenset[str]]]] = {}
+# 색인마다 공종 표. 열쇠는 id(ix)라 같은 색인인지 약한 참조로 다시 보고, 색인이 사라지면 칸도 지운다(점검 R6 B4:
+# 버려진 색인의 주소를 새 색인이 받으면 옛 표를 돌려줬고, 칸은 색인마다 늘기만 했다)
+_scope_cache: dict[int, tuple[weakref.ref, Mapping[str, str], dict[str, frozenset[str]]]] = {}
+
+
+def _forget(key: int):
+    return lambda _ref: _scope_cache.pop(key, None)
 
 
 def scopes(ix: bm25.Index, tags: Mapping[str, str]) -> dict[str, frozenset[str]]:
     """조각 번호 → 공종 코드 묶음(표시가 없거나 공통뿐이면 {'common'}). 색인마다 한 번 만든다."""
-    hit = _scope_cache.get(id(ix))
-    if hit and hit[0] is tags:
-        return hit[1]
+    key = id(ix)
+    hit = _scope_cache.get(key)
+    if hit and hit[0]() is ix and hit[1] is tags:
+        return hit[2]
     out: dict[str, frozenset[str]] = {}
     for x in ix.items:
         got = {tags.get(t) for t in x.chunk.trades} - {None, "common"}
         out[x.chunk.ref] = frozenset(got) if got else frozenset({"common"})  # type: ignore[arg-type]
-    _scope_cache[id(ix)] = (tags, out)
+    _scope_cache[key] = (weakref.ref(ix, _forget(key)), tags, out)
     return out
 
 
