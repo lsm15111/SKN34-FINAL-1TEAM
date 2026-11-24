@@ -42,4 +42,8 @@
   .close { display: none; }
   .foot { padding-bottom: 20px; flex-direction: row; justify-content: flex-end; }
   .foot:not(:has(> :not(.close))) { display: none; }
+  /* 단추 묶음(Btns 등 div)은 가운데 창(Dialog) 단추 줄처럼 오른쪽에 글 폭만큼 · 최소 120px로 둬요.
+     묶음이 글 폭 합만큼만 잡히고 단추가 반씩 나눠 가져 긴 글이 '요청...'으로 잘렸어요(QA r9 U1) */
+  .foot > div { display: flex; flex: 1 1 auto; flex-wrap: wrap; justify-content: flex-end; gap: 8px; min-width: 0; }
+  .foot > div > * { flex: 0 0 auto; min-width: 120px; }
 }

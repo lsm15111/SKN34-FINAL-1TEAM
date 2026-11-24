@@ -162,6 +162,23 @@ export function pyeongToM2(p: string): string | null {
   return (Math.round(n * PYEONG_M2 * 10) / 10).toFixed(1);
 }
 
+// 면적 칸 단위 고르기(㎡ | 평): 고치기 화면(InfoForm)과 첫 대화(StartChat)가 같이 써요. 칸에는 평, 답에는 바꾼 ㎡예요
+/** 면적 칸 단위: ㎡ · 평(평은 넣을 때만, 저장 · 계산은 ㎡, copy-guide U10) */
+export type AreaUnit = "m2" | "py";
+/** 평 칸 글 → 답에 넣을 ㎡ 글. 바꿀 수 없는 글이면 그대로 넣어 검사(checkDraft)가 잡아요 */
+export const areaOfPyeong = (py: string): string => pyeongToM2(py) ?? py.trim();
+/** ㎡ 글 → 평 글(단위를 평으로 바꿀 때 칸에 보일 값, 소수 한 자리): "84.9" → "25.7". 숫자가 아니면 빈 글 */
+export function pyeongOf(m2: string): string {
+  const n = Number(m2.trim());
+  return m2.trim() && Number.isFinite(n) && n > 0 ? String(Math.round((n / PYEONG_M2) * 10) / 10) : "";
+}
+/** 평으로 넣을 때 칸 아래 오류(검사는 ㎡로 해요): ㎡ 예시 대신 평 말로 바꿔요 */
+export function pyeongError(py: string): string {
+  if (!py.trim()) return "평 숫자를 넣어 주세요. 예: 34";
+  if (!Number.isFinite(Number(py.trim()))) return "숫자로 넣어 주세요. 예: 34";
+  return "면적이 너무 작거나 커요. 평 숫자를 다시 확인해 주세요.";
+}
+
 /** 숫자 뒤 을/를: 마지막 자리를 읽는 소리로 골라요(69.4 → 를, 70 → 을) */
 export function numEulReul(n: string): string {
   const last = n.trim().slice(-1);
