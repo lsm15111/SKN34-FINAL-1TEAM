@@ -220,7 +220,8 @@ def test_step_suggestion_rests_after_three_turns_and_with_an_open_card(api, scri
     for i in range(4):
         script([{"text": f"벽지는 바탕이 중요해요{'.' * (i + 1)}"}])
         got.append(suggest_ids(ok(ask(api, pid, f"실크벽지 관리는 어떻게 해요 {i}"))))
-    assert [("step-standard" in x) for x in got] == [True, True, True, False]
+    # 단계 · 상태가 그대로면 바로 다음 턴부터 쉬어요(QA r11 J2: 셋 연속 → 한 번)
+    assert [("step-standard" in x) for x in got] == [True, False, False, False]
     # 열린 승인 카드가 있으면 그 카드가 다음 걸음: 단계와 다른 카드(집 정보)여도, 이번 턴에 만든 카드여도 단계 제안을
     # 하지 않아요(QA r6 c2 T2)
     _, pid2 = home(api, "two@mitjip.test")

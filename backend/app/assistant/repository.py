@@ -97,6 +97,26 @@ async def turns_of(s: AsyncSession, chat_id: uuid.UUID, revs: Sequence[int]) -> 
     return list(rows.all())
 
 
+async def turn_before(
+    s: AsyncSession, user_id: uuid.UUID, turn_id: uuid.UUID
+) -> AssistantTurn | None:
+    """같은 대화에서 이 턴 바로 앞 턴(실패한 턴은 빼요: 답 · 다음에 물을 말을 보이지 못했어요)."""
+    cur = await turn_owned(s, user_id, turn_id)
+    if cur is None:
+        return None
+    return await s.scalar(
+        select(AssistantTurn)
+        .where(
+            AssistantTurn.user_id == user_id,
+            AssistantTurn.chat_id == cur.chat_id,
+            AssistantTurn.status != "failed",
+            AssistantTurn.created_at < cur.created_at,
+        )
+        .order_by(AssistantTurn.created_at.desc())
+        .limit(1)
+    )
+
+
 async def failed_turns(
     s: AsyncSession, chat_id: uuid.UUID, since: datetime | None, limit: int
 ) -> list[AssistantTurn]:
