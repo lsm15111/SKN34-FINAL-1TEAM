@@ -250,8 +250,9 @@ STEPS: dict[str, tuple[str, str]] = {
     "extra_added": ("공사 중 · 추가 금액 답 전", "추가 금액 보고 승인 · 거절 고르기"),
     "work_done": ("업체가 공사를 끝냄 · 공사 끝 확인 전", "점검표로 보고 공사 끝 확인하기"),
     # 붙은 카드 둘(공사 전 할 일 · 이웃 안내문 초안)을 할 일로(QA 2차 t1: '대화에서 한번 확인해 보실래요?')
+    # 줄은 시작 4~7일 전에 생겨요: 남은 날은 사실 left(일주일 · n일)로 넘겨요(R1b #13)
     "prep_week": (
-        "공사 날짜 수락 끝 · 공사 일주일 전",
+        "공사 날짜 수락 끝 · 공사 시작 일주일 안",
         "공사 전에 할 일 챙기고 이웃 안내문 초안 보기",
     ),
 }
@@ -957,15 +958,44 @@ async def _settle_rows(s: AsyncSession, limit: int) -> list[AssistantNudge]:
     return [*new, *old]
 
 
+# 대상이 실측 요청인 줄: 요청이 기한 지남(visits expired: 업체 첫 답 48시간 · 고객 고르기 7일)으로 끝나면 날이 지난 줄이다
+VISIT_LINES = ("visit_offered", "quote_sent", "visit_requested", "visit_picked")
+
+
+async def lapsed(s: AsyncSession, n: AssistantNudge, now: datetime) -> bool:
+    """할 일이 끝난 줄(context 없음)이 사람이 한 일이 아니라 기한 · 날이 지나 끝났는지(R1b #10): 실측 요청이 기한
+    지남, 공사 전날 줄의 공사 날이 옴, 1주 전 줄의 공사 날이 옴 · 공사가 고객 확인 없이 자동으로 끝남(aftercare)."""
+    from app.schedule.models import Deal
+    from app.visit.models import Visit
+
+    t = TRIGGERS[n.trigger]
+    today = now.astimezone(SEOUL).date()
+    if t.name in VISIT_LINES:
+        return await s.scalar(select(Visit.status).where(Visit.id == n.ref_id)) == "expired"
+    if t.name == "work_eve":
+        d = await s.get(Deal, n.ref_id)
+        return (
+            d is not None
+            and d.status != "reselected"
+            and d.start_date is not None
+            and d.start_date <= today
+        )
+    if t.name in aftercare.NAMES:
+        return await aftercare.lapsed(s, t, n, today)
+    return False
+
+
 async def close_settled(
     now: datetime, limit: int = SETTLE_BATCH, *, until: float | None = None
 ) -> int:
     """정리(2분): 보이는 먼저 말 건 줄(sent · opened) 중 할 일이 끝난 줄을 닫는다. 달린 승인 카드가 실행됐으면
-    acted, 대상 상태가 바뀌었으면(context 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도) handled. 닫은 줄 수.
+    acted, 대상 상태가 바뀌었으면(context 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도) handled. 사람이 한 일이
+    아니라 기한 · 날이 지나 끝났으면(lapsed) repo.LAPSED라 '완료'로 남기지 않는다(R1b #10). 닫은 줄 수.
     (승인으로 실행한 행동은 actions.execute가 바로 닫는다. 이것은 화면 단추 · 상대 응답 · 시간으로 바뀐 줄을 닫는다)
     상태는 가볍게(context check) 보고, 본 줄은 줄 뒤로 보낸다(due_at = now). until(sweep이 정한 멈출 때,
     time.monotonic 값, 없으면 지금부터 SETTLE_SECONDS)이 지나면 멈추고 남은 줄은 다음 차례에 본다.
-    닫은 줄은 대화 기록에 '완료'로 남고, commit 뒤 그 사람에게 화면 신호(state)를 보낸다."""
+    할 일이 끝나 닫은 줄은 대화 기록에 '완료'로 남고(지난 줄은 빠진다), commit 뒤 그 사람에게 화면 신호(state)를
+    보낸다."""
     from app.assistant.models import AssistantAction
 
     stop = time_mod.monotonic() + SETTLE_SECONDS if until is None else until
@@ -995,7 +1025,7 @@ async def close_settled(
                 if n.action_id in ran:
                     reason = "acted"
                 elif await context(s, n, now, check=True) is None:
-                    reason = "handled"
+                    reason = repo.LAPSED if await lapsed(s, n, now) else "handled"
                 else:
                     seen.append(n.id)
                     continue
@@ -1062,13 +1092,16 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
         gone = await repo.dismissals(s, n.user_id, now - DISMISS_SEEN)
         sent_today = await repo.sent_count(s, n.user_id, _day_start(now), "notify")
         sent_24h = await repo.sent_count(s, n.user_id, now - timedelta(hours=24))
+        # 근원 알림이 이미 종을 울린 줄(공사 끝 3일 전 done_remind): 비서는 종을 더하지 않으니 조용한 대화 줄로 보내
+        # 하루 알림 상한 · 밤 미룸에 세지 않는다(R1b #17). 글은 알림 틀 그대로
+        rang = n.channel == "notify" and await _rang(s, n, t)
     dismissals = [policy.Dismissal(trigger, at, ref) for trigger, at, ref in gone]
     # 새 소식은 다른 대상의 같은 종류 줄을 닫은 쉬기(−30 · 3일)에 걸리지 않는다(같은 대상을 닫았으면 쉰다).
     # 두 번 닫아 멈춘 종 알림은 그대로 지킨다
     fresh = fresh_event(t, n)
     rule = RULES.check(
         trigger=t.name,
-        channel=n.channel,
+        channel="feed" if rang else n.channel,
         surface=n.surface,
         now=now,
         sent_today=sent_today,
@@ -1114,7 +1147,7 @@ async def _evaluate(n: AssistantNudge, now: datetime) -> str:
                 await _close(n, "held", "judge", score=points)
                 return "held"
     text, src = await write(f, n.user_id)
-    return await _send(n, t, c, now, text, src, points, channel)
+    return await _send(n, t, c, now, text, src, points, "feed" if rang else channel)
 
 
 async def _rang(s: AsyncSession, n: AssistantNudge, t: Trigger) -> bool:

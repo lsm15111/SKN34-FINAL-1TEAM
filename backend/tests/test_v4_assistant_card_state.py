@@ -173,7 +173,8 @@ def test_remind_line_gets_a_new_card_after_the_first_one_expired(api, monkeypatc
     at = deal["done_posted_at"] + timedelta(days=4, minutes=1)
     run(api, deal_job("deal_done_remind", did, at))
     tick(api)
-    (remind,) = [x for x in nudges(trigger="work_done") if x["channel"] == "notify"]
+    # 근원 done_remind 알림이 이미 울려 비서 줄은 종 없는 대화 줄이에요(점검 R1b #17)
+    (remind,) = [x for x in nudges(trigger="work_done") if x["id"] != n["id"]]
     assert remind["status"] == "sent" and remind["action_id"] not in (None, first)
     assert action(remind["action_id"])["status"] == "proposed"
     assert action(first)["status"] == "expired"

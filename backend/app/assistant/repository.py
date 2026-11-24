@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.assistant.models import (
     AssistantAction,
     AssistantMemory,
+    AssistantMemoryMark,
     AssistantNudge,
     AssistantTurn,
 )
@@ -80,13 +81,15 @@ async def turn_owned(
 
 
 async def turns_of(s: AsyncSession, chat_id: uuid.UUID, revs: Sequence[int]) -> list[AssistantTurn]:
-    """대화의 끝난 턴들 중 trace.rev가 revs 안인 것(대화 기록과 잇기)."""
+    """대화의 끝난 턴들 중 trace.rev가 revs 안인 것(대화 기록과 잇기). 실패한 턴은 빼요: 저장하지 못해 대화 rev가
+    그대로라 다음 턴이 같은 rev로 저장돼요(R1a B6, 한 글에 두 턴이 붙지 않게)."""
     if not revs:
         return []
     rows = await s.scalars(
         select(AssistantTurn)
         .where(
             AssistantTurn.chat_id == chat_id,
+            AssistantTurn.status != "failed",
             AssistantTurn.trace["rev"].as_integer().in_(list(revs)),
         )
         .execution_options(populate_existing=True)
@@ -349,8 +352,11 @@ async def open_actions(
     return list(rows.all())
 
 
-async def close_handled(s: AsyncSession, ids: Sequence[uuid.UUID], reason: str) -> list[uuid.UUID]:
-    """열린 제안만 → expired(reason). 그 행동을 단 먼저 말 걸기 줄(sent · opened)도 expired(handled)."""
+async def close_handled(
+    s: AsyncSession, ids: Sequence[uuid.UUID], reason: str, line: str = "handled"
+) -> list[uuid.UUID]:
+    """열린 제안만 → expired(reason). 그 행동을 단 먼저 말 걸기 줄(sent · opened)도 expired(line: 할 일이 끝남
+    handled · 대상이 기한 · 날이 지나 끝남 LAPSED)."""
     res = await s.execute(
         update(AssistantAction)
         .where(AssistantAction.id.in_(list(ids)), AssistantAction.status == "proposed")
@@ -362,7 +368,7 @@ async def close_handled(s: AsyncSession, ids: Sequence[uuid.UUID], reason: str) 
         await s.execute(
             update(AssistantNudge)
             .where(AssistantNudge.action_id.in_(closed), AssistantNudge.status.in_(SHOWN))
-            .values(status="expired", reason="handled")
+            .values(status="expired", reason=line)
         )
     return closed
 
@@ -619,10 +625,10 @@ async def close_lines_of(
 async def settled_events(
     s: AsyncSession, user_id: uuid.UUID, notification_ids: Sequence[uuid.UUID]
 ) -> set[uuid.UUID]:
-    """알림 id 중 끝난 일의 소식: 그 알림에서 만든 먼저 말 건 줄(dedup_key ev:{알림 id})이 할 일을 끝내 닫힌 것
-    (SETTLED)과, 가리키는 실측 요청이 끝났거나(취소 · 못 받음 · 기한 지남 · 안 옴 · 닫힘) 확정된 것(QA r3 s6 B3 ·
-    c4 #37: 취소한 요청의 '실측이 정해졌어요', 다른 업체를 확정해 닫힌 요청의 소식). 오늘 정할 일 '새 소식'에서 끝난
-    일을 다시 보이지 않게 쓴다."""
+    """알림 id 중 끝난 일의 소식: 그 알림에서 만든 먼저 말 건 줄(dedup_key ev:{알림 id})이 할 일을 끝내거나 기한 ·
+    날이 지나 닫힌 것(OVER)과, 가리키는 실측 요청이 끝났거나(취소 · 못 받음 · 기한 지남 · 안 옴 · 닫힘) 확정된 것
+    (QA r3 s6 B3 · c4 #37: 취소한 요청의 '실측이 정해졌어요', 다른 업체를 확정해 닫힌 요청의 소식). 오늘 정할 일
+    '새 소식'에서 끝난 일을 다시 보이지 않게 쓴다."""
     if not notification_ids:
         return set()
     keys = {f"ev:{i}": i for i in notification_ids}
@@ -631,7 +637,7 @@ async def settled_events(
             AssistantNudge.user_id == user_id,
             AssistantNudge.dedup_key.in_(list(keys)),
             AssistantNudge.status == "expired",
-            AssistantNudge.reason.in_(SETTLED),
+            AssistantNudge.reason.in_(OVER),
         )
     )
     return {keys[k] for k in rows.all()} | await _visit_done_news(s, user_id, notification_ids)
@@ -746,6 +752,10 @@ async def shown_nudges(
 
 
 SETTLED = ("acted", "handled")  # 할 일이 끝나 닫은 줄의 까닭: 대화 기록에 '완료'로 남는다
+# 기한 · 날이 지나 닫은 줄의 까닭(할 일을 한 게 아니에요, R1b #10 · 고정 선 5): '완료'로 남기지 않아 대화 기록에서
+# 빠진다(새 줄에 밀린 replaced와 같게). 실측 요청 기한 지남 · 공사 날이 옴 · 고객 확인 없이 자동으로 끝난 공사
+LAPSED = "lapsed"
+OVER = (*SETTLED, LAPSED)  # 더 할 일이 없는 줄(오늘 정할 일 '새 소식'에서 빼는 기준)
 
 
 async def feed_nudges(
@@ -862,10 +872,36 @@ async def trim_memory(s: AsyncSession, user_id: uuid.UUID, keep: int) -> int:
     return res.rowcount or 0
 
 
-async def delete_memory(s: AsyncSession, user_id: uuid.UUID, memory_id: uuid.UUID) -> bool:
+async def delete_memory(s: AsyncSession, user_id: uuid.UUID, memory_id: uuid.UUID) -> str | None:
+    """내 기억 한 줄을 지운다. 지운 줄의 키(없거나 남의 것이면 None)."""
     res = await s.execute(
-        delete(AssistantMemory).where(
-            AssistantMemory.id == memory_id, AssistantMemory.user_id == user_id
+        delete(AssistantMemory)
+        .where(AssistantMemory.id == memory_id, AssistantMemory.user_id == user_id)
+        .returning(AssistantMemory.key)
+    )
+    return res.scalar_one_or_none()
+
+
+async def memory_marks(s: AsyncSession, user_id: uuid.UUID) -> dict[str, datetime]:
+    """기억 칸마다 마지막으로 바뀐 때(말한 때 · 지운 때 · 칩으로 줄인 때)."""
+    rows = await s.execute(
+        select(AssistantMemoryMark.key, AssistantMemoryMark.changed_at).where(
+            AssistantMemoryMark.user_id == user_id
         )
     )
-    return res.rowcount == 1
+    return {key: at for key, at in rows.all()}
+
+
+async def mark_memory(s: AsyncSession, user_id: uuid.UUID, key: str, at: datetime) -> None:
+    """기억 칸이 바뀐 때를 적는다(늘기만, 지운 칸도 남긴다)."""
+    stmt = insert(AssistantMemoryMark).values(user_id=user_id, key=key, changed_at=at)
+    await s.execute(
+        stmt.on_conflict_do_update(
+            index_elements=["user_id", "key"],
+            set_={
+                "changed_at": func.greatest(
+                    AssistantMemoryMark.changed_at, stmt.excluded.changed_at
+                )
+            },
+        )
+    )

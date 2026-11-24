@@ -723,8 +723,20 @@ def moved(a: AssistantAction, t: Targets) -> bool:
     return False
 
 
-async def _moved_ids(s: AsyncSession, rows: list[AssistantAction]) -> list[uuid.UUID]:
-    """열린 제안들 중 대상 상태가 만든 때와 달라진 것(읽기 조인 한 번씩)."""
+def lapsed(a: AssistantAction, t: Targets) -> bool:
+    """대상이 사람이 한 일이 아니라 기한이 지나 끝났다(실측 요청 기한 지남: 업체 첫 답 48시간 · 고객 고르기 7일). 그
+    행동을 단 먼저 말 건 줄은 '완료'가 아니라 지난 줄로 닫는다(R1b #10). 한 번 더 요청(대상이 이미 기한 지남)은 빼요."""
+    return (
+        a.target_kind == "visit"
+        and a.target_ver != "expired"
+        and t.visits.get(a.target_id) == "expired"
+    )
+
+
+async def _moved_ids(
+    s: AsyncSession, rows: list[AssistantAction]
+) -> tuple[list[uuid.UUID], set[uuid.UUID]]:
+    """열린 제안들 중 대상 상태가 만든 때와 달라진 것(읽기 조인 한 번씩)과 그중 대상이 기한 · 날이 지나 끝난 것."""
     from app.project.diy import diy_ver, picked_of
     from app.schedule import service as schedule_service
 
@@ -740,13 +752,17 @@ async def _moved_ids(s: AsyncSession, rows: list[AssistantAction]) -> list[uuid.
         live=await repo.live_visits(s, of("project")),
         diys={pid: diy_ver(picked_of(chips.get(pid, ()))) for pid in of("project")},
     )
-    gone = [a.id for a in rows if moved(a, t)]
-    return gone + await aftercare.moved_ids(s, rows)  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
+    gone = [a for a in rows if moved(a, t)]
+    more = set(await aftercare.moved_ids(s, rows))  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
+    late = {a.id for a in gone if lapsed(a, t)}
+    late |= await aftercare.lapsed_ids(s, [a for a in rows if a.id in more])
+    return [a.id for a in gone] + list(more), late
 
 
 async def close_handled(limit: int | None = None, seconds: float | None = None) -> int:
     """sweep: 대상(target_kind · target_id)의 상태가 비서 밖(화면 단추 · 상대의 응답)에서 바뀐 열린 제안을 닫는다.
-    proposed → expired, result.reason = handled_elsewhere(화면 error_code). 그 행동을 단 먼저 말 걸기 줄도 닫는다.
+    proposed → expired, result.reason = handled_elsewhere(화면 error_code). 그 행동을 단 먼저 말 걸기 줄도 닫는다
+    (대상이 기한 · 날이 지나 끝났으면 repo.LAPSED: '완료'로 남기지 않는다, R1b #10).
     바꾸기는 조건부 UPDATE(proposed일 때만)라 같은 때 승인과 겹치면 승인이 이긴다. 닫은 수.
     열린 줄을 모두 본다: 새것부터 한 쪽(limit)씩 읽고(created_at · id 커서) 끝까지 간다(새것 200개 창만 보던 것,
     D2 · 부하 L3). 시간 예산(seconds)이 다 되면 멈춘 자리를 남기고, 다음 차례는 그 자리부터 끝까지 본 뒤 처음(새것)
@@ -759,9 +775,12 @@ async def close_handled(limit: int | None = None, seconds: float | None = None) 
     while True:
         async with SessionLocal() as s:
             rows = await repo.open_actions(s, limit, after=after)
-            gone = await _moved_ids(s, rows) if rows else []
-            if gone:
-                total += len(await repo.close_handled(s, gone, HANDLED))
+            gone, late = await _moved_ids(s, rows) if rows else ([], set())
+            done = [i for i in gone if i not in late]
+            if done:
+                total += len(await repo.close_handled(s, done, HANDLED))
+            if late:
+                total += len(await repo.close_handled(s, list(late), HANDLED, line=repo.LAPSED))
             await s.commit()
         if len(rows) < limit:  # 가장 오래된 줄까지 봤다
             if not again:

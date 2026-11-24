@@ -283,6 +283,24 @@ class AssistantMemory(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class AssistantMemoryMark(Base):
+    """기억 칸(사람, 키)마다 마지막으로 바뀐 때: 그 값을 말한 때 · 고객이 지운 때 · 칩으로 줄인 때(0055). 늘기만 하고
+    기억 줄을 지워도 남는다. 값 · 글은 두지 않는다.
+
+    기억 뽑기 일은 그 말을 한 때가 이 값보다 앞이면 그 칸을 건드리지 않는다: 미뤘다 뽑거나 다시 하는 옛 말이 나중
+    말을 덮거나, 지운 기억이 지우기 전에 한 말로 다시 생기지 않게(R1b #8 · #9).
+    """
+
+    __tablename__ = "assistant_memory_marks"
+    __table_args__ = (CheckConstraint(f"key in {_in(MEMORY_KEYS)}", name="key"),)
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), primary_key=True
+    )
+    key: Mapped[str] = mapped_column(String(12), primary_key=True)
+    changed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
 class AssistantRefTop(Base):
     """비서 대화 이름표 머리글자(v · m · s …)마다 쓴 가장 큰 번호(runtime.RefTable). 늘기만 한다.
 
