@@ -481,7 +481,50 @@ async def _expert_answer(
     # 값이 섞인 견주기 · 빈 답 뒤(QA r7 c2 L27): 값은 이 공사 계산 값으로만
     if "price" in policy_of(ask.clean_message(question)):
         data["note"] = " ".join(x for x in (data.get("note"), MONEY_NOTE) if x)
-    return ToolOut(data={**data, "engine": EXPERT, "expert": record})
+    out = ToolOut(data={**data, "engine": EXPERT, "expert": record})
+    if (card := expert_card(ok)) is not None:  # 근거 조각 · 출처 이름을 화면에(QA r7 c1 · c2)
+        out.cards.append(card)
+        out.data["note"] = " ".join(x for x in (out.data.get("note"), CARD_NOTE) if x)
+    return out
+
+
+CARD_NOTE = "근거 조각과 출처 이름은 알아 두기 카드로 같이 보였어요. 글로 다시 늘어놓지 말아요."
+# 전문가 답의 확인할 조건 → 끝 물음 한 문장. 비서 답에 묻는 말 · 다음 걸음이 없으면 런타임이 지금 할 일 줄 대신 붙여요
+# (QA r7 c1 6 · 10 · 13 · 25턴: 전문가 길 답이 확인할 조건 없이 끝남). 전문가는 '…인지' 꼴로 내요(지시문 예 '지금 벽에
+# 곰팡이 · 결로 자국이 있는지')
+ASK_TAIL = "{ask} 알려 주시겠어요?"
+HANGUL = re.compile(r"[가-힣]")
+
+
+def ask_tail(data: dict) -> str | None:
+    """answer_question 결과 값 → 끝 물음 한 문장. 전문가 길이고 확인할 조건이 '…지'로 끝날 때만, 아니면 None."""
+    if data.get("route") != EXPERT:
+        return None
+    item = next((x for x in data.get("items") or [] if x.get("label") == ASK_LABEL), None)
+    first = ((item or {}).get("lines") or [None])[0]
+    text = first.get(policy.DATA_KEY, "") if isinstance(first, dict) else ""
+    text = " ".join(str(text).split()).rstrip(" .?")
+    if not text.endswith("지") or not HANGUL.search(text):
+        return None
+    return ASK_TAIL.format(ask=text)
+
+
+def expert_card(ok: list):
+    """전문가 답이 기댄 자료 조각(근거 번호 차례, 셋까지) → 알아 두기 카드(발췌 · 출처 이름, search_knowledge와 같은
+    꼴). 전문 지식(G)만 기댄 답은 카드가 없어요(QA r7 c1 6 · 10 · 13 · 25턴 · c2 18문항 중 12: 출처가 화면에 없음)."""
+    cited = list(
+        dict.fromkeys(
+            n.pieces[r]
+            for n in ok
+            for x in (*n.answer, *n.cautions)
+            for r in x.refs
+            if r in n.pieces
+        )
+    )
+    if not cited:
+        return None
+    key = hashlib.sha256(" ".join(p.ref for p in cited).encode()).hexdigest()[:8]
+    return cards.knowledge_card(f"know-{key}", None, cited)
 
 
 def expert_data(ok: list, notes: list, *, order: bool) -> dict:

@@ -3,6 +3,8 @@
 - 1. 집 정보 승인 카드 차액의 까닭(c2 T9~T11): 계산 엔진 줄로 바뀌는 줄 · 기준을 모델 값 change와 다음 턴 사실에
   넘겨요. 화면 카드 글은 그대로예요.
 - 2. 값이 섞인 견주기(c2 L27) · v3 빈 답(c2 L21)은 공정 전문가로. 기본 경로(period=v3,price=v3,*=expert+v3)는 그대로예요.
+- 3. 전문가 답(c1 6 · 10 · 13 · 25턴 · c2 18문항 중 12): 근거 조각 · 출처 이름 알아 두기 카드, 확인할 조건 끝 물음
+  (아는 칸을 되묻는 조건은 버림), 카드 인용 '-다'체는 '-요'체로(못 바꾸면 원문 인용).
 """
 
 import asyncio
@@ -15,7 +17,9 @@ import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
-from app.assistant.tools import answer, propose
+from app.assistant import policy
+from app.assistant.experts import agent as experts
+from app.assistant.tools import answer, cards, propose
 from app.calc import dobae
 from app.calc.common import Line
 from app.calc.quote_diff import line_changes
@@ -241,3 +245,115 @@ def test_empty_v3_answer_goes_on_to_the_expert(api, script, monkeypatch):
     log = script([{"tool_calls": [call]}, {"text": "확인했어요."}])
     ok(ask(api, pid, q))
     assert len(log) == 2
+
+
+# ---- 3. 전문가 답의 근거 · 출처 카드 · 확인할 조건 끝 물음 · '-해요'체 카드 인용 ----
+
+
+def test_plain_excerpts_read_polite_or_stay_quoted():
+    """카드 발췌 '-다'체는 자주 나오는 끝만 '-요'체로(QA r7 c2 L21 '…안내한다.' · '…본다.'), 못 바꾸면 원문 인용 그대로."""
+    assert (
+        cards.quoted("이음매는 띠초배로 보강하도록 안내한다.")
+        == "이음매는 띠초배로 보강하도록 안내해요."
+    )
+    assert cards.quoted("바탕 상태를 먼저 살펴본다. 들뜬 곳은 제거한다.") == (
+        "바탕 상태를 먼저 살펴봐요. 들뜬 곳은 제거해요."
+    )
+    assert cards.quoted("바탕은 충분히 건조되어야 한다.") == "바탕은 충분히 건조돼야 해요."
+    assert cards.quoted("이 작업은 필수입니다.") == "이 작업은 필수예요."
+    assert cards.quoted("시공 기준이다.") == "시공 기준이에요."
+    # 한 문장이라도 못 바꾸면 줄 전체를 원문 인용으로(섞어 바꾸지 않아요)
+    assert (
+        cards.quoted("도배지를 바른다. 기포는 뺀다.") == "자료에서 “도배지를 바른다. 기포는 뺀다.”"
+    )
+    assert cards.quoted("실크는 닦을 수 있어요.") == "실크는 닦을 수 있어요."  # '-요'체는 그대로
+
+
+def test_expert_ask_about_a_known_fact_is_dropped():
+    """확인할 조건이 이 집 사실로 아는 칸(살면서 · 벽지 종류 · 철거)을 되묻으면 버려요(전문가 출력 검사)."""
+    out = experts.ExpertOut.model_validate(
+        _out(("곰팡이는 없애고 말린 뒤 도배해요.", ["G"]), ask_="살면서 공사하시는지")
+    )
+    known = frozenset({"living", "grade"})
+    note = experts.refine("도배", out, {}, "", known)
+    assert note.ask == "" and note.dropped["known"] == 1
+    for ask_ in ("지금 벽에 결로 자국이 있는지", "살면서 공사하시는지"):
+        got = experts.refine("도배", out.model_copy(update={"ask": ask_}), {}, "", frozenset())
+        assert got.ask == ask_  # 모르는 칸이면 그대로
+
+
+def _piece(ref: str, text: str, **kw) -> "experts.Piece":
+    return experts.Piece(
+        ref, kw.pop("kind", "표준시방서"), "KCS 41 51 05 도배공사", "3.3 바탕", text, **kw
+    )
+
+
+def test_expert_card_shows_cited_pieces_and_public_sources():
+    """전문가 답이 기댄 조각(근거 번호 차례) → 알아 두기 카드: 공공 · 표준은 펴낸 곳, 그 밖은 자료 종류 이름. 전문 지식(G)만
+    기댄 답은 카드가 없어요."""
+    k1 = _piece(
+        "K1", "곰팡이는 제거하고 충분히 건조해야 한다.", publisher="국토교통부", official=True
+    )
+    k2 = _piece("K2", "현장에서는 곰팡이 방지제를 바르기도 한다.", kind="시공 후기")
+    note = experts.Note(
+        trade="도배",
+        pieces={"K1": k1, "K2": k2, "K3": _piece("K3", "쓰지 않은 조각이다.")},
+        answer=[experts.Line("곰팡이는 없애고 말린 뒤 도배해요.", ("K1", "G"))],
+        cautions=[experts.Line("방지제를 바르기도 해요.", ("K2",))],
+    )
+    card = answer.expert_card([note])
+    assert card is not None and card.kind == "knowledge" and card.card_id.startswith("know-")
+    assert card.data["lines"] == [
+        "곰팡이는 제거하고 충분히 건조해야 해요.",
+        "현장에서는 곰팡이 방지제를 바르기도 해요.",
+    ]
+    assert card.data["source"] == "국토교통부 · 시공 후기"
+    only_g = experts.Note(trade="도배", pieces={"K1": k1}, answer=[experts.Line("말려요.", ("G",))])
+    assert answer.expert_card([only_g]) is None
+
+
+@pytest.mark.usefixtures("repo_search")
+def test_expert_turn_sends_the_card_and_ends_with_the_ask(api, script, monkeypatch):
+    """전문가 길 턴: 알아 두기 카드(출처)를 같이 보내고, 답에 묻는 말 · 다음 걸음이 없으면 확인할 조건을 끝 물음으로
+    붙여요(QA r7 c1 6 · 10 · 13 · 25턴). 모델이 물음으로 끝내면 붙이지 않아요."""
+    from app.assistant.experts import agent as experts_agent
+    from tests.test_v4_assistant_offers import cards_of, tokens
+
+    _, pid = home(api)
+    monkeypatch.setattr(settings, "assistant_answer_route", TRADE_ROUTE)
+    _gate(monkeypatch)
+    k1 = _piece(
+        "K1", "곰팡이는 제거하고 충분히 건조해야 한다.", publisher="국토교통부", official=True
+    )
+
+    async def consult(_trades, _question, _home, _terms=()):
+        line = experts.Line("곰팡이는 없애고 말린 뒤 도배해요.", ("K1",))
+        return [
+            experts.Note(
+                trade="도배", pieces={"K1": k1}, answer=[line], ask="지금 벽에 결로 자국이 있는지"
+            )
+        ]
+
+    monkeypatch.setattr(experts_agent, "consult", consult)
+    q = "곰팡이 핀 벽에 그냥 도배해도 돼요?"
+    call = {"id": "q", "name": "answer_question", "input": {"question": q, "kind": "general"}}
+    log = script([{"tool_calls": [call]}, {"text": "곰팡이는 없애고 말린 뒤 도배해요."}])
+    ev = ok(ask(api, pid, q))
+    body = tool_result(log, 1)
+    assert answer.CARD_NOTE in body["note"]
+    (card,) = cards_of(ev, "knowledge")
+    assert card["data"]["source"] == "국토교통부"
+    assert tokens(ev).endswith("\n\n지금 벽에 결로 자국이 있는지 알려 주시겠어요?")
+    log = script([{"tool_calls": [call]}, {"text": "곰팡이는 없애고 말려요. 벽에 물기도 있나요?"}])
+    ev = ok(ask(api, pid, q))
+    assert tokens(ev).endswith("벽에 물기도 있나요?")  # 모델이 물었으면 끝 물음을 더 붙이지 않아요
+    assert answer.ask_tail({"route": "v2g", "items": []}) is None
+    assert (
+        answer.ask_tail(
+            {
+                "route": "expert",
+                "items": [{"label": answer.ASK_LABEL, "lines": [{policy.DATA_KEY: "벽 상태"}]}],
+            }
+        )
+        is None
+    )  # '…지' 꼴이 아니면 붙이지 않아요

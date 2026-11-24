@@ -41,6 +41,7 @@ from app.assistant import choices, policy, prompts
 from app.assistant import tools as tools_mod
 from app.assistant.schemas import AnswerData, CardOut
 from app.assistant.tools import ToolCtx, ToolError
+from app.assistant.tools import answer as answer_tools
 from app.auth.models import User
 from app.config import settings
 from app.shared.errors import AppError
@@ -1170,7 +1171,8 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
     다음 단계를 말함 · QA r6 c3 M8 · c1 M12: 막는 답 · 범위 밖 답 · '사람이야?' 답이 다음 할 일 없이 끝남). 답에 다음
     걸음(policy.leads: 가리키는 말 · 묻는 말 · 할 일을 하라는 말)이 없고, 다음 일 카드 · 승인 카드가 없을 때 코드가 지금
     할 일 줄(free.now_tail: 무료 · 범위 밖 답과 같은 줄)을 붙여요. 막는 답인지는 낱말로 가르지 않고 답 꼴로 봐요. 같은
-    단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만). 인사 · 고마움만 한 턴(chat_only)은 붙이지 않아요."""
+    단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만). 인사 · 고마움만 한 턴(chat_only)은 붙이지 않아요.
+    이 턴 전문가 답에 확인할 조건이 있으면(turn.ask) 지금 할 일 줄 대신 그 조건을 묻는 한 문장을 붙여요."""
     from app.assistant import free
 
     ctx = turn.ctx
@@ -1182,6 +1184,11 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
         return ""
     if len(turn.gate.sent) >= STEP_ROOM:  # 붙이면 많아야 네 문장을 넘어요
         return ""
+    # 전문가 답의 확인할 조건을 끝 물음으로(지금 할 일 줄보다 먼저, QA r7 c1 6 · 10 · 13 · 25턴)
+    if turn.ask:
+        asked, _why = turn.gate._check(turn.ask)  # 숫자 · 안쪽 말 검사(모델 문장과 같은 검사)
+        if asked and asked not in res.text:
+            return asked
     try:
         line = await free.now_tail(turn.tc)
     except Exception as e:  # noqa: BLE001 - 할 일 줄을 못 읽으면 붙이지 않아요(종류 이름만 로그)
@@ -1312,6 +1319,8 @@ class _Turn:
         # 이 턴에 보인 카드 · 만든 승인 카드 · 부른 카드 도구의 카드 종류(요청 점검이 견준다)
         self.done: set[str] = {str(d.get("kind")) for _, d in seen if d.get("kind")}
         self.rechecked = False
+        # 이 턴 전문가 답의 확인할 조건 끝 물음(answer.ask_tail): 답에 묻는 말 · 다음 걸음이 없으면 끝에 붙여요(next_step)
+        self.ask: str | None = None
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -1571,6 +1580,8 @@ class _Turn:
             trace["ms"] = int((time.monotonic() - t0) * 1000)
             return self._error(cid, "tool_failed", "도구를 쓰지 못했어요."), "tool_failed"
         given = out.data
+        if name == "answer_question" and (tail := answer_tools.ask_tail(given)):
+            self.ask = tail
         # 이 턴에 똑같이 보낸 카드는 다시 보내지 않고 모델에 알린다(QA r6 c3 H1: 업체 추천 뒤 show_card로 같은 카드
         # 두 번). 값이 달라진 같은 카드(제안 도구가 바뀜 칸을 단 집 정보 카드)는 화면이 그 자리에서 바꿔 끼운다
         shown = [c for c in out.cards if not self._sent_same(c)]
