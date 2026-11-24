@@ -5,8 +5,7 @@ import Link from "next/link";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
 import { TermCard } from "@/components/guide/TermCard";
-import { TermDetail, TermHead } from "@/components/guide/TermDetail";
-import { TermPanel } from "@/components/guide/TermPanel";
+import { OpenTerm } from "@/components/guide/TermDetail";
 import { FindButton } from "@/components/guide/Triggers";
 import { TERMS, TRADE_LABEL, TRADE_ORDER, termById, type Term, type TradeKey } from "@/lib/guide";
 import s from "@/components/guide/guide.module.css";
@@ -15,11 +14,10 @@ type Q = { trade?: string; img?: string; term?: string };
 type Props = { searchParams: Promise<Q> };
 
 const isTrade = (v: string | undefined): v is TradeKey => !!v && (TRADE_ORDER as string[]).includes(v);
-function href(q: { trade?: TradeKey; img?: boolean; term?: string }) {
+function href(q: { trade?: TradeKey; img?: boolean }) {
   const p = new URLSearchParams();
   if (q.trade) p.set("trade", q.trade);
   if (q.img) p.set("img", "1");
-  if (q.term) p.set("term", q.term);
   const v = p.toString();
   return v ? `/guide/terms?${v}` : "/guide/terms";
 }
@@ -35,13 +33,11 @@ export default async function GuideTermsPage({ searchParams }: Props) {
   const q = await searchParams;
   const trade = isTrade(q.trade) ? q.trade : undefined;
   const img = q.img === "1";
-  const open = termById(q.term ?? "");
   const pool = TERMS.filter((t) => !img || t.images.length > 0);
   const count = (k?: TradeKey) => pool.filter((t) => !k || t.trade === k).length;
   const groups = (trade ? [trade] : TRADE_ORDER)
     .map((k) => ({ k, items: pool.filter((t) => t.trade === k).sort(byName) }))
     .filter((g) => g.items.length);
-  const here = href({ trade, img });
 
   return (
     <>
@@ -74,7 +70,7 @@ export default async function GuideTermsPage({ searchParams }: Props) {
                 <span className={s.meta}>{g.items.length}개{g.k === "oos" ? " · 믿집 범위 밖이라 알아 두기로만 적었어요" : ""}</span>
               </div>
               <ul className={s.cards}>
-                {g.items.map((t) => <li key={t.id}><TermCard term={t} href={href({ trade, img, term: t.id })} showTrade={!!trade || g.k === "oos"} keepScroll /></li>)}
+                {g.items.map((t) => <li key={t.id}><TermCard term={t} showTrade={!!trade || g.k === "oos"} /></li>)}
               </ul>
             </section>
           ))
@@ -82,11 +78,7 @@ export default async function GuideTermsPage({ searchParams }: Props) {
           <p className={s.empty}>맞는 용어가 없어요</p>
         )}
 
-        {open ? (
-          <TermPanel id={open.id} label={`${open.term} 자세히`} closeHref={here} head={<TermHead term={open} />}>
-            <TermDetail term={open} nameId="term-name" />
-          </TermPanel>
-        ) : null}
+        <OpenTerm id={q.term} />
       </Main>
     </>
   );

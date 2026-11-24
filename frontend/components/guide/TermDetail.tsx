@@ -1,8 +1,20 @@
 // 용어 자세히 칸 속(서버): 쉬운 말 → 그림 → 참고 · 어디에 쓰나요 · 자세히 → 업체에 물어볼 것 → 나오는 글 → 출처.
 // 다른 공정(범위 밖) 용어는 '알아 두기'로만 적었다고 밝혀요.
 import Link from "next/link";
-import { CHECKED, TRADE_LABEL, articleHref, articlesWithTerm, type Term } from "@/lib/guide";
+import { CHECKED, TRADE_LABEL, articleHref, articlesWithTerm, termById, type Term } from "@/lib/guide";
+import { TermPanel } from "./TermPanel";
 import s from "./guide.module.css";
+
+/** 주소 ?term=의 용어 칸. 백과 화면마다 맨 끝에 두면 보던 화면 위에 열려요. 없는 용어면 그리지 않아요 */
+export function OpenTerm({ id }: { id?: string | string[] }) {
+  const t = typeof id === "string" ? termById(id) : undefined;
+  if (!t) return null;
+  return (
+    <TermPanel id={t.id} label={`${t.term} 자세히`} head={<TermHead term={t} />}>
+      <TermDetail term={t} nameId="term-name" />
+    </TermPanel>
+  );
+}
 
 export function TermHead({ term: t }: { term: Term }) {
   return (
