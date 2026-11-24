@@ -205,7 +205,7 @@
 ## 4. 런타임(`runtime.run_turn`)
 1. `start_turn`(짧은 세션)
    - client_key 재생: done이면 결과를 돌려주고, running이면 409예요.
-   - 잠금은 running 행이에요(부분 UNIQUE → 409 turn_running). heartbeat가 2분 넘게 멈추면 failed 'stalled'로 바꿔요.
+   - 잠금은 running 행이에요(부분 UNIQUE → 409 turn_running). heartbeat가 2분 넘게 멈추면 failed 'stalled'로 바꿔요. 도는 턴은 10초마다 heartbeat를 올리고, 새 턴은 같은 대화의 heartbeat가 30초 넘게 멈춘 턴을 그 자리에서 'stalled'로 닫아요(QA r11 u1 N1: 일꾼이 죽은 턴이 대화를 2분 잠금).
    - 복원: 최근 24줄(글만, 앞 12줄의 비서 글은 앞 200자) · `project_facts` · 기억 · 열린 행동 · refs(Redis 30분)
    - 세션을 닫은 뒤 LLM을 불러요.
 2. 프롬프트 캐시
