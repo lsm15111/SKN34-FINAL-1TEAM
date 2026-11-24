@@ -881,6 +881,12 @@ export class TurnBusy extends ApiError {
 /** 다시 보내도 넘쳤을 때 보이는 말(입력 칸 글은 되살려요) */
 export const BUSY_TEXT = "지금 이야기하는 분이 많아요. 잠시 뒤에 다시 보내 주세요.";
 
+/** 한도에 닿아 멈춘 턴(done.stopped) 안내: 카드가 있으면 카드만 보인다고, 없으면 다시 물어 달라고(QA r9 c2: 카드 없는 턴에도
+ *  '카드만 보여 드려요') */
+export function stoppedNote(hasCard: boolean): string {
+  return hasCard ? "설명을 끝까지 만들지 못해 카드만 보여 드려요" : "답을 끝까지 만들지 못했어요. 다시 물어봐 주세요";
+}
+
 /** Retry-After 머리(초) → 기다릴 ms */
 export function busyWaitMs(header: string | null): number {
   const sec = Number(header);

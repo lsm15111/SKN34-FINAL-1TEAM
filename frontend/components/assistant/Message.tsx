@@ -6,7 +6,7 @@
 // 할 일이 끝난 먼저 말 건 줄(settled)은 기록에 '완료'로 남아요: 카드는 보낸 때 모습에서 단추를 빼고, 다음에 물을 말은 두지 않아요.
 // AI 글의 '고객님'은 그릴 때만 로그인한 사람 이름('○○ 님')으로 바꿔요(MyName, lib/callName). 저장 · LLM 기록은 '고객님' 그대로예요.
 import { createContext, useContext } from "react";
-import { slotTitleNow, type ActionOut, type FeedItem, type FeedPart, type SlotNow, type SuggestOut } from "@/lib/api/assistant";
+import { slotTitleNow, stoppedNote, type ActionOut, type FeedItem, type FeedPart, type SlotNow, type SuggestOut } from "@/lib/api/assistant";
 import { callName } from "@/lib/callName";
 import { bubbles } from "@/lib/richText";
 import { ApprovalCard } from "./kit/ApprovalCard";
@@ -76,7 +76,7 @@ export function Message({ item, ctx, act, live, onRetry }: { item: FeedItem; ctx
             {item.status ?? (item.parts.length ? "" : "답을 만들고 있어요")}
           </span>
         ) : null}
-        {item.done && item.stopped ? <p className={s.note}>설명을 끝까지 만들지 못해 카드만 보여 드려요</p> : null}
+        {item.done && item.stopped ? <p className={s.note}>{stoppedNote(hasCard)}</p> : null}
         {item.done && !item.stopped && item.mode === "free" && hasCard && !hasAi && !hasAnswer ? <p className={s.note}>설명을 만들지 못했어요</p> : null}
         {item.error ? (
           <p className={s.fail} role="alert"><I n="alert" />{item.error.message}{item.error.code === "busy" ? null : <button type="button" className={s.textBtn} onClick={onRetry}>다시 불러오기</button>}</p>
