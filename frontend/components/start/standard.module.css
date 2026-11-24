@@ -9,7 +9,7 @@
 .info { padding: 14px 16px; border-radius: var(--mj-radius-card); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-size: var(--mj-type-label); line-height: var(--mj-lh-body); }
 
 .skel { display: flex; flex-direction: column; gap: 12px; padding: var(--mj-pad-group); border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); }
-.skel i { display: block; height: 20px; border-radius: 8px; background: var(--mj-fill); }
+.skel i { display: block; height: 20px; border-radius: var(--mj-radius-badge); background: var(--mj-fill); }
 .skel i:first-of-type { width: 60%; height: 34px; }
 .skel i:nth-of-type(2) { width: 40%; }
 

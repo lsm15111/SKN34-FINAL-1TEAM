@@ -13,7 +13,7 @@
   color: var(--mj-text); text-decoration: none; overflow-wrap: anywhere;
 }
 .name:hover { color: var(--mj-link-hover); }
-.name:focus-visible { outline: 2px solid var(--mj-focus); outline-offset: 2px; border-radius: 4px; }
+.name:focus-visible { outline: 2px solid var(--mj-focus); outline-offset: 2px; border-radius: var(--mj-radius-badge); }
 .todoText { margin: 0; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); color: var(--mj-text); }
 
 /* 할 일 단추 + 업체 상태 꼬리표: 한 줄에 두고 넘치면 다음 줄로 */
