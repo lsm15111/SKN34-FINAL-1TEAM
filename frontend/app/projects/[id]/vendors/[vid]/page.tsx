@@ -1,12 +1,15 @@
 // /projects/{id}/vendors/{vid} — 업체 자세히(C11 · D07 + 옆 AI 칸) · 시공 사례 크게 보기(C47, ?photo=n).
 // 가견적 = 업체가 확인한 단가 × 믿집 수량(계산 엔진). 벽지를 바꿔 보면(?grade=) 그 벽지의 가견적을 API가 다시 계산해 줘요.
 // 화면은 금액을 더하거나 빼지 않아요(다른 벽지 차이도 API grade_diff). 남의 공사 · 목록 밖 업체면 404예요.
-// v4(비서 화면 서랍)에서는 표준견적서와 견준 %를 보이지 않아요(리드 결정 2026-11-21).
+// v4(비서 화면 카드 창)에서는 표준견적서와 견준 %를 보이지 않아요(리드 결정 2026-11-21).
+// 자주 묻는 답 · 사업자 정보는 맨 아래 닫힌 접기예요(폰 · 웹). 사업자 정보는 청약 전에 알릴 업체 신원 정보(전자상거래법 제20조)라
+// 접어 두되 늘 열어 볼 수 있어요. 리뷰 기준 줄은 리뷰 전체 화면에만 둬요(2026-11-24 사용자).
 import { notFound } from "next/navigation";
 import { uiMode } from "@/components/assistant/mode";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead, WithAside } from "@/components/site/Frame";
+import { Accordion } from "@/components/ui/Accordion";
 import { Avatar } from "@/components/ui/Avatar";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
@@ -15,7 +18,6 @@ import { QuoteLines } from "@/components/ui/QuoteLines";
 import { Stars } from "@/components/ui/Stars";
 import { SummaryRows } from "@/components/ui/Summary";
 import { avgText } from "@/components/review/RatingSummary";
-import { ReviewRulesLine } from "@/components/review/RulesSheet";
 import { reviewDate, topTags } from "@/components/review/tags";
 import { CasesBlock, type CasePhoto } from "@/components/vendors/CasesBlock";
 import { DetailActions } from "@/components/vendors/DetailActions";
@@ -82,7 +84,6 @@ export default async function VendorDetailPage({ params, searchParams }: {
     { id: "est", label: "가견적" },
     ...(photos.length ? [{ id: "cases", label: <><span className={s.webWord}>시공 </span>사례 <span className="mj-num">{photos.length}</span></> }] : []),
     { id: "reviews", label: <>리뷰 <span className="mj-num">{reviewCount}</span></> },
-    { id: "biz", label: "사업자 정보", webOnly: true },
   ];
 
   const opened = pr.opened_on ? [monthText(pr.opened_on), d.years_open != null ? `업력 ${d.years_open}년` : null].filter(Boolean).join(" · ") : null;
@@ -130,12 +131,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
                 {state === "no_estimate" ? <p className={s.help}>업체가 단가를 확인하면 보여요</p> : null}
               </div>
             )}
-            {state === "no_estimate" ? null : (
-              <>
-                <GradeToggle grade={grade} diff={state === "ok" ? d.grade_diff ?? null : null} />
-                <p className={s.help}>요청할 때 고른 벽지로 가견적이 고정돼요</p>
-              </>
-            )}
+            {state === "no_estimate" ? null : <GradeToggle grade={grade} diff={state === "ok" ? d.grade_diff ?? null : null} />}
           </section>
           {state === "ok" && est && lines ? (
             <section className={s.group} aria-label="가견적 줄">
@@ -155,29 +151,23 @@ export default async function VendorDetailPage({ params, searchParams }: {
 
           {photos.length ? <CasesBlock id="cases" photos={photos} /> : null}
 
-          {faqs.length ? (
-            <section id="faq" className={s.group} aria-labelledby="faq-t">
-              <h2 id="faq-t" className={s.hs}>자주 묻는 답</h2>
-              <dl className={s.faq}>
-                {faqs.map((f) => <div key={f.key}><dt>{f.label}</dt><dd>{f.answer}</dd></div>)}
-              </dl>
-            </section>
-          ) : null}
-
           <section id="reviews" className={s.group} aria-labelledby="rv-t">
             <div className={s.gh}>
               <h2 id="rv-t">리뷰 <span className="mj-num">{reviewCount}</span>{avg ? <> · <Stars value={Number(avg)} /></> : null}</h2>
               {reviewCount ? <Button variant="text" arrow href={`${listHref}/${encodeURIComponent(vid)}/reviews`}>모두 보기</Button> : null}
             </div>
             {tags.length ? <p className={s.quote}>{tags.map((t) => `"${t}"`).join(" · ")}</p> : reviewCount ? null : <p className={s.sub}>아직 리뷰가 없어요</p>}
-            <ReviewRulesLine />
             <ReviewLinks vendorId={vid} links={links} />
           </section>
 
-          <section id="biz" className={`${s.group} ${s.webGroup}`} aria-labelledby="biz-t">
-            <h2 id="biz-t" className={s.hs}>사업자 정보</h2>
-            <SummaryRows size="sm" items={biz} />
-          </section>
+          <div className={s.group}>
+            <Accordion
+              items={[
+                ...(faqs.length ? [{ key: "faq", q: "자주 묻는 답", a: <dl className={s.faq}>{faqs.map((f) => <div key={f.key}><dt>{f.label}</dt><dd>{f.answer}</dd></div>)}</dl> }] : []),
+                { key: "biz", q: "사업자 정보", a: <SummaryRows size="sm" items={biz} /> },
+              ]}
+            />
+          </div>
         </WithAside>
       </Main>
       <BottomBar>

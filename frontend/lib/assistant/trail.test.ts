@@ -1,6 +1,6 @@
-// 카드 창이 다닌 길(lib/assistant/trail): '앞 화면으로' · 닫기가 몇 칸 돌아갈지
+// 카드 창이 다닌 길(lib/assistant/trail): '앞 화면으로' · 닫기가 몇 칸 돌아갈지 · 창 안 앞 칸
 import { expect, test } from "@playwright/test";
-import { canBack, closePlan, EMPTY_TRAIL, walk, type Move, type Trail } from "./trail";
+import { canBack, cardsBefore, closePlan, EMPTY_TRAIL, walk, type Move, type Trail } from "./trail";
 
 const B = "/projects/p1";
 const go = (...steps: [string, Move?, number?][]) =>
@@ -50,4 +50,16 @@ test("이 화면이 뜨기 전 칸으로 뒤로 가면 맨 앞에 붙고, 같은
   const t = walk(go([`${B}/plan`]), `${B}/standard`, "pop");
   expect(t).toMatchObject({ list: [`${B}/standard`, `${B}/plan`], at: 0 });
   expect(walk(t, `${B}/standard`, "push")).toBe(t);
+});
+
+test("창 안 앞 칸(창 모양 정하기): 창을 연 칸부터 지금 칸 앞까지, 대화 자리에서 끊어요", () => {
+  expect(cardsBefore(go([B], [`${B}/vendors`], [`${B}/vendors/v1`]), B)).toEqual([`${B}/vendors`]); // 업체 보기 안에서 연 업체
+  expect(cardsBefore(go([B], [`${B}/vendors/v1`]), B)).toEqual([]); // 대화에서 바로 연 업체
+  const t = go([B], [`${B}/vendors/v1`], [`${B}/visits/new`], [`${B}/vendors`], [`${B}/vendors/v2`]);
+  expect(cardsBefore(t, B)).toEqual([`${B}/vendors/v1`, `${B}/visits/new`, `${B}/vendors`]);
+  expect(cardsBefore(walk(t, `${B}/vendors/v1`, "pop", 1), B)).toEqual([]); // 뒤로 창을 연 칸에 오면 앞 칸 없음
+  expect(cardsBefore(go([B], [`${B}/home`], [B], [`${B}/vendors/v1`]), B)).toEqual([]); // 앞서 닫은 창 칸은 세지 않아요
+  expect(cardsBefore(go([`${B}/vendors`], [`${B}/vendors/v1`]), B)).toEqual([`${B}/vendors`]); // 링크로 바로 연 창
+  expect(cardsBefore(go([B], [`${B}/vendors`], [B]), B)).toEqual([]); // 창이 없으면 없음
+  expect(cardsBefore(EMPTY_TRAIL, B)).toEqual([]);
 });

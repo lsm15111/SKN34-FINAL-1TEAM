@@ -116,7 +116,6 @@ test("J3 표준견적서 → 업체 담기 3곳 → 실측 일정 요청 → 상
     await expect(page.getByText("가견적 · 부가세 포함")).toBeVisible();
     await expect(page.getByText(won(d.estimate_v3!.total), { exact: true }).first()).toBeVisible();
     for (const n of [d.estimate_v3!.supply, d.estimate_v3!.vat, d.estimate_v3!.total]) await expectAmount(page, n, "C11 가견적 합계 칸");
-    await expect(page.getByText("요청할 때 고른 벽지로 가견적이 고정돼요")).toBeVisible();
     await expect(page.getByText("업체 단가 × 믿집 수량").first()).toBeVisible();
     await expectNoSideScroll(page, "C11 업체 상세");
     await shot(page, "03-C11-detail");

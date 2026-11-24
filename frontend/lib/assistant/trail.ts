@@ -32,6 +32,16 @@ export function canBack(t: Trail, base: string): boolean {
   return !!prev && prev.startsWith(`${base}/`);
 }
 
+/** 이 창에서 지금 칸 앞에 다닌 카드 주소(창을 연 칸부터 차례로). 대화 자리 · 이 공사 밖 주소에서 끊고, 지금 칸이 카드가 아니면 없어요.
+ *  창 모양을 정할 때 써요: 앞 칸에 큰 창이 있었으면 서랍 주소(업체 자세히)도 큰 창 그대로(CardSlot) */
+export function cardsBefore(t: Trail, base: string): string[] {
+  const card = (p: string | undefined) => !!p && p.startsWith(`${base}/`);
+  if (!card(t.list[t.at])) return [];
+  let i = t.at;
+  while (card(t.list[i - 1])) i--;
+  return t.list.slice(i, t.at);
+}
+
 /** 닫기: 대화 자리로 가는 길. back은 몇 칸 뒤로인지(가장 가까운 대화 자리까지). 길에 대화 자리가 없으면(링크로 바로 연 창)
  *  처음 카드까지 돌아가 그 칸을 대화 주소로 바꿔요(replace). 창 안에서 다닌 카드가 기록에 남지 않게 해요 */
 export function closePlan(t: Trail, base: string): { back: number; replace: boolean } {
