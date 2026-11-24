@@ -219,7 +219,7 @@ ACTION_KINDS = {
     "customer": {"propose_home_info", "propose_visit_request", "propose_visit_slot",
                  "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept",
                  "propose_extra_answer", "propose_work_check", "propose_visit_again",
-                 "propose_date_change", "propose_visit_cancel"},
+                 "propose_date_change", "propose_visit_cancel", "propose_budget"},
     "vendor": {"propose_window_answer", "propose_decline", "propose_dates"},
 }  # fmt: skip
 MEMORY_KEYS = {

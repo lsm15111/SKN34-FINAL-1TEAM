@@ -365,12 +365,35 @@ def mock_runs(mod, path: Path):
 
 class RegressionSetTest(unittest.TestCase):
     def test_pending_scenarios_are_skipped(self):
+        # R08 · R09는 P1 · P2 병합(11-25)으로 켰어요. 건너뛰기는 임시 폴더의 대기 시나리오로 봐요
+        import shutil
+        from unittest import mock
+
+        from kit import SCENARIOS
+        from sim import run as simrun
+
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp)
+            for sid in ("R03", "R08"):
+                shutil.copy(SCENARIOS / f"{sid}.json", folder / f"{sid}.json")
+            r9 = json.loads((SCENARIOS / "R09.json").read_text(encoding="utf-8"))
+            r9["pending"] = "기능이 아직 통합에 없어요"
+            (folder / "R09.json").write_text(json.dumps(r9, ensure_ascii=False), encoding="utf-8")
+            with mock.patch.object(simrun, "SCENARIOS", folder):
+                skipped: list[str] = []
+                got = simrun.load(["R08", "R09", "R03"], "all", skipped)
+        self.assertEqual([s["id"] for s in got], ["R03", "R08"])
+        self.assertEqual([x.split(":")[0] for x in skipped], ["R09"])
+
+    def test_p1_p2_regressions_are_active_and_check_their_tools(self):
         from sim import run as simrun
 
         skipped: list[str] = []
-        got = simrun.load(["R08", "R09", "R03"], "all", skipped)
-        self.assertEqual([s["id"] for s in got], ["R03"])
-        self.assertEqual([x.split(":")[0] for x in skipped], ["R08", "R09"])
+        got = {s["id"]: s for s in simrun.load(["R08", "R09"], "all", skipped)}
+        self.assertEqual(skipped, [])
+        self.assertEqual(got["R08"]["checks"]["required_tools"], ["check_outside_quote"])
+        self.assertEqual(got["R09"]["checks"]["required_tools"], ["prework_brief"])
+        self.assertEqual(got["R09"]["world"]["project"]["stage"], "vendors")
 
 
 if __name__ == "__main__":
