@@ -342,7 +342,7 @@ def test_p8_two_vendors_cannot_take_the_same_half_day_at_home(api):
     assert r.status_code == 409 and r.json()["error"]["code"] == "slot_clash", r.text
     assert (
         r.json()["error"]["message"]
-        == "같은 반나절에 다른 업체 실측이 잡혀 있어요. 다른 반나절을 골라 주세요."
+        == "이미 다른 업체 실측이 잡힌 때예요. 다른 일정을 골라 주세요."
     )
     assert kit.status(vb) == "offered"
     other = "pm" if half == "am" else "am"

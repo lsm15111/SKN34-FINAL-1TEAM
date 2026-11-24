@@ -52,7 +52,7 @@ function CardBody({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
       return (
         <>
           {r.booked ? <Sub>{eulReul(slotText(r.booked))} 보냈어요</Sub> : null}
-          {r.next.due_at ? <Small>{dueText(r.next.due_at)} {iGa(v)} 답해요 · 그때까지 이 반나절을 잡아 둬요</Small> : null}
+          {r.next.due_at ? <Small>{dueText(r.next.due_at)} {iGa(v)} 답해요 · 그때까지 이 날짜를 잡아 둬요</Small> : null}
         </>
       );
     case "proposed": {

@@ -136,7 +136,7 @@ DECIDED_MAX = 6  # 턴 사실 '최근 처리한 카드' 수(바뀐 카드까지 
 CARD_KIND: dict[str, tuple[str, tuple[str, ...]]] = {
     "home_info": ("집 정보", ("집 정보", "직접 할 일")),
     "visit_request": ("실측 요청", ("실측 요청",)),
-    "visit_slot": ("실측 시간", ("실측 시간", "반나절")),
+    "visit_slot": ("실측 일정", ("실측 시간", "실측 일정", "실측 날짜", "반나절")),
     "vendor_confirm": ("업체 확정", ("업체 확정",)),
     "dates_accept": ("공사 날짜 수락", ("공사 날짜 수락",)),
     "delay_accept": ("바뀐 공사 날짜 수락", ("바뀐 공사 날짜",)),
@@ -307,16 +307,16 @@ HALF_KO = {"am": "오전", "pm": "오후"}
 # 것(바로 확정 기간 · 업체가 낸 다른 날)은 그렇다고 적는다(QA r4 s4 7턴: 바로 확정 업체에 '업체가 수락해야 정해져요')
 VISIT_WORDS = {
     "requested": "실측 요청함(업체 답 기다림)",
-    "offered": "실측 기간 답 옴(반나절 고를 차례)",
-    "picked": "실측 시간 고름(업체 수락 기다림)",
-    "proposed": "업체가 다른 실측 시간을 냄(고를 차례 · 고르면 바로 정해짐)",
+    "offered": "실측 기간 답 옴(날짜 고를 차례)",
+    "picked": "실측 날짜 고름(업체 수락 기다림)",
+    "proposed": "업체가 다른 실측 날짜를 냄(고를 차례 · 고르면 바로 정해짐)",
     "booked": "실측 날짜 정해짐",
     "visited": "실측 받음(견적서 기다림)",
     "quoted": "견적서 옴",
 }
-OFFERED_INSTANT = "실측 기간 답 옴(반나절 고를 차례 · 바로 확정: 고르면 업체 수락 없이 정해짐)"
+OFFERED_INSTANT = "실측 기간 답 옴(날짜 고를 차례 · 바로 확정: 고르면 업체 수락 없이 정해짐)"
 ENDED_WHY = {"declined": "업체가 못 받음", "no_show": "업체가 실측에 안 옴"}
-EXPIRED_WHY = {"reply": "업체 답 기한 지남", "pick": "반나절 고르기 기한 지남"}
+EXPIRED_WHY = {"reply": "업체 답 기한 지남", "pick": "날짜 고르기 기한 지남"}
 # 확정한 업체의 공사 날짜 상태(schedule.service.dates_states) → 화면 말. scheduled는 업체 공사 날로 쓴다
 DATES_WORDS = {
     "waiting": "업체가 공사 날짜를 정하는 중",
@@ -336,7 +336,7 @@ BEFORE_CHAT = ("requested", "offered", "picked", "proposed")  # 채팅이 열리
 # 요청함 · 기간 답 옴 · 고름(업체 수락 기다림)은 모두 실측 날짜가 정해질 때 열려요. '업체가 수락하면'은 아직 기간 답 전인
 # 바로 확정 업체에 맞지 않았어요(QA r6 c3 t13)
 CHAT_WAIT = "실측 날짜가 정해지면 열려요"
-CHAT_PICK = "실측 시간을 고르면 바로 열려요"  # 바로 확정 기간 · 업체가 낸 다른 날(고르면 정해진다)
+CHAT_PICK = "실측 날짜를 고르면 바로 열려요"  # 바로 확정 기간 · 업체가 낸 다른 날(고르면 정해진다)
 LIVE_VISITS = ("requested", "offered", "picked", "proposed", "booked", "visited", "quoted")
 NO_DOBAE = "표준견적서 · 상담(업체 연결은 도배만이라 이 공사는 업체 단계가 없어요)"
 UNKNOWN_STAGE = "지금 단계를 읽지 못했어요(도구로 확인해요)"
@@ -360,7 +360,7 @@ def visit_words(r, chosen: bool, today) -> str:
         return OFFERED_INSTANT
     slot = f"{kdate.md_long(b.day, today)} {HALF_KO[b.half]}" if b is not None else None
     if st == "picked" and slot:
-        return f"실측 시간 고름({slot} · 업체 수락 기다림)"
+        return f"실측 날짜 고름({slot} · 업체 수락 기다림)"
     if st == "booked" and r.next.kind == "change":
         return (
             "실측 날짜 바꾸기를 요청함(업체 답 기다림)"
@@ -1783,7 +1783,7 @@ STEP_IDEAS = {
         "집 정보 확인해 줘",
     ),
     "standard": ("업체 3곳을 골라 둘까요?", "표준견적서 다음은 업체 고르기예요", "업체 추천해 줘"),
-    "pick": ("실측 시간 후보를 볼까요?", "담은 업체에 실측을 요청할 차례예요", "실측 시간 찾아 줘"),
+    "pick": ("실측 일정 후보를 볼까요?", "담은 업체에 실측을 요청할 차례예요", "실측 일정 찾아 줘"),
     # 이름과 보내는 말을 맞춰요(QA r3 s5: '실측 일정을 챙길까요?'를 누르면 '오늘 할 일 알려 줘'가 감)
     # 실측 단계 제안은 대화마다 되풀이돼 잠시 꺼 둬요(2026-11-23 사용자 '일단 주석'). 이 단계에는 단계 제안이 없어요
     # "visit": ("오늘 할 일을 볼까요?", "업체 답과 실측 날짜를 볼 차례예요", "오늘 할 일 알려 줘"),

@@ -799,7 +799,7 @@ class SlotIn(BaseModel):
 
 # 반나절 승인 카드를 누른 뒤 일(모델 값 note): 업체 수락 전에는 실측이 정해진 게 아니에요
 SLOT_ACCEPT = (
-    "고객이 카드를 누르면 고른 반나절이 업체에 가고, 업체가 수락하면 정해져요. 누르기 전이나 업체 수락 전에는 "
+    "고객이 카드를 누르면 고른 실측 날짜가 업체에 가고, 업체가 수락하면 정해져요. 누르기 전이나 업체 수락 전에는 "
     "정해진 게 아니에요."
 )
 SLOT_INSTANT = "고객이 카드를 누르면 바로 정해져요. 누르기 전에는 정해진 게 아니에요."
@@ -849,16 +849,16 @@ def slot_offer(v, slot: dict) -> dict:
     }
 
 
-SLOT_CLASH = "같은 반나절에 다른 업체 실측이 잡혀 있거나 그 시간 카드가 열려 있어요."
-SLOT_CLASH_HINT = "그 요청의 vendor_free_slots(ref m…)를 다시 불러요. 다른 업체가 잡았거나 열린 카드로 고른 반나절은 빠진 후보가 와요"
+SLOT_CLASH = "이미 다른 업체 실측이 잡혔거나 다른 카드에서 고른 때예요."
+SLOT_CLASH_HINT = "그 요청의 vendor_free_slots(ref m…)를 다시 불러요. 다른 업체가 잡았거나 열린 카드로 고른 때는 빠진 후보가 와요"
 
 
 @tool(
     "propose_visit_slot",
     surface="customer",
     kind="propose",
-    status="실측 시간을 준비하고 있어요",
-    description="반나절 후보(s1…) 하나를 고르는 승인 카드를 만들어요.",
+    status="실측 날짜 카드를 준비하고 있어요",
+    description="실측 일정 후보(s1…) 하나를 고르는 승인 카드를 만들어요.",
     model=SlotIn,
     schema=obj({"slot_ref": REF}),
 )
@@ -1294,7 +1294,7 @@ async def propose_date_change(tc: ToolCtx, a: DateChangeIn) -> ToolOut:
 
 # 고객 승인 카드 종류(제안 도구 이름에서 propose_를 뗀 것) → 화면 이름
 KIND_NAME: dict[str, str] = {
-    "home_info": "집 정보", "visit_request": "실측 요청", "visit_slot": "실측 시간",
+    "home_info": "집 정보", "visit_request": "실측 요청", "visit_slot": "실측 날짜",
     "vendor_confirm": "업체 확정", "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락",
     "date_change": "날짜 바꾸기 요청", "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인",
     "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소",

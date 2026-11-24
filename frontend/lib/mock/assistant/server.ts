@@ -187,7 +187,7 @@ function visitTask(s: State, phase: "sent" | "answered" | "booked" | "quoted" | 
   const rows: Record<typeof phase, TaskRow[]> = {
     sent: D.VENDORS.filter((v) => s.picks.includes(v.key)).map((v) => ({ label: v.name, state: "waiting", text: "답 기다림", note: due })),
     answered: [
-      { label: "결도배", state: "need", text: "날짜 고를 차례", note: "11.23~11.28 중 반나절" },
+      { label: "결도배", state: "need", text: "날짜 고를 차례", note: "11.23~11.28 실측 가능 기간" },
       { label: "바른벽", state: "done", text: "실측 확정", note: "11.24(화) 오후 · 바로 확정" },
       { label: "마루와벽", state: "waiting", text: "답 기다림", note: due },
     ],
@@ -217,7 +217,7 @@ function slotsCard(s: State, who: "gyeol" | "maru", chosen: string): CardOut<"vi
   const am = readMemory().some((m) => m.key === "avail_half");
   return {
     card_id: `slots-${who}`, kind: "visit_slots",
-    say: who === "gyeol" ? "결도배가 갈 수 있는 기간을 답했어요. 이 시간 어때요?" : "마루와벽이 다른 날을 냈어요. 이 중에서 골라 주세요.",
+    say: who === "gyeol" ? "결도배가 갈 수 있는 기간을 답했어요. 이 일정 어때요?" : "마루와벽이 다른 날을 냈어요. 이 중에서 골라 주세요.",
     data: {
       vendor_name: v.name,
       window: who === "gyeol" ? { start: "2026-11-23", end: "2026-11-28" } : { start: "2026-11-25", end: "2026-11-26" },
@@ -490,7 +490,7 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
   if (/순서/.test(text)) return answer("집 정보 → 표준견적서 → 업체 고르기 → 실측 → 견적서 비교 · 확정 → 공사 날짜 순서예요. 비서가 단계마다 알려 드려요.");
   if (/희망 기간/.test(text)) return answer("희망 기간은 요청서에서 바꿀 수 있어요. 보내기 전이라면 승인 카드에 바로 반영돼요.", [{ label: "요청서 열기", href: href(s, "/visits/new") }]);
   if (/폐기물/.test(text)) return answer("바른벽 견적서에는 폐기물 처리가 적혀 있지 않아요. 채팅에 물어볼 말을 넣어 둘게요. 보내기는 직접 눌러 주세요.", [{ label: "채팅 열기", href: "/chat" }]);
-  if (/다른 시간|달력/.test(text)) return answer("달력에서 업체가 답한 기간 안의 반나절을 직접 고를 수 있어요.", [{ label: "실측 일정 열기", href: href(s, "/visits") }]);
+  if (/다른 시간|달력/.test(text)) return answer("달력에서 업체가 답한 기간 안의 실측 일정을 직접 고를 수 있어요.", [{ label: "실측 일정 열기", href: href(s, "/visits") }]);
   if (/다른 날짜/.test(text)) return answer("다른 날짜는 두 번까지 요청할 수 있어요. 요청하면 업체가 다시 골라 올려요.", [{ label: "공사 날짜 열기", href: href(s, "/schedule") }]);
   if (/달력에 넣기/.test(text)) return answer("확정 공정표를 휴대폰 달력에 넣을 수 있어요.", [{ label: "달력 파일 받기", href: `/api/projects/${encodeURIComponent(s.pid)}/plan.ics` }]);
   if (/언제/.test(text)) return answer("업체는 요청을 받고 48시간 안에 답해요. 견적서는 보통 실측 다음 날까지 와요. 오면 바로 알려 드릴게요.");
@@ -526,7 +526,7 @@ function vendorsBeat(s: State): Step[] {
     ...sentences("세 곳 모두 단가를 확인한 업체예요. 고른 곳에만 실측 요청이 가요."),
     // 다음에 물을 말은 목록(0~3개)이에요: 첫 것은 제안 카드, 나머지는 칩으로 보여요
     done(s, ["가견적은 어떻게 계산해요?", "실측은 무엇을 봐요?"], { suggest: [
-      { id: "step-pick", text: "실측 희망 기간을 볼까요?", why: "담은 업체에 실측을 요청할 차례예요", say: "실측 시간 찾아 줘" },
+      { id: "step-pick", text: "실측 희망 기간을 볼까요?", why: "담은 업체에 실측을 요청할 차례예요", say: "실측 일정 찾아 줘" },
       { id: "idea-standard", text: "표준견적서 금액을 풀어 볼까요?", why: "가장 큰 줄부터 볼 수 있어요", say: "표준견적서 금액 풀이해 줘" },
     ] }),
   ];

@@ -184,7 +184,7 @@ def _in_window(w: VisitWindow, day: date, half: str, today: date) -> None:
 # ---- 반나절 칸 잡기 · 확정 ----
 
 # 같은 집 다른 업체 실측과 같은 반나절(QA edge P8). 업체에는 다른 업체 이름 · 일정을 알리지 않는다
-CLASH = "같은 반나절에 다른 업체 실측이 잡혀 있어요. 다른 반나절을 골라 주세요."
+CLASH = "이미 다른 업체 실측이 잡힌 때예요. 다른 일정을 골라 주세요."
 CLASH_VENDOR = "고객의 다른 일정과 겹치는 반나절이에요. 다른 날을 내 주세요."
 
 
@@ -984,7 +984,7 @@ async def request_change(
     if v.id in await repo.changes_open(s, [v.id]):
         raise app_error("already", "이미 바꾸기 요청을 보냈어요.")
     if (data.day, data.half) == (v.booked_day, v.booked_half):
-        raise _invalid("지금 날짜와 다른 반나절을 골라 주세요.", ["day"])
+        raise _invalid("지금 실측 날짜와 다른 일정을 골라 주세요.", ["day"])
     await _check_home(s, v, data.day, data.half, by_vendor=False)
     today = svc.today_of(now)
     w = (await repo.windows(s, [v.id])).get(v.id)

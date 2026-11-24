@@ -46,14 +46,14 @@ WEEK = "월화수목금토일"
 STEPS = ["집 정보", "표준견적서", "업체", "실측", "견적서", "공정표", "공사"]
 CARD_KO = {
     "home_info": "집 정보", "standard_quote": "표준견적서", "vendor_picks": "업체 추천",
-    "visit_slots": "실측 시간", "quote_compare": "견적 비교", "schedule": "공정표",
+    "visit_slots": "실측 일정", "quote_compare": "견적 비교", "schedule": "공정표",
     "knowledge": "알아 두기", "answer": "답", "floorplan_links": "도면 찾기", "today": "오늘 정할 일",
     "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트", "extra": "추가 금액",
     "notice": "이웃 안내문", "grade_compare": "벽지 견주기", "market_range": "시세 범위",
     "options": "고르기", "research": "조사",
 }  # fmt: skip
 ACTION_KO = {
-    "home_info": "집 정보 고치기", "visit_request": "실측 요청", "visit_slot": "실측 시간 고르기",
+    "home_info": "집 정보 고치기", "visit_request": "실측 요청", "visit_slot": "실측 날짜 고르기",
     "vendor_confirm": "업체 확정", "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락",
     "date_change": "날짜 바꾸기 요청", "window_answer": "기간 답하기", "decline": "못 받아요",
     "dates": "공사 날짜 보내기", "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인",
@@ -643,7 +643,7 @@ def card_lines(c: dict, key: str, surface: str, full: bool = True) -> list[str]:
                     f"{' · 고른 것 ' + d['chosen'] if d.get('chosen') else ''}")  # fmt: skip
         for x in d.get("wishes") or []:
             body.append(
-                f"{x.get('ref')} 희망 기간 {span(x.get('start'), x.get('end'))} · 업체 빈 반나절 {x.get('open_count')}칸"
+                f"{x.get('ref')} 희망 기간 {span(x.get('start'), x.get('end'))} · 가능한 실측 일정 {x.get('open_count')}개"
             )
             btn.append(f'{vp} {key} "visit_request:<업체 v#>,{x.get("ref")}"')
         for x in d.get("candidates") or []:

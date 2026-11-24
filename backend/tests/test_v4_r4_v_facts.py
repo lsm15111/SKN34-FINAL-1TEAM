@@ -129,7 +129,7 @@ def test_instant_vendor_says_picking_sets_it_without_the_vendor_accepting(api, s
         api, instant=False, email="gyeol@mitjip.test", name="결도배", customer_email="b@mitjip.test"
     )
     facts = turn_facts(api, script, g["pid"])
-    assert "결도배(m1) 실측 기간 답 옴(반나절 고를 차례)" in facts and "바로 확정" not in facts
+    assert "결도배(m1) 실측 기간 답 옴(날짜 고를 차례)" in facts and "바로 확정" not in facts
     assert f"채팅: 결도배 아직 안 열림({S.CHAT_WAIT})" in facts
 
 
@@ -139,14 +139,14 @@ def test_words_and_chat_line_for_instant_and_proposed_rows():
     slow = row("offered", "결도배", window=NS(instant=False))
     other = row("proposed", "한결")
     assert S.visit_words(fast, False, TODAY) == S.OFFERED_INSTANT
-    assert S.visit_words(slow, False, TODAY) == "실측 기간 답 옴(반나절 고를 차례)"
+    assert S.visit_words(slow, False, TODAY) == "실측 기간 답 옴(날짜 고를 차례)"
     assert S.visit_words(other, False, TODAY).endswith("고르면 바로 정해짐)")
     assert S.chat_line([fast, slow, other], None, set()) == (
         f"채팅: 결도배 아직 안 열림({S.CHAT_WAIT}) / 마루와벽 · 한결 아직 안 열림({S.CHAT_PICK})"
     )
     refs = {fast.visit_id: "m3"}
     assert S.vendors_line([fast, slow], None, None, TODAY, refs) == (
-        f"업체: 마루와벽(m3) {S.OFFERED_INSTANT} / 결도배 실측 기간 답 옴(반나절 고를 차례)"
+        f"업체: 마루와벽(m3) {S.OFFERED_INSTANT} / 결도배 실측 기간 답 옴(날짜 고를 차례)"
     )
 
 

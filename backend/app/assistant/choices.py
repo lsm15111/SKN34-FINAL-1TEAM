@@ -36,7 +36,7 @@ ACTIONS: dict[str, str] = {
     "extra_answer": "customer", "work_check": "customer", "visit_again": "customer",  # 07
 }  # fmt: skip
 LABEL = {
-    "visit_request": "실측 요청", "visit_slot": "실측 시간 고르기", "vendor_confirm": "업체 확정",
+    "visit_request": "실측 요청", "visit_slot": "실측 날짜 고르기", "vendor_confirm": "업체 확정",
     "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락", "window_answer": "기간 답하기",
     "decline": "못 받아요", "dates": "공사 날짜 보내기",
     "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인", "visit_again": "한 번 더 요청",

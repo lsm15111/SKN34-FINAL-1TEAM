@@ -731,7 +731,7 @@ async def market_range(
 # 보낸 실측 요청의 지금 상태(취소할 수 있는 것만) → 화면 말
 SENT_STATE = {
     "requested": "업체 답 기다림",
-    "offered": "반나절 고를 차례",
+    "offered": "날짜 고를 차례",
     "picked": "업체 수락 기다림",
     "proposed": "업체가 낸 날 고를 차례",
     "booked": "실측 날짜 잡힘",
@@ -1021,7 +1021,7 @@ async def wishes(
         "wishes": [
             {"ref": w.ref, "start": w.start, "end": w.end, "open_count": w.open_count} for w in out
         ],
-        "basis": "공사 시작 희망일 − 28 ~ − 14일 안에서 업체 빈 반나절이 많은 기간",
+        "basis": "공사 시작 희망일 − 28 ~ − 14일 안에서 가능한 실측 일정이 많은 기간",
     }
     return card, model
 
@@ -1117,8 +1117,8 @@ async def visit_slots(
 
 
 SLOT_SPLIT = (
-    "같은 집의 다른 업체 실측(잡힌 시간 · 열린 실측 시간 카드)과 같은 반나절은 후보에 넣지 않아요. 같은 반나절에 두 "
-    "업체 실측을 잡을 수 없어요."
+    "다른 업체 실측이 이미 잡혔거나 다른 카드에서 고른 때는 후보에서 뺐어요. 한 집에 같은 때 두 업체 실측을 잡을 "
+    "수는 없어요."
 )
 
 
