@@ -26,7 +26,7 @@ SETS: dict[str, dict[str, str]] = {
 # 판 묶음과 상관없이 같은 지시문
 BASE: dict[str, str] = {
     "nudge_judge": "nudge_judge_v1",
-    "memory": "memory_v3",
+    "memory": "memory_v4",  # QA r7: 물음 속 자기 사실(반려동물) · 직접 할 일은 고객 낱말 그대로
     "brief": "brief_v2",
     "researcher": "researcher_v4",  # 조사 담당(worker, 웹 검색 · 가져오기, 진행 말 · 항목 꼴 · 자재 판매가 · 규격)
     # 공정 전문가 하위 에이전트(assistant/experts, 비서 answer_question 'expert' 엔진). 고객에게 직접 말하지 않아요

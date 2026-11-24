@@ -1374,6 +1374,8 @@ async def _eve(tc: ToolCtx) -> tuple[str, ToolOut]:
     card = cards.prep_card(f"prep-{tc.project_id}", trades)
     if tc.project_id is not None:
         async with SessionLocal() as s:
+            home = await diy_tools.home_ctx(s, tc.user, tc.project_id, tc.today)  # 이 집에 맞춤
+            card = cards.prep_card(f"prep-{tc.project_id}", trades, home)
             card = await diy_tools.eve_card(s, tc.user, tc.project_id, tc.today, card)
     return EVE_SAID, ToolOut(data={}, cards=[card])
 

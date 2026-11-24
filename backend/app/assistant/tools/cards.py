@@ -1631,16 +1631,33 @@ class HomeCtx:
     away_weekdays: bool = False  # 기억: 주말에만 시간이 돼요(평일엔 집을 비워요)
     weekday_work: bool = False  # 수락한 공사 날에 평일이 있어요
     diy: tuple[str, ...] = ()  # 고른 직접 할 일 칩 키
+    trades: tuple[str, ...] = ()  # 이 공사 공정(공사 정보 · 업체 확정): 주의 줄 거르기
+    mold: bool = False  # 모은 조건: 벽에 곰팡이 · 물자국이 있어요
+    cold: bool = False  # 다가오는 공사 날(없으면 오늘)이 추운 철(COLD_MONTHS)이에요
 
 
 # 사는 집에만 맞는 준비 줄(가구 · 짐 · 벽에 건 것). 빈 집이면 뺀다(QA r5 c1: 빈 집에 '벽에 건 액자 · 선반 떼기')
 FURNITURE = re.compile(r"가구|짐|액자|선반")
 ENTRY_ITEM = "공사 날 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정하기"
-PET_ITEM = "공사 날 반려동물이 지낼 곳 정하기"
+PET_ITEM = "공사 날 반려동물을 맡길 곳이나 지낼 방 정하기"
+PET_DOOR_ITEM = "작업 중 현관 · 방문이 열려도 반려동물이 나가지 않게 하기"
 AWAY_LINE = (
     "평일에 공사해요. 집을 비우시면 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정해 두세요."
 )
-PET_LINE = "반려동물은 풀 냄새 · 먼지 · 소음을 피해 공사 날 지낼 곳을 미리 정해 두세요."
+PET_LINE = (
+    "반려동물은 풀 냄새 · 먼지 · 소음을 피해 공사 날 맡길 곳이나 지낼 방을 미리 정해 두세요. "
+    "작업하는 동안 현관 · 방문이 자주 열려요."
+)
+# 추운 철 빈 집(QA r7 c4 10: 12월 빈 집에 보일러 줄 없음). 근거: LH 도배 시방서 시공 전후 기온 유지 · 제조사 겨울
+# 가이드(시공 뒤 보일러는 약하게, 급하게 올리지 않기), 지식 dobae-043 · 카드 dobae.prep.winter
+COLD_MONTHS = frozenset({11, 12, 1, 2, 3})
+COLD_LINE = (
+    "추운 철 빈 집이라 공사 며칠 전부터 벽지가 다 마를 때까지 보일러를 끄지 말고 약하게 켜 두세요. "
+    "갑자기 세게 틀면 벽지가 터질 수 있어요."
+)
+COLD_ITEM = "보일러를 끄지 말고 약하게 켜 두기"
+# 곰팡이 · 습기를 말하는 주의 줄은 그 집에 곰팡이 · 물자국이 있다고 했을 때만(QA r7 c4 10)
+MOLD = re.compile(r"곰팡이|습기|결로|물자국")
 
 
 def fit_items(items, h: "HomeCtx | None") -> list[str]:
@@ -1649,16 +1666,42 @@ def fit_items(items, h: "HomeCtx | None") -> list[str]:
 
 
 def home_lines(h: "HomeCtx | None") -> list[str]:
-    """살면서 하는 집의 평일 공사(집을 비움) · 반려동물 줄."""
-    if h is None or not h.occupied:
+    """살면서 하는 집의 평일 공사(집을 비움) · 반려동물 줄, 추운 철 빈 집의 보일러 줄."""
+    if h is None:
         return []
+    if not h.occupied:
+        return [COLD_LINE] if h.cold else []
     out = [AWAY_LINE] if h.weekday_work and h.away_weekdays else []
     return [*out, *([PET_LINE] if h.pet else [])]
 
 
+def home_items(h: "HomeCtx | None") -> list[str]:
+    """이 집에 맞춰 더하는 체크 칸: 사는 집 반려동물(맡길 곳 · 문 열림) · 추운 철 빈 집 보일러."""
+    if h is None:
+        return []
+    if not h.occupied:
+        return [COLD_ITEM] if h.cold else []
+    return [PET_ITEM, PET_DOOR_ITEM] if h.pet else []
+
+
+def caution_fits(text: str, trades: list[str], h: "HomeCtx | None") -> bool:
+    """공정 주의 줄이 이 공사 · 집에 맞는지(QA r7 c4 10: 목공 없는 공사에 '목공이 끝난 뒤에 도배해요'). 다른 공정
+    이름을 말하는 줄은 그중 하나라도 이 공사 공정일 때만, 곰팡이 · 습기 줄은 곰팡이 · 물자국이 있다고 했을 때만.
+    집을 모르면(h None) 그대로예요."""
+    from app.agent.v3.trades import SPECS
+
+    if h is None:
+        return True
+    named = [x.code for x in SPECS if x.code not in trades and x.code != "common" and x.ko in text]
+    if named and not set(named) & set(h.trades):
+        return False
+    return h.mold or not MOLD.search(text)
+
+
 def prep_card(card_id: str, trades: list[str], home: "HomeCtx | None" = None) -> CardOut:
     """공사 전날 준비물(공정 설정 agent.v3.trades의 고객 준비 · 주의점, 정해 둔 글). home이 있으면 이 집에 맞춘다:
-    빈 집은 가구 줄을 빼고 출입 방법을, 평일에 집을 비우면 출입 방법을, 반려동물이 있으면 지낼 곳을 더한다."""
+    빈 집은 가구 줄을 빼고 출입 방법을, 평일에 집을 비우면 출입 방법을, 반려동물이 있으면 맡길 곳 · 문 열림을,
+    추운 철 빈 집은 보일러를 더하고, 주의점은 이 공사 공정 · 곰팡이에 맞는 줄만 둔다(caution_fits)."""
     from app.agent.v3.trades import SPECS
 
     specs = [x for x in SPECS if x.code in trades] or [x for x in SPECS if x.code == "dobae"]
@@ -1666,9 +1709,13 @@ def prep_card(card_id: str, trades: list[str], home: "HomeCtx | None" = None) ->
     if home is not None:
         if not home.occupied or (home.weekday_work and home.away_weekdays):
             prep.append(ENTRY_ITEM)
-        if home.occupied and home.pet:
-            prep.append(PET_ITEM)
-    cautions = list(dict.fromkeys(c for x in specs for c in x.cautions))
+        prep += home_items(home)
+    codes = [x.code for x in specs]
+    cautions = [
+        c
+        for c in dict.fromkeys(c for x in specs for c in x.cautions)
+        if caution_fits(c, codes, home)
+    ]
     data = KnowledgeData(
         title="공사 전날 준비물",
         lines=[*home_lines(home), *prep, *cautions][:6],

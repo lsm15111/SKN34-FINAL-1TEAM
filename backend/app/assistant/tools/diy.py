@@ -564,7 +564,8 @@ def _focus_text(key: str, g: Got) -> str:
 
 async def home_ctx(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> cards.HomeCtx:
     """이 집 사실(cards.HomeCtx): 살면서 공사 · 기억(반려동물 · 주말에만) · 수락한 공사 날에 평일이 있는지 · 고른
-    직접 할 일. 남의 공사면 AppError(404)."""
+    직접 할 일 · 이 공사 공정(공사 정보 · 업체 확정) · 모은 조건 곰팡이 · 다가오는 공사 날(없으면 오늘)이 추운 철인지.
+    남의 공사면 AppError(404)."""
     from datetime import timedelta
 
     from app.assistant import memory
@@ -574,20 +575,28 @@ async def home_ctx(s: AsyncSession, user: User, pid: uuid.UUID, today: date) -> 
     p = await project_service.get_for(s, user, pid)
     rows = await repo.memories(s, user.id)
     keys, _src = await keys_for(s, pid)
+    conds = await project_service.conditions(s, pid)
     weekday = False
+    trades = {c for c in ("dobae", "mokgong") if getattr(p.trades, c, None) is not None}
+    ahead: list[date] = []  # 오늘부터의 공사 날
     for d in await schedule_service.deals_for(s, user, pid, None, today):
+        trades.add(d.trade)
         if d.start_date is None or d.end_date is None:
             continue
         span = d.work_days or [
             d.start_date + timedelta(days=i) for i in range((d.end_date - d.start_date).days + 1)
         ]
         weekday = weekday or any(x.weekday() < 5 for x in span)
+        ahead += [x for x in span if x >= today]
     return cards.HomeCtx(
         occupied=bool(p.occupied),
         pet=any(m.key == "pet" for m in rows),
         away_weekdays=memory.prefs(rows)[1] == "weekend",
         weekday_work=weekday,
         diy=tuple(keys),
+        trades=tuple(sorted(trades)),
+        mold=conds.get("dobae.mold") == "있어요",  # 공정 설정 칸 dobae.mold의 '있어요'
+        cold=min(ahead, default=today).month in cards.COLD_MONTHS,
     )
 
 
