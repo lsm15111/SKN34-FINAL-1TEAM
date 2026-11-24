@@ -474,17 +474,16 @@ def test_notify_once_feed_at_night_and_watch_closes_stalled(api, script):
             return got
 
     assert run(api, watch_once) is False
-    (n,) = query("select * from notifications where kind = 'assistant_research'")
-    assert n["dedup_key"] == f"research:{rid}" and n["link"] == f"/projects/{pid}"
-    assert "조사를 마쳤어요" in n["body"]
+    # 끝은 대화 줄로만 알려요. 종 알림은 만들지 않아요(11-24 사용자 '알림에 조사 마쳤어요는 필요없어')
+    assert query("select * from notifications where kind = 'assistant_research'") == []
     feed = api.get("/assistant/feed", params={"project_id": pid}).json()
     (item,) = [x for x in feed["items"] if x["id"] == f"r-{rid}"]
     assert item["parts"][0]["t"] == "text" and item["parts"][0]["src"] == "guide"
+    assert "조사를 마쳤어요" in item["parts"][0]["text"]
     card = item["parts"][1]["card"]
     assert card["kind"] == "research" and card["card_id"] == f"research-{rid}-result"
     assert card["data"]["phase"] == "result" and card["data"]["summary"]
-    # 감시: 6분 지나도 도는 중이면 멈춘 조사로 닫고 알림 · 대화 한 줄
-    query("delete from notifications")
+    # 감시: 6분 지나도 도는 중이면 멈춘 조사로 닫고 대화 한 줄(종 알림 없음)
     rid2 = uuid.uuid4()
     owner = query("select owner_id from projects")[0]["owner_id"]
     query(
@@ -498,7 +497,7 @@ def test_notify_once_feed_at_night_and_watch_closes_stalled(api, script):
     assert run(api, watch_once) is True
     row = next(r for r in rows() if r["id"] == rid2)
     assert (row["status"], row["error_code"]) == ("failed", "stalled")
-    assert len(query("select * from notifications where kind = 'assistant_research'")) == 1
+    assert query("select * from notifications where kind = 'assistant_research'") == []
     feed = api.get("/assistant/feed", params={"project_id": pid}).json()
     (item,) = [x for x in feed["items"] if x["id"] == f"r-{rid2}"]
     assert [p["t"] for p in item["parts"]] == ["text"]  # 찾은 게 없으면 한 줄만
@@ -522,7 +521,7 @@ def test_api_owner_only_vendor_forbidden_and_stop(api, script):
         api.post(f"/assistant/research/{rid}/stop").json()["status"] == "stopped"
     )  # 두 번째도 200
     assert run(api, research.run, rid) == "skipped"  # 멈춘 조사는 worker가 돌리지 않는다
-    assert len(query("select * from notifications where kind = 'assistant_research'")) == 1
+    assert query("select * from notifications where kind = 'assistant_research'") == []
 
 
 def test_turn_facts_line_and_get_research_tool(api, script):

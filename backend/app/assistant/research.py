@@ -4,9 +4,9 @@
   도는 조사 하나를 보고, 대기 줄 + jobs(멈춘 조사 감시) 한 트랜잭션 → commit 뒤 arq 큐에 넣는다. 같은 종류가 돌고
   있으면 새 일 대신 바꾸기 메모로 잇고, 다른 종류면 시작하지 않는다(busy). 승인 카드가 아니다(바뀌는 업무 상태 없음).
 - 바꾸기 · 멈추기(change · stop_out): 메모를 붙이거나 멈춤 요청을 남긴다. worker가 API 호출 사이마다 본다.
-- worker(run): queued → running → Claude 왕복(서버 도구, pause_turn 잇기, 왕복 4번 · $0.15 · 4분 상한) → 결과 저장 +
-  종 알림(dedup_key로 한 번) 한 트랜잭션 → commit 뒤 화면 신호. 대화에는 feed_items가 끝난 조사 줄(한 문장 + 결과
-  카드)을 끼운다. 고객이 부탁한 결과라 먼저 말 걸기의 하루 수 · 밤 미룸 규칙 밖이다.
+- worker(run): queued → running → Claude 왕복(서버 도구, pause_turn 잇기, 왕복 4번 · $0.15 · 4분 상한) → 결과 저장
+  → commit 뒤 화면 신호. 대화에는 feed_items가 끝난 조사 줄(한 문장 + 결과 카드)을 끼운다. 종 알림은 만들지 않는다
+  (11-24 사용자 '알림에 조사 마쳤어요는 필요없어': 맡긴 조사의 끝은 대화 줄로 충분).
 - 진행 기록(trail, 피클 표본처럼 하는 일을 한 줄씩): 스트림에서 블록이 끝날 때 검색어 · 읽은 곳(도메인) · 결과 수 ·
   조사 담당의 도구 앞 한 줄 말(요약과 같은 검사)을 steps에 더하고, 카드는 steps로 기록 줄을 만든다.
 - 결과 항목(자재 · 일반): 끝 정리의 '- 이름 | 특징 | 주의할 점 | 주소' 줄 → 결과 블록 링크와 맞는 것만, 칸마다 검사.
@@ -155,11 +155,10 @@ STOPPED_FOUND = " 그때까지 찾은 것만 정리했어요."
 DONE_PARTIAL = " 찾은 만큼 정리했어요."
 # 자재 결과 카드 뒤 끝 질문(피클 표본처럼 고를 것을 묻고 끝낸다)
 ASK_PICK = "어느 쪽이 끌리세요? 고르시면 그걸로 이어서 알아볼게요."
-NOTIFY_KIND = "assistant_research"
 STEERED = "돌던 조사에 바꾼 조건을 전했어요."
 NO_SUCH = "그 낱말이 든 조사가 없어요. 오늘 조사 목록의 제목 낱말로 다시 읽어요."
 # 걸리는 시간 말(QA r3 s3 · v1: 실제 16~56초인데 '몇 분 걸려요'). 비서가 고객에게 이 말 그대로 알려요
-STARTED = "잠깐(1분 안팎) 걸려요. 끝나면 대화와 알림으로 알려 드려요."
+STARTED = "잠깐(1분 안팎) 걸려요. 끝나면 이 대화에 올려 드려요."
 BUSY = "다른 조사가 도는 중이에요. 끝나거나 멈춘 뒤에 새로 할 수 있어요."
 
 # 고객 목표 · 메모에서 떼는 것: 가린 자리 · 동 · 호 · 층 · 번지 숫자 · 주소
@@ -831,7 +830,7 @@ async def _live(s: AsyncSession, project_id: uuid.UUID) -> AssistantResearch | N
 
 async def _steer(s: AsyncSession, r: AssistantResearch, note: str, now: datetime) -> bool:
     """도는 조사에 바꾸기 메모를 붙인다(아직 도는 중일 때만). 메모에 지역 · 조건이 있으면 제목도 바꾼다(steered_title:
-    진행 카드 · 턴 사실 · 끝 줄 · 종 알림이 바꾼 조건으로). commit은 부르는 쪽."""
+    진행 카드 · 턴 사실 · 끝 줄이 바꾼 조건으로). commit은 부르는 쪽."""
     from sqlalchemy.orm.attributes import set_committed_value
 
     title = steered_title(r.goal, [*note_texts(r), note], r.kind)
@@ -1031,10 +1030,8 @@ async def _end(
     cost: int | None = None,
     notes_used: int | None = None,
 ) -> bool:
-    """조건부로 끝 상태로 바꾸고 같은 트랜잭션에 종 알림(dedup_key로 한 번)을 쓴다. 바꾼 줄이 없으면 False.
+    """조건부로 끝 상태로 바꾼다. 바꾼 줄이 없으면 False. 종 알림은 쓰지 않는다(끝은 대화 줄로 알림).
     commit · 화면 신호는 부르는 쪽."""
-    from app.notify import service as notify_service
-
     values: dict[str, Any] = {
         "status": status,
         "step": None,
@@ -1053,35 +1050,18 @@ async def _end(
         update(AssistantResearch)
         .where(AssistantResearch.id == research_id, AssistantResearch.status.in_(from_))
         .values(**values)
-        .returning(AssistantResearch.user_id, AssistantResearch.project_id, AssistantResearch.title)
+        .returning(AssistantResearch.id)
         .execution_options(synchronize_session=False)
     )
-    row = got.first()
-    if row is None:
-        return False
-    user_id, project_id, title = row
-    body = ENDED_LINE[status].format(title=title).split(". ")[0].rstrip(".")
-    await notify_service.add(
-        s,
-        user_id=user_id,
-        kind=NOTIFY_KIND,
-        body=body,
-        link=f"/projects/{project_id}",
-        dedup_key=f"research:{research_id}",
-        project_id=project_id,
-    )
-    return True
+    return got.first() is not None
 
 
 async def _signal(r: AssistantResearch) -> None:
-    """commit 뒤: 열어 둔 대화가 다시 읽게(state) · 안 읽은 알림 수(notif). 실패해도 일은 끝난 것(로그만)."""
-    from app.notify import service as notify_service
+    """commit 뒤: 열어 둔 대화가 다시 읽게(state). 실패해도 일은 끝난 것(로그만)."""
     from app.realtime import service as realtime
 
     try:
         await realtime.push_state([r.user_id], "thread", r.id, r.project_id)
-        async with SessionLocal() as s:
-            await notify_service.push_unread(s, [r.user_id])
     except Exception as e:  # noqa: BLE001 - 신호는 지워져도 되는 것(화면은 다시 읽어 맞춘다)
         log.warning("조사 끝 신호 실패 (%s)", type(e).__name__)
 
@@ -2009,7 +1989,7 @@ def build_result(run_: _Run, notes: list[str], prompt: str, today: date) -> dict
 
 
 async def _finish(run_: _Run) -> str:
-    """끝 상태 · 결과 저장 + 종 알림(한 트랜잭션) → commit 뒤 화면 신호."""
+    """끝 상태 · 결과 저장 → commit 뒤 화면 신호."""
     # 누출 견주기는 규칙 글로(큰따옴표 예시 말 "찾은 만큼 정리했어요"는 그대로 말해도 된다)
     prompt = prompts.rules("researcher")
     if run_.step != "write":

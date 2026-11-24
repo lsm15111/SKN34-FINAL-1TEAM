@@ -182,8 +182,11 @@ def test_change_research_renames_the_title_bell_end_line_and_pick(api, script):
             await s.commit()
 
     run(api, finish)
-    (bell,) = query("select body from notifications where kind = 'assistant_research'")
-    assert bell["body"].startswith(want) and "성남" not in bell["body"]
+    # 끝 줄(대화)도 바꾼 제목으로. 종 알림은 만들지 않아요(11-24)
+    feed = api.get("/assistant/feed", params={"project_id": pid}).json()
+    (end,) = [x for x in feed["items"] if x["id"] == f"r-{row['id']}"]
+    assert end["parts"][0]["text"].startswith(want) and "성남" not in end["parts"][0]["text"]
+    assert query("select * from notifications where kind = 'assistant_research'") == []
     # '수지'(바꾸기 메모에만 있는 낱말)로도 그 조사를 읽어요
     log = script(
         [
