@@ -42,6 +42,9 @@ type State = {
   deal: "gyeol" | "bareun";
   /** 승인 뒤 이어질 일(새로 고쳐도 이어지게 시각과 함께 저장) */
   pending: { beat: Beat; at: number }[];
+  /** 희망 예산(집 정보 '예산' 칸, 원)과 열린 희망 예산 카드가 저장할 값 */
+  budget: number | null;
+  budgetAsk: number | null;
 };
 type Beat = "sent" | "answered" | "booked" | "maruBooked" | "quoted" | "closed" | "dates" | "final";
 type Draft =
@@ -55,7 +58,7 @@ type Draft =
 type Step = { wait: number; ev: Draft; clock?: string; apply?: (s: State) => void; dup?: boolean };
 type Plan = { steps: Step[]; after?: (s: State) => void };
 
-const VERSION = 6;
+const VERSION = 7;
 const KEY = (pid: string) => `mj_v4_mock:${pid}`;
 const MEMORY_KEY = "mj_v4_mock:memory";
 const cache = new Map<string, State>();
@@ -110,6 +113,7 @@ function enqueue<T>(pid: string, fn: () => Promise<T>): Promise<T> {
 const base = (pid: string, script: MockScript, clock: string): State => ({
   v: VERSION, pid, script, stage: "standard", clock, items: [], actions: {}, chips: [], rev: 1, n: 0,
   notes: [], picks: ["gyeol", "bareun", "maru"], quoteVer: 1, quoteFailOnce: true, todayDismissed: false, demolition: null, wish: null, deal: "gyeol", pending: [],
+  budget: 3_000_000, budgetAsk: null,
 });
 const href = (s: State, tail = "") => `/projects/${encodeURIComponent(s.pid)}${tail}`;
 const nextId = (s: State, p: string) => `${p}-${++s.n}`;
@@ -407,7 +411,7 @@ function boardOf(s: State): BoardOut {
   const open = Object.values(s.actions).filter((a) => a.status === "proposed").length;
   return {
     project_name: "노원구 아파트 도배", step: i, facts, confirmed: true, todo: open, money, vendors, period, docs,
-    plan_example: s.stage !== "final", memory: [], today_pin: s.script === "today" && !s.todayDismissed ? 2 : 0,
+    plan_example: s.stage !== "final", memory: [], today_pin: s.script === "today" && !s.todayDismissed ? 2 : 0, budget_won: s.budget,
   };
 }
 
@@ -457,6 +461,9 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
   }
   if ((s.stage === "standard" || s.stage === "vendors") && /업체/.test(text) && /추천|골라/.test(text)) return reply(vendorsBeat(s));
   if ((s.stage === "standard" || s.stage === "vendors") && /실측\S{0,2}\s*(?:시간|언제|날짜|일정)|희망 기간 후보/.test(text)) return reply(wishBeat(s));
+  // 예산을 말하면 기억이 아니라 희망 예산 승인 카드(서버 propose_budget과 같은 꼴)
+  const said = /예산/.test(text) ? /(\d{2,6})\s*만/.exec(text.replace(/,/g, "")) : null;
+  if (said) return reply(budgetAsked(s, Number(said[1]) * 10_000));
   if (/다른 업체/.test(text)) return answer("업체 목록에서 더 볼 수 있어요. 가견적 낮은 순으로 보여요.", [{ label: "업체 목록 열기", href: href(s, "/vendors") }]);
   if (/가견적/.test(text)) return answer("가견적은 업체가 확인한 단가에 믿집이 센 수량을 곱해 계산 엔진이 만든 금액이에요. 실측 뒤 업체가 보내는 견적서와 달라질 수 있어요.", [{ label: "표준견적서 보기", href: href(s, "/standard") }]);
   if (/견적서 비교|비교 보기/.test(text)) return reply(compareBeat(s, true));
@@ -496,6 +503,23 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
   if (/언제/.test(text)) return answer("업체는 요청을 받고 48시간 안에 답해요. 견적서는 보통 실측 다음 날까지 와요. 오면 바로 알려 드릴게요.");
   if (/실측은 무엇/.test(text)) return answer("실측 때 업체가 벽 상태 · 몰딩 · 짐을 보고 견적서를 보내요. 한 시간 안쪽이면 끝나요.");
   return answer("예시 화면이라 정해 둔 말에만 답해요. 아래 칩이나 카드의 단추로 이어 가 보세요.");
+}
+
+/** 희망 예산을 말하면 비서가 '희망 예산 저장' 제안을 만들어요(승인해야 저장, 기억에는 금액을 남기지 않아요) */
+function budgetAsked(s: State, amount: number): Step[] {
+  const close = closeOpen(s, "budget");
+  s.budgetAsk = amount;
+  const act = makeAction(s, "budget", {
+    title: "희망 예산 저장",
+    rows: [{ label: "희망 예산", value: won(amount), sub: `지금 ${s.budget != null ? won(s.budget) : "아직 몰라요"}` }],
+    note: "저장하면 보드 · 집 정보에 보이고, 실측을 요청하면 업체 요청서에도 보여요",
+    approve_label: "맞아요, 저장",
+  }, D.T("2026-11-28", "10:00"), { target_id: s.pid, target_ver: s.budget != null ? String(s.budget) : "-" });
+  return [
+    ...close, step({ type: "action", data: act }, 300),
+    ...sentences(`예산은 기억 대신 집 정보의 희망 예산으로 저장해요. ${won(amount)}으로 저장하는 카드를 만들었어요.`),
+    done(s, s.chips),
+  ];
 }
 
 /** 철거 범위를 고르면 비서가 '집 정보 저장' 제안을 만들어요(승인해야 저장) */
@@ -767,10 +791,12 @@ export async function approve(pid: string, actionId: string, _clientKey: string)
           : a.kind === "visit_slot" ? { text: a.summary.title.startsWith("마루와벽") ? "실측을 잡았어요" : "고른 시간을 보냈어요. 업체가 수락하면 확정돼요", href: href(s, "/visits"), label: "실측 일정 보기" }
             : a.kind === "vendor_confirm" ? { text: `${a.summary.title}했어요`, href: href(s, "/quotes"), label: "견적서 보기" }
               : a.kind === "dates_accept" ? { text: "공사 날짜를 수락했어요", href: href(s, "/plan"), label: "공정표 보기" }
-                : { text: "했어요" };
+                : a.kind === "budget" ? { text: `희망 예산을 ${won(s.budgetAsk ?? 0)}으로 저장했어요`, href: href(s, "/home?field=budget"), label: "우리 집 정보" }
+                  : { text: "했어요" };
     const fin: ActionOut = { ...a, status: "executed", decided_at: at, executed_at: at, result };
     setAction(s, fin);
     if (a.kind === "vendor_confirm") s.deal = bareun ? "bareun" : "gyeol";
+    if (a.kind === "budget" && s.budgetAsk != null) { s.budget = s.budgetAsk; s.budgetAsk = null; }
     if (a.kind === "home_info") {
       const picked = /전체/.test(a.summary.rows?.[0]?.value ?? "") ? "full" : /일부/.test(a.summary.rows?.[0]?.value ?? "") ? "partial" : "none";
       s.demolition = picked;

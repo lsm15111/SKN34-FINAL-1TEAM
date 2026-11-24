@@ -251,10 +251,11 @@ export type TaskOut = {
   error?: string | null;
 };
 
-/** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change), visit_cancel은 보낸 실측 요청 취소 */
+/** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change), visit_cancel은 보낸 실측 요청 취소,
+ *  budget은 희망 예산(집 정보 '예산' 칸) 저장 */
 export type ActionKind =
   | "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates"
-  | "extra_answer" | "work_check" | "visit_again" | "visit_cancel";
+  | "extra_answer" | "work_check" | "visit_again" | "visit_cancel" | "budget";
 export type ActionStatus = "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
 /** 무엇 · 얼마 · 어느 버전(assistant_actions.summary). 금액 · 차액은 서버 값 */
 export type ActionSummary = {
@@ -406,6 +407,8 @@ export type BoardOut = {
   memory: MemoryOut[];
   /** 대화가 길면 단계 띠 아래 '오늘 정할 일 n ›' */
   today_pin: number;
+  /** 희망 예산(원, 집 정보 '예산' 칸). 화면 · 승인 카드로만 넣고, 비면 아직 안 정함. 기억(memory)에는 금액이 없어요 */
+  budget_won?: number | null;
 };
 
 export type NotifyPage = Schemas["NotificationPage"];
@@ -569,10 +572,10 @@ export function actionsIn(items: FeedItem[]): ActionOut[] {
 }
 
 /**
- * 공사에 한 번만 정하는 종류(대상이 공사 · 공정 하나): 집 정보 · 실측 요청 · 업체 확정(한 곳을 확정하면 다른 곳 확정 제안도 끝나요).
+ * 공사에 한 번만 정하는 종류(대상이 공사 · 공정 하나): 집 정보 · 희망 예산 · 실측 요청 · 업체 확정(한 곳을 확정하면 다른 곳 확정 제안도 끝나요).
  * 나머지(반나절 · 공사 날짜 · 날짜 바꾸기 · 추가 금액 …)는 실측 · 확정 · 추가 금액마다 열린 제안이 따로 있어요.
  */
-const ONE_DECISION: ReadonlySet<ActionKind> = new Set<ActionKind>(["home_info", "visit_request", "vendor_confirm"]);
+const ONE_DECISION: ReadonlySet<ActionKind> = new Set<ActionKind>(["home_info", "budget", "visit_request", "vendor_confirm"]);
 
 /**
  * 할 일을 마친 먼저 말 건 줄(nudge_id): 서버가 '완료'로 보낸 줄(settled), 그 줄에 달린 승인 카드가 실행됐거나, 화면 v3 단추로
@@ -750,7 +753,8 @@ export function kindsForWrite(method: string, path: string, projectId: string): 
   const base = `/projects/${projectId}`;
   if (!path.startsWith(base)) return [];
   const tail = path.slice(base.length);
-  if (method === "PATCH" && tail === "") return ["home_info"];
+  // 집 정보 고치기는 희망 예산(같은 화면의 '예산' 칸)도 같이 저장해요
+  if (method === "PATCH" && tail === "") return ["home_info", "budget"];
   if (method !== "POST") return [];
   if (tail === "/visits") return ["visit_request"];
   if (/^\/visits\/[^/]+\/(pick|proposal\/pick|repick)$/.test(tail)) return ["visit_slot"];

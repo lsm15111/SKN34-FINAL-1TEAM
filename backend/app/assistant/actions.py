@@ -678,6 +678,8 @@ class Targets:
     dates: dict[uuid.UUID, str]  # 업체 확정 → 공사 날짜 상태(dates_state)
     live: set[tuple[uuid.UUID, str, uuid.UUID | None]]  # 살아 있는 실측 (공사, 공정, 업체)
     diys: dict[uuid.UUID, str] = field(default_factory=dict)  # 공사 → 직접 할 일 칩 지문(diy_ver)
+    # 공사 → 희망 예산(원, 열린 희망 예산 카드의 대상만)
+    budgets: dict[uuid.UUID, int | None] = field(default_factory=dict)
 
 
 def home_ver(rev: int, fields: dict, picked: list[str] | None) -> str:
@@ -686,6 +688,12 @@ def home_ver(rev: int, fields: dict, picked: list[str] | None) -> str:
     from app.project.diy import diy_ver
 
     return f"{rev}:{diy_ver(picked)}" if "diy" in fields else str(rev)
+
+
+def budget_ver(won: int | None) -> str:
+    """희망 예산 제안의 target_ver: 만든 때 예산(원, 없으면 '-'). 예산은 rev를 올리지 않아서, 화면에서 바꾼 뒤 옛
+    카드를 승인하면 옛 값으로 덮지 않게 판으로 본다."""
+    return "-" if won is None else str(won)
 
 
 def moved(a: AssistantAction, t: Targets) -> bool:
@@ -710,6 +718,9 @@ def moved(a: AssistantAction, t: Targets) -> bool:
                 return p[1] and set(pl.get("fields") or {}) != {"diy"}
             ids = [uuid.UUID(v) for v in pl.get("vendor_ids", [])]
             return bool(ids) and all((a.target_id, pl.get("trade"), v) in t.live for v in ids)
+        case "budget":  # 희망 예산: 잠겼거나(실측 요청 뒤) 화면에서 예산이 바뀜
+            p = t.projects.get(a.target_id)
+            return p is None or p[1] or budget_ver(t.budgets.get(a.target_id)) != a.target_ver
         case "vendor_confirm":
             return t.visits.get(a.target_id) != "quoted"
         case "visit_slot" | "window_answer" | "decline":
@@ -751,6 +762,9 @@ async def _moved_ids(
         dates=await schedule_service.dates_states(s, of("deal")),
         live=await repo.live_visits(s, of("project")),
         diys={pid: diy_ver(picked_of(chips.get(pid, ()))) for pid in of("project")},
+        budgets=await repo.project_budgets(
+            s, list({a.target_id for a in rows if a.kind == "budget"})
+        ),
     )
     gone = [a for a in rows if moved(a, t)]
     more = set(await aftercare.moved_ids(s, rows))  # 07: 추가 금액 · 공사 끝 확인 · 한 번 더 요청
@@ -877,6 +891,27 @@ async def _forget_left_out(s: AsyncSession, user: User, picked, now: datetime) -
 
     kept = set(picked or ())
     await diy_tools.forget(s, user.id, [k for k in DIY if k not in kept], now)
+
+
+async def _budget(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
+    """희망 예산(집 정보 '예산' 칸): 카드를 만든 때 값(target_ver)과 지금 값이 다르면 409 stale(화면에서 바뀐 값을
+    옛 카드로 덮지 않는다). 주인 · 잠김 · 값 꼴은 project.service.set_budget이 본다. 공사 행을 먼저 잠가 판 검사와 저장
+    사이에 화면 저장이 끼지 않게 한다. 기억(memory)에는 아무것도 쓰지 않는다(고정 선 7)."""
+    from app.assistant.tools.cards import man_won
+    from app.project import service as project_service
+
+    pid = a.project_id
+    await project_service.lock(s, pid)  # type: ignore[arg-type]
+    p = await project_service.get_for(s, user, pid)  # type: ignore[arg-type]
+    if budget_ver(p.budget_won) != a.target_ver:
+        raise _stale("희망 예산이 그사이 바뀌었어요. 비서에게 다시 물어봐 주세요.")
+    won = int(a.payload["max_won"])
+    await project_service.set_budget(s, user, pid, won)  # type: ignore[arg-type]
+    text = f"희망 예산을 {man_won(won)}으로 저장했어요"
+    await mark(
+        {"text": text, "href": f"/projects/{pid}/home?field=budget", "label": "우리 집 정보"}
+    )
+    await s.commit()
 
 
 async def _visit_request(
@@ -1112,6 +1147,7 @@ EXECUTORS: dict[str, Executor] = {
     "delay_accept": _dates_accept,
     "date_change": _date_change,
     "visit_cancel": _visit_cancel,
+    "budget": _budget,
     "window_answer": _window_answer,
     "decline": _decline,
     "dates": _dates,

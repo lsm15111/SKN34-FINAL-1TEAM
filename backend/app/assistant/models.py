@@ -59,6 +59,8 @@ ACTION_KINDS = (
     "visit_again",
     # 보낸 실측 요청 취소(0051, visit.service.cancel)
     "visit_cancel",
+    # 희망 예산(0059, 집 정보 '예산' 칸 project.service.set_budget)
+    "budget",
 )
 ACTION_STATUSES = ("proposed", "approved", "executed", "rejected", "expired", "failed")
 ORIGINS = ("turn", "nudge")

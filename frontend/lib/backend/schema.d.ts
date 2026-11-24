@@ -3124,7 +3124,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again" | "visit_cancel";
+            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again" | "visit_cancel" | "budget";
             /**
              * Status
              * @enum {string}
@@ -3560,6 +3560,11 @@ export interface components {
             memory: components["schemas"]["MemoryOut"][];
             /** Today Pin */
             today_pin: number;
+            /**
+             * Budget Won
+             * @description 희망 예산(원, 집 정보 '예산' 칸). 화면 · 승인 카드로만 넣고, 비면 아직 안 정함
+             */
+            budget_won?: number | null;
         };
         /** BoardPeriod */
         BoardPeriod: {
