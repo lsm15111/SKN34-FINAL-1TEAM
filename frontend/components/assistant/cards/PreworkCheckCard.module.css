@@ -1,0 +1,29 @@
+/* 도배 전 점검 카드 전용. 공통 바탕 · 단추 · 칩 · 큰 숫자 상자는 ../kit/kit.module.css */
+
+/* 묶음(앞 공사 · 직접 할 일 · 벽지 직접 구매): 위 줄로 나눠요 */
+.sec { display: grid; gap: 10px; min-width: 0; padding-top: 14px; border-top: 1px solid var(--mj-line-soft); }
+.head { margin: 0; font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); color: var(--mj-text); }
+
+/* 앞 공사 줄: 이름 + 상태, 왜 먼저인지, 고르기 칩(폰 360에서는 칩이 줄을 바꿔요) */
+.rows, .tasks, .mats { list-style: none; margin: 0; padding: 0; display: grid; min-width: 0; }
+.row { display: grid; gap: 6px; padding: 10px 0; border-top: 1px solid var(--mj-line-soft); min-width: 0; }
+.row:first-child { border-top: 0; padding-top: 0; }
+.rowHead { display: flex; align-items: center; justify-content: space-between; gap: 6px 10px; flex-wrap: wrap; min-width: 0; }
+.rowHead b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); }
+.why { margin: 0; font-size: var(--mj-type-caption); color: var(--mj-text-sub); overflow-wrap: anywhere; }
+.note { margin: 0; font-size: var(--mj-type-caption); color: var(--mj-on-primary-weak); font-weight: var(--mj-weight-semibold); overflow-wrap: anywhere; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* 직접 할 일: 이름 한 줄 + 언제 한 줄 */
+.tasks li { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); min-width: 0; }
+.tasks li:first-child { border-top: 0; padding-top: 0; }
+.tasks li > span { color: var(--mj-text-sub); overflow-wrap: anywhere; }
+
+/* 부자재: 이름 + 포함 상태, 줄 이름 · 양 */
+.mats li { display: grid; gap: 2px; padding: 8px 0; border-top: 1px solid var(--mj-line-soft); min-width: 0; }
+.mats li:first-child { border-top: 0; padding-top: 0; }
+
+/* 다음 걸음 한 줄 */
+.next { display: grid; gap: 8px; padding: 12px 14px; border-radius: var(--mj-radius-field); background: var(--mj-surface-sub); }
+.next p { margin: 0; display: flex; gap: 6px; align-items: flex-start; font-size: var(--mj-type-label); color: var(--mj-text); overflow-wrap: anywhere; }
+.next p svg { width: 18px; height: 18px; flex: none; margin-top: 2px; color: var(--mj-text-mute); }

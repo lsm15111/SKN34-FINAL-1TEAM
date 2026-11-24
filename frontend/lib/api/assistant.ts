@@ -15,7 +15,7 @@ export type CardKind =
   | "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule"
   | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist"
   | "extra" | "notice" | "research"
-  | "grade_compare" | "market_range" | "options" | "product_estimate";
+  | "grade_compare" | "market_range" | "options" | "product_estimate" | "prework_check";
 
 /** 출처 이름표: 믿집 계산(계산 엔진) · AI 답변(LLM 글) · 믿집 안내(정해 둔 글) */
 export type Source = "calc" | "ai" | "guide";
@@ -229,13 +229,53 @@ export type ProductEstimateData = {
   total_won: number; label: string; assumed: string[]; href_standard: string;
 };
 
+/** 도배 전 점검(갈래 P2). 앞 공사 답: done 끝났어요 · todo 아직이에요 · none 안 해요(서버 project/prework.py와 같은 값) */
+export type PreworkKey = "mokgong" | "electric" | "film" | "floor";
+export type PreworkState = "done" | "todo" | "none";
+export const PREWORK_STATES: { key: PreworkState; label: string }[] = [
+  { key: "done", label: "끝났어요" },
+  { key: "todo", label: "아직이에요" },
+  { key: "none", label: "안 해요" },
+];
+/** 앞 공사 한 줄: state는 저장된 답(없으면 단추로 물어요), why는 왜 도배 전에 끝내는지(정해 둔 글) */
+export type PreworkRow = { key: PreworkKey; label: string; state: PreworkState | null; why: string; note?: string | null };
+/** 벽지 직접 구매일 때 살 롤 수(계산 엔진, 표준견적서 화면 롤 수와 같은 셈) · 부자재가 표준견적서에 들어 있는지(state: 포함 상태 6종, null이면 업체 확인) */
+export type PreworkPaper = {
+  name: string; size: string; area_m2: string;
+  count: number; base: number; loss: number; spare_min: number; spare_max: number;
+  basis: string;
+  materials: { name: string; state: string | null; line?: string | null; amount?: string | null }[];
+};
+export type PreworkCheckData = {
+  rows: PreworkRow[];
+  /** 도배 전에 끝낼 직접 할 일(날짜는 공정표와 같은 값) */
+  tasks: { label: string; when: string }[];
+  paper: PreworkPaper | null;
+  next: string; next_label?: string | null; next_say?: string | null;
+  href: string;
+};
+
+/**
+ * 점검 카드에서 고른 앞 공사 답 → 한 턴으로 보낼 choice('prework.<공정>:<값>', 줄 순서)와 고객 말. 저장된 답과 같은 것은 빼요.
+ * 고른 게 없으면 null. 서버가 승인 카드를 만들고, 고객이 그 카드를 눌러야 저장돼요.
+ */
+export function preworkSend(rows: PreworkRow[], picked: Partial<Record<PreworkKey, PreworkState>>): { choice: string[]; text: string } | null {
+  const got = rows.filter((r) => picked[r.key] && picked[r.key] !== r.state);
+  if (!got.length) return null;
+  const word = (s: PreworkState) => PREWORK_STATES.find((x) => x.key === s)?.label ?? s;
+  return {
+    choice: got.map((r) => CHOICE.prework(r.key, picked[r.key] as PreworkState)),
+    text: `앞 공사 답: ${got.map((r) => `${r.label} ${word(picked[r.key] as PreworkState)}`).join(" · ")}`,
+  };
+}
+
 export type CardData = {
   home_info: HomeInfoData; standard_quote: StandardQuoteData; vendor_picks: VendorPicksData; visit_slots: VisitSlotsData;
   quote_compare: QuoteCompareData; schedule: ScheduleData; knowledge: KnowledgeData; answer: AnswerData;
   floorplan_links: FloorplanLinksData; today: TodayData; vendor_brief: VendorBriefData; quote_checklist: QuoteChecklistData;
   extra: ExtraData; notice: NoticeData; research: ResearchData;
   grade_compare: GradeCompareData; market_range: MarketRangeData; options: OptionsData;
-  product_estimate: ProductEstimateData;
+  product_estimate: ProductEstimateData; prework_check: PreworkCheckData;
 };
 export type CardOut<K extends CardKind = CardKind> = { card_id: string; kind: K; data: CardData[K]; say?: string | null };
 
@@ -252,10 +292,11 @@ export type TaskOut = {
 };
 
 /** 제안 도구와 1:1(propose_*). date_change는 수락한 공사 날짜 바꾸기 요청(propose_date_change), visit_cancel은 보낸 실측 요청 취소,
- *  budget은 희망 예산(집 정보 '예산' 칸) 저장 */
+ *  budget은 희망 예산(집 정보 '예산' 칸) 저장
+ *  prework는 도배 전 점검 카드 단추로 고른 앞 공사 답(제안 도구 없이 카드 단추로만) */
 export type ActionKind =
   | "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates"
-  | "extra_answer" | "work_check" | "visit_again" | "visit_cancel" | "budget";
+  | "extra_answer" | "work_check" | "visit_again" | "visit_cancel" | "budget" | "prework";
 export type ActionStatus = "proposed" | "approved" | "executed" | "rejected" | "expired" | "failed";
 /** 무엇 · 얼마 · 어느 버전(assistant_actions.summary). 금액 · 차액은 서버 값 */
 export type ActionSummary = {
@@ -367,6 +408,8 @@ export const CHOICE = {
     answer === "approve" ? `extra_answer:${extra}` : `extra_answer:${extra},${answer}`,
   /** 집 정보 벽지 칸(벽지 두 종류 견주기 카드): 그 벽지로 바꾸는 집 정보 승인 카드 */
   grade: (grade: "economy" | "basic") => `grade:${grade}`,
+  /** 앞 공사 답(도배 전 점검 카드): 여럿을 한 턴에 보내면 승인 카드 하나(preworkSend) */
+  prework: (key: PreworkKey, state: PreworkState) => `prework.${key}:${state}`,
 };
 
 // ───── 대화 · 보드 · 오늘 · 상태 · 기억 · 알림

@@ -26,6 +26,7 @@ CardKind = Literal[
     "grade_compare", "market_range", "options",  # 벽지 두 종류 견주기 · 시세 범위 · 고르기 칩
     "research",  # 09 조사 담당: 진행 · 결과(data는 assistant/research.py ResearchData)
     "product_estimate",  # 조사로 찾은 벽지 판매가로 센 이 집 도배 금액(A안)
+    "prework_check",  # 도배 전 점검: 앞 공사 · 직접 할 일 · 벽지 직접 구매 롤 수(갈래 P2)
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
@@ -33,6 +34,7 @@ ActionKind = Literal[
     "extra_answer", "work_check", "visit_again",  # 07 자동화
     "visit_cancel",  # 보낸 실측 요청 취소
     "budget",  # 희망 예산(집 정보 '예산' 칸)
+    "prework",  # 도배 전 점검 카드 단추로 고른 앞 공사 답 저장
 ]  # fmt: skip
 ActionStatus = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 TurnStatus = Literal["running", "done", "stopped", "failed"]
@@ -597,6 +599,70 @@ class OptionsData(BaseModel):
 
     title: str
     options: list[OptionOut] = Field(max_length=6)
+
+
+PreworkKey = Literal["mokgong", "electric", "film", "floor"]
+PreworkState = Literal["done", "todo", "none"]
+LineStateOut = Literal["included", "bundled", "separate", "optional", "after_visit", "excluded"]
+
+
+class PreworkRow(BaseModel):
+    key: PreworkKey
+    label: str = Field(description="공정 화면 말(목공 · 전기 · 필름 · 바닥)")
+    state: PreworkState | None = Field(
+        description="저장된 답(모은 조건 prework.<공정>): done 끝났어요 · todo 아직이에요 · none 안 해요. "
+        "없으면 단추로 물어요"
+    )
+    why: str = Field(description="왜 도배 전에 끝내는지 한 줄(정해 둔 글, 숫자 없음)")
+    note: str | None = Field(default=None, description="이 공사에서 이미 아는 것(코드 글)")
+
+
+class PreworkTask(BaseModel):
+    label: str = Field(description="도배 전에 끝낼 직접 할 일(calc.diy 이름)")
+    when: str = Field(description="언제까지(계산 엔진 날짜 글, 공정표와 같은 값)")
+
+
+class PreworkMaterial(BaseModel):
+    name: str = Field(description="풀 · 초배지 · 부직포")
+    state: LineStateOut | None = Field(
+        description="표준견적서에서의 포함 상태(그 자재를 단 줄의 상태). 없으면 업체 확인"
+    )
+    line: str | None = Field(default=None, description="그 표준견적서 줄 이름")
+    amount: str | None = Field(
+        default=None,
+        description="양 글(계산 엔진, 표준품셈 재료량). 셀 기준이 없으면 비움(업체 확인)",
+    )
+
+
+class PreworkPaper(BaseModel):
+    """벽지 직접 구매일 때 살 벽지 롤 수(계산 엔진 calc.dobae_rolls, 표준견적서 화면 롤 수와 같은 셈) · 부자재."""
+
+    name: str = Field(description="롤 종류(실크 · 광폭 합지)")
+    size: str = Field(description="롤 크기 '106cm × 15.6m'")
+    area_m2: Decimal = Field(description="도배 면적(벽 + 천장, 계산 엔진)")
+    count: int = Field(description="필요 롤(자투리 포함, 올림)")
+    base: int = Field(description="면적만 덮는 롤(올림)")
+    loss: int = Field(description="자투리 몫 롤(count − base)")
+    spare_min: int = Field(description="여분 롤(셈 밖, 손상 · 무늬 맞춤 대비)")
+    spare_max: int
+    basis: str = Field(description="셈 근거 한 줄(도배 면적 × 소요량, 계산 엔진 값)")
+    materials: list[PreworkMaterial]
+
+
+class PreworkCheckData(BaseModel):
+    """도배 전 점검(실측 요청 전): 앞 공사가 끝났는지 · 도배 전 직접 할 일 · 벽지 직접 구매면 롤 수와 부자재.
+    앞 공사 단추는 choice 'prework.<공정>:<done · todo · none>'(5개까지)로 턴을 보내고, 코드가 승인 카드(prework)를
+    만들어요. 저장은 고객이 그 승인 카드를 누를 때만이에요. 업체 연결 · 견적은 하지 않아요."""
+
+    rows: list[PreworkRow]
+    tasks: list[PreworkTask] = Field(default=[], description="도배 전에 끝낼 직접 할 일")
+    paper: PreworkPaper | None = Field(default=None, description="벽지 직접 구매일 때만")
+    next: str = Field(description="다음 걸음 한 줄(정해 둔 글)")
+    next_label: str | None = Field(default=None, description="다음 걸음 단추 글")
+    next_say: str | None = Field(
+        default=None, description="다음 걸음 단추를 누르면 비서에게 보낼 말"
+    )
+    href: str
 
 
 class CardOut(BaseModel):

@@ -223,6 +223,8 @@ BUTTONS: dict[str, frozenset[str]] = {
     "grade_compare": frozenset({"home_info"}),
     # 고르기 칩(누르면 그 말을 보내요): 칩을 눌러 달라는 말이 '누를 승인 카드는 없어요'로 바뀌지 않게(고침 5차 R1)
     "options": frozenset({"choice"}),
+    # 도배 전 점검 카드의 앞 공사 단추(끝났어요 · 아직이에요 · 안 해요) → 앞 공사 답 승인 카드
+    "prework_check": frozenset({"prework"}),
 }
 
 

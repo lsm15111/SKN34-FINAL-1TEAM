@@ -61,6 +61,8 @@ ACTION_KINDS = (
     "visit_cancel",
     # 희망 예산(0059, 집 정보 '예산' 칸 project.service.set_budget)
     "budget",
+    # 도배 전 앞 공사 답(0059, project.prework.set_prework). 제안 도구 없이 점검 카드 단추(choices)로만 만들어요
+    "prework",
 )
 ACTION_STATUSES = ("proposed", "approved", "executed", "rejected", "expired", "failed")
 ORIGINS = ("turn", "nudge")

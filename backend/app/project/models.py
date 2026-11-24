@@ -70,6 +70,11 @@ _DIY_SQL = (
     "key not like 'diy.%' or (value = 'self' and key in ('diy.paint', 'diy.outlet', 'diy.light',"
     " 'diy.silicone', 'diy.handle', 'diy.clean', 'diy.paper_buy', 'diy.none'))"
 )
+# 도배 전 앞 공사 답 칸(project/prework.py 공정 · 단추 값). 공정을 더하면 이 줄 · migration도 같이 바꾼다
+_PREWORK_SQL = (
+    "key not like 'prework.%' or (key in ('prework.mokgong', 'prework.electric', 'prework.film',"
+    " 'prework.floor') and value in ('done', 'todo', 'none'))"
+)
 
 
 class Project(Base):
@@ -282,6 +287,7 @@ class ProjectCondition(Base):
     (예: dobae.grade)이고 공사 · 칸마다 하나다. 다음 턴부터 에이전트가 같은 칸을 다시 묻지 않는다.
     v4 철거 범위(demolition)는 코드 값(full · partial · none)만 받는다(0043, 전체 철거면 리모델링 기준).
     v4 직접 할 일(diy.<키>)은 project/diy.py 칩 키와 '없어요'(diy.none)만, 값은 self만 받는다(0046).
+    v4 도배 전 앞 공사 답(prework.<공정>)은 project/prework.py 공정과 단추 값(done · todo · none)만 받는다(0059).
     """
 
     __tablename__ = "project_conditions"
@@ -293,6 +299,7 @@ class ProjectCondition(Base):
             "key <> 'demolition' or value in ('full', 'partial', 'none')", name="demolition"
         ),
         CheckConstraint(_DIY_SQL, name="diy"),
+        CheckConstraint(_PREWORK_SQL, name="prework"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
