@@ -84,6 +84,7 @@ CARD_NAME = {
     "extra": "추가 금액", "notice": "이웃 안내문", "grade_compare": "벽지 두 종류 비교",
     "market_range": "시세 범위", "options": "고르기", "research": "조사",
     "product_estimate": "벽지 금액", "prework_check": "도배 전 점검",
+    "outside_quote": "받은 견적서 점검",
 }  # fmt: skip
 CARDS_ONLY = "(카드를 보여 줬어요"  # 카드만 보낸 턴의 기록 글 머리(끝 문장으로 보지 않는다)
 BREAKER_KEY = "assistant:breaker"
@@ -1130,6 +1131,8 @@ class TurnCtx:
     stale: list[str] = field(default_factory=list)
     # 카드 단추가 보낸 턴(context.choice가 있음): 글은 화면이 만든 말이라 기억을 뽑지 않는다
     pressed: bool = False
+    # 이 턴에 붙인 사진(본인 것만, 화면이 개인정보를 가린 그림). 받은 견적서 점검 도구만 읽는다
+    files: list[uuid.UUID] = field(default_factory=list)
 
 
 @dataclass
@@ -1233,7 +1236,7 @@ def off_topic(ctx: TurnCtx, note: str | None = None) -> bool:
     있어('날씨 풀리면요') 막지 않아요."""
     from app.assistant import free
 
-    if ctx.surface != "customer" or ctx.pressed or ctx.choice or note:
+    if ctx.surface != "customer" or ctx.pressed or ctx.choice or note or ctx.files:
         return False
     got = free.off_kind(ctx.text)
     return got is not None and got[0] != "call" and not asked_last(ctx.history)
@@ -1335,11 +1338,19 @@ def asked_last(history: list[dict]) -> bool:
     return False
 
 
+def files_note(ctx: TurnCtx) -> str:
+    """붙인 사진 한 줄(모델에만, 사진은 받은 견적서 점검 도구가 읽어요). 없으면 ''."""
+    return f"견적서 사진 {len(ctx.files)}장을 붙였어요" if ctx.files else ""
+
+
 def said(ctx: TurnCtx, note: str | None = None) -> str:
-    """모델에 보낼 이번 고객 글: 가린 글 + 카드에서 고른 것 + 코드가 처리한 한 줄. 비면 ''(빈 글 블록은 보내지 않는다)."""
+    """모델에 보낼 이번 고객 글: 가린 글 + 카드에서 고른 것 + 붙인 사진 + 코드가 처리한 한 줄. 비면 ''(빈 글 블록은
+    보내지 않는다)."""
     text = ctx.text
     if ctx.choice:
         text += f"\n(카드에서 고름: {', '.join(choices.text_of(c) for c in ctx.choice)})"
+    if ctx.files:
+        text += f"\n({files_note(ctx)})"
     if note:
         text += f"\n({note})"
     return text.strip()
@@ -1397,6 +1408,8 @@ class _Turn:
             self.gate.allow(note)
         # 그중 새로 만든 승인 카드의 턴 사실 이름(with_open: 모델이 단추 이름을 말할 재료)
         self.made_names: list[str] = []
+        if ctx.files:  # '사진 1장'을 다시 말해도 근거가 있게
+            self.gate.allow(files_note(ctx))
         for name, data in seen:
             if name == "card":
                 self.gate.allow(card_ground(data.get("data") or {}))
@@ -1409,7 +1422,9 @@ class _Turn:
                 if str(data.get("action_id")) in res.made_ids and (got := made_name(data)):
                     self.made_names.append(got)
         # 인사 · 고마움만 한 턴: 도구를 부르지 못하게(도구 정의는 그대로 보내 캐시를 지킨다)
-        self.chat_only = policy.small_talk(ctx.text) and not ctx.choice and not ctx.stale
+        self.chat_only = (
+            policy.small_talk(ctx.text) and not ctx.choice and not ctx.stale and not ctx.files
+        )
         # 요청 점검(asks.py): 고객 비서에서 고객이 직접 쓴 말만(카드 단추가 만든 말 · 인사는 아님)
         plain = ctx.surface == "customer" and not self.chat_only and not ctx.pressed
         self.asks = asks_mod.extract(ctx.text) if plain else asks_mod.NONE
@@ -1433,6 +1448,7 @@ class _Turn:
             now=ctx.now,
             refs=ctx.refs,
             text=ctx.text,
+            files=tuple(ctx.files),
         )
 
     def _messages(self) -> list[dict]:

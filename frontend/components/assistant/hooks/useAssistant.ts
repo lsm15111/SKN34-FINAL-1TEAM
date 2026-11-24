@@ -259,8 +259,8 @@ export function useAssistant(projectId: string) {
   }, [projectId, markHandled, later]);
 
   /** 한 턴 보내기. 넘쳐서(503 busy · unavailable) Retry-After만큼 기다렸다 같은 client_key로 한 번 다시 보내도 넘치면
-   *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요) */
-  const send = useCallback(async (text: string, context?: TurnIn["context"]): Promise<"busy" | void> => {
+   *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요). files는 붙인 받은 견적서 사진(가린 그림) id */
+  const send = useCallback(async (text: string, context?: TurnIn["context"], files?: string[]): Promise<"busy" | void> => {
     const t = text.trim();
     if (!sayable(t) || runningRef.current) return; // 보이지 않는 글자만 있는 글은 보내지 않아요
     runningRef.current = true;
@@ -271,7 +271,7 @@ export function useAssistant(projectId: string) {
     setItems((cur) => [...cur, { id: userId, role: "user", at: nowRef.current || new Date().toISOString(), text: t }]);
     const ctl = new AbortController();
     abortRef.current = ctl;
-    const body: TurnIn = { project_id: projectId, client_key: key, text: t, context: context ?? null };
+    const body: TurnIn = { project_id: projectId, client_key: key, text: t, context: context ?? null, ...(files?.length ? { files } : {}) };
     let turnId = "";
     let tries = 0;
     let busyTried = false;

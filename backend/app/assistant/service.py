@@ -900,8 +900,11 @@ async def start_turn(
     project_id: uuid.UUID | None = None,
     visit_id: uuid.UUID | None = None,
     context: TurnContextIn | None = None,
+    files: list[uuid.UUID] | None = None,
 ) -> TurnCtx | AssistantTurn:
-    """돌 턴의 문맥, 또는 같은 client_key로 이미 끝난 턴(되돌림). 오류는 스트림을 열기 전에 난다."""
+    """돌 턴의 문맥, 또는 같은 client_key로 이미 끝난 턴(되돌림). 오류는 스트림을 열기 전에 난다.
+    files(붙인 사진, 고객만)는 본인이 올린 사진만 받는다(남의 · 없는 파일 404 · 사진이 아니면 422)."""
+    from app.files import service as files_service
     from app.project import service as project_service
     from app.shared import ratelimit
     from app.visit import service as visit_service
@@ -928,6 +931,8 @@ async def start_turn(
         project = None
         if surface == "customer":
             project = await project_service.get_for(s, user, project_id)  # 남의 · 없는 공사 404
+            if files:  # 받은 견적서 사진(가린 그림): 본인 사진만
+                files = [f.id for f in await files_service.own_images(s, user.id, files)]
             await project_service.lock(s, project_id)  # 같은 공사의 대화 만들기가 줄 선다
         elif visit_id is not None:
             await visit_service.vendor_visit(s, user, visit_id, today)  # 남의 요청 404
@@ -1011,6 +1016,7 @@ async def start_turn(
         card_id=card_id,
         stale=stale,
         pressed=bool(picked),
+        files=list(files or []) if surface == "customer" else [],
     )
 
 

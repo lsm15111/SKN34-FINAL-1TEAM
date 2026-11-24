@@ -3886,7 +3886,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options" | "research" | "product_estimate";
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options" | "research" | "product_estimate" | "outside_quote";
             /** Data */
             data: {
                 [key: string]: unknown;
@@ -9745,6 +9745,11 @@ export interface components {
             /** Text */
             text: string;
             context?: components["schemas"]["TurnContextIn"] | null;
+            /**
+             * Files
+             * @description 붙인 사진(받은 견적서). 먼저 POST /files kind=chat_photo로 올린 내 사진만(남의 것 404 · 사진이 아니면 422). 화면이 개인정보를 가린 그림만 올려요
+             */
+            files?: string[];
         };
         /**
          * TurnOut

@@ -47,6 +47,21 @@ async def clean(data: bytes, mime: str) -> tuple[bytes, str]:
     return await anyio.to_thread.run_sync(_clean, data, mime, limiter=_SLOTS)
 
 
+async def shrink(data: bytes, side: int) -> bytes:
+    """저장한 사진을 긴 변 side 아래 JPEG로 줄인다(LLM에 보낼 크기 · 비용을 고르게). 작업 스레드에서 한 장씩."""
+    return await anyio.to_thread.run_sync(_shrink, data, side, limiter=_SLOTS)
+
+
+def _shrink(data: bytes, side: int) -> bytes:
+    img = ImageOps.exif_transpose(_open(data))
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    img.thumbnail((side, side))
+    out = io.BytesIO()
+    img.save(out, "JPEG", quality=85)  # 새 그림이라 EXIF · 글 상자가 없다
+    return out.getvalue()
+
+
 def _clean(data: bytes, mime: str) -> tuple[bytes, str]:
     img = _open(data)
     icc = img.info.get("icc_profile")

@@ -39,13 +39,14 @@ Role = Literal[
 ]
 # 장부(llm_usage.purpose)에 남기는 목적. usage/models.py의 PURPOSES와 같다(시험이 맞춰 본다)
 Purpose = Literal[
-    "assistant", "floorplan", "nudge", "memory", "v2_chat", "research",
+    "assistant", "floorplan", "nudge", "memory", "v2_chat", "research", "quote_check",
     "orchestrator", "trade", "quote_explanation", "schedule", "composer", "general", "planner",
     "judge", "check",
 ]  # fmt: skip
 PURPOSES: frozenset[str] = frozenset(get_args(Purpose))
-# 기본 모델(Sonnet)을 쓰는 목적. 판정은 Opus, 그 밖(짧은 문장 · 분류 · 기억 · 가벼운 역할)은 Haiku
-MAIN_PURPOSES = frozenset({"assistant", "floorplan", "v2_chat", "research"})
+# 기본 모델(Sonnet)을 쓰는 목적. 판정은 Opus, 그 밖(짧은 문장 · 분류 · 기억 · 가벼운 역할)은 Haiku.
+# quote_check(받은 견적서 글 · 사진 줄 뽑기)는 사진 속 표를 읽어 비서와 같은 모델이에요
+MAIN_PURPOSES = frozenset({"assistant", "floorplan", "v2_chat", "research", "quote_check"})
 # 거절 · 잘림이면 장부에 실패로 적는다(stop_reason 그대로)
 BAD_STOPS = frozenset({"refusal", "max_tokens", "model_context_window_exceeded"})
 

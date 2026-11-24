@@ -232,7 +232,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
             </MyName.Provider>
             {/* 대화를 못 읽었으면(읽는 중 · 실패) 보내지 않아요: 보낸 말 · 답이 보이지 않은 채 턴만 돌지 않게.
                 넘쳐서(503) 끝내 못 보냈으면 send가 "busy"를 돌려주고 입력 칸이 쓴 글을 되살려요 */}
-            <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t) => a.send(t)} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
+            <Composer projectId={projectId} chips={a.chips} busy={a.running || !a.loaded || !!a.loadError} onSend={(t, files) => a.send(t, undefined, files)} band={a.board?.todo ?? 0} onBand={() => setBoardOpen(true)} health={a.health} />
           </div>
         </div>
         <Board board={a.board} failed={a.boardFailed} onRetry={a.retryBoard} open={boardOpen} flash={a.flash} base={base} onClose={() => setBoardOpen(false)} />

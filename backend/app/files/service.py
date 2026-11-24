@@ -334,6 +334,26 @@ async def owned(
     return {r.id: r for r in (await s.execute(q)).scalars().all()}
 
 
+async def own_images(s: AsyncSession, owner_id: uuid.UUID, ids: list[uuid.UUID]) -> list[File]:
+    """그 회원이 올린 사진(준 차례, 겹친 id는 한 번). 남의 · 없는 파일이 하나라도 있으면 404(있는지 알려 주지 않음),
+    사진이 아니면 422. 비서 턴에 붙인 받은 견적서 사진이 쓴다."""
+    want = list(dict.fromkeys(ids))
+    got = await owned(s, owner_id, want)
+    if len(got) != len(want):
+        raise AppError(404, "not_found", "파일을 찾을 수 없어요.")
+    rows = [got[i] for i in want]
+    if any(r.content_type not in IMAGES for r in rows):
+        raise AppError(422, "file_type", "사진만 붙일 수 있어요.")
+    return rows
+
+
+async def read_image(f: File, side: int) -> bytes:
+    """저장한 사진을 읽어 긴 변 side 아래 JPEG로(images.shrink). 저장소에 없으면 FileNotFoundError, 열 수 없으면
+    images.BadImage."""
+    data = await run_in_threadpool(storage.read, f.storage_key)
+    return await images.shrink(data, side)
+
+
 async def storage_keys_of(s: AsyncSession, owner_id: uuid.UUID) -> list[str]:
     """그 회원이 올린 파일의 저장 위치 (탈퇴할 때 디스크에서 지우려고)"""
     return list(

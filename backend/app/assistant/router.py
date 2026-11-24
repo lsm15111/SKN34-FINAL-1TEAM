@@ -82,6 +82,7 @@ async def turn(
         text=body.text,
         project_id=body.project_id,
         context=body.context,
+        files=body.files,
     )
     return _sse(user, got)
 
