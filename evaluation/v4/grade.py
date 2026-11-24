@@ -58,8 +58,19 @@ from sim import check as simcheck
 RUBRIC_PATH = HERE / "rubric_single.md"
 SCEN = SETS / "scenarios"
 DIMS = jg.DIMS
-CHAT_DIMS = (*DIMS, "progress")
-DIM_KO = {**jg.DIM_KO, "progress": "진행"}
+# 대화에만 더하는 기준(루브릭 6.1, 판 2): 중간 도구 선택 · 불필요한 되묻기 · 반셀프 고객 다음 할 일 안내. 근거 턴을 같이 적어요
+TURN_DIMS = ("tool_choice", "asks", "lead")
+CHAT_DIMS = (*DIMS, "progress", *TURN_DIMS)
+DIM_KO = {
+    **jg.DIM_KO,
+    "progress": "진행",
+    "tool_choice": "도구 선택",
+    "asks": "되묻기",
+    "lead": "다음 할 일",
+}
+PASS_OVERALL = 7  # report.md 판정 PASS: 종합 7점 이상이고 1~2점 차원이 없음
+LOW_DIM = 2
+ARGS_MAX = 80  # 판정 입력: 도구 입력 요약 글자 상한
 RETRY = 3
 TURN_MAX = 1200  # 대화: 비서 말 하나 글자 상한
 TOOL_FULL = 4000  # 판정기 기준 값: 도구 결과 하나 글자 상한(원본 seen에서)
@@ -89,6 +100,16 @@ class DimGrade(BaseModel):
     score: Five | None = Field(description=SCORE)
 
 
+class TurnDimGrade(BaseModel):
+    """근거 턴을 같이 적는 차원(루브릭 6.1)."""
+
+    reason: str = Field(description=REASON)
+    turns: list[int] = Field(
+        description="근거 턴 번호(문제가 있으면 그 턴, 없으면 잘한 턴 하나 이상)"
+    )
+    score: Five | None = Field(description=SCORE)
+
+
 class Grade(BaseModel):
     accuracy: DimGrade = Field(description=_desc("accuracy"))
     grounding: DimGrade = Field(description=_desc("grounding"))
@@ -110,6 +131,15 @@ class ChatGrade(BaseModel):
     numbers: DimGrade = Field(description=_desc("numbers"))
     progress: DimGrade = Field(
         description="진행: 목표대로 일을 앞으로 옮겼나 · 필요한 것을 물었나 · 확정은 승인 카드로"
+    )
+    tool_choice: TurnDimGrade = Field(
+        description="도구 선택(루브릭 6.1): 턴마다 부른 도구 · 입력이 고객 말과 지금 단계에 맞았나"
+    )
+    asks: TurnDimGrade = Field(
+        description="되묻기(루브릭 6.1): 이미 아는 것을 다시 묻거나 필요 없는 확인으로 턴을 낭비하지 않았나"
+    )
+    lead: TurnDimGrade = Field(
+        description="다음 할 일(루브릭 6.1): 반셀프 고객이 다음에 할 일 · 누를 곳을 정확히 안내했나"
     )
     worst: str = Field(description=WORST)
     worst_turn: int | None = Field(description="가장 문제인 비서 턴 번호. 없으면 null")
@@ -307,14 +337,37 @@ def timeline(r: dict) -> list[dict]:
     return out
 
 
-def turn_lines(t: dict, n: int, who: str, cap: int = TURN_MAX) -> list[str]:
+def args_brief(args) -> str:
+    """도구 입력 요약(판정 근거): 한 줄 JSON, ARGS_MAX자까지."""
+    s = json.dumps(args or {}, ensure_ascii=False, separators=(",", ":"), default=str)
+    return s if len(s) <= ARGS_MAX else s[:ARGS_MAX] + "…"
+
+
+def tool_line(t: dict) -> str | None:
+    """턴에 부른 도구 이름 · 입력 요약(루브릭 6.1 도구 선택의 근거). 실패한 도구는 오류 코드를 붙여요."""
+    outs = t.get("tool_out") or []
+    calls = []
+    for i, x in enumerate(t.get("tool_args") or []):
+        err = (outs[i].get("error") if i < len(outs) else None) or x.get("error")
+        calls.append(
+            f"{x.get('name')}({args_brief(x.get('args'))})" + (f" 오류 {err}" if err else "")
+        )
+    if not calls and t.get("tools"):  # 옛 기록: 이름만
+        calls = list(t["tools"])
+    return f"[도구: {' · '.join(calls)}]" if calls else None
+
+
+def turn_lines(t: dict, n: int, who: str, cap: int = TURN_MAX, tools: bool = True) -> list[str]:
     text = (t.get("text") or "").strip() or "(글 없음)"
     if len(text) > cap:
         text = text[:cap] + " …(생략)"
     said = f"{who}: {t.get('say', '')}"
     if t.get("press"):
         said += f" [카드 단추로 보냄: {t['press'].get('kind')}]"
-    lines = [f"### 턴 {n}", said, f"비서: {text}"]
+    lines = [f"### 턴 {n}", said]
+    if tools and (line := tool_line(t)):  # 판정 에이전트(agent_judge)는 도구 결과까지 따로 넣어요
+        lines.append(line)
+    lines.append(f"비서: {text}")
     shown = [f"[카드: {c}]" for c in dict.fromkeys(t.get("cards") or [])]  # 같은 카드는 한 번
     shown += [f"[승인 카드: {x.get('kind')}]" for x in t.get("actions") or []]
     if t.get("turn_status") not in (None, "done"):
@@ -348,9 +401,36 @@ def load_sims(a) -> list[Item]:
             key=f"{r['scenario']}#{r.get('trial', 0)}", id=r["scenario"], kind="chat", variant="real",
             group=sc.get("surface") or r.get("surface") or "", split=r.get("split") or sc.get("split") or "",
             shared=chat_head(sc, r), body=chat_body(r), text="\n".join(t.get("text") or "" for t in says),
-            extra={"passed": bool(r.get("passed")), "turns": len(says)},
+            extra={"passed": bool(r.get("passed")), "turns": len(says), **code_view(r, sc)},
         ))  # fmt: skip
     return items
+
+
+def code_view(r: dict, sc: dict | None) -> dict:
+    """report.md에 쓸 코드 채점: 끝 상태 · 대화 확인 · 불변식 통과와 실패 항목. 불변식이 없는 옛 기록은 다시 재요."""
+    from sim import invariants as inv
+
+    items = r.get("invariants")
+    if items is None and not r.get("seed_error") and not r.get("crash"):
+        items = inv.check_all(r, sc)
+    items = items or []
+    fails = [
+        i["what"]
+        for i in (r.get("end") or []) + (r.get("checks") or [])
+        if not i["ok"] and not i["na"]
+    ]
+    bad = [
+        {"inv": i["key"], "why": b["why"], "turn": b["turn"]}
+        for i in items
+        for b in i["got"]["bad"]
+    ]
+    code_ok = not r.get("seed_error") and not r.get("crash") and not fails and not bad
+    return {
+        "code_ok": code_ok,
+        "fails": fails[:6],
+        "inv_bad": bad[:12],
+        "error": r.get("seed_error") or r.get("crash"),
+    }
 
 
 # ---- 부르기 ----
@@ -363,6 +443,8 @@ def stub_grade(x: Item, schema: type[BaseModel]) -> dict:
             "reason": "스텁 점수(유료 호출 없음)",
             "score": 1 if low else (None if d == "numbers" and stable_int(x.key, d) % 3 == 0
                                      else 2 + stable_int("stub", x.key, d) % 4),
+            **({"turns": [1 + stable_int("t", x.key, d) % max(1, x.extra.get("turns") or 1)]}
+               if d in TURN_DIMS else {}),
         }
         for d in dims
     }  # fmt: skip
@@ -813,6 +895,183 @@ def report(s: dict) -> str:
     return "\n".join(lines)
 
 
+# ---- 실행 모델 · 판정 모델 분리 ----
+def run_models(paths: list[Path]) -> dict:
+    """매길 실행(run)이 쓴 LLM 모델: 그 폴더 meta.json의 llm(모델 · 가벼운 모델) + 기록 장부의 모델(by_model ·
+    llm_calls). 둘 다 없으면 앱 설정(config)에서 읽어요. 무료 모드 실행은 빈 집합이에요."""
+    models: set[str] = set()
+    sources: list[str] = []
+    free = False
+    for p in paths:
+        meta_p = p.parent / "meta.json"
+        meta = json.loads(meta_p.read_text("utf-8")) if meta_p.exists() else {}
+        llm = meta.get("llm") or {}
+        got = {str(llm[k]) for k in ("model", "light_model") if llm.get(k)}
+        if got:
+            sources.append(f"{p.parent.name}/meta.json")
+        free = free or meta.get("run_mode") == "free" or meta.get("mode") == "free"
+        for r in jsonl(p) if p.exists() else []:
+            got |= {str(m) for m in ((r.get("usage") or {}).get("by_model") or {})}
+            # run_v4_answers 장부 줄(calls)
+            calls = r.get("calls") if isinstance(r.get("calls"), list) else []
+            got |= {str(c.get("model")) for c in calls if isinstance(c, dict) and c.get("model")}
+        models |= got
+    if not models and not free:
+        try:  # 기록에 모델이 없으면 앱 설정(지금 설정 그대로 돌렸다고 봐요)
+            sys.path.insert(0, str(ROOT / "backend"))
+            from app.config import settings
+
+            if settings.llm_provider == "openai":
+                models = {settings.openai_agent_model, settings.openai_light_model}
+            else:
+                models = {settings.llm_claude_model, settings.llm_claude_light_model}
+            sources.append("앱 설정(config)")
+        except Exception as e:  # noqa: BLE001 - 설정을 못 읽으면 모름으로 둬요
+            sources.append(f"모름({type(e).__name__})")
+    return {
+        "models": sorted(m for m in models if m),
+        "sources": sources,
+        "free": free and not models,
+    }
+
+
+def same_model(judge: str, models: list[str]) -> list[str]:
+    """판정 모델과 같은 실행 모델(공급자가 붙인 날짜 꼬리 'gpt-6.1-terra-2026…'도 같게 봐요)."""
+    j = judge.lower()
+    return [
+        m
+        for m in models
+        if m.lower() == j or m.lower().startswith(j + "-") or j.startswith(m.lower() + "-")
+    ]
+
+
+def family(model: str) -> str:
+    return (
+        "claude"
+        if model.startswith("claude")
+        else "openai"
+        if model.startswith("gpt")
+        else model.split("-")[0]
+    )
+
+
+def separation(judge: str, paths: list[Path], allow_same: bool) -> dict:
+    """실행 · 판정 모델 분리 확인. 같으면 멈춰요(--allow-same-model이면 경고만 찍고 이어 가요)."""
+    got = run_models(paths)
+    same = same_model(judge, got["models"])
+    fam = sorted({family(m) for m in got["models"]} & {family(judge)})
+    sep = {"judge": judge, "run_models": got["models"], "sources": got["sources"], "free_run": got["free"],
+           "separate": None if not got["models"] and not got["free"] else not same, "same": same,
+           "same_family": fam, "allowed_same": bool(same and allow_same)}  # fmt: skip
+    if same and not allow_same:
+        raise SystemExit(
+            f"판정 모델({judge})이 실행 모델({', '.join(same)})과 같아 멈춰요. 다른 판정 모델을 쓰거나 "
+            "--allow-same-model로 덮어써요(자기 편애 위험)"
+        )
+    if same:
+        print(
+            f"경고: 판정 모델({judge})이 실행 모델과 같아요({', '.join(same)}). --allow-same-model로 이어 가요"
+        )
+    elif fam:
+        print(f"참고: 판정 모델과 실행 모델이 같은 계열이에요({fam[0]}, 모델은 달라요)")
+    elif sep["separate"] is None:
+        print("경고: 실행 모델을 몰라 분리를 확인하지 못했어요")
+    return sep
+
+
+def sep_line(sep: dict | None) -> str:
+    if not sep:
+        return "실행 · 판정 모델 분리: 기록 없음"
+    run = ", ".join(sep.get("run_models") or []) or (
+        "무료 모드(LLM 없음)" if sep.get("free_run") else "모름"
+    )
+    state = {True: "분리됨", False: "같음(덮어씀)", None: "확인 못 함"}[sep.get("separate")]
+    return f"실행 모델 {run} · 판정 모델 {sep.get('judge')} → {state}"
+
+
+# ---- report.md(판 · 시나리오마다 PASS/FAIL · 사유 · 실패 턴 · 불변식 위반) ----
+def _inv_cell(bad: list[dict]) -> str:
+    from sim import invariants as inv
+
+    if not bad:
+        return "0"
+    by: dict[str, set] = defaultdict(set)
+    for b in bad:
+        by[b["inv"]].add(b.get("turn"))
+    parts = []
+    for k, turns in by.items():
+        t = sorted(x for x in turns if x is not None)
+        parts.append(inv.NAMES.get(k, k) + (f"(턴 {','.join(map(str, t))})" if t else ""))
+    return " · ".join(parts)
+
+
+def write_md(out: Path, title: str, head: list[str], rows: list[dict]) -> Path:
+    """rows: run · key · code · judge · final · why(목록) · turns · inv(위반 목록)."""
+    lines = [f"# {title}", "", *head, "",
+             "| 판(run) | 시나리오 | 코드(끝 상태 · 확인 · 불변식) | 판정 | 최종 | 사유 | 실패 턴 | 불변식 위반 |",
+             "| --- | --- | --- | --- | --- | --- | --- | --- |"]  # fmt: skip
+    for r in rows:
+        why = " / ".join(r["why"])[:400].replace("|", "/").replace("\n", " ") or "-"
+        turns = ", ".join(map(str, r["turns"])) or "-"
+        lines.append(f"| {r['run']} | {r['key']} | {r['code']} | {r['judge']} | **{r['final']}** | {why} | "
+                     f"{turns} | {_inv_cell(r['inv'])} |")  # fmt: skip
+    n = len(rows)
+    ok = sum(r["final"] == "PASS" for r in rows)
+    code = sum(r["code"] == "PASS" for r in rows)
+    judged = sum(r["judge"].startswith("PASS") for r in rows)
+    lines += ["", f"PASS {ok}/{n} · 코드 PASS {code}/{n} · 판정 PASS {judged}/{n}"]
+    path = out / "report.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8", newline="\n")
+    return path
+
+
+def judge_pass(g: dict) -> tuple[bool, list[str], list[int]]:
+    """판정 PASS(종합 ≥ PASS_OVERALL · 1~2점 차원 없음), 사유, 근거 턴(문제 턴 · 3점 이하 턴 기준)."""
+    low = [
+        (d, g[d])
+        for d in CHAT_DIMS
+        if d in g and g[d].get("score") is not None and g[d]["score"] <= LOW_DIM
+    ]
+    ok = g["overall"] >= PASS_OVERALL and not low
+    why = [f"판정 종합 {g['overall']}점: {g.get('worst')}"] if g["overall"] < PASS_OVERALL else []
+    why += [f"{DIM_KO.get(d, d)} {v['score']}점: {v.get('reason')}" for d, v in low]
+    turns = set()
+    if not ok and g.get("worst_turn"):
+        turns.add(int(g["worst_turn"]))
+    for d in TURN_DIMS:
+        v = g.get(d) or {}
+        if v.get("score") is not None and v["score"] <= 3:
+            turns |= {int(x) for x in v.get("turns") or []}
+    return ok, why, sorted(turns)
+
+
+def grade_report(out: Path, rows: list[dict], meta: dict) -> Path | None:
+    """대화(chat) 판정 줄 → report.md. 코드 PASS = 끝 상태 · 대화 확인 · 불변식 모두, 판정 PASS = judge_pass."""
+    chats = [r for r in rows if r.get("kind") == "chat" and r.get("variant") == "real"]
+    if not chats:
+        return None
+    run = Path(meta.get("sims") or "").parent.name or "-"
+    table = []
+    for r in sorted(chats, key=lambda x: x["key"]):
+        x = r.get("extra") or {}
+        j_ok, j_why, j_turns = judge_pass(r["grade"])
+        why = [f"심기 · 실행 오류: {x['error']}"] if x.get("error") else []
+        why += [f"코드: {f}" for f in x.get("fails") or []]
+        why += [f"불변식 {b['inv']}: {b['why']}" for b in (x.get("inv_bad") or [])[:3]] + j_why
+        turns = sorted({b["turn"] for b in x.get("inv_bad") or [] if b.get("turn")} | set(j_turns))
+        code = "PASS" if x.get("code_ok", x.get("passed")) else "FAIL"
+        # 판정 칸: PASS/FAIL(종합 점수)
+        judge = f"{'PASS' if j_ok else 'FAIL'}({r['grade']['overall']}점)"
+        table.append({"run": run, "key": r["key"], "code": code, "judge": judge,
+                      "final": "PASS" if code == "PASS" and j_ok else "FAIL", "why": why, "turns": turns,
+                      "inv": x.get("inv_bad") or []})  # fmt: skip
+    head = [f"- 판정기 {meta.get('judge')} · 모드 {meta.get('mode')} · 루브릭 {meta.get('rubric')}",
+            f"- {sep_line(meta.get('separation'))}",
+            f"- 판정 PASS: 종합 {PASS_OVERALL}점 이상 · {LOW_DIM}점 이하 차원 없음. 최종 PASS = 코드 PASS + 판정 PASS",
+            "- 실패 턴: 불변식 위반 턴 + 판정 문제 턴(worst_turn) + 도구 선택 · 되묻기 · 다음 할 일 3점 이하 근거 턴"]  # fmt: skip
+    return write_md(out, "판정 보고(grade.py)", head, table)
+
+
 # ---- 실행 ----
 def load_key(a) -> None:
     name = "OPENAI_API_KEY" if a.judge.startswith("gpt") else "ANTHROPIC_API_KEY"
@@ -861,6 +1120,11 @@ def parse_args(argv=None):
     ap.add_argument(
         "--human-file", type=Path, help="--report와 함께: 채운 사람 CSV(열쇠는 옆 _key.csv)"
     )
+    ap.add_argument(
+        "--allow-same-model",
+        action="store_true",
+        help="판정 모델이 실행 모델과 같아도 이어 가요(경고를 찍고 meta에 남겨요)",
+    )
     a = ap.parse_args(argv)
     if a.judge not in prices.PRICES:
         ap.error(f"가격표에 없는 판정기예요: {a.judge}")
@@ -883,8 +1147,14 @@ def finish(a, out: Path, extra: dict) -> dict:
     if a.human_file:
         s["human"] = human_agree(a.human_file, rows)
     s.update(extra)
+    meta_p = out / "meta.json"
+    meta = json.loads(meta_p.read_text("utf-8")) if meta_p.exists() else {}
+    s["separation"] = meta.get("separation")
     (out / "summary.json").write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
     print(report(s))
+    print(sep_line(meta.get("separation")))
+    if md := grade_report(out, rows, meta):
+        print(f"보고: {md}")
     return s
 
 
@@ -922,11 +1192,13 @@ def main(argv=None) -> int:
     if not items:
         sys.exit("매길 항목이 없어요(--system · --trial을 확인해요)")
     system = RUBRIC_PATH.read_text("utf-8")
+    # 실행 모델과 판정 모델이 같으면 멈춰요(자기 편애, Zheng et al. 3.3). 돈을 쓰기 전에 봐요
+    sep = separation(a.judge, [p for p in (a.answers, a.sims) if p], a.allow_same_model)
     out.mkdir(parents=True, exist_ok=True)
     meta = {
         "tag": a.tag, "judge": a.judge, "effort": a.effort, "mode": "dry-run" if a.dry_run else "live",
         "rubric": short_hash(system), "answers": str(a.answers or ""), "set": str(a.set), "system": a.system,
-        "sims": str(a.sims or ""),
+        "sims": str(a.sims or ""), "separation": sep,
         "trial": a.trial, "controls": a.controls, "items": len(items), "head": jg._git("rev-parse", "HEAD"),
     }  # fmt: skip
     meta_path = out / "meta.json"

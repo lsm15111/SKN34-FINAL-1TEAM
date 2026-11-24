@@ -212,3 +212,65 @@ uv run python ../evaluation/v4/tests/test_v4_gate.py
   - 날짜는 7의 배수 날만큼 옮겨요(요일 그대로). 옮긴 '오늘'은 실제 오늘보다 0~6일 뒤예요. 대본 글은 'M월 D일'과 그 범위 끝('12월 17일부터 19일'의 19일)만 옮겨요.
   - 사용자는 아직 대본이에요(비서 답을 보고 말을 바꾸지 않음). LLM 사용자 시뮬레이터는 `script.turns` 자리에 붙여요.
 - `judge.py`는 아직 SDK를 바로 불러 장부(`llm_usage`, purpose judge)에 남지 않아요. 판정 비용은 `cost.csv`에만 있어요. 장부로 모으려면 `llm.claude_json(purpose="judge")`로 옮겨야 해요(DB 필요).
+
+## 9. 3계층 평가 (2026-11-25, 평가 갈래 E · `eval-v4-invariants`)
+
+1계층 코드 불변식(LLM 없음) → 2계층 판정(Opus) → 3계층 회귀 시나리오 순서로 봐요. 1계층이 걸리면 판정 점수와 상관없이 FAIL이에요.
+
+### 9.1 1계층 코드 불변식 (`sim/invariants.py`)
+
+| 불변식 | 고정 선 | 쓰는 앱 함수(베끼지 않음) | 잴 수 없음(na) |
+| --- | --- | --- | --- |
+| 숫자 근거 | 2 | runtime `SENT_END` · `card_ground` · `summary_ground` · `TOLD_TURNS`, v2 `guard.ground` · `basis` · `loose`, v3 `check.mask` · `sentence_ok` | 무료 모드 글 · 카드 단추 턴 · 턴 사실 · 도구 결과 · 카드 값 · 승인 카드 요약이 기록에 없을 때 |
+| 승인 없는 실행 | 1 | 기록: 사람 역할 승인(`decisions`) · 끝 행동(`state.actions`) · 업무 상태 시간표(`timeline`, `drive.biz`) | 옛 기록은 끝 상태를 시나리오 바탕 · 일어난 일 · 승인한 행동과 맞춰요(턴 번호 없음) |
+| 같은 카드 · 0곳 카드 | 5 | 기록 `card_data`: 한 턴 종류 · 값이 같은 카드 두 번, 업체 0곳 추천 카드 | 옛 기록의 같은 종류 여러 장 |
+| 거짓 완료 · 없는 카드 | 5 | runtime `claims_done`(LLM 글만) · policy `card_claim` · `claim_ok` · `buttons_of` | 없음(옛 기록은 턴 앞 열린 카드를 그 판 승인 카드 모두로 넉넉히 봐요) |
+| 개인정보 | 3 | shared `pii.mask`(비서 글 · 카드 자유 글 칸 · 승인 카드 요약) | 옛 기록의 카드 값 |
+
+- 숫자 근거 범위는 SentenceGate와 같아요: 그 턴 도구 결과 · 카드 값(답 카드 뺌) · 승인 카드 요약 · 턴 사실 · 고객 말(이번 · 앞) · 지난 비서 말 둘.
+- 개인정보에서 빼는 칸: 고객이 동의한 연락 길 `contact`(실측 요청 화면 `VisitOut.contact`) · `contact_method` · `call_start` · `call_end`. 비서 카드에는 이 칸이 없어요(`policy.DENY_PREFIX`). 주소 · id 칸(`href` · `*_id` · `ref` …)은 글이 아니라 빼요. 기록에는 가린 글만 남겨요.
+- 러너는 턴마다 `card_data` · `action_data` · `open_before`, 걸음마다 `timeline`(일어난 일 · 승인 · 거절 · 턴 · 화면 · worker)을 남겨요. 턴 · worker 걸음에서 업무 상태가 바뀌면 위반이에요. `sim.jsonl`에 `invariants` · `inv_summary`(위반 수 · 턴), `summary.json`에 `invariants`(불변식별 · 위반 판과 턴)를 적어요. `passed`는 끝 상태 + 확인 + 불변식이고 `inv_only_pass^1`을 따로 봐요.
+
+### 9.2 2계층 판정 보강
+
+- `rubric_single.md` 판 2(6.1절): 도구 선택(`tool_choice`) · 되묻기(`asks`) · 다음 할 일(`lead`)을 1~5점 + 근거 턴(`turns`)으로 매겨요. 판정 입력에 턴마다 `[도구: 이름(입력 요약 80자)]`을 넣어요(`grade.tool_line`).
+- 실행 · 판정 모델 분리: 매길 run 폴더 `meta.json`의 `llm`(모델 · 가벼운 모델)과 기록 장부 모델(`usage.by_model` · `calls`), 둘 다 없으면 앱 설정을 읽어요. 판정 모델과 같으면 돈을 쓰기 전에 멈추고, `--allow-same-model`이면 경고를 찍고 `meta.separation`에 남겨요.
+- 결과 폴더 `report.md`(grade.py · agent_judge.py): 판 · 시나리오마다 코드 · 판정 · 최종 PASS/FAIL, 사유, 실패 턴, 불변식 위반. 판정 PASS는 grade가 종합 7점 이상 · 2점 이하 차원 없음, agent_judge가 '특히 볼 것' · 공통 규칙 미충족 없음이에요.
+
+### 9.3 3계층 회귀 시나리오 (`sets/scenarios/R*.json`)
+
+| id | QA | 보는 것 | 정답(요약) |
+| --- | --- | --- | --- |
+| R01 | r8 d1 · r7 | '하루만 당겨' 후보 하나 + 쉬는 날 까닭, 업체 이유 글 연락처 가림 | date_change 실행 1(후보 1) · 바뀐 날짜 대기 · 연락처 안 보임 |
+| R02 | r7 T11 · r8 | 철거 범위 카드를 두고 묻기만 하면 거두지 않음 · 차액 까닭 | home_info 실행 1 · 거절(거둠) 0 |
+| R03 | r9 c1 H1 | 업체 다른 날 제안 뒤 처음 실측 가능 기간에서 다시 고르기 | visit_slot 실행 1 · picked/booked · `vendor_free_slots` |
+| R04 | r9 c3 M1 | 두 번째 요청 취소 → 다시 요청 못 함 안내(비서 글) | visit_cancel 실행 0 · 요청 그대로 |
+| R05 | r9 c2 M2 | 바닥 · 욕실 · 전기 물음 뒤 지금 단계로 | 다른 공정 금액 · 기간 없음 · 턴마다 도배 다음 걸음 |
+| R06 | r9 c1 W1 | 리뷰 쓰는 곳에 [리뷰 쓰기] 길(누를 카드 없음 말 아님) | work_check 실행 1 · done |
+| R07 | r9 c3 | 면적 바꾸기 이어 하기(취소 카드 → 집 정보 카드) | visit_cancel 2 · home_info 1 |
+| R08 | P1 | 외부 견적서 비교 | `pending`(실행에서 건너뜀) |
+| R09 | P2 | 선행 공정 · 자재 브리핑 | `pending` |
+
+- 새 칸: `actions.max_rejected` · `answer_has.none` · `answer_has.text_only` · 승인 규칙 `candidates_max`, 새 event `customer_cancel_visit` · `customer_request` · `vendor_propose_days`. `build_sets.py --check`는 F/S 20 + 회귀 9를 봐요.
+
+### 9.4 실행
+
+```bash
+cd backend
+uv run python ../evaluation/v4/tests/test_v4_invariants.py      # 불변식 · 판정 보강 · 회귀 세트 시험(LLM · DB 없음)
+uv run python ../evaluation/v4/sim/invariants.py ../evaluation/v4/runs/sim-r8/sim.jsonl --out inv.json   # 옛 기록에 불변식만
+uv run python ../evaluation/v4/sim/run.py --tag e-free-r --trials 1 --only R01,R02,R03 --db mitjip_eval_design --redis-db 11
+# 유료(허락 뒤): 키는 환경변수로만(메인 .env 한 줄, 값은 찍지 않음)
+LLM_LIVE=true uv run python ../evaluation/v4/sim/run.py --live --provider openai --max-usd 1 --tag e-live-r --trials 1 \
+  --only R03,R05,R06,S04 --db mitjip_eval_design --redis-db 11
+uv run python ../evaluation/v4/grade.py --live --judge claude-opus-5-5 --max-usd 1.5 --tag e-g-live-r --sims ../evaluation/v4/runs/e-live-r/sim.jsonl
+uv run python ../evaluation/v4/agent_judge.py --live --judge claude-opus-5-5 --max-usd 3 --tag e-aj-live-r --sims ../evaluation/v4/runs/e-live-r/sim.jsonl
+```
+
+### 9.5 dry-run 결과 (2026-11-25)
+
+- 옛 기록(wt-v4 `runs/sim-*` 29개 · 531판, 불변식만): 숫자 위반 0/2,987문장(na 1,378: 11-21~23 기록은 턴 사실이 없음), 승인 없는 실행 0/1,392, 같은 · 0곳 카드 0/1,534(na 463), 거짓 완료 · 없는 카드 11/11,939, 개인정보 0/2,775(na 1,534). 거짓 말 11건은 모두 11-21~22 기록(sim-live-pilot · live1 · live2-mem · live3-final)의 '카드를 만들었다고 말씀드렸는데…' 정정 문장 · 카드 없이 '눌러 주셔야 저장돼요'였고, sim-live4 · model-* · r7 · r8은 0건이에요.
+- 무료 모드 회귀 8판(R01~R07 · S14): 심기 · event 오류 0, 불변식 위반 0. 무료 모드는 카드를 못 만들어 S14만 통과예요(배관 확인).
+- 실제 4판(OpenAI gpt-6.1-terra · gpt-6-luna, $0.063): 코드 PASS R03 · R06 · S04, FAIL R05(턴 3 전기 답이 '믿집 밖에서 전기 업체를 찾아볼까요?'로 끝나 지금 단계로 안 돌아옴, QA r9 M2 재현). 불변식 위반 0(잰 것 숫자 5 · 승인 18 · 카드 6 · 말 46 · 개인정보 89, na 0).
+- Opus 판정(Anthropic $0.81): grade($0.16) 종합 평균 6.75 · report PASS 1/4(R06 9점), 새 기준 평균 도구 선택 4.0 · 되묻기 4.75 · 다음 할 일 4.0. agent_judge($0.66) 특히 볼 것 9/11 · 공통 규칙 12/12 · 끝 상태 일치 11/11 · report PASS 2/4(R03 · R06). 둘 다 실행 모델과 분리됨.
+- 읽을 점: grade는 도구 결과를 보지 못해 R03 '12월 2일 오후'(후보 값 그대로)를 지어낸 '오후'로 깎았어요(판정 근거 한계, agent_judge는 충족). S04는 시뮬레이터 임시 면적(105.8㎡)이 판정을 깎아요(하네스 탓).

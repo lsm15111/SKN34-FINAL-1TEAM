@@ -121,6 +121,7 @@ def view_of(action: dict, payload: dict | None, extra: dict | None = None) -> di
     """승인 규칙이 보는 값: 카드 요약(금액 · 판) + 실행할 값(날짜 · 반나절 · 업체 수 · 칸)."""
     s, p = action.get("summary") or {}, payload or {}
     days = p.get("days") or []
+    wish = p.get("wish_dates") or []  # 날짜 바꾸기 요청(date_change)의 후보 시작일
     v = {
         "kind": action.get("kind"),
         "amount": s.get("amount_won"),
@@ -132,9 +133,10 @@ def view_of(action: dict, payload: dict | None, extra: dict | None = None) -> di
         "vendors": len(p["vendor_ids"]) if p.get("vendor_ids") else None,
         "fields": p.get("fields") or {},
         "code": p.get("code"),
-        "start": p.get("start") or (days[0] if days else None),
+        "start": p.get("start") or (days[0] if days else wish[0] if wish else None),
         "end": p.get("end") or (days[-1] if days else None),
         "diy": p.get("diy") or [],  # 실측 요청 카드의 '업체에 알릴 것'(반셀프 직접 할 일 키)
+        "candidates": len(wish) if wish else None,  # 날짜 바꾸기 후보 수
     }
     v.update(extra or {})
     return v
@@ -193,6 +195,7 @@ PREDICATES: dict[str, Callable[[object, dict, int], bool]] = {
     "amount_min": _num("amount", False),
     "vendors_max": _num("vendors", True),
     "vendors_min": _num("vendors", False),
+    "candidates_max": _num("candidates", True),
     "weekday_in": _weekday_in,
     "half_in": lambda want, v, _t: v.get("half") in want,
     "wish_has_weekday": _wish_has,
@@ -310,6 +313,10 @@ def check_end(expected: dict, state: dict) -> list[dict]:
     for k, most in (acts.get("max_proposed") or {}).items():
         got = n(k)
         out.append(_item("end", f"행동 {db_kind(k)} 제안 ≤{most}", got <= most, got))
+    # 거절 · 거둠 상한(묻기만 한 말에 카드를 거두지 않음)
+    for k, most in (acts.get("max_rejected") or {}).items():
+        got = n(k, "rejected")
+        out.append(_item("end", f"행동 {db_kind(k)} 거절 ≤{most}", got <= most, got))
     if acts.get("none_without_approval"):
         bad = [
             a["kind"] for a in rows if a["status"] == "executed" and not a.get("approved_by_runner")
@@ -448,13 +455,18 @@ def _answer_has(spec: dict, turns: list[dict]) -> list[dict]:
         return [_item("check", what, True, None, na=True, why="그 말을 하지 않음")]
     out = []
     for t in said:
-        shown = t.get("shown") or ""
+        # text_only: 카드 · 승인 카드 요약을 빼고 비서 글만 봐요(카드 줄이 이미 말한 것을 비서 말로도 했는지)
+        shown = (t.get("text") or "") if spec.get("text_only") else (t.get("shown") or "")
         ok = not spec.get("any") or any(x in shown for x in spec["any"])
         ok = ok and (not spec.get("regex") or re.search(spec["regex"], shown) is not None)
         out.append(_item("check", what, ok, t.get("text")))
         bad = sorted(set(t.get("cards") or []) & set(spec.get("no_cards") or []))
         if spec.get("no_cards"):
             out.append(_item("check", f"'{spec['when_said']}' 답에 카드 없음", not bad, bad))
+        # 나오면 안 되는 말(예: 화면 단추 길을 '누를 승인 카드는 없어요'로 바꿈)
+        if spec.get("none"):
+            hit = [x for x in spec["none"] if x in shown]
+            out.append(_item("check", f"'{spec['when_said']}' 답에 말 없음", not hit, hit))
     return out
 
 
