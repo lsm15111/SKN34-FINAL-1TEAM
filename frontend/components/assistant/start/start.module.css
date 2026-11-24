@@ -1,8 +1,12 @@
-/* 첫 대화(/start v4) 전용: 보드 없이 대화 한 열 · 집 확인 카드의 고르기 칸 · 단계 띠 · 칸 이름 옆 '?' 풀이 · 폰 머리 오른쪽 글자 단추.
+/* 첫 대화(/start v4) 전용: 보드 없이 대화 한 열 · 집 확인 카드의 고르기 칸 · 면적 단위 줄 · 단계 띠 · 칸 이름 옆 '?' 풀이 · 폰 머리 오른쪽 글자 단추.
    색 · 글자는 --mj-* 토큰만 */
 .body { grid-template-columns: minmax(0, 1fr); }
 .sels { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .sels select { flex: 1 1 140px; max-width: 220px; }
+/* 면적 칸 + 단위 고르기(㎡ | 평)를 한 줄에(고치기 화면 info.module.css와 같은 모양). 단위 칸(46)은 입력 칸(48) 가운데에 맞춰요 */
+.areaRow { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.areaRow > :first-child { flex: 1 1 auto; min-width: 0; }
+.unit { flex: none; width: 112px; margin-top: 1px; }
 
 /* 단계 띠(공사 화면 단계 띠 모양): 목록 꾸밈을 빼고, 누르는 칸이 아니라 손 모양을 쓰지 않아요 */
 .steps { list-style: none; margin: 0; padding: 0; }

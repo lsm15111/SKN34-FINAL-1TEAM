@@ -190,10 +190,12 @@ export function dueState(dueTime: string, now: string): "over" | "near" | "norma
   return dayNo(dateSeoul(dueTime)) - dayNo(dateSeoul(now)) <= 1 ? "near" : "normal";
 }
 
-/** 범위: "12.7~12.21" · weekday면 "12.7(월)~12.21(월)" · long이면 같은 달 "12월 13일~18일", 다른 달 "12월 28일~1월 4일" */
+/** 범위: "12.7~12.21" · weekday면 "12.7(월)~12.21(월)" · long이면 같은 달 "12월 13일~18일", 다른 달 "12월 28일~1월 4일".
+ *  하루짜리는 날짜 하나예요: "12.7" · "12.7(월)" · "12월 7일"(QA r9 U3: '11월 25일~25일') */
 export function rangeText(from: string, to: string, opts: { weekday?: boolean; long?: boolean } = {}): string {
-  const [, m1, d1] = ymdParts(from);
-  const [, m2, d2] = ymdParts(to);
+  const [y1, m1, d1] = ymdParts(from);
+  const [y2, m2, d2] = ymdParts(to);
+  if (y1 === y2 && m1 === m2 && d1 === d2) return opts.long ? `${m1}월 ${d1}일` : opts.weekday ? dateShort(from) : `${m1}.${d1}`;
   if (opts.long) return m1 === m2 ? `${m1}월 ${d1}일~${d2}일` : `${m1}월 ${d1}일~${m2}월 ${d2}일`;
   if (opts.weekday) return `${dateShort(from)}~${dateShort(to)}`;
   return `${m1}.${d1}~${m2}.${d2}`;

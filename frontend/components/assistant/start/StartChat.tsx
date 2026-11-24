@@ -5,6 +5,8 @@
 //   공사 희망 시기). 직접 할 일은 여기서 묻지 않아요(2026-11-24 사용자: 추후에. 공사 화면 집 정보 · 비서가 받아요).
 //   그 밖의 조건(편한 요일 · 목공 세부 · 우선순위)은 필요한 단계에서 비서가 물어요.
 // - 처음 고객이 모를 말(공급 · 전용 면적 · 실크 · 합지 · 철거 범위)은 칸 이름 옆 '?'로 그 자리에서 풀어요(TermHelp, 백과 용어는 용어 칸까지).
+// - 면적은 고치기 화면(InfoForm)과 같은 칸 · 같은 함수예요: 기준(공급 | 전용) + 넣는 칸 + 단위(㎡ | 평, 평이면 '믿집 계산'으로 ㎡).
+//   평형 칩은 두지 않아요(QA r9: 두 입구의 넣는 법을 하나로 · copy-guide U10 ㎡ 기본, 평은 넣을 때 돕기만).
 // - 머리는 다른 화면과 같은 사이트 머리예요(siteHeader, 페이지가 그려 넘겨요: 웹 메뉴로 백과 · 자주 묻는 질문, 폰은 ‹ 새 공사 시작).
 // - 넣는 중인 답은 마지막 [다음] 전에는 저장하지 않아요. 그 사이 다른 화면으로 가려 하면 '입력한 정보는 저장되지 않아요' 창(useLeaveGuard).
 // - AI 글은 쓰지 않아요(로그인 전 · 공사 전). 말은 정해 둔 글('믿집 안내')이고, 금액 · 일수 · 시기 칩 날짜는 계산 엔진 값
@@ -17,14 +19,17 @@ import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { JoinDialog } from "@/components/auth/JoinDialog";
 import { DateSheet } from "@/components/start/DateSheet";
+import { CalcBox } from "@/components/ui/CalcBox";
+import { Field as NumField } from "@/components/ui/Field";
+import { Segmented } from "@/components/ui/Segmented";
 import { DEMOLITION, resetMock, type StandardQuoteData } from "@/lib/api/assistant";
 import type { Region } from "@/lib/api/project";
 import { errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort, decText } from "@/lib/format";
 import { calcGuest, sendHome, type GuestStandard } from "@/lib/guest/api";
 import {
-  checkDraft, EMPTY_DRAFT, GRADE_WORD, pyeongToM2, roomsOf, toHomeInfo, WISH_LABEL,
-  type InfoDraft, type RoomRule, type StartWish,
+  areaOfPyeong, checkDraft, EMPTY_DRAFT, GRADE_WORD, PYEONG_M2, pyeongError, pyeongOf, pyeongToM2, roomsOf, toHomeInfo, WISH_LABEL,
+  type AreaUnit, type InfoDraft, type RoomRule, type StartWish,
 } from "@/lib/guest/info";
 import { toQuoteLines } from "@/lib/guest/standard";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
@@ -42,7 +47,6 @@ type Phase = "home" | "work" | "calc" | "creating" | "done";
 type Step = "home" | "work";
 const STEPS = ["우리 집", "원하는 공사", "표준견적서"] as const;
 const stepAt = (p: Phase) => (p === "home" ? 0 : p === "done" ? 2 : 1);
-const PYEONG = ["24", "32", "34", "40"];
 const MOCK_PID = "a3a00000-0000-4000-8000-000000000001";
 /** 철거 범위는 백과 용어가 없어서 두 줄로 풀어요 */
 const DEMOLITION_NOTE = "집 안 마감(벽지 · 바닥 · 몰딩 등)을 뜯어내는 범위예요. 집 전체를 뜯고 새로 고치면 '전체 철거'예요.";
@@ -93,7 +97,7 @@ function errorsOf(d: InfoDraft, today: string): Errors {
   const e = checkDraft(d);
   return {
     ...(e.region ? { region: "지역을 골라 주세요." } : {}),
-    ...(e.area ? { area: d.area ? e.area : "평형을 고르거나 ㎡로 넣어 주세요." } : {}),
+    ...(e.area ? { area: e.area } : {}),
     ...(e.occupied ? { occupied: e.occupied } : {}),
     ...(e.grade ? { grade: e.grade } : {}),
     ...(!d.demolition ? { demolition: "철거 범위를 골라 주세요." } : {}),
@@ -127,7 +131,9 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
   const [std, setStd] = useState<GuestStandard | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [join, setJoin] = useState(false);
-  const [manual, setManual] = useState(false);
+  /** 면적 칸 단위와 평으로 넣는 글(칸에는 평, 답에는 바꾼 ㎡). 처음은 ㎡(U10) */
+  const [unit, setUnit] = useState<AreaUnit>("m2");
+  const [py, setPy] = useState("");
   const [dateOpen, setDateOpen] = useState(false);
   const log = useRef<HTMLDivElement>(null);
   const restored = useRef(false);
@@ -160,7 +166,6 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
     }
     const next = { ...saved, rooms, when, start };
     setD(next);
-    setManual(!!saved.area && !PYEONG.some((p) => pyeongToM2(p) === saved.area && saved.basis === "supply"));
     setResumed(true);
     // 손님이 [견적서 열기] 뒤 뒤로 왔으면 표준견적서까지 이어 가요(조건이 그대로일 때만, QA r7 N8)
     const step = mode === "guest" ? readStep() : null;
@@ -182,6 +187,21 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
   const eWork = tried.work ? errorsIn(all, "work") : {};
   const sido = regions.find((r) => r.id === d.sido);
   const rooms = shownRooms(d, roomRule);
+  // 면적(고치기 화면과 같아요): 평이면 칸 글은 평 그대로 두고 답에는 바꾼 ㎡를 넣어요. 검사는 ㎡로, 오류 글은 평 말로
+  const setArea = (v: string) => {
+    if (unit === "m2") { set({ area: v }); return; }
+    setPy(v);
+    set({ area: areaOfPyeong(v) });
+  };
+  const switchUnit = (v: string) => {
+    const next: AreaUnit = v === "py" ? "py" : "m2";
+    if (next === unit) return;
+    if (next === "py") setPy(pyeongOf(d.area));
+    setUnit(next);
+  };
+  const areaM2 = unit === "py" ? pyeongToM2(py) : null;
+  const areaErr = eHome.area && unit === "py" ? pyeongError(py) : eHome.area;
+  const unitWord = unit === "py" ? "평" : "㎡";
 
   function nextHome() {
     setTried((x) => ({ ...x, home: true }));
@@ -293,26 +313,17 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
                       </select>
                     </div>
                   </Field>
-                  <Field label="면적" id="st-area" error={eHome.area} help={<TermHelp label="면적" tips={tips.area} />}>
-                    <div className={k.chips} id="st-area">
-                      {PYEONG.map((p) => {
-                        const m2 = pyeongToM2(p);
-                        const on = !manual && d.basis === "supply" && d.area === m2;
-                        return <button key={p} type="button" className={k.chip} aria-pressed={on} disabled={homeOff} onClick={() => { setManual(false); set({ area: m2 ?? "", basis: "supply" }); }}>{p}평형</button>;
-                      })}
-                      <button type="button" className={k.chip} aria-pressed={manual} disabled={homeOff} onClick={() => setManual(true)}>㎡로 넣기</button>
+                  <Field label="면적" id="st-area" error={areaErr} help={<TermHelp label="면적" tips={tips.area} />}>
+                    <Segmented legend="면적 기준" hideLegend value={d.basis} disabled={homeOff} onChange={(v) => set({ basis: v === "exclusive" ? "exclusive" : "supply" })}
+                      options={[{ value: "supply", label: "공급면적" }, { value: "exclusive", label: "전용면적" }]} />
+                    <div className={t.areaRow}>
+                      <NumField id="st-area" label={`${d.basis === "exclusive" ? "전용" : "공급"}면적(${unitWord})`} hideLabel unit={unitWord} num maxLength={8} disabled={homeOff}
+                        value={unit === "py" ? py : d.area} aria-invalid={areaErr ? true : undefined} onChange={(e) => setArea(e.target.value)} />
+                      <Segmented legend="면적 단위" hideLegend className={t.unit} value={unit} disabled={homeOff} onChange={switchUnit}
+                        options={[{ value: "m2", label: "㎡" }, { value: "py", label: "평" }]} />
                     </div>
-                    {manual ? (
-                      <div className={t.sels}>
-                        <select className={c.sel} aria-label="면적 기준" value={d.basis} disabled={homeOff} onChange={(e) => set({ basis: e.target.value === "exclusive" ? "exclusive" : "supply" })}>
-                          <option value="supply">공급</option>
-                          <option value="exclusive">전용</option>
-                        </select>
-                        <span className={c.ho}>
-                          <input className={`${c.inp} ${k.num}`} inputMode="decimal" aria-label="면적(㎡)" placeholder="84.9" value={d.area} disabled={homeOff}
-                            onChange={(e) => set({ area: e.target.value.replace(/[^\d.]/g, "").slice(0, 6) })} />㎡
-                        </span>
-                      </div>
+                    {areaM2 ? (
+                      <CalcBox tone="form" lines={[{ terms: [{ n: py.trim(), unit: "평" }, "×", { n: String(PYEONG_M2) }], result: { n: areaM2, unit: "㎡" } }]} />
                     ) : null}
                   </Field>
                   <Field label="방 개수" id="st-rooms">

@@ -26,8 +26,9 @@ import type { Region } from "@/lib/api/project";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort } from "@/lib/format";
 import {
-  DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, PYEONG_M2, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, pyeongToM2, roomsOf, scopeOf,
-  spaceLabel, summaryRows, toEditBody, toHomeInfo, type Demolition, type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
+  DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, PYEONG_M2, areaOfPyeong, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, pyeongError, pyeongOf,
+  pyeongToM2, roomsOf, scopeOf, spaceLabel, summaryRows, toEditBody, toHomeInfo,
+  type AreaUnit, type Demolition, type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
 } from "@/lib/guest/info";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
 import { DateSheet } from "./DateSheet";
@@ -42,20 +43,6 @@ const FIELD_ID: Record<keyof InfoErrors, string> = {
   spaces: "inf-spaces", faces: "inf-faces", region: "inf-region", area: "inf-area", occupied: "inf-occupied", grade: "inf-grade", budget: "inf-budget",
 };
 const FOCUS_ID: Record<InfoFocus, string> = { ...FIELD_ID, rooms: "inf-rooms", start: "inf-start", demolition: "inf-demolition", diy: DIY_FIELD_ID };
-
-/** 면적 칸 단위: ㎡ · 평(평은 넣을 때만, 저장 · 계산은 ㎡) */
-type Unit = "m2" | "py";
-/** ㎡ 글 → 평 글(단위를 평으로 바꿀 때 칸에 보일 값, 소수 한 자리): "84.9" → "25.7". 숫자가 아니면 빈 글 */
-function pyeongOf(m2: string): string {
-  const n = Number(m2.trim());
-  return m2.trim() && Number.isFinite(n) && n > 0 ? String(Math.round((n / PYEONG_M2) * 10) / 10) : "";
-}
-/** 평으로 넣을 때 칸 아래 오류(검사는 ㎡로 해요): ㎡ 예시 대신 평 말로 바꿔요 */
-function pyeongError(py: string): string {
-  if (!py.trim()) return "평 숫자를 넣어 주세요. 예: 34";
-  if (!Number.isFinite(Number(py.trim()))) return "숫자로 넣어 주세요. 예: 34";
-  return "면적이 너무 작거나 커요. 평 숫자를 다시 확인해 주세요.";
-}
 
 /** 칸 묶음(id)의 첫 입력 · 단추에 초점을 주고 가운데로 보여요 */
 function focusBox(id: string) {
@@ -96,7 +83,7 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
   // 준비 중 칩(목공 · 아파트 밖 주거)의 안내 한 줄(QA r6 M4 · M18). 칩을 주석으로 뺀 동안은 쓰지 않아요(11-24):
   // const [soon, setSoon] = useState<{ at: "trade" | "house"; text: string } | null>(null);
   /** 면적 칸 단위와 평으로 넣는 글(칸에는 평, 답에는 바꾼 ㎡) */
-  const [unit, setUnit] = useState<Unit>("m2");
+  const [unit, setUnit] = useState<AreaUnit>("m2");
   const [py, setPy] = useState("");
   /** 도배할 곳 '일부만'을 펼쳤어요. 첫 화면은 칸을 빼고 집 전체예요(넣던 답이 부분 공사면 그 칸을 보여요) */
   const [part, setPart] = useState(initial?.scope === "partial" || focus === "spaces" || focus === "faces");
@@ -179,14 +166,14 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
     const added = next.filter((k) => !chips.includes(k));
     set({ rooms: n, ...scopeOf([...on, ...added], d.faces, next) });
   };
-  // 면적: 평이면 칸 글은 평 그대로 두고 답에는 바꾼 ㎡(pyeongToM2)를 넣어요. 바꿀 수 없는 글이면 그대로 넣어 검사가 잡아요
+  // 면적: 평이면 칸 글은 평 그대로 두고 답에는 바꾼 ㎡(areaOfPyeong)를 넣어요. 바꿀 수 없는 글이면 그대로 넣어 검사가 잡아요
   const setArea = (v: string) => {
     if (unit === "m2") { set({ area: v }); return; }
     setPy(v);
-    set({ area: pyeongToM2(v) ?? v.trim() });
+    set({ area: areaOfPyeong(v) });
   };
   const switchUnit = (v: string) => {
-    const next: Unit = v === "py" ? "py" : "m2";
+    const next: AreaUnit = v === "py" ? "py" : "m2";
     if (next === unit) return;
     if (next === "py") setPy(pyeongOf(d.area));
     setUnit(next);

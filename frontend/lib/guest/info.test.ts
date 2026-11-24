@@ -1,6 +1,10 @@
 // 기본 정보 답 → API 몸통(lib/guest/info toHomeInfo): 방 개수 · 공사 시작 희망일 · 직접 할 일(반셀프 칩)
+// 면적 칸 ㎡ | 평(고치기 화면 · 첫 대화가 같은 함수를 써요, QA r9)
 import { expect, test } from "@playwright/test";
-import { diyFromPicks, diyOfKeys, diyPicks, diyText, EMPTY_DRAFT, roomsOf, ROOM_RULE_EMPTY, summaryRows, toEditBody, toHomeInfo, type InfoDraft } from "./info";
+import {
+  areaOfPyeong, checkDraft, diyFromPicks, diyOfKeys, diyPicks, diyText, EMPTY_DRAFT, pyeongError, pyeongOf, roomsOf, ROOM_RULE_EMPTY, summaryRows, toEditBody, toHomeInfo,
+  type InfoDraft,
+} from "./info";
 
 const DRAFT: InfoDraft = {
   ...EMPTY_DRAFT, sido: "seoul", sgg: "노원구", area: "105.8", occupied: false, grade: "basic", demolition: "none",
@@ -57,4 +61,27 @@ test("넣은 내용 줄: 철거 범위 · 직접 할 일은 고른 때만 끝에
   expect(tail({ ...DRAFT, demolition: null })).toEqual([]);
   expect(tail({ ...DRAFT, demolition: "partial", diy: [] })).toEqual(["철거 범위=부분 철거", "직접 할 일=없어요"]);
   expect(tail({ ...DRAFT, diy: ["clean"] })).toEqual(["철거 범위=철거 안 함", "직접 할 일=입주 청소"]);
+});
+
+test("평으로 넣은 면적은 ㎡로 바꿔 답에 넣고, 검사 · 보내기는 ㎡로 해요", () => {
+  expect(areaOfPyeong("34")).toBe("112.4");
+  expect(areaOfPyeong(" 25.7 ")).toBe("85.0");
+  // 바꿀 수 없는 글은 그대로 넣어 검사가 잡아요
+  expect(areaOfPyeong(" 3a ")).toBe("3a");
+  const d = { ...DRAFT, area: areaOfPyeong("34"), basis: "supply" as const };
+  expect(checkDraft(d).area).toBeUndefined();
+  expect([toHomeInfo(d).area_m2, toHomeInfo(d).area_basis]).toEqual(["112.4", "supply"]);
+});
+
+test("단위를 평으로 바꾸면 넣은 ㎡를 평(소수 한 자리)으로 보여요", () => {
+  expect(pyeongOf("112.4")).toBe("34");
+  expect(pyeongOf("84.9")).toBe("25.7");
+  expect(pyeongOf("")).toBe("");
+  expect(pyeongOf("abc")).toBe("");
+});
+
+test("평으로 넣을 때 오류는 평 말로 써요", () => {
+  expect(pyeongError("")).toBe("평 숫자를 넣어 주세요. 예: 34");
+  expect(pyeongError("3a")).toBe("숫자로 넣어 주세요. 예: 34");
+  expect(pyeongError("2")).toBe("면적이 너무 작거나 커요. 평 숫자를 다시 확인해 주세요.");
 });

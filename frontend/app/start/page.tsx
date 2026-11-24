@@ -3,6 +3,7 @@
 // v4(겉모양 스위치): 새로 시작은 첫 대화(StartChat: 우리 집 → 원하는 공사 → 표준견적서, [다음]으로 한 걸음씩). 고치기(?edit=)는 v3 화면 그대로예요.
 //   머리는 다른 화면과 같은 사이트 머리(웹 메뉴 · 폰 ‹)를 여기서 그려 넘겨요(2026-11-24 사용자: 백과 같은 곳으로 갈 수 있게).
 //   칸 옆 '?'의 풀이는 백과 용어 사전 글이고, '자세히'는 ?term=으로 이 화면 위에 용어 칸을 열어요(OpenTerm).
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { uiMode } from "@/components/assistant/mode";
@@ -23,7 +24,11 @@ import { termById } from "@/lib/guide";
 import { MOCK_V3A, mockKeyOf } from "@/lib/mock/v3a/mode";
 import { getSession, requireRole } from "@/lib/session";
 
-export const metadata = { title: "기본 정보" };
+/** 탭 제목: v4 새로 시작은 사이트 메뉴 이름 '인테리어 받기'(QA r9 U5), 고치기 · v3 화면은 화면 제목 '기본 정보' */
+export async function generateMetadata({ searchParams }: { searchParams: Promise<{ edit?: string }> }): Promise<Metadata> {
+  const { edit } = await searchParams;
+  return { title: !edit && (await uiMode()) === "v4" ? "인테리어 받기" : "기본 정보" };
+}
 
 /** 첫 대화 칸 옆 '?' 풀이(백과 용어 사전 글): 면적은 쉬운 말, 벽지는 고르는 법. 사전에 없는 용어는 빼요 */
 function tipsOf(ids: string[], pick: "easy" | "tip"): StartTip[] {

@@ -119,7 +119,9 @@ export default async function VendorDetailPage({ params, searchParams }: {
             <div className={s.vhead}>
               <Avatar name={name} size="l" warm />
               <div className={s.vtext}>
-                <p className={`${s.vname} ${s.phoneWord}`} aria-hidden="true">{name}</p>
+                {/* 이름 줄: v3 웹은 화면 제목(h1)이 이름이라 폰에서만 보여요. v4 카드 창은 h1을 숨기고 창 제목이 '업체 자세히'라
+                    폭과 상관없이 보여요(QA r9 U2) */}
+                <p className={v4 ? s.vname : `${s.vname} ${s.phoneWord}`} aria-hidden="true">{name}</p>
                 {pr.intro ? <p className={s.vintro}>{pr.intro}</p> : null}
                 <p className={s.vmeta}>{line1}</p>
                 <p className={`${s.vmeta} mj-num`}>
