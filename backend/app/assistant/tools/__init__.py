@@ -38,7 +38,7 @@ class ToolCtx:
 
     user: User
     surface: Surface
-    turn_id: uuid.UUID
+    turn_id: uuid.UUID | None  # 이어 하기(follow.py)처럼 턴 밖에서 부르면 없음
     chat_id: uuid.UUID
     project_id: uuid.UUID | None
     visit_id: uuid.UUID | None
@@ -53,6 +53,8 @@ class ToolCtx:
     # 이 제안 도구 부름의 asked_again(모델이 정함: 고객이 이번 턴 말로 거절 · 거둔 같은 제안을 다시 해 달라고 함).
     # 부름마다 run이 넣는다(같은 턴의 다른 부름에 넘어가지 않게)
     asked_again: bool = False
+    # 이 부름이 만든 제안의 출처: 대화 턴(turn) · 코드가 카드 뒤에 이어서 내민 줄(nudge, follow.py)
+    origin: str = "turn"
 
 
 @dataclass

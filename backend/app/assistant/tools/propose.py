@@ -40,6 +40,7 @@ from app.project.diy import DIY as DIY_LABELS
 from app.project.diy import DiyKey
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
+from app.shared.ids import uuid7
 from app.shared.korean import euro
 from app.visit.models import SLOTS, WISH_SPAN_MAX
 
@@ -137,6 +138,7 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
             surface=tc.surface,
             now=tc.now,
             turn_id=tc.turn_id,
+            origin=tc.origin,
             pressed=fresh(tc),
             **kw,
         )
@@ -420,12 +422,16 @@ NEED_BASIS = (
 # (visit.service.unlock_if_idle, 리드 결정 11-22). 견적서가 온 뒤에는 취소로도 풀리지 않는다
 LOCKED_QUOTED = "업체 견적서가 온 뒤라 집 정보를 고칠 수 없어요."
 LOCKED_LIVE = "실측 요청이 진행 중이라 집 정보를 고칠 수 없어요. 보낸 요청을 모두 취소하면 다시 고칠 수 있어요."
-# 바뀐 조건을 업체에 알리기만 하려면 요청을 두는 길이 먼저예요(QA r6 c2 M5: 취소만 권함)
-LOCKED_HINT = (
-    "바뀐 조건을 업체에 알리려는 거면 요청은 그대로 두고 실측 때나 채팅이 열리면 말하면 돼요. 집 정보까지 고치려면 "
-    "보낸 요청을 propose_visit_cancel(요청마다)로 취소 승인 카드를 만들 수 있어요. 고객이 눌러 모두 취소되면 "
-    "잠금이 풀리고, 그 뒤 다시 부르면 돼요."
+# 살아 있는 요청만 잠금을 붙잡으면(견적서 전) 요청마다 취소 카드를 만들고, 모두 취소되면 follow.py가 바로 이어서 이 집
+# 정보 카드를 내밀어요(사용자 11-24 '취소도 띄워주고 … 바로 이어서 면적 바꾸는 것까지 띄워줘야'). 요청을 두고 알리는
+# 길도 같이 말해요(QA r6 c2 M5: 취소만 권함)
+NEED_CANCEL_NOTE = (
+    "실측 요청 {n}건이 진행 중이라 지금은 집 정보를 바꿀 수 없어요. 요청마다 취소 카드를 만들었어요. 모두 취소하면 "
+    "바로 이어서 집 정보를 바꾸는 카드를 보여 드려요. 요청을 그대로 두려면 카드를 누르지 말고 실측 때나 채팅이 "
+    "열리면 업체에 바뀐 것을 알려 주세요."
 )
+NEED_CANCEL_SOME = "전에 거절한 취소 카드는 다시 만들지 않았어요(카드 {made}장)."
+NEED_CANCEL = "cancel_first"  # 모델 값 step: 집 정보 카드는 취소 카드가 모두 실행된 뒤 이어서 와요
 
 
 def locked_text(live: int, quoted: bool) -> str:
@@ -540,8 +546,9 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
             changes = {"sido": region[0], "sgg": region[1], **dong, **changes}
     if not changes:
         raise ToolError("no_change", "바뀐 칸이 없어요.")
-    if p.locked and set(changes) != {"diy"}:  # 직접 할 일만 바꾸는 건 요청 뒤에도 된다
-        raise ToolError("locked", locked_text(*hold), hint=LOCKED_HINT if hold[0] else None)
+    locked = p.locked and set(changes) != {"diy"}  # 직접 할 일만 바꾸는 건 요청 뒤에도 된다
+    if locked and (hold[1] or not hold[0]):  # 견적서가 왔으면 취소로도 잠금이 풀리지 않아요
+        raise ToolError("locked", locked_text(*hold))
     home_changes = {k: v for k, v in changes.items() if k not in (DEMOLITION_KEY, "diy")}
     merged = None
     if home_changes:  # 철거 범위만 바꾸면 집 정보는 그대로라 다시 검사하지 않는다
@@ -580,6 +587,8 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         if k not in ("sido", "emd")
     ]
     rows = [SummaryRow(label=k, value=v, sub=f"지금 {b}") for k, v, b in shown]
+    if locked:  # 살아 있는 요청만 잠금을 붙잡아요: 요청마다 취소 카드 + 모두 취소되면 이어서 이 카드(follow.py)
+        return await need_cancel(tc, pid, a.fields, rows)
     out, _ = await _offer(
         tc,
         kind="home_info",
@@ -622,6 +631,45 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     card.say = "이 집 정보가 맞는지 확인해 주세요."
     out.cards.append(card)
     return out
+
+
+async def need_cancel(
+    tc: ToolCtx, pid: uuid.UUID, fields: HomeFields, rows: list[SummaryRow]
+) -> ToolOut:
+    """잠긴 집 정보(살아 있는 실측 요청, 견적서 전): 요청마다 취소 카드에 이어 할 일(then: 이 집 정보)을 달아요. 같은
+    묶음의 취소 카드가 모두 실행되고 잠금이 풀리면 follow.py가 이 fields로 집 정보 카드를 바로 내밀어요."""
+    async with SessionLocal() as s:
+        live = await cards.sent_visits(s, tc.user, pid)
+    if not live:  # 그사이 요청이 모두 끝났어요(잠금도 곧 풀려요)
+        raise ToolError("stale", "그사이 실측 요청이 끝났어요. 다시 불러 주세요.")
+    then = {
+        "kind": "home_info",
+        "group": str(uuid7()),
+        "fields": fields.model_dump(exclude_none=True, mode="json"),
+    }
+    outs = [await cancel_one(tc, v, "other", pid, then=then) for v in live]
+    made = sum(1 for o in outs if o.actions)
+    note = NEED_CANCEL_NOTE.format(n=len(live))
+    if made < len(live):
+        note = f"{note} {NEED_CANCEL_SOME.format(made=made)}"
+    states = [o.data.get("state") for o in outs]
+    data = {
+        # 카드 말 검사(SentenceGate)가 보는 state는 취소 카드 그대로(new · same), 집 정보는 취소 뒤 이어서(step).
+        # 칸 이름은 모델 값 허용 목록(policy.ALLOWED) 안에서 골라요
+        "state": "new" if "new" in states else states[0],
+        "step": NEED_CANCEL,
+        "count": len(live),
+        "rows": [r.model_dump(exclude_none=True) for r in rows],
+        "items": [
+            {"vendor_name": v.vendor_name, **o.data} for v, o in zip(live, outs, strict=True)
+        ],
+        "note": note,
+    }
+    return ToolOut(
+        data=data,
+        actions=[x for o in outs for x in o.actions],
+        closed=[x for o in outs for x in o.closed],
+    )
 
 
 class WishIn(BaseModel):
@@ -1571,8 +1619,10 @@ def cancel_choose(tc: ToolCtx, live: list) -> ToolOut:
     return ToolOut(data=data, cards=[cancel_options(live)])
 
 
-async def cancel_one(tc: ToolCtx, v, code: str, pid: uuid.UUID) -> ToolOut:
-    """요청 하나의 취소 승인 카드."""
+async def cancel_one(
+    tc: ToolCtx, v, code: str, pid: uuid.UUID, *, then: dict | None = None
+) -> ToolOut:
+    """요청 하나의 취소 승인 카드. then: 같은 묶음이 모두 취소되면 이어서 내밀 카드(need_cancel → follow.py)."""
     summary = ActionSummary(
         title=f"{v.vendor_name}에 보낸 실측 요청 취소",
         rows=[
@@ -1589,7 +1639,12 @@ async def cancel_one(tc: ToolCtx, v, code: str, pid: uuid.UUID) -> ToolOut:
         target_kind="visit",
         target_id=v.id,
         target_ver=v.status,
-        payload={"visit_id": str(v.id), "code": code, "vendor_name": v.vendor_name},
+        payload={
+            "visit_id": str(v.id),
+            "code": code,
+            "vendor_name": v.vendor_name,
+            **({"then": then} if then else {}),
+        },
         summary=summary,
         expires_at=tc.now + timedelta(days=2),
         project_id=pid,

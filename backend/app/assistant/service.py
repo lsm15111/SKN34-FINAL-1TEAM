@@ -1494,7 +1494,7 @@ def _nudge_item(n, acts: dict, task, proactive) -> AssistantItem:
         parts.append(ActionPart(action=actions.out(a)))
     if task is not None:
         parts.append(TaskPart(task=task))
-    if not done:
+    if not done and n.trigger not in proactive.NO_SUGGEST:
         parts.append(SuggestPart(suggest=SuggestOut(**proactive.suggest_of(n))))
     return AssistantItem(
         id=f"n-{n.id}", at=n.sent_at, turn_id=None, parts=parts, nudge_id=n.id, settled=done

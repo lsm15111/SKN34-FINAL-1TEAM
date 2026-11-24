@@ -500,7 +500,13 @@ async def execute(
         await visit_service.flush_later(s)
         await schedule_service.flush_later(s)
         done = await repo.action_owned(s, user.id, a.id, surface)
-        return out(done)  # type: ignore[arg-type]
+        res = out(done)  # type: ignore[arg-type]
+    if done is not None and done.status == "executed":
+        # 이어 하기(follow.py): 이 카드에 이어 할 일이 달렸으면 묶음이 다 끝났는지 보고 다음 카드를 내밀어요
+        from app.assistant import follow
+
+        await follow.after_execute(user, done, now)
+    return res
 
 
 # 기능 함수가 검사 앞에서 읽기 도우미를 부르는 종류: 표준견적서(quote.ensure_standard) · 예상 공정표

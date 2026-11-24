@@ -115,7 +115,9 @@ def test_customer_rules_follow_the_r6_list():
     assert "그 업체를 찾아 달라고 하면 이 말부터 하고" in r and "믿집 밖에서 찾아볼지 묻기만" in r
     assert "도배를 같이 하면 도배는 업체 연결까지 된다고" in r
     assert "업체에 전하는 길은 셋뿐이야" in r and "날짜 · 메모는 안 가" in r
-    assert "요청은 두고 알리는 길(실측 때 · 열린 채팅)을 먼저 말하고" in r
+    # 잠긴 집 정보: 요청을 두고 알리는 길을 먼저, 취소하면 바로 이어서 집 정보 카드(사용자 11-24)
+    assert "요청을 두고 실측 때 · 열린 채팅으로 알리기, 또는 취소 카드를 눌러 취소하고 바로 고치기" in r
+    assert "그대로 propose_home_info를 불러" in r and "step cancel_first" in r
     assert "고객에게 시키지 말고" in r and "건조 · 입주 청소까지" in r
     assert "취향은 정해 주지 말고 고르는 법을 말해" in r
     assert "모른다 · 확인할 수 없다고 하지 말고" in r and "[리뷰 쓰기]" in r
