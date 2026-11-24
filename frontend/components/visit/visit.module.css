@@ -20,6 +20,11 @@
 .cardAct > * { flex: 1 1 auto; }
 .cardFoot { display: flex; justify-content: flex-start; margin: -6px 0 -10px -4px; }
 .cardLink { display: flex; justify-content: flex-start; margin: -6px 0 -10px; }
+/* 채팅 열기 아래 취소: 누를 곳(44)이 겹치지 않게 */
+.cardLink + .cardFoot { margin-top: 0; }
+/* 표 단추 칸: 할 일 단추 아래 취소(회색 글자 단추) */
+.actStack { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.actStack > .btnRow { align-self: stretch; }
 .btnRow { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .btnRow > * { flex: 1 1 0; min-width: 0; }
 .btnRow > .err { flex-basis: 100%; }

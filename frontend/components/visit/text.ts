@@ -48,6 +48,18 @@ export const CANCEL_REASONS = [
 export type CancelCode = (typeof CANCEL_REASONS)[number]["key"] | "late_quote";
 export const cancelLabel = (k: string | null | undefined) => (k === "late_quote" ? "견적서가 늦어서 닫았어요" : CANCEL_REASONS.find((r) => r.key === k)?.label ?? "그 밖");
 
+/** 취소 단추(C30): 서버가 취소를 받는 상태(visit.service CANCELLABLE)에서만. 날짜가 정해지기 전은 요청 취소,
+ *  정해진 뒤(확정 · 실측 받음)는 실측 취소이고 창에 정한 날을 보여요. 상태판은 can.cancel을 같이 봐요(날짜 고르기 화면은 can이 없어요) */
+const CANCEL_REQUEST: ReadonlySet<string> = new Set(["requested", "offered", "picked", "proposed"]);
+const CANCEL_VISIT: ReadonlySet<string> = new Set(["booked", "visited"]);
+export type CancelAct = { label: "요청 취소" | "실측 취소"; request: boolean; slot: { day: string; half: Half } | null };
+export function cancelAct(v: { status: string; booked: { day: string; half: Half } | null; can?: { cancel: boolean } }): CancelAct | null {
+  if (v.can && !v.can.cancel) return null;
+  if (CANCEL_REQUEST.has(v.status)) return { label: "요청 취소", request: true, slot: null };
+  if (CANCEL_VISIT.has(v.status)) return { label: "실측 취소", request: false, slot: v.booked ? { day: v.booked.day, half: v.booked.half } : null };
+  return null;
+}
+
 /** 업체가 다른 날을 제안한 이유(V07) */
 export const PROPOSAL_REASON: Record<string, string> = { other_site: "다른 현장이 있어요", no_crew: "자재 · 사람이 안 돼요", other: "그 밖" };
 

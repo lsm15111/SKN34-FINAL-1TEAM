@@ -1,5 +1,5 @@
 "use client";
-// 실측 일정 카드 · 표의 단추(C14 요청 취소 · C18 한 번 더 요청 · C32 실측 받았어요 · 업체가 안 왔어요)와 실시간 다시 읽기.
+// 실측 일정 카드 · 표의 단추(C14 · C30 요청 취소 · 실측 취소 · C18 한 번 더 요청 · C32 실측 받았어요 · 업체가 안 왔어요)와 실시간 다시 읽기.
 // 쓰기는 lib/mock/v3b/client send()(진짜면 POST /api, 예시면 9판 이야기 다음 단계). 결과는 서버가 다시 그린 상태판으로 보여요.
 import { useRouter } from "next/navigation";
 import { useState } from "react";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToast } from "@/components/ui/Toast";
 import { CancelSheet } from "./CancelSheet";
+import type { CancelAct } from "./text";
 import s from "./visit.module.css";
 
 const path = (projectId: string, visitId: string, tail: string) => `/projects/${encodeURIComponent(projectId)}/visits/${encodeURIComponent(visitId)}/${tail}`;
@@ -18,13 +19,13 @@ function ErrLine({ text }: { text: string | null }) {
   return text ? <p className={s.err} role="alert"><Icon name="error" size={16} />{text}</p> : null;
 }
 
-/** 답 전 요청 거두기(C14 '요청 취소', 회색 글자 단추) */
-export function CancelRequestButton({ projectId, visitId, vendorName }: { projectId: string; visitId: string; vendorName: string }) {
+/** 요청 취소 · 실측 취소(C30, 회색 글자 단추). 무엇을 보일지는 cancelAct(text.ts)가 골라요 */
+export function CancelButton({ projectId, visitId, vendorName, act }: { projectId: string; visitId: string; vendorName: string; act: CancelAct }) {
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button variant="text" gray onClick={() => setOpen(true)} aria-haspopup="dialog">요청 취소</Button>
-      <CancelSheet open={open} onClose={() => setOpen(false)} projectId={projectId} visitId={visitId} vendorName={vendorName} request />
+      <Button variant="text" gray onClick={() => setOpen(true)} aria-haspopup="dialog">{act.label}</Button>
+      <CancelSheet open={open} onClose={() => setOpen(false)} projectId={projectId} visitId={visitId} vendorName={vendorName} request={act.request} slot={act.slot} />
     </>
   );
 }
