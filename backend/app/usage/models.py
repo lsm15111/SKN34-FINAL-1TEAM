@@ -27,6 +27,7 @@ PURPOSES = (
     "memory",  # v4 기억 추출
     "v2_chat",  # v2 /v2/ask 도구 루프(chat_tools)
     "research",  # v4 조사 담당(worker, 웹 검색 · 가져오기)
+    "quote_check",  # v4 받은 견적서 점검: 외부 견적서 글 · 가린 사진에서 줄 뽑기
     "orchestrator",  # 여기부터 planner까지 v2 · v3 structured 역할
     "trade",
     "quote_explanation",

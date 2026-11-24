@@ -26,6 +26,7 @@ CardKind = Literal[
     "grade_compare", "market_range", "options",  # 벽지 두 종류 견주기 · 시세 범위 · 고르기 칩
     "research",  # 09 조사 담당: 진행 · 결과(data는 assistant/research.py ResearchData)
     "product_estimate",  # 조사로 찾은 벽지 판매가로 센 이 집 도배 금액(A안)
+    "outside_quote",  # 받은 견적서 점검(믿집 밖 견적서 ↔ 표준견적서, calc.quote_compare)
 ]  # fmt: skip
 ActionKind = Literal[
     "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept", "delay_accept",
@@ -40,6 +41,7 @@ Half = Literal["am", "pm"]
 ClientKey = Annotated[str, Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")]
 Choice = Annotated[str, Field(min_length=1, max_length=40)]
 CARD_ID_MAX = 100  # 카드 id(대상 id 42자 + 먼저 말 건 줄 '@줄 id' 37자)
+FILES_MAX = 3  # 한 턴에 붙이는 사진(받은 견적서 쪽수)
 
 
 # ---- 들어오는 몸통 ----
@@ -76,6 +78,12 @@ class TurnIn(BaseModel):
     client_key: ClientKey
     text: TurnText
     context: TurnContextIn | None = None
+    files: list[uuid.UUID] = Field(
+        default_factory=list,
+        max_length=FILES_MAX,
+        description="붙인 사진(받은 견적서). 먼저 POST /files kind=chat_photo로 올린 내 사진만(남의 것 404 · 사진이 "
+        "아니면 422). 화면이 개인정보를 가린 그림만 올려요",
+    )
 
 
 class VendorTurnIn(BaseModel):
@@ -583,6 +591,66 @@ class MarketRangeData(BaseModel):
     source: str = Field(description="출처 한 줄")
     assumed: list[str] = Field(default=[], description="계산에 넣은 가정(코드 글)")
     note: str | None = Field(default=None, description="범위를 말할 수 없는 까닭(found false)")
+
+
+class OutsideRowOut(BaseModel):
+    key: str = Field(
+        description="견줄 항목(paper · labor · material · putty · meal_truck · removal · waste · cover · "
+        "bundle) 또는 other(표준에 없음) · discount(할인)"
+    )
+    name: str = Field(description="줄 이름(항목 이름 · 표준에 없는 줄은 견적서 줄 이름, 가린 것)")
+    state: Literal["missing", "more", "same", "less", "extra", "discount", "noprice"] = Field(
+        description="빠짐 · 많음 · 비슷 · 적음 · 표준에 없음 · 할인 · 금액 없음(포함 · 따로만 적힘)"
+    )
+    outside_won: int | None = Field(
+        description="받은 금액(부가세 포함으로 맞춘 값, 고객이 준 값에서 계산 엔진)"
+    )
+    standard_won: int | None = Field(description="표준 금액(부가세 포함, 계산 엔진)")
+    diff_won: int | None = Field(description="받은 금액 − 표준 금액(계산 엔진)")
+    lines: list[str] = Field(default=[], description="이 줄에 든 견적서 줄 이름(가린 것)")
+    note: str | None = Field(
+        default=None, description="표준 줄이 합계 밖이거나 금액 없는 줄일 때 한 줄"
+    )
+
+
+class OutsidePuttyOut(BaseModel):
+    need: Literal["need", "check", "no"] = Field(
+        description="올퍼티: 권함 · 실측 때 확인 · 부분퍼티로 충분"
+    )
+    label: str
+    why: str = Field(description="근거 한 줄(도배 유형 · 철거 범위 · 표준 퍼티 줄 상태)")
+    found: Literal["full", "part", "none"] = Field(description="받은 견적서의 퍼티 줄")
+    found_label: str
+
+
+class OutsideBudgetOut(BaseModel):
+    state: Literal["within", "over", "under"]
+    label: str = Field(description="희망 예산 범위 글(모은 조건)")
+    gap_won: int | None = Field(description="넘거나 모자란 금액(계산 엔진, 안이면 null)")
+
+
+class OutsideQuoteData(BaseModel):
+    """받은 견적서 점검(check_outside_quote): 믿집 밖에서 받은 도배 견적서(글 · 가린 사진)를 이 집 도배 표준견적서와
+    줄마다 견준 값. 받은 금액은 고객이 준 값이고 부가세 맞추기 · 합 · 차 · 판정은 계산 엔진(calc.quote_compare)이에요.
+    표준견적서 대비 %는 없어요."""
+
+    source: Literal["text", "photo", "both"] = Field(description="읽은 곳: 글 · 사진 · 둘 다")
+    rows: list[OutsideRowOut]
+    outside_won: int = Field(description="견준 범위 받은 합계(부가세 맞춤, 표준에 없는 줄 뺌)")
+    standard_won: int = Field(description="같은 범위 표준 합계(부가세 포함)")
+    diff_won: int = Field(description="outside_won − standard_won")
+    state: Literal["more", "same", "less"] = Field(
+        description="합계 판정(시장 실견적 가운데 50% 띠)"
+    )
+    basis: str = Field(description="부가세 기준 한 줄")
+    notes: list[str] = Field(default=[], description="견준 범위 · 사진 확인 · 뺀 줄 안내(틀 글)")
+    putty: OutsidePuttyOut
+    asks: list[str] = Field(default=[], description="그 업체에 물을 것(틀 글, 많아야 5개)")
+    next: str = Field(description="다음 걸음 한 줄(틀 글)")
+    budget: OutsideBudgetOut | None = Field(
+        default=None, description="희망 예산(모은 조건)이 있을 때만"
+    )
+    href: str = Field(description="표준견적서 화면")
 
 
 class OptionOut(BaseModel):

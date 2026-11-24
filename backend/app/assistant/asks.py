@@ -118,6 +118,7 @@ CALL_KIND = {
     "get_standard_quote": "standard_quote",
     "get_schedule": "schedule",
     "compare_quotes": "quote_compare",
+    "check_outside_quote": "quote_compare",  # '받은 견적서 봐 줘'가 믿집 밖 견적서일 때(받은 견적서 점검)
     "recommend_vendors": "vendor_picks",
     "start_research": "vendor_picks",  # 믿집 업체가 없는 지역은 믿집 밖 조사로 이어요
     "today_tasks": "today",
