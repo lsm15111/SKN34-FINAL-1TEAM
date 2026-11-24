@@ -70,6 +70,8 @@ NUDGE_TRIGGERS = (
     "visit_requested", "visit_picked", "deal_confirmed",
     # 07 자동화(0044, aftercare.TRIGGERS)
     "vendor_out", "extra_added", "work_done", "prep_week", "dates_requested", "quote_due",
+    # 이어 하기(0054, follow.py): 사람이 누른 카드 뒤 코드가 바로 내미는 다음 카드
+    "follow_up",
 )  # fmt: skip
 NUDGE_CHANNELS = ("feed", "notify")
 NUDGE_STATUSES = ("pending", "held", "sent", "opened", "dismissed", "expired")

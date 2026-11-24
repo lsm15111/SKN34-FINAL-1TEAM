@@ -298,6 +298,12 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
         res.reason = ANSWERED  # 잠긴 집의 칸 단추: 까닭 한 줄로 끝내요(LLM 없음)
     states = {out.data.get("state") for out in outs}
     lines = ([MADE] if "new" in states else [SAME] if "same" in states else []) + errors
+    # 잠긴 집의 칸 단추가 취소 카드를 냈으면(요청이 살아 있음) 그 안내 한 줄: 모두 취소하면 이어서 집 정보 카드
+    needs = [o.data["note"] for o in outs if o.data.get("step") == propose.NEED_CANCEL]
+    if needs:
+        lines = [*needs, *errors]
+        if not acts and not ctx.stale:
+            res.reason = ANSWERED  # 이 안내 한 줄로 끝내요(LLM 없음, 잠긴 집의 칸 단추와 같은 길)
     if ctx.stale:
         kinds = [a[0] for a in (action(c) for c in ctx.stale) if a is not None]
         fresh = await reload(tc, kinds, ctx.card_id)

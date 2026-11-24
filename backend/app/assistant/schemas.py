@@ -871,6 +871,7 @@ NudgeTrigger = Literal[
     "visit_offered", "quote_sent", "dates_proposed", "work_eve", "no_pick",
     "visit_requested", "visit_picked", "deal_confirmed",
     "vendor_out", "extra_added", "work_done", "prep_week", "dates_requested", "quote_due",
+    "follow_up",
 ]  # fmt: skip
 NudgeStatus = Literal["pending", "held", "sent", "opened", "dismissed", "expired"]
 

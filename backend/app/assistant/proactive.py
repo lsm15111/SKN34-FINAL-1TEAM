@@ -176,8 +176,17 @@ TRIGGERS: dict[str, Trigger] = {
             notify="{area} 요청의 공사 날짜를 아직 내지 않았어요. 후보를 확인해 주세요.",
         ),
         *(Trigger(**x) for x in aftercare.TRIGGERS),  # 07 자동화(업체 빠짐 · 추가 금액 · 공사 끝 …)
+        # 이어 하기(follow.py, 0054): 사람이 누른 카드 뒤 코드가 바로 내미는 다음 카드 줄. 판정 · 알림 없이 보낸 채로
+        # 만들어요(문장은 follow.py 틀). 달린 승인 카드가 실행되면 정리가 닫아요
+        Trigger(
+            "follow_up", "customer", (), action=True, state="visit", say="이어서 할 카드 보여 줘",
+            why="이어서 할 일이에요",
+            feed="이어서 할 일의 카드를 올렸어요. 확인하고 눌러 주세요.",
+        ),
     )
 }  # fmt: skip
+# 다음에 물을 말을 붙이지 않는 줄: 달린 승인 카드가 다음 걸음이에요
+NO_SUGGEST = frozenset({"follow_up"})
 EVENT_KINDS: dict[str, str] = {k: t.name for t in TRIGGERS.values() for k in t.kinds}
 
 
@@ -1233,6 +1242,11 @@ def _link(t: Trigger, n: AssistantNudge) -> str:
     if t.name == "deal_confirmed":
         return f"/vendor/jobs/{n.ref_id}"
     return f"/vendor/requests/{n.ref_id}"
+
+
+async def signal(n: AssistantNudge) -> None:
+    """평가 · 정리 밖에서 보낸 줄(이어 하기)의 commit 뒤 화면 신호."""
+    await _signal(n, TRIGGERS[n.trigger], unread=False)
 
 
 async def _signal(n: AssistantNudge, t: Trigger, *, unread: bool) -> None:

@@ -112,16 +112,19 @@ def test_live_request_locks_region_then_cancelling_every_request_unlocks_it(api,
         script, api, pid, "관악구로 바꿔 줘", ("propose_home_info", {"fields": {"sgg": "관악구"}})
     )
     got = results(log)[0]
-    assert (got["error"], got["message"]) == ("locked", propose.LOCKED_LIVE)
-    assert "propose_visit_cancel" in got["hint"] and not acts(ev)
-    # 요청을 모두 취소하면(견적서 전) 잠금이 풀리고 집 정보를 고칠 수 있어요(QA r3 s1 B3)
-    cancel(api, pid, visit)
+    # 요청이 살아 있으면 요청마다 취소 카드를 내밀어요. 모두 취소하면(견적서 전) 잠금이 풀리고 이어서 집 정보 카드가
+    # 바로 와요(QA r3 s1 B3 · 사용자 11-24 '취소하면 바로 이어서')
+    assert (got["state"], got["step"], got["count"]) == ("new", propose.NEED_CANCEL, 1)
+    (c,) = [x for x in acts(ev) if x["status"] == "proposed"]
+    assert c["kind"] == "visit_cancel" and action(c["action_id"])["payload"]["visit_id"] == visit
+    assert approve(api, c["action_id"]).json()["status"] == "executed"
     assert locked(api, pid) is False
-    ev, log = call(
-        script, api, pid, "관악구로 바꿔 줘", ("propose_home_info", {"fields": {"sgg": "관악구"}})
-    )
-    (a,) = [x for x in acts(ev) if x["status"] == "proposed"]
-    assert approve(api, a["action_id"], seen=a["target_ver"]).json()["status"] == "executed"
+    (n,) = nudges(trigger="follow_up")
+    a = action(n["action_id"])
+    assert (a["kind"], a["status"], a["origin"]) == ("home_info", "proposed", "nudge")
+    assert api.get(f"/projects/{pid}").json()["sgg"] == "노원구"  # 누르기 전에는 그대로
+    r = approve(api, str(n["action_id"]), seen=a["target_ver"])
+    assert r.json()["status"] == "executed", r.text
     assert api.get(f"/projects/{pid}").json()["sgg"] == "관악구"
 
 
@@ -402,7 +405,9 @@ def test_locked_home_field_button_ends_with_a_set_line_without_llm(api, script):
     log = script([{"text": "불리면 안 되는 대본이에요."}])
     ev = ok(ask(api, pid, "합지로 바꿀래요", context={"choice": "grade:economy"}))
     assert log == []  # LLM을 부르지 않아요
-    assert said(ev) == propose.LOCKED_LIVE and not acts(ev)
+    # 요청이 살아 있으면 취소 카드와 안내 한 줄(모두 취소하면 이어서 집 정보 카드)
+    assert said(ev) == propose.NEED_CANCEL_NOTE.format(n=1)
+    assert [x["kind"] for x in acts(ev) if x["status"] == "proposed"] == ["visit_cancel"]
     done = ev[-1][1]
     assert done["mode"] == "free"
     (row,) = query("select trace from assistant_turns order by created_at desc limit 1")
