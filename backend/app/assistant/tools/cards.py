@@ -1636,11 +1636,15 @@ class HomeCtx:
 # 사는 집에만 맞는 준비 줄(가구 · 짐 · 벽에 건 것). 빈 집이면 뺀다(QA r5 c1: 빈 집에 '벽에 건 액자 · 선반 떼기')
 FURNITURE = re.compile(r"가구|짐|액자|선반")
 ENTRY_ITEM = "공사 날 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정하기"
-PET_ITEM = "공사 날 반려동물이 지낼 곳 정하기"
+PET_ITEM = "공사 날 반려동물을 맡길 곳이나 지낼 방 정하기"
+PET_DOOR_ITEM = "작업 중 현관 · 방문이 열려도 반려동물이 나가지 않게 하기"
 AWAY_LINE = (
     "평일에 공사해요. 집을 비우시면 출입 방법(비밀번호 · 열쇠)을 업체와 믿집 채팅으로 정해 두세요."
 )
-PET_LINE = "반려동물은 풀 냄새 · 먼지 · 소음을 피해 공사 날 지낼 곳을 미리 정해 두세요."
+PET_LINE = (
+    "반려동물은 풀 냄새 · 먼지 · 소음을 피해 공사 날 맡길 곳이나 지낼 방을 미리 정해 두세요. "
+    "작업하는 동안 현관 · 방문이 자주 열려요."
+)
 
 
 def fit_items(items, h: "HomeCtx | None") -> list[str]:
@@ -1656,9 +1660,17 @@ def home_lines(h: "HomeCtx | None") -> list[str]:
     return [*out, *([PET_LINE] if h.pet else [])]
 
 
+def home_items(h: "HomeCtx | None") -> list[str]:
+    """이 집에 맞춰 더하는 체크 칸: 사는 집 반려동물(맡길 곳 · 문 열림)."""
+    if h is None or not h.occupied:
+        return []
+    return [PET_ITEM, PET_DOOR_ITEM] if h.pet else []
+
+
 def prep_card(card_id: str, trades: list[str], home: "HomeCtx | None" = None) -> CardOut:
     """공사 전날 준비물(공정 설정 agent.v3.trades의 고객 준비 · 주의점, 정해 둔 글). home이 있으면 이 집에 맞춘다:
-    빈 집은 가구 줄을 빼고 출입 방법을, 평일에 집을 비우면 출입 방법을, 반려동물이 있으면 지낼 곳을 더한다."""
+    빈 집은 가구 줄을 빼고 출입 방법을, 평일에 집을 비우면 출입 방법을, 반려동물이 있으면 맡길 곳 · 문 열림을
+    더한다."""
     from app.agent.v3.trades import SPECS
 
     specs = [x for x in SPECS if x.code in trades] or [x for x in SPECS if x.code == "dobae"]
@@ -1666,8 +1678,7 @@ def prep_card(card_id: str, trades: list[str], home: "HomeCtx | None" = None) ->
     if home is not None:
         if not home.occupied or (home.weekday_work and home.away_weekdays):
             prep.append(ENTRY_ITEM)
-        if home.occupied and home.pet:
-            prep.append(PET_ITEM)
+        prep += home_items(home)
     cautions = list(dict.fromkeys(c for x in specs for c in x.cautions))
     data = KnowledgeData(
         title="공사 전날 준비물",

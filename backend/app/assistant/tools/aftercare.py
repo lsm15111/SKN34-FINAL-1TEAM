@@ -171,8 +171,9 @@ def check_card(
 ) -> CardOut:
     """공사 전 할 일(before) · 공사 끝 점검표(after): knowledge 카드의 체크 칸(공정 설정 값, 정해 둔 글).
     extra는 공정 설정 뒤에 더할 체크 칸(반셀프 직접 할 일, tools.diy.prep_part)이에요. home이 있으면 이 집에 맞춰요:
-    빈 집은 가구 · 짐 줄을 빼고, 평일에 집을 비우는 집 · 반려동물이 있는 집은 줄을 더해요. 공통 줄 '직접 할 일
-    (콘센트 옮기기 등)'은 쓰지 않고 고른 직접 할 일을 그 이름으로 넣어요(날짜가 없으면 전 · 뒤만)."""
+    빈 집은 가구 · 짐 줄을 빼고, 평일에 집을 비우는 집 · 반려동물이 있는 집(맡길 곳 · 문 열림)은 줄을 더해요
+    (cards.home_lines · home_items). 공통 줄 '직접 할 일(콘센트 옮기기 등)'은 쓰지 않고 고른 직접 할 일을 그 이름으로
+    넣어요(날짜가 없으면 전 · 뒤만)."""
     from app.agent.v3.trades import BY_CODE, CHECK_NOTE, CHECK_SOURCE
 
     codes = [c for c in dict.fromkeys(trades) if c in BY_CODE and c != "common"] or ["dobae"]
@@ -186,8 +187,7 @@ def check_card(
             ],
             home,
         )
-        if home is not None and home.occupied and home.pet:
-            items.append(cards.PET_ITEM)
+        items += cards.home_items(home)
         if home is not None and home.diy and not extra:  # 공사 날짜 전: 고른 일을 전 · 뒤로만
             from app.assistant.tools import diy as diy_tools
 

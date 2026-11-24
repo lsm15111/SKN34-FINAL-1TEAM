@@ -244,7 +244,7 @@ def test_final_plan_card_today_rows_and_prep_lists(api):
     assert f"페인트(문틀 · 몰딩) 칠하기 · 끝냈는지 확인해요 · {SELF}" in labels
     assert any(x.startswith("조명 교체 · ") for x in labels)
     assert diy_tools.SAFETY in got.data["lines"]
-    assert "벽 앞 가구 옮기기" in labels  # 공정 준비물은 그대로
+    assert "벽 앞 가구 · 짐을 누가 옮길지 업체와 채팅으로 정하기" in labels  # 공정 준비물은 그대로
 
 
 def test_reminders_need_final_plan(api):
