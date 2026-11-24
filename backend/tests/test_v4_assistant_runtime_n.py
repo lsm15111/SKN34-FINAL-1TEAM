@@ -383,12 +383,12 @@ def test_prompt_set_picks_files_and_keeps_text_per_set(monkeypatch):
     assert "\nASSISTANT_PROMPT_SET=v4\n" in env
     monkeypatch.setattr(settings, "assistant_prompt_set", "v3")
     assert [prompts.version(n) for n in NAMES] == [
-        "customer_v3", "vendor_v3", "nudge_write_v2", "nudge_judge_v1", "memory_v3", "brief_v2",
+        "customer_v3", "vendor_v3", "nudge_write_v2", "nudge_judge_v1", "memory_v4", "brief_v2",
     ]  # fmt: skip
     v3 = prompts.system("customer")
     monkeypatch.setattr(settings, "assistant_prompt_set", "v4")
     assert [prompts.version(n) for n in NAMES] == [
-        "customer_v4", "vendor_v4", "nudge_write_v3", "nudge_judge_v1", "memory_v3", "brief_v2",
+        "customer_v4", "vendor_v4", "nudge_write_v3", "nudge_judge_v1", "memory_v4", "brief_v2",
     ]  # fmt: skip
     v4 = prompts.system("customer")
     assert "판: customer_v3" in v3 and "판: customer_v4" in v4
