@@ -8,6 +8,8 @@
 - 판정: 줄 · 합계마다 많음 · 적음(BAND 밖) · 비슷, 줄에는 빠짐(표준엔 합계에 드는데 외부에 없음) · 표준에 없음 · 할인 ·
   금액 없음(포함 · 따로라고만 적힌 줄)도 있다. 표준 합계 밖 줄(선택 · 실측 후 · 고객 구매)은 외부에 그 줄이 있을 때만
   같은 범위로 더해 견준다(added).
+- 합계 둘: 같은 범위 합(outside_cmp)은 표준에 없는 줄(표준에 금액이 없는 항목 · 기타)을 빼고 표준 합과 견준다(차이 ·
+  판정). 받은 줄 모두 합(outside_total)은 적힌 합계(빠진 줄 묻기) · 희망 예산과 견준다.
 - 올퍼티(full_putty): 이 집 도배 유형 · 철거 범위 · 표준 퍼티 줄 상태로 권함 · 실측 때 확인 · 부분퍼티로 충분 + 근거 한 줄.
 - 표준 대비 %는 내지 않는다(차이는 원 단위만, docs/v4/08-rules.md 숫자). 물을 말은 '-요' 틀 글이다.
 """
@@ -363,15 +365,16 @@ class Row:
 @dataclass(frozen=True)
 class Compare:
     rows: list[Row]
-    outside_total: int  # 외부 줄 합(부가세 맞춘 값, 표준에 없는 줄 · 할인 포함)
-    outside_cmp: int  # 견준 범위 외부 합(표준에 없는 줄 뺌)
+    # 받은 줄 모두 합(부가세 맞춘 값, 표준에 없는 줄 · 할인 포함): 적힌 합계 · 희망 예산과 견줘요
+    outside_total: int
+    outside_cmp: int  # 같은 범위 받은 합(outside_total − extra_total, 할인은 남김)
     standard_cmp: int  # 같은 범위 표준 합(부가세 포함)
     diff: int  # outside_cmp − standard_cmp
-    state: Judge
+    state: Judge  # outside_cmp ↔ standard_cmp
     added: tuple[str, ...]  # 표준 합계 밖인데 외부에 있어 더한 표준 줄
-    extra_total: int  # 표준에 없는 줄 합
+    extra_total: int  # 표준에 없는 줄 합(줄 상태 extra: 표준에 금액이 없는 항목 · 기타 줄)
     vat_unknown: bool  # 부가세 여부가 적혀 있지 않은 줄이 있어 적힌 값 그대로 견줌
-    stated_gap: int | None  # 적힌 합계 − 줄 합(STATED_GAP_WON을 넘을 때만)
+    stated_gap: int | None  # 적힌 합계 − 받은 줄 모두 합(STATED_GAP_WON을 넘을 때만): 빠진 줄 묻기
     putty: PuttyCheck
     budget: BudgetCheck | None
     asks: tuple[str, ...]  # 그 업체에 물을 것
@@ -535,9 +538,9 @@ def compare(
     for ln, amount in priced.get("discount", []):
         rows.append(Row("discount", ln.name, "discount", amount, None, None, (ln.name,)))
 
-    every = [a for k in priced for _, a in priced[k]]
-    outside_total = sum(every)
-    extra_total = sum(a for _, a in priced.get("other", []))
+    outside_total = sum(a for k in priced for _, a in priced[k])  # 받은 줄 모두 합
+    # 표준에 없는 줄: 표준에 금액이 없는 항목(폐기물 · 보양 등) · 기타. 줄로만 보이고 같은 범위 합에서 빼요
+    extra_total = sum(r.outside or 0 for r in rows if r.state == "extra")
     outside_cmp = outside_total - extra_total
     standard_cmp = with_vat(std_total, vat_rate).total
     state: Judge = judge(outside_cmp, standard_cmp, band) if standard_cmp > 0 else "same"
@@ -545,6 +548,7 @@ def compare(
     stated_gap = None
     checks: list[str] = []  # 합계 · 부가세
     if stated_total is not None and not total_only:
+        # 적힌 합계는 받은 줄 모두 합과 견줘요(같은 범위 합이 아니에요): 빠진 줄이 있는지 묻기
         gap = vat_in(stated_total, stated_vat, vat_rate) - outside_total
         if abs(gap) > STATED_GAP_WON:
             stated_gap = gap
@@ -561,6 +565,7 @@ def compare(
         )
     # 물을 말 차례: 올퍼티 → 빠짐 · 따로 받음 → 많음 → 합계 · 부가세 → 실측 후 줄(ASKS_MAX까지)
     asks = [*([putty.ask] if putty.ask else []), *asks, *more, *checks]
+    # 희망 예산은 낼 돈(받은 줄 모두 합)과 견줘요
     got_budget = budget_check(outside_total, *budget) if budget is not None else None
     return Compare(
         rows=rows,

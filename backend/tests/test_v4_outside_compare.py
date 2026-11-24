@@ -123,14 +123,15 @@ def test_missing_more_same_and_diff_on_the_same_vat_basis():
     waste = row(c, "waste")
     assert (waste.state, waste.outside, waste.standard) == ("extra", 110_000, None)
     assert waste.note and "실측 후" in waste.note
-    # 합계: 같은 범위(표준 합계에 드는 줄)로 견줘요. 부가세 포함
+    # 합계: 같은 범위(표준 합계에 드는 줄)로 견줘요. 표준에 금액이 없는 폐기물(표준에 없음)은 줄로만 보이고 빼요
     assert (c.outside_cmp, c.standard_cmp, c.diff, c.state) == (
-        2_970_000,
+        2_860_000,
         2_365_000,
-        605_000,
+        495_000,
         "same",
     )
-    assert c.outside_total == 2_970_000 and c.added == () and not c.vat_unknown
+    assert c.outside_total == 2_970_000 and c.extra_total == 110_000
+    assert c.added == () and not c.vat_unknown
     assert any("초배지 · 부자재" in a for a in c.asks)
     assert any(a.startswith("인건비가 표준보다 550,000원 많아요") for a in c.asks)
     # 철거는 표준도 실측 후라 빠짐이 아니라 물을 것이에요
@@ -207,6 +208,41 @@ def test_extra_lines_are_left_out_of_the_compare_total_and_discount_stays():
     assert c.outside_total == 2_365_000 + 220_000 - 110_000
     assert c.outside_cmp == 2_365_000 - 110_000
     assert c.diff == -110_000
+
+
+def test_lines_the_standard_has_no_amount_for_stay_out_of_the_same_scope_total():
+    # QA r10 c3 · u1: 표준에 금액이 없는 폐기물 · 보양 줄이 받은 쪽 합에만 들어가 차이 · 판정이 어긋났어요
+    lines = [
+        out("실크벽지", 1_000_000),
+        out("도배 인건비", 1_400_000),
+        out("부자재", 150_000),
+        out("폐기물 처리", 200_000),  # 표준은 실측 후 · 금액 없음
+        out("보양 작업", 50_000),  # 표준에 보양 줄이 없음
+    ]
+    c = qc.compare(
+        lines,
+        STANDARD,
+        grade="basic",
+        stated_total=2_800_000,
+        stated_vat="excluded",
+        budget=(None, 3_000_000),
+    )
+    # 줄에는 그대로 보여요(표준에 없음)
+    assert [(r.key, r.state, r.outside) for r in c.rows if r.state == "extra"] == [
+        ("waste", "extra", 220_000),
+        ("cover", "extra", 55_000),
+    ]
+    # 같은 범위는 벽지 · 인건비 · 부자재만(2,550,000 × 1.1). 두 줄을 넣으면 띠 위(많음)로 뒤집혀요
+    assert (c.outside_cmp, c.standard_cmp, c.diff, c.state) == (
+        2_805_000,
+        2_365_000,
+        440_000,
+        "same",
+    )
+    assert c.extra_total == 275_000 and c.outside_total == 3_080_000
+    # 적힌 합계(빠진 줄 묻기) · 희망 예산은 받은 줄 모두 합과 견줘요
+    assert c.stated_gap is None
+    assert c.budget is not None and (c.budget.state, c.budget.gap) == ("over", 80_000)
 
 
 def test_lines_without_amount_count_as_present_and_separate_ones_are_asked():

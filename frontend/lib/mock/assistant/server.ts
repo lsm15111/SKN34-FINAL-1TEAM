@@ -328,9 +328,9 @@ function outsideCard(s: State, photo: boolean): CardOut<"outside_quote"> {
         { key: "waste", name: "폐기물", state: "extra", outside_won: 165000, standard_won: null, diff_won: null, lines: ["폐기물 처리"], note: "표준견적서에서는 실측 후 정하는 줄이에요" },
         { key: "other", name: "걸레받이 교체", state: "extra", outside_won: 220000, standard_won: null, diff_won: null, lines: ["걸레받이 교체"] },
       ],
-      outside_won: 2970000, standard_won: 2470000, diff_won: 500000, state: "same",
+      outside_won: 2805000, standard_won: 2470000, diff_won: 335000, state: "same",
       basis: "부가세 포함으로 맞춰 견줬어요.",
-      notes: [...(photo ? ["사진에서 읽은 금액이에요. 받은 견적서와 같은지 한 번 확인해 주세요."] : []), "표준견적서에 없는 줄은 합계 견주기에서 뺐어요."],
+      notes: [...(photo ? ["사진에서 읽은 금액이에요. 받은 견적서와 같은지 한 번 확인해 주세요."] : []), "표준견적서에 없는 줄 385,000원은 합계 견주기에서 뺐어요(받은 견적서 전체 3,190,000원)."],
       putty: {
         need: "check", label: "실측 때 벽 보고 정해요", found: "none", found_label: "퍼티 줄 없음",
         why: "철거 없이 기존 벽에 실크를 바르면 부분퍼티로 충분한 경우가 많아요. 벽이 많이 울퉁불퉁하면 실측 때 올퍼티를 권할 수 있어요.",
@@ -589,7 +589,7 @@ const PREWORK_ROWS: { key: PreworkKey; label: string; why: string }[] = [
   { key: "mokgong", label: "목공", why: "문틀 · 몰딩을 바꾸면 벽에 틈이 생겨, 메우고 덮은 뒤에 도배해요." },
   { key: "electric", label: "전기", why: "도배한 뒤에 배선을 옮기면 벽을 다시 뜯어야 해서, 전기 공사를 먼저 끝내요." },
   { key: "film", label: "필름", why: "필름은 목공 뒤 도배 전에 붙여요. 순서가 어긋나면 비용이 겹치고 하자가 생길 수 있어요." },
-  { key: "floor", label: "바닥", why: "장판은 보통 도배 뒤, 마루는 도배 전에 까는 경우가 많아 실측 때 업체와 순서를 정해요." },
+  { key: "floor", label: "바닥", why: "마루는 도배 전에, 장판은 도배 뒤에 까는 게 보통이에요. 업체마다 다를 수 있어 실측 때 순서를 맞춰요." },
 ];
 function preworkCard(s: State): CardOut<"prework_check"> {
   const saved = s.prework ?? {};

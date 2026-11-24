@@ -133,16 +133,20 @@ def stale(choice: str, surface: str) -> bool:
 
 
 def text_of(choice: str) -> str:
-    """LLM에 보낼 고른 것: 이름표는 그대로, 칸은 화면 말('철거 범위: 전체 철거'), 행동은 '실측 요청 v1, v2'."""
+    """LLM에 보낼 고른 것: 이름표는 그대로, 칸은 화면 말('철거 범위: 전체 철거'), 앞 공사 답은 화면 말(아직이면 카드
+    근거까지), 행동은 '실측 요청 v1, v2'."""
     from app.assistant.tools.propose import FIELD_LABEL, _show
 
     f = field(choice)
     if f is not None:
         return f"{FIELD_LABEL[f[0]]}: {_show(*f)}"
     if (pw := prework_field(choice)) is not None:  # '앞 공사 목공: 끝났어요'
+        from app.assistant.tools.prework import WHY
         from app.project import prework
 
-        return f"{prework.LABEL} {prework.PREWORK[pw[0]]}: {prework.STATES[pw[1]]}"
+        got = f"{prework.LABEL} {prework.PREWORK[pw[0]]}: {prework.STATES[pw[1]]}"
+        # 아직인 공정은 점검 카드 근거를 그대로 같이 줘요(순서를 지어 말하지 않게, QA r10 c3 T2)
+        return f"{got}(카드 근거: {WHY[pw[0]]})" if pw[1] == "todo" else got
     a = action(choice)
     if a is not None:
         return f"{LABEL[a[0]]} {', '.join(a[1])}"
