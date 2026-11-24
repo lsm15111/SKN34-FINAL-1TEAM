@@ -1,7 +1,7 @@
 """v4 점검 고침(기억): 기억 칸마다 마지막으로 바뀐 때(assistant_memory_marks)
 
-Revision ID: 0055_v4_audit_memory
-Revises: 0054_v4_follow_up
+Revision ID: 0056_v4_audit_memory
+Revises: 0055_v4_audit_flow
 Create Date: 2026-11-24
 
 - (사람, 키)마다 그 값을 말한 때 · 고객이 지운 때 · 칩으로 줄인 때를 남긴다. 미뤘다 뽑거나 다시 하는 기억 뽑기 일이
@@ -14,8 +14,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0055_v4_audit_memory"
-down_revision: str | Sequence[str] | None = "0054_v4_follow_up"
+revision: str = "0056_v4_audit_memory"
+down_revision: str | Sequence[str] | None = "0055_v4_audit_flow"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

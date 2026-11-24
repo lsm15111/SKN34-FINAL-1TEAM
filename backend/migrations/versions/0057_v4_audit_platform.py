@@ -1,7 +1,7 @@
 """점검 플랫폼: 시공 사진 FK를 ON DELETE CASCADE로 · 장부 줄에 새 계정 몫 표시(llm_usage.new_account).
 
-Revision ID: 0055_v4_audit_platform
-Revises: 0054_v4_follow_up
+Revision ID: 0057_v4_audit_platform
+Revises: 0056_v4_audit_memory
 Create Date: 2026-11-24
 
 - vendor_portfolio.file_id → files: ON DELETE가 없으면(NO ACTION) 시공 사진을 올린 업체가 탈퇴할 때 회원 행을 지우며
@@ -16,8 +16,8 @@ from collections.abc import Sequence
 import sqlalchemy as sa
 from alembic import op
 
-revision: str = "0055_v4_audit_platform"
-down_revision: str | Sequence[str] | None = "0054_v4_follow_up"
+revision: str = "0057_v4_audit_platform"
+down_revision: str | Sequence[str] | None = "0056_v4_audit_memory"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
