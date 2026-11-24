@@ -23,7 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.calc import deadline, dobae, mokgong, rolls
-from app.calc.common import FORMULA_VERSION, Money, Step, from_entered, sum_days, sum_won
+from app.calc.common import FORMULA_VERSION, Line, Money, Step, from_entered, sum_days, sum_won
 from app.calc.quote_diff import budget_fit, budget_gap
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
 from app.calc.standard_quote import house_area, house_pyeong
@@ -227,10 +227,34 @@ def calc_trades(
     return out
 
 
+@dataclass(frozen=True)
+class StandardPreview:
+    """저장하지 않고 센 표준견적서(계산 엔진): 합계(부가세 포함) · 도배 기준 이름(두 기준 판, 옛 판 · 도배 없으면
+    None) · 그 기준을 고른 근거 · 줄('공정:줄 키' → 줄)."""
+
+    total: int
+    basis: str | None
+    why: tuple[str, ...]
+    lines: dict[str, Line]
+
+
+def preview(p: ProjectOut, said: Mapping[str, str]) -> StandardPreview:
+    """저장하지 않고 이 공사 · 모은 조건으로 센 표준견적서(ensure_standard와 같은 계산). 승인 카드가 바꾸기 전 · 뒤를
+    견줄 때 써요(바꾼 뒤 공사는 project.service.preview_home). 줄은 차액의 까닭(바뀌는 줄)에 써요."""
+    trades = calc_trades(p, said=said)
+    pick = dobae.pick_profile(work_facts(p, said))
+    pf = DOBAE_PROFILES[pick.profile].profile if p.trades.dobae else None
+    return StandardPreview(
+        sum_won(c.total for c in trades),
+        pf.name if pf is not None else None,
+        pick.why if pf is not None else (),
+        {f"{c.trade}:{ln.key}": ln for c in trades for ln in c.lines},
+    )
+
+
 def preview_total(p: ProjectOut, said: Mapping[str, str]) -> int:
-    """저장하지 않고 이 공사 · 모은 조건으로 센 표준견적서 합계(부가세 포함, 계산 엔진). ensure_standard와 같은 계산이에요.
-    승인 카드가 바꾸기 전 · 뒤 금액을 견줄 때 써요(바꾼 뒤 공사는 project.service.preview_home)."""
-    return sum_won(c.total for c in calc_trades(p, said=said))
+    """저장하지 않고 이 공사 · 모은 조건으로 센 표준견적서 합계(부가세 포함, 계산 엔진). ensure_standard와 같은 계산이에요."""
+    return preview(p, said).total
 
 
 async def _latest(s: AsyncSession, project_id: uuid.UUID) -> dict[str, StandardQuote]:

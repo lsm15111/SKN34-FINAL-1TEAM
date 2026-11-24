@@ -23,9 +23,10 @@ import { useToast } from "@/components/ui/Toast";
 
 export type Assistant = ReturnType<typeof useAssistant>;
 
-/** 처음 대화(기록 없음)일 때 빠른 답 칩. 서버가 고른 칩(마지막 카드 다음 말)이 없으면 이 줄을 그대로 둬요(QA r7 M10: 먼저 말 건 줄이
- *  생기면 칩이 0개였어요). 실측 단계(보드 단계 띠 3칸)부터는 '업체 추천해 줘'를 빼요(서버 칩 규칙 '실측 요청 전'과 같은 뜻) */
-const FIRST_CHIPS = ["표준견적서 금액 풀이해 줘", "업체 추천해 줘", "공사는 어떤 순서로 해요?"];
+/** 처음 대화(기록 없음)일 때 빠른 답 칩: 업체 추천 + 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기(QA r7 첫 인사). 서버가 고른 칩
+ *  (마지막 카드 다음 말)이 없으면 이 줄을 그대로 둬요(QA r7 M10: 먼저 말 건 줄이 생기면 칩이 0개였어요). 실측 단계(보드 단계 띠
+ *  3칸)부터는 '업체 추천해 줘'를 빼요(서버 칩 규칙 '실측 요청 전'과 같은 뜻) */
+const FIRST_CHIPS = ["업체 추천해 줘", "공사는 어떤 순서로 해요?", "직접 할 수 있는 일 있어요?", "집 정보 바꾸고 싶어요"];
 const RECO_CHIP = "업체 추천해 줘";
 const VISIT_STEP = 3;
 const firstChips = (step: number | undefined) => (step != null && step >= VISIT_STEP ? FIRST_CHIPS.filter((c) => c !== RECO_CHIP) : FIRST_CHIPS);

@@ -503,6 +503,16 @@ def past(text: str) -> bool:
     return False
 
 
+# 지금 단계를 말하는 문장: 코드의 지금 할 일 줄(free.NOW_*)과 모델이 쓰는 같은 뜻 문장('지금은 …' · '… 기다리는 중' ·
+# '… 할 차례' · '… 예정돼 있어요'). 한 답에 한 번, 지난 턴과 같은 상태면 다시 말하지 않는다(QA r7 c1 19 · 27 · 20~23턴)
+NOW_STATE = re.compile(r"^지금은\s|기다리|할\s*차례|예정(?:돼|되어|이에요|이고|입니다)")
+
+
+def now_state(text: str) -> bool:
+    """지금 단계(기다림 · 차례 · 예정)를 말하는 문장인지."""
+    return bool(NOW_STATE.search((text or "").strip()))
+
+
 def same_line(a: str, b: str) -> bool:
     """두 문장이 완전히 같은지(띄움 · 문장부호만 다름). 한 글자라도 다르면 다른 말이다('포함' ≠ '불포함')."""
     x, y = _PLAIN.sub("", a or ""), _PLAIN.sub("", b or "")

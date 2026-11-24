@@ -13,6 +13,7 @@
 
 import re
 import uuid
+from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 from typing import Literal
@@ -31,6 +32,8 @@ from app.assistant.schemas import (
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import TRADE, dobae_only, pid_of, region_of
 from app.calc import visit_view
+from app.calc.common import COUNTED
+from app.calc.quote_diff import LineChange, line_changes
 from app.db import SessionLocal
 from app.project import diy as project_diy
 from app.project.diy import DIY as DIY_LABELS
@@ -38,7 +41,7 @@ from app.project.diy import DiyKey
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 from app.shared.korean import euro
-from app.visit.models import SLOTS
+from app.visit.models import SLOTS, WISH_SPAN_MAX
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 HALF = {"am": "오전", "pm": "오후"}
@@ -262,9 +265,25 @@ def home_note(
     return "저장하면 " + ". ".join(parts)
 
 
-def standard_change(p, said: dict, changes: dict, merged) -> tuple[int, int] | None:
-    """집 정보 승인 카드 미리 보기: (지금, 바꾼 뒤) 표준견적서 합계(부가세 포함, 계산 엔진, 저장 안 함). 바꾼 뒤는 집
-    정보(merged, 없으면 그대로) · 철거 범위 · 직접 할 일 칩을 넣어 다시 세요. 셀 수 없으면 None."""
+@dataclass(frozen=True)
+class StandardChange:
+    """집 정보 승인 카드 미리 보기(계산 엔진, 저장 안 함): 표준견적서 합계 지금 · 바꾼 뒤(부가세 포함), 도배 기준 이름
+    (지금 · 바꾼 뒤)과 바꾼 뒤 기준의 근거, 바뀌는 줄(calc.quote_diff.line_changes: 합계 몫 차가 큰 순)."""
+
+    from_won: int
+    to_won: int
+    basis: tuple[str | None, str | None]
+    why: tuple[str, ...]
+    lines: list[LineChange]
+
+    @property
+    def moved(self) -> bool:
+        return self.from_won != self.to_won
+
+
+def standard_change(p, said: dict, changes: dict, merged) -> StandardChange | None:
+    """집 정보 승인 카드 미리 보기: 지금 · 바꾼 뒤 표준견적서(계산 엔진, 저장 안 함). 바꾼 뒤는 집 정보(merged, 없으면
+    그대로) · 철거 범위 · 직접 할 일 칩을 넣어 다시 세요. 셀 수 없으면 None."""
     from app.calc.dobae import DEMOLITION_KEY
     from app.project import service as project_service
     from app.quote import service as quote_service
@@ -276,9 +295,117 @@ def standard_change(p, said: dict, changes: dict, merged) -> tuple[int, int] | N
         after = project_diy.with_chips(after, changes["diy"])
     home = project_service.preview_home(p, merged) if merged is not None else p
     try:
-        return quote_service.preview_total(p, said), quote_service.preview_total(home, after)
+        now, then = quote_service.preview(p, said), quote_service.preview(home, after)
     except (ValueError, KeyError):
         return None
+    return StandardChange(
+        now.total,
+        then.total,
+        (now.basis, then.basis),
+        then.why,
+        line_changes(now.lines, then.lines),
+    )
+
+
+# 바뀌는 줄의 포함 상태(화면 말, 합계에는 포함 · 따로 계산만 들어가요)
+LINE_STATE = {
+    "included": "포함", "bundled": "묶음 포함", "separate": "따로 계산",
+    "optional": "선택", "after_visit": "실측 후", "excluded": "안 함",
+}  # fmt: skip
+NO_LINE = "없음"
+CHANGE_NOTE = (
+    "카드 차액이 생기는 까닭이에요(계산 엔진 미리 보기, 저장 안 함). 차액을 말하거나 까닭을 물으면 기준과 큰 줄 한두 "
+    "개로 말해요. 줄 금액은 공급가(부가세 별도, 합계에는 포함 · 따로 계산 줄만 들어가요)라 카드 차액(부가세 포함)과 "
+    "더하거나 빼지 않아요. 계산 엔진 값이라 저장된 표준견적서와 달라도 '확인되지 않아요' · '정정할게요'로 뒤집지 않아요."
+)
+
+
+def short_name(name: str) -> str:
+    """줄 이름 앞부분(괄호 뜻 뺌): '퍼티작업 (사전퍼티 · 밑작업)' → '퍼티작업'."""
+    return name.split(" (")[0]
+
+
+def basis_said(ch: StandardChange) -> str | None:
+    """도배 기준이 바뀌면 '지금 기준 → 바꾼 뒤 기준(근거: …)', 그대로면 None."""
+    was, now = ch.basis
+    if not now or was == now:
+        return None
+    why = f"(근거: {' · '.join(ch.why)})" if ch.why else ""
+    return f"{was or '지금 기준'} → {now}{why}"
+
+
+def _state(ln) -> str:
+    return LINE_STATE.get(ln.state, ln.state) if ln is not None else NO_LINE
+
+
+def change_model(ch: StandardChange) -> dict:
+    """모델 값 change(QA r7 c2 T9~T11: 차액 까닭을 못 댐): 기준이 바뀌면 기준 · 근거, 바뀌는 줄(줄마다 지금 · 승인 뒤
+    상태와 합계에 드는 공급가). 숫자는 계산 엔진 줄 값 그대로예요(새로 세지 않아요)."""
+
+    def side(label: str, ln) -> dict:
+        got = {"label": label, "state": _state(ln)}
+        if ln is not None and ln.state in COUNTED and ln.amount is not None:
+            got["공급가"] = ln.amount
+        return got
+
+    out: dict = {}
+    if basis := basis_said(ch):
+        out["basis"] = basis
+    out["lines"] = [
+        {
+            "name": short_name((c.after or c.before).name),  # type: ignore[union-attr]
+            "items": [side("지금", c.before), side("승인 뒤", c.after)],
+        }
+        for c in ch.lines
+    ]
+    out["note"] = CHANGE_NOTE
+    return out
+
+
+def change_said(ch: StandardChange) -> str:
+    """턴 사실에 붙일 까닭 글: 기준 · 크게 바뀌는 줄 이름(상태가 바뀐 줄은 [지금 → 승인 뒤] 상태). 금액은 넣지 않아요."""
+    names = [
+        short_name((c.after or c.before).name)  # type: ignore[union-attr]
+        + (f"[{_state(c.before)} → {_state(c.after)}]" if c.state_moved else "")
+        for c in ch.lines
+    ]
+    bits = [basis_said(ch), f"크게 바뀌는 줄 {' · '.join(names)}" if names else None]
+    return ", ".join(x for x in bits if x)
+
+
+async def open_home_fact(s, p, a) -> str | None:
+    """턴 사실 '승인 기다리는 카드'의 집 정보 카드 뒤 괄호 글: 바꾸는 칸 · 카드 차액(저장한 요약) · 계산 엔진 미리 보기
+    (기준 · 크게 바뀌는 줄, 다시 셈 · 저장 안 함). 표준견적서가 바뀌지 않는 카드면 None. 다음 턴에도 카드 차액을 계산
+    엔진 값으로 알고 까닭을 말하게 해요(QA r7 c2 T10: '확인되지 않아 정정할게요'로 뒤집고 까닭을 못 댐)."""
+    from app.calc.dobae import DEMOLITION_KEY
+    from app.project import service as project_service
+    from app.project.schemas import HomeInfoIn
+
+    sm = a.summary or {}
+    d = sm.get("diff")
+    if a.kind != "home_info" or not d or p.home is None:
+        return None
+    rows = " · ".join(
+        f"{r['label']} {r['value']}"
+        for r in sm.get("rows") or []
+        if isinstance(r, dict) and r.get("label") and r.get("value")
+    )
+    head = f"누르면 표준견적서 {d['from_won']:,}원 → {d['to_won']:,}원"
+    bits = [x for x in (rows, head) if x]
+    fields = dict((a.payload or {}).get("fields") or {})
+    moved = {k: v for k, v in fields.items() if k not in (DEMOLITION_KEY, "diy")}
+    try:
+        merged = None
+        if moved:
+            now = p.home.model_dump(mode="json")
+            home = {k: v for k, v in now.items() if k not in (DEMOLITION_KEY, "diy")}
+            merged = HomeInfoIn.model_validate({**home, **moved})
+        ch = standard_change(p, await project_service.conditions(s, p.id), fields, merged)
+    except ValidationError:
+        ch = None
+    if ch is not None and (why := change_said(ch)):
+        bits.append(f"계산 엔진 미리 보기: {why}")
+    return " · ".join(bits)
 
 
 NEED_BASIS = (
@@ -322,7 +449,8 @@ def locked_text(live: int, quoted: bool) -> str:
     "평형과 타입을 같이 말하면 타입(전용 ㎡)을 넣어요. "
     "철거 범위는 전체 철거(full) · 부분 철거(partial) · 철거 안 함(none)이고, 전체 철거면 표준견적서가 "
     "리모델링 기준으로 바뀌어요. 직접 할 일(diy)은 고객이 업체 없이 직접 하는 일의 바뀐 뒤 전체 목록이고, 빈 목록이면 "
-    "'없어요'예요. 직접 할 일만 바꾸는 건 실측을 요청한 뒤에도 돼요.",
+    "'없어요'예요. 직접 할 일만 바꾸는 건 실측을 요청한 뒤에도 돼요. 표준견적서 금액이 바뀌면 결과 change가 카드 차액의 "
+    "까닭(계산 엔진 미리 보기: 기준 · 바뀌는 줄)이에요. 차액은 계산 엔진 값이라 다음 턴에도 정정하지 않아요.",
     model=HomeIn,
     schema=obj(
         {
@@ -421,14 +549,14 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     # 저장 전 표준견적서 금액 · 차액(계산 엔진, 저장 안 함): 살면서 ↔ 빈 집 같은 바뀜도 누르기 전에 보이고, 금액이
     # 그대로인 바뀜(날짜 · 부분 철거)은 메모가 '그대로'라고 말해요(QA r6 c2)
     money = standard_change(p, said, changes, merged)
-    moved = None if money is None else money[0] != money[1]
+    moved = None if money is None else money.moved
     diff = None
     if money is not None and moved:
         diff = DiffOut(
             label="표준견적서",
-            from_won=money[0],
-            to_won=money[1],
-            diff_won=visit_view.grade_diff(money[1], money[0]),
+            from_won=money.from_won,
+            to_won=money.to_won,
+            diff_won=visit_view.grade_diff(money.to_won, money.from_won),
         )
 
     def after(k: str, v) -> str:  # 평형으로 받은 면적은 고객이 말한 평을 같이 보인다
@@ -479,6 +607,9 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         out.data["vendors"] = vendors_of(reach)
     if not out.actions:  # 거절한 같은 제안: 카드에 바뀜 · 단추를 달지 않는다
         return out
+    # 차액의 까닭(모델 값만, 카드 글은 늘리지 않아요. QA r7 c2 T9~T11)
+    if money is not None and moved:
+        out.data["change"] = change_model(money)
     card.data = {
         **card.data,
         "changes": [{"label": k, "before": b, "after": v} for k, v, b in shown],
@@ -489,11 +620,19 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     return out
 
 
+class WishIn(BaseModel):
+    """고객이 말한 희망 기간(하루면 시작 · 끝이 같은 날)."""
+
+    start: date
+    end: date
+
+
 class VisitReqIn(BaseModel):
     trade: Literal["dobae", "mokgong"] = "dobae"
     vendor_refs: list[str] = Field(default_factory=list, max_length=3)
     wish_ref: str | None = None
     pick: Literal["top"] | None = None  # 고객이 맡김: 믿집 점수 1위를 서버가 넣는다
+    wish: WishIn | None = None  # 고객이 말한 희망 기간(wish_ref · 초안보다 먼저)
 
     @model_validator(mode="after")
     def _who(self) -> "VisitReqIn":
@@ -512,6 +651,15 @@ def estimate_row(paper_note: str | None) -> SummaryRow:
     return SummaryRow(label=ESTIMATE_LABEL, value="업체가 확인한 단가로 고정돼요", sub=paper_note)
 
 
+# 고객이 말한 희망 기간이 화면 요청 규칙(calc.slots.said_wish)에 맞지 않을 때 도구 오류 글
+WISH_SAID = {
+    "past": "희망 기간은 내일부터 고를 수 있어요.",
+    "order": "희망 기간의 끝이 시작보다 앞이에요.",
+    "long": f"희망 기간은 {WISH_SPAN_MAX}일 안으로 고를 수 있어요.",
+}
+WISH_HINT = "wish는 고객이 말한 시작 · 끝 날짜(하루면 같은 날)예요. 고객에게 기간을 다시 물어요."
+
+
 def slots_full_said(n: int, room: int) -> str:
     """요청 칸이 모자랄 때 도구 오류 글: 진행 중 n곳, 더 요청할 수 있는 곳 room."""
     more = f"{room}곳만 더 요청할 수 있어요" if room > 0 else "새 업체에 요청할 수 없어요"
@@ -528,7 +676,9 @@ def slots_full_said(n: int, room: int) -> str:
     status="실측 요청을 준비하고 있어요",
     description="고른 업체(v1…, 1~3곳)에 보낼 실측 요청을 승인 카드로 만들어요. 업체 이름표는 recommend_vendors "
     "결과나 턴 사실 '담은 업체' 줄(업체 보기에서 고객이 담은 곳)의 v…예요. 희망 기간은 wish_ref(r1…)이고, "
-    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
+    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 희망 기간을 말했으면('25일에서 27일 사이' · "
+    "'다음 주 평일') wish에 그 시작 · 끝 날짜를 넣어요(하루면 같은 날, 내일부터 · 62일 안, wish_ref보다 먼저예요). "
+    "고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
     "빈 목록으로 두고 pick=top으로 불러요: 믿집 점수 1위 업체를 믿집이 넣고, 결과의 why가 까닭이에요(따로 고르지 "
     "않아요). 요청은 집 지역 업체에만 보낼 수 있어요.",
     model=VisitReqIn,
@@ -546,6 +696,12 @@ def slots_full_said(n: int, room: int) -> str:
                 "enum": ["top"],
                 "description": "고객이 고르기를 맡김: 믿집 점수 1위를 믿집이 넣어요",
             },
+            "wish": obj(
+                {
+                    "start": {"type": "string", "format": "date"},
+                    "end": {"type": "string", "format": "date"},
+                }
+            ),
         },
         required=["trade", "vendor_refs"],
     ),
@@ -584,7 +740,11 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     room = SLOTS - len(live)
     if len([c for c in rows if c.vendor_id not in live]) > room:
         raise ToolError("slots_full", slots_full_said(len(live), room))
-    if a.wish_ref is not None:
+    if a.wish is not None:  # 고객이 말한 기간(화면 요청과 같은 규칙, QA r7 화면 N3)
+        start, end = a.wish.start, a.wish.end
+        if (bad := slots.said_wish(start, end, tc.today)) is not None:
+            raise ToolError("bad_wish", WISH_SAID[bad], hint=WISH_HINT)
+    elif a.wish_ref is not None:
         w = tc.refs.get(a.wish_ref, "wish")
         start, end = date.fromisoformat(w["start"]), date.fromisoformat(w["end"])
     else:
@@ -1251,7 +1411,8 @@ class WithdrawIn(BaseModel):
     kind="read",
     status="카드를 거두고 있어요",
     description="고객이 아직 누르지 않은 승인 카드(승인 기다리는 카드)를 고객 말로 거둬요('그 카드 취소해 줘' · "
-    "'아까 요청 카드 거둬 줘'). 거절과 같게 남아 다시 만들지 않아요. kind는 카드 종류(모르면 any), about은 거둘 "
+    "'아까 요청 카드 거둬 줘'). 고객이 거두라고 하지 않았고 바라는 것도 말하지 않았으면(그 카드가 맞는지 묻기만 함) "
+    "부르지 말고 답한 뒤 어떻게 할지 물어요. 거절과 같게 남아 다시 만들지 않아요. kind는 카드 종류(모르면 any), about은 거둘 "
     "카드 제목(턴 사실 · 도구 결과의 제목 그대로) 또는 업체 이름이고 모르면 빈 글이에요. 하나로 정해지면 바로 "
     "거두고(state withdrawn), 여럿이면 후보(items)와 고르기 칩 카드를 돌려줘요(state choose: 어느 카드인지 물어요). "
     "이미 실행된 카드는 거둘 수 없어요: 보낸 실측 요청은 propose_visit_cancel(requests의 m 이름표)로 취소 승인 "

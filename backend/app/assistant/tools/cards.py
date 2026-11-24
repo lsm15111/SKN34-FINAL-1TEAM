@@ -1758,7 +1758,8 @@ _INNER_LINE = re.compile(r"^\s*(?:\[[^\]\n]*\]\s*)*(?:[^\n]*\.pdf)?\s*$", re.IGN
 _INNER_PAREN = re.compile(
     r"\s*[(（][^()（）\n]*(?:전처리|저장소|정오표|팀\s*내부)[^()（）\n]*[)）]"
 )
-# 원문 '-다'체 문장(평서 '…한다.' · '…이다.'). 이런 발췌는 고쳐 쓰지 않고 '자료에서 “…”' 꼴로 원문임을 보인다
+# 원문 '-다'체 문장(평서 '…한다.' · '…이다.'). 이런 발췌는 자주 나오는 끝만 '-요'체로 바꾸고(polite), 못 바꾸면
+# '자료에서 “…”' 꼴로 원문임을 보인다
 _PLAIN_END = re.compile(r"[가-힣]다(?:[.!…]+(?=\s|$)|$)")
 QUOTE_HEAD = "자료에서"
 _PAREN = re.compile(r"\s*\([^()\n]*\)")
@@ -1785,8 +1786,48 @@ def clean_source_text(text: str | None) -> str:
 
 
 def quoted(line: str) -> str:
-    """원문 '-다'체 발췌면 '자료에서 “…”'(원문 그대로임을 보임), '-요'체 요약이면 그대로."""
-    return f"{QUOTE_HEAD} “{line}”" if _PLAIN_END.search(line) else line
+    """원문 '-다'체 발췌는 '-요'체로 바꿔 보이고(polite, 자주 나오는 끝만), 못 바꾸면 '자료에서 “…”'(원문 그대로임을
+    보임). '-요'체 요약이면 그대로(QA r7 c2 L21: 카드 인용 '…안내한다.' · '…본다.')."""
+    if not _PLAIN_END.search(line):
+        return line
+    return polite(line) or f"{QUOTE_HEAD} “{line}”"
+
+
+# 원문 '-다'체 문장 끝 → '-요'체(앞에서부터 처음 맞는 것, 긴 끝 먼저). '-이다' · '-입니다'는 받침을 봐요(이에요 · 예요)
+POLITE_ENDS: tuple[tuple[str, str], ...] = (
+    ("하여야 한다", "해야 해요"), ("되어야 한다", "돼야 해요"), ("야 한다", "야 해요"),
+    ("않는다", "않아요"), ("않다", "않아요"), ("않습니다", "않아요"),
+    ("한다", "해요"), ("된다", "돼요"), ("하다", "해요"), ("있다", "있어요"), ("없다", "없어요"),
+    ("좋다", "좋아요"), ("본다", "봐요"), ("준다", "줘요"), ("둔다", "둬요"),
+    ("합니다", "해요"), ("됩니다", "돼요"), ("있습니다", "있어요"), ("없습니다", "없어요"),
+)  # fmt: skip
+COPULA = ("이다", "입니다")
+_SENT_CUT = re.compile(r"(?<=[.!?…])\s+")
+_END_MARK = re.compile(r"[.!?…]*$")
+
+
+def _batchim(ch: str) -> bool:
+    return "가" <= ch <= "힣" and (ord(ch) - 0xAC00) % 28 != 0
+
+
+def polite(line: str) -> str | None:
+    """'-다'체 발췌 한 줄 → '-요'체(문장마다 끝만 바꿈). '-다'로 끝나는데 바꿀 수 없는 문장이 하나라도 있으면 None
+    (원문 그대로 '자료에서 “…”'로 둬요). '-다'로 끝나지 않는 문장(목록 · 이름 · '-요'체)은 그대로예요."""
+    out = []
+    for sent in _SENT_CUT.split(line.strip()):
+        mark = _END_MARK.search(sent).group(0)  # type: ignore[union-attr]
+        body = sent[: len(sent) - len(mark)]
+        if body.endswith("다"):
+            new = next((body[: -len(a)] + b for a, b in POLITE_ENDS if body.endswith(a)), None)
+            cop = next((c for c in COPULA if new is None and body.endswith(c)), None)
+            if cop is not None:
+                stem = body[: -len(cop)]
+                new = stem + ("이에요" if stem and _batchim(stem[-1]) else "예요")
+            if new is None:
+                return None
+            body = new
+        out.append(body + mark)
+    return " ".join(out)
 
 
 def short_title(text: str, n: int = KNOW_TITLE_MAX) -> str:

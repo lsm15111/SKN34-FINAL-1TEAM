@@ -167,6 +167,24 @@ def card_name(a, label: str | None = None) -> str:
     return f"{head}{title}{tail}"
 
 
+async def opened_name(s, p, a) -> str:
+    """승인 기다리는 카드 한 장의 턴 사실 이름. 표준견적서를 바꾸는 집 정보 카드는 바꾸는 칸 · 카드 차액 · 계산 엔진
+    미리 보기(기준 · 크게 바뀌는 줄)를 괄호로 붙여요(QA r7 c2 T10 · T11: 다음 턴에 카드 차액을 '확인되지 않아
+    정정할게요'로 뒤집고 까닭을 못 댐). 못 읽으면 이름만(세이브포인트: 턴 행을 넣은 트랜잭션을 지켜요)."""
+    from app.assistant.tools import propose
+
+    name = card_name(a)
+    if a.kind != "home_info":
+        return name
+    try:
+        async with s.begin_nested():
+            more = await propose.open_home_fact(s, p, a)
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 이름만
+        log.warning("턴 사실 집 정보 카드 미리 보기 실패 (%s)", type(e).__name__)
+        more = None
+    return f"{name}({more})" if more else name
+
+
 def _why_not(a) -> str | None:
     """실행 못 한 카드의 까닭(첫 문장): 서버가 남긴 말(result.message), 없으면 그 카드를 누를 때 서버가 주는 말."""
     from app.visit.service import QUOTE_CHANGED
@@ -307,6 +325,11 @@ DATES_WORDS = {
     "change_requested": "공사 날짜 바꾸기를 요청함(업체 답 기다림)",
     "change_proposed": "업체가 바뀐 공사 날짜를 올림(수락할 차례)",
 }
+# 업체가 올린 공사 날짜를 수락할 차례(dates)에 붙이는 다른 날짜 요청 남은 수(QA r7 c4 T12): 바란 날과 다르면 다시 요청할 수
+# 있는지 알게 해요. 다 썼으면 믿집 채팅으로 이야기해요(schedule.service REQUESTS_MAX · propose_date_change requests_used)
+DATES_ANSWER = ("proposed", "change_proposed")
+LEFT_WORDS = "다른 날짜 요청 {n}번 남음"
+LEFT_NONE = "다른 날짜 요청은 다 씀(업체와 믿집 채팅으로)"
 # 끝난 공사의 리뷰를 아직 안 썼을 때 업체 줄에 붙이는 말(쓰는 곳: 공사 화면 · 점검표 카드의 [리뷰 쓰기] 단추)
 REVIEW_OPEN = "리뷰 아직 안 씀(공사 화면 · 공사 끝 점검표 카드의 [리뷰 쓰기]에서 써요)"
 BEFORE_CHAT = ("requested", "offered", "picked", "proposed")  # 채팅이 열리기 전(업체 수락 전)
@@ -359,8 +382,9 @@ def visit_words(r, chosen: bool, today) -> str:
     return VISIT_WORDS.get(st, "진행 중")
 
 
-def deal_words(d, dates: str | None, today) -> str:
-    """확정한 업체(schedule.service.deals_for 한 건) → '확정 · 공사 금액 … · 공사 날짜 상태'."""
+def deal_words(d, dates: str | None, today, left: int | None = None) -> str:
+    """확정한 업체(schedule.service.deals_for 한 건) → '확정 · 공사 금액 … · 공사 날짜 상태'. left(다른 날짜 요청 남은
+    수)를 주면 업체가 올린 날짜를 수락할 차례에 붙여요(QA r7 c4 T12: 바란 날과 다를 때 다시 요청할 길을 몰라 사과만 함)."""
     parts = ["확정"]
     if d.grand_total is not None:
         parts.append(f"공사 금액 부가세 포함 {d.grand_total:,}원")
@@ -377,6 +401,8 @@ def deal_words(d, dates: str | None, today) -> str:
             parts.append("리뷰 씀")
     elif dates in DATES_WORDS:
         parts.append(DATES_WORDS[dates])
+        if left is not None and dates in DATES_ANSWER:
+            parts.append(LEFT_WORDS.format(n=left) if left > 0 else LEFT_NONE)
     elif d.start_date is not None and d.end_date is not None:
         parts.append(f"업체 공사 날 {kdate.long_range(d.start_date, d.end_date, today)}")
     return " · ".join(parts)
@@ -397,20 +423,25 @@ def live_refs(rows: list, deal, refs: RefTable) -> dict[uuid.UUID, str]:
 
 
 def vendors_line(
-    rows: list, deal, dates: str | None, today, refs: dict | None = None
+    rows: list,
+    deal,
+    dates: str | None,
+    today,
+    refs: dict | None = None,
+    left: int | None = None,
 ) -> str | None:
     """턴 사실 '업체:' 줄: 이 공사에 걸린 업체마다 지금 상태(요청한 순). 없으면 None. refs(요청 id → 이름표)가 있으면
-    살아 있는 요청의 업체 이름 뒤에 붙인다('결도배(m1) 실측 요청함 …')."""
+    살아 있는 요청의 업체 이름 뒤에 붙인다('결도배(m1) 실측 요청함 …'). left는 확정의 다른 날짜 요청 남은 수(deal_words)."""
     refs = refs or {}
     items = []
     for r in rows:
         if deal is not None and r.visit_id == deal.visit_id:
-            items.append(f"{r.vendor_name} {deal_words(deal, dates, today)}")
+            items.append(f"{r.vendor_name} {deal_words(deal, dates, today, left)}")
         else:
             tag = f"({refs[r.visit_id]})" if r.visit_id in refs else ""
             items.append(f"{r.vendor_name}{tag} {visit_words(r, deal is not None, today)}")
     if deal is not None and all(r.visit_id != deal.visit_id for r in rows):
-        items.append(f"{deal.vendor_name} {deal_words(deal, dates, today)}")
+        items.append(f"{deal.vendor_name} {deal_words(deal, dates, today, left)}")
     return "업체: " + " / ".join(items) if items else None
 
 
@@ -470,6 +501,15 @@ class WorkNow:
     chat: str | None = None
 
 
+async def requests_left(s, deal_id: uuid.UUID) -> int | None:
+    """확정 하나의 다른 날짜 요청 남은 수(schedule.service REQUESTS_MAX − 쓴 수, 읽기만). 없으면 None."""
+    from app.schedule import service as schedule_service
+    from app.schedule.models import Deal
+
+    used = await s.scalar(select(Deal.date_request_count).where(Deal.id == deal_id))
+    return None if used is None else max(schedule_service.REQUESTS_MAX - used, 0)
+
+
 async def work_now(s, user: User, p, today, now: datetime, refs: RefTable | None = None) -> WorkNow:
     """업체마다 지금 상태(visit.service.board_now) · 확정(schedule.service.deals_for · dates_states) · 열린 채팅
     (cards.chat_links). 모두 읽기만 한다(턴 시작 트랜잭션 중간에 부른다). refs(턴의 이름표 표)를 주면 살아 있는
@@ -488,10 +528,11 @@ async def work_now(s, user: User, p, today, now: datetime, refs: RefTable | None
     opened = set(await cards.chat_links(s, p.id, ids))
     stage, key = stage_of(rows, deal, dates, today)
     tags = live_refs(rows, deal, refs) if refs is not None else {}
+    left = await requests_left(s, deal.id) if deal is not None and dates in DATES_ANSWER else None
     return WorkNow(
         stage,
         key,
-        vendors_line(rows, deal, dates, today, tags),
+        vendors_line(rows, deal, dates, today, tags, left),
         chat_line(rows, deal, opened) if rows or deal else f"채팅: 열린 채팅 없음({CHAT_WAIT})",
     )
 
@@ -534,7 +575,8 @@ async def _customer_facts(
     if period:
         lines.append(period)
     if opened:
-        lines.append("승인 기다리는 카드: " + " / ".join(card_name(a) for a in opened))
+        names = [await opened_name(s, p, a) for a in opened]
+        lines.append("승인 기다리는 카드: " + " / ".join(names))
     if done := decided_line(decided):
         lines.append(done)
     from app.assistant.tools import diy as diy_tools

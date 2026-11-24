@@ -104,13 +104,20 @@ class Home:
 
 @dataclass(frozen=True)
 class Piece:
-    """전문가에게 주는 지식 조각 하나(자료)."""
+    """전문가에게 주는 지식 조각 하나(자료). publisher · official은 알아 두기 카드의 출처 이름(cards.public_source)에
+    써요(공공 · 표준 · 제조사 · 협회만 펴낸 곳 이름, 그 밖은 자료 종류)."""
 
     ref: str
     kind: str  # 출처 종류(표준시방서 · 법령 …)
     title: str
     section: str
     text: str
+    publisher: str = ""
+    official: bool = False
+
+    @property
+    def source_type(self) -> str:  # bm25.Hit와 같은 이름(카드 출처 이름)
+        return self.kind
 
 
 async def home_of(user, project_id) -> Home:
@@ -175,6 +182,8 @@ def piece_of(h: bm25.Hit) -> Piece:
         title=cards.clean_name(h.title),
         section=cards.clean_name(h.section),
         text=cards.clean_source_text(h.text)[:PIECE_CHARS],
+        publisher=cards.clean_name(h.publisher),
+        official=h.official,
     )
 
 
@@ -367,8 +376,28 @@ def _line(x: ExpertLine, pieces: dict[str, Piece], allowed: str, drop: Counter) 
     return Line(checked.text, fit)
 
 
-def refine(trade: str, out: ExpertOut, pieces: dict[str, Piece], allowed: str) -> Note:
-    """LLM 답 → 검사한 메모(근거 · 숫자 · 길이 · 줄 수)."""
+# 확인할 조건이 이 집 사실로 이미 아는 칸(Home.known)을 묻는지: 비서가 끝 물음으로 쓰니 아는 것을 되묻지 않게 버려요
+# (QA r7 c1 · c2: 전문가 답 끝은 확인할 조건 하나를 묻는 말)
+KNOWN_ASK: dict[str, re.Pattern[str]] = {
+    "living": re.compile(r"사는\s*채로|살면서|거주\s*중|비우고|빈\s*집"),
+    "grade": re.compile(r"합지|실크|벽지\s*종류"),
+    "demolition": re.compile(r"철거|뜯는지|뜯을지"),
+}
+
+
+def known_ask(ask: str, known: frozenset[str]) -> bool:
+    """확인할 조건이 이 집 사실로 아는 칸(known)을 묻는지."""
+    return any(k in known and rx.search(ask) for k, rx in KNOWN_ASK.items())
+
+
+def refine(
+    trade: str,
+    out: ExpertOut,
+    pieces: dict[str, Piece],
+    allowed: str,
+    known: frozenset[str] = frozenset(),
+) -> Note:
+    """LLM 답 → 검사한 메모(근거 · 숫자 · 길이 · 줄 수, 확인할 조건은 숫자 · 이미 아는 칸)."""
     drop: Counter = Counter()
     answer = [y for x in out.answer if (y := _line(x, pieces, allowed, drop))]
     seen = {a.text for a in answer}
@@ -378,6 +407,9 @@ def refine(trade: str, out: ExpertOut, pieces: dict[str, Piece], allowed: str) -
     drop["long"] += max(len(answer) - ANSWER_MAX, 0) + max(len(cautions) - CAUTION_MAX, 0)
     ask = _clip(out.ask, ASK_CHARS)
     if ask and guard.check(ask, allowed).dropped:
+        ask = ""
+    if ask and known_ask(ask, known):
+        drop["known"] += 1
         ask = ""
     return Note(
         trade=trade,
@@ -430,7 +462,7 @@ async def consult_one(trade: str, question: str, home: Home, hits: list[bm25.Hit
         note.failed = next(k for cls, k in FAILED if isinstance(e, cls))
     else:
         allowed = "\n".join([question, *home.lines, *(p.text for p in pieces.values())])
-        note = refine(trade, got, pieces, allowed)
+        note = refine(trade, got, pieces, allowed, home.known)
     note.ms = int((time.monotonic() - t0) * 1000)
     if note.failed:
         log.warning("공정 전문가 실패 (%s, %s)", TRADE_CODES[trade], note.failed)

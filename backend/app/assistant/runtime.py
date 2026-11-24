@@ -41,6 +41,7 @@ from app.assistant import choices, policy, prompts
 from app.assistant import tools as tools_mod
 from app.assistant.schemas import AnswerData, CardOut
 from app.assistant.tools import ToolCtx, ToolError
+from app.assistant.tools import answer as answer_tools
 from app.auth.models import User
 from app.config import settings
 from app.shared.errors import AppError
@@ -617,6 +618,8 @@ class SentenceGate:
         self._back = False  # 바로 앞 문장이 내용 까닭으로 빠졌다(되가리키는 다음 문장도 뺀다)
         # 되풀이로 뺀 다음 할 일 문장(마지막 하나): 답에 다른 다음 할 일이 없으면 턴 끝에 살린다(settle)
         self._spare: _Piece | None = None
+        # 지난 턴과 같은 지금 단계 문장을 뺐다(_same_state): 상태가 그대로라 지금 할 일 줄도 붙이지 않아요(next_step)
+        self.state_cut = False
         # 바로 앞 비서 답들의 문장(답마다, 가까운 것부터, SPARE_RUN개). 주지 않으면 said 하나를 바로 앞 답으로 본다
         self.turns = [list(t) for t in turns] if turns is not None else [self.said]
 
@@ -688,6 +691,7 @@ class SentenceGate:
             self._gone,
             self._back,
             self._spare,
+            self.state_cut,
         )
         return len(self._out), keep, len(self.dropped), self.cut
 
@@ -711,6 +715,7 @@ class SentenceGate:
             self._gone,
             self._back,
             self._spare,
+            self.state_cut,
         ) = keep
         del self.dropped[dropped:]
         self.cut = cut
@@ -908,11 +913,32 @@ class SentenceGate:
         last = self.turns[:SPARE_RUN]
         return len(last) >= SPARE_RUN and all(self._repeat(text, t) for t in last)
 
+    def _same_state(self, text: str) -> bool:
+        """지금 단계 문장(policy.now_state)이 지난 비서 턴(said)의 지금 단계 문장과 같은 업체 · 날짜 · 반나절만 말하는지
+        (새 대상 없음, QA r7 c1 20~23턴: '우리집벽지 실측 내일 오전' 끝맺음 네 턴). 업체 이름이 없는 문장 · 고객이 금액 ·
+        날짜 · 할 일을 물은 턴은 보지 않아요."""
+        if self.asked or not policy.now_state(text):
+            return False
+        mine = policy.targets(text, self.names)
+        if not mine[2]:
+            return False
+        return any(
+            policy.now_state(x)
+            and all(a <= b for a, b in zip(mine, policy.targets(x, self.names), strict=True))
+            for x in self.said
+        )
+
     async def _send(self, p: _Piece) -> None:
         """검사를 지난 문장 하나를 보낸다. 이 턴에 보낸 문장과 같으면 빼고, 첫 문장이 아닌 지난 턴 안내 되풀이도 뺀다
         (묶음 안 문장은 목록이 비지 않게 둔다)."""
         if any(policy.same_line(p.text, x) for x in self.sent):
             self.dropped.append("같은 문장")
+            self.cut += 1
+            return
+        # 지난 턴과 같은 지금 단계(상태가 그대로)면 다시 말하지 않아요
+        if self._out and not p.member and self._same_state(p.text):
+            self.state_cut = True
+            self.dropped.append("지난 턴과 같은 지금 단계")
             self.cut += 1
             return
         if self._out and not p.member and self._repeat(p.text):
@@ -1170,7 +1196,8 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
     다음 단계를 말함 · QA r6 c3 M8 · c1 M12: 막는 답 · 범위 밖 답 · '사람이야?' 답이 다음 할 일 없이 끝남). 답에 다음
     걸음(policy.leads: 가리키는 말 · 묻는 말 · 할 일을 하라는 말)이 없고, 다음 일 카드 · 승인 카드가 없을 때 코드가 지금
     할 일 줄(free.now_tail: 무료 · 범위 밖 답과 같은 줄)을 붙여요. 막는 답인지는 낱말로 가르지 않고 답 꼴로 봐요. 같은
-    단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만). 인사 · 고마움만 한 턴(chat_only)은 붙이지 않아요."""
+    단계에서는 한 번만 나와요(상태가 바뀌었거나 처음일 때만). 인사 · 고마움만 한 턴(chat_only)은 붙이지 않아요.
+    이 턴 전문가 답에 확인할 조건이 있으면(turn.ask) 지금 할 일 줄 대신 그 조건을 묻는 한 문장을 붙여요."""
     from app.assistant import free
 
     ctx = turn.ctx
@@ -1181,6 +1208,14 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
     if any(policy.leads(s) for s in turn.gate.sent):
         return ""
     if len(turn.gate.sent) >= STEP_ROOM:  # 붙이면 많아야 네 문장을 넘어요
+        return ""
+    # 전문가 답의 확인할 조건을 끝 물음으로(지금 할 일 줄보다 먼저, QA r7 c1 6 · 10 · 13 · 25턴)
+    if turn.ask:
+        asked, _why = turn.gate._check(turn.ask)  # 숫자 · 안쪽 말 검사(모델 문장과 같은 검사)
+        if asked and asked not in res.text:
+            return asked
+    # 지금 단계는 한 답에 한 번: 모델이 이미 말했거나(QA r7 c1 19 · 27턴) 지난 턴과 같은 상태라 뺐으면 붙이지 않아요
+    if turn.gate.state_cut or any(policy.now_state(s) for s in turn.gate.sent):
         return ""
     try:
         line = await free.now_tail(turn.tc)
@@ -1312,6 +1347,8 @@ class _Turn:
         # 이 턴에 보인 카드 · 만든 승인 카드 · 부른 카드 도구의 카드 종류(요청 점검이 견준다)
         self.done: set[str] = {str(d.get("kind")) for _, d in seen if d.get("kind")}
         self.rechecked = False
+        # 이 턴 전문가 답의 확인할 조건 끝 물음(answer.ask_tail): 답에 묻는 말 · 다음 걸음이 없으면 끝에 붙여요(next_step)
+        self.ask: str | None = None
         self.errors: Counter[tuple[str, str]] = Counter()
         self.beat_at = time.monotonic()
         self.tc = ToolCtx(
@@ -1571,6 +1608,8 @@ class _Turn:
             trace["ms"] = int((time.monotonic() - t0) * 1000)
             return self._error(cid, "tool_failed", "도구를 쓰지 못했어요."), "tool_failed"
         given = out.data
+        if name == "answer_question" and (tail := answer_tools.ask_tail(given)):
+            self.ask = tail
         # 이 턴에 똑같이 보낸 카드는 다시 보내지 않고 모델에 알린다(QA r6 c3 H1: 업체 추천 뒤 show_card로 같은 카드
         # 두 번). 값이 달라진 같은 카드(제안 도구가 바뀜 칸을 단 집 정보 카드)는 화면이 그 자리에서 바꿔 끼운다
         shown = [c for c in out.cards if not self._sent_same(c)]
