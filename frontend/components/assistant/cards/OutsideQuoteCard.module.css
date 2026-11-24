@@ -1,6 +1,6 @@
 /* 받은 견적서 점검 카드 전용. 공통 바탕 · 단추는 ../kit/kit.module.css */
 
-/* 두 합계: 폰 360에서도 두 칸이 나란히(금액은 칸 안에서 줄을 바꿔요), 아래 차이 한 줄 */
+/* 두 합계는 두 칸 나란히, 아래 차이 한 줄. 금액은 한 덩어리(oneLine)라 폰에서는 한 줄씩 놓아요(맨 아래) */
 .total { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .total > div { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 12px 14px; border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); }
 .total > div > span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
@@ -27,3 +27,9 @@
 .asks { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: var(--mj-type-label); color: var(--mj-text); }
 .notes { margin: 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 .next { margin: 0; font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-text); }
+
+/* 폰: 두 칸 나란히는 금액(20px)이 칸보다 넓어 숫자 가운데서 끊겨요('309만 / 1,076원', QA r10 U4). 합계마다 한 줄(이름 왼쪽 · 금액 오른쪽) */
+@media (max-width: 520px) {
+  .total { grid-template-columns: minmax(0, 1fr); }
+  .total > div { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; padding: 10px 14px; }
+}

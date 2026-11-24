@@ -1,6 +1,6 @@
 /* 벽지 두 종류 견주기 · 시세 범위 · 고르기 칩 카드 전용. 공통 바탕 · 단추는 ../kit/kit.module.css */
 
-/* 두 벽지 합계: 폰 360에서도 두 칸이 나란히(금액은 칸 안에서 줄을 바꿔요) */
+/* 두 벽지 합계: 두 칸 나란히. 금액은 한 덩어리(oneLine)라 폰에서는 한 줄씩 놓아요(맨 아래) */
 .cols { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .cols li { display: grid; gap: 2px; align-content: start; min-width: 0; padding: 12px 14px; border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); }
 .cols li[data-on="true"] { border-color: var(--mj-primary); box-shadow: 0 0 0 1px var(--mj-primary); }
@@ -29,3 +29,10 @@
 .opt:hover { background: var(--mj-surface-sub); }
 .opt[disabled] { color: var(--mj-text-mute); cursor: not-allowed; }
 .opt small { font-size: var(--mj-type-caption); color: var(--mj-text-mute); font-weight: var(--mj-weight-regular); }
+
+/* 폰: 두 칸 나란히는 금액(20px)이 칸보다 넓어 숫자 가운데서 끊겨요('264만 / 8,000원', QA r10 U4). 벽지마다 한 줄(이름 왼쪽 · 금액 오른쪽) */
+@media (max-width: 520px) {
+  .cols { grid-template-columns: minmax(0, 1fr); }
+  .cols li { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 12px; padding: 10px 14px; }
+  .cols li > small { flex-basis: 100%; }
+}

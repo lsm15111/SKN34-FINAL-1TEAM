@@ -23,6 +23,10 @@ export function wonDelta(n: number): string {
   return n > 0 ? `+${won(n)}` : n < 0 ? won(n) : "변동 없음";
 }
 
+/** 금액 한 덩어리: 표시 글의 빈칸을 줄이 안 바뀌는 빈칸으로 바꿔 좁은 칸에서도 숫자 가운데서 끊기지 않게 해요
+ *  ('309만 / 1,076원', QA r10 U4). 금액 앞뒤 말과의 빈칸은 그대로라 줄은 금액 사이에서 바뀌어요. oneLine(won)(3091076) */
+export const oneLine = (fmt: (n: number) => string) => (n: number): string => fmt(n).replace(/ /g, " ");
+
 const WEEK = ["일", "월", "화", "수", "목", "금", "토"];
 /** "2026-11-16" → "11.16(월)" */
 export function md(iso: string): string {

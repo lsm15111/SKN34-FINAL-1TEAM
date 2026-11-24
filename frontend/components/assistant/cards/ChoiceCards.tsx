@@ -10,7 +10,7 @@
 import Link from "next/link";
 import type { GradeCompareData } from "@/lib/api/assistant";
 import { CHOICE } from "@/lib/api/assistant";
-import { won, wonDelta } from "@/lib/format";
+import { oneLine, won, wonDelta } from "@/lib/format";
 import { SourceTag } from "../kit/StatusTag";
 import { I } from "../kit/icons";
 import k from "../kit/kit.module.css";
@@ -19,7 +19,10 @@ import c from "./cards.module.css";
 import s from "./ChoiceCards.module.css";
 
 const PAPER: Record<"economy" | "basic", string> = { economy: "합지", basic: "실크" };
-const amount = (n: number | null) => (n == null ? "없음" : won(n));
+/** 벽지 견주기 금액은 한 덩어리로(폰 360에서 '264만 / 8,000원'처럼 숫자 가운데서 줄이 바뀌지 않게, QA r10 U4) */
+const one = oneLine(won);
+const delta = oneLine(wonDelta);
+const amount = (n: number | null) => (n == null ? "없음" : one(n));
 
 export function GradeCompareCard({ card, ctx, old }: CardProps<"grade_compare">) {
   const d: GradeCompareData = card.data;
@@ -36,14 +39,14 @@ export function GradeCompareCard({ card, ctx, old }: CardProps<"grade_compare">)
         {(["economy", "basic"] as const).map((g) => (
           <li key={g} data-on={d.current === g || undefined}>
             <span>{PAPER[g]}</span>
-            <b className={k.num}>{won(total[g])}</b>
+            <b className={k.num}>{one(total[g])}</b>
             {d.current === g ? <small>지금 고른 벽지</small> : null}
           </li>
         ))}
       </ul>
       <p className={s.diff}>
         <span>실크가 합지보다</span>
-        <b className={k.num}>{wonDelta(d.diff_won)}</b>
+        <b className={k.num}>{delta(d.diff_won)}</b>
       </p>
       {d.rows.length ? (
         <div>

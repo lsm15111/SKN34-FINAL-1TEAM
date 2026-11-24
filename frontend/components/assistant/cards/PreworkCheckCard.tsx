@@ -3,11 +3,12 @@
 // 구매면 살 롤 수(자투리 포함 · 여분 따로)와 풀 · 초배지 · 부직포가 표준견적서에 들어 있는지. 숫자는 모두 서버(계산 엔진) 값이에요.
 // - 앞 공사 단추(끝났어요 · 아직이에요 · 안 해요)는 이 화면에서 골라 두고 [고른 답 보내기]로 한 턴에 보내요(choice
 //   'prework.<공정>:<값>' 여럿, preworkSend). 서버가 승인 카드를 만들고, 고객이 그 카드를 눌러야 저장돼요(고정 선 1).
-// - 저장된 답은 카드 때 값이에요. 바꾼 것만 보내요. 믿집은 그 공정 업체를 잇거나 견적을 내지 않아요.
+// - 저장된 답은 카드 때 값 위에 실행된 앞 공사 승인 카드 값을 덮은 것이에요(다시 열어도 저장한 단추가 골라져 보이게, preworkSaved).
+//   바꾼 것만 보내요. 믿집은 그 공정 업체를 잇거나 견적을 내지 않아요.
 // - 할 일이 끝난 줄의 카드(old)는 단추를 두지 않아요.
 import Link from "next/link";
 import { useState } from "react";
-import { PREWORK_STATES, preworkSend, type PreworkKey, type PreworkState } from "@/lib/api/assistant";
+import { PREWORK_STATES, preworkSaved, preworkSend, type PreworkKey, type PreworkState } from "@/lib/api/assistant";
 import { lineStateLabel } from "@/lib/labels";
 import { SourceTag, StatusTag, type Tone } from "../kit/StatusTag";
 import { I } from "../kit/icons";
@@ -20,9 +21,10 @@ const word = (x: PreworkState) => PREWORK_STATES.find((p) => p.key === x)?.label
 
 export function PreworkCheckCard({ card, ctx, old }: CardProps<"prework_check">) {
   const d = card.data;
+  const rows = preworkSaved(d.rows, (label) => ctx.lastAction("prework", (a) => a.status === "executed" && !!a.summary.rows?.some((x) => x.label === label)));
   const [picked, setPicked] = useState<Partial<Record<PreworkKey, PreworkState>>>({});
   const [sent, setSent] = useState(false);
-  const out = preworkSend(d.rows, picked);
+  const out = preworkSend(rows, picked);
   const pick = (key: PreworkKey, x: PreworkState) => {
     setPicked((v) => ({ ...v, [key]: x }));
     setSent(false);
@@ -39,7 +41,7 @@ export function PreworkCheckCard({ card, ctx, old }: CardProps<"prework_check">)
       <div className={s.sec}>
         <p className={s.head}>앞 공사</p>
         <ul className={s.rows}>
-          {d.rows.map((r) => {
+          {rows.map((r) => {
             const now = picked[r.key] ?? r.state;
             return (
               <li key={r.key} className={s.row}>

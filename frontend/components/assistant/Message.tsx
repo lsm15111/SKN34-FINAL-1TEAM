@@ -79,7 +79,7 @@ export function Message({ item, ctx, act, live, onRetry }: { item: FeedItem; ctx
         {item.done && item.stopped ? <p className={s.note}>{stoppedNote(hasCard)}</p> : null}
         {item.done && !item.stopped && item.mode === "free" && hasCard && !hasAi && !hasAnswer ? <p className={s.note}>설명을 만들지 못했어요</p> : null}
         {item.error ? (
-          <p className={s.fail} role="alert"><I n="alert" />{item.error.message}{item.error.code === "busy" ? null : <button type="button" className={s.textBtn} onClick={onRetry}>다시 불러오기</button>}</p>
+          <p className={s.fail} role="alert"><I n="alert" />{item.error.message}{item.error.code === "busy" || item.error.code === "unsent" ? null : <button type="button" className={s.textBtn} onClick={onRetry}>다시 불러오기</button>}</p>
         ) : null}
       </div>
     </div>
