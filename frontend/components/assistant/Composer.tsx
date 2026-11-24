@@ -2,7 +2,7 @@
 // 입력 칸(아래에 붙음): 빠른 답 칩(가로 넘김) · 입력 상자(사이트 입력 칸과 같은 모서리) + 40px 파란 원 ↑. 웹 1024 아래는 칩 왼쪽에 '보드' 띠.
 // 빠른 답 칩은 고객 말로 남을 뿐 일을 실행하지 않아요(실행은 승인 카드만). 쓰다 만 글만 이 탭에 둬요(편의).
 // 비서가 무료 모드(LLM 없이)면 입력 칸 위에 한 줄로 알려요(health: off · budget · breaker).
-// 넘쳐서 끝내 못 보냈으면(onSend가 "busy") 쓴 글 · 붙인 사진을 입력 칸에 되살려요(지우지 않아요).
+// 넘쳐서 끝내 못 보냈거나(onSend가 "busy") 서버 기록에 없는 말이면("unsent") 쓴 글 · 붙인 사진을 입력 칸에 되살려요(지우지 않아요).
 // 보이지 않는 글자(폭 없는 빈칸 · 한글 채움 등)만 있는 글은 빈 글로 봐요(보내기 단추를 꺼요, canSend).
 // 받은 견적서 사진(2a): 사진 단추로 고르면 가리기 창(PhotoMask)이 떠요. 가린 그림만 올리고, 보낼 때 그 id를 턴에 붙여요(세 장까지).
 // 글 없이 사진만 보내면 정해 둔 말(PHOTO_SAY)을 남겨요.
@@ -24,8 +24,8 @@ export function Composer({ projectId, chips, busy, onSend, band, onBand, health 
   projectId: string;
   chips: string[];
   busy: boolean;
-  /** "busy"를 돌려주면 서버가 받지 못한 말이에요(입력 칸에 되살려요). files는 붙인 사진(가린 그림) id */
-  onSend: (text: string, files?: string[]) => Promise<"busy" | void> | void;
+  /** "busy" · "unsent"를 돌려주면 서버가 받지 못한 말이에요(입력 칸에 되살려요). files는 붙인 사진(가린 그림) id */
+  onSend: (text: string, files?: string[]) => Promise<"busy" | "unsent" | void> | void;
   /** 보드 띠 오른쪽 수(정할 일) */
   band: number;
   onBand: () => void;
@@ -61,7 +61,8 @@ export function Composer({ projectId, chips, busy, onSend, band, onBand, health 
     setText("");
     setPhotos([]);
     const ids = sent.map((x) => x.id);
-    if ((await onSend(t, ids.length ? ids : undefined)) === "busy") {
+    const got = await onSend(t, ids.length ? ids : undefined);
+    if (got === "busy" || got === "unsent") {
       setText((cur) => cur || text.trim()); // 그사이 새로 쓴 글이 있으면 그대로 둬요
       setPhotos((cur) => (cur.length ? cur : sent));
       return;

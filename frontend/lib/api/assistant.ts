@@ -269,6 +269,24 @@ export function preworkSend(rows: PreworkRow[], picked: Partial<Record<PreworkKe
   };
 }
 
+/**
+ * 점검 카드 줄의 지금 저장된 답: 카드 때 값(state) 위에 그 줄을 실은 가장 나중의 실행된 앞 공사 승인 카드(prework) 값을 덮어요.
+ * 카드는 보낸 때 값이라 답을 저장한 뒤 대화를 다시 열면 단추가 비어 보였어요(QA r10 U5). 앞 공사 답은 이 승인 카드로만 바뀌어요.
+ * 승인 카드 줄은 화면 말(공정 이름 · 단추 이름, 서버 project/prework.py와 같은 말)이라 그 말로 맞춰요. 바뀐 게 없으면 같은 배열이에요.
+ * last(label): 그 공정 줄을 실은 가장 나중의 실행된 승인 카드(없으면 null)
+ */
+export function preworkSaved(rows: PreworkRow[], last: (label: string) => ActionOut | null): PreworkRow[] {
+  let changed = false;
+  const out = rows.map((r) => {
+    const said = last(r.label)?.summary.rows?.find((x) => x.label === r.label)?.value;
+    const state = PREWORK_STATES.find((x) => x.label === said)?.key;
+    if (!state || state === r.state) return r;
+    changed = true;
+    return { ...r, state };
+  });
+  return changed ? out : rows;
+}
+
 /** 받은 견적서 점검(check_outside_quote): 믿집 밖에서 받은 도배 견적서(글 · 가린 사진)를 이 집 표준견적서와 줄마다 견준 값.
  *  받은 금액은 고객이 준 값이고, 부가세 맞추기 · 합 · 차이 · 판정은 서버(계산 엔진) 값이에요. 화면은 계산하지 않아요. 표준 대비 %는 없어요 */
 export type OutsideRowState = "missing" | "more" | "same" | "less" | "extra" | "discount" | "noprice";
@@ -965,6 +983,31 @@ export class TurnBusy extends ApiError {
 }
 /** 다시 보내도 넘쳤을 때 보이는 말(입력 칸 글은 되살려요) */
 export const BUSY_TEXT = "지금 이야기하는 분이 많아요. 잠시 뒤에 다시 보내 주세요.";
+/** 끝내 잇지 못한 턴의 보낸 말이 서버 기록에 없을 때 대화 끝에 두는 말(입력 칸 글은 되살려요) */
+export const UNSENT_TEXT = "보내지 못했어요. 다시 보내 주세요.";
+
+/** 보낸 말 하나: 턴 번호(ack 전에 끊겼으면 null) · 보낸 때(서버 시각, ack가 왔으면 턴 시작) */
+export type Said = { text: string; turnId: string | null; since: string };
+
+/** 보낸 말이 다시 읽은 기록(서버)에 남았는지. 그 턴의 답이 저장됐거나, 실패 말과 같은 때의 고객 말(서버가 실패 턴의 고객 말을
+ *  남겨요, 가린 글이라 보낸 글과 다를 수 있어요)이 있으면 남았어요. 그 턴 말이 없으면(아직 도는 · 멈춘 턴, 턴 번호 모름) 보낸 때
+ *  뒤의 같은 글 고객 말을 찾아요 */
+export function saidKept(items: FeedItem[], said: Said): boolean {
+  const mine = said.turnId ? items.find((x): x is AssistantItem => x.role === "assistant" && x.turn_id === said.turnId) : undefined;
+  if (mine && !mine.error) return true;
+  const at = mine ? Date.parse(mine.at) : NaN;
+  const from = Date.parse(said.since);
+  return items.some((x) => x.role === "user" && (mine ? Date.parse(x.at) === at : x.text === said.text && !(Date.parse(x.at) < from)));
+}
+
+/** 끝내 잇지 못한 턴(같은 client_key로 다시 이어도 끊김 · 409 turn_running 되풀이) 뒤 다시 읽은 기록(page, 못 읽었으면 null)으로
+ *  할 일(QA r10 U2: 서버 일꾼이 죽어 멈춘 턴은 기록에 보낸 말이 없어 다시 읽으면 말 · 입력 칸이 안내 없이 사라졌어요).
+ *  남았으면 기록대로 두고, 없으면 대화 끝에 안내 한 줄(notice)을 두고 입력 칸에 글을 되살려요(restore).
+ *  못 읽었으면 남았는지 몰라 글만 되살려요(끊김 안내는 그대로) */
+export function afterLost(page: FeedItem[] | null, said: Said): { restore: boolean; notice: string | null } {
+  if (!page) return { restore: true, notice: null };
+  return saidKept(page, said) ? { restore: false, notice: null } : { restore: true, notice: UNSENT_TEXT };
+}
 
 /** 한도에 닿아 멈춘 턴(done.stopped) 안내: 카드가 있으면 카드만 보인다고, 없으면 다시 물어 달라고(QA r9 c2: 카드 없는 턴에도
  *  '카드만 보여 드려요') */

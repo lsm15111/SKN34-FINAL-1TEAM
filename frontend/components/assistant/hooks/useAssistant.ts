@@ -9,11 +9,11 @@
 // 그 자리에 보인 오늘 정할 일 · 첫 인사는 첫 말을 보낸 뒤에도 그 자리에 그대로 둬요(같은 날 카드가 턴으로 와도 값만 바꿔요).
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, getBoard, getFeed, getHealth,
+  actionsIn, afterLost, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, getBoard, getFeed, getHealth,
   getLatestThread, getSlotsNow, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, movedSlotIds, newClientKey, openNudge as openApi,
   rejectAction, replaceAction, resetMock, resetTurn, sayable, seqFilter, settledNudges, streamTurn, subscribeTurns, takeToday, targetOfWrite,
   turnErrorText, BUSY_TEXT, TURN_RETRY_MS, TurnBusy,
-  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type SlotNow, type TodayData, type TurnEvent, type TurnIn,
+  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type FeedPage, type HealthOut, type SlotNow, type ThreadOut, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { useStream } from "@/lib/backend/stream";
@@ -31,6 +31,8 @@ const RECO_CHIP = "업체 추천해 줘";
 const VISIT_STEP = 3;
 const firstChips = (step: number | undefined) => (step != null && step >= VISIT_STEP ? FIRST_CHIPS.filter((c) => c !== RECO_CHIP) : FIRST_CHIPS);
 const LOST = "연결이 끊겼어요. 대화를 다시 불러올게요.";
+/** 끝내 잇지 못한 턴: 이만큼 기다렸다 기록을 다시 읽어 보낸 말이 서버에 남았는지 봐요 */
+const LOST_READ_MS = 3000;
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const handledKey = (pid: string) => `mj_v4_handled:${pid}`;
 
@@ -61,6 +63,8 @@ export function useAssistant(projectId: string) {
   const [gone, setGone] = useState<Record<string, true>>({});
   const [pending, setPending] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
+  /** 보내지 못한 말 안내(끝내 잇지 못한 턴의 보낸 말이 서버 기록에 없어요): 기록을 다시 읽어도 대화 끝에 남고, 다음 말을 보내면 지워요 */
+  const [unsent, setUnsent] = useState<string | null>(null);
   const [flash, setFlash] = useState(0);
   const nowRef = useRef("");
   const runningRef = useRef(false);
@@ -138,16 +142,8 @@ export function useAssistant(projectId: string) {
   /** 버린 읽기를 다시 할 때(턴이 이미 끝났으면) 부를 later. later가 loadFeed 뒤에 만들어져서 ref로 이어요 */
   const laterRef = useRef<(force: boolean, ms?: number) => void>(() => undefined);
 
-  /** 대화 기록 첫 쪽. 대화가 없으면(처음) 비우고 처음 칩을 보여요. 앞 쪽을 읽어 뒀으면 그 앞에 그대로 이어 붙여요.
-   *  읽는 사이 턴이 시작됐으면 결과를 버리고(보낸 말 · 흘러오는 답을 지우지 않게) 턴이 끝난 뒤 다시 읽어요 */
-  const loadFeed = useCallback(async () => {
-    const gen = genRef.current;
-    const [thread, page] = await Promise.all([getLatestThread(projectId), getFeed(projectId)]);
-    if (gen !== genRef.current || runningRef.current) {
-      if (runningRef.current) syncLater.current = true;
-      else laterRef.current(true, 300);
-      return;
-    }
+  /** 읽은 대화 기록 첫 쪽을 그려요. 대화가 없으면(처음) 비우고 처음 칩을 보여요. 앞 쪽을 읽어 뒀으면 그 앞에 그대로 이어 붙여요 */
+  const showFeed = useCallback((thread: ThreadOut | null, page: FeedPage) => {
     if (olderRef.current) {
       setItems((cur) => foldCards(keepOlder(cur, page.items)));
     } else {
@@ -167,7 +163,31 @@ export function useAssistant(projectId: string) {
       const day = dateSeoul(page.now);
       setTodayFirst(!page.items.some((it) => dateSeoul(it.at) === day));
     }
-  }, [projectId]);
+  }, []);
+
+  /** 대화 기록 첫 쪽 읽기. 읽는 사이 턴이 시작됐으면 결과를 버리고(보낸 말 · 흘러오는 답을 지우지 않게) 턴이 끝난 뒤 다시 읽어요 */
+  const loadFeed = useCallback(async () => {
+    const gen = genRef.current;
+    const [thread, page] = await Promise.all([getLatestThread(projectId), getFeed(projectId)]);
+    if (gen !== genRef.current || runningRef.current) {
+      if (runningRef.current) syncLater.current = true;
+      else laterRef.current(true, 300);
+      return;
+    }
+    showFeed(thread, page);
+  }, [projectId, showFeed]);
+
+  /** 도는 턴 안에서 기록 첫 쪽을 바로 다시 읽어 그려요(loadFeed처럼 버리지 않아요). 못 읽으면 null */
+  const reread = useCallback(async (): Promise<FeedItem[] | null> => {
+    try {
+      const [thread, page] = await Promise.all([getLatestThread(projectId), getFeed(projectId)]);
+      showFeed(thread, page);
+      void refreshSide();
+      return page.items;
+    } catch {
+      return null;
+    }
+  }, [projectId, showFeed, refreshSide]);
 
   const load = useCallback(async () => {
     olderRef.current = false;
@@ -259,20 +279,24 @@ export function useAssistant(projectId: string) {
   }, [projectId, markHandled, later]);
 
   /** 한 턴 보내기. 넘쳐서(503 busy · unavailable) Retry-After만큼 기다렸다 같은 client_key로 한 번 다시 보내도 넘치면
-   *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요). files는 붙인 받은 견적서 사진(가린 그림) id */
-  const send = useCallback(async (text: string, context?: TurnIn["context"], files?: string[]): Promise<"busy" | void> => {
+   *  보낸 말을 빼고 안내한 뒤 "busy"를 돌려줘요(입력 칸이 쓴 글을 되살려요). 서버 기록에 없는 말(끝내 잇지 못한 턴 · 다른 턴이 도는 중)은
+   *  "unsent"를 돌려줘요(입력 칸이 쓴 글을 되살려요). files는 붙인 받은 견적서 사진(가린 그림) id */
+  const send = useCallback(async (text: string, context?: TurnIn["context"], files?: string[]): Promise<"busy" | "unsent" | void> => {
     const t = text.trim();
     if (!sayable(t) || runningRef.current) return; // 보이지 않는 글자만 있는 글은 보내지 않아요
     runningRef.current = true;
     genRef.current += 1; // 이 턴 전에 시작한 기록 읽기 결과는 버려요
     setRunning(true);
+    setUnsent(null);
     const key = newClientKey();
     const userId = `u-${key}`;
+    const since = nowRef.current; // 보낸 때(서버 시각). ack가 오면 턴 시작 시각으로 봐요
     setItems((cur) => [...cur, { id: userId, role: "user", at: nowRef.current || new Date().toISOString(), text: t }]);
     const ctl = new AbortController();
     abortRef.current = ctl;
     const body: TurnIn = { project_id: projectId, client_key: key, text: t, context: context ?? null, ...(files?.length ? { files } : {}) };
     let turnId = "";
+    let ackAt = "";
     let tries = 0;
     let busyTried = false;
     const failMsg = (message: string, code = "send") =>
@@ -284,6 +308,7 @@ export function useAssistant(projectId: string) {
           const ended = await streamTurn(body, (ev) => {
             if (ev.type === "ack") {
               turnId = ev.data.turn_id;
+              ackAt = ev.data.at ?? ackAt;
               // 같은 client_key로 다시 이으면 서버가 저장한 것을 처음부터 보내요: 이 턴 조각을 비우고 받아요
               if (again) setItems((cur) => resetTurn(cur, turnId));
             }
@@ -315,15 +340,26 @@ export function useAssistant(projectId: string) {
             continue;
           }
           if (drop || ours) {
-            // 끝내 잇지 못했어요: 서버는 끝까지 돌려 저장해요. 대화를 다시 읽으면 보여요
+            // 끝내 잇지 못했어요: 서버는 끝까지 돌려 저장해요. 잠깐 뒤 기록을 다시 읽어 보낸 말이 남았는지 봐요. 서버 일꾼이 죽어
+            // 멈춘 턴은 기록에 보낸 말이 없어요: 대화 끝에 안내 한 줄을 두고 입력 칸에 글을 되살려요(QA r10 U2, afterLost)
             if (turnId) setItems((cur) => cur.map((x) => (x.role === "assistant" && x.turn_id === turnId ? { ...x, done: true, status: null, error: { code: "dropped", message: LOST } } : x)));
             else if (ours) failMsg(LOST, "dropped");
             else failMsg(errorText(e), "network");
-            later(true, 3000);
+            await wait(LOST_READ_MS);
+            if (ctl.signal.aborted) return;
+            const page = await reread();
+            if (ctl.signal.aborted) return;
+            const next = afterLost(page, { text: t, turnId: turnId || null, since: ackAt || since });
+            if (next.notice) setUnsent(next.notice);
+            if (!page) later(true, LOST_READ_MS);
+            return next.restore ? "unsent" : undefined;
           } else if (e instanceof ApiError && e.code === "turn_running") {
-            // 다른 탭 · 앞 질문의 답이 아직 도는 중: 끝나면 대화를 다시 읽어 보여요
+            // 다른 탭 · 앞 질문의 답이 아직 도는 중(서버가 받지 않은 말): 보낸 말을 빼고 입력 칸에 되살려요(QA r10 U2: 멈춘 턴이
+            // 자리를 쥔 동안 다시 보내도 글이 사라졌어요). 끝나면 대화를 다시 읽어 보여요
+            setItems((cur) => cur.filter((x) => x.id !== userId));
             failMsg(e.message || "앞 답을 만드는 중이에요. 끝나면 다시 보내 주세요.", "turn_running");
             later(false, 5000);
+            return "unsent";
           } else if (e instanceof ApiError && e.status === 429) {
             failMsg(e.message, "too_many");
           } else {
@@ -341,7 +377,7 @@ export function useAssistant(projectId: string) {
       syncLater.current = null;
       if (pend !== null) later(pend, 300);
     }
-  }, [projectId, apply, later]);
+  }, [projectId, apply, later, reread]);
 
   /** 기록 밖(열린 승인 카드 묶음)의 행동이면: 열린 목록도 바꾸고 결과를 그 자리에 남겨요(기록 안 행동은 replaceAction이 바꿔요) */
   const keep = useCallback((a: ActionOut) => {
@@ -475,6 +511,7 @@ export function useAssistant(projectId: string) {
     anchored.current = false; // 대본이 바뀌면 화면이 만든 말 자리 · 첫 인사 · 오늘 정할 일 자리도 다시 정해요
     setPin(null);
     setKept({});
+    setUnsent(null);
     await load();
   }, [projectId, load]);
 
@@ -521,8 +558,10 @@ export function useAssistant(projectId: string) {
   useEffect(() => { if (firstToday && todayDate) setPin(todayDate); }, [firstToday, todayDate]);
 
   /** 보이는 대화: 기록 + 화면이 만든 말(오늘 정할 일: 그날 카드가 기록에 없을 때 · 기록에 없는 열린 승인 카드 묶음)을 처음 열 때 마지막 말 뒤에.
-   *  오늘 정할 일을 그 자리에 보인 뒤 같은 날 카드가 턴으로 오면(첫 인사 등) 그 자리에서 값만 바꾸고 턴 쪽 카드는 빼요(보낸 말 위 카드가 아래로 옮겨 가지 않게) */
+   *  오늘 정할 일을 그 자리에 보인 뒤 같은 날 카드가 턴으로 오면(첫 인사 등) 그 자리에서 값만 바꾸고 턴 쪽 카드는 빼요(보낸 말 위 카드가 아래로 옮겨 가지 않게).
+   *  보내지 못한 말 안내는 늘 대화 끝에 둬요 */
   const view = useMemo<FeedItem[]>(() => {
+    const tail: AssistantItem[] = unsent ? [{ id: "unsent", role: "assistant", at: now, turn_id: null, parts: [], done: true, local: true, error: { code: "unsent", message: unsent } }] : [];
     const local: AssistantItem[] = [];
     let base = items;
     if (todayFirst && today && (firstToday || pin === today.date)) {
@@ -538,10 +577,10 @@ export function useAssistant(projectId: string) {
     if (orphans.length) {
       local.push({ id: "open-actions", role: "assistant", at: now, turn_id: null, done: true, local: true, parts: orphans.map((action) => ({ t: "action" as const, action })) });
     }
-    if (!local.length) return base;
+    if (!local.length) return tail.length ? [...base, ...tail] : base;
     const at = anchorIndex(base, anchor);
-    return [...base.slice(0, at), ...local, ...base.slice(at)];
-  }, [items, open, kept, today, todayFirst, firstToday, pin, anchor, now]);
+    return [...base.slice(0, at), ...local, ...base.slice(at), ...tail];
+  }, [items, open, kept, today, todayFirst, firstToday, pin, anchor, now, unsent]);
 
   return {
     projectId, items: view, chips: chips.length ? chips : firstChips(board?.step), now, loaded, loadError, running, board, boardFailed, retryBoard, pending, errors, flash, handled: handledAll, ended, health,

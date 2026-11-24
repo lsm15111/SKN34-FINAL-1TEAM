@@ -6,12 +6,15 @@
 import Link from "next/link";
 import { Badge } from "@/components/ui/Badge";
 import { budgetText, diffText, PUTTY_TONE, ROW_CHIP, rowParts, sortRows, SOURCE_WORD, TOTAL_WORD } from "@/lib/assistant/outside";
-import { won } from "@/lib/format";
+import { oneLine, won as wonText } from "@/lib/format";
 import { SourceTag } from "../kit/StatusTag";
 import { I } from "../kit/icons";
 import k from "../kit/kit.module.css";
 import type { CardProps } from "./types";
 import s from "./OutsideQuoteCard.module.css";
+
+/** 금액은 한 덩어리로(폰 360에서 '309만 / 1,076원'처럼 숫자 가운데서 줄이 바뀌지 않게, QA r10 U4) */
+const won = oneLine(wonText);
 
 export function OutsideQuoteCard({ card }: CardProps<"outside_quote">) {
   const d = card.data;
