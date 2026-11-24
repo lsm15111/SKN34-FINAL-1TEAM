@@ -30,7 +30,16 @@ from app.assistant.schemas import (
     SummaryRow,
 )
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
-from app.assistant.tools.customer import TRADE, dobae_only, pid_of, region_of
+from app.assistant.tools.customer import (
+    TRADE,
+    WISH_SCHEMA,
+    WishIn,
+    dobae_only,
+    keep_wish,
+    pid_of,
+    region_of,
+    told_wish,
+)
 from app.calc import deadline, visit_view
 from app.calc.common import COUNTED
 from app.calc.quote_diff import LineChange, line_changes
@@ -753,13 +762,6 @@ async def propose_budget(tc: ToolCtx, a: BudgetIn) -> ToolOut:
     return out
 
 
-class WishIn(BaseModel):
-    """고객이 말한 희망 기간(하루면 시작 · 끝이 같은 날)."""
-
-    start: date
-    end: date
-
-
 class VisitReqIn(BaseModel):
     trade: Literal["dobae", "mokgong"] = "dobae"
     vendor_refs: list[str] = Field(default_factory=list, max_length=3)
@@ -791,6 +793,11 @@ WISH_SAID = {
     "long": f"희망 기간은 {WISH_SPAN_MAX}일 안으로 고를 수 있어요.",
 }
 WISH_HINT = "wish는 고객이 말한 시작 · 끝 날짜(하루면 같은 날)예요. 고객에게 기간을 다시 물어요."
+# 희망 기간이 믿집 초안일 때 모델 값 note 끝(단추로 만든 카드도 모델이 받아요): 고객이 말한 기간과 다르면 바꾸는 길
+WISH_DRAFT = (
+    "희망 기간은 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 이 대화에서 실측 희망 기간을 말했으면 "
+    "같은 업체로 wish를 넣어 다시 불러 바꿔요(이 카드는 새 카드로 바뀌어요)."
+)
 
 
 def slots_full_said(n: int, room: int, held: int = 0) -> str:
@@ -815,7 +822,8 @@ def slots_full_said(n: int, room: int, held: int = 0) -> str:
     status="실측 요청을 준비하고 있어요",
     description="고른 업체(v1…, 1~3곳)에 보낼 실측 요청을 승인 카드로 만들어요. 업체 이름표는 recommend_vendors "
     "결과나 턴 사실 '담은 업체' 줄(업체 보기에서 고객이 담은 곳)의 v…예요. 희망 기간은 wish_ref(r1…)이고, "
-    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 희망 기간을 말했으면('25일에서 27일 사이' · "
+    "비우면 이 대화에서 고객이 말한 기간(앞서 wish로 넣은 것), 그것도 없으면 믿집 초안(공사 시작 희망일 − 28 ~ "
+    "− 14일)이에요. 고객이 희망 기간을 말했으면('25일에서 27일 사이' · "
     "'다음 주 평일') wish에 그 시작 · 끝 날짜를 넣어요(하루면 같은 날, 내일부터 · 62일 안, wish_ref보다 먼저예요). "
     "고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
     "빈 목록으로 두고 pick=top으로 불러요: 믿집 점수 1위 업체를 믿집이 넣고, 결과의 why가 까닭이에요(따로 고르지 "
@@ -835,12 +843,7 @@ def slots_full_said(n: int, room: int, held: int = 0) -> str:
                 "enum": ["top"],
                 "description": "고객이 고르기를 맡김: 믿집 점수 1위를 믿집이 넣어요",
             },
-            "wish": obj(
-                {
-                    "start": {"type": "string", "format": "date"},
-                    "end": {"type": "string", "format": "date"},
-                }
-            ),
+            "wish": WISH_SCHEMA,
         },
         required=["trade", "vendor_refs"],
     ),
@@ -884,14 +887,19 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     if len([c for c in rows if not c.shortlisted and c.vendor_id not in live]) > room:
         held = max(SLOTS - room - len(live), 0)  # 담아 두기만 한 곳(요청 전)
         raise ToolError("slots_full", slots_full_said(len(live), room, held))
+    draft = False
     if a.wish is not None:  # 고객이 말한 기간(화면 요청과 같은 규칙, QA r7 화면 N3)
         start, end = a.wish.start, a.wish.end
         if (bad := slots.said_wish(start, end, tc.today)) is not None:
             raise ToolError("bad_wish", WISH_SAID[bad], hint=WISH_HINT)
+        keep_wish(tc, start, end)  # 다음 카드 단추 요청도 이 기간(QA r10 c1 T5)
     elif a.wish_ref is not None:
         w = tc.refs.get(a.wish_ref, "wish")
         start, end = date.fromisoformat(w["start"]), date.fromisoformat(w["end"])
+    elif (said := told_wish(tc)) is not None:
+        start, end = said  # 이 대화에서 고객이 말한 기간(카드 단추 · wish 없이 부름)
     else:
+        draft = True
         start, end = slots.draft_wish(visit_service.work_start(p), tc.today) or (
             tc.today + timedelta(days=1),
             tc.today + timedelta(days=14),
@@ -930,6 +938,8 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     if top is not None:  # 맡긴 고르기: 누구를 왜 넣었는지(까닭 틀)
         out.data["vendor"] = top["name"]
         out.data["why"] = [TOP_WHY, *top.get("reasons", [])]
+    if draft and out.actions:
+        out.data["note"] = f"{out.data['note']} {WISH_DRAFT}"
     return out
 
 

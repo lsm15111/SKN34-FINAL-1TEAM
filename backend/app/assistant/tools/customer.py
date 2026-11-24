@@ -166,9 +166,61 @@ async def market_range(tc: ToolCtx, a: TradeIn) -> ToolOut:
     return ToolOut(data=model, cards=[card] if card is not None else [])
 
 
+class WishIn(BaseModel):
+    """고객이 말한 실측 희망 기간(하루면 시작 · 끝이 같은 날)."""
+
+    start: date
+    end: date
+
+
+WISH_SCHEMA = obj(
+    {
+        "start": {"type": "string", "format": "date"},
+        "end": {"type": "string", "format": "date"},
+    }
+)
+# 고객이 말한 실측 희망 기간(이 대화 이름표 표의 said 희망 기간 r…): 업체 추천 카드 단추 · wish 없이 부른 요청 도구가
+# 믿집 초안 대신 이 기간으로 요청 카드를 만들어요(QA r10 c1 T4 · T5: '실측은 26~28일' 뒤 단추로 11.26 하루 카드)
+WISH_KEPT = "고객이 말한 실측 희망 기간을 담았어요. 고른 업체로 실측 요청 카드를 만들면(카드 단추도) 이 기간이에요."
+WISH_NOT_KEPT = "그래서 희망 기간은 담지 않았어요. 고객에게 기간을 다시 물어요."
+
+
+def keep_wish(tc: ToolCtx, start: date, end: date) -> str:
+    """고객이 말한 실측 희망 기간을 이 대화 이름표 표에 담는다(said, 같은 기간이면 같은 이름표 r…)."""
+    return tc.refs.put("wish", {"start": start.isoformat(), "end": end.isoformat(), "said": True})
+
+
+def told_wish(tc: ToolCtx) -> tuple[date, date] | None:
+    """이 대화에서 고객이 말한 실측 희망 기간(가장 최근에 담은 것). 지났거나 화면 요청 규칙(calc.slots.said_wish)에
+    맞지 않으면 None(믿집 초안을 써요)."""
+    from app.calc import slots
+
+    for it in reversed(list(tc.refs.items.values())):
+        if it.get("kind") == "wish" and it.get("said"):
+            start, end = date.fromisoformat(str(it["start"])), date.fromisoformat(str(it["end"]))
+            return None if slots.said_wish(start, end, tc.today) else (start, end)
+    return None
+
+
+def take_wish(tc: ToolCtx, w: WishIn | None, model: dict) -> None:
+    """업체 추천에서 받은 고객 희망 기간: 규칙에 맞으면 담고 모델 값 wish · note, 아니면 까닭 note(담지 않아요)."""
+    from app.assistant.tools.propose import WISH_SAID
+    from app.calc import slots
+
+    if w is None:
+        return
+    bad = slots.said_wish(w.start, w.end, tc.today)
+    if bad is None:
+        keep_wish(tc, w.start, w.end)
+        model["wish"] = {"start": w.start, "end": w.end}
+    said = WISH_KEPT if bad is None else f"{WISH_SAID[bad]} {WISH_NOT_KEPT}"
+    model["note"] = " ".join(x for x in (model.get("note"), said) if x)
+
+
 class RecommendIn(BaseModel):
     trade: Trade = "dobae"
     sgg: str | None = Field(default=None, max_length=30)  # 다른 구 업체 읽기만(집 정보는 그대로)
+    wish: WishIn | None = None  # 고객이 말한 실측 희망 기간(카드 단추 요청 카드에 써요)
 
 
 # 고객이 고르기를 맡길 때(리드 결정 11-22, QA r3 s4): 코드 점수 1위를 서버가 넣는다(AGENTS.md 4장 '업체 추천은
@@ -197,7 +249,9 @@ def left_to_us(model: dict) -> None:
     description="이 집 조건에 맞는 업체 3곳(v1~v3)을 믿집 점수(별점 · 끝낸 공사 · 가견적)로 골라요. picks는 점수 "
     "순(첫째가 1위)이에요. 가견적은 업체가 확인한 단가 × 믿집 수량이에요. 업체 연결은 아직 도배(dobae)만이에요. "
     "고객이 집 지역과 다른 구를 말하면 sgg(시 · 군 · 구, 예 노원구)로 그 구 업체를 읽기만으로 볼 수 있어요: 집 "
-    "정보는 그대로이고 그 업체들에는 요청할 수 없어요(실측 요청은 집 지역 업체에만). 믿집 밖 조사보다 먼저 써요.",
+    "정보는 그대로이고 그 업체들에는 요청할 수 없어요(실측 요청은 집 지역 업체에만). 믿집 밖 조사보다 먼저 써요. "
+    "고객이 이 대화에서 실측 희망 기간을 말했으면('26일부터 28일 사이') wish에 그 시작 · 끝 날짜를 넣어요(하루면 "
+    "같은 날): 카드 단추로 고른 업체의 실측 요청 카드가 그 기간으로 만들어져요.",
     model=RecommendIn,
     schema=obj(
         {
@@ -207,11 +261,18 @@ def left_to_us(model: dict) -> None:
                 "description": "집 지역이 아닌 시 · 군 · 구 업체를 읽기만으로 볼 때 그 이름(예 노원구, 같은 이름이 여러 "
                 "시 · 도에 있으면 '부산 중구'). 비우면 집 지역",
             },
+            "wish": WISH_SCHEMA,
         },
         required=["trade"],
     ),
 )
 async def recommend_vendors(tc: ToolCtx, a: RecommendIn) -> ToolOut:
+    out = await _recommend(tc, a)
+    take_wish(tc, a.wish, out.data)
+    return out
+
+
+async def _recommend(tc: ToolCtx, a: RecommendIn) -> ToolOut:
     from app.project import service as project_service
 
     dobae_only(a.trade)

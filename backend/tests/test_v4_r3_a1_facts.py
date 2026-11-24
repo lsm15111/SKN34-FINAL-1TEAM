@@ -20,6 +20,7 @@ from app.agent import llm
 from app.assistant import service as S
 from app.shared import kdate
 from app.shared.clock import today_seoul
+from tests.conftest import query
 from tests.helpers import use
 from tests.test_deal import confirm
 from tests.test_quote_compare import quote
@@ -276,11 +277,13 @@ def test_turn_facts_follow_each_vendor_from_booked_to_deal(api, script):
     assert ask_visits(api, f["pid"], [gyeol]).status_code == 201
     slot = f"{kdate.md_long(day(6), today_seoul())} 오전"
     facts = turn_facts(api, script, f["pid"])
-    # 고침 4차 V(QA r4 s1 · s6): 살아 있는 요청 업체 이름 뒤에 대화 이름표(m…)가 붙어요(요청한 순으로 m1 · m2)
+    # 고침 4차 V(QA r4 s1 · s6): 살아 있는 요청 업체 이름 뒤에 대화 이름표(m…)가 붙어요(요청한 순으로 m1 · m2).
+    # 견적서 오기 전 요청은 요청 때 고정한 가견적도 붙어요(QA r10 c2 T27)
+    est = {r["vendor_name"]: r["estimate_total"] for r in query("select * from visits")}
     assert (
-        f"업체: 마루와벽(m1) 실측 날짜 정해짐({slot}) / 결도배(m2) 실측 요청함(업체 답 기다림)"
-        in facts
-    )
+        f"업체: 마루와벽(m1) 실측 날짜 정해짐({slot}) · 가견적 부가세 포함 {est['마루와벽']:,}원"
+        f" / 결도배(m2) 실측 요청함(업체 답 기다림) · 가견적 부가세 포함 {est['결도배']:,}원"
+    ) in facts
     assert "채팅: 마루와벽 열림 / 결도배 아직 안 열림(실측 날짜가 정해지면 열려요)" in facts
     assert "단계: 실측(요청한 업체 2곳 · 견적서 전)" in facts
     # 견적서가 오면 판 · 금액(부가세 포함)과 견적 견주기 단계

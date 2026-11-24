@@ -1153,6 +1153,9 @@ class TurnResult:
     made: set[str] = field(default_factory=set)
     # 이 턴에 새로 만든 승인 카드 id(단추 고르기 · 제안 도구). 같은 턴에 다시 제안하면 모델에도 '새로 만듦'으로 알린다
     made_ids: set[str] = field(default_factory=set)
+    # 이 턴에 카드 단추 고르기로 만든(같은 카드가 열려 있으면 그 카드) 승인 카드의 제안 결과(모델 값, 제안 도구 결과와
+    # 같은 값: state · 카드 줄 · 누르면 무엇이 되는지 note). 모델에만 넘긴다(저장 · 흔적 아님, made_text)
+    made_out: list[dict] = field(default_factory=list)
     cut: int = 0  # 길이 상한 · 되풀이로 뺀 문장 수
     # 문장 검사가 버린 문장의 까닭(종류만, 글 없음)
     dropped: list[str] = field(default_factory=list)
@@ -1338,6 +1341,19 @@ def asked_last(history: list[dict]) -> bool:
     return False
 
 
+MADE_OUT = "제안 결과"  # 카드 단추로 만든 승인 카드(모델에 넘기는 고객 글 끝 괄호의 머리)
+
+
+def made_text(res: TurnResult) -> str:
+    """카드 단추로 만든 승인 카드의 제안 결과 → 모델에 줄 한 줄('제안 결과: {…}'). 없으면 ''. 제안 도구를 부른 턴처럼
+    누르면 무엇이 되는지(note) · 카드 줄을 모델이 받게 해요(QA r10 c1 T10: 'MADE' 한 줄만 받아 다시 고르기 카드를
+    '누르면 바로 정해져요'라고 틀림)."""
+    if not res.made_out:
+        return ""
+    got = res.made_out[0] if len(res.made_out) == 1 else res.made_out
+    return f"{MADE_OUT}: " + json.dumps(got, ensure_ascii=False, default=str)
+
+
 def files_note(ctx: TurnCtx) -> str:
     """붙인 사진 한 줄(모델에만, 사진은 받은 견적서 점검 도구가 읽어요). 없으면 ''."""
     return f"견적서 사진 {len(ctx.files)}장을 붙였어요" if ctx.files else ""
@@ -1406,6 +1422,10 @@ class _Turn:
         # 카드 단추 고르기(choices)가 이 턴에 보낸 카드 · 승인 카드: 숫자 근거 · 누를 단추 · 길게 둘 카드
         if note:
             self.gate.allow(note)
+        # 그 승인 카드의 제안 결과(모델에만, 고객 글 끝 괄호): 숫자 근거이기도 해요
+        self.made_note = made_text(res)
+        if self.made_note:
+            self.gate.allow(self.made_note)
         # 그중 새로 만든 승인 카드의 턴 사실 이름(with_open: 모델이 단추 이름을 말할 재료)
         self.made_names: list[str] = []
         if ctx.files:  # '사진 1장'을 다시 말해도 근거가 있게
@@ -1455,9 +1475,12 @@ class _Turn:
         facts = with_open(self.ctx.facts, self.made_names)
         if want := asks_mod.line(self.asks):  # 요청 점검: 이번 부탁(코드가 고객 말에서 뽑음)
             facts = f"{facts}\n{want}" if facts else want
+        text = said(self.ctx, self.note)
+        if self.made_note:  # 카드 단추로 만든 승인 카드의 제안 결과(누르면 무엇이 되는지)
+            text = f"{text}\n({self.made_note})"
         return [
             *self.ctx.history,
-            {"role": "user", "content": [{"type": "text", "text": said(self.ctx, self.note)}]},
+            {"role": "user", "content": [{"type": "text", "text": text}]},
             {"role": "system", "content": facts},
         ]
 
