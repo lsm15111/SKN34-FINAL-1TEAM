@@ -374,12 +374,18 @@ def _offer(sch, deal, today: date, **kw) -> dict:
 
 
 def test_one_day_earlier_over_a_weekend_is_the_friday():
-    """12.21(월)~22 공사를 '하루만 당겨': 하루 전(일)부터 앞으로만 찾아 후보가 없었어요. 앞 일하는 날(금)부터예요."""
+    """12.21(월)~22 공사를 '하루만 당겨': 하루 전(일)부터 앞으로만 찾아 후보가 없었어요. 앞 일하는 날(금)이에요.
+    며칠을 콕 집어 말했으면 후보는 그 하루만(QA r8 d1: 12.11 · 10 · 9를 같이 보내 업체가 12.9를 골라 닷새 당김),
+    쉬는 날을 건너뛴 까닭은 카드 note에 써요."""
     dob = _deal("dobae", MON, TUE)
     got = _offer(_sch(dob), dob, d("2026-11-23"), delay_days=1, direction="earlier")
-    assert got["payload"]["wish_dates"] == ["2026-12-18", "2026-12-17", "2026-12-16"]
+    assert got["payload"]["wish_dates"] == ["2026-12-18"]
     rows = [r.value for r in got["summary"].rows if r.label.startswith("후보")]
-    assert rows[0] == kdate.md_range(d("2026-12-18"), MON)  # 일하는 날 2일: 금 · 월
+    assert rows == [kdate.md_range(d("2026-12-18"), MON)]  # 일하는 날 2일: 금 · 월
+    note = got["summary"].note
+    assert note.startswith(
+        "12월 20일(일)은 쉬는 날(주말 · 공휴일)이라 가까운 일하는 날 12월 18일(금)로"
+    )
     # 말한 첫날(wish_from)이 있으면 그날보다 앞으로는 안 가요(앞 판과 같음)
     wish = _offer(_sch(dob), dob, d("2026-11-23"), wish_from=d("2026-12-17"), direction="earlier")
     assert wish["payload"]["wish_dates"] == ["2026-12-17", "2026-12-18"]

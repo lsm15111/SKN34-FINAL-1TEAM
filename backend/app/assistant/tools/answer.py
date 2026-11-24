@@ -149,7 +149,10 @@ def kind_of(kind: str, question: str) -> str:
     from app.agent.v3.policy import REFUND, WARRANTY
 
     if kind in ("price", "period") and (
-        WARRANTY.search(question) or REFUND.search(question) or COMPARE.search(question)
+        WARRANTY.search(question)
+        or REFUND.search(question)
+        or COMPARE.search(question)
+        or NEED.search(question)
     ):
         return "general"
     return kind
@@ -162,6 +165,14 @@ COMPARE = re.compile(
     r"|(?:뭐가|무엇이|어느\s*(?:게|것이|거|쪽이?)|어떤\s*(?:게|것이|거))\s*(?:더\s*)?"
     r"(?:나[아을으]|낫|좋|오래|튼튼)",
     re.IGNORECASE,
+)
+# 꼭 해야 하는지 · 빼도 되는지 · 원인 · 하자 증상을 묻는 말: 금액 · 기간 낱말이 섞여도 공정 지식이 답이라 전문가 길로
+# 가요(값은 MONEY_NOTE로 이 공사 계산 값만, QA r8 d1: '초배 꼭 해야 해요? 빼면 얼마?' · '이음매가 몇 달 뒤 벌어지면?' ·
+# '겨울에 보일러 켜 둬야 해요?'가 v3 길에서 짧은 '자료 없음'만). '왜 이렇게 비싸요?' 같은 금액 물음은 v3 그대로예요
+NEED = re.compile(
+    r"꼭\s*해야|(?:해|둬|켜|꺼|놔|떼|빼|바꿔|칠해|발라)야\s*(?:하나|해요|돼요|되나요|할까요|하는지)"
+    r"|안\s*하면|빼도\s*(?:돼|되|괜찮)|원인"
+    r"|벌어지|들뜨|들떠|갈라지|곰팡이|결로|누수"
 )
 # 값이 섞인 견주기 · 빈 답 뒤 전문가 답(모델 값 note): 값은 이 공사 계산 값으로만, 믿집이 세지 않는 일은 그렇다고만
 MONEY_NOTE = (
@@ -176,7 +187,9 @@ def money_first(question: str) -> bool:
     from app.v2 import ask
 
     flags = set(policy_of(ask.clean_message(question)))
-    return bool({"price", "period"} & flags) and not COMPARE.search(question)
+    return bool({"price", "period"} & flags) and not (
+        COMPARE.search(question) or NEED.search(question)
+    )
 
 
 # 'AS' · 'A/S' · '에이에스'(영어 낱말 안의 as는 아님)

@@ -190,12 +190,14 @@ def test_compare_words_and_money_first():
         COMPARE_Q,
         "실크랑 합지 중에 뭐가 더 나아요? 가격은요?",
         "페인트 아니면 필름, 어느 게 오래가요?",
+        # 꼭 해야 하는지 묻는 말도 공정 지식이 답이라 전문가 길(QA r8 d1: v3 길에서 짧은 '자료 없음'만)
+        "초배는 꼭 해야 해요? 빼면 얼마나 아껴요?",
     ):
         assert answer.kind_of("price", q) == "general" and not answer.money_first(q), q
     for q in (
         "도배 비용 얼마예요?",
         "도배 며칠 걸려요?",
-        "초배는 꼭 해야 해요? 빼면 얼마나 아껴요?",
+        "초배 빼면 얼마나 아껴요?",
     ):
         assert answer.kind_of("price", q) == "price" and answer.money_first(q), q
 
@@ -232,7 +234,7 @@ def test_empty_v3_answer_goes_on_to_the_expert(api, script, monkeypatch):
         return ToolOut(data={"route": route["v"], "sources": [], "found": False}), False
 
     monkeypatch.setattr(answer, "_v3_answer", empty)
-    q = "초배는 꼭 해야 해요? 빼면 얼마나 아껴요?"
+    q = "초배 빼면 얼마나 아껴요?"  # 금액이 먼저인 물음(꼭 해야 하는지 묻는 말은 바로 전문가, QA r8 d1)
     expert = _out(("실크는 초배로 바탕을 골라야 이음매가 덜 보여요.", ["G"]))
     for kind in ("price", "general"):
         call = {"id": "q", "name": "answer_question", "input": {"question": q, "kind": kind}}

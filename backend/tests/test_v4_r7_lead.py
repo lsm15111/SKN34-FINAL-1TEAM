@@ -218,3 +218,46 @@ def test_delay_schedule_card_shows_the_current_dates(api, script):
     assert data["phase"] == "dates" and data["now_start"] and data["now_end"]
     assert data["now_start"] != data["start"]  # 지금 날짜와 바꾸자는 날이 따로
     assert card["say"].endswith("공사 날짜를 바꾸자고 했어요.")
+
+
+def test_offer_result_gives_the_card_note_to_the_model(api, script, monkeypatch):
+    """판정 에이전트 r8 S15: 카드 아래 안내(누르면 · 수락 전 무엇이 되는지)가 모델 값에 없어 다음 걸음에 못 썼어요."""
+    quiet(monkeypatch)
+    vendor(api, "r7note@mitjip.test", "결도배")
+    _, pid = customer(api)
+    req = {
+        "id": "p",
+        "name": "propose_visit_request",
+        "input": {"trade": "dobae", "vendor_refs": ["v1"]},
+    }
+    log = script(
+        [{"tool_calls": [RECOMMEND]}, {"tool_calls": [req]}, {"text": "카드를 만들었어요."}]
+    )
+    ev = ok(ask(api, pid, "결도배에 실측 요청해 줘"))
+    (a,) = proposed(ev)
+    got = tool_result(log, 2)
+    assert got["state"] == "new" and got["summary"]["note"] == a["summary"]["note"]
+    assert "48시간" in got["summary"]["note"]
+
+
+# ---- 필요 · 원인 · 하자 증상 물음은 금액 · 기간 낱말이 있어도 공정 전문가로(QA r8 d1) ----
+
+
+@pytest.mark.parametrize(
+    ("kind", "question", "want"),
+    [
+        ("price", "초배 꼭 해야 해요? 빼면 얼마예요?", "general"),
+        ("period", "이음매가 몇 달 뒤에 벌어지면 어떻게 해요?", "general"),
+        ("period", "겨울에 보일러 켜 둬야 해요?", "general"),
+        ("price", "곰팡이 생긴 벽은 비용이 더 드나요?", "general"),
+        ("price", "왜 이렇게 비싸요?", "price"),  # 이 공사 금액 물음은 v3 그대로
+        ("price", "표준견적서 초배 줄은 얼마예요?", "price"),
+        ("period", "공사 얼마나 기다려야 해요?", "period"),
+    ],
+)
+def test_need_and_symptom_questions_go_to_the_trade_experts(kind, question, want):
+    from app.assistant.tools import answer
+
+    assert answer.kind_of(kind, question) == want
+    if want == "general":
+        assert not answer.money_first(question)

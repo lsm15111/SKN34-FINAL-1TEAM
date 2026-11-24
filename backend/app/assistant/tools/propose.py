@@ -155,6 +155,10 @@ async def _offer(tc: ToolCtx, **kw) -> tuple[ToolOut, dict]:
         model["expires_at"] = cards.seoul_text(a.expires_at)  # 서울 시각 글(UTC를 그대로 읽지 않게)
         # 카드에 보이는 줄(직접 할 일 · 지역 · 날짜 · 금액): 모델이 카드와 다른 목록을 말하지 않게(QA r3 s6 B1)
         model["summary"]["rows"] = summary_rows(a.summary)
+        # 카드 아래 안내(누르면 · 수락 전 무엇이 되는지): 지시문이 이 말을 다음 걸음에 쓰라고 해요(판정 에이전트 r8 S15:
+        # 모델 값에 없어서 '누르기 전엔 업체에 답이 가지 않아요'를 못 말했어요)
+        if a.summary.note:
+            model["summary"]["note"] = a.summary.note
     # 같은 대상의 열린 카드를 새 카드로 바꿔 닫았다(QA r3 s4: 이미 닫힌 카드를 '거둘까요?'라고 물음)
     if got.closed:
         titles = [title_of(c) for c in got.closed]
@@ -1097,6 +1101,7 @@ def date_change_offer(
         Dated,
         count_workdays,
         free_range,
+        is_off,
         no_earlier_why,
         start_choices,
         start_choices_before,
@@ -1139,12 +1144,16 @@ def date_change_offer(
         t.deal.trade, [Dated(t.deal.trade, *base), *others], schedule_service.ORDER, off, weekend
     )
     floor = max(tomorrow, start_from) if start_from else tomorrow
+    # 며칠을 콕 집어 말했으면(delay_days) 후보는 그 하루만: '하루만 당겨'에 12.11 · 12.10 · 12.9를 같이 보내 업체가 12.9를
+    # 골랐어요(QA r8 d1, 닷새 당김). 말한 날(wish_from)부터 찾을 때는 가까운 순 후보 여러 개 그대로예요
+    many = 1 if delay_days else CHANGE_WISH_MAX
+    target: date | None = None
     # 앞당기기: 지금 시작일 전, 바라는 날에 가까운 일하는 날부터(계산 엔진)
     if direction == "earlier":
         target = base[0] - timedelta(days=delay_days) if delay_days else (wish_from or base[0])
         # 며칠 앞으로(delay_days)면 그 앞 일하는 날까지 거슬러 찾고, 말한 첫날(wish_from)보다 앞으로는 가지 않아요
         low = floor if delay_days else max(floor, target)
-        got = start_choices_before(target, n, CHANGE_WISH_MAX, base[0], low, off, weekend, end_by)
+        got = start_choices_before(target, n, many, base[0], low, off, weekend, end_by)
         if not got:
             why = no_earlier_why(base[0], low, tomorrow, start_from, None if delay_days else target)
             raise ToolError("no_earlier", no_earlier_text(why, base[0], low))
@@ -1154,7 +1163,8 @@ def date_change_offer(
         if direction == "later":  # 미루기: 지금 시작일 뒤부터
             first = max(first, base[0] + timedelta(days=1))
         first = max(first, start_from) if start_from else first
-        got = start_choices(first, n, CHANGE_WISH_MAX, {base[0]}, off, weekend, end_by)
+        target = base[0] + timedelta(days=delay_days) if delay_days else None
+        got = start_choices(first, n, many, {base[0]}, off, weekend, end_by)
     picked = [(a, b) for a, b in got if a <= today + CHANGE_AHEAD]
     if not picked:
         why = (
@@ -1178,10 +1188,20 @@ def date_change_offer(
         ],
         SummaryRow(label="까닭", value=actions.CHANGE_REASONS[reason]),
     ]
+    # 콕 집은 날이 쉬는 날이라 건너뛰었으면 그 까닭(QA r8 d1: 12.12 · 13 주말이라 '하루 당김'이 12.11(금)인 까닭을 못 말함)
+    skipped = (
+        f"{cards.md_long(target)}은 쉬는 날(주말 · 공휴일)이라 가까운 일하는 날 {cards.md_long(picked[0][0])}로 "
+        "잡았어요. "
+        if delay_days
+        and target is not None
+        and picked[0][0] != target
+        and is_off(target, off, weekend)
+        else ""
+    )
     summary = ActionSummary(
         title=f"{name} 공사 날짜 바꾸기 요청" if change else f"{name} 다른 공사 날짜 요청",
         rows=rows,
-        note="업체가 새 날짜를 올려 수락하기 전까지 지금 날짜는 그대로예요. "
+        note=f"{skipped}업체가 새 날짜를 올려 수락하기 전까지 지금 날짜는 그대로예요. "
         f"날짜 바꾸기 요청은 {t.requests_left}번 남았어요",
         approve_label="날짜 바꾸기 요청 보내기",
     )
