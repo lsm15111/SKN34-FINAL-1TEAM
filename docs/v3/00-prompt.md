@@ -31,7 +31,7 @@
 | 에이전트 설계 | 다중 에이전트 구조 · 공종별 지식을 설계해요. 여러 방식을 실험으로 비교하고 무료로 평가해요 | `agents.md`, ADR, `backend/app/agent` 코드, `evaluation/v3/*` 결과 |
 
 - 모든 문서는 `docs/v3/` 아래에 둬요.
-- 역할 정의는 `.claude/agents/v3-*.md`에 있어요. 다음 세션에서도 같은 역할로 부를 수 있어요.
+- 역할 정의는 [`docs/archive/claude-agents-v3/`](../archive/claude-agents-v3/)의 `v3-*.md`에 있어요. 2026-11-25에 `.claude/agents/`에서 옮겨 지금은 하위 에이전트로 불리지 않아요.
 
 ## 3. 일하는 규칙
 
