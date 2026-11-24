@@ -199,7 +199,10 @@ class VendorPortfolio(Base):
     vendor_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("vendors.user_id", ondelete="CASCADE"), index=True
     )
-    file_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("files.id"), unique=True)
+    # 파일이 지워지면 사진 줄도 지운다(0055): 탈퇴 때 파일(주인 CASCADE)이 업체 줄보다 먼저 지워져도 막히지 않게
+    file_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("files.id", ondelete="CASCADE"), unique=True
+    )
     title: Mapped[str] = mapped_column(String(60))
     sort: Mapped[int] = mapped_column(SmallInteger, default=0)
     space: Mapped[str | None] = mapped_column(String(20))  # 거실 · 안방

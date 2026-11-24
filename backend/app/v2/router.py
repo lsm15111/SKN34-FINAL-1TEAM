@@ -113,8 +113,9 @@ async def v2_quick(body: v2.V2QuickIn, _: User = Depends(current_user)) -> v2.V2
     return service.quick(body)
 
 
+# 유료 LLM 길이라 고객만(가이드는 로그인한 고객만, AGENTS 4장). 업체 신청만 한 계정이 쓰지 못하게(점검 R6 B3)
 @router.post("/ask", response_model=v2.V2AskOut, summary="v2 AI 상담 한 턴 시작")
-async def v2_ask(body: v2.V2AskIn, user: User = Depends(current_user)) -> v2.V2AskOut:
+async def v2_ask(body: v2.V2AskIn, user: User = Depends(require_role("customer"))) -> v2.V2AskOut:
     return await ask_chat.start(user.id, body, today_seoul())
 
 
@@ -122,7 +123,7 @@ async def v2_ask(body: v2.V2AskIn, user: User = Depends(current_user)) -> v2.V2A
     "/ask/{turn_id}", response_model=v2.V2AskOut, summary="v2 AI 상담: 화면 도구 결과 보내기"
 )
 async def v2_ask_resume(
-    turn_id: str, body: v2.V2AskResumeIn, user: User = Depends(current_user)
+    turn_id: str, body: v2.V2AskResumeIn, user: User = Depends(require_role("customer"))
 ) -> v2.V2AskOut:
     return await ask_chat.resume(user.id, turn_id, body)
 

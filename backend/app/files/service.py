@@ -19,7 +19,7 @@ from urllib.parse import quote
 from botocore.exceptions import BotoCoreError, ClientError
 from fastapi import UploadFile
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import and_, column, delete, exists, func, select, table, text, true
+from sqlalchemy import and_, column, delete, exists, func, select, table, text, true, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
@@ -165,8 +165,8 @@ async def prepare(kind: str, upload: UploadFile) -> Prepared:
     name = clean_filename(upload.filename)
     if ctype in IMAGES:
         try:
-            # 그림 처리는 CPU를 쓰므로 요청 처리 흐름을 막지 않게 따로 돌린다
-            data, out_type = await run_in_threadpool(images.clean, data, ctype)
+            # 그림 처리는 CPU를 쓰므로 요청 처리 흐름을 막지 않게 따로 돌린다(한 장씩, images.clean)
+            data, out_type = await images.clean(data, ctype)
         except images.BadImage as exc:
             raise AppError(
                 422, "file_broken", "사진을 열 수 없어요. 다른 파일로 올려 주세요."
@@ -212,12 +212,15 @@ async def drop(s: AsyncSession, owner_id: uuid.UUID, file_id: uuid.UUID) -> str 
     return row.storage_key
 
 
-async def remove_stored(key: str) -> None:
-    """commit 뒤에 저장소의 내용을 지운다. 못 지우면 기록만 남긴다(DB에는 이미 없다)."""
+async def remove_stored(key: str) -> bool:
+    """commit 뒤에 저장소의 내용을 지운다. 못 지우면 기록만 남기고 False(DB에는 이미 없다).
+    행이 없는 저장소 내용을 다시 지우는 정리 일은 없다(sweep_unattached는 DB 행 기준): 남은 수는 로그로 본다."""
     try:
         await run_in_threadpool(storage.remove, key)
-    except (OSError, BotoCoreError, ClientError):  # 남은 내용은 정리 작업이 지운다
+    except (OSError, BotoCoreError, ClientError):
         log.error("지운 파일의 내용을 저장소에서 지우지 못했어요")
+        return False
+    return True
 
 
 UPLOADS_PER_HOUR = 120
@@ -336,6 +339,23 @@ async def storage_keys_of(s: AsyncSession, owner_id: uuid.UUID) -> list[str]:
     return list(
         (await s.execute(select(File.storage_key).where(File.owner_id == owner_id))).scalars()
     )
+
+
+async def hand_over(s: AsyncSession, owner_id: uuid.UUID, to: dict[uuid.UUID, uuid.UUID]) -> int:
+    """내 파일을 다른 회원 몫으로 넘긴다(파일 id → 새 주인). 탈퇴하는 업체의 확정 견적서를 그 공사 고객 쪽에 남길 때
+    쓴다: 회원 행을 지워도 파일(주인 CASCADE)이 남고, 새 주인이 탈퇴하면 함께 지워진다. commit은 부르는 쪽.
+    돌려주는 값: 넘긴 수."""
+    moved = 0
+    for new_owner in set(to.values()):
+        ids = [f for f, o in to.items() if o == new_owner]
+        res = await s.execute(
+            update(File)
+            .where(File.id.in_(ids), File.owner_id == owner_id)
+            .values(owner_id=new_owner)
+            .execution_options(synchronize_session=False)
+        )
+        moved += res.rowcount
+    return moved
 
 
 # ---- 붙이지 않은 파일 정리 (sec M5) ----

@@ -2,7 +2,7 @@
 
 - 상태를 바꾸는 service가 **같은 트랜잭션**에 add()를 부른다(아웃박스). 이미 끝난 기한은 cancel().
 - worker(조립 층)가 1분마다 claim()으로 가져가 kind별 처리 함수를 부르고 finish() · fail()로 끝낸다.
-  이 패키지는 흐름 기능(visit · schedule)을 import하지 않는다.
+  시간이 모자라 시작하지 못한 일은 release()로 돌려놓는다. 이 패키지는 흐름 기능(visit · schedule)을 import하지 않는다.
 - 처리 함수는 멱등이어야 한다: '아직 그 상태 · 기한이 지났을 때만' 조건부 UPDATE, 알림은 dedup_key.
 - 처리 함수는 bool 또는 Outcome을 돌려준다. Outcome이면 worker가 commit 뒤에 화면 신호(state) ·
   안 읽은 알림 수(notif)를 보낸다(이 패키지는 realtime · notify를 부르지 않는다).
@@ -63,6 +63,7 @@ RETRY = (
     timedelta(minutes=5),
     timedelta(minutes=30),
 )  # 실패하면 다시 해 볼 때
+STUCK = "Stuck"  # 멈춘 일을 다시 거둘 때 last_error (지난 처리가 끝나지 못함)
 
 
 def key(kind: str, ref_id: uuid.UUID | None, run_at: datetime) -> str:
@@ -152,6 +153,8 @@ async def claim(
 ) -> list[Job]:
     """기한이 된 일(pending · run_at ≤ now)과 멈춘 일(running · locked_until < now)을 가져가 running으로.
     FOR UPDATE SKIP LOCKED라 worker 둘이 같은 행을 가져가지 않는다. kinds를 주면 그 kind만.
+    멈춘 일은 지난 처리가 끝나지 못한 것(worker 시간 제한 · 프로세스 멈춤)이라 한 번 실패로 센다(attempts + 1,
+    last_error Stuck). ATTEMPTS_MAX에 닿으면 failed로 끝내고 돌려주지 않는다(끝없이 다시 거두지 않게).
     commit은 부르는 쪽(곧바로)."""
     due = or_(
         and_(Job.status == "pending", Job.run_at <= now),
@@ -166,12 +169,33 @@ async def claim(
         .with_for_update(skip_locked=True)
         .execution_options(populate_existing=True)
     )
-    rows = list((await s.execute(q)).scalars())
-    for j in rows:
+    rows = []
+    for j in (await s.execute(q)).scalars():
+        if j.status == "running":
+            j.attempts += 1
+            j.last_error = STUCK
+            if j.attempts >= ATTEMPTS_MAX:
+                j.status, j.locked_until, j.done_at = "failed", None, now
+                continue
         j.status = "running"
         j.locked_until = now + LOCK
+        rows.append(j)
     await s.flush()
     return rows
+
+
+async def release(s: AsyncSession, job_ids: list[uuid.UUID]) -> int:
+    """거두었지만 처리를 시작하지 않은 일을 기다림(pending)으로 돌려놓는다(센 횟수 · 실행 시각 그대로).
+    sweep이 시간 제한 안에 끝낼 수 없을 때 쓴다. 돌려주는 값: 돌려놓은 수. commit은 부르는 쪽."""
+    if not job_ids:
+        return 0
+    res = await s.execute(
+        update(Job)
+        .where(Job.id.in_(job_ids), Job.status == "running")
+        .values(status="pending", locked_until=None)
+        .execution_options(synchronize_session=False)
+    )
+    return res.rowcount
 
 
 async def finish(

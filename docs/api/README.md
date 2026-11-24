@@ -145,7 +145,7 @@ FastAPI 원본 경로입니다. 동일 URL에서 메서드가 다르면 별도 A
 | POST | `/auth/logout` | 기존 세션 폐기·쿠키 삭제(없어도 204) | 공개 | `auth.logout` |
 | GET | `/me` | 로그인 사용자·권한·업체 승인 상태 | 로그인 | `auth.read_me` |
 | PATCH | `/me` | 본인 정보 수정 | 로그인 | `auth.patch_me` |
-| POST | `/me/withdraw` | 비밀번호 재확인 후 탈퇴·쿠키 삭제(관리자 직접 탈퇴는 403) | 로그인·관리자 제외 | `account.withdraw` |
+| POST | `/me/withdraw` | 비밀번호 재확인 후 탈퇴·쿠키 삭제(관리자 직접 탈퇴는 403). 업체가 탈퇴해도 고객이 확정한 견적서 파일은 그 고객 쪽에 남고, 저장소에서 못 지운 파일은 수만 기록하고 204 | 로그인·관리자 제외 | `account.withdraw` |
 
 ## 파일·알림 (6개)
 
@@ -351,7 +351,7 @@ FastAPI 원본 경로입니다. 동일 URL에서 메서드가 다르면 별도 A
 
 ## v2 계산·AI 상담·저장 (22개)
 
-코드: [v2 라우터](../../backend/app/v2/router.py). `/v2/ask`와 계산 API는 **로그인 필요(역할 제한 없음)**이고, `/v2/cases`는 **고객 역할만** 가능하다. v2 화면은 `wallpaper`(도배)만 노출하지만, 코드의 계산 입력 enum이 모든 화면 노출 기능을 뜻하지는 않는다.
+코드: [v2 라우터](../../backend/app/v2/router.py). 계산 API는 **로그인 필요(역할 제한 없음)**이고, 유료 LLM 길인 `/v2/ask` · `/v2/ask/{turn_id}`와 `/v2/cases`는 **고객 역할만** 가능하다(업체 · 관리자 403). v2 화면은 `wallpaper`(도배)만 노출하지만, 코드의 계산 입력 enum이 모든 화면 노출 기능을 뜻하지는 않는다.
 
 | 메서드 | 원본 경로 | 기능 | 인증·역할 | 코드(함수) |
 | --- | --- | --- | --- | --- |
@@ -368,8 +368,8 @@ FastAPI 원본 경로입니다. 동일 URL에서 메서드가 다르면 별도 A
 | POST | `/v2/calc7` | 셀프 도배·몰딩·페인트 계산기 | 로그인 | `v2.v2_calc7` |
 | POST | `/v2/extras-range` | 선택한 추가 항목 시장 범위 | 로그인 | `v2.v2_extras` |
 | POST | `/v2/quick-budget` | 빠른 예산 범위·추가 질문 계산 | 로그인 | `v2.v2_quick` |
-| POST | `/v2/ask` | AI 상담 한 턴 시작(도구·완료 JSON) | 로그인 | `v2.v2_ask` |
-| POST | `/v2/ask/{turn_id}` | 화면 도구 결과 제출·턴 재개 | 로그인·본인 턴 | `v2.v2_ask_resume` |
+| POST | `/v2/ask` | AI 상담 한 턴 시작(도구·완료 JSON) | 고객 | `v2.v2_ask` |
+| POST | `/v2/ask/{turn_id}` | 화면 도구 결과 제출·턴 재개 | 고객·본인 턴 | `v2.v2_ask_resume` |
 | GET | `/v2/ask/health` | v2 AI 켜짐 상태(`ok`, `live`) | 로그인 | `v2.v2_ask_health` |
 | GET | `/v2/cases` | 내 v2 인테리어 목록 | 고객 | `v2.cases` |
 | POST | `/v2/cases` | v2 인테리어 한 건 생성(201) | 고객 | `v2.case_create` |

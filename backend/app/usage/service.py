@@ -3,9 +3,10 @@
 - allow(): 유료 호출 전에 사용자 하루 · 새 계정(한 계정 하루 · 새 계정 합 하루) · 서비스 하루 · 전체 쓴 돈을
   상한과 비교한다. 90% 이상이면 OverCap(llm이 OverBudget으로 바꿔 부르는 쪽이 무료 모드로 간다),
   80% 이상이면 경고 로그를 범위마다 하루 한 번 남긴다.
-- 새 계정: 가입(users.created_at)한 지 llm_new_user_days일 안인 고객 계정. 계정 여러 개로 서비스 하루 상한을 다
-  쓰지 못하게(보안 QA M4) 사용자 하루에 더해 한 계정 하루 · 새 계정 합 하루를 본다. 새 계정 합은 부른 때 새 계정이던
-  호출만 센다. 업체 · 관리자(EXEMPT_ROLES)와 사용자를 모르는 일(worker 등)은 새 계정 몫을 보지 않는다.
+- 새 계정: 가입(users.created_at)한 지 llm_new_user_days일 안인 고객 · 승인 전 업체 계정. 계정 여러 개로 서비스
+  하루 상한을 다 쓰지 못하게(보안 QA M4) 사용자 하루에 더해 한 계정 하루 · 새 계정 합 하루를 본다. 새 계정 합은 부른 때
+  새 계정이던 호출(장부 줄 new_account)만 센다: 그 뒤 탈퇴해 사용자 칸이 비어도 그날 쓴 돈은 남는다.
+  관리자 · 승인된 업체(exempt)와 사용자를 모르는 일(worker 등)은 새 계정 몫을 보지 않는다.
 - record(): 호출 뒤 짧은 세션으로 한 줄을 넣고 commit한다(글 없음). 그다음 Redis 정수 카운터를 올린다.
 - 셈: Redis 정수 카운터(마이크로달러)가 먼저다. 키가 없으면 llm_usage 합계로 채우고(SYNC_S마다 다시 맞춤),
   Redis가 안 되면 합계로 바로 센다. 가입 시각 · 역할도 Redis에 하루 두고, 없으면 users에서 읽는다.
@@ -23,7 +24,7 @@ from datetime import datetime, time, timedelta
 from typing import Any, Literal
 
 from redis.exceptions import RedisError
-from sqlalchemy import func, select
+from sqlalchemy import column, func, select, table
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 
@@ -41,9 +42,9 @@ WARN, STOP = 0.8, 0.9
 # 카운터를 llm_usage 합계로 다시 맞추는 주기(초). Redis가 잠깐 안 됐을 때 생긴 어긋남도 이 안에서 풀린다
 SYNC_S = 600
 FLAG_S = 86_400  # 경고 · 막음 로그는 범위마다 하루 한 번. 가입 시각 · 역할도 이만큼 Redis에 둔다
-# 새 계정 몫을 보지 않는 역할: 업체는 사업자등록증 + 관리자 승인, 관리자는 CLI로만 만들어 계정을 찍어 낼 수 없다
-EXEMPT_ROLES = ("vendor", "admin")
-_NOT_NEW = "-"  # 가입 시각 캐시에서 '새 계정 몫을 보지 않음'(EXEMPT_ROLES)
+# 업체 승인 상태(읽기 조인). 업체 기능은 위층이라 모델을 import하지 않고 읽을 칸만 적는다
+_VENDORS = table("vendors", column("user_id"), column("status"))
+_NOT_NEW = "-"  # 가입 시각 캐시에서 '새 계정 몫을 보지 않음'(exempt)
 # 키가 있을 때만 올린다. 없으면 다음 allow가 DB 합계로 채운다(이번 호출은 이미 DB에 있다)
 _INCR = (
     "if redis.call('exists', KEYS[1]) == 1 then"
@@ -71,7 +72,7 @@ class Bucket:
     cap: int  # 마이크로달러
     since: datetime | None  # 이때부터 센다(None이면 처음부터)
     user_id: uuid.UUID | None = None
-    # 있으면 부른 때 가입한 지 이 일수 안이던 계정의 호출만 센다(새 계정 합)
+    # 있으면 새 계정 합: 부른 때 가입한 지 이 일수 안이던 계정의 호출(장부 줄 new_account)만 센다
     new_days: int | None = None
 
 
@@ -86,7 +87,7 @@ def _tag() -> str:
 
 
 def is_new(joined: datetime | None, now: datetime) -> bool:
-    """가입한 지 llm_new_user_days일 안인 계정인지. 가입 시각이 없으면(사용자 없음 · 업체 · 관리자) 아니다."""
+    """가입한 지 llm_new_user_days일 안인 계정인지. 가입 시각이 없으면(사용자 없음 · 관리자 · 승인된 업체) 아니다."""
     days = settings.llm_new_user_days
     return joined is not None and days > 0 and joined > now - timedelta(days=days)
 
@@ -96,7 +97,7 @@ def buckets(
 ) -> list[Bucket]:
     """셀 범위: 사용자 하루(사용자를 알 때만) · 새 계정이면 한 계정 하루와 새 계정 합 하루 · 서비스 하루 · 전체.
 
-    joined는 새 계정 몫을 볼 가입 시각(joined_at, 업체 · 관리자면 None)이다.
+    joined는 새 계정 몫을 볼 가입 시각(joined_at, 관리자 · 승인된 업체면 None)이다.
     """
     now = now or clock.now_utc()
     day = now.astimezone(clock.SEOUL).date()
@@ -118,12 +119,18 @@ def buckets(
     return out
 
 
+def exempt(role: str, vendor_status: str | None) -> bool:
+    """새 계정 몫을 보지 않는 계정: 관리자(CLI로만 만듦) · 승인된 업체(사업자등록증 + 관리자 승인)는 계정을 찍어 낼 수
+    없다. 승인 전(심사 중 · 보완 요청 · 거절) 업체는 가입 신청만으로 생겨 고객처럼 센다."""
+    return role == "admin" or (role == "vendor" and vendor_status == "approved")
+
+
 async def joined_at(user_id: uuid.UUID | None) -> datetime | None:
-    """새 계정 몫을 볼 가입 시각(users.created_at). 업체 · 관리자(EXEMPT_ROLES)이거나 사용자 줄이 없으면
+    """새 계정 몫을 볼 가입 시각(users.created_at). 관리자 · 승인된 업체(exempt)이거나 사용자 줄이 없으면
     (그사이 탈퇴) None이라 새 계정 몫을 보지 않는다. 새 계정 몫을 끈 때(일수 0)는 읽지 않는다.
 
-    가입 시각 · 역할은 Redis에 하루 두고, 없거나 Redis가 안 되면 users에서 읽는다.
-    DB 오류는 그대로 낸다(allow를 부른 쪽이 닫힘 쪽으로 막는다).
+    가입 시각 · 역할은 Redis에 하루 두고, 없거나 Redis가 안 되면 users에서 읽는다(심사 중에 둔 값은 승인 뒤에도
+    하루 동안 새 계정으로 센다). DB 오류는 그대로 낸다(allow를 부른 쪽이 닫힘 쪽으로 막는다).
     """
     if user_id is None or settings.llm_new_user_days <= 0:
         return None
@@ -136,12 +143,16 @@ async def joined_at(user_id: uuid.UUID | None) -> datetime | None:
         with contextlib.suppress(ValueError):  # 모르는 값이면 users에서 다시 읽는다
             text = got.decode() if isinstance(got, bytes) else got
             return None if text == _NOT_NEW else datetime.fromisoformat(text)
-    q = select(User.created_at, User.role).where(User.id == user_id)
+    q = (
+        select(User.created_at, User.role, _VENDORS.c.status)
+        .outerjoin(_VENDORS, _VENDORS.c.user_id == User.id)
+        .where(User.id == user_id)
+    )
     async with SessionLocal() as s:
         row = (await s.execute(q)).first()
     if row is None:
         return None
-    joined = None if row.role in EXEMPT_ROLES else row.created_at
+    joined = None if exempt(row.role, row.status) else row.created_at
     with contextlib.suppress(*REDIS_ERRORS):
         await queue.redis.set(key, joined.isoformat() if joined else _NOT_NEW, ex=FLAG_S)
     return joined
@@ -152,11 +163,8 @@ async def db_spent(b: Bucket) -> int:
     q = select(func.coalesce(func.sum(LlmUsage.cost_micros), 0))
     if b.user_id is not None:
         q = q.where(LlmUsage.user_id == b.user_id)
-    if b.new_days is not None:  # 새 계정 합: 부른 때 가입한 지 new_days일 안이던 고객 계정의 호출만
-        q = q.join_from(LlmUsage, User, User.id == LlmUsage.user_id).where(
-            User.role.not_in(EXEMPT_ROLES),
-            User.created_at > LlmUsage.created_at - timedelta(days=b.new_days),
-        )
+    if b.new_days is not None:  # 새 계정 합: 부른 때 새 계정이던 호출만(탈퇴해도 남음)
+        q = q.where(LlmUsage.new_account.is_(True))
     if b.since is not None:
         q = q.where(LlmUsage.created_at >= b.since)
     async with SessionLocal() as s:
@@ -214,12 +222,16 @@ async def record(
     error: str | None = None,
     latency_ms: int = 0,
 ) -> int:
-    """호출 한 번을 장부에 남기고 비용(마이크로달러)을 돌려준다.
+    """호출 한 번을 장부에 남기고 비용(마이크로달러)을 돌려준다. 부른 때 새 계정이었으면 줄에 표시한다(new_account).
 
     장부 · 카운터가 안 돼도 호출 결과는 살린다(로그만). purpose가 표에 없으면 ValueError(코드 실수).
     """
     if purpose not in PURPOSES:
         raise ValueError("모르는 purpose")
+    now, joined = clock.now_utc(), None
+    # 가입 시각을 못 읽으면(DB 오류) 새 계정 표시 없이 남긴다(서비스 하루 · 전체 셈에는 그대로 든다)
+    with contextlib.suppress(*DB_ERRORS):
+        joined = await joined_at(user_id)
     model = (model or "unknown").strip()[:60] or "unknown"
     t = [max(int(x or 0), 0) for x in (input_tokens, cache_read, cache_write_5m, cache_write_1h)]
     out, searches = max(int(output_tokens or 0), 0), max(int(web_searches or 0), 0)
@@ -247,17 +259,14 @@ async def record(
         "ok": error is None,
         "error": error,
         "latency_ms": max(int(latency_ms), 0),
+        "new_account": is_new(joined, now),
     }
     try:
         await _insert(user_id, values)
     except DB_ERRORS:
         log.warning("LLM 사용 기록을 남기지 못했어요 (%s)", purpose)
     if cost:
-        joined = None
-        # 가입 시각을 못 읽으면 새 계정 카운터만 이번 비용이 빠진다(다음 맞춤에서 장부 합계로 풀린다)
-        with contextlib.suppress(*DB_ERRORS):
-            joined = await joined_at(user_id)
-        for b in buckets(user_id, joined=joined):
+        for b in buckets(user_id, now, joined):
             with contextlib.suppress(*REDIS_ERRORS):
                 await queue.redis.eval(_INCR, 1, b.key, cost)
     return cost
