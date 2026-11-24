@@ -122,9 +122,11 @@ def test_customer_rules_follow_the_r6_list():
 
 
 def test_vendor_rules_point_to_real_screen_paths():
-    """고침 6차(QA r6 c4 V15 · V16 · V19 · V21): 못 하는 부탁도 대신 되는 길로. 수락한 날짜는 업체 화면에서 못 바꿔요."""
+    """고침 6차(QA r6 c4 V15 · V16 · V19 · V21): 못 하는 부탁도 대신 되는 길로. 수락한 날짜는 업체 화면
+    [날짜 바꾸기]로 보내요(QA r7 c4 V18 · V26: 화면에 생긴 길을 '못 바꿔요'라고 함)."""
     r = rules("vendor_v4")
     assert "대신 되는 길(화면 단추 · 채팅 · 카드) 하나로 이어" in r
     assert "[추가 금액 올리기]" in r and "[공사 끝 알리기]" in r and "'리뷰 · 답글'" in r
-    assert "업체 화면에서 바로 바꿀 수 없어요" in r and "propose_dates" in r
+    assert "[날짜 바꾸기]에서 새 날짜와 까닭을 보내 주세요" in r and "propose_dates" in r
+    assert "바로 바꿀 수 없어요" not in r
     assert "알림은 밤에도 바로 가고" in r and "밤 9시~아침 9시 알림은 아침에 가" not in r
