@@ -486,6 +486,35 @@ def summary_ground(summary: dict) -> str:
     return "\n".join(x for x in lines if x.strip())
 
 
+OPEN_FACT = "승인 기다리는 카드: "  # 턴 사실의 열린 승인 카드 줄(service가 만든다)
+
+
+def made_name(action: dict) -> str | None:
+    """카드 단추로 이 턴에 만든 승인 카드(ActionOut 값) → 턴 사실 이름: 제목 + 끝에 단추 이름(service.button_of와 같은
+    꼴, 제목에 이미 있으면 붙이지 않는다)."""
+    s = action.get("summary") or {}
+    title = str(s.get("title") or "").strip()
+    label = str(s.get("approve_label") or "").strip()
+    if not title:
+        return None
+    return f"{title} [{label}]" if label and label not in title else title
+
+
+def with_open(facts: str, names: Sequence[str]) -> str:
+    """턴 사실 + 카드 단추로 이 턴에 만든 승인 카드: '승인 기다리는 카드' 줄 끝에 잇고, 줄이 없으면 새 줄. 턴 사실은 단추를
+    누르기 전에 만들어 이 카드가 빠져 있어요. '카드를 확인하고 눌러 주세요' 대신 단추 이름을 말할 재료예요(QA r9 c2 T12 ·
+    c3 T2, 코드가 문장에 단추 이름을 넣던 것은 지시문 예시로 옮김, docs/v4/15-sentence-rules.md)."""
+    if not names:
+        return facts
+    add = " / ".join(names)
+    lines = facts.split("\n") if facts else []
+    for i, line in enumerate(lines):
+        if line.startswith(OPEN_FACT):
+            lines[i] = f"{line} / {add}"
+            return "\n".join(lines)
+    return "\n".join([*lines, OPEN_FACT + add])
+
+
 @dataclass
 class _Piece:
     """검사를 지난 문장 하나: 앞 띄움 · 글 · 카드 말 · 목록 줄에 든 문장인지(item) · 목록 줄을 여는지(row)."""
@@ -590,8 +619,7 @@ class SentenceGate:
     한 문장만 남겨 뒀다가, 턴 끝에 답에 다른 다음 할 일 · 묻는 말이 없고 이 턴에 만든 · 보인 카드 단추도 없으면 끝에
     살린다(QA r6 c3 t19: [채팅] 안내가 '지난 턴과 같은 안내'로 빠져 상태 문장만 남음).
     본문이 빠짐: 검사 · 묶음으로 답의 본문이 빠져 보낸 글이 없거나 가리키는 말뿐이면 턴 끝(mend)에 정직한 한 줄을 보낸다.
-    고쳐 보냄: '표준견적'은 화면 말 '표준견적서'로(policy.term_fix), 단추 이름 없이 카드를 누르라는 맞는 말은 그 승인
-    카드 단추 이름을 넣어(_button, 단추가 하나로 정해질 때만) 보낸다(QA r9)."""
+    단추 이름 · 화면 말 · 말투는 고치지 않는다(지시문 예시가 맡음, docs/v4/15-sentence-rules.md)."""
 
     def __init__(
         self,
@@ -620,8 +648,6 @@ class SentenceGate:
         # 하면 이 턴 기준으로는 틀려도 '아직 만들지 않았어요'로 바꾸지 않고 뺀다(QA r7 c1 9턴: 방금 승인한 카드에 반대 말)
         self.before: set[str] = set()
         self.buttons: set[str] = set()  # 이 턴에 보인 화면 카드 단추가 만드는 행동 종류
-        # 승인 카드 종류 → 단추 이름(턴 앞 열린 카드 · 이 턴에 만든 카드): 단추 이름 없이 카드를 누르라는 말에 넣어요
-        self.labels: dict[str, set[str]] = {}
         self._held: list[_Piece] = []  # 카드 말이 맞게 될 때까지 붙잡아 둔 문장(뒤 문장도 순서대로)
         self._fixed = False  # 정직한 한 줄을 이미 썼다
         self.said = [s for s in said if s and s.strip()]  # 지난 비서 턴에 보낸 문장
@@ -757,7 +783,6 @@ class SentenceGate:
         if fixed != raw:
             self.dropped.append("한자 지움")
             raw = fixed
-        raw = policy.term_fix(raw)  # 화면 말('표준견적은' → '표준견적서는')
         # 숫자: 근거 값 그대로에 더해 어림 · 파생 · 날짜를 읽는다(guard.loose, 08-rules 숫자 절). 통과한 값만 허용에 더해
         # 아래 검사(한글 금액 · 쓰면 안 되는 표현 · 한 일처럼 · 주소 · 누출)를 같이 지나게 한다
         g = self._grounds()
@@ -960,29 +985,9 @@ class SentenceGate:
             for x in self.said
         )
 
-    def label(self, kind: str, name: str | None) -> None:
-        """승인 카드 단추 이름을 더한다(열린 카드 · 이 턴에 만든 카드)."""
-        if name and name.strip():
-            self.labels.setdefault(kind, set()).add(name.strip())
-
-    def _button(self, p: _Piece) -> _Piece:
-        """단추 이름 없이 카드를 누르라는 맞는 말에 그 승인 카드 단추 이름을 넣는다(QA r9 c1 T5 · T13 · c2 T12 · T23~T25
-        '카드를 확인하고 눌러 주세요'). 말이 가리키는 종류(없으면 이 턴에 만든 카드, 그것도 없고 이 턴에 보인 화면 카드
-        단추가 없으면 열린 카드)의 단추 이름이 하나일 때만 넣어요. 둘 이상이거나 모르면 그대로예요."""
-        if p.claim is None or p.claim[0] != "press" or "카드" not in p.text:
-            return p
-        kinds = p.claim[1]
-        if not kinds:
-            kinds = self.made if self.made else set() if self.buttons else set(self.labels)
-        names = {x for k in kinds for x in self.labels.get(k, ())}
-        if len(names) != 1:
-            return p
-        return replace(p, text=policy.with_button(p.text, next(iter(names))))
-
     async def _send(self, p: _Piece) -> None:
         """검사를 지난 문장 하나를 보낸다. 이 턴에 보낸 문장과 같으면 빼고, 첫 문장이 아닌 지난 턴 안내 되풀이도 뺀다
         (묶음 안 문장은 목록이 비지 않게 둔다)."""
-        p = self._button(p)
         if any(policy.same_line(p.text, x) for x in self.sent):
             self.dropped.append("같은 문장")
             self.cut += 1
@@ -1390,6 +1395,8 @@ class _Turn:
         # 카드 단추 고르기(choices)가 이 턴에 보낸 카드 · 승인 카드: 숫자 근거 · 누를 단추 · 길게 둘 카드
         if note:
             self.gate.allow(note)
+        # 그중 새로 만든 승인 카드의 턴 사실 이름(with_open: 모델이 단추 이름을 말할 재료)
+        self.made_names: list[str] = []
         for name, data in seen:
             if name == "card":
                 self.gate.allow(card_ground(data.get("data") or {}))
@@ -1399,9 +1406,8 @@ class _Turn:
                 self.gate.long_ok |= data.get("kind") in policy.LONG_CARDS
             elif name == "action" and data.get("status") == "proposed":
                 self.gate.allow(summary_ground(data.get("summary") or {}))
-                self.gate.label(
-                    str(data.get("kind")), (data.get("summary") or {}).get("approve_label")
-                )
+                if str(data.get("action_id")) in res.made_ids and (got := made_name(data)):
+                    self.made_names.append(got)
         # 인사 · 고마움만 한 턴: 도구를 부르지 못하게(도구 정의는 그대로 보내 캐시를 지킨다)
         self.chat_only = policy.small_talk(ctx.text) and not ctx.choice and not ctx.stale
         # 요청 점검(asks.py): 고객 비서에서 고객이 직접 쓴 말만(카드 단추가 만든 말 · 인사는 아님)
@@ -1430,7 +1436,7 @@ class _Turn:
         )
 
     def _messages(self) -> list[dict]:
-        facts = self.ctx.facts
+        facts = with_open(self.ctx.facts, self.made_names)
         if want := asks_mod.line(self.asks):  # 요청 점검: 이번 부탁(코드가 고객 말에서 뽑음)
             facts = f"{facts}\n{want}" if facts else want
         return [
@@ -1485,7 +1491,6 @@ class _Turn:
         live = [a for a in rows if a.status == "proposed" and a.expires_at > self.ctx.now]
         for a in live:
             self.gate.names |= card_vendors(a.summary)
-            self.gate.label(a.kind, (a.summary or {}).get("approve_label"))
         since = self.ctx.now - timedelta(hours=BEFORE_HOURS)
         self.gate.before = {a.kind for a in rows if a not in live and a.created_at > since}
         return {a.kind for a in live}
@@ -1698,7 +1703,6 @@ class _Turn:
             self.gate.allow(card_ground(c.data))
         for a in out.actions:
             self.gate.allow(summary_ground(a.summary.model_dump(mode="json")))
-            self.gate.label(a.kind, a.summary.approve_label)
         for a in out.closed:
             await self.emit("action", a.model_dump(mode="json"))
         for c in shown:

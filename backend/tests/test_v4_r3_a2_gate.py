@@ -5,7 +5,8 @@
   묶음째 보내거나 뺀다(답 자체가 목록이면 목록 줄 여덟까지) · 넘친 문장은 마지막 묻는 말 하나만 끝에
 - 앞 문장이 빠져 첫 문장이 되면 첫머리 접속 말을 뗀다 · 카드 말은 이 턴에 한 일 · 눌러 달라는 말만(앞으로 하겠다는 말 ·
   소개는 걸지 않음) · 외국어 속말은 로마자 비율로 · 한자 한 글자는 지우고 낱말이면 뺀다 · 지난 세 턴 안내 되풀이는 뺀다
-- 숫자: 이 턴에 만든 승인 카드 요약 · 보인 카드 값은 근거 · 합 · 차는 같은 금액 기준끼리만 · '도구가 실패해서'는 안쪽 말
+- 숫자: 이 턴에 만든 승인 카드 요약 · 보인 카드 값은 근거 · 합 · 차는 같은 금액 기준끼리만 · '도구가 실패해서'는 코드가
+  빼지 않고 지시문이 맡음(P4 11-25, 옛 기대는 안쪽 말로 뺌)
 DB 없는 문장 검사 + Claude 대본 턴(유료 호출 0회)."""
 
 import asyncio
@@ -441,21 +442,30 @@ def test_basis_of_json_keys_and_labels():
     assert 2750000 - 220000 not in g.exact and 2500000 + 250000 in g.exact | g.nums
 
 
-# ---- 할 일 6: 안쪽 말 ----
+# ---- 할 일 6: 도구 · 서버 실패 말은 코드가 빼지 않고 지시문 규칙 · 예시로(QA r3 c4c #34, P4 11-25) ----
 
 
 @pytest.mark.parametrize(
-    ("text", "why"),
+    "text",
     [
-        ("자료를 더 확인하려 했는데 도구가 실패해서, 아직 알 수 없어요.", "안쪽 말"),
-        ("도구 오류로 결과를 못 봤어요.", "안쪽 말"),
-        ("서버 오류가 났어요.", "안쪽 말"),
-        ("준비할 도구는 커터칼과 헤라예요.", None),
-        ("도구를 챙겨 두세요.", None),
+        "자료를 더 확인하려 했는데 도구가 실패해서, 아직 알 수 없어요.",
+        "도구 오류로 결과를 못 봤어요.",
+        "서버 오류가 났어요.",
+        "준비할 도구는 커터칼과 헤라예요.",
+        "도구를 챙겨 두세요.",
     ],
 )
-def test_tool_failure_is_inside_talk(text, why):
-    assert policy.inside(text) == why
+def test_tool_failure_words_are_left_to_the_prompt(text):
+    """'도구가 실패해서' 같은 말은 안쪽 말 거름(INNER_FAIL)이 빼지 않고 그대로 보내요. 지시문 규칙('도구가 실패해서'처럼
+    안쪽 사정을 말하지 말고)과 예시 6(시세를 못 읽었을 때 '지금 확인하지 못했어요')이 맡아요."""
+    from app.assistant import prompts
+
+    assert policy.inside(text) is None
+    g, _ = gate()
+    assert run(g, text) == text
+    assert "'도구가 실패해서'처럼 안쪽 사정을 말하지 말고" in prompts.rules("customer")
+    examples = prompts._model_text("customer_v4").split("## 좋은 예시", 1)[1]
+    assert "시세 범위는 지금 확인하지 못했어요" in examples
 
 
 # ---- 턴(Claude 대본) ----

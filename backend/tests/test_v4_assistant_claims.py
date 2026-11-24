@@ -7,7 +7,7 @@ import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
-from app.assistant import policy
+from app.assistant import policy, prompts
 from tests.conftest import query
 from tests.test_v4_assistant_actions import approve
 from tests.test_v4_assistant_offers import proposed, tokens, with_delay
@@ -127,12 +127,15 @@ def test_card_words_with_a_card_or_an_offer_stay(api, script):
     ev = ok(ask(api, pid, "방은 세 개예요"))
     text = tokens(ev)
     assert text.index("카드를 만들어 드릴게요") < text.index("눌러 주세요")  # 순서 그대로
-    # 조건이 붙은 제안과 열린 카드를 누르라는 말은 그대로(열린 카드 단추가 하나면 그 이름을 넣어요, QA r9)
+    # 조건이 붙은 제안과 열린 카드를 누르라는 말은 그대로. 단추 이름은 코드가 끼워 넣지 않고 지시문 예시 · 턴 사실
+    # [단추]로 모델이 말해요(QA r9 단추 이름 넣기를 P4 11-25에 지시문으로 옮김)
     script([{"text": "면적 기준을 알려 주시면 카드를 만들어 드릴게요. 위 카드를 눌러 주세요."}])
     ev = ok(ask(api, pid, "면적은 잘 모르겠어요"))
     text = tokens(ev)
     assert "알려 주시면 카드를 만들어 드릴게요" in text
-    assert "위 카드의 [맞아요, 저장]을 눌러 주세요" in text
+    assert "위 카드를 눌러 주세요" in text and "[맞아요, 저장]" not in text
+    examples = prompts._model_text("customer_v4").split("## 좋은 예시", 1)[1]
+    assert "[맞아요, 저장]을 누르시면" in examples
 
 
 @pytest.mark.parametrize(

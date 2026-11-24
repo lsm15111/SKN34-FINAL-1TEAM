@@ -2,8 +2,9 @@
 
 - W1: 화면 단추 이름([리뷰 쓰기] 등)을 누르라는 말은 '카드' 낱말이 같이 있어도 승인 카드 말이 아니에요(c1 T19).
 - M2: 범위 밖 공정 · 잡담 턴 뒤에는 단계 제안(다음에 물을 말)이 쉬지 않아요(c2 T4 전기 턴은 누를 곳이 없었어요).
-- 그대로: 열린 승인 카드 턴 사실 · 단추 이름 없이 카드를 누르라는 말에 단추 이름 · 지난 턴과 같은 지금 단계 문장
-  빼기(업체 이름 없어도) · '표준견적' → '표준견적서' · 첫 견적서만 왔을 때 확정 권하지 않기.
+- 그대로: 열린 승인 카드 턴 사실(카드 단추로 그 턴에 만든 카드도) · 지난 턴과 같은 지금 단계 문장 빼기(업체 이름
+  없어도) · 첫 견적서만 왔을 때 확정 권하지 않기. 단추 이름 넣기 · '표준견적' → '표준견적서'는 코드가 문장을 고치지 않고
+  지시문 예시로 옮겼어요(P4 11-25, docs/v4/15-sentence-rules.md).
 - 낮음: 가림 말('금액이 가려져 …') 빼기 · 멈춤으로 닫힌 턴의 고객 말 남기기.
 DB 없는 문장 검사 + Claude 대본 턴(유료 호출 0회)."""
 
@@ -14,8 +15,9 @@ import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
-from app.assistant import policy, proactive
+from app.assistant import policy, proactive, prompts
 from app.assistant.runtime import SentenceGate, recent_said
+from tests.test_v4_assistant_offers import proposed, tokens
 from tests.test_v4_assistant_turns import ask, home, ok
 
 PROMPT = "너는 믿집 비서야."
@@ -70,6 +72,11 @@ def before(*answers: str) -> list[str]:
 def suggest_ids(ev) -> list[str]:
     done = next(d for e, d, _ in ev if e == "done")
     return [x["id"] for x in done["suggest"]]
+
+
+def examples() -> str:
+    """customer_v4 좋은 예시 절(모델에 가는 글)."""
+    return prompts._model_text("customer_v4").split("## 좋은 예시", 1)[1]
 
 
 # ---- W1. 화면 단추 이름을 누르라는 말은 '카드'가 있어도 승인 카드 말이 아니에요(c1 T19) ----
@@ -146,7 +153,7 @@ def test_out_of_scope_words():
         assert not S.out_of_scope(t), t
 
 
-# ---- 그대로 1. 열린 승인 카드 턴 사실에 단추 이름(카드를 눌러 주세요 대신 [단추]를 눌러 주세요) ----
+# ---- 그대로 1. 단추 이름: 열린 승인 카드 턴 사실에 [단추], 문장은 코드가 고치지 않고 지시문 예시로(P4 11-25) ----
 
 
 def test_open_card_fact_names_its_button(api, script):
@@ -161,51 +168,53 @@ def test_open_card_fact_names_its_button(api, script):
     assert line.endswith(f"[{a['summary']['approve_label']}]")
 
 
-@pytest.mark.parametrize(
-    ("raw", "label", "want"),
-    [
-        (
-            "12월 1일 오전이 괜찮으시면 열린 실측 일정 카드를 눌러 주세요.",
-            "이 시간으로 고르기",
-            "12월 1일 오전이 괜찮으시면 열린 실측 일정 카드의 [이 시간으로 고르기]를 눌러 주세요.",
-        ),
-        (
-            "카드를 확인하고 누르시면 두 업체에 요청이 보내져요.",
-            "2곳에 요청 보내기",
-            "카드를 확인하고 [2곳에 요청 보내기]를 누르시면 두 업체에 요청이 보내져요.",
-        ),
-        ("카드를 눌러 주세요.", "맞아요, 저장", "카드의 [맞아요, 저장]을 눌러 주세요."),
-        (
-            "두 취소 카드를 모두 눌러 주세요.",
-            "실측 요청 취소하기",
-            "두 취소 카드의 [실측 요청 취소하기]를 모두 눌러 주세요.",
-        ),
-        ("[끝났어요]를 눌러 주세요.", "끝났어요", "[끝났어요]를 눌러 주세요."),  # 이미 있음
-        # 누를 것을 이미 말함
-        ("카드에서 수락을 눌러 주세요.", "이 날짜로 수락", "카드에서 수락을 눌러 주세요."),
-    ],
-)
-def test_button_name_goes_into_the_press_line(raw, label, want):
-    assert policy.with_button(raw, label) == want
+# 옛 단추 이름 넣기(policy.with_button)가 고치던 말과 그 일을 맡은 지시문 예시(None이면 이미 누를 것을 말함)
+PRESS_LINES = [
+    (
+        "12월 1일 오전이 괜찮으시면 열린 실측 일정 카드를 눌러 주세요.",
+        "visit_slot",
+        "[이 날짜로 고르기]를 눌러 주세요.",
+    ),
+    (
+        "카드를 확인하고 누르시면 두 업체에 요청이 보내져요.",
+        "visit_request",
+        "[2곳에 요청 보내기]를 누르시면",
+    ),
+    ("카드를 눌러 주세요.", "home_info", "[맞아요, 저장]을 누르시면"),
+    ("두 취소 카드를 모두 눌러 주세요.", "visit_cancel", "[실측 요청 취소하기]를 누르시면"),
+    ("[끝났어요]를 눌러 주세요.", "work_check", None),  # 이미 단추 이름
+    ("카드에서 수락을 눌러 주세요.", "dates_accept", None),  # 누를 것을 이미 말함
+]
 
 
-def test_gate_names_the_button_when_it_is_clear():
-    """열린 카드 · 이 턴에 만든 카드의 단추가 하나로 정해질 때만 넣어요(c2 T12 · T23~T25 · c1 T5)."""
-    g = gate()
-    g.label("visit_slot", "이 시간으로 고르기")
-    text = run(g, "우리집벽지 실측 일정은 열린 카드를 확인하고 눌러 주세요.", {"visit_slot"})
-    assert text == "우리집벽지 실측 일정은 열린 카드를 확인하고 [이 시간으로 고르기]를 눌러 주세요."
-    g = gate(made={"visit_request"})  # 카드 단추 고르기로 이 턴에 만든 카드
-    g.label("visit_request", "2곳에 요청 보내기")
-    g.label("home_info", "맞아요, 저장")
-    text = run(g, "카드를 확인하고 누르시면 두 업체에 요청이 보내져요.", {"home_info"})
-    assert "[2곳에 요청 보내기]를 누르시면" in text
-    # 어느 단추인지 모르면 그대로
-    g = gate()
-    g.label("visit_request", "2곳에 요청 보내기")
-    g.label("home_info", "맞아요, 저장")
-    raw = "카드를 확인하고 눌러 주세요."
-    assert run(g, raw, {"visit_request", "home_info"}) == raw
+@pytest.mark.parametrize(("raw", "kind", "example"), PRESS_LINES)
+def test_press_line_is_sent_as_written(raw, kind, example):
+    """단추 이름 없이 카드를 누르라는 맞는 말은 코드가 고치지 않고 그대로 보내요(옛 with_button, QA r9 c1 T5 · T13 ·
+    c2 T12 · T23~T25 · c3 Y3). 단추 이름은 지시문 예시와 턴 사실 [단추]로 모델이 말해요. 숫자 근거는 문장 그대로예요."""
+    assert run(gate(allowed=raw), raw, {kind}) == raw
+    if example:
+        assert example in examples()
+
+
+def test_press_turn_keeps_the_line_and_the_fact_names_the_new_card(api, script):
+    """카드 단추로 만든 승인 카드(QA r9 c2 T12 · c3 T2 '카드를 확인하고 누르시면'): 코드는 단추 이름을 끼워 넣지 않고, 턴
+    사실 '승인 기다리는 카드'에 그 카드를 [단추]와 함께 더해 모델에 단추 이름을 줘요(턴 사실은 단추를 누르기 전에 만들어
+    이 카드가 빠져 있었어요)."""
+    from tests.test_v4_r3_a1_facts import facts_of
+
+    _, pid = home(api, "press@mitjip.test")
+    log = script([{"text": "카드를 확인하고 눌러 주세요."}])
+    ev = ok(ask(api, pid, "부분만 할게요", context={"choice": "demolition:partial"}))
+    (a,) = proposed(ev)
+    label = a["summary"]["approve_label"]
+    assert tokens(ev) == "카드를 확인하고 눌러 주세요."
+    line = next(x for x in facts_of(log[0]).splitlines() if x.startswith("승인 기다리는 카드: "))
+    assert line.endswith(f"{a['summary']['title']} [{label}]")
+    # 같은 카드를 다시 고르면(이미 열려 있어 턴 사실에 있음) 두 번 넣지 않아요
+    log = script([{"text": "카드를 확인하고 눌러 주세요."}])
+    ok(ask(api, pid, "부분만 할게요", context={"choice": "demolition:partial"}))
+    line = next(x for x in facts_of(log[0]).splitlines() if x.startswith("승인 기다리는 카드: "))
+    assert line.count(f"[{label}]") == 1
 
 
 # ---- 그대로 2. 지난 턴과 같은 지금 단계 문장은 업체 이름이 없어도 빼요(c2 T5~T7 · T14 · T15) ----
@@ -255,36 +264,34 @@ def test_same_step_words():
     )
 
 
-# ---- 그대로 3. '표준견적'은 화면 말 '표준견적서'로(c1 T2 · c2 T9 · T16) ----
+# ---- 그대로 3. '표준견적서' 낱말은 코드가 고치지 않고 지시문 규칙 · 예시로(c1 T2 · c2 T9 · T16, P4 11-25) ----
 
 
-def test_standard_quote_word_is_the_screen_word():
-    g = gate()
-    text = run(
-        g,
+def test_standard_quote_word_is_left_to_the_prompt():
+    """줄인 '표준견적'을 코드가 '표준견적서'로 바꾸지 않아요(옛 term_fix). 지시문 규칙(화면 말)과 예시 6이 맡아요."""
+    raw = (
         "이 집 표준견적은 공공 기준으로 믿집이 계산한 참고 금액이에요. "
-        "표준견적이랑 업체 견적서를 같이 보세요. 표준견적서는 업체 견적이 아니에요.",
+        "표준견적이랑 업체 견적서를 같이 보세요. 표준견적서는 업체 견적이 아니에요."
     )
-    assert text == (
-        "이 집 표준견적서는 공공 기준으로 믿집이 계산한 참고 금액이에요. "
-        "표준견적서랑 업체 견적서를 같이 보세요. 표준견적서는 업체 견적이 아니에요."
-    )
+    assert run(gate(), raw) == raw
+    assert "'표준견적'으로 줄이지 말고 '표준견적서'" in prompts.rules("customer")
+    assert "이 집 실크 도배 표준견적서는" in examples()
 
 
 @pytest.mark.parametrize(
-    ("raw", "want"),
+    "raw",
     [
-        ("표준견적이 부가세 포함이에요.", "표준견적서가 부가세 포함이에요."),
-        ("표준견적을 보세요.", "표준견적서를 보세요."),
-        ("표준견적과 견줘요.", "표준견적서와 견줘요."),
-        ("표준견적으로 보면 비싸요.", "표준견적서로 보면 비싸요."),
-        ("참고 금액은 표준견적이에요.", "참고 금액은 표준견적서예요."),
-        ("표준 견적에 들어 있어요.", "표준견적서에 들어 있어요."),
-        ("표준견적서를 보세요.", "표준견적서를 보세요."),
+        "표준견적이 부가세 포함이에요.",
+        "표준견적을 보세요.",
+        "표준견적과 견줘요.",
+        "표준견적으로 보면 비싸요.",
+        "참고 금액은 표준견적이에요.",
+        "표준 견적에 들어 있어요.",
+        "표준견적서를 보세요.",
     ],
 )
-def test_standard_quote_word_fix(raw, want):
-    assert policy.term_fix(raw) == want
+def test_standard_quote_word_is_sent_as_written(raw):
+    assert run(gate(), raw) == raw
 
 
 # ---- 그대로 4. 첫 견적서만 왔을 때 확정을 권하지 않아요(c1 68893362) ----
