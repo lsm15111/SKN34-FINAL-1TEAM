@@ -35,16 +35,18 @@ NOT_FOUND = "대화를 찾을 수 없어요."
 CONFLICT = "다른 질문이 먼저 저장됐어요. 다시 물어봐 주세요."
 
 
-async def create(s: AsyncSession, user_id: uuid.UUID) -> uuid.UUID:
-    """새 대화방. 만든 대화 id를 돌려준다."""
-    chat = await repository.insert_chat(s, user_id)
+async def create(s: AsyncSession, user_id: uuid.UUID, kind: str = "ai") -> uuid.UUID:
+    """새 대화방. 만든 대화 id를 돌려준다. kind: ai(v3 AI 칸) · v2(/v2 상담, v3 목록에 섞이지 않게)."""
+    chat = await repository.insert_chat(s, user_id, kind=kind)
     await s.commit()
     return chat.id
 
 
-async def get_for(s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID) -> Chat:
-    """내 대화를 연다. 남의 대화 · 없는 대화는 똑같이 404 (있는지 없는지 알려 주지 않는다)."""
-    chat = await repository.get_owned(s, user_id, chat_id)
+async def get_for(
+    s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, kind: str = "ai"
+) -> Chat:
+    """내 대화를 연다. 남의 대화 · 없는 대화 · 다른 종류(kind) 대화는 똑같이 404 (있는지 없는지 알려 주지 않는다)."""
+    chat = await repository.get_owned(s, user_id, chat_id, kind)
     if chat is None:
         raise AppError(404, "not_found", NOT_FOUND)
     return chat
@@ -110,6 +112,9 @@ WAIT_TTL = 1800  # 되물은 칸은 30분 뒤 비운다(agents.md 5절)
 REPLAY_TTL = 600  # 같은 client_key는 10분 동안 처음 답을 그대로 돌려준다
 THREAD_MESSAGES = 30
 RESUME_HOURS = 24  # 마지막 턴 뒤 이 시간 안이면 화면을 옮겨도 같은 대화를 이어 가요(맥락 L2)
+# 대화 표 waiting에서 v3 관문이 이어 받는 담당. 0055 전 v2 상담 대화(kind ai로 저장됨)의 'orchestrator'는 v3 담당이 아니라
+# 버린다(점검 R6 B2: 짧은 답이 GateResult 검사에서 500)
+WAIT_ROUTES = frozenset({"trade", "quote_explanation", "schedule"})
 # 대화 표 CHECK(0022)에 맞춘 라벨 · 출처. v3 가이드 · 복합은 v2처럼 orchestrator로 남긴다
 LABEL = {
     "guide": "orchestrator",
@@ -328,7 +333,7 @@ async def ai_turn(user, body: AiTurnIn, today: date, on_part=None) -> AiTurnOut:
         )
     wait_key = _key("wait", str(body.chat_id)) if body.chat_id else None
     waiting = await _get_json(wait_key) if wait_key and waiting_label else None
-    if waiting is None and waiting_label:
+    if waiting is None and waiting_label in WAIT_ROUTES:
         waiting = {"route": waiting_label}
     ctx = TurnContext(
         user_id=user.id,

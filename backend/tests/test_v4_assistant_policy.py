@@ -189,7 +189,7 @@ def test_facts_about_others_are_kept(text):
 
 
 def test_gate_drops_standard_percent_even_with_allowed_numbers():
-    gate, sent = _gate("30 2026-11-30")
+    gate, sent = _gate("30% 2026-11-30")  # % 숫자는 단위까지 근거에 있어야 지나요(점검 R1a B2)
 
     async def go():
         await gate.feed("이 견적은 표준견적서보다 30% 싸요. 포함 항목을 보세요.")

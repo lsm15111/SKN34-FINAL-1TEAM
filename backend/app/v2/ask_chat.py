@@ -7,6 +7,7 @@
 - 되물었는지는 답 끝의 [되물음] 표시로 안다(chat 지시문). 표시는 떼고, 그 역할 라벨을 waiting에 남긴다
   다음 턴 관문이 waiting을 받아 짧은 답("32평")도 같은 역할로 보낸다 (#120)
 - 대화 표에는 일반 상담(kind=chat)만 쌓는다. 견적서 · 공정표 화면 버튼의 설명은 한 번으로 끝난다
+- 대화 종류(chats.kind)는 v2다. v3 AI 칸(kind ai) 목록 · 이어 보기에 섞이지 않고, 서로의 대화를 열지 않는다(점검 R6 B2)
 """
 
 import uuid
@@ -19,6 +20,7 @@ from app.v2 import ask
 from app.v2 import schemas as v2
 
 ASKED = "[되물음]"  # chat 지시문이 되물을 때만 답 끝에 붙인다. 화면에는 보내지 않는다
+KIND = "v2"  # 대화 표 종류(0055)
 
 
 async def start(user_id: uuid.UUID, b: v2.V2AskIn, today: date) -> v2.V2AskOut:
@@ -29,7 +31,7 @@ async def start(user_id: uuid.UUID, b: v2.V2AskIn, today: date) -> v2.V2AskOut:
     keep = b.kind == "chat"
     if keep and b.chat_id is not None:
         async with SessionLocal() as s:  # 짧게 열고 닫는다. LLM을 기다리는 동안 쥐지 않는다
-            chat = await chat_service.get_for(s, user_id, b.chat_id)
+            chat = await chat_service.get_for(s, user_id, b.chat_id, KIND)
             turns = await chat_service.recent(s, chat)
             rev, waiting = chat.rev, chat.waiting
         history = [{"role": t.role, "content": t.text} for t in turns]
@@ -75,7 +77,7 @@ async def _finish(user_id: uuid.UUID, out: v2.V2AskOut, meta: dict) -> v2.V2AskO
     waiting = (intent.label if intent else "orchestrator") if asked else None
     async with SessionLocal() as s:
         if chat_id is None:
-            chat_id = await chat_service.create(s, user_id)
+            chat_id = await chat_service.create(s, user_id, KIND)
         await chat_service.save_turn(
             s,
             user_id=user_id,
