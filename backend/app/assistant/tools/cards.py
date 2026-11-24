@@ -980,6 +980,7 @@ WHY = {
     "weekday": "평일이에요",
     "weekend": "주말이에요",
     "vendor_proposal": "업체가 낸 날이에요",
+    "vendor_declined": "업체가 어렵다고 한 때예요",  # 다른 날을 내기 전 고객이 고른 때(다시 고르기 맨 뒤)
 }
 
 
@@ -1116,8 +1117,10 @@ async def visit_slots(
         notes.append(PROPOSAL_NOTE)
     elif (v.status == "offered" or repick) and v.days and not late:
         opened = [slots.DayOpen(d.day, d.am_left, d.pm_left) for d in v.days]
-        # 다시 고르기는 업체가 낸 날을 빼요(그 날은 업체가 낸 날 카드로 바로 정해요)
+        # 다시 고르기는 업체가 낸 날을 빼요(그 날은 업체가 낸 날 카드로 바로 정해요). 업체가 다른 날을 내기 전 고객이
+        # 고른 때(업체가 어렵다고 한 때)는 맨 뒤로 미루고 그렇다고 달아요(QA r10 c1 T9)
         offered = {(x.day, x.half) for x in v.proposal.slots} if repick else set()
+        hard = await repo.last_pick(s, v.visit_id) if repick else None
         found = slots.candidates(
             opened,
             v.work_wish_on,
@@ -1127,6 +1130,7 @@ async def visit_slots(
             days_off=days_off(opened[0].day, opened[-1].day),
             taken=taken | (again if repick else skip) | offered,
             named=named,
+            later={hard} if hard else (),
         )
         via = "repick" if repick else "pick"
         picks = [(c.day, c.half, day_why(c.why, c.day, named), via) for c in found]

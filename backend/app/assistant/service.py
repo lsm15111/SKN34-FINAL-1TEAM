@@ -440,6 +440,20 @@ def live_refs(rows: list, deal, refs: RefTable) -> dict[uuid.UUID, str]:
     }
 
 
+# 견적서가 오기 전 살아 있는 요청에 붙이는 요청 때 고정한 가견적(BoardRowOut.estimate_total, 보드 '업체 금액'과 같은
+# 값). 요청한 업체가 희망 예산 안인지 물을 때 근거예요(QA r10 c2 T27: 못 써서 '알 수 없어요' + 요청 안 한 업체 추천)
+ESTIMATE_WORDS = "가견적 부가세 포함 {won:,}원"
+BEFORE_QUOTE = ("requested", "offered", "picked", "proposed", "booked", "visited")
+
+
+def estimate_words(r) -> str:
+    """견적서 오기 전 살아 있는 요청의 ' · 가견적 부가세 포함 N원'. 그 밖이거나 값이 없으면 ''."""
+    won = getattr(r, "estimate_total", None)
+    if r.status not in BEFORE_QUOTE or won is None:
+        return ""
+    return " · " + ESTIMATE_WORDS.format(won=won)
+
+
 def vendors_line(
     rows: list,
     deal,
@@ -449,7 +463,8 @@ def vendors_line(
     left: int | None = None,
 ) -> str | None:
     """턴 사실 '업체:' 줄: 이 공사에 걸린 업체마다 지금 상태(요청한 순). 없으면 None. refs(요청 id → 이름표)가 있으면
-    살아 있는 요청의 업체 이름 뒤에 붙인다('결도배(m1) 실측 요청함 …'). left는 확정의 다른 날짜 요청 남은 수(deal_words)."""
+    살아 있는 요청의 업체 이름 뒤에 붙인다('결도배(m1) 실측 요청함 …'). left는 확정의 다른 날짜 요청 남은 수(deal_words).
+    견적서 오기 전 요청은 요청 때 고정한 가견적을 붙인다(estimate_words)."""
     refs = refs or {}
     items = []
     for r in rows:
@@ -457,7 +472,8 @@ def vendors_line(
             items.append(f"{r.vendor_name} {deal_words(deal, dates, today, left)}")
         else:
             tag = f"({refs[r.visit_id]})" if r.visit_id in refs else ""
-            items.append(f"{r.vendor_name}{tag} {visit_words(r, deal is not None, today)}")
+            words = visit_words(r, deal is not None, today) + estimate_words(r)
+            items.append(f"{r.vendor_name}{tag} {words}")
     if deal is not None and all(r.visit_id != deal.visit_id for r in rows):
         items.append(f"{deal.vendor_name} {deal_words(deal, dates, today, left)}")
     return "업체: " + " / ".join(items) if items else None

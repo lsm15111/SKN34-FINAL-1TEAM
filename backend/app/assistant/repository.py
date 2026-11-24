@@ -25,7 +25,7 @@ from app.project.models import Project, ProjectCondition
 from app.quote.models import VendorQuote
 from app.schedule.models import DateProposal
 from app.shared.ids import uuid7
-from app.visit.models import ENDED, LIVE, Visit
+from app.visit.models import ENDED, LIVE, Visit, VisitEvent, VisitProposal
 
 # ---- 대화 ----
 
@@ -471,6 +471,25 @@ async def open_slot_halves(
     return out
 
 
+async def last_pick(s: AsyncSession, visit_id: uuid.UUID) -> tuple[date, str] | None:
+    """그 실측 요청에서 고객이 마지막으로 고른 반나절(이력 picked의 날 · am · pm, 읽기 조인). 업체가 다른 날을 낸
+    요청(proposed)이면 업체가 어렵다고 한 때예요(다시 고르기 후보에서 뒤로 미뤄요, QA r10 c1 T9). 없으면 None."""
+    row = (
+        await s.execute(
+            select(VisitEvent.day, VisitEvent.half)
+            .where(
+                VisitEvent.visit_id == visit_id,
+                VisitEvent.to_status == "picked",
+                VisitEvent.day.is_not(None),
+                VisitEvent.half.is_not(None),
+            )
+            .order_by(VisitEvent.at.desc(), VisitEvent.id.desc())
+            .limit(1)
+        )
+    ).first()
+    return (row.day, str(row.half)) if row else None
+
+
 # ---- 먼저 말 걸기 ----
 
 SHOWN = ("sent", "opened")  # 대화 기록에 보이는 줄
@@ -654,6 +673,8 @@ async def settled_events(
 # 실측 요청 하나를 가리키는 알림 주소
 NEWS_VISIT = re.compile(r"/projects/[^/?#]+/visits/([0-9a-fA-F-]{36})")
 NEWS_QUOTE = re.compile(r"^quote:([0-9a-fA-F-]{36})$")  # 견적서 알림(dedup_key quote:{견적서 id})
+# 업체가 다른 날을 낸 알림(dedup_key visit_proposed:{제안 id}): 그 제안이 닫히면(고름 · 다시 고름 · 기한 지남) 끝난 소식
+NEWS_PROPOSAL = re.compile(r"^visit_proposed:([0-9a-fA-F-]{36})$")
 VISIT_DONE = (*ENDED, "chosen")  # 이 요청의 진행 소식은 끝난 일(끝남 · 닫힘 · 확정)
 
 
@@ -667,8 +688,9 @@ def _uuid(text: str) -> uuid.UUID | None:
 async def _visit_done_news(
     s: AsyncSession, user_id: uuid.UUID, notification_ids: Sequence[uuid.UUID]
 ) -> set[uuid.UUID]:
-    """알림 중 가리키는 실측 요청(주소 · 견적서)이 끝났거나 확정된 것. 끝남 알림 자체('못 받아요' · '답하지 않았어요')는
-    요청을 가리키지 않아(공사 실측 목록 주소) 남는다."""
+    """알림 중 가리키는 실측 요청(주소 · 견적서)이 끝났거나 확정된 것과, 업체가 다른 날을 낸 알림 중 그 제안이 닫힌 것
+    (QA r10 c1: 다시 골라 실측이 잡힌 뒤에도 '다른 날을 제안했어요'가 새 소식에 남음). 끝남 알림 자체('못 받아요' ·
+    '답하지 않았어요')는 요청을 가리키지 않아(공사 실측 목록 주소) 남는다."""
     found = await s.execute(
         select(Notification.id, Notification.link, Notification.dedup_key).where(
             Notification.user_id == user_id, Notification.id.in_(list(notification_ids))
@@ -676,13 +698,27 @@ async def _visit_done_news(
     )
     about: dict[uuid.UUID, uuid.UUID] = {}  # 알림 → 실측 요청
     quotes: dict[uuid.UUID, uuid.UUID] = {}  # 알림 → 견적서
+    offers: dict[uuid.UUID, uuid.UUID] = {}  # 알림 → 업체가 낸 다른 날 제안
     for nid, link, key in found.all():
         m = NEWS_VISIT.search(link or "")
         q = NEWS_QUOTE.match(key or "")
+        if (o := NEWS_PROPOSAL.match(key or "")) and (x := _uuid(o.group(1))):
+            offers[nid] = x
         if m and (v := _uuid(m.group(1))):
             about[nid] = v
         elif q and (x := _uuid(q.group(1))):
             quotes[nid] = x
+    closed: set[uuid.UUID] = set()
+    if offers:
+        shut = set(
+            await s.scalars(
+                select(VisitProposal.id).where(
+                    VisitProposal.id.in_(list(set(offers.values()))),
+                    VisitProposal.status != "open",
+                )
+            )
+        )
+        closed = {n for n, x in offers.items() if x in shut}
     if quotes:
         rows = await s.execute(
             select(VendorQuote.id, VendorQuote.visit_id).where(
@@ -692,7 +728,7 @@ async def _visit_done_news(
         of = dict(rows.all())
         about |= {n: of[x] for n, x in quotes.items() if x in of}
     if not about:
-        return set()
+        return closed
     gone = set(
         await s.scalars(
             select(Visit.id).where(
@@ -700,7 +736,7 @@ async def _visit_done_news(
             )
         )
     )
-    return {n for n, v in about.items() if v in gone}
+    return closed | {n for n, v in about.items() if v in gone}
 
 
 async def shown_all(s: AsyncSession, limit: int) -> list[AssistantNudge]:

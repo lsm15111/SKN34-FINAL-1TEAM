@@ -18,6 +18,7 @@
 import uuid
 from typing import TYPE_CHECKING
 
+from app.assistant import policy
 from app.assistant.schemas import CardOut
 from app.assistant.tools import ToolCtx, ToolError, ToolOut
 from app.assistant.tools import aftercare as aftercare_tools
@@ -327,6 +328,9 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
             locked = locked or (kind == "home" and e.code == "locked")
     for out in outs:
         await _send(out, emit, res, send_card)
+    # 만든(같으면 열린) 승인 카드의 제안 결과: LLM 턴에 모델이 제안 도구를 부른 것처럼 받아요(누르면 무엇이 되는지 ·
+    # 카드 줄, QA r10 c1 T10). 무료 모드 답 글(돌려주는 줄)에는 넣지 않아요
+    res.made_out += [policy.to_model(out.data) for out in outs if out.actions]
     if locked and not outs and not acts and not ctx.stale:
         res.reason = ANSWERED  # 잠긴 집의 칸 단추: 까닭 한 줄로 끝내요(LLM 없음)
     states = {out.data.get("state") for out in outs}
