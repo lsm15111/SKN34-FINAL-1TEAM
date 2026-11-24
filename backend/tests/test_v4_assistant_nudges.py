@@ -148,6 +148,7 @@ def test_triggers_match_the_table():
     assert set(proactive.TRIGGERS) == set(NUDGE_TRIGGERS)
     assert proactive.EVENT_KINDS == {
         "visit_offered": "visit_offered",
+        "visit_proposed": "visit_proposed",  # 업체가 낸 다른 실측 날짜(QA r11 c1)
         "quote_sent": "quote_sent",
         "quote_resent": "quote_sent",
         "dates_proposed": "dates_proposed",

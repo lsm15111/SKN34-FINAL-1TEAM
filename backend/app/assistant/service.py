@@ -1951,6 +1951,7 @@ NUDGE_DONE: dict[str, tuple[str, frozenset[str]]] = {
     "extra_added": ("extra", frozenset({"extra_answer"})),
     "dates_proposed": ("schedule", frozenset({"dates_accept", "delay_accept"})),
     "visit_offered": ("visit_slots", frozenset({"visit_slot"})),
+    "visit_proposed": ("visit_slots", frozenset({"visit_slot"})),
     "vendor_out": ("vendor_picks", frozenset({"visit_request"})),
     "no_pick": ("vendor_picks", frozenset({"visit_request"})),
 }
