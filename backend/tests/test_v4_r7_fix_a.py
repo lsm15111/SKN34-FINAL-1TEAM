@@ -9,6 +9,7 @@
 - 5. 비서가 되물은 것에 고객이 답하면 그 답으로 판단 한 문장을 먼저 잇기(c2 L22 → L23, 지시문 규칙).
 - 6. 비서 실측 요청 카드에 고객이 말한 희망 기간(화면 N3): wish 칸, 검사는 계산 엔진(화면 요청과 같은 규칙).
 - 7. 지금 할 일 줄은 한 답에 한 번, 지난 턴과 같은 상태면 다시 말하지 않기(c1 19 · 27 · 20~23턴).
+- 8. 업체가 올린 날짜가 바란 것과 다를 때(c4 T12): 턴 사실에 다른 날짜 요청 남은 수, 지시문에 다시 요청 · 채팅 길.
 """
 
 import asyncio
@@ -509,3 +510,44 @@ def test_same_state_is_not_said_again(api, script, monkeypatch):
     script([{"text": "아직 답이 없어요. 결도배 답을 기다리는 중이에요."}])
     said = tokens(ok(ask(api, pid, "결도배 답은 언제 와요?")))
     assert said == "아직 답이 없어요. 결도배 답을 기다리는 중이에요."
+
+
+# ---- 8. 업체가 올린 날짜가 바란 것과 다를 때 다시 요청할 길(턴 사실 남은 횟수) ----
+
+
+def test_dates_fact_says_requests_left():
+    """업체가 올린 공사 날짜를 수락할 차례에는 다른 날짜 요청 남은 수를 붙여요(QA r7 c4 T12). 다른 상태는 그대로."""
+    from datetime import date
+
+    from app.assistant import service as S
+
+    d = SimpleNamespace(grand_total=3_080_000, status="scheduled", start_date=None, end_date=None)
+    today = date(2026, 12, 1)
+    assert S.deal_words(d, "change_proposed", today, 1) == (
+        "확정 · 공사 금액 부가세 포함 3,080,000원 · 업체가 바뀐 공사 날짜를 올림(수락할 차례) · 다른 날짜 요청 1번 남음"
+    )
+    assert S.deal_words(d, "proposed", today, 0).endswith(S.LEFT_NONE)
+    assert S.deal_words(d, "waiting", today, 2).endswith("업체가 공사 날짜를 정하는 중")
+    assert S.deal_words(d, "proposed", today).endswith("업체가 올린 공사 날짜를 수락할 차례")
+
+
+def test_turn_facts_count_requests_left(api, script):
+    """업체가 공사 날짜를 올린 뒤 턴 사실 업체 줄에 다른 날짜 요청 남은 수(확정마다 2번)가 붙어요."""
+    from tests.helpers import use
+    from tests.test_final_plan import DOB, proposal_of, two
+
+    customer_token, pid, _dm, dd = two(api)
+    proposal_of(api, "maru@mitjip.test", dd, DOB)
+    use(api, customer_token)
+    log = script([{"text": "업체가 올린 날짜를 확인해 주세요."}])
+    ok(ask(api, pid, "공사 날짜 어떻게 됐어요?"))
+    assert "업체가 올린 공사 날짜를 수락할 차례 · 다른 날짜 요청 2번 남음" in facts_of(log)
+
+
+def test_rule_gives_the_next_step_for_other_dates():
+    """바란 날과 다른 날짜가 오면 사과만 하지 않고 다시 요청(남은 수) · 믿집 채팅 중 다음 걸음 하나(지시문)."""
+    from app.assistant import prompts
+
+    rules = prompts.rules("customer")
+    assert "업체가 올린 공사 날짜가 고객이 바란 것과 다르면" in rules
+    assert "'다른 날짜 요청 n번 남음'이면 바란 날로 propose_date_change 카드를 만들고" in rules
