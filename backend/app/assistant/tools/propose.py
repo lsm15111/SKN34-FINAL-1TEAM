@@ -31,7 +31,7 @@ from app.assistant.schemas import (
 )
 from app.assistant.tools import ToolCtx, ToolError, ToolOut, cards, obj, tool
 from app.assistant.tools.customer import TRADE, dobae_only, pid_of, region_of
-from app.calc import visit_view
+from app.calc import deadline, visit_view
 from app.calc.common import COUNTED
 from app.calc.quote_diff import LineChange, line_changes
 from app.db import SessionLocal
@@ -443,6 +443,11 @@ NEED_CANCEL_NOTE = (
     "열리면 업체에 바뀐 것을 알려 주세요."
 )
 NEED_CANCEL_SOME = "전에 거절한 취소 카드는 다시 만들지 않았어요(카드 {made}장)."
+# 같은 업체 두 번째 요청이 섞였을 때(QA r9 c3 M1: 이어 하기로 취소 → 고치기 → 다시 요청하면 그 업체에 못 보냄)
+NEED_CANCEL_LAST = (
+    "{names}에 보낸 요청은 두 번째라 취소하면 이 공사에서는 다시 요청할 수 없어요. 그 업체를 두려면 요청을 그대로 "
+    "두고 실측 때 알리는 길을 먼저 말해요."
+)
 NEED_CANCEL = "cancel_first"  # 모델 값 step: 집 정보 카드는 취소 카드가 모두 실행된 뒤 이어서 와요
 
 
@@ -664,6 +669,8 @@ async def need_cancel(
     note = NEED_CANCEL_NOTE.format(n=len(live))
     if made < len(live):
         note = f"{note} {NEED_CANCEL_SOME.format(made=made)}"
+    if last := [v.vendor_name for v in live if last_try(v)]:  # QA r9 c3 M1: 바란 업체를 잃지 않게
+        note = f"{note} {NEED_CANCEL_LAST.format(names=' · '.join(last))}"
     states = [o.data.get("state") for o in outs]
     data = {
         # 카드 말 검사(SentenceGate)가 보는 state는 취소 카드 그대로(new · same), 집 정보는 취소 뒤 이어서(step).
@@ -803,6 +810,8 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     rows = []
     for vid in picked:
         c = cards_by_id.get(vid)
+        if c is not None and c.state == "blocked_retry":  # 까닭 없이 막히지 않게(QA r9 c3 M1)
+            raise ToolError("blocked_retry", cards.BLOCKED_ONE.format(name=c.name))
         if c is None or c.state != "ok" or c.estimate_total is None:
             raise ToolError("unavailable", "고른 업체 중 지금 요청할 수 없는 곳이 있어요.")
         rows.append(c)
@@ -826,7 +835,7 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
             tc.today + timedelta(days=14),
         )
     if start <= tc.today:
-        raise ToolError("past", "희망 기간이 지났어요. 시간 후보를 다시 찾아 주세요.")
+        raise ToolError("past", "희망 기간이 지났어요. 희망 기간 후보를 다시 찾아 주세요.")
     summary = ActionSummary(
         title=f"{' · '.join(c.name for c in rows)}에 실측 요청 보내기",  # 턴 사실에 업체가 보이게
         amounts=[AmountRow(label=c.name, won=c.estimate_total) for c in rows],
@@ -872,22 +881,57 @@ SLOT_ACCEPT = (
     "정해진 게 아니에요."
 )
 SLOT_INSTANT = "고객이 카드를 누르면 바로 정해져요. 누르기 전에는 정해진 게 아니에요."
+# 업체가 낸 날 대신 처음 실측 가능 기간에서 다시 고르는 카드(QA r9 c1 H1)
+REPICK_THEN = (
+    "고객이 카드를 누르면 업체가 낸 날은 닫히고 고른 실측 날짜가 업체에 가요. "
+    "누르기 전에는 업체가 낸 날 그대로예요."
+)
+REPICK_ACCEPT = "업체가 수락하면 정해져요."
+REPICK_INSTANT = "누르면 바로 정해져요."
+SLOT_STALE = "고를 수 있는 때가 아니에요. 실측 일정 후보를 다시 찾아 주세요."
 
 
-def slot_offer(v, slot: dict) -> dict:
-    """반나절 하나(pick_view 결과 v · 이름표 값 slot) → 대기 행동 인자. 도구 · 먼저 말 걸기가 같이 쓴다.
-    고를 수 있는 때가 아니면 ToolError(stale)."""
+def slot_via(v, slot: dict) -> str:
+    """이름표가 만든 때의 길(slot['via'])을 지금 요청 상태에 맞춘다. 업체가 다른 날을 낸 뒤(proposed) 앞 카드(처음
+    기간)의 날을 고르면 업체가 낸 날이면 그 날(proposal), 아니면 처음 기간에서 다시 고르기(repick)예요. 화면에서 이미
+    다시 고르기를 눌러 날짜 고를 차례(offered)로 돌아왔으면 다시 고르기 카드도 그냥 고르기(pick)예요."""
     via = slot["via"]
+    if v.status == "proposed" and v.proposal is not None and via == "pick":
+        said = (date.fromisoformat(slot["day"]), slot["half"])
+        return "proposal" if said in {(x.day, x.half) for x in v.proposal.slots} else "repick"
+    if v.status == "offered" and via == "repick":
+        return "pick"
+    return via
+
+
+def slot_offer(v, slot: dict, now: datetime | None = None) -> dict:
+    """반나절 하나(pick_view 결과 v · 이름표 값 slot) → 대기 행동 인자. 도구 · 먼저 말 걸기가 같이 쓴다.
+    고를 수 있는 때가 아니면 ToolError(stale), 처음 기간에서 고를 기한이 지났으면 ToolError(expired). 고객 말은
+    실측 말(실측 가능 기간 · 실측 날짜)이에요."""
+    via = slot_via(v, slot)
+    then = None
     if via == "proposal":
         if v.status != "proposed" or v.proposal is None:
-            raise ToolError("stale", "업체가 낸 날이 바뀌었어요. 시간 후보를 다시 찾아 주세요.")
+            raise ToolError(
+                "stale", "업체가 낸 날이 바뀌었어요. 실측 일정 후보를 다시 찾아 주세요."
+            )
         due, instant, ver = v.proposal.due_at, True, "업체가 낸 날"
+    elif via == "repick":
+        if v.status != "proposed" or v.proposal is None or v.window is None:
+            raise ToolError("stale", SLOT_STALE)
+        w = v.window
+        if now is not None and deadline.is_over(now, w.pick_due_at):
+            raise ToolError("expired", cards.REPICK_LATE)
+        # 업체가 낸 날을 고를 기한과 처음 기간에서 고를 기한 중 이른 때까지(그 뒤엔 다시 고르기가 막혀요)
+        due, instant = min(v.proposal.due_at, w.pick_due_at), w.instant
+        ver = f"처음 실측 가능 기간 {cards.md_range(w.start, w.end)}"
+        then = f"업체가 낸 날은 닫히고 {'바로' if instant else '업체가 수락하면'} 확정돼요"
     else:
         if v.status != "offered" or v.window is None:
-            raise ToolError("stale", "고를 수 있는 때가 아니에요. 시간 후보를 다시 찾아 주세요.")
+            raise ToolError("stale", SLOT_STALE)
         w = v.window
         due, instant = w.pick_due_at, w.instant
-        ver = f"업체가 답한 기간 {cards.md_range(w.start, w.end)}"
+        ver = f"실측 가능 기간 {cards.md_range(w.start, w.end)}"
     day = date.fromisoformat(slot["day"])
     summary = ActionSummary(
         title=f"{v.vendor_name} 실측 {cards.md_long(day)} {HALF[slot['half']]}",
@@ -895,11 +939,11 @@ def slot_offer(v, slot: dict) -> dict:
         rows=[
             SummaryRow(
                 label="그 뒤 일",
-                value="고르면 바로 확정돼요" if instant else "업체가 수락하면 확정돼요",
+                value=then or ("고르면 바로 확정돼요" if instant else "업체가 수락하면 확정돼요"),
             )
         ],
         note="시각은 실측 전날 채팅으로 정해요",
-        approve_label="이 시간으로 고르기",
+        approve_label="이 날짜로 다시 고르기" if via == "repick" else "이 날짜로 고르기",
     )
     return {
         "kind": "visit_slot",
@@ -927,7 +971,9 @@ SLOT_CLASH_HINT = "그 요청의 vendor_free_slots(ref m…)를 다시 불러요
     surface="customer",
     kind="propose",
     status="실측 날짜 카드를 준비하고 있어요",
-    description="실측 일정 후보(s1…) 하나를 고르는 승인 카드를 만들어요.",
+    description="실측 일정 후보(s1…) 하나를 고르는 승인 카드를 만들어요. 업체가 다른 날을 낸 뒤 처음 실측 가능 "
+    "기간 후보(vendor_free_slots more=true)를 고르면 업체가 낸 날 대신 다시 고르는 카드예요(누르면 업체가 낸 날은 "
+    "닫혀요).",
     model=SlotIn,
     schema=obj({"slot_ref": REF}),
 )
@@ -945,10 +991,13 @@ async def propose_visit_slot(tc: ToolCtx, a: SlotIn) -> ToolOut:
     half = (date.fromisoformat(slot["day"]), slot["half"])
     if half in other | {(m.day, m.half) for m in v.mine}:
         raise ToolError("slot_clash", SLOT_CLASH, hint=SLOT_CLASH_HINT)
-    got = slot_offer(v, slot)
+    got = slot_offer(v, slot, tc.now)
     out, _ = await _offer(tc, project_id=pid, **got)
     if out.actions:  # 누른 뒤 일: 바로 확정인지 업체 수락을 기다리는지(QA r3 s4 6턴 '정해졌어요')
-        then = SLOT_INSTANT if got["payload"]["instant"] else SLOT_ACCEPT
+        instant = got["payload"]["instant"]
+        then = SLOT_INSTANT if instant else SLOT_ACCEPT
+        if got["payload"]["via"] == "repick":  # 업체가 낸 날은 닫혀요(QA r9 c1 H1)
+            then = f"{REPICK_THEN} {REPICK_INSTANT if instant else REPICK_ACCEPT}"
         out.data["note"] = f"{out.data['note']} {then}"
     return out
 
@@ -1657,18 +1706,54 @@ def cancel_choose(tc: ToolCtx, live: list) -> ToolOut:
     return ToolOut(data=data, cards=[cancel_options(live)])
 
 
+CANCEL_NOTE = "취소하면 업체에 알림이 가고 이 업체의 담기 칸이 비어요"
+# 같은 업체에 보낸 두 번째 요청(ATTEMPTS_MAX)을 취소하면 이 공사에서는 그 업체에 다시 요청할 수 없어요(QA r9 c3 M1)
+LAST_TRY = SummaryRow(
+    label="다시 요청",
+    value="이 업체엔 다시 요청할 수 없어요",
+    sub="같은 업체에는 두 번까지 요청해요",
+)
+LAST_TRY_NOTE = (
+    "{name}에 보낸 두 번째 요청이라 취소하면 이 공사에서는 {name}에 다시 요청할 수 없어요(같은 업체에는 두 번까지). "
+    "누르기 전에 고객에게 이 말을 해요."
+)
+
+
+def last_try(v) -> bool:
+    """같은 업체에 보낸 마지막(두 번째) 요청인지: 취소하면 다시 요청할 수 없어요(visit.service blocked_retry)."""
+    from app.visit.models import ATTEMPTS_MAX
+
+    return (getattr(v, "attempt", 1) or 1) >= ATTEMPTS_MAX
+
+
+def cancel_note(v) -> str:
+    """취소 카드 메모(요청 상태마다): 날짜 전이면 담기 칸, 골라 둔 날짜 · 정해진 실측 날짜 · 실측 받은 뒤 견적서
+    (QA r9 c3 낮음 4: 잡은 날짜가 없는 요청에도 '실측 날짜도 풀려요')."""
+    if v.status in ("picked", "proposed"):
+        return f"{CANCEL_NOTE}. 골라 둔 실측 날짜도 풀려요"
+    if v.status == "booked" and getattr(v, "booked_day", None) and getattr(v, "booked_half", None):
+        when = f"{cards.md_long(v.booked_day)} {HALF[v.booked_half]}"
+        return f"취소하면 업체에 알림이 가고 정해진 실측 날짜 {when}도 취소돼요"
+    if v.status == "visited":
+        return "취소하면 업체에 알림이 가고 이 업체 견적서는 받지 않아요"
+    return CANCEL_NOTE
+
+
 async def cancel_one(
     tc: ToolCtx, v, code: str, pid: uuid.UUID, *, then: dict | None = None
 ) -> ToolOut:
-    """요청 하나의 취소 승인 카드. then: 같은 묶음이 모두 취소되면 이어서 내밀 카드(need_cancel → follow.py)."""
+    """요청 하나의 취소 승인 카드. then: 같은 묶음이 모두 취소되면 이어서 내밀 카드(need_cancel → follow.py).
+    같은 업체 두 번째 요청이면 '이 업체엔 다시 요청할 수 없어요' 줄과 모델 값 note로 미리 알려요."""
+    last = last_try(v)
     summary = ActionSummary(
         title=f"{v.vendor_name}에 보낸 실측 요청 취소",
         rows=[
             SummaryRow(label="업체", value=v.vendor_name),
             SummaryRow(label="지금", value=cards.SENT_STATE.get(v.status, "진행 중")),
             SummaryRow(label="까닭", value=actions.CANCEL_REASONS[code]),
+            *([LAST_TRY] if last else []),
         ],
-        note="취소하면 업체에 알림이 가고 이 업체의 담기 칸이 비어요. 잡아 둔 실측 날짜도 풀려요",
+        note=cancel_note(v),
         approve_label="실측 요청 취소하기",
     )
     out, _ = await _offer(
@@ -1687,6 +1772,8 @@ async def cancel_one(
         expires_at=tc.now + timedelta(days=2),
         project_id=pid,
     )
+    if last and out.actions:
+        out.data["note"] = f"{out.data['note']} {LAST_TRY_NOTE.format(name=v.vendor_name)}"
     return out
 
 

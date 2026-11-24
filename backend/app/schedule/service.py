@@ -2871,6 +2871,11 @@ def _todo_out(pid: uuid.UUID, code: str, trade: str, d: Deal | None, ctx: dict) 
             "실측 일정 보기",
             f"{base}/visits?trade={trade}",
         ),
+        "visit_booked": (
+            f"실측 날짜가 정해졌어요 · {label}",
+            "실측 일정 보기",
+            f"{base}/visits?trade={trade}",
+        ),
         "before_work": (
             f"{label} 공사는 {_md(d.start_date)}에 시작해요 · 공사 전에 할 일을 확인하세요"
             if d and d.start_date
@@ -2982,6 +2987,7 @@ async def _progress_of(s: AsyncSession, p: ProjectOut, today: date, now: datetim
             end=d.end_date if d else None,
             work_done_on=d.work_done_on if d else None,
             extras_pending=waiting.get(d.id, 0) if d else 0,
+            booked=f.booked if f else 0,
         )
         ctx = {"proposal": x, "request": r, "facts": f}
         out.append((progress(tf, today, now), d, ctx, f))

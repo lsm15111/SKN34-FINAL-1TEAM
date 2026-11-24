@@ -107,7 +107,7 @@ def test_visit_time_after_vendor_answer_shows_halves_and_slot_button(api):
     ev = ok(ask(api, f["pid"], "실측은 언제 할 수 있어요?"))
     (slots,) = cards_of(ev, "visit_slots")
     cands = slots["data"]["candidates"]
-    assert cands and said(ev).startswith("업체가 답한 기간에서")
+    assert cands and said(ev).startswith("실측 가능 기간에서")
     ev = ok(ask(api, f["pid"], "이 시간이요", context={"choice": f"visit_slot:{cands[0]['ref']}"}))
     (a,) = [x for x in acts(ev) if x["status"] == "proposed"]
     assert a["kind"] == "visit_slot" and a["target_ver"] == "offered"

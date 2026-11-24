@@ -791,6 +791,16 @@ NONE_AREA = "{area}에는 믿집이 단가를 확인한 {trade} 업체가 아직
 NONE_LIVE = "고를 수 있는 업체 중 {names}에는 이미 실측을 요청해 진행 중이에요"
 NONE_OUT = "이 공사에서 빠진 업체({names})는 다시 추천하지 않아요(못 받음 · 답 없음 · 멈춤)"
 NONE_ASKED = "이미 요청하거나 확정한 업체({names})는 뺐어요"
+# 같은 업체에 두 번 요청해(취소 · 답 없음 포함) 이 공사에서 다시 요청할 수 없는 업체(visit.service blocked_retry). 추천에서
+# 빠진 까닭 · 요청 도구 오류 글(QA r9 c3 M1: '지금 준비하지 못했어요' · '이유는 확인하지 못했어요'로 끝남)
+BLOCKED_NOTE = (
+    "{names}에는 이 공사에서 이미 두 번 요청해서(취소한 요청 포함) 다시 요청할 수 없어 추천에서 뺐어요. 같은 업체에는 "
+    "두 번까지 요청할 수 있어요."
+)
+BLOCKED_ONE = (
+    "{name}에는 이 공사에서 이미 두 번 요청해서(취소한 요청 포함) 다시 요청할 수 없어요. 같은 업체에는 두 번까지 요청할 "
+    "수 있어요. 다른 업체를 골라 주세요."
+)
 # 담기 칸 3칸이 다 찼을 때 추천은 담아 둔 업체(요청 전) 중에서만(점검 R2 B1)
 HELD_ONLY = (
     "담기 칸 3곳이 다 차서 담아 둔 업체(요청 전) 중에서만 골랐어요. 다른 업체에 요청하려면 업체 보기에서 담은 업체 "
@@ -934,11 +944,20 @@ async def vendor_picks(
     going = sorted(by_id[v].name for v in live if v in by_id)
     if going:  # 진행 중인 요청은 추천에서 뺐다: 다시 요청하라고 하지 않고 그 진행을 안내한다
         notes.append(f"{' · '.join(going)}에는 이미 실측을 요청해 진행 중이라 추천에서 뺐어요.")
-    if notes:
-        model["note"] = " ".join(notes)
+    # 두 번 요청해 막힌 업체: 빠진 까닭을 남겨요(QA r9 c3 M1)
+    blocked = sorted(c.name for c in by_id.values() if c.state == "blocked_retry")
+    told = BLOCKED_NOTE.format(names=" · ".join(blocked)) if blocked else None
     if not picks:
         ok = [c for c in (*lst.local, *lst.nearby) if c.state == "ok"]
-        model["why"] = none_why(ok, live, out_ids, asked, lst.area_name, trade)
+        # 단가를 확인한 업체가 없는 게 아니라 두 번 요청해 막혔어요(까닭은 why로만)
+        if told and not ok:
+            model["why"], told = [told], None
+        else:
+            model["why"] = none_why(ok, live, out_ids, asked, lst.area_name, trade)
+    if told:
+        notes.append(told)
+    if notes:
+        model["note"] = " ".join(notes)
     return card, model
 
 
@@ -1051,30 +1070,46 @@ async def visit_slots(
     days: str,
     skip: frozenset[tuple[date, str]] = frozenset(),
     said: str = "",
+    window: bool = False,
+    again: frozenset[tuple[date, str]] = frozenset(),
 ) -> tuple[CardOut, dict]:
     """요청 뒤: 날짜 고르기 화면(pick_view)의 열린 반나절 → calc.slots.candidates → s1~s3.
-    업체가 다른 날을 냈으면(proposed) 그 날들이 후보다(고르면 바로 확정). skip(이미 보인 반나절, 비서 '다른 시간')은
-    업체 기간 후보에서 뺀다. 같은 집 다른 업체 실측이 잡은 반나절과 다른 요청의 열린 실측 시간 카드가 고른 반나절도
-    뺀다(QA r6 c4 1: '두 업체 다 토요일로'에 두 카드 모두 11.28 오전, 둘째 승인이 409 slot_clash).
-    said(이번 턴 고객 말)와 기억한 편한 요일에 이름으로 나온 요일만 '말한 요일이에요'를 단다(day_why)."""
+    업체가 다른 날을 냈으면(proposed) 그 날들이 후보다(고르면 바로 확정). window(비서 '다른 날짜', proposed일 때)면
+    업체가 낸 날 대신 처음 실측 가능 기간에서 다시 고를 후보(repick)예요: 업체가 낸 날과 again(이미 보인 다시 고르기
+    후보)은 빼요(QA r9 c1 H1). skip(이미 보인 반나절, 비서 '다른 날짜')은 업체 기간 후보에서 뺀다. 같은 집 다른
+    업체 실측이 잡은 반나절과 다른 요청의 열린 실측 날짜 카드가 고른 반나절도 뺀다(QA r6 c4 1: '두 업체 다
+    토요일로'에 두 카드 모두 11.28 오전, 둘째 승인이 409 slot_clash). said(이번 턴 고객 말)와 기억한 편한 요일에
+    이름으로 나온 요일을 먼저 고르고(QA r9 c3) 그 요일만 '말한 요일이에요'를 단다(day_why). 업체 답 전(requested)이면
+    희망 기간 안 그 요일을 모델 값 days로 준다."""
     from app.assistant import repository as repo
-    from app.calc import slots
+    from app.calc import deadline, slots
     from app.refprice.holidays import days_off
     from app.visit import service as visit_service
 
     v = await visit_service.pick_view(s, user, pid, visit_id, now)
     today = visit_service.today_of(now)
-    # 같은 집 다른 업체 실측이 잡은 반나절(P8) · 다른 요청의 열린 실측 시간 카드가 고른 반나절은 빼요
+    # 같은 집 다른 업체 실측이 잡은 반나절(P8) · 다른 요청의 열린 실측 날짜 카드가 고른 반나절은 빼요
     taken = {(m.day, m.half) for m in v.mine} | await repo.open_slot_halves(
         s, user.id, pid, visit_id
     )
+    remembered = next(
+        (m.value for m in await repo.memories(s, user.id) if m.key == "avail_days"), ""
+    )
+    named = said_weekdays(said) | said_weekdays(remembered)
+    proposed = v.status == "proposed" and v.proposal is not None
+    repick = proposed and window
+    late = repick and v.window is not None and deadline.is_over(now, v.window.pick_due_at)
+    notes: list[str] = []
     picks: list[tuple[date, str, list[str], str]] = []
-    if v.status == "proposed" and v.proposal is not None:
+    if proposed and not repick:
         for x in [x for x in v.proposal.slots if slots.free_at_home(x.day, x.half, taken)][:3]:
             day_kind = "weekend" if x.day.weekday() >= 5 else "weekday"
             picks.append((x.day, x.half, ["vendor_proposal", day_kind], "proposal"))
-    elif v.status == "offered" and v.days:
+        notes.append(PROPOSAL_NOTE)
+    elif (v.status == "offered" or repick) and v.days and not late:
         opened = [slots.DayOpen(d.day, d.am_left, d.pm_left) for d in v.days]
+        # 다시 고르기는 업체가 낸 날을 빼요(그 날은 업체가 낸 날 카드로 바로 정해요)
+        offered = {(x.day, x.half) for x in v.proposal.slots} if repick else set()
         found = slots.candidates(
             opened,
             v.work_wish_on,
@@ -1082,13 +1117,13 @@ async def visit_slots(
             prefer=prefer,
             day_prefer=days,
             days_off=days_off(opened[0].day, opened[-1].day),
-            taken=taken | skip,
+            taken=taken | (again if repick else skip) | offered,
+            named=named,
         )
-        remembered = next(
-            (m.value for m in await repo.memories(s, user.id) if m.key == "avail_days"), ""
-        )
-        named = said_weekdays(said) | said_weekdays(remembered)
-        picks = [(c.day, c.half, day_why(c.why, c.day, named), "pick") for c in found]
+        via = "repick" if repick else "pick"
+        picks = [(c.day, c.half, day_why(c.why, c.day, named), via) for c in found]
+    if repick:
+        notes.append(REPICK_LATE if late else REPICK_NOTE if picks else REPICK_NONE)
     cands = [
         SlotCandidate(
             ref=refs.put(
@@ -1107,7 +1142,8 @@ async def visit_slots(
         vendor_name=v.vendor_name,
         window=DateRange(start=w.start, end=w.end) if w else None,
         candidates=cands,
-        instant=v.instant or v.status == "proposed",
+        # 업체가 낸 날은 고르면 바로 확정, 다시 고르기는 처음 기간 그대로(바로 확정이 아니면 업체 수락)
+        instant=v.instant or (proposed and not repick),
         calendar_href=href(pid, f"/visits/{v.visit_id}"),
         vendor_note=policy.vendor_note(v.proposal.note if v.proposal else None),
     )
@@ -1124,8 +1160,15 @@ async def visit_slots(
         ],
         "vendor_note": data.vendor_note is not None,  # 업체 글은 카드 칸에만(모델에는 있는지만)
     }
+    if v.status == "requested" and v.wish_start is not None and v.wish_end is not None:
+        # 업체 답 전: 희망 기간과 그 안 고객이 콕 집은 요일(QA r9 c3 T7: '토요일로 바꿀 수 있어요?')
+        model["wish"] = {"start": v.wish_start, "end": v.wish_end}
+        if named:
+            model["days"] = named_days(v.wish_start, v.wish_end, today, named)
     if taken:  # 나눈 까닭을 한 줄로 말할 수 있게(같은 반나절에 두 업체를 잡을 수 없어요)
-        model["note"] = SLOT_SPLIT
+        notes.append(SLOT_SPLIT)
+    if notes:
+        model["note"] = " ".join(notes)
     return card, model
 
 
@@ -1133,6 +1176,38 @@ SLOT_SPLIT = (
     "다른 업체 실측이 이미 잡혔거나 다른 카드에서 고른 때는 후보에서 뺐어요. 한 집에 같은 때 두 업체 실측을 잡을 "
     "수는 없어요."
 )
+# 업체가 다른 날을 냈을 때(proposed) 모델 값 note: 업체가 낸 날이 안 맞으면 처음 실측 가능 기간에서 다시 고르는 길
+# (QA r9 c1 H1: 화면 [업체 기간에서 고르기]를 몰라 같은 카드 · 물음을 세 턴 되풀이)
+PROPOSAL_NOTE = (
+    "후보는 업체가 낸 날이에요(고르면 바로 정해져요). 안 맞으면 처음 실측 가능 기간에서 다시 고를 수 있다고 한 문장으로 "
+    "알려요. 고객이 그 날이 안 맞다거나 처음 기간에서 다시 고르고 싶다고 하면 같은 카드를 다시 내지 말고 more=true로 "
+    "다시 불러요: 업체가 낸 날 대신 처음 기간에서 고를 후보가 와요. 화면 길은 실측 일정 화면의 [업체 기간에서 "
+    "고르기]예요."
+)
+REPICK_NOTE = (
+    "업체가 낸 날 대신 처음 실측 가능 기간에서 다시 고를 후보예요(업체가 낸 날은 뺐어요). 고른 후보로 승인 카드를 "
+    "만들고, 고객이 누르면 업체가 낸 날은 닫혀요."
+)
+REPICK_NONE = (
+    "처음 실측 가능 기간에 다시 고를 수 있는 실측 일정이 남아 있지 않아요. 업체가 낸 날을 고르거나 다른 업체에 요청할 "
+    "수 있어요."
+)
+REPICK_LATE = (
+    "처음 실측 가능 기간에서 고르는 기한이 지나 다시 고를 수 없어요. 업체가 낸 날을 고르거나 다른 업체에 요청할 수 "
+    "있어요."
+)
+NAMED_DAYS_MAX = 4
+
+
+def named_days(start: date, end: date, today: date, named: frozenset[int]) -> list[str]:
+    """희망 기간(내일부터) 안 고객이 이름으로 말한 요일의 날 글('11월 28일(토)'), 앞에서 NAMED_DAYS_MAX개."""
+    out: list[str] = []
+    d = max(start, today + timedelta(days=1))
+    while d <= end and len(out) < NAMED_DAYS_MAX:
+        if d.weekday() in named:
+            out.append(md_long(d))
+        d += timedelta(days=1)
+    return out
 
 
 # ---- 견적서 비교 ----
@@ -1627,7 +1702,8 @@ def board_row(v, o, works: dict, today: date) -> "BoardVendorRow":
 
 # 공사 요약의 지금 할 일(o.todo) 코드 → 오늘 정할 일 · 보드에서 어디에 두는지(업체 차례 · 공사 중은 기다리는 일)
 TODO_WAIT = frozenset({"dates_waiting", "dates_requested", "working", "fixing"})
-TODO_SKIP = frozenset({"visit_requested"})  # 실측 요청 뒤: 업체마다 '답 기다림' 줄이 따로 있어요
+# 실측 요청 뒤: 업체마다 '답 기다림' · '실측 예정' 줄이 따로 있어요
+TODO_SKIP = frozenset({"visit_requested", "visit_booked"})
 
 
 def todo_kind(todo) -> str | None:
@@ -1928,6 +2004,22 @@ NEXT_TEXT = {
     "quote": "견적서 기다림",
     "confirm": "견적서 보고 확정할 차례",
 }
+# 열린 승인 카드 종류 → 같은 일인 업체 줄 차례(오늘 정할 일에서 한 줄로 묶어요, QA r9 c2 T24)
+SAME_JOB: dict[str, frozenset[str]] = {
+    "visit_slot": frozenset({"pick", "proposal"}),
+    "vendor_confirm": frozenset({"confirm"}),
+}
+
+
+def news_visit(link: str | None) -> uuid.UUID | None:
+    """알림 주소가 가리키는 실측 요청(/projects/…/visits/<id>). 없으면 None."""
+    from app.assistant.repository import NEWS_VISIT
+
+    m = NEWS_VISIT.search(link or "")
+    try:
+        return uuid.UUID(m.group(1)) if m else None
+    except ValueError:
+        return None
 
 
 async def chat_links(s: AsyncSession, pid: uuid.UUID, vendor_ids) -> dict[uuid.UUID, str]:
@@ -1989,6 +2081,8 @@ async def today(
     acts = await repo.actions_of(s, user.id, "customer", project_id=pid, status="proposed")
     todo: list[TodayRow] = []
     model_todo: list[dict] = []
+    # 실측 요청 → 그 요청을 가리키는 열린 승인 카드(종류, 모델 줄): 같은 일의 업체 줄을 따로 두지 않아요
+    on_visit: dict[uuid.UUID, tuple[str, dict]] = {}
     for a in acts:
         x = action_out(a)
         soon = a.expires_at - now <= timedelta(hours=24)
@@ -2001,9 +2095,10 @@ async def today(
                 due=soon,
             )
         )
-        model_todo.append(
-            {"title": x.summary.title, "kind": a.kind, "due_at": seoul_text(a.expires_at)}
-        )
+        item = {"title": x.summary.title, "kind": a.kind, "due_at": seoul_text(a.expires_at)}
+        model_todo.append(item)
+        if a.target_kind == "visit":
+            on_visit.setdefault(a.target_id, (a.kind, item))
     waiting: list[TodayRow] = []
     model_wait: list[dict] = []
     kind = todo_kind(o.todo)
@@ -2016,6 +2111,9 @@ async def today(
     diy_rows, diy_items = await diy_tools.today_rows(s, user, pid, today_)
     todo += diy_rows
     model_todo += diy_items
+    # 고객이 할 줄(승인 카드 · 고객 차례)이 있는 실측 요청: 모델 값 새 소식에서 같은 일을 빼요. 업체 차례 줄(실측 예정
+    # 등)은 소식의 날짜 · 내용을 대신하지 않아 소식을 그대로 둬요
+    shown = {vid for vid, (k, _item) in on_visit.items() if k in SAME_JOB}
     for v in o.vendors:
         n = v.next
         if n.kind == "none":
@@ -2023,6 +2121,13 @@ async def today(
         ref = refs.put(
             "visit", {"id": str(v.visit_id), "vendor_name": v.vendor_name, "trade": v.trade}
         )
+        if n.who == "customer":
+            shown.add(v.visit_id)
+        same = on_visit.get(v.visit_id)
+        if same is not None and n.who == "customer" and n.kind in SAME_JOB.get(same[0], ()):
+            # 같은 일은 한 줄(승인 카드 줄)로: 업체 줄의 이름표 · 차례는 그 줄 모델 값에 붙여요(QA r9 c2 T24)
+            same[1].update(ref=ref, vendor_name=v.vendor_name, next=NEXT_TEXT.get(n.kind, n.kind))
+            continue
         row = TodayRow(
             id=f"v-{v.visit_id}",
             icon="calendar" if n.kind in ("pick", "proposal", "visit") else "inbox",
@@ -2044,7 +2149,7 @@ async def today(
             model_wait.append(item)
     page = await notify_service.page(s, user.id, pid)
     fresh = [x for x in page.items if not x.read and now - x.created_at <= timedelta(days=2)]
-    # 비서 카드로 할 일을 끝낸 알림('날짜를 골라 주세요' 뒤 시간을 골랐어요)은 새 소식에서 뺀다
+    # 비서 카드로 할 일을 끝낸 알림('날짜를 골라 주세요' 뒤 날짜를 골랐어요)은 새 소식에서 뺀다
     done = await repo.settled_events(s, user.id, [x.id for x in fresh])
     news = [
         TodayRow(
@@ -2059,11 +2164,14 @@ async def today(
     ][:3]
     data = TodayData(date=today_, todo=todo, waiting=waiting, news=news)
     card = CardOut(card_id="today", kind="today", data=data.model_dump(mode="json"))
+    # 모델 값 새 소식: 위 고객 줄(승인 카드 · 고객 차례)이 맡은 실측 요청의 소식은 같은 일이라 뺀다(QA r9 c2 T24: 승인
+    # 카드 줄 · 차례 줄 · 새 소식 세 줄). 카드의 새 소식 칸은 화면이 그리지 않아요(종 알림과 겹침)
+    told = [x for x in news if news_visit(x.action.href if x.action else None) not in shown]
     model = {
         "date": today_,
         "todo": model_todo,
         "waiting": model_wait,
-        "news": [{"title": x.title, "sub": x.sub} for x in news],
+        "news": [{"title": x.title, "sub": x.sub} for x in told],
         "count": len(todo),
     }
     return card, model

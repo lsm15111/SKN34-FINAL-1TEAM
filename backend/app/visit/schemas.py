@@ -879,6 +879,7 @@ class VisitFactsOut(BaseModel):
     quoted_names: list[str]
     waiting_names: list[str]
     last_at: datetime | None = Field(description="요청 상태가 마지막으로 바뀐 때")
+    booked: int = Field(default=0, description="실측 날짜가 정해진(실측 받음 포함) 요청 수")
 
 
 class VisitQuotesOut(BaseModel):

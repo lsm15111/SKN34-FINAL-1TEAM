@@ -654,7 +654,8 @@ async def answer_window(
         s,
         user_id=h.owner_id,
         kind="visit_offered",
-        body=f"{i_ga(v.vendor_name)} 기간을 보냈어요. 날짜를 골라 주세요",
+        # 고객 실측 말: 업체가 보낸 기간은 '실측 가능 기간'(QA r9 c1)
+        body=f"{i_ga(v.vendor_name)} 실측 가능 기간을 보냈어요. 실측 날짜를 골라 주세요",
         link=link("visit_offered", pid=v.project_id, vid=v.id),
         dedup_key=f"visit_offered:{v.id}",
         project_id=v.project_id,
@@ -686,6 +687,16 @@ async def pick(
     v = await _customer_visit(s, user, project_id, visit_id)
     if v.status != "offered":
         raise svc.visit_error(v, "날짜를 고를 수 있는 요청이 아니에요.")
+    status, hold, tid = await _pick(s, user, v, data, now)
+    await s.commit()
+    svc.push_later(s, [user.id, v.vendor_id], v)
+    return PickOut(visit_id=v.id, status=status, booked=svc.booked_out(hold), thread_id=tid)
+
+
+async def _pick(
+    s: AsyncSession, user: User, v: Visit, data: SlotIn, now: datetime
+) -> tuple[str, VisitHold, uuid.UUID | None]:
+    """offered인 요청에서 반나절 고르기(commit · 신호는 부르는 쪽). (상태, 잡기, 대화 id)."""
     w = (await repo.windows(s, [v.id])).get(v.id)
     if w is None:
         raise app_error("stale")
@@ -726,9 +737,7 @@ async def pick(
             dedup_key=f"visit_picked:{v.id}:{_short(hold.id)}",
         )
         status = "picked"
-    await s.commit()
-    svc.push_later(s, [user.id, v.vendor_id], v)
-    return PickOut(visit_id=v.id, status=status, booked=svc.booked_out(hold), thread_id=tid)
+    return status, hold, tid
 
 
 # ---- 업체 수락 · 다른 날 제안 (V06 · V07) ----
@@ -851,6 +860,35 @@ async def repick(
     v = await _customer_visit(s, user, project_id, visit_id)
     if v.status != "proposed":
         raise svc.visit_error(v, "다시 고를 수 있는 요청이 아니에요.")
+    await _repick(s, user, v, now)
+    await s.commit()
+    svc.push_later(s, [user.id, v.vendor_id], v)
+    return await _state_out(s, v.id, now)
+
+
+async def repick_pick(
+    s: AsyncSession,
+    user: User,
+    project_id: uuid.UUID,
+    visit_id: uuid.UUID,
+    data: SlotIn,
+    now: datetime,
+) -> PickOut:
+    """proposed → offered → picked(바로 확정이면 booked)를 한 트랜잭션으로: 업체가 낸 날 대신 처음 실측 가능 기간에서
+    다시 고르기(비서 승인 카드, QA r9 c1 H1). 화면의 [업체 기간에서 고르기] → 고르기와 같은 이력 · 알림이고, 고르기가
+    막히면(기간 밖 · 칸이 참 · 고르기 기한 지남) 다시 고르기도 같이 되돌려 업체가 낸 날이 그대로 남아요."""
+    v = await _customer_visit(s, user, project_id, visit_id)
+    if v.status != "proposed":
+        raise svc.visit_error(v, "다시 고를 수 있는 요청이 아니에요.")
+    await _repick(s, user, v, now)
+    status, hold, tid = await _pick(s, user, v, data, now)
+    await s.commit()
+    svc.push_later(s, [user.id, v.vendor_id], v)
+    return PickOut(visit_id=v.id, status=status, booked=svc.booked_out(hold), thread_id=tid)
+
+
+async def _repick(s: AsyncSession, user: User, v: Visit, now: datetime) -> None:
+    """제안 닫기(repicked) · proposed → offered · 이력 · 기한 일 · 업체 알림(commit은 부르는 쪽)."""
     p = (await repo.proposals_open(s, [v.id])).get(v.id)
     if p is None or not await repo.close_proposal(s, p.id, "repicked", now):
         raise app_error("stale")
@@ -868,9 +906,6 @@ async def repick(
         link=link("visit_repicked", vid=v.id),
         dedup_key=f"visit_repicked:{p.id}",
     )
-    await s.commit()
-    svc.push_later(s, [user.id, v.vendor_id], v)
-    return await _state_out(s, v.id, now)
 
 
 # ---- 실측 뒤 (C32 · D20) ----

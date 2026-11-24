@@ -364,12 +364,15 @@ class SlotsIn(BaseModel):
     ref: str  # 업체 이름표(v…, 요청 전) 또는 실측 요청 이름표(m…, 업체가 기간을 답한 뒤)
     prefer: Literal["any", "am", "pm"] = "any"
     days: Literal["any", "weekday", "weekend"] = "any"
-    more: bool = False  # 다른 시간: 이 대화에서 이미 보인 반나절은 빼고 남은 자리에서
+    # 다른 날짜: 이 대화에서 이미 보인 후보는 빼고 남은 자리에서. 업체가 다른 날을 냈으면(proposed) 처음 실측 가능
+    # 기간에서 다시 고를 후보(QA r9 c1 H1)
+    more: bool = False
 
 
-MORE_NONE = "이 대화에서 이미 보인 후보 말고는 업체 기간에 남은 실측 일정이 없어요."
+MORE_NONE = "이 대화에서 이미 보인 후보 말고는 실측 가능 기간에 남은 실측 일정이 없어요."
 MORE_NOTE = "이 대화에서 이미 보인 후보는 빼고 남은 자리에서 골랐어요."
-# 고를 실측 일정 후보가 없을 때(점검 R2 B6: 업체 답 전 · 이미 고른 요청에 후보 없는 빈 카드를 보냄) 요청 상태마다 까닭
+# 고를 실측 일정 후보가 없을 때(점검 R2 B6: 업체 답 전 · 이미 고른 요청에 후보 없는 빈 카드를 보냄) 요청 상태마다 까닭.
+# 업체 답 전(requested)에 요일 · 날짜를 바꾸고 싶어 하면 '바꿀 수 없어요'로 끝내지 않게 길을 같이 줘요(QA r9 c3 T7)
 NO_SLOTS = {
     "requested": "업체가 아직 실측 가능 기간을 답하지 않았어요. 업체가 답하면 그 기간에서 실측 일정을 고를 수 있어요.",
     "picked": "이미 실측 일정을 골라 업체 수락을 기다리고 있어요.",
@@ -379,17 +382,25 @@ NO_SLOTS = {
         ("declined", "expired", "cancelled", "no_show", "closed"), "이 요청은 이미 끝났어요."
     ),
 }
-NO_SLOTS_LEFT = "업체가 답한 기간에 지금 고를 수 있는 실측 일정이 남아 있지 않아요."
+WAIT_WAYS = (
+    "날짜 · 요일을 바꾸고 싶어 하면 '바꿀 수 없어요'로 끝내지 말고 이 길을 말해요: 요청은 그대로 두면 돼요. 업체가 실측 "
+    "가능 기간을 보내면 이 대화로 알려 드리고, 그 기간 안에서 고객이 말한 요일을 골라 승인 카드를 만들 수 있어요. 희망 "
+    "기간 안 그 요일은 days예요."
+)
+NO_SLOTS_LEFT = "실측 가능 기간에 지금 고를 수 있는 실측 일정이 남아 있지 않아요."
 NO_WISHES = "공사 시작 전 희망 기간에 이 업체의 빈 실측 일정이 없어요."
 NO_CARD_NOTE = "그래서 실측 일정 카드는 보이지 않았어요(카드를 보였다고 말하지 마요)."
 
 
-def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
-    """이 대화에서 이미 보인 그 요청의 반나절 후보(이름표 s…의 날 · 반나절, 먼저 말 걸기 카드 포함)."""
+def shown_halves(tc: ToolCtx, visit_id: str, via: str | None = None) -> frozenset[tuple[date, str]]:
+    """이 대화에서 이미 보인 그 요청의 반나절 후보(이름표 s…의 날 · 반나절, 먼저 말 걸기 카드 포함). via를 주면 그
+    길(다시 고르기 repick 등)로 보인 것만."""
     return frozenset(
         (date.fromisoformat(str(it["day"])), str(it["half"]))
         for it in tc.refs.items.values()
-        if it.get("kind") == "slot" and str(it.get("visit_id")) == visit_id
+        if it.get("kind") == "slot"
+        and str(it.get("visit_id")) == visit_id
+        and (via is None or it.get("via") == via)
     )
 
 
@@ -401,8 +412,11 @@ def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
     description="실측 일정 후보를 찾아요. ref는 꼭 넣어요: 요청 전에는 업체 이름표(v1…, recommend_vendors 결과)로 "
     "희망 기간 후보(r1~r2), 업체가 기간을 답한 뒤에는 실측 요청 이름표(m1…, today_tasks · compare_quotes 결과)로 "
     "실측 일정 후보(s1~s3, 날짜 · 오전 · 오후). prefer는 고객이 말한 편한 때(오전 · 오후), days는 평일 · 주말이에요. "
-    "고객이 다른 날짜 · 다른 때를 더 보고 싶어 하면 more=true: 이 대화에서 이미 보인 후보는 빼고 업체 기간에 남은 "
-    "자리(오후 포함)에서 골라요.",
+    "고객이 다른 날짜 · 다른 때를 더 보고 싶어 하면 more=true: 이 대화에서 이미 보인 후보는 빼고 실측 가능 기간에 "
+    "남은 자리(오후 포함)에서 골라요. 업체가 다른 날을 냈는데(업체가 낸 날 고를 차례) 그 날이 안 맞거나 처음 기간에서 "
+    "다시 고르려 하면 more=true로 처음 실측 가능 기간 후보를 받아요(고르면 업체가 낸 날 대신 다시 골라요). 실측 요청 "
+    "뒤 업체 답 전에 고객이 실측 날짜 · 요일을 바꾸고 싶어 해도 그 요청 이름표로 불러요(바꾸는 길 · 희망 기간 안 그 "
+    "요일이 와요).",
     model=SlotsIn,
     schema=obj(
         {
@@ -411,7 +425,8 @@ def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
             "days": {"type": "string", "enum": ["any", "weekday", "weekend"]},
             "more": {
                 "type": "boolean",
-                "description": "이미 보인 후보 말고 다른 일정을 볼 때 true(업체가 기간을 답한 뒤)",
+                "description": "이미 보인 후보 말고 다른 일정을 볼 때 true(업체가 기간을 답한 뒤). 업체가 낸 날 "
+                "대신 처음 실측 가능 기간에서 다시 고를 때도 true",
             },
         },
         required=["ref", "prefer", "days"],
@@ -423,26 +438,39 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
     async with SessionLocal() as s:
         if kind == "visit":
             v = tc.refs.get(a.ref, "visit")
-            skip = shown_halves(tc, str(v["id"])) if a.more else frozenset()
+            vid = str(v["id"])
+            skip = shown_halves(tc, vid) if a.more else frozenset()
+            again = shown_halves(tc, vid, "repick") if a.more else frozenset()
             card, model = await cards.visit_slots(
                 s,
                 tc.user,
                 pid,
-                uuid.UUID(v["id"]),
+                uuid.UUID(vid),
                 tc.now,
                 tc.refs,
                 prefer=a.prefer,
                 days=a.days,
                 skip=skip,
                 said=tc.text,
+                window=a.more,
+                again=again,
             )
-            if skip and model.get("status") == "offered":  # 다른 시간(QA r3 c1 6턴)
+            status = model.get("status")
+            if skip and status == "offered":  # 다른 날짜(QA r3 c1 6턴)
                 model["note"] = MORE_NOTE if model["candidates"] else MORE_NONE
                 if not model["candidates"]:  # 빈 카드 대신 사실만
                     return ToolOut(data=model)
+            # 처음 기간에서 다시 고를 후보를 한 번 더(이미 보인 것 빼고)
+            if again and status == "proposed":
+                more = MORE_NOTE if model["candidates"] else MORE_NONE
+                model["note"] = " ".join(x for x in (model.get("note"), more) if x)
             if not model["candidates"]:  # 고를 후보가 없으면 빈 카드 대신 까닭(점검 R2 B6)
-                why = NO_SLOTS.get(model.get("status"), NO_SLOTS_LEFT)
-                note = " ".join(x for x in (why, NO_CARD_NOTE, model.get("note")) if x)
+                # 업체가 낸 날 대신 처음 기간에서 다시 고를 후보가 없으면 그 까닭이 모델 값 note예요
+                why = (
+                    None if a.more and status == "proposed" else NO_SLOTS.get(status, NO_SLOTS_LEFT)
+                )
+                ways = WAIT_WAYS if status == "requested" else None
+                note = " ".join(x for x in (why, ways, NO_CARD_NOTE, model.get("note")) if x)
                 return ToolOut(data={**model, "note": note})
         else:  # 업체 이름표가 아니면 RefTable.get이 모르는 이름표 오류(힌트에 필요한 종류)
             vend = {**tc.refs.get(a.ref, "vendor"), "ref": a.ref}

@@ -137,6 +137,16 @@ def test_vendor_rules_point_to_real_screen_paths():
     assert "알림은 밤에도 바로 가고" in r and "밤 9시~아침 9시 알림은 아침에 가" not in r
 
 
+def test_vendor_rules_point_to_the_request_screen_before_chat():
+    """QA r9 c1 V7 · M5: 고객이 고른 실측 날짜에 못 가면 요청 화면 [다른 날 제안]이에요. 믿집 채팅은 실측 날짜가 정해진
+    뒤에 열려서 그 전엔 채팅으로 상의하라고 하지 않아요."""
+    r = rules("vendor_v4")
+    assert "요청 화면의 [수락]" in r and "같은 화면 [다른 날 제안]" in r
+    assert "믿집 채팅은 실측 날짜가 정해진 뒤에 열려서" in r
+    body = (PROMPTS / "vendor_v4.md").read_text(encoding="utf-8")
+    assert "### 7. 고른 날에 못 갈 때" in body
+
+
 def test_card_made_words_say_what_pressing_does():
     """판정 에이전트 r8(S15 · S18): 카드를 만들고 누르면 무엇이 되는지 · 누르기 전엔 그대로인지를 말하지 않았어요."""
     r = rules("customer_v4")

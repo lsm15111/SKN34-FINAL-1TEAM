@@ -929,16 +929,18 @@ async def _visit_request(
 
 
 async def _visit_slot(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
+    """실측 날짜 고르기: 업체 기간(pick) · 업체가 낸 날(proposal) · 업체가 낸 날 대신 처음 기간에서 다시 고르기
+    (repick: 화면 [업체 기간에서 고르기] → 고르기를 한 트랜잭션으로, QA r9 c1 H1)."""
     from app.visit import flow
     from app.visit.schemas import SlotIn
 
     pl = a.payload
     data = SlotIn(day=date.fromisoformat(pl["day"]), half=pl["half"])
     booked = pl["via"] == "proposal" or bool(pl.get("instant"))
-    text = "실측을 잡았어요" if booked else "고른 시간을 보냈어요. 업체가 수락하면 확정돼요"
+    text = "실측을 잡았어요" if booked else "고른 실측 날짜를 보냈어요. 업체가 수락하면 확정돼요"
     href = f"/projects/{a.project_id}/visits/{pl['visit_id']}"
     await mark({"text": text, "href": href, "label": "실측 일정 보기"})
-    fn = flow.pick_proposal if pl["via"] == "proposal" else flow.pick
+    fn = {"proposal": flow.pick_proposal, "repick": flow.repick_pick}.get(pl["via"], flow.pick)
     await fn(s, user, a.project_id, uuid.UUID(pl["visit_id"]), data, now)  # type: ignore[arg-type]
 
 
