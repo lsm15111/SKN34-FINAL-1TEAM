@@ -10,7 +10,8 @@
   무료 모드다(차단기에 세지 않는다). 빈 말은 LLM에 보내지 않는다(빈 글 블록은 400).
 - 모델 글은 문장마다 check.sentence_ok(허용 숫자 = 이번 턴 도구 결과 · 이 턴에 만든 · 보인 카드 값 · 사실 · 고객
   글 · 지난 비서 말 두 개)를 지난 것만 token으로 보낸다. 숫자는 근거 값 그대로에 더해 어림 · 차액 · 합계 · 평당 · 날짜
-  꼴을 읽고(guard.loose, 합 · 차는 같은 금액 기준끼리만), 누출은 지시문의 규칙 절과만 견준다(prompts.rules). 내용
+  꼴을 읽고(guard.loose, 합 · 차는 같은 금액 기준끼리만, 지난 고객 말 · 비서 말은 그 말 안에서만, 고객 말의 한글 금액은
+  원 값으로), 누출은 지시문의 규칙 절과만 견준다(prompts.rules). 내용
   까닭(숫자 · 한 일처럼 말함 …)으로 뺀 문장 바로 뒤의 되가리키는 문장('이 값은 …')도 뺀다. 말투 · 길이는
   모델에 맡기고(docs/v4/08-rules.md) 아주 긴 답만 줄인다: 앞 문장부터 상한까지 보내고 넘친 문장은 마지막 묻는 말
   하나만 턴 끝에 보낸다. 앞으로 가리키는 문장과 뒤 목록은 묶음째 보내거나 뺀다(안 문장이 검사로 빠지면 가리키는 말이
@@ -415,14 +416,17 @@ def said_turns(history: list[dict], turns: int = SPARE_RUN) -> list[list[str]]:
     return [recent_said([{"role": "assistant", "content": t}], 1) for t in reversed(said)]
 
 
-def told_before(history: list[dict], turns: int = TOLD_TURNS) -> str:
-    """지난 비서 말 turns개(가장 가까운 것부터 셈)의 글: 이미 검사를 지나 보낸 글이라 숫자 근거다(앞 턴에 말한 가견적을
-    '만 원 단위로'처럼 다시 말할 수 있게, QA r5 C s5-4). 카드만 보낸 턴의 기록 글은 세기만 한다. 대화 기록은 최근
-    service.HISTORY_FULL줄을 자르지 않아 이 글은 앞부분만 남긴 옛 비서 말(HISTORY_CUT자)이 아니다."""
+def told_each(history: list[dict], turns: int = TOLD_TURNS) -> list[str]:
+    """지난 비서 말 turns개(가장 가까운 것부터 셈)의 글 하나하나: 이미 검사를 지나 보낸 글이라 숫자 근거다(앞 턴에 말한
+    가견적을 '만 원 단위로'처럼 다시 말할 수 있게, QA r5 C s5-4). 카드만 보낸 턴의 기록 글은 세기만 한다. 대화 기록은
+    최근 service.HISTORY_FULL줄을 자르지 않아 이 글은 앞부분만 남긴 옛 비서 말(HISTORY_CUT자)이 아니다."""
     said = [m.get("content") for m in history if m.get("role") == "assistant"][-turns:]
-    return "\n".join(
-        t for t in said if isinstance(t, str) and t.strip() and not t.startswith(CARDS_ONLY)
-    )
+    return [t for t in said if isinstance(t, str) and t.strip() and not t.startswith(CARDS_ONLY)]
+
+
+def told_before(history: list[dict], turns: int = TOLD_TURNS) -> str:
+    """told_each를 이은 글."""
+    return "\n".join(told_each(history, turns))
 
 
 def back_ref(text: str) -> bool:
@@ -488,6 +492,9 @@ def summary_ground(summary: dict) -> str:
 
 
 OPEN_FACT = "승인 기다리는 카드: "  # 턴 사실의 열린 승인 카드 줄(service가 만든다)
+# 열린 승인 카드 줄의 카드 하나 끝 단추 이름(service.button_of ' [단추]')과 범위 밖 코드 틀 답의 끝 한 줄(free_turn)
+OPEN_BUTTON = re.compile(r"\s\[([^\[\]]+)\]$")
+PRESS_LINE = "카드의 {button} 누르면 이어서 진행돼요."
 
 
 def made_name(action: dict) -> str | None:
@@ -633,10 +640,13 @@ class SentenceGate:
         names: Collection[str] = (),
         asked: Collection[str] = (),
         turns: Sequence[Collection[str]] | None = None,
+        apart: Sequence[str] = (),
     ) -> None:
         self._emit = emit
         self._prompt = prompt  # 누출 견주기 글(prompts.rules: 지시문의 규칙 절만)
         self._allowed = [allowed]
+        # 따로 근거(지난 고객 말 · 지난 비서 말 하나하나): 숫자 그대로는 근거이고 파생 숫자는 그 말 안에서만(guard.ground)
+        self._apart = [x for x in apart if x and x.strip()]
         self._ground: guard.Ground | None = None
         self._buf = ""
         self._sep = ""  # 다음 문장 앞에 붙일 띄움(빈칸 · 줄 바꿈)
@@ -692,7 +702,8 @@ class SentenceGate:
     def _grounds(self) -> guard.Ground:
         """허용 글의 숫자 근거(옛 검사 값 · 어림 · 파생 · 날짜, 금액 기준 꼬리표). 근거가 더해지면 다시 읽는다."""
         if self._ground is None:
-            self._ground = guard.ground("\n".join(self._allowed), guard.basis(self._allowed))
+            tags = guard.basis([*self._allowed, *self._apart])
+            self._ground = guard.ground("\n".join(self._allowed), tags, self._apart)
         return self._ground
 
     async def feed(self, chunk: str) -> None:
@@ -1395,17 +1406,21 @@ class _Turn:
         )
         self.system = prompts.system(ctx.surface)
         self.defs = tools_mod.defs(ctx.surface)  # type: ignore[arg-type]
-        # 허용 숫자: 이번 고객 글 · 턴 사실 + 대화 기록의 고객 말(앞 턴에 고객이 한 '7시'를 다시 말할 수 있게, 고정 선 2)
-        said_before = "\n".join(
-            m["content"]
+        # 허용 숫자(고정 선 2): 이번 고객 글 · 턴 사실은 도구 결과 · 카드 값과 한 근거로 묶어요(차액 · 합계 · 평당을 서로
+        # 만듦). 대화 기록의 고객 말(앞 턴에 고객이 한 '7시'를 다시 말할 수 있게)과 지난 비서 말 두 개(이미 검사를 지나
+        # 보낸 글, 앞 턴에 말한 가견적을 '만 원 단위로'처럼 다시 말할 수 있게, 고침 5차 R1)는 말 하나하나 따로 둬요: 숫자
+        # 그대로는 근거이고 파생 숫자는 그 말 안 숫자끼리만 만들어요(QA r10 c2 T26: 희망 예산 250만 원 + 다른 턴 송금
+        # 부탁 50만 원 = '300만 원'). 고객 말의 한글 금액('삼백만 원' · '3백만' · '예산 200')은 원 값으로도 읽어요(guard.heard)
+        heard = [
+            guard.heard(m["content"])
             for m in ctx.history
             if m.get("role") == "user" and isinstance(m.get("content"), str)
-        )
+        ]
         self.gate = SentenceGate(
             emit,
             # 누출은 규칙 절과만 견준다(성격 소개 · 좋은 예시 · 그대로 말해도 되는 말을 닮은 답은 버리지 않게)
             prompts.rules(ctx.surface),
-            f"{ctx.text}\n{ctx.facts}\n{said_before}",
+            f"{guard.heard(ctx.text)}\n{ctx.facts}",
             made=res.made,
             said=recent_said(ctx.history),
             turns=said_turns(ctx.history),
@@ -1414,11 +1429,8 @@ class _Turn:
             # 같은 카드 · 채팅인지 가리는 업체 이름(턴 사실 업체 줄 · 이 대화 이름표 표, 열린 카드 업체는 run에서 더함)
             names=fact_names(ctx.facts) | ref_names(ctx.refs),
             asked=policy.asked(ctx.text),
+            apart=[*heard, *told_each(ctx.history)],
         )
-        # 지난 비서 말 두 개(이미 검사를 지나 보낸 글)도 숫자 근거다: 앞 턴에 말한 가견적을 '만 원 단위로'처럼 다시 말할
-        # 수 있게(고침 5차 R1, QA r5 C s5-4). 그 말에 없는 숫자 · 반올림 단위의 반을 넘는 어림은 지금처럼 뺀다
-        if told := told_before(ctx.history):
-            self.gate.allow(told)
         # 카드 단추 고르기(choices)가 이 턴에 보낸 카드 · 승인 카드: 숫자 근거 · 누를 단추 · 길게 둘 카드
         if note:
             self.gate.allow(note)
@@ -1768,7 +1780,8 @@ async def free_turn(
     ctx: TurnCtx, emit: Emit, res: TurnResult, reason: str, note: str | None = None
 ) -> None:
     """무료 모드(계약서 4장 9): LLM 없이 코드 길잡이(free.answer)가 의도 → 도구 → 카드 + 정해 둔 글로 답한다.
-    note(카드 고르기를 코드가 처리한 결과)가 있으면 그 한 줄로 답한다."""
+    note(카드 고르기를 코드가 처리한 결과)가 있으면 그 한 줄로 답한다. 범위 밖 답(off_topic)은 열린 승인 카드가 있으면
+    턴 사실 '승인 기다리는 카드' 줄의 가장 새 카드 단추 이름으로 끝낸다(PRESS_LINE, QA r10 c2 T11)."""
     from app.assistant import free
 
     res.mode, res.reason = "free", reason
@@ -1808,6 +1821,12 @@ async def free_turn(
                     "status", {"text": out.task.title, "task": out.task.model_dump(mode="json")}
                 )
     text = text or FAIL_TEXT
+    if reason == "off_topic":
+        line = next((x for x in ctx.facts.split("\n") if x.startswith(OPEN_FACT)), "")
+        items = [OPEN_BUTTON.search(x.rstrip()) for x in line[len(OPEN_FACT) :].split(" / ")]
+        button = next((f"[{m.group(1)}]" for m in items if m), None)
+        if button and button not in text:
+            text = free.join(text, PRESS_LINE.format(button=free.josa(button, "을/를")))
     await send_card(
         res,
         emit,
