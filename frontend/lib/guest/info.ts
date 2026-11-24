@@ -190,7 +190,7 @@ export function checkDraft(d: InfoDraft): InfoErrors {
   const a = d.area.trim();
   const n = Number(a);
   const guessText = (v: number) => v.toFixed(1).replace(/\.0$/, "");
-  if (!a) e.area = "면적을 ㎡로 넣어 주세요. 평만 알면 '평으로 넣기'를 써요.";
+  if (!a) e.area = "면적을 넣어 주세요. 평으로 알면 칸 옆 단위를 '평'으로 바꿔요.";
   else if (!/^\d+(\.\d+)?$/.test(a) || !Number.isFinite(n)) e.area = "숫자로 넣어 주세요. 예: 69.4";
   else if (n <= 10) {
     const g = guessText(n * 10);
