@@ -186,3 +186,35 @@ def test_screen_button_guidance_is_not_a_card_claim(text, kind):
 
     got = policy.card_claim(text)
     assert (got[0] if got else None) == kind
+
+
+def test_due_note_shows_midnight_as_the_day_before_24():
+    """QA r8 u1: 비서 '기다리는 중' 카드 기한이 '11.27 00:00까지'였어요(화면은 '11.26(목) 24:00까지')."""
+    from datetime import datetime
+
+    from app.assistant.tools import cards
+    from app.shared.clock import SEOUL
+
+    assert cards.due_note(datetime(2026, 11, 27, 0, 0, tzinfo=SEOUL)) == "11.26 24:00까지"
+    assert cards.due_note(datetime(2026, 11, 26, 18, 30, tzinfo=SEOUL)) == "11.26 18:30까지"
+
+
+# ---- 날짜 바꾸기 카드에 지금 날짜와 바꾸자는 말(QA r8 u1 U3) ----
+
+
+def test_delay_schedule_card_shows_the_current_dates(api, script):
+    from tests.test_v4_assistant_offers import with_delay
+
+    _, pid, _did = with_delay(api)
+    script(
+        [
+            {"tool_calls": [{"id": "s", "name": "show_card", "input": {"kind": "schedule"}}]},
+            {"text": "바꾸자는 날짜를 카드에서 확인해 주세요."},
+        ]
+    )
+    ev = ok(ask(api, pid, "공사 날짜 보여 줘"))
+    (card,) = [d for e, d, _ in ev if e == "card" and d["kind"] == "schedule"]
+    data = card["data"]
+    assert data["phase"] == "dates" and data["now_start"] and data["now_end"]
+    assert data["now_start"] != data["start"]  # 지금 날짜와 바꾸자는 날이 따로
+    assert card["say"].endswith("공사 날짜를 바꾸자고 했어요.")

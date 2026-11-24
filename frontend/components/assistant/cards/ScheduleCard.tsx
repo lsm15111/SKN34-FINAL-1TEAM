@@ -18,15 +18,22 @@ type Proposal = { proposal_ref?: string | null; proposal_kind?: "dates_accept" |
 export function ScheduleCard({ card, ctx, old }: CardProps<"schedule">) {
   const d: typeof card.data & Proposal = card.data;
   const final = d.phase === "final";
+  const change = !final && !!d.now_start && !!d.now_end;
   const accept = !final && d.proposal_ref && d.proposal_kind && !d.conflicts.length ? `${d.proposal_kind}:${d.proposal_ref}` : null;
   return (
     <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
       <div className={k.top}>
-        <h3 id={`${card.card_id}-t`}>{final ? "확정 공정표" : "공사 날짜가 왔어요"}</h3>
+        <h3 id={`${card.card_id}-t`}>{final ? "확정 공정표" : change ? "공사 날짜를 바꾸자고 했어요" : "공사 날짜가 왔어요"}</h3>
         {final ? <SourceTag src="calc" /> : <span className={k.muted}>{d.vendor_name}</span>}
       </div>
+      {change && d.now_start && d.now_end ? (
+        <div className={c.span}>
+          <span>지금 공사 날짜</span>
+          <b className={k.num}>{rangeText(d.now_start, d.now_end, { weekday: true })}</b>
+        </div>
+      ) : null}
       <div className={c.span}>
-        <span>{final ? `공정표 ${d.plan_version}판` : "업체가 고른 날"}</span>
+        <span>{final ? `공정표 ${d.plan_version}판` : change ? "바꾸자는 날" : "업체가 고른 날"}</span>
         <b className={k.num}>{rangeText(d.start, d.end, { weekday: true })}</b>
         <small className={k.num}>일하는 날 {d.work_days}일</small>
       </div>

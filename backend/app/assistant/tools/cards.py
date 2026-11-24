@@ -81,6 +81,14 @@ def href(pid: uuid.UUID, tail: str = "") -> str:
     return f"/projects/{pid}{tail}"
 
 
+def due_note(at: datetime) -> str:
+    """기한 짧은 글 '11.26 18:00까지'. 0시 기한은 앞날 24:00(화면 dueText와 같은 꼴, QA r8 u1: '11.27 00:00까지')."""
+    x = at.astimezone(SEOUL)
+    if x.hour == 0 and x.minute == 0:
+        return f"{(x - timedelta(days=1)):%m.%d} 24:00까지"
+    return f"{x:%m.%d %H:%M}까지"
+
+
 def seoul_text(at: datetime | None) -> str | None:
     """시각 → 모델에 줄 서울 시각 글 '11월 23일(월) 오후 6시'. 시각(UTC)을 그대로 넘기면 모델이 09:00Z를 '오전
     9시'로 읽어요(QA r1 c6). 말하는 꼴 그대로라 문장 숫자 검사에도 그 숫자가 들어가요.
@@ -1357,6 +1365,8 @@ async def schedule(
                     plan_version=sch.final_version,
                     href=href(pid, "/schedule"),
                     vendor_note=policy.vendor_note(x.reason),
+                    now_start=d.start_date if kind == "delay" else None,
+                    now_end=d.end_date if kind == "delay" else None,
                     proposal_ref=None if accept else pref,
                     proposal_kind=None
                     if accept
@@ -1372,7 +1382,12 @@ async def schedule(
                     card_id=f"dates-{x.id}",
                     kind="schedule",
                     data=data.model_dump(mode="json"),
-                    say=f"{d.vendor_name}{'가' if _batchim_free(d.vendor_name) else '이'} 공사 날짜를 올렸어요.",
+                    say=f"{d.vendor_name}{'가' if _batchim_free(d.vendor_name) else '이'} "
+                    + (
+                        "공사 날짜를 바꾸자고 했어요."
+                        if kind == "delay"
+                        else "공사 날짜를 올렸어요."
+                    ),
                 )
         deals.append(row)
     model: dict = {"final_version": sch.final_version, "deals": deals}
@@ -1524,9 +1539,7 @@ def visit_task(pid: uuid.UUID, o, now: datetime) -> "TaskOut | None":
                 label=v.vendor_name,
                 state=state,  # type: ignore[arg-type]
                 text=text or ENDED_TEXT.get(v.status, "진행 중"),
-                note=n.due_at.astimezone(SEOUL).strftime("%m.%d %H:%M까지")
-                if n.due_at and state in ("need", "waiting")
-                else None,
+                note=due_note(n.due_at) if n.due_at and state in ("need", "waiting") else None,
             )
         )
     quoted = any(v.status in ("quoted", "chosen") for v in o.vendors)
@@ -1958,7 +1971,7 @@ async def today(
                 id=f"a-{a.id}",
                 icon=ACTION_ICON.get(a.kind, "doc"),  # type: ignore[arg-type]
                 title=x.summary.title,
-                sub=f"{a.expires_at.astimezone(SEOUL).strftime('%m.%d %H:%M')}까지 승인",
+                sub=f"{due_note(a.expires_at)} 승인",
                 due=soon,
             )
         )
@@ -1988,7 +2001,7 @@ async def today(
             id=f"v-{v.visit_id}",
             icon="calendar" if n.kind in ("pick", "proposal", "visit") else "inbox",
             title=f"{v.vendor_name} {NEXT_TEXT.get(n.kind, '')}".strip(),
-            sub=n.due_at.astimezone(SEOUL).strftime("%m.%d %H:%M까지") if n.due_at else None,
+            sub=due_note(n.due_at) if n.due_at else None,
             due=n.soon or n.overdue,
         )
         item = {

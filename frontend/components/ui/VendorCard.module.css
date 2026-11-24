@@ -15,6 +15,10 @@
 .on { background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); }
 .on:hover { background: var(--mj-primary-weak-hover); }
 .pick[aria-disabled="true"] { background: var(--mj-surface-sub); color: var(--mj-text-mute); box-shadow: inset 0 0 0 1px var(--mj-line); cursor: not-allowed; font-weight: var(--mj-weight-semibold); }
+/* 폰: 꺼진 단추의 긴 글('담을 수 없어요' · '가견적 준비 중')은 두 줄로 접어 금액을 덮지 않게(QA r8 u1 U1, 360px에서 '원'이 3px 가려짐) */
+@media (max-width: 420px) {
+  .pick[aria-disabled="true"] { max-width: 5.5em; white-space: normal; text-align: center; line-height: 1.3; padding: 4px 10px; }
+}
 
 .tray { display: flex; align-items: center; gap: 10px; padding: 12px; border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); }
 .trayText { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }

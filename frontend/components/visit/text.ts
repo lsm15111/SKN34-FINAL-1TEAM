@@ -1,5 +1,5 @@
 // 실측 일정 화면 말(copy-guide 1.4 · 1.9 · F2~F5 · CF-01~CF-07 · CF-60). 날짜 · 기한은 API 값을 모양만 바꿔요(lib/format).
-import { areaText, dateLong, dateSeoul, dateShort, dueText, halfDayText, rangeText, timeSeoul, type Half } from "@/lib/format";
+import { areaText, dateLong, dateSeoul, dueText, halfDayText, rangeText, type Half } from "@/lib/format";
 import { visitState, type StateTone } from "@/lib/labels";
 import type { BoardRow, VisitProject } from "@/lib/api/visit";
 
@@ -60,8 +60,8 @@ export function windowText(w: { start: string; end: string; excluded: string[] }
   return `가능 ${rangeText(w.start, w.end)}${ex ? ` · ${ex} 빼고` : ""}`;
 }
 
-/** 기한 줄 꼴(표 칸): '11.25(수) 09:05'(까지 없이) */
-export const dueCell = (t: string) => `${dateShort(dateSeoul(t))} ${timeSeoul(t)}`;
+/** 기한 줄 꼴(표 칸): '11.25(수) 09:05'(까지 없이). 0시 기한은 앞날 24:00(dueText와 같은 꼴, QA r8 u1 데스크톱 표) */
+export const dueCell = (t: string) => dueText(t).replace(/까지$/, "");
 
 /** 상태 칩 말 · 모양(N4 C). 실측 시각이 지났는데 아직 확정 상태면 '실측 시각 지남'(copy-guide 1.9) */
 export function boardState(r: Pick<BoardRow, "status" | "can">): { label: string; tone: StateTone } {

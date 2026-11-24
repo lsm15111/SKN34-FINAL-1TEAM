@@ -281,6 +281,11 @@ class ScheduleData(BaseModel):
     vendor_note: str | None = Field(
         default=None, description=VENDOR_NOTE_DESC + " (날짜를 바꾼 까닭)"
     )
+    now_start: date | None = Field(
+        default=None,
+        description="수락한 뒤 바꾸자는 날짜(delay)면 지금 공사 날짜 시작 · 끝(QA r8 u1 U3: 바뀌는 날만 보였어요)",
+    )
+    now_end: date | None = None
     proposal_ref: str | None = Field(
         default=None,
         description="수락 기다리는 공사 날짜 제안 이름표(p…, phase dates일 때). "

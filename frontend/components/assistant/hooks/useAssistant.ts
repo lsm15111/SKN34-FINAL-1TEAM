@@ -159,8 +159,9 @@ export function useAssistant(projectId: string) {
     revRef.current = thread ? thread.rev : 0;
     if (!anchored.current) {
       anchored.current = true;
-      // 대화(고객 말)가 없으면 첫 인사: 먼저 말 건 줄은 대화가 없어도 기록에 끼워져 와요(서버 feed_for)
-      setGreet(!thread);
+      // 대화(고객 말)가 없으면 첫 인사: 먼저 말 건 줄은 대화가 없어도 기록에 끼워져 와요(서버 feed_for). 업체 소식으로
+      // 서버가 빈 대화를 먼저 만들 수도 있어서(QA r8 u1), 앞 쪽이 없고 고객 말이 하나도 없으면 대화가 있어도 인사해요
+      setGreet(!thread || (page.before == null && !page.items.some((it) => it.role === "user")));
       const last = page.items[page.items.length - 1];
       setAnchor(last ? { id: last.id, at: last.at } : null);
       const day = dateSeoul(page.now);

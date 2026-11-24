@@ -188,6 +188,8 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock }: {
       setPick(draft.diy ? (draft.diy.length ? draft.diy : ["none"]) : []);
       setAnswered(answeredBefore && !!draft.diy);
       setPhase("done");
+      // 되돌아온 화면은 브라우저가 앞 스크롤 자리를 되살린 뒤에 끝까지 내려요(QA r8 u1 U2: 가입 단추가 화면 밖)
+      window.setTimeout(() => log.current?.lastElementChild?.scrollIntoView({ block: "end" }), 120);
     } catch (e) {
       setErr(errorText(e));
       setPhase("confirm");

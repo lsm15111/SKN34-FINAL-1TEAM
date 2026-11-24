@@ -128,6 +128,9 @@ export type ScheduleData = {
   ics_href?: string | null;
   /** 업체가 적은 말(날짜를 바꾼 까닭). 업체 글 그대로라 이 칸에만 보여요 */
   vendor_note?: string | null;
+  /** 수락한 뒤 바꾸자는 날짜면 지금 공사 날짜(서버 값, 처음 올린 날짜면 없음) */
+  now_start?: string | null;
+  now_end?: string | null;
   /** 공사 업체와 열린 믿집 채팅(업체에 물어볼 때 누를 곳) */
   chats?: { label: string; href: string }[];
 };
