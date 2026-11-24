@@ -136,10 +136,17 @@ def draft_wish(work_start: date | None, today: date) -> tuple[date, date] | None
     return start, end
 
 
-def recommend(work_start: date | None, days: Sequence[DayOpen]) -> Pick | None:
+def recommend(
+    work_start: date | None,
+    days: Sequence[DayOpen],
+    taken: Collection[tuple[date, str]] = (),
+) -> Pick | None:
     """추천 반나절: 공사 시작 희망일 − 20일에 가장 가까운 열린 칸 (같으면 이른 날 · 오전 먼저).
-    희망일이 없으면 가장 이른 열린 칸. 열린 칸이 없으면 None."""
-    choices = [(x.day, h) for x in days for h in HALVES if x.left(h) > 0]
+    희망일이 없으면 가장 이른 열린 칸. 열린 칸이 없으면 None.
+    taken(같은 집 다른 실측이 잡은 반나절)은 빼요(free_at_home, 고르기가 409 slot_clash로 막는 칸)."""
+    choices = [
+        (x.day, h) for x in days for h in HALVES if x.left(h) > 0 and free_at_home(x.day, h, taken)
+    ]
     if not choices:
         return None
     if work_start is None:

@@ -15,7 +15,6 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from fastapi.responses import Response
-from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -197,8 +196,6 @@ async def _standard(
     """내 프로젝트(남의 것은 404)와 그 공정의 최신 표준견적서 · 줄"""
     p = await project_service.get_for(s, user, project_id)
     got = await quote_service.standard_trade(s, p, trade)
-    if sa_inspect(user).expired_attributes:  # 같은 집을 동시에 열어 표준견적서 저장이 되돌아갔다
-        await s.refresh(user)  # (rollback이 세션 객체를 만료시켜 user.id가 비동기 밖에서 읽힌다)
     if got is None:
         raise AppError(422, "trade", "이 집에서 고른 공정이 아니에요.")
     return p, *got
@@ -806,7 +803,10 @@ async def cancel(
     now = now or now_utc()
     p = await project_service.get_for(s, user, project_id)
     if data is None:
-        v = await repo.get(s, visit_id)
+        # 몸통 없는 길도 프로젝트 → 요청 순서로 잠가요. 안 잠그면 같은 집 새 요청이 진행 중일 때 '살아 있는 요청 0'으로
+        # 세고 집 정보 잠금을 풀었어요(end_visit → unlock_if_idle, 점검 R4#5)
+        await project_service.lock(s, p.id)
+        v = await repo.lock(s, visit_id)
         if v is None or v.project_id != p.id:
             raise AppError(404, "not_found", NOT_FOUND)
         if v.status == "quoted":
@@ -1973,7 +1973,12 @@ async def pick_view(
         for h in slots.HALVES
         if d.left(h) == 0
     ]
-    rec = slots.recommend(v.work_wish_on, days) if days else None
+    every = [o for o in await repo.of_project(s, p.id, None) if o.id != v.id]
+    others = [o for o in every if o.status in ("picked", "booked", "visited")]
+    held = await repo.holds_of_visits(s, [o.id for o in every])
+    # 추천은 같은 집 다른 실측이 잡은 반나절을 빼요(고르기 _check_home이 409로 막는 칸, 점검 R4#6)
+    home = {(h.day, h.half) for h in held.values()}
+    rec = slots.recommend(v.work_wish_on, days, home) if days else None
     overlap = bool(
         w is not None
         and v.wish_start is not None
@@ -1991,12 +1996,6 @@ async def pick_view(
         if w is not None and v.wish_start is not None and v.status == "offered"
         else None
     )
-    others = [
-        o
-        for o in await repo.of_project(s, p.id, None)
-        if o.id != v.id and o.status in ("picked", "booked", "visited")
-    ]
-    held = await repo.holds_of_visits(s, [o.id for o in others])
     return VisitPickOut(
         visit_id=v.id,
         project_id=p.id,
@@ -2189,6 +2188,11 @@ async def vendor_slots(
 # 업체 멈춤(D26)으로 닫는 요청: 업체 확정 전 진행 중인 것 (확정한 공사는 schedule이 다룬다)
 SUSPEND_CLOSES = ("requested", "offered", "picked", "proposed", "booked", "visited", "quoted")
 SUSPENDED = "지금 믿집에서 일할 수 없는 업체라 요청이 닫혔어요 · 다른 업체를 담아 주세요"
+
+
+async def live_ids_of_vendor(s: AsyncSession, vendor_id: uuid.UUID) -> list[uuid.UUID]:
+    """그 업체의 아직 살아 있는 요청 id(확정한 공사 포함). 업체 멈춤을 풀 때 이 요청의 대화만 다시 연다."""
+    return [v.id for v in await repo.visits_of_vendor(s, vendor_id, LIVE)]
 
 
 async def close_for_vendor(s: AsyncSession, vendor_id: uuid.UUID, now: datetime) -> int:

@@ -157,6 +157,8 @@ async def write(
     await _check_photos(s, user, data.photo_file_ids)
     now = now_utc()
     grade = await repo.grade_of(s, project_id, deal.trade)
+    # 관리자가 숨긴 리뷰를 지운 공사면 다시 써도 숨긴 채(같은 기준)로 시작해요. 관리자가 보고 다시 보이게 해요(점검 R4#3)
+    held = await repo.held_code(s, deal_id)
     r = Review(
         id=uuid7(),
         deal_id=deal_id,
@@ -167,6 +169,8 @@ async def write(
         tags=list(data.tags),
         body=data.body,
         context_label=context_label(project.sgg, deal.trade, grade),
+        status="hidden" if held else "shown",
+        hidden_code=held,
         created_at=now,
     )
     try:
@@ -231,6 +235,9 @@ async def edit(
 async def remove(s: AsyncSession, user: User, review_id: uuid.UUID) -> None:
     r = await _mine(s, user, review_id)
     vendor_id = r.vendor_id
+    if r.status == "hidden" and r.hidden_code and r.deal_id is not None:
+        # 관리자가 숨긴 리뷰: 지우고 다시 써서 숨김을 푸는 길을 막아요(점검 R4#3)
+        await repo.hold(s, r.deal_id, r.hidden_code)
     await s.delete(r)
     await s.commit()
     await realtime.push_state([vendor_id], "review", review_id)
@@ -322,8 +329,12 @@ async def set_hidden(s: AsyncSession, review_id: uuid.UUID, code: str) -> uuid.U
 
 
 async def set_shown(s: AsyncSession, review_id: uuid.UUID) -> uuid.UUID | None:
-    """관리자 다시 보이기 (부르는 쪽 트랜잭션 안). 돌려주는 값: 업체 id (없거나 이미 보임이면 None)"""
-    return await repo.set_status(s, review_id, hidden_code=None)
+    """관리자 다시 보이기 (부르는 쪽 트랜잭션 안). 돌려주는 값: 업체 id (없거나 이미 보임이면 None).
+    관리자가 그 공사 리뷰를 다시 봤으니 '숨긴 리뷰를 지운 공사' 표시도 지운다."""
+    vendor_id = await repo.set_status(s, review_id, hidden_code=None)
+    if vendor_id is not None:
+        await repo.drop_hold_of(s, review_id)
+    return vendor_id
 
 
 async def exists(s: AsyncSession, review_id: uuid.UUID) -> Review | None:

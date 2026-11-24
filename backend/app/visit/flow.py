@@ -85,8 +85,9 @@ def _invalid(message: str, loc: list[str | int] | None = None) -> AppError:
 
 
 def _short(x: uuid.UUID) -> str:
-    """알림 · 기한 일 이름에 붙이는 짧은 꼬리 (80자 안)"""
-    return x.hex[:8]
+    """알림 · 기한 일 이름에 붙이는 짧은 꼬리 (80자 안). uuid7 뒤 32비트는 행마다 다른 난수예요
+    (앞 8자리는 시각이라 약 65초 동안 같아 바꾼 일정의 기한 일 · 알림이 앞 것과 겹쳤어요, 점검 R4#7)."""
+    return x.hex[-8:]
 
 
 async def _locked_in(s: AsyncSession, project_id: uuid.UUID, visit_id: uuid.UUID) -> Visit:
@@ -710,7 +711,10 @@ async def pick(
         ):
             raise app_error("stale")
         s.add(_event(v, "offered", "picked", user, "picked", now, data.day, data.half))
-        await jobs_service.add(s, kind="visit_accept_due", ref_id=v.id, run_at=until)
+        # 이름에 잡기 꼬리: 다른 날 제안 → 다시 고르기로 같은 반나절을 고르면 기한(그 반나절 시작)이 같아
+        # 취소된 앞 일과 겹쳐 새 일이 안 들어갔어요(점검 R4#2)
+        key = f"{jobs_service.key('visit_accept_due', v.id, until)}:{_short(hold.id)}"
+        await jobs_service.add(s, kind="visit_accept_due", ref_id=v.id, run_at=until, dedup_key=key)
         h = await _home(s, v)
         when = svc.slot_text(data.day, data.half)
         await notify_service.add(

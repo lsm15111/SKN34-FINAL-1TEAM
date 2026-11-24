@@ -4,12 +4,13 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import delete, func, select, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.files.models import File
 from app.project.models import Project, ProjectTrade
-from app.review.models import Review, ReviewPhoto, ReviewReply
+from app.review.models import Review, ReviewHold, ReviewPhoto, ReviewReply
 from app.schedule.models import Deal
 from app.vendor.models import Vendor, VendorReviewLink
 
@@ -209,3 +210,27 @@ async def set_status(
         .execution_options(synchronize_session=False)
     )
     return (await s.execute(q)).scalar_one_or_none()
+
+
+async def hold(s: AsyncSession, deal_id: uuid.UUID, hidden_code: str) -> None:
+    """숨긴 리뷰를 지운 공사로 남긴다(이미 있으면 기준만 바꾼다)"""
+    q = (
+        insert(ReviewHold)
+        .values(deal_id=deal_id, hidden_code=hidden_code)
+        .on_conflict_do_update(
+            index_elements=[ReviewHold.deal_id], set_={"hidden_code": hidden_code}
+        )
+    )
+    await s.execute(q)
+
+
+async def held_code(s: AsyncSession, deal_id: uuid.UUID) -> str | None:
+    """그 공사에 다시 쓴 리뷰가 숨긴 채로 시작할 기준(없으면 None)"""
+    q = select(ReviewHold.hidden_code).where(ReviewHold.deal_id == deal_id)
+    return (await s.execute(q)).scalar_one_or_none()
+
+
+async def drop_hold_of(s: AsyncSession, review_id: uuid.UUID) -> None:
+    """관리자가 다시 보이게 한 리뷰의 공사 표시를 지운다"""
+    deal = select(Review.deal_id).where(Review.id == review_id).scalar_subquery()
+    await s.execute(delete(ReviewHold).where(ReviewHold.deal_id == deal))

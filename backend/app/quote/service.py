@@ -62,6 +62,7 @@ from app.shared.ids import uuid7
 from app.vendor import service as vendor_service
 
 ROOM = "방"  # 방문 개수: 목공을 고른 공간 중 이름에 '방'이 든 곳
+KITCHEN = "주방"  # 이름에 '방'이 들지만 방이 아니에요(방문 없음, 점검 R3#3)
 FULL_FACES = ("wall", "ceiling")
 VALID_SOON = "quote_valid_soon"  # 기한 일 kind (jobs.models.KINDS) · 알림 kind (notify.catalog)
 # 벽지 직접 구매 안내 한 줄(틀): 표준견적서 · 업체 보기 · 비서 업체 고르기 카드가 같은 글을 써요.
@@ -170,7 +171,9 @@ def calc_trades(
     out: list[TradeCalc] = []
     if p.trades.mokgong:
         names = {sp.id: sp.name for sp in p.spaces}
-        rooms = sum(1 for sid in p.trades.mokgong.spaces if ROOM in names.get(sid, ""))
+        rooms = sum(
+            1 for sid in p.trades.mokgong.spaces if ROOM in names.get(sid, "").replace(KITCHEN, "")
+        )
         items = tuple(p.trades.mokgong.items)
         m = mokgong.quote(
             mokgong.MokgongInput(
@@ -272,6 +275,8 @@ async def _latest(s: AsyncSession, project_id: uuid.UUID) -> dict[str, StandardQ
 
 
 def _fresh(row: StandardQuote, p: ProjectOut, c: TradeCalc) -> bool:
+    """저장본이 지금 계산과 같은지. 가정 줄(notes)도 본다: 기준 판이 그대로여도 모은 조건(철거 범위 · 근거)이 바뀌면
+    가정 첫 줄 근거와 철거 줄이 달라져 새 버전을 쌓는다(rev를 안 올리는 철거 범위 바꾸기, 점검 R3#2)."""
     return (
         row.project_rev == p.rev
         and row.formula_ver == FORMULA_VERSION
@@ -279,12 +284,15 @@ def _fresh(row: StandardQuote, p: ProjectOut, c: TradeCalc) -> bool:
         and row.market_ver == c.market_ver
         and row.share_ver == c.share_ver
         and row.own_paper == c.own_paper
+        and list(row.notes) == list(c.notes)
     )
 
 
 async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQuote]:
     """이 집의 최신 표준견적서(공정별). 없거나 바뀌었으면 새 버전을 저장하고 commit한다.
-    도배 기준은 모은 조건까지 읽어 고른다(조건이 바뀌어 기준 판이 바뀌면 새 버전)."""
+    도배 기준은 모은 조건까지 읽어 고른다(조건이 바뀌어 기준 판이 바뀌면 새 버전).
+    같은 집을 동시에 저장하다 지면 이 저장(savepoint)만 되돌리고 이긴 쪽 판을 다시 읽는다. 세션 전체를
+    되돌리지 않아 부르는 쪽이 먼저 읽은 객체(user · 요청 · 확정)는 만료되지 않는다(점검 R3#1 · R4#1)."""
     latest = await _latest(s, p.id)
     said = await project_service.conditions(s, p.id)
     wanted = {t.trade: t for t in calc_trades(p, said=said)}
@@ -294,55 +302,58 @@ async def ensure_standard(s: AsyncSession, p: ProjectOut) -> dict[str, StandardQ
     area, basis = _area(p)
     pyeong = house_pyeong(p.size.band, p.size.m2, p.size.basis, HOUSE_DEFAULT)
     try:
-        for trade in stale:
-            c = wanted[trade]
-            row = StandardQuote(
-                project_id=p.id,
-                trade=trade,
-                version=(latest[trade].version + 1) if trade in latest else 1,
-                project_rev=p.rev,
-                formula_ver=FORMULA_VERSION,
-                price_ver=c.price_ver,
-                grade=c.grade,
-                area_m2=area,
-                area_basis=basis,
-                pyeong=pyeong,
-                supply=c.supply,
-                vat=c.vat,
-                total=c.total,
-                man_day=c.man_day,
-                crew=c.crew,
-                notes=c.notes,
-                scope=c.scope,
-                faces=list(c.faces),
-                space_keys=list(c.spaces),
-                share_ver=c.share_ver,
-                market_ver=c.market_ver,
-                own_paper=c.own_paper,
-            )
-            s.add(row)
-            await s.flush()
-            s.add_all(
-                [
-                    StandardQuoteLine(
-                        quote_id=row.id,
-                        key=ln.key,
-                        name=ln.name,
-                        qty=ln.qty,
-                        unit=ln.unit,
-                        unit_price=ln.unit_price,
-                        amount=ln.amount,
-                        state=ln.state,
-                        basis=ln.basis,
-                        source=ln.source[:120],
-                        sort=i,
-                    )
-                    for i, ln in enumerate(c.lines)
-                ]
-            )
+        async with s.begin_nested():
+            for trade in stale:
+                c = wanted[trade]
+                row = StandardQuote(
+                    project_id=p.id,
+                    trade=trade,
+                    version=(latest[trade].version + 1) if trade in latest else 1,
+                    project_rev=p.rev,
+                    formula_ver=FORMULA_VERSION,
+                    price_ver=c.price_ver,
+                    grade=c.grade,
+                    area_m2=area,
+                    area_basis=basis,
+                    pyeong=pyeong,
+                    supply=c.supply,
+                    vat=c.vat,
+                    total=c.total,
+                    man_day=c.man_day,
+                    crew=c.crew,
+                    notes=c.notes,
+                    scope=c.scope,
+                    faces=list(c.faces),
+                    space_keys=list(c.spaces),
+                    share_ver=c.share_ver,
+                    market_ver=c.market_ver,
+                    own_paper=c.own_paper,
+                )
+                s.add(row)
+                await s.flush()
+                s.add_all(
+                    [
+                        StandardQuoteLine(
+                            quote_id=row.id,
+                            key=ln.key,
+                            name=ln.name,
+                            qty=ln.qty,
+                            unit=ln.unit,
+                            unit_price=ln.unit_price,
+                            amount=ln.amount,
+                            state=ln.state,
+                            basis=ln.basis,
+                            source=ln.source[:120],
+                            sort=i,
+                        )
+                        for i, ln in enumerate(c.lines)
+                    ]
+                )
+    except IntegrityError as exc:  # 같은 집을 동시에 두 번 열면 먼저 저장한 버전을 쓴다
+        if "uq_standard_quotes_version" not in str(exc.orig):
+            raise
+    else:
         await s.commit()
-    except IntegrityError:  # 같은 집을 동시에 두 번 열면 먼저 저장한 버전을 쓴다
-        await s.rollback()
     latest = await _latest(s, p.id)
     return {t: latest[t] for t in wanted if t in latest}
 
