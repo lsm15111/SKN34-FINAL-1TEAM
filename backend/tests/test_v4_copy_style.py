@@ -206,6 +206,8 @@ FREE_NAMES = (
     "SLOTS_MORE", "SLOTS_DAY", "SLOTS_NO_DAY", "EVE_SAID", "ORDER_SAID", "PET_SAID", "ACCESS_SAID",
     "ACCESS_CARD", "PICKS_MORE", "PICKS_ASKED", "PICKS_CHOSEN",
     "OTHER_LINK", "OTHER_MONEY", "FREE_ASK",
+    # 점검 R1b 바라는 말 거르기(되묻는 한 줄)
+    "CHANGE_KEEP", "CHANGE_NO_DAY", "NOT_WANTED", "VENDOR_KEEP", "CANCEL_KEEP",
 )  # fmt: skip
 CONSTS = {
     "free.py": {n: ("틀 · 무료 모드 정해 둔 답", "answer") for n in FREE_NAMES},
