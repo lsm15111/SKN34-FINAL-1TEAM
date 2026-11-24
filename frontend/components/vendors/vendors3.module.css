@@ -40,7 +40,6 @@
 .tab { flex: none; display: inline-flex; align-items: center; min-height: var(--mj-hit); padding: 0 10px; border-bottom: 2px solid transparent; color: var(--mj-text-sub); font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); text-decoration: none; white-space: nowrap; }
 .tab:hover { color: var(--mj-text); }
 .tab[aria-current="true"] { border-bottom-color: var(--mj-text); color: var(--mj-text); font-weight: var(--mj-weight-bold); }
-.webTab { display: none; }
 
 /* 가견적 */
 .none { font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); }
@@ -63,16 +62,13 @@
 .headMenu { margin-left: auto; }
 @media (max-width: 767px) { .headMenu.headMenu { display: none; } }
 
-/* 폰 · 웹 글 바꿔 끼우기(탭 '사례 6' ↔ '시공 사례 6') · 웹에만 있는 묶음(D07 사업자 정보) */
+/* 폰 · 웹 글 바꿔 끼우기(탭 '사례 6' ↔ '시공 사례 6') */
 .webWord { display: none; }
-.webGroup { display: none; }
 @media (min-width: 768px) {
   .phoneTray { display: none; }
   .webTray { display: flex; align-items: center; justify-content: space-between; gap: 12px 16px; flex-wrap: wrap; padding: 14px var(--mj-pad-group); border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); }
-  .webTab { display: inline-flex; }
   .webWord { display: inline; }
   .phoneWord { display: none; }
-  .webGroup { display: flex; }
 }
 /* 더보기(업체가 5곳을 넘을 때) */
 .more { align-self: stretch; }

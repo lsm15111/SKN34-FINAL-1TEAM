@@ -1,10 +1,10 @@
 "use client";
-// 업체 자세히 위 탭(C11 '가견적 · 사례 · 리뷰' · D07 '+ 사업자 정보'). 같은 화면 안 묶음으로 옮겨 가는 바로 가기예요.
-// 지금 보이는 묶음의 탭을 굵게 + 밑줄로 보여요(aria-current="true"). 웹 전용 탭(사업자 정보)은 폰에서 숨겨요.
+// 업체 자세히 위 탭(C11 '가견적 · 사례 · 리뷰'). 같은 화면 안 묶음으로 옮겨 가는 바로 가기예요.
+// 지금 보이는 묶음의 탭을 굵게 + 밑줄로 보여요(aria-current="true"). 사업자 정보는 탭 없이 맨 아래 접기예요.
 import { useEffect, useState, type ReactNode } from "react";
 import s from "./vendors3.module.css";
 
-export type TabItem = { id: string; label: ReactNode; webOnly?: boolean };
+export type TabItem = { id: string; label: ReactNode };
 
 export function DetailTabs({ items }: { items: TabItem[] }) {
   const [now, setNow] = useState(items[0]?.id);
@@ -23,7 +23,7 @@ export function DetailTabs({ items }: { items: TabItem[] }) {
   return (
     <nav className={s.tabs} aria-label="업체 자세히 바로 가기">
       {items.map((t) => (
-        <a key={t.id} href={`#${t.id}`} className={t.webOnly ? `${s.tab} ${s.webTab}` : s.tab} aria-current={now === t.id ? "true" : undefined} onClick={() => setNow(t.id)}><span>{t.label}</span></a>
+        <a key={t.id} href={`#${t.id}`} className={s.tab} aria-current={now === t.id ? "true" : undefined} onClick={() => setNow(t.id)}><span>{t.label}</span></a>
       ))}
     </nav>
   );

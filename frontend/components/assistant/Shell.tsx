@@ -7,10 +7,10 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { lastActionIn, lastCardIn, lockedNow, mockScriptOf, type ActionOut } from "@/lib/api/assistant";
-import { canBack, closePlan, EMPTY_TRAIL, walk, type Move, type Trail } from "@/lib/assistant/trail";
+import { canBack, cardsBefore, closePlan, EMPTY_TRAIL, walk, type Move, type Trail } from "@/lib/assistant/trail";
 import type { MockScript } from "@/lib/mock/assistant/mode";
 import { Board } from "./Board";
-import { CardSlot } from "./CardSlot";
+import { CardSlot, cardOf } from "./CardSlot";
 import type { WindowStep } from "./CardWindow";
 import { Composer } from "./Composer";
 import { Feed } from "./Feed";
@@ -112,6 +112,8 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
   }, [closing, base, toChat]);
   const step: WindowStep = { at: trail.at, path: trail.list[trail.at] ?? here, pop: trail.move === "pop" };
   const back = canBack(trail, base) ? () => router.back() : undefined;
+  // 이 창 앞 칸에 큰 창(업체 보기 · 실측 일정 …)이 있었으면 서랍 주소(업체 자세히)도 큰 창 그대로예요(CardSlot)
+  const wide = cardsBefore(trail, base).some((p) => cardOf(p.slice(base.length + 1).split("/"), null)?.kind === "sheet");
   const markOpener = (target: EventTarget) => {
     const t = (target as HTMLElement).closest<HTMLElement>("a[href^='/projects/'], button");
     if (t) opener.current = t;
@@ -235,7 +237,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
         </div>
         <Board board={a.board} failed={a.boardFailed} onRetry={a.retryBoard} open={boardOpen} flash={a.flash} base={base} onClose={() => setBoardOpen(false)} />
       </div>
-      <CardSlot step={step} onBack={back} onClose={close} hidden={closing}>{children}</CardSlot>
+      <CardSlot step={step} wide={wide} onBack={back} onClose={close} hidden={closing}>{children}</CardSlot>
     </div>
   );
 }
