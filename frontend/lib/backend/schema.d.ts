@@ -12613,6 +12613,12 @@ export interface components {
              */
             photo_labels: (string | null)[];
             /**
+             * Diy
+             * @description 고객이 직접 할 일(반셀프 칩 화면 말). 요청 때 고객이 업체에 알린 사본(visits.diy), 없으면 빈 목록
+             * @default []
+             */
+            diy: string[];
+            /**
              * Capacity
              * @description 반나절 한 칸에 받는 실측 수 (L03)
              */

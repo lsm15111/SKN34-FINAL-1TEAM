@@ -171,6 +171,8 @@ function Side({ r, v, now }: { r: InboxRowV3; v: VendorVisitV3 | null; now: stri
         {!R.isJob(r) && v?.window && (r.status === "offered" || r.status === "proposed") ? <Row label="보낸 기간" value={rangeText(v.window.start, v.window.end, { weekday: true })} /> : null}
         {!R.isJob(r) && v?.booked && (r.status === "picked" || r.status === "booked") ? <Row label={r.status === "picked" ? "고객이 고른 날" : "실측 날짜"} value={halfDayText(v.booked.day, v.booked.half)} /> : null}
         {!R.isJob(r) && r.work_wish_on ? <Row label="공사 시작 희망" value={dateShort(r.work_wish_on)} /> : null}
+        {/* 요청 때 고객이 알린 직접 할 일(브리핑 카드에만 보였어요, QA r7 N5) */}
+        {v?.diy?.length ? <Row label="고객이 직접 할 일" sub={v.diy.join(", ")} /> : null}
         {!R.isJob(r) && r.estimate_total != null ? <Row label="가견적" sub={gradeLabel(r.grade)} value={won(r.estimate_total)} /> : null}
         {!R.isJob(r) && r.budget_won != null ? <Row label="예산" sub="고객이 넣었어요" value={won(r.budget_won)} /> : null}
         <Row label="받은 때" value={`${dateShort(r.received_at)} ${timeSeoul(r.received_at)}`} />

@@ -7,6 +7,9 @@
 .acts > * { flex: 1 1 0; min-width: 0; }
 .sep { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--mj-line); }
 .opts { display: flex; flex-direction: column; }
+/* 고객이 직접 할 일(요청 브리핑 카드와 같은 꼴: 작은 이름 위 · 글 아래) */
+.diy { margin: 0; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+.diy b { display: block; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 /* 폰 · 태블릿만 아래 단추 띠(웹은 오른쪽 칸에 단추). display: contents라 띠가 화면 끝에 그대로 붙어요 */
 .phoneBar { display: contents; }
 @media (min-width: 1024px) { .phoneBar { display: none; } }

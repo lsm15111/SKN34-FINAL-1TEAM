@@ -13,7 +13,7 @@ import { enc } from "../send";
 import { LOC_NOTE } from "../text";
 import { Notice } from "@/components/ui/Notice";
 import { Eyebrow, Group, Row, Rows, Small } from "../ui/parts";
-import { factLine, visitTitle } from "./facts";
+import { DiyFact, factLine, visitTitle } from "./facts";
 
 export function VisitStatus({ v, now }: { v: VendorVisitV3; now: string }) {
   const st = v.state ? { tone: v.state.icon as StateTone, label: v.state.label } : visitState(v.status, "vendor");
@@ -69,6 +69,7 @@ export function VisitStatus({ v, now }: { v: VendorVisitV3; now: string }) {
         <Group>
           <StateTag tone={st.tone}>{st.label}</StateTag>
           <Eyebrow>{factLine(v)}</Eyebrow>
+          <DiyFact v={v} />
           {body}
         </Group>
         {v.change && v.change.status === "open" ? (
