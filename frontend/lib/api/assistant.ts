@@ -768,6 +768,41 @@ export function vendorKindsForWrite(method: string, path: string): ActionKind[] 
   return [];
 }
 
+/**
+ * 업체가 요청 · 공사 화면(v3 단추)에서 한 쓰기(대상 id · 행동 종류)를 이 탭에 잠깐(5분) 둬요. 작업함 '비서 소식'은 다른 화면이라
+ * 쓰는 때 열려 있지 않아서, 다시 열릴 때 같은 대상의 열린 승인 카드를 '처리됨'으로 그려요(QA r7 N4: 서버 정리는 2분마다라 그 사이
+ * '승인이 필요해요'로 남고 누르면 409로 사라졌어요). 대상 id를 아는 쓰기만 둬요. 저장소를 못 쓰면 넘어가요(편의).
+ */
+const VENDOR_DONE_KEY = "mj_v4_vendor_done";
+const VENDOR_DONE_MS = 5 * 60 * 1000;
+type VendorDone = { kinds: ActionKind[]; target: string; at: number };
+function readVendorDone(now: number): VendorDone[] {
+  try {
+    const raw: unknown = JSON.parse(window.sessionStorage.getItem(VENDOR_DONE_KEY) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((x): x is VendorDone =>
+      !!x && typeof x === "object" && typeof x.target === "string" && typeof x.at === "number" && now - x.at < VENDOR_DONE_MS
+      && Array.isArray(x.kinds) && x.kinds.every((k: unknown) => typeof k === "string"));
+  } catch {
+    return [];
+  }
+}
+export function rememberVendorWrite(method: string, path: string, now: number = Date.now()): void {
+  const kinds = vendorKindsForWrite(method, path);
+  const target = targetOfWrite(method, path);
+  if (!kinds.length || !target) return;
+  try {
+    const list = [...readVendorDone(now), { kinds, target, at: now }].slice(-20);
+    window.sessionStorage.setItem(VENDOR_DONE_KEY, JSON.stringify(list));
+  } catch { /* 편의 기능이라 넘어가요 */ }
+}
+/** 이 탭에서 화면으로 처리한 열린 승인 카드 id(대상 id가 같고 같은 일을 하는 카드만) */
+export function vendorDoneIds(actions: ActionOut[], now: number = Date.now()): string[] {
+  const done = readVendorDone(now);
+  const hit = (a: ActionOut) => a.status === "proposed" && done.some((w) => w.target === a.target_id && w.kinds.includes(a.kind));
+  return [...new Set(actions.filter(hit).map((a) => a.action_id))];
+}
+
 // ───── 실제 API(목업이면 대본)
 
 const mock = () => import("@/lib/mock/assistant/server");

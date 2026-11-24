@@ -5,12 +5,13 @@
 // 턴이 끝나기 전에 끊기면 같은 client_key로 다시 이어요(서버가 저장한 것을 다시 보내거나, 아직 돌면 409라 기다려요).
 // 끝내 못 이으면 알리고 잠시 뒤 '비서 소식'을 다시 읽어요(그새 저장된 승인 카드가 보이게).
 // 넘치면(503) Retry-After만큼 기다렸다 한 번 더 보내고, 또 넘치면 잠시 뒤 다시 눌러 달라고 안내해요(고객 비서 화면과 같아요).
+// 업체 쓰기(비서 카드 승인 · 기간 답하기 …)가 끝나면 다시 읽어요(QA r7 L17b: 승인 뒤에도 '오늘 할 일 1 · 새 요청 1건'이 남았어요).
 import { useCallback, useEffect, useState } from "react";
 import {
   busyOnce, getVendorToday, newClientKey, streamVendorTurn, BUSY_TEXT, TURN_RETRY_MS, TurnBusy, VENDOR_ASSISTANT_EVENT,
   type TodayIcon, type TodayRow, type VendorTodayData,
 } from "@/lib/api/assistant";
-import { ApiError, errorText } from "@/lib/backend/client";
+import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { dateLong } from "@/lib/format";
 import { I, type IconName } from "@/components/assistant/kit/icons";
 import k from "@/components/assistant/kit/kit.module.css";
@@ -29,6 +30,14 @@ export function VendorToday() {
     getVendorToday().then((x) => { if (alive) setD(x); }).catch(() => undefined);
     return () => { alive = false; };
   }, []);
+  useEffect(() => {
+    const on = (e: Event) => {
+      const { path } = (e as CustomEvent<ApiWrite>).detail ?? { path: "" };
+      if (path.startsWith("/vendor/")) void reload();
+    };
+    window.addEventListener(API_WRITE_EVENT, on);
+    return () => window.removeEventListener(API_WRITE_EVENT, on);
+  }, [reload]);
   if (!d || !d.rows.length) return null;
 
   /** 비서 소식 · 오늘 브리핑을 다시 읽어요 */
