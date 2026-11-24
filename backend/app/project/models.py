@@ -60,6 +60,7 @@ SPACE_NAMES = {
 SOURCES = ("v2", "guest", "member")
 BUDGET_WON_MIN = 100_000
 BUDGET_WON_MAX = 10_000_000_000
+BUDGET_WON_UNIT = 10_000  # 예산은 만 원 단위(CHECK budget_won)
 _FACES_SQL = "array['wall', 'ceiling']::varchar[]"
 _SPACE_KINDS_SQL = (
     "('living', 'kitchen', 'master', 'room1', 'room2', 'room3', 'room4', 'hall', 'entry', 'dress')"

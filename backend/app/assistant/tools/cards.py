@@ -109,6 +109,14 @@ def _m2(x: Decimal | float | None) -> str | None:
     return None if x is None else f"{Decimal(str(x)).quantize(Decimal('0.1'))}㎡"
 
 
+def man_won(won: int) -> str:
+    """금액 글 '250만 원' · '516만 8,000원'(화면 lib/format.ts won과 같은 꼴). 희망 예산 카드 · 턴 사실에 써요."""
+    man, rest = divmod(won, 10_000)
+    if not man:
+        return f"{rest:,}원"
+    return f"{man:,}만 원" if not rest else f"{man:,}만 {rest:,}원"
+
+
 # ---- 집 정보 ----
 
 

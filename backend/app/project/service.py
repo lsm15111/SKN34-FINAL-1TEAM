@@ -19,6 +19,9 @@ from app.files import service as files_service
 from app.project import diy
 from app.project import repository as repo
 from app.project.models import (
+    BUDGET_WON_MAX,
+    BUDGET_WON_MIN,
+    BUDGET_WON_UNIT,
     CHECK_KEYS,
     CHECK_LABELS,
     FACES,
@@ -319,6 +322,24 @@ async def update(
     await _write(s, p, data)
     await _commit(s)
     return await _out(s, p)
+
+
+BUDGET_BAD = "희망 예산은 10만 원부터 100억 원까지 만 원 단위로 넣어 주세요."
+
+
+async def set_budget(s: AsyncSession, owner: User, project_id: uuid.UUID, won: int) -> None:
+    """희망 예산(집 정보 '예산' 칸 budget_won)만 바꿔요. 비서 승인 카드 실행이 불러요(화면 길은 update).
+    만든 고객만(남의 것 · 없는 것은 같은 404), 실측 요청 뒤(잠김)는 409 locked(업체 요청서에 간 값이에요).
+    표준견적서 계산에 들지 않아 rev는 그대로예요. commit은 부르는 쪽이 해요."""
+    p = await repo.get_for_update(s, project_id)
+    if p is None or p.owner_id != owner.id:
+        raise AppError(404, "not_found", "프로젝트를 찾을 수 없어요.")
+    if p.locked_at is not None:
+        raise app_error("locked", LOCKED)
+    if not BUDGET_WON_MIN <= won <= BUDGET_WON_MAX or won % BUDGET_WON_UNIT:
+        raise AppError(422, "invalid", BUDGET_BAD)
+    p.budget_won = won
+    await s.flush()
 
 
 async def lock(s: AsyncSession, project_id: uuid.UUID) -> None:

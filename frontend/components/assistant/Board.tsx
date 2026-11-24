@@ -5,6 +5,7 @@
 // 칸을 누르면 그 칸의 자세히가 대화 안 카드 자리로 열려요(2026-11-23 사용자): '우리 집' 줄 → '우리 집 정보' 창(그 칸에 초점,
 // 철거 범위 · 직접 할 일도. 실측 요청 뒤 잠기면 직접 할 일만 고치고 나머지는 보기만) · 금액 → 표준견적서(업체를 확정했으면 실측
 // 견적서) · 업체 금액 범위 → 견적서 비교 · 업체 줄 → 그 업체 내역(실측 · 견적서 · 공사, 서버 href) · 기간 → 공정표 · 서류 → 서류 모음.
+// 희망 예산(집 정보 '예산' 칸, 화면 · 승인 카드로 넣은 값)은 '우리 집' 줄 끝에 서버 값을 won 꼴로만 보여요(정했을 때만).
 import Link from "next/link";
 import { Fragment, useEffect, useRef, type ReactNode } from "react";
 import type { BoardOut } from "@/lib/api/assistant";
@@ -97,6 +98,13 @@ function Sections({ b, base, onOpen }: { b: BoardOut; base: string; onOpen?: () 
                 <li key={f}><Link href={to(field)} {...go} aria-label={`${f} · ${editable(field) ? "고치기" : "보기"}`}><span>{f}</span></Link></li>
               ) : <li key={f}><span>{f}</span></li>;
             })}
+            {b.budget_won != null ? (
+              <li key="budget">
+                <Link href={to("budget")} {...go} aria-label={`희망 예산 ${won(b.budget_won)} · ${editable("budget") ? "고치기" : "보기"}`}>
+                  <span>희망 예산 {won(b.budget_won)}</span>
+                </Link>
+              </li>
+            ) : null}
           </ul>
         ) : <p className={s.muted}>주소를 알려 주면 채워져요</p>}
       </section>

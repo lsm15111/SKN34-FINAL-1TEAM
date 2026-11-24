@@ -400,6 +400,14 @@ async def project_diys(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.U
     return out
 
 
+async def project_budgets(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, int | None]:
+    """공사 id → 희망 예산(집 정보 '예산' 칸, 원. 없으면 None). 읽기 조인."""
+    if not ids:
+        return {}
+    rows = await s.execute(select(Project.id, Project.budget_won).where(Project.id.in_(list(ids))))
+    return {i: won for i, won in rows}
+
+
 async def visit_states(s: AsyncSession, ids: Sequence[uuid.UUID]) -> dict[uuid.UUID, str]:
     """실측 id → 상태. 읽기 조인."""
     if not ids:

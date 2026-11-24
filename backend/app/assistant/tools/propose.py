@@ -38,6 +38,7 @@ from app.db import SessionLocal
 from app.project import diy as project_diy
 from app.project.diy import DIY as DIY_LABELS
 from app.project.diy import DiyKey
+from app.project.models import BUDGET_WON_MAX, BUDGET_WON_MIN, BUDGET_WON_UNIT
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 from app.shared.ids import uuid7
@@ -689,6 +690,67 @@ async def need_cancel(
         actions=[x for o in outs for x in o.actions],
         closed=[x for o in outs for x in o.closed],
     )
+
+
+# ---- 희망 예산(갈래 P3, 사용자 결정 11-24 '공사 조건 칸으로') ----
+# 기억은 금액을 저장하지 않아요(고정 선 7). 고객이 말한 예산은 이 카드를 눌러야 집 정보 '예산' 칸(projects.budget_won,
+# 화면 '희망 · 예산')에 저장되고(고정 선 1) 턴 사실 '희망 예산' 줄 · 보드로 가요. 업체 요청서에도 가는 값이라 실측 요청
+# 뒤(잠김)에는 집 정보처럼 바꾸지 않아요.
+BUDGET_NOTE = "저장하면 보드 · 집 정보에 보이고, 실측을 요청하면 업체 요청서에도 보여요"
+BUDGET_LOCKED = (
+    "실측을 요청한 뒤라 희망 예산을 바꿀 수 없어요. 업체 요청서에 간 값과 같아야 해서요."
+)
+BUDGET_SAME = "희망 예산이 이미 그 금액이에요."
+NO_BUDGET = "아직 몰라요"  # 화면 칩 이름과 같아요
+
+
+class BudgetIn(BaseModel):
+    max_won: int = Field(ge=BUDGET_WON_MIN, le=BUDGET_WON_MAX, multiple_of=BUDGET_WON_UNIT)
+
+
+@tool(
+    "propose_budget",
+    surface="customer",
+    kind="propose",
+    status="희망 예산 저장을 준비하고 있어요",
+    description="고객이 이 공사에 쓰려는 예산을 말하면 써요('250만 원 안쪽이면 좋겠어요' · '예산 300이에요'). "
+    "희망 예산 승인 카드를 만들고, 고객이 누르면 집 정보의 희망 예산에 저장돼 턴 사실 '희망 예산' 줄로 와요. 예산은 "
+    "기억에 남지 않으니 기억하겠다고 하지 말고 이 카드를 만들어요. max_won은 고객이 말한 금액을 원 단위 정수로 넣어요"
+    "(만 원 단위, '250만 원 이하' → 2500000, 범위면 위 끝). 고객이 말하지 않은 금액은 짐작해 넣지 말고 먼저 물어요. "
+    "실측 요청 뒤에는 바꿀 수 없어요.",
+    model=BudgetIn,
+    schema=obj(
+        {"max_won": {"type": "integer", "description": "희망 예산(원, 만 원 단위, 예 2500000)"}}
+    ),
+)
+async def propose_budget(tc: ToolCtx, a: BudgetIn) -> ToolOut:
+    from app.project import service as project_service
+
+    pid = pid_of(tc)
+    async with SessionLocal() as s:
+        p = await project_service.get_for(s, tc.user, pid)
+    if p.locked:
+        raise ToolError("locked", BUDGET_LOCKED)
+    if p.budget_won == a.max_won:
+        raise ToolError("no_change", BUDGET_SAME)
+    now = cards.man_won(p.budget_won) if p.budget_won is not None else NO_BUDGET
+    out, _ = await _offer(
+        tc,
+        kind="budget",
+        target_kind="project",
+        target_id=pid,
+        target_ver=actions.budget_ver(p.budget_won),
+        payload={"max_won": a.max_won},
+        summary=ActionSummary(
+            title="희망 예산 저장",
+            rows=[SummaryRow(label="희망 예산", value=cards.man_won(a.max_won), sub=f"지금 {now}")],
+            note=BUDGET_NOTE,
+            approve_label="맞아요, 저장",
+        ),
+        expires_at=tc.now + timedelta(days=7),
+        project_id=pid,
+    )
+    return out
 
 
 class WishIn(BaseModel):
@@ -1415,11 +1477,12 @@ KIND_NAME: dict[str, str] = {
     "home_info": "집 정보", "visit_request": "실측 요청", "visit_slot": "실측 날짜",
     "vendor_confirm": "업체 확정", "dates_accept": "공사 날짜 수락", "delay_accept": "바뀐 날짜 수락",
     "date_change": "날짜 바꾸기 요청", "extra_answer": "추가 금액 답", "work_check": "공사 끝 확인",
-    "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소",
+    "visit_again": "한 번 더 요청", "visit_cancel": "실측 요청 취소", "budget": "희망 예산",
 }  # fmt: skip
 WithdrawKind = Literal[
     "any", "home_info", "visit_request", "visit_slot", "vendor_confirm", "dates_accept",
     "delay_accept", "date_change", "extra_answer", "work_check", "visit_again", "visit_cancel",
+    "budget",
 ]  # fmt: skip
 _PLAIN = re.compile(r"[\s·,.!?~()\[\]'\"“”‘’:;\-]+")
 # 말 조각 끝의 조사(업체 이름 · 카드 이름에 붙은 '솔빛도배에' · '요청을')

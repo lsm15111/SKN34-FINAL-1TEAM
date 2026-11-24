@@ -143,6 +143,7 @@ CARD_KIND: dict[str, tuple[str, tuple[str, ...]]] = {
     "delay_accept": ("바뀐 공사 날짜 수락", ("바뀐 공사 날짜",)),
     "date_change": ("공사 날짜 바꾸기", ("날짜 바꾸기", "날짜 요청")),
     "visit_cancel": ("실측 요청 취소", ("취소",)),
+    "budget": ("희망 예산", ("희망 예산",)),
     "extra_answer": ("추가 금액 답", ("추가 금액",)),
     "work_check": ("공사 끝 확인", ("공사 끝", "남은 일")),
     "visit_again": ("실측 다시 요청", ("한 번 더", "다시 요청")),
@@ -289,6 +290,14 @@ def home_facts(home: dict) -> list[str]:
             f = f"{m[1]}평형(공급)"
         out.append(f)
     return out
+
+
+def budget_line(won: int) -> str:
+    """턴 사실 '희망 예산:' 줄(집 정보 '예산' 칸 저장 값 그대로, 고객이 화면 · 승인 카드로 넣은 값). 기억 줄과 달리
+    금액이에요(기억은 금액을 남기지 않아요, 고정 선 7). 예산 물음 · 견적 이야기의 숫자 근거예요(고정 선 2)."""
+    from app.assistant.tools.cards import man_won
+
+    return f"희망 예산: {man_won(won)}"
 
 
 def period_line(period, today) -> str | None:
@@ -557,7 +566,7 @@ async def _customer_facts(
     diy: str | None = None,
 ) -> str:
     """고객 턴 사실. refs(턴의 이름표 표)를 주면 업체 줄에 살아 있는 요청 이름표를, diy('직접 할 일:' 줄, diy_facts)를
-    주면 집 줄 다음에 넣는다."""
+    주면 집 줄 다음에 넣는다. 희망 예산(집 정보 '예산' 칸)을 정했으면 그다음 줄에 저장 값 그대로 넣는다(갈래 P3)."""
     from app.assistant import memory
     from app.assistant.tools import cards
     from app.schedule import service as schedule_service
@@ -578,6 +587,7 @@ async def _customer_facts(
         "단계: " + w.stage + (" · 집 정보 잠김(실측 요청 뒤)" if home["locked"] else ""),
         "집: " + " · ".join(home_facts(home)),
         *([diy] if diy else []),
+        *([budget_line(p.budget_won)] if p.budget_won is not None else []),
         *(x for x in (w.vendors, picked, w.chat) if x),
     ]
     period = period_line(await schedule_service.period_now(s, p), today)
@@ -1734,6 +1744,7 @@ async def board_for(user: User, project_id: uuid.UUID) -> BoardOut:
         plan_example=False,  # 도면은 기본 정보 받기에서 뺌(11-22 사용자): 보드의 '대표 평면 · 예시'를 보이지 않아요
         memory=[memory_out(x) for x in remembered],
         today_pin=opened,
+        budget_won=p.budget_won,  # 희망 예산(기억이 아니라 집 정보 칸, 갈래 P3)
     )
 
 

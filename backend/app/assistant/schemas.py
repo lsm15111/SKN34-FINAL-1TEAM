@@ -32,6 +32,7 @@ ActionKind = Literal[
     "date_change", "window_answer", "decline", "dates",
     "extra_answer", "work_check", "visit_again",  # 07 자동화
     "visit_cancel",  # 보낸 실측 요청 취소
+    "budget",  # 희망 예산(집 정보 '예산' 칸)
 ]  # fmt: skip
 ActionStatus = Literal["proposed", "approved", "executed", "rejected", "expired", "failed"]
 TurnStatus = Literal["running", "done", "stopped", "failed"]
@@ -961,6 +962,10 @@ class BoardOut(BaseModel):
     plan_example: bool
     memory: list[MemoryOut] = Field(default=[], description="비서가 기억하는 것(고객 말에서만)")
     today_pin: int
+    budget_won: int | None = Field(
+        default=None,
+        description="희망 예산(원, 집 정보 '예산' 칸). 화면 · 승인 카드로만 넣고, 비면 아직 안 정함",
+    )
 
 
 class HealthOut(BaseModel):
