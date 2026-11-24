@@ -753,6 +753,16 @@ async def offer_choices(tc: ToolCtx, a: ChoicesIn) -> ToolOut:
         raise ToolError(
             "bad_input", "고를 것에 넣을 수 없는 글이 있어요.", hint="칩 글을 다시 써요"
         )
+    # 고객이 방금 보낸 말과 같은 칩(띄움 · 문장부호만 다름)은 빼요(QA r11: 물은 말 그대로의 칩)
+    opts = [
+        o for o in opts if not (policy.same_line(o[0], tc.text) or policy.same_line(o[1], tc.text))
+    ]
+    if not opts:
+        raise ToolError(
+            "bad_input",
+            "고를 것이 모두 고객이 방금 한 말과 같아요.",
+            hint="칩 없이 묻는 말로 맺어요",
+        )
     card = cards.options_card(f"choices-{tc.turn_id}", policy.mask_in(a.title), opts)
     return ToolOut(
         data={"shown": "options", "count": len(opts), "note": CHOICES_SAID}, cards=[card]

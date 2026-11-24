@@ -122,10 +122,13 @@ def test_step_suggestion_comes_back_after_an_out_of_scope_turn(api, script):
     vendor(api, "maru@mitjip.test", "마루와벽")
     vendor(api, "gyeol@mitjip.test", "결도배")
     _, pid = customer(api)
+    got = []
     for i in range(3):
         script([{"text": f"벽지는 바탕이 중요해요{'.' * (i + 1)}"}])
-        assert "step-standard" in suggest_ids(ok(ask(api, pid, f"실크벽지 관리는 어떻게 해요 {i}")))
-    # 세 번 보인 뒤라도 범위 밖 공정 말 턴은 지금 단계로 돌아올 누를 곳이 있어요
+        got.append(suggest_ids(ok(ask(api, pid, f"실크벽지 관리는 어떻게 해요 {i}"))))
+    # 같은 단계 · 상태면 다음 턴부터 쉬어요(QA r11 J2)
+    assert [("step-standard" in x) for x in got] == [True, False, False]
+    # 쉬는 중이라도 범위 밖 공정 말 턴은 지금 단계로 돌아올 누를 곳이 있어요
     script([{"text": "콘센트를 늘리는 건 전기 공사예요."}])
     ev = ok(ask(api, pid, "거실에 콘센트 두 개 더 달고 싶어요. 전기 업체도 불러 줄 수 있어요?"))
     assert "step-standard" in suggest_ids(ev)

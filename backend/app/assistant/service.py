@@ -1213,15 +1213,18 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
                 },
             )
             res = await runtime.run_turn(ctx, emit)
-            res.chips = runtime.chips_for(
-                res.cards, await chip_facts(ctx.user, ctx.surface, ctx.project_id, res.cards)
-            )
+            facts = await chip_facts(ctx.user, ctx.surface, ctx.project_id, res.cards)
+            res.chips = runtime.chips_for(res.cards, facts, said=ctx.text)
             rev = await finish_turn(ctx, res)
             let_go()  # 저장했다: 끊긴 턴이 쥔 자리는 바로 놓는다
             ideas = await suggest_for(
-                ctx.user, ctx.surface, ctx.project_id, said=ctx.text, chips=res.chips
+                ctx.user,
+                ctx.surface,
+                ctx.project_id,
+                said=ctx.text,
+                chips=res.chips,
+                turn_id=ctx.turn_id,
             )
-            await note_suggest(ctx.turn_id, [x.id for x in ideas if x.id.startswith("step-")])
             await emit(
                 "done",
                 {
@@ -1264,6 +1267,7 @@ async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
     """같은 client_key의 끝난 턴을 다시 보낸다(카드 · 행동 지금 상태 · 저장한 답 · done 또는 error)."""
     async with SessionLocal() as s:
         text = await _answer_text(s, turn)
+        said = await _answer_text(s, turn, "user")
         ids = [uuid.UUID(x) for x in (turn.trace or {}).get("actions", [])]
         acts = await repo.actions_by_id(s, user.id, ids)
         chat = await s.get(Chat, turn.chat_id)
@@ -1301,14 +1305,15 @@ async def replay(user: User, turn: AssistantTurn) -> AsyncIterator[str]:
             "cards": [c["card_id"] for c in turn.cards or []],
             "actions": [str(i) for i in ids],
             "stopped": turn.status == "stopped",
-            "chips": runtime.chips_for(turn.cards or [], facts),
+            "chips": runtime.chips_for(turn.cards or [], facts, said=said or ""),
             "suggest": [],
         },
     )
 
 
-async def _answer_text(s, turn: AssistantTurn) -> str | None:
-    """턴이 저장한 답 글(trace.rev의 비서 줄). 실패한 턴은 저장하지 못해 없어요: 같은 rev는 다음 턴의 글이에요(R1a B6)."""
+async def _answer_text(s, turn: AssistantTurn, role: str = "assistant") -> str | None:
+    """턴이 저장한 답 글(trace.rev의 비서 줄, role='user'면 그 턴 고객 말). 실패한 턴은 저장하지 못해 없어요: 같은
+    rev는 다음 턴의 글이에요(R1a B6)."""
     rev = (turn.trace or {}).get("rev")
     if rev is None or turn.status == "failed":
         return None
@@ -1316,7 +1321,7 @@ async def _answer_text(s, turn: AssistantTurn) -> str | None:
         select(ChatMessage.text).where(
             ChatMessage.chat_id == turn.chat_id,
             ChatMessage.turn == rev,
-            ChatMessage.role == "assistant",
+            ChatMessage.role == role,
         )
     )
 
@@ -1508,11 +1513,11 @@ async def feed_for(
     items.sort(key=lambda x: x.at)  # 같은 때면 원래 순서(질문 → 답)
     last = turns.get(max(turns)) if turns else None
     more = _has_older(rows, limit)
-    chips = (
-        runtime.chips_for(last.cards, await chip_facts(user, surface, project_id, last.cards))
-        if last
-        else []
-    )
+    chips: list[str] = []
+    if last:  # 그 턴 고객 말과 같은 칩은 빼요(턴 끝 done.chips와 같게)
+        said = next((m.text for m in rows if m.role == "user" and m.turn == max(turns)), "")
+        facts = await chip_facts(user, surface, project_id, last.cards)
+        chips = runtime.chips_for(last.cards, facts, said=said)
     return FeedPage(
         items=items,
         before=rows[0].turn if more else None,
@@ -1984,13 +1989,17 @@ async def suggest_for(
     *,
     said: str = "",
     chips: list[str] | tuple[str, ...] = (),
+    turn_id: uuid.UUID | None = None,
 ) -> list[SuggestOut]:
     """다음에 물을 말 0~3개(코드가 고름): 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일).
-    이번 말 · 칩과 같은 말, 고객이 최근에 이미 물은 말, 바로 앞 턴에 보인 카드로 이어지는 단계 제안은 뺀다(같은
-    제안을 여러 턴 되풀이하지 않게). 먼저 말 건 줄의 제안은 그 일이 끝났으면 뺀다(NUDGE_DONE). 단계는 공사 날짜를
-    수락하기 전엔 업체 상태에서 나온 실제 단계(work_now)다. 담은 업체가 없으면 '실측 시간' 대신 업체 고르기를, 고를
-    수 있는 업체 수만큼(0곳이면 믿집 밖 찾기) 권한다. 못 읽으면(어떤 오류든) 비운다: 턴 저장 commit 뒤라 error
-    이벤트로 끝내면 화면은 실패, 다시 열면 답이 있다."""
+    이번 말 · 칩과 같은 말(띄움 · 문장부호만 달라도), 고객이 최근에 이미 물은 말, 바로 앞 턴에 보인 카드로 이어지는
+    단계 제안은 뺀다(같은 제안을 여러 턴 되풀이하지 않게). 먼저 말 건 줄의 제안은 그 일이 끝났으면 뺀다(NUDGE_DONE).
+    단계는 공사 날짜를 수락하기 전엔 업체 상태에서 나온 실제 단계(work_now)다. 담은 업체가 없으면 '실측 시간' 대신 업체
+    고르기를, 고를 수 있는 업체 수만큼(0곳이면 믿집 밖 찾기) 권한다. 못 읽으면(어떤 오류든) 비운다: 턴 저장 commit
+    뒤라 error 이벤트로 끝내면 화면은 실패, 다시 열면 답이 있다.
+    turn_id(이번 턴)를 주면 바로 앞 턴에 보였거나 그렇게 쉰 제안과 같은 제안(글 · 보내는 말이 같음: 단계 · 상태가
+    그대로)은 다시 내지 않고, 보인 · 쉰 제안을 이 턴 흔적에 남긴다(QA r11 c1 T2 · c2 T4, r10 c1 T13~T15: 같은 제안이
+    턴마다). 단계 · 상태가 바뀌어 제안 글이 달라지면 다시 낸다. 범위 밖 말 턴의 단계 제안은 쉬지 않는다(QA r9 c2 M2)."""
     from app.assistant import proactive
     from app.project import service as project_service
     from app.schedule import service as schedule_service
@@ -1998,8 +2007,13 @@ async def suggest_for(
 
     out: list[SuggestOut] = []
     recent: set[str] = set()
+    before: set[str] = set()
+    back = False  # 범위 밖 말 턴: 지금 단계로 돌아올 누를 곳(단계 제안)은 쉬지 않아요
     try:
         async with SessionLocal() as s:
+            back = surface == "customer" and out_of_scope(said)
+            if turn_id is not None:
+                before = await _ideas_before(s, user.id, turn_id)
             shown = await repo.shown_nudges(
                 s, user.id, surface, project_id if surface == "customer" else None, open_only=True
             )
@@ -2040,7 +2054,7 @@ async def suggest_for(
                     key
                     and ideas
                     and STEP_CARD.get(key) not in last
-                    and (seen.get(f"step-{key}", 0) < STEP_REPEAT or out_of_scope(said))
+                    and (seen.get(f"step-{key}", 0) < STEP_REPEAT or back)
                 ):
                     idea, why, say = ideas
                     out.append(SuggestOut(id=f"step-{key}", text=text or idea, why=why, say=say))
@@ -2056,15 +2070,26 @@ async def suggest_for(
         if not isinstance(e, AppError):
             log.warning("다음에 물을 말 만들기 실패 (%s)", type(e).__name__)
         return []
-    skip = {said.strip(), *chips}
-    seen: set[str] = set()
+    taken = [said, *chips]  # 이번 말 · 칩, 그리고 앞에서 고른 제안의 보내는 말
     picked: list[SuggestOut] = []
+    held: list[str] = []
     for x in out:
-        if x.say in skip or x.say in seen or (x.id.startswith("step-") and x.say in recent):
+        step = x.id.startswith("step-")
+        if any(policy.same_line(x.say, t) for t in taken) or (
+            step and any(policy.same_line(x.say, t) for t in recent)
+        ):
             continue
-        seen.add(x.say)
+        taken.append(x.say)
+        # 앞 턴에 보였거나 쉰 그대로(단계 · 상태가 그대로)면 이번에도 쉬어요
+        if _idea_key(x) in before and not (step and back):
+            held.append(_idea_key(x))
+            continue
         picked.append(x)
-    return picked[:SUGGEST_MAX]
+    picked = picked[:SUGGEST_MAX]
+    if turn_id is not None:
+        steps = [x.id for x in picked if x.id.startswith("step-")]
+        await note_suggest(turn_id, steps, [*held, *map(_idea_key, picked)])
+    return picked
 
 
 # 같은 단계 제안(다음에 물을 말)은 최근 STEP_WINDOW턴에 STEP_REPEAT번 보였으면 쉬어요(QA r6 c2: '업체 2곳을 골라
@@ -2102,18 +2127,33 @@ async def _shown_steps(s, user_id: uuid.UUID, project_id: uuid.UUID) -> dict[str
     return got
 
 
-async def note_suggest(turn_id: uuid.UUID, ids: list[str]) -> None:
-    """이 턴에 보인 다음에 물을 말 id를 턴 흔적에 남겨요(되풀이 셈, _shown_steps). 못 남기면 그대로 둬요."""
-    if not ids:
+async def note_suggest(turn_id: uuid.UUID, ids: list[str], ideas: list[str] | None = None) -> None:
+    """이 턴에 보인 단계 제안 id(trace.suggest, 되풀이 셈 _shown_steps)와 보였거나 앞 턴과 같아 쉰 다음에 물을 말
+    (trace.ideas, 다음 턴이 견줌 _ideas_before)을 턴 흔적에 남겨요. 못 남기면 그대로 둬요."""
+    got = {**({"suggest": ids} if ids else {}), **({"ideas": ideas} if ideas else {})}
+    if not got:
         return
     try:
         async with SessionLocal() as s:
             t = await s.get(AssistantTurn, turn_id)
             if t is not None:
-                t.trace = {**(t.trace or {}), "suggest": ids}
+                t.trace = {**(t.trace or {}), **got}
                 await s.commit()
     except SQLAlchemyError as e:  # 지워져도 되는 셈(되풀이를 한 번 더 셀 뿐)
         log.warning("다음에 물을 말 흔적 저장 실패 (%s)", type(e).__name__)
+
+
+def _idea_key(x: SuggestOut) -> str:
+    """같은 다음에 물을 말인지 견줄 열쇠: 보이는 글 + 보내는 말. 단계 · 상태가 바뀌면 글이 달라져요(단계 키마다 다른
+    글, 고를 수 있는 업체 수 'PICK_FEW'). 같은 말의 새 먼저 말 걸기 줄(두 번째 견적서 도착)은 같은 제안으로 봐요(새
+    줄은 대화 기록에 제 제안을 달고 와요)."""
+    return f"{x.text}|{x.say}"
+
+
+async def _ideas_before(s, user_id: uuid.UUID, turn_id: uuid.UUID) -> set[str]:
+    """바로 앞 턴(같은 대화, 실패한 턴 빼고)에 보였거나 쉰 다음에 물을 말 열쇠(trace.ideas)."""
+    prev = await repo.turn_before(s, user_id, turn_id)
+    return {str(x) for x in (prev.trace or {}).get("ideas") or []} if prev is not None else set()
 
 
 async def _recent(s, user_id: uuid.UUID, project_id: uuid.UUID) -> tuple[set[str], set[str]]:

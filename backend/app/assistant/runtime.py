@@ -1235,11 +1235,16 @@ def _chip_ok(need: str | None, facts: Collection[str]) -> bool:
     return need[1:] not in facts if need.startswith("!") else need in facts
 
 
-def chips_for(cards: list[dict], facts: Collection[str] = ()) -> list[str]:
-    """마지막 카드 종류로 고른 빠른 답 칩(정해 둔 글) 중 지금 공사 단계 사실(facts)에 맞는 것만."""
+def chips_for(cards: list[dict], facts: Collection[str] = (), said: str = "") -> list[str]:
+    """마지막 카드 종류로 고른 빠른 답 칩(정해 둔 글) 중 지금 공사 단계 사실(facts)에 맞는 것만. 그 턴 고객 말(said)과
+    같은 칩(띄움 · 문장부호만 다름)은 빼요(QA r11 c2 T19: 방금 물은 말 그대로의 칩)."""
     for c in reversed(cards):
         if c["kind"] in CHIPS:
-            return [text for text, need in CHIPS[c["kind"]] if _chip_ok(need, facts)]
+            return [
+                text
+                for text, need in CHIPS[c["kind"]]
+                if _chip_ok(need, facts) and not policy.same_line(text, said)
+            ]
     return []
 
 
@@ -1896,7 +1901,7 @@ async def run_turn(ctx: TurnCtx, emit: Emit) -> TurnResult:
     if not res.text:
         names = dict.fromkeys(CARD_NAME.get(c["kind"], "카드") for c in res.cards)
         res.text = f"{CARDS_ONLY}: " + " · ".join(names) + ")"
-    res.chips = chips_for(res.cards)
+    res.chips = chips_for(res.cards, said=ctx.text)
     # 이 턴 카드의 이름표를 저장 전에 남긴다(턴 저장이 409로 실패해도 기록에 남는 카드 단추가 같은 대상을 가리키게)
     await ctx.refs.save()
     return res
