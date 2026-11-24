@@ -468,7 +468,8 @@ async def _expert_answer(
         record["why_v2g"] = "free"
     else:
         try:
-            notes = await experts.consult(got.trades, question, home, terms)
+            # 숫자 근거는 모델이 쓴 질문이 아니라 이번 턴 고객 말(점검 R2 B2)
+            notes = await experts.consult(got.trades, question, home, terms, said=tc.text)
         except (ToolError, AppError):
             raise
         except Exception as e:  # noqa: BLE001 - 종류 이름만 로그(질문 글은 남기지 않음)

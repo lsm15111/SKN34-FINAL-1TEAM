@@ -369,6 +369,19 @@ class SlotsIn(BaseModel):
 
 MORE_NONE = "이 대화에서 이미 보인 후보 말고는 업체 기간에 남은 실측 일정이 없어요."
 MORE_NOTE = "이 대화에서 이미 보인 후보는 빼고 남은 자리에서 골랐어요."
+# 고를 실측 일정 후보가 없을 때(점검 R2 B6: 업체 답 전 · 이미 고른 요청에 후보 없는 빈 카드를 보냄) 요청 상태마다 까닭
+NO_SLOTS = {
+    "requested": "업체가 아직 실측 가능 기간을 답하지 않았어요. 업체가 답하면 그 기간에서 실측 일정을 고를 수 있어요.",
+    "picked": "이미 실측 일정을 골라 업체 수락을 기다리고 있어요.",
+    "booked": "실측 날짜가 이미 정해졌어요.",
+    **dict.fromkeys(("visited", "quoted", "chosen"), "이 업체는 실측을 이미 마쳤어요."),
+    **dict.fromkeys(
+        ("declined", "expired", "cancelled", "no_show", "closed"), "이 요청은 이미 끝났어요."
+    ),
+}
+NO_SLOTS_LEFT = "업체가 답한 기간에 지금 고를 수 있는 실측 일정이 남아 있지 않아요."
+NO_WISHES = "공사 시작 전 희망 기간에 이 업체의 빈 실측 일정이 없어요."
+NO_CARD_NOTE = "그래서 실측 일정 카드는 보이지 않았어요(카드를 보였다고 말하지 마요)."
 
 
 def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
@@ -427,11 +440,18 @@ async def vendor_free_slots(tc: ToolCtx, a: SlotsIn) -> ToolOut:
                 model["note"] = MORE_NOTE if model["candidates"] else MORE_NONE
                 if not model["candidates"]:  # 빈 카드 대신 사실만
                     return ToolOut(data=model)
+            if not model["candidates"]:  # 고를 후보가 없으면 빈 카드 대신 까닭(점검 R2 B6)
+                why = NO_SLOTS.get(model.get("status"), NO_SLOTS_LEFT)
+                note = " ".join(x for x in (why, NO_CARD_NOTE, model.get("note")) if x)
+                return ToolOut(data={**model, "note": note})
         else:  # 업체 이름표가 아니면 RefTable.get이 모르는 이름표 오류(힌트에 필요한 종류)
             vend = {**tc.refs.get(a.ref, "vendor"), "ref": a.ref}
             card, model = await cards.wishes(
                 s, tc.user, pid, vend, tc.today, tc.refs, prefer=a.prefer, days=a.days
             )
+            # 업체 빈 반나절이 없으면 빈 희망 기간 카드 대신 까닭(점검 R2 B6)
+            if not model["wishes"]:
+                return ToolOut(data={**model, "note": f"{NO_WISHES} {NO_CARD_NOTE}"})
     return ToolOut(data=model, cards=[card])
 
 
@@ -551,6 +571,9 @@ async def show_card(tc: ToolCtx, a: ShowIn) -> ToolOut:
             card, model = await cards.schedule(s, tc.user, pid, tc.today, tc.refs)
         else:
             card, model = await cards.today(s, tc.user, pid, tc.today, tc.now, tc.refs)
+            # 할 일 · 기다림이 없으면 빈 카드 대신 사실만(today_tasks와 같이, 점검 R2 B9)
+            if not any(card.data.get(k) for k in ("todo", "waiting", "know")):
+                return ToolOut(data={"shown": None, **model, "note": TODAY_EMPTY})
     if card is None:
         raise ToolError("no_card", "보여 줄 카드가 아직 없어요.")
     return ToolOut(data=shown_of(a.kind, model), cards=[card])

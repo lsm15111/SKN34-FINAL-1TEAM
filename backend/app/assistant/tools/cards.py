@@ -791,6 +791,11 @@ NONE_AREA = "{area}에는 믿집이 단가를 확인한 {trade} 업체가 아직
 NONE_LIVE = "고를 수 있는 업체 중 {names}에는 이미 실측을 요청해 진행 중이에요"
 NONE_OUT = "이 공사에서 빠진 업체({names})는 다시 추천하지 않아요(못 받음 · 답 없음 · 멈춤)"
 NONE_ASKED = "이미 요청하거나 확정한 업체({names})는 뺐어요"
+# 담기 칸 3칸이 다 찼을 때 추천은 담아 둔 업체(요청 전) 중에서만(점검 R2 B1)
+HELD_ONLY = (
+    "담기 칸 3곳이 다 차서 담아 둔 업체(요청 전) 중에서만 골랐어요. 다른 업체에 요청하려면 업체 보기에서 담은 업체 "
+    "하나를 빼야 해요."
+)
 
 
 def none_why(ok: list, live: set, out: set, asked: set, area: str, trade: str) -> list[str]:
@@ -841,6 +846,12 @@ async def vendor_picks(
     asked = {uuid.UUID(v) for a in opened for v in (a.payload or {}).get("vendor_ids", [])}
     lst = await visit_service.vendors_for(s, user, pid, trade)
     by_id = {c.vendor_id: c for c in (*lst.local, *lst.nearby)}
+    # 담기 칸(공정마다 3칸: 담은 업체 + 담기 없이 보낸 옛 요청)이 다 찼으면 새 업체는 담을 수 없어 요청도 못 해요. 그때는
+    # 담아 둔 업체(요청 전)만 고르고, 그마저 없으면 full이에요(점검 R2 B1: 살아 있는 요청만 세어 담기만 3곳 찬 공사에
+    # 다른 업체를 추천 → [실측 요청]이 409 slots_full)
+    room = lst.shortlist.left if lst.shortlist is not None else SLOTS - len(live)
+    if room <= 0:
+        exclude = exclude | {v for v, c in by_id.items() if not c.shortlisted}
     cands = [
         vendor_pick.Candidate(
             vendor_id=str(c.vendor_id),
@@ -907,11 +918,13 @@ async def vendor_picks(
             for x in picks
         ],
         "count": len(picks),
-        # 이 공정 실측 요청 칸(3곳)이 다 찼는지: 차면 부르는 쪽이 카드를 보내지 않아요(QA r7 c1: 다 찬 뒤 추천 카드
-        # → 요청 카드 승인이 409 slots_full로 실패)
-        "full": len(live) >= SLOTS,
+        # 이 공정 담기 칸(3칸)이 다 차 요청할 수 있는 업체가 없는지: 차면 부르는 쪽이 카드를 보내지 않아요(QA r7 c1: 다 찬
+        # 뒤 추천 카드 → 요청 카드 승인이 409 slots_full로 실패). 담아 둔 업체가 남았으면 그 업체만 보여요
+        "full": room <= 0 and not picks,
     } | estimate_range(picks)
     notes = []
+    if room <= 0 and picks:
+        notes.append(HELD_ONLY)
     if opened:
         names = [x.name for x in picks if x.vendor_id in asked]
         notes.append(

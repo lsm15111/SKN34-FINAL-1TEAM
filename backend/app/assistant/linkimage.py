@@ -6,12 +6,17 @@
 - 그림은 저장 · 복사하지 않고 주소만 남긴다. 화면이 그 사이트에서 바로 불러오고(CSP img-src에 같은 곳만 열어 둠,
   frontend/proxy.ts), https이면서 그 사이트(하위 도메인 포함) 주소만 쓴다.
 - 일반 이름(link-preview)으로 부르고, 페이지 앞부분(200KB)만 읽고, 모두 합쳐 10초 안에 끝낸다.
+- 넘어가기(30x)는 저절로 따라가지 않고 한 번씩(MAX_HOPS번까지) 따라가요. 넘어갈 때마다 새 주소가 https · 바깥 주소
+  (public_url)이고 같은 사이트인지와 그 사이트 robots를 다시 봐요(점검 R1b #11: 처음 주소만 보고 끝까지 따라가 내부
+  주소 · http로도 요청이 갔고, robots가 막은 같은 사이트 경로도 읽었어요). pagecheck도 같은 도우미(read_page)를 써요.
 - 실패(시간 초과 · 막힘 · 그림 없음)는 그림 없이 둔다(지어내지 않음). 로그에는 오류 종류만 남긴다.
 """
 
 import asyncio
+import ipaddress
 import logging
 import re
+from collections.abc import Callable
 from html import unescape
 from urllib.parse import urljoin, urlsplit
 from urllib.robotparser import RobotFileParser
@@ -21,6 +26,13 @@ import httpx
 log = logging.getLogger(__name__)
 
 UA = "link-preview/1.0"
+MAX_HOPS = 5  # 넘어가기(30x)를 따라가는 횟수(robots.txt도 같아요)
+# 안쪽 이름(사설망 · 개발 이름): 이런 곳으로는 요청을 보내지 않아요
+_LOCAL_NAME = re.compile(
+    r"(?:^|\.)(?:localhost|local|localdomain|internal|intranet|lan|home|corp|home\.arpa)$"
+)
+# 끝 이름은 글자로 시작해요(한글 도메인 '.한국'도). 숫자뿐이면('127.1' · '0x7f.1') 주소 꼴로 봐요
+_TLD = re.compile(r"[^\W\d_][\w-]*")
 # 사이트 → 그림 찾는 법: "og"는 og:image, 그 밖의 글은 그 경로가 든 본문 첫 <img>
 SITES: dict[str, str] = {
     "lxzin.com": "og",  # og:image = 제품 썸네일(octapi.lxzin.com)
@@ -36,6 +48,76 @@ GENERIC = re.compile(r"opengraph|og[_-]?image|logo|favicon|/ci[_./-]", re.IGNORE
 _META = re.compile(r"<meta\b[^>]*>", re.IGNORECASE)
 _IMG = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _ATTR = re.compile(r"""([a-zA-Z_:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))""")
+
+
+def public_url(url: str) -> bool:
+    """우리 서버가 읽어도 되는 바깥 https 주소인지: https · 기본 포트 · 공인 IP(사설 · 루프백 · 링크 로컬 · 예약 IP가
+    아님) · 안쪽 이름(localhost · .local · .internal · 점 없는 이름)이 아님. 이름이 가리키는 IP는 보지 않아요(DNS를
+    부르지 않아요)."""
+    try:
+        u = urlsplit(url)
+        host = (u.hostname or "").lower().rstrip(".")
+        port = u.port
+    except ValueError:
+        return False
+    if u.scheme != "https" or not host or port not in (None, 443):
+        return False
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return (
+            "." in host
+            and not _LOCAL_NAME.search(host)
+            and bool(_TLD.fullmatch(host.rsplit(".", 1)[-1]))
+        )
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return ip.is_global
+
+
+async def can_read(
+    client: httpx.AsyncClient, url: str, robots: dict[str, RobotFileParser | None]
+) -> bool:
+    """그 사이트 robots.txt가 이 주소를 읽게 하는지(사이트마다 한 번 읽어 robots에 둬요). 모르면 읽지 않아요."""
+    u = urlsplit(url)
+    base = f"{u.scheme}://{u.netloc}"
+    if base not in robots:
+        robots[base] = await _robots(client, base)
+    rp = robots[base]
+    return rp is not None and rp.can_fetch(UA, url)
+
+
+async def read_page(
+    client: httpx.AsyncClient,
+    url: str,
+    robots: dict[str, RobotFileParser | None],
+    same: Callable[[str], bool],
+    *,
+    limit: int,
+    timeout: float,
+) -> tuple[int | None, str | None]:
+    """robots를 지키며 페이지 앞부분(limit 바이트)을 읽어요: (상태 코드, html). 넘어가기(30x)는 한 번씩 따라가며 주소마다
+    바깥 https 주소(public_url) · 같은 사이트(same) · robots를 다시 봐요. 못 읽은 곳(주소 · 사이트 · robots 막힘 ·
+    robots 모름 · 넘어가기가 너무 많음 · 연결 실패)은 (None, None), 200이 아니거나 html이 아니면 (상태, None)."""
+    for _ in range(MAX_HOPS + 1):
+        if not public_url(url) or not same(url) or not await can_read(client, url, robots):
+            return None, None
+        try:
+            async with client.stream("GET", url, timeout=timeout, follow_redirects=False) as r:
+                if r.is_redirect:
+                    url = urljoin(str(r.url), r.headers.get("location", ""))
+                    continue
+                if r.status_code != 200 or "html" not in r.headers.get("content-type", ""):
+                    return r.status_code, None
+                buf = bytearray()
+                async for chunk in r.aiter_bytes():
+                    buf.extend(chunk)
+                    if len(buf) >= limit:
+                        break
+                return 200, bytes(buf[:limit]).decode(r.encoding or "utf-8", errors="ignore")
+        except httpx.HTTPError:
+            return None, None
+    return None, None  # 넘어가기가 너무 많아요
 
 
 def site_of(url: str) -> str | None:
@@ -92,12 +174,22 @@ def find_image(html: str, page_url: str) -> str | None:
 
 
 async def _robots(client: httpx.AsyncClient, base: str) -> RobotFileParser | None:
-    """사이트 robots.txt. 401 · 403은 모두 막음, 다른 4xx(없음)는 모두 허용, 5xx · 연결 실패는 모름(None)."""
+    """사이트 robots.txt. 401 · 403은 모두 막음, 다른 4xx(없음)는 모두 허용, 5xx · 연결 실패는 모름(None).
+    넘어가기는 MAX_HOPS번까지 한 번씩 따라가고, 바깥 https 주소(public_url)가 아니면 따라가지 않고 모름이에요."""
     rp = RobotFileParser()
-    try:
-        r = await client.get(f"{base}/robots.txt", timeout=TIMEOUT, follow_redirects=True)
-    except httpx.HTTPError:
-        return None
+    url = f"{base}/robots.txt"
+    for _ in range(MAX_HOPS + 1):
+        if not public_url(url):
+            return None
+        try:
+            r = await client.get(url, timeout=TIMEOUT, follow_redirects=False)
+        except httpx.HTTPError:
+            return None
+        if not r.is_redirect:
+            break
+        url = urljoin(str(r.url), r.headers.get("location", ""))
+    else:
+        return None  # 넘어가기가 너무 많아요
     if r.status_code in (401, 403):
         rp.disallow_all = True
     elif r.status_code >= 500:
@@ -109,38 +201,16 @@ async def _robots(client: httpx.AsyncClient, base: str) -> RobotFileParser | Non
     return rp
 
 
-async def _page(client: httpx.AsyncClient, url: str, site: str) -> str | None:
-    """페이지 앞부분 글(html만, 다른 사이트로 넘어가면 None)."""
-    try:
-        async with client.stream("GET", url, timeout=TIMEOUT, follow_redirects=True) as r:
-            kind = r.headers.get("content-type", "")
-            if r.status_code != 200 or "html" not in kind or site_of(str(r.url)) != site:
-                return None
-            buf = bytearray()
-            async for chunk in r.aiter_bytes():
-                buf.extend(chunk)
-                if len(buf) >= PAGE_BYTES:
-                    break
-            return bytes(buf[:PAGE_BYTES]).decode(r.encoding or "utf-8", errors="ignore")
-    except httpx.HTTPError:
-        return None
-
-
 async def image_for(
     client: httpx.AsyncClient, url: str, robots: dict[str, RobotFileParser | None]
 ) -> str | None:
-    """제조사 페이지 하나의 대표 그림 주소(robots를 지킴). 아니면 None."""
+    """제조사 페이지 하나의 대표 그림 주소(robots를 지킴, 넘어가도 같은 사이트 안에서만). 아니면 None."""
     site = site_of(url)
-    u = urlsplit(url)
-    if site is None or u.scheme != "https":
+    if site is None:
         return None
-    base = f"{u.scheme}://{u.netloc}"
-    if base not in robots:
-        robots[base] = await _robots(client, base)
-    rp = robots[base]
-    if rp is None or not rp.can_fetch(UA, url):
-        return None
-    html = await _page(client, url, site)
+    _, html = await read_page(
+        client, url, robots, lambda x: site_of(x) == site, limit=PAGE_BYTES, timeout=TIMEOUT
+    )
     return find_image(html, str(url)) if html else None
 
 
@@ -162,7 +232,7 @@ async def add_images(items: list[dict]) -> None:
         for x in todo:
             u = urlsplit(str(x["href"]))
             base = f"{u.scheme}://{u.netloc}"
-            if u.scheme == "https" and base not in robots:
+            if public_url(str(x["href"])) and base not in robots:
                 robots[base] = await _robots(client, base)
 
         async def one(x: dict) -> None:

@@ -275,18 +275,18 @@
 | --- | --- |
 | `get_home`() | `project.service.get_for` |
 | `get_standard_quote`(trade) | `quote.service.standard_for` |
-| `recommend_vendors`(trade, sgg?) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3(점수 순). 모델 값 note에 '맡기시면: 점수 1위 · 까닭 틀'. sgg가 집 지역과 다르면 `visit.service.vendors_elsewhere`로 그 구 업체를 읽기만(이름표 없음 · 카드 id `picks-dobae@구` = 단추 없는 카드, 실측 요청은 집 지역 업체에만) |
-| `vendor_free_slots`(ref, prefer, days, more?) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3. more면 이 대화에서 이미 보인 반나절(이름표 s…)을 빼고 남은 자리(오후 포함)에서 골라요 |
+| `recommend_vendors`(trade, sgg?) | `visit.service.vendors_for` + `calc.vendor_pick.pick` · `reasons` → v1~v3(점수 순). 모델 값 note에 '맡기시면: 점수 1위 · 까닭 틀'. sgg가 집 지역과 다르면 `visit.service.vendors_elsewhere`로 그 구 업체를 읽기만(이름표 없음 · 카드 id `picks-dobae@구` = 단추 없는 카드, 실측 요청은 집 지역 업체에만). 담기 칸 3칸이 다 찼으면 담아 둔 업체(요청 전) 중에서만 고르고, 그마저 없으면 카드 없이 까닭 |
+| `vendor_free_slots`(ref, prefer, days, more?) | ref는 꼭 넣어요. 요청 전 업체 v…: `visit.service.open_halves_for`(새, 칸 수만) + `calc.slots.wish_candidates`(새) → r1~r2. 업체가 기간을 답한 뒤 실측 요청 m…: `pick_view` + `calc.slots.candidates`(새) → s1~s3. more면 이 대화에서 이미 보인 반나절(이름표 s…)을 빼고 남은 자리(오후 포함)에서 골라요. 고를 후보가 없으면(업체 답 전 · 이미 고름 · 빈 일정 없음) 카드 없이 까닭 `note`만 줘요 |
 | `compare_quotes`(trade) | `visit.service.compare`. 표준 대비 %는 넘기지 않아요. 받은 견적서가 없으면 카드 없이 `note`('아직 받은 견적서가 없어요 · 기다리는 업체 n곳') · `count` 0 · `waiting`, 한 곳이면 비교가 아니라 그 견적서 카드(`quote_compare.single`, 열 하나)예요(`show_card(quote_compare)`도 같아요) |
 | `get_schedule`() | `schedule.service.schedule_for` |
 | `today_tasks`() | `service.feed_for`(`schedule.service.overview_for` + 열린 행동) |
 | `search_knowledge`(query, trade) | `knowledge.service.search` |
 | `answer_question`(question, kind) | `chat.service.answer_only` / `v2.ask.answer_only` |
 | `find_floorplan_docs`() | `tools/floorplan.py`: Sonnet 5.5 + `web_search_20260209`(max_uses 3, 네이버 부동산 · 호갱노노 · 아실 차단, 링크 · 출처만) |
-| `show_card`(kind) | `tools/cards.py` |
+| `show_card`(kind) | `tools/cards.py`. 오늘(today)은 할 일 · 기다림이 없으면 `today_tasks`처럼 카드 없이 `note`예요 |
 | `compare_grades`() | `quote.service.home_v3` · `standard_v3`(합지 · 실크, 저장 안 함) + `calc.visit_view.grade_diff`(차액) |
 | `market_range`(trade) | `calc.quick_budget.quick`(`refprice.market` 시장 기준 한 벌): 부가세 포함 범위 · 근거 실견적 수 · 출처 한 줄. 부분 공사 · 천장만 · 천장 평탄화 · 근거 30건 미만이면 범위 없이 까닭 |
-| 업체 `request_brief`(visit_ref) | `visit.service.vendor_visit` + `vendor.service.get_profile` · `estimate_v3_for` |
+| 업체 `request_brief`(visit_ref) | `visit.service.vendor_visit` + `vendor.service.get_profile` · `estimate_v3_for`. 기간 답하기 승인 카드는 결과 `state`로 알려요: new(이번에 만듦) · same(열려 있던 카드) · rejected(업체가 거절한 같은 제안이라 다시 보내지 않음) |
 | 업체 `my_free_slots`(from, to) | `vendor_visit(preview)` + `calc.slots.best_windows`(새) → w1~w3 |
 | 업체 `quote_checklist`(visit_ref) | `quote.service.latest_of` + `agent/trades` 주의점 |
 | 업체 `my_jobs`() | `schedule.service.vendor_inbox` · `job_for` |
@@ -295,7 +295,7 @@
 | 도구(입력) | 승인 뒤 실행 |
 | --- | --- |
 | `propose_home_info`(칸, 지역 sgg 포함) | `project.service.update`. 지역은 잠기기 전만(시 · 도와 구를 같이, 옛 동은 지움) |
-| `propose_visit_request`(trade, vendor_refs, wish_ref, pick?) | `visit.flow.add_shortlist`(안 담은 업체만) → `visit.flow.request`. pick=top(고객이 맡김)이면 서버가 추천 점수 1위를 넣어요. 요약에 지역 줄 |
+| `propose_visit_request`(trade, vendor_refs, wish_ref, pick?) | `visit.flow.add_shortlist`(안 담은 업체만) → `visit.flow.request`. pick=top(고객이 맡김)이면 서버가 추천 점수 1위를 넣어요. 요약에 지역 줄. 새로 담을 업체가 남은 담기 칸보다 많으면 카드 없이 도구 오류 `slots_full` |
 | `propose_visit_slot`(slot_ref) | `visit.flow.pick` · `pick_proposal` |
 | `propose_vendor_confirm`(visit_ref) | `schedule.service.confirm`(seen_ver) |
 | `propose_dates_accept` · `propose_delay_accept`(proposal_ref) | `schedule.service.accept_dates`(seen_version) |

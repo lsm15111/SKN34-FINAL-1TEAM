@@ -41,12 +41,32 @@ _HAS_COUNT = re.compile(
     r"(?<![\d.,])\d{1,2}\s*(?:곳|군데|가지|개|종류)(?!월)|"
     r"(?<![가-힣])(?:두|세|네|다섯|여섯|일곱|여덟|아홉|열)\s*(?:곳|군데|가지|개|종류)"
 )
+# 집 칸 수('방 3개' · '화장실 2개')는 찾을 수가 아니에요(점검 R1b #14: 목표 '방 3개 아파트 … 추천'을 '3가지'로 읽음)
+_HOME_PART = re.compile(
+    r"(?:(?<![가-힣])방|안방|작은방|큰방|주방|화장실|욕실|베란다|발코니|드레스룸|창문|문짝)\s*$"
+)
+
+
+def home_part(text: str, at: int) -> bool:
+    """at에서 시작하는 수가 집 칸 수('방 3개')인지(바로 앞 낱말로 봐요)."""
+    return bool(_HOME_PART.search(text[max(0, at - 8) : at]))
+
+
+def has_count(text: str) -> bool:
+    """글에 찾을 수('5곳' · '세 가지')가 있는지(집 칸 수는 빼요)."""
+    return any(not home_part(text, m.start()) for m in _HAS_COUNT.finditer(text or ""))
+
+
 _ASK_VERB = re.compile(r"찾|알려|알아봐|추천|골라|고르|뽑|조사|정리|비교|가져|모아|보여|소개")
 _UPTO = re.compile(r"\s*(?:까지|만|정도|쯤|씩)")  # 부탁 말 뒤에 온 수('조사해줘 5개까지')
 _CLAUSE_END = re.compile(r"[.?!\n]")
 # 값을 묻는 말. '비용 · 금액'은 이 집 견적(계산 엔진)을 묻는 말이라 넣지 않아요. '값싼'은 값을 묻는 말이 아니에요.
-# '견적이랑 많이 차이나?'는 값 차이를 묻는 말이에요
-_PRICE = re.compile(r"가격|얼마(?!나)|판매가|값(?![싸싼쌉쌌])|시세|단가|차이\s*(?:나|많이|커|크)")
+# '견적이랑 많이 차이나?'는 값 차이를 묻는 말이에요. '얼마나'는 돈 말('들어요 · 나와요 · 비싸요')과 올 때만 값이고
+# ('얼마나 걸려요'는 아님), '이 값으로 해 줘'처럼 값을 고르는 말은 묻는 말이 아니에요(점검 R1b #16)
+_PRICE = re.compile(
+    r"가격(?!\s*으로)|얼마(?!나)|얼마나\s*(?:들|드|나와|나오|나올|비싸|싸|해요|하나요|할까)|판매가|"
+    r"값(?![싸싼쌉쌌]|\s*으로)|시세|단가(?!\s*로)|차이\s*(?:나|많이|커|크)"
+)
 # 값 말 바로 뒤: 빼 달라 · 됐다 · 들어 있는지(포함 여부를 묻는 말은 값을 묻는 말이 아님)
 _NOT_AFTER = re.compile(
     r"\s*(?:은|는|도|이|가)?\s*(?:말고|빼고|없이|됐|필요\s*없|상관\s*없|안\s*궁금|들어가|들어\s*있|포함)"
@@ -56,6 +76,14 @@ _SEE = re.compile(
     r"보여|볼래|볼게|보자|보기(?![에엔])|봐야|봐\s*줘|열어|띄워|확인\s*(?:해|할|하고)"
 )
 _CHANGE = re.compile(r"바꾸|바꿀|바꿔|변경|수정|고칠|고쳐|고치")
+# 보기 · 바꾸기 말 바로 뒤가 방법('바꾸는 방법') · 가정('바꾸면') · 부정('보여 주지 마세요')이거나 바로 앞이 '안 · 못'이면
+# 부탁이 아니에요(점검 R1b #16). '보여 주면 좋겠어요'는 부탁이에요
+_VERB_NOT = re.compile(
+    r"[가-힣]{0,2}\s*(?:주|줘)?\s*(?:"
+    r"[는은]\s*(?:방법|법)|(?:려)?면(?!\s*(?:좋|고맙|감사))(?![가-힣])|지\s*(?:마|말|않)"
+    r")"
+)
+_NOT_BEFORE = re.compile(r"(?<![가-힣])(?:안|못)\s*$")
 # '견적서 비교해줘' · '업체 추천해 주세요'(이름에 할 일이 든 카드)
 _DO = re.compile(r"^\s*(?:좀\s*)?해\s*(?:줘|주세요|줄래|주실래|봐)")
 NEAR = 12  # 카드 이름과 보기 · 바꾸기 말 사이 글자 수
@@ -129,7 +157,7 @@ def _asked_before(text: str, m: re.Match[str], start: int) -> bool:
 
 
 def _count(text: str) -> tuple[int | None, str]:
-    found = list(_COUNT.finditer(text))
+    found = [m for m in _COUNT.finditer(text) if not home_part(text, m.start())]
     for i, m in enumerate(found):
         end = found[i + 1].start() if i + 1 < len(found) else len(text)
         stop = _CLAUSE_END.search(text, m.end(), end)
@@ -158,7 +186,15 @@ def _show(text: str) -> tuple[str, ...]:
                 got.append(kind)
                 break
             verb = _SEE.search(near) or (_CHANGE.search(near) if kind in CHANGEABLE else None)
-            if verb and not _NOT_BETWEEN.search(near[: verb.start()]):
+            if verb is None:
+                continue
+            head = near[: verb.start()]
+            at = m.end() + verb.end()  # 보기 · 바꾸기 말 바로 뒤(같은 문장)
+            if (
+                not _NOT_BETWEEN.search(head)
+                and not _NOT_BEFORE.search(head)
+                and not _VERB_NOT.match(text, at, stop.start() if stop else len(text))
+            ):
                 got.append(kind)
                 break
     return tuple(got)
@@ -225,7 +261,7 @@ def research_goal(goal: str, text: str | None, kind: str, limit: int) -> str:
     """조사 목표에 고객이 말한 찾을 수 · 판매가가 빠졌으면 끝에 붙여요(' · 5곳' · ' · 판매가'). 목표에 이미 있으면 그대로."""
     a = extract(text)
     add: list[str] = []
-    if a.count and not _HAS_COUNT.search(goal):
+    if a.count and not has_count(goal):
         add.append(f"{a.count}{'곳' if kind == 'outside_vendors' else '가지'}")
     if a.price and kind == "materials" and not _PRICE.search(goal):
         add.append("판매가")

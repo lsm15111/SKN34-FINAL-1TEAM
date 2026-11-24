@@ -8,7 +8,8 @@
   구조 자료(JSON-LD price · meta product:price:amount · itemprop price), 규격은 '폭 × 길이' 꼴로 같은 값일 때만.
 - linkimage와 같은 규칙: robots.txt를 먼저 보고 막혔거나 알 수 없으면 읽지 않아요. 일반 이름(link-preview)으로 부르고,
   https 페이지 앞부분(400KB)만, 모두 합쳐 12초 안에 끝내요. 막은 곳(weblinks.BLOCKED) · 가져오기만 막은 곳
-  (research.NO_FETCH)은 읽지 않아요.
+  (research.NO_FETCH)은 읽지 않아요. 넘어가기(30x)는 한 번씩 따라가며 넘어갈 때마다 바깥 https 주소 · 같은 사이트 ·
+  robots를 다시 봐요(linkimage.read_page, 점검 R1b #11).
 - 페이지 글은 저장하지 않아요. 확인한 값 한 줄(판매가 · 규격)만 조사 결과에 남아요. 로그에는 오류 종류만 남겨요.
 """
 
@@ -122,32 +123,18 @@ async def fetch(
     robots: dict[str, RobotFileParser | None],
     skip: tuple[str, ...],
 ) -> tuple[int | None, str | None]:
-    """(상태 코드, html 앞부분). 읽지 않은 곳(https 아님 · 막은 곳 · robots 막힘 · 모름)이나 연결 실패는 (None, None),
-    다른 사이트로 넘어갔거나 html이 아니면 (상태, None)."""
-    u = urlsplit(url)
-    host = (u.hostname or "").lower()
-    if u.scheme != "https" or not host or weblinks.blocked(host, skip):
+    """(상태 코드, html 앞부분). 읽지 않은 곳(바깥 https 주소 아님 · 막은 곳 · robots 막힘 · 모름)이나 연결 실패,
+    다른 사이트로 넘어가는 곳(주차 도메인 등: 따라가지 않고 판단하지 않아요)은 (None, None), html이 아니면 (상태, None).
+    넘어가기는 한 번씩 따라가며 주소 · 사이트 · robots를 다시 봐요(linkimage.read_page, 점검 R1b #11)."""
+    host = (urlsplit(url).hostname or "").lower()
+    if not host or weblinks.blocked(host, skip):
         return None, None
-    base = f"{u.scheme}://{u.netloc}"
-    if base not in robots:
-        robots[base] = await linkimage._robots(client, base)
-    rp = robots[base]
-    if rp is None or not rp.can_fetch(linkimage.UA, url):
-        return None, None
-    try:
-        async with client.stream("GET", url, timeout=TIMEOUT, follow_redirects=True) as r:
-            if _site(r.url.host or "") != _site(host):
-                return None, None  # 다른 사이트로 넘어감(주차 도메인 등): 판단하지 않아요
-            if r.status_code != 200 or "html" not in r.headers.get("content-type", ""):
-                return r.status_code, None
-            buf = bytearray()
-            async for chunk in r.aiter_bytes():
-                buf.extend(chunk)
-                if len(buf) >= PAGE_BYTES:
-                    break
-            return 200, bytes(buf[:PAGE_BYTES]).decode(r.encoding or "utf-8", errors="ignore")
-    except httpx.HTTPError:
-        return None, None
+
+    def same(x: str) -> bool:
+        h = (urlsplit(x).hostname or "").lower()
+        return _site(h) == _site(host) and not weblinks.blocked(h, skip)
+
+    return await linkimage.read_page(client, url, robots, same, limit=PAGE_BYTES, timeout=TIMEOUT)
 
 
 def _client() -> httpx.AsyncClient:
@@ -166,7 +153,7 @@ async def _fetch_all(
         u = urlsplit(url)
         base = f"{u.scheme}://{u.netloc}"
         if (
-            u.scheme == "https"
+            linkimage.public_url(url)
             and base not in robots
             and not weblinks.blocked(u.hostname or "", skip)
         ):

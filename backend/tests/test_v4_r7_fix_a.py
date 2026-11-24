@@ -334,7 +334,7 @@ def test_expert_turn_sends_the_card_and_ends_with_the_ask(api, script, monkeypat
         "K1", "곰팡이는 제거하고 충분히 건조해야 한다.", publisher="국토교통부", official=True
     )
 
-    async def consult(_trades, _question, _home, _terms=()):
+    async def consult(_trades, _question, _home, _terms=(), **_kw):  # said(고객 말, 점검 R2 B2)
         line = experts.Line("곰팡이는 없애고 말린 뒤 도배해요.", ("K1",))
         return [
             experts.Note(

@@ -15,7 +15,7 @@ import re
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
@@ -97,9 +97,10 @@ def fresh(tc: ToolCtx) -> bool:
 
 
 def rejected_note(surface: str) -> str:
-    who = "고객" if surface == "customer" else "업체"
+    # 조사를 맞춰요(점검 R2 B10: '업체이 거절한')
+    who, subj = ("고객", "고객이") if surface == "customer" else ("업체", "업체가")
     return (
-        f"{who}이 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. 이번 턴 {who} 말이 거절 · 거둔 "
+        f"{subj} 거절한 제안이에요. 판 · 금액 · 날짜가 바뀌지 않아 다시 만들지 않았어요. 이번 턴 {who} 말이 거절 · 거둔 "
         "이 제안을 다시 해 달라는 뜻이면 같은 도구를 asked_again=true로 다시 불러요(새 승인 카드를 만들어요, 누르기 전엔 "
         "실행되지 않아요). 그런 뜻이 아니면 다시 밀지 말고, 카드 단추로 직접 고를 수 있다고만 알려요."
     )
@@ -194,6 +195,17 @@ class HomeFields(BaseModel):
 
 class HomeIn(BaseModel):
     fields: HomeFields
+
+
+def same_value(key: str, now, new) -> bool:
+    """집 정보 칸의 지금 값과 바꿀 값이 같은지. 면적은 수로 견줘요(점검 R2 B7: 저장값 84.0과 모델 값 84를 다른
+    값으로 봐 바뀐 칸 없는 승인 카드를 만들었어요). 나머지는 글자로 견줘요."""
+    if key == "area_m2" and now is not None and new is not None:
+        try:
+            return Decimal(str(now)) == Decimal(str(new))
+        except InvalidOperation:
+            pass
+    return str(now) == str(new)
 
 
 REQUESTED = "실측을 요청한 업체"
@@ -538,7 +550,7 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     home_now = {k: v for k, v in now_home.items() if k not in (DEMOLITION_KEY, "diy")}
     if "diy" in asked:  # 칩 순서로 맞춰 견준다
         asked["diy"] = [k for k in tuple(DIY_LABELS) if k in set(asked["diy"])]
-    changes = {k: v for k, v in asked.items() if str(now_home.get(k)) != str(v)}
+    changes = {k: v for k, v in asked.items() if not same_value(k, now_home.get(k), v)}
     if want_region is not None:  # 지역 바꾸기(리드 결정 11-22, QA r3 s1)
         region = region_of(want_region, now_home["sido"])
         if region != (now_home["sido"], now_home["sgg"]):  # 시 · 도와 구를 같이, 옛 동은 지운다
@@ -712,12 +724,18 @@ WISH_SAID = {
 WISH_HINT = "wish는 고객이 말한 시작 · 끝 날짜(하루면 같은 날)예요. 고객에게 기간을 다시 물어요."
 
 
-def slots_full_said(n: int, room: int) -> str:
-    """요청 칸이 모자랄 때 도구 오류 글: 진행 중 n곳, 더 요청할 수 있는 곳 room."""
+def slots_full_said(n: int, room: int, held: int = 0) -> str:
+    """요청 칸이 모자랄 때 도구 오류 글: 진행 중 n곳, 담아 둔 곳 held(요청 전), 더 요청할 수 있는 곳 room."""
     more = f"{room}곳만 더 요청할 수 있어요" if room > 0 else "새 업체에 요청할 수 없어요"
+    if not held:
+        return (
+            f"실측 요청은 공정마다 {SLOTS}곳까지예요. 지금 {n}곳이 진행 중이라 {more}. "
+            "진행 중인 요청 한 곳을 취소하면 다른 업체에 요청할 수 있어요."
+        )
+    now = f"{n}곳이 진행 중이고 {held}곳을 담아 둬서" if n else f"{held}곳을 담아 둬서"
     return (
-        f"실측 요청은 공정마다 {SLOTS}곳까지예요. 지금 {n}곳이 진행 중이라 {more}. "
-        "진행 중인 요청 한 곳을 취소하면 다른 업체에 요청할 수 있어요."
+        f"실측 요청은 담은 업체까지 공정마다 {SLOTS}곳이에요. 지금 {now} {more}. "
+        "담아 둔 업체에 요청하거나, 업체 보기에서 담은 업체 하나를 빼면 다른 업체에 요청할 수 있어요."
     )
 
 
@@ -788,10 +806,13 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
         if c is None or c.state != "ok" or c.estimate_total is None:
             raise ToolError("unavailable", "고른 업체 중 지금 요청할 수 없는 곳이 있어요.")
         rows.append(c)
-    # 요청 칸(공정마다 3곳)이 모자라면 승인 카드를 만들지 않아요(QA r7 c1: 만든 카드를 승인하면 409 slots_full)
-    room = SLOTS - len(live)
-    if len([c for c in rows if c.vendor_id not in live]) > room:
-        raise ToolError("slots_full", slots_full_said(len(live), room))
+    # 요청 칸(공정마다 3곳)이 모자라면 승인 카드를 만들지 않아요(QA r7 c1: 만든 카드를 승인하면 409 slots_full).
+    # 칸은 실행(visit.flow.add_shortlist)과 같은 담기 칸(담은 업체 + 담기 없이 보낸 옛 요청)으로 세요: 새로 담을 업체
+    # (아직 안 담음 · 요청 중 아님)가 남은 칸보다 많으면 막아요(점검 R2 B1: 담기만 3곳 찬 공사에 요청 카드 → 409)
+    room = lst.shortlist.left if lst.shortlist is not None else SLOTS - len(live)
+    if len([c for c in rows if not c.shortlisted and c.vendor_id not in live]) > room:
+        held = max(SLOTS - room - len(live), 0)  # 담아 두기만 한 곳(요청 전)
+        raise ToolError("slots_full", slots_full_said(len(live), room, held))
     if a.wish is not None:  # 고객이 말한 기간(화면 요청과 같은 규칙, QA r7 화면 N3)
         start, end = a.wish.start, a.wish.end
         if (bad := slots.said_wish(start, end, tc.today)) is not None:
@@ -1561,7 +1582,14 @@ ALL_SAID = re.compile(
 # '결도배 빼고 다')
 KEEP_SAID = re.compile(
     r"^(?:에보낸요청|요청|업체|쪽|거|건)?(?:은|는|이|가|도|만)?(?:그대로|그냥|계속|일단)?"
-    r"(?:남기|남겨|두고|놔두|놓고|말고|빼고|제외|유지|살리|살려)"
+    r"(?:남기|남겨|두고|놔두|놓고|말고|빼고|제외|유지|살리|살려"
+    r"|취소(?:는|를|은|도)?(?:하지|하진|하지는)?말고)"  # '결도배는 취소하지 말고 …'(점검 R2 B5)
+)
+# 업체 이름 바로 뒤의 '취소 안 할래요' · '취소하지 마세요'(점검 R2 B5): 그 요청은 남겨요. 남길 업체만 말하고 끝나면
+# 다른 요청을 취소하라는 뜻인지 몰라서 '나머지 · 모두'나 다른 업체 이름이 없으면 고르기 칩으로 물어요
+KEEP_NOT = re.compile(
+    r"^(?:에보낸요청|요청|업체|쪽|거|건)?(?:은|는|이|가|도|만)?(?:그대로|그냥|계속|일단|절대|꼭)?"
+    r"(?:(?:안|못)취소|취소(?:는|를|은|도)?(?:하지|하진|하지는|하면|해선)?(?:말|마|않|안|못))"
 )
 
 
@@ -1569,14 +1597,23 @@ def cancel_targets(live: list, text: str) -> list:
     """visit_ref 없이 불렀을 때 이번 턴 고객 말(가린 글)로 취소할 요청을 푼다(QA r4 s1 C1 · s6 12 · 13턴: 고르기 칩
     글 '마루와벽에 보낸 실측 요청 취소해 줘' · '둘 다 취소해 주세요'에도 고르기 칩만 6번). 업체 이름이 나오면 그
     요청(들), '…는 남기고'면 남긴 업체 말고 남은 하나(또는 '나머지 · 모두'면 남은 것 모두), '둘 다 · 모두 · 전부 · 다
-    취소'면 살아 있는 요청 모두. 못 풀면 빈 목록(고르기 칩으로 물어요)."""
+    취소'면 살아 있는 요청 모두. '…는 취소 안 할래요'처럼 남길 말만 하면 '나머지 · 모두'가 있을 때만 남은 것을 풀어요.
+    못 풀면 빈 목록(고르기 칩으로 물어요)."""
     said = plain(text)
     named, kept = [], []
+    only_not = True  # 남긴 업체가 모두 '취소 안 해요' 꼴로만 남았다(이어서 취소할 말이 없음)
     for v in live:
         name = plain(v.vendor_name)
         at = said.find(name) if name else -1
         if at >= 0:
-            (kept if KEEP_SAID.match(said[at + len(name) :]) else named).append(v)
+            after = said[at + len(name) :]
+            if KEEP_SAID.match(after):
+                kept.append(v)
+                only_not = False
+            elif KEEP_NOT.match(after):
+                kept.append(v)
+            else:
+                named.append(v)
     # 다른 업체 이름에 든 짧은 이름은 뺀다('한결도배'라고 하면 '한결'은 아니에요)
     names = [plain(v.vendor_name) for v in named]
     named = [
@@ -1587,7 +1624,8 @@ def cancel_targets(live: list, text: str) -> list:
         return named
     if kept:
         rest = [v for v in live if v not in kept]
-        return rest if len(rest) == 1 or every or "나머지" in said else []
+        one = len(rest) == 1 and not only_not
+        return rest if one or every or "나머지" in said else []
     return list(live) if every else []
 
 

@@ -201,7 +201,7 @@ def test_expert_answer_falls_back_to_v2g(monkeypatch, repo_search):
         raise llm.LLMError("실패")
 
     monkeypatch.setattr(llm, "claude_json", fail)
-    tc = SimpleNamespace(user=None, project_id=None, mode="llm")
+    tc = SimpleNamespace(user=None, project_id=None, mode="llm", text="초배지는 왜 발라요?")
     d = asyncio.run(answer._expert_answer(tc, "초배지는 왜 발라요?")).data
     assert d["route"] == "v2g" and d["hits"] and d["engine"] == "v2g"
     assert d["expert"]["why_v2g"] == "experts" and d["expert"]["notes"][0]["failed"] == "error"
@@ -269,8 +269,8 @@ def test_terms_widen_expert_search(monkeypatch, repo_search):
         raise llm.LLMError("기록만")
 
     monkeypatch.setattr(llm, "claude_json", fake)
-    tc = SimpleNamespace(user=None, project_id=None, mode="llm")
     q = "도배 전에 기존 조명을 떼 놔야 해요?"
+    tc = SimpleNamespace(user=None, project_id=None, mode="llm", text=q)
     asyncio.run(answer._expert_answer(tc, q))
     asyncio.run(answer._expert_answer(tc, q, ("도배 전 조명 기구 제거",)))
     assert "K2578" not in sent[0] and "K2578" in sent[1]

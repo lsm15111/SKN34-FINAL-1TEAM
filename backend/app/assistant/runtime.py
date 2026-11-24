@@ -1639,7 +1639,8 @@ class _Turn:
                 self.res.actions.append(str(a.action_id))
             self.done.add(a.kind)
             await self.emit("action", a.model_dump(mode="json"))
-        if t.kind == "propose" and out.actions:  # 카드 말(만들었어요 · 눌러 주세요)을 놓아준다
+        # 카드 말(만들었어요 · 눌러 주세요)을 놓아준다. 승인 카드를 만드는 읽기 도구(업체 request_brief)도 같아요(점검 R2 B3)
+        if out.actions:
             fresh = given.get("state") == "new"
             await self.gate.cards({a.kind for a in out.actions}, fresh=fresh)
         if out.task is not None:
