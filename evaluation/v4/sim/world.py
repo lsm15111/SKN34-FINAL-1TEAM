@@ -470,6 +470,10 @@ class World:
 
     def send_quote(self, ref: str, q: dict) -> int:
         v = self.visits[ref]
+        if self._status(ref) == "booked":
+            # 견적서는 실측한 뒤에 와요(서버 409 before_visit, QA r6 · 2026-11-24). 대본의 '견적서 받음'은 실측이
+            # 끝난 뒤라 실측을 먼저 '실측 받음'으로 넘겨요(시간 건너뜀)
+            self.mark_visited(ref)
         self.as_(self.vendors[v["vendor"]])
         fid = self._upload("quote_doc", "실측견적.pdf")
         days = q.get("days") or QUOTE_DEFAULT["days"]
