@@ -17,7 +17,7 @@ from tests.test_v4_prompt_examples import PROMPTS, answers, sl
 
 EXAMPLE_BUBBLES = 3  # '말풍선 둘(많아야 셋)'
 # 고객 '많아야 네 문장'(고침 6차) · 업체 '많아야 다섯 문장'
-EXAMPLE_SENTS = {"customer_v4": 4, "vendor_v4": 5}
+EXAMPLE_SENTS = {"customer_v4": 4, "customer_v5": 4, "vendor_v4": 5}
 SENT_CHARS = 60  # '문장은 50자 안팎'
 EXAMPLE_CHARS = 160  # 예시 답 전체(모델이 예시 길이를 따라 해요)
 BUBBLE = re.compile(r"\n[ \t]*\n")
@@ -28,7 +28,7 @@ def rules(name: str) -> str:
     return prompts._model_text(name).split("## 좋은 예시", 1)[0]
 
 
-@pytest.mark.parametrize("name", ["customer_v4", "vendor_v4"])
+@pytest.mark.parametrize("name", ["customer_v4", "customer_v5", "vendor_v4"])
 def test_example_answers_are_short_and_plain(name):
     got = answers(name)
     assert got
@@ -54,12 +54,13 @@ def test_example_answers_are_short_and_plain(name):
     assert not bad, bad
 
 
-@pytest.mark.parametrize("name", ["customer_v4", "vendor_v4"])
+@pytest.mark.parametrize("name", ["customer_v4", "customer_v5", "vendor_v4"])
 def test_rules_set_length_format_and_korean_only(name):
     r = rules(name)
+    customer = name.startswith("customer")
     assert "말풍선 둘(많아야 셋)" in r
-    assert ("두세 문장, 많아야 네 문장" if name == "customer_v4" else "많아야 다섯 문장") in r
-    assert ("문장은 50자 안팎으로 짧게" if name == "customer_v4" else "문장은 짧게 끊고") in r
+    assert ("두세 문장, 많아야 네 문장" if customer else "많아야 다섯 문장") in r
+    assert ("문장은 50자 안팎으로 짧게" if customer else "문장은 짧게 끊고") in r
     assert "목록(-, 1.) · 굵은 글씨 · 제목을 쓰지 마" in r
     assert "한국어로만 답해" in r and "지금은 한국어로만 답할 수 있어요" in r
     assert "길어도 돼" not in prompts._model_text(name)
@@ -86,9 +87,11 @@ def test_customer_rules_follow_the_r3_list():
     assert "카드의 [채팅 열기]를 가리켜" not in prompts._model_text("customer_v4")
 
 
-def test_cancel_example_uses_changed_only_when_the_customer_said_so():
-    body = (PROMPTS / "customer_v4.md").read_text(encoding="utf-8").split("### 9. 취소", 1)[1]
-    block = body.split("### 10.", 1)[0]
+@pytest.mark.parametrize("name", ["customer_v4", "customer_v5"])
+def test_cancel_example_uses_changed_only_when_the_customer_said_so(name):
+    text = (PROMPTS / f"{name}.md").read_text(encoding="utf-8")
+    body = re.split(r"### \d+\. 취소", text, maxsplit=1)[1]
+    block = body.split("\n### ", 1)[0]
     said = next(ln for ln in block.splitlines() if ln.startswith("- 고객(이미 보냈을 때):"))
     tool = next(ln for ln in block.splitlines() if ln.startswith("- 도구(이미 보냈을 때):"))
     assert "changed" in tool and "일정이 바뀌" in said
@@ -157,8 +160,9 @@ def test_card_made_words_say_what_pressing_does():
     )  # S11(목공은 표준견적서가 있어요)
 
 
-def test_visit_words_for_customers():
+@pytest.mark.parametrize("name", ["customer_v4", "customer_v5"])
+def test_visit_words_for_customers(name):
     """고객에게 실측 후보는 '실측 일정 후보', 정해진 것은 '실측 날짜'(사용자 11-24: '반나절 후보' 표현이 이상해요)."""
-    r = rules("customer_v4")
+    r = rules(name)
     assert "고를 후보는 '실측 일정 후보', 정해진 것은 '실측 날짜'(오전 · 오후)라고 해" in r
     assert "고객에게 '반나절' · '실측 시간'이라고 하지 마" in r

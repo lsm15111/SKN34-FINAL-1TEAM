@@ -358,13 +358,13 @@ def test_v4_examples_and_persona_are_not_leaks_but_rules_are(monkeypatch):
 
 
 def test_markers_are_never_sent_and_old_prompts_keep_their_text(monkeypatch):
-    for name in ("v3", "v4"):
+    for name in ("v3", "v4", "v5"):
         monkeypatch.setattr(settings, "assistant_prompt_set", name)
         for key in ("customer", "vendor", "nudge_write", "nudge_judge", "memory", "brief"):
             assert "<!--" not in prompts.text(key)
     # 표식 줄만 뺀 글이 모델에 가는 글이다(v3 · 업체 v4는 표식을 더했어도 모델 글이 그대로)
     folder = ROOT / "backend" / "app" / "assistant" / "prompts"
-    for file in ("customer_v3", "vendor_v3", "vendor_v4", "customer_v4"):
+    for file in ("customer_v3", "vendor_v3", "vendor_v4", "customer_v4", "customer_v5"):
         raw = (folder / f"{file}.md").read_text(encoding="utf-8")
         assert "<!-- 규칙 -->" in raw
         kept = [ln for ln in raw.splitlines() if ln not in ("<!-- 규칙 -->", "<!-- 예시 -->")]
@@ -392,6 +392,12 @@ def test_prompt_set_picks_files_and_keeps_text_per_set(monkeypatch):
     ]  # fmt: skip
     v4 = prompts.system("customer")
     assert "판: customer_v3" in v3 and "판: customer_v4" in v4
+    # v5는 고객 지시문만 바뀐 판(11-25, 기본은 v4 그대로)
+    monkeypatch.setattr(settings, "assistant_prompt_set", "v5")
+    assert [prompts.version(n) for n in NAMES] == [
+        "customer_v5", "vendor_v4", "nudge_write_v3", "nudge_judge_v1", "memory_v4", "brief_v2",
+    ]  # fmt: skip
+    assert "판: customer_v5" in prompts.system("customer")
     monkeypatch.setattr(settings, "assistant_prompt_set", "v3")
     assert prompts.system("customer") == v3  # 같은 판이면 같은 글(프롬프트 캐시 앞부분이 맞는다)
 
@@ -399,7 +405,7 @@ def test_prompt_set_picks_files_and_keeps_text_per_set(monkeypatch):
 def test_each_set_sends_its_own_cached_system_prompt(api, script, monkeypatch):
     pid = home(api, "set@mitjip.test")
     sent = {}
-    for name in ("v3", "v4"):
+    for name in ("v3", "v4", "v5"):
         monkeypatch.setattr(settings, "assistant_prompt_set", name)
         log = script([{"text": "도와드릴게요."}])
         ok(ask(api, pid, "안녕하세요"))
@@ -409,7 +415,8 @@ def test_each_set_sends_its_own_cached_system_prompt(api, script, monkeypatch):
         assert "".join(b["text"] for b in system) == prompts.system("customer")
         sent[name] = req
     # 도구 앞부분은 같고 지시문부터 판마다 달라 캐시가 판마다 따로 맞는다
-    assert sent["v3"]["tools"] == sent["v4"]["tools"]
+    assert sent["v3"]["tools"] == sent["v4"]["tools"] == sent["v5"]["tools"]
+    assert sent["v5"]["system"] != sent["v4"]["system"]
     assert sent["v3"]["system"] != sent["v4"]["system"]
 
 
