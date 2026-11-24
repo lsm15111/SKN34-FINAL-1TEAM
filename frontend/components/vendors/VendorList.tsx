@@ -88,6 +88,8 @@ export function VendorList({ projectId, list, shortlist, next, mock, head, aside
     if (c.state === "paper_unsupported") return "excluded";
     if (c.state === "blocked_retry") return "full";
     if (picked.includes(c.vendor_id)) return "added";
+    // 업체를 확정한 뒤에는 더 담을 수 없어요(눌러도 서버 409 locked라 꺼 둬요, QA r7 N6)
+    if (chosen) return "full";
     return left === 0 ? "full" : "add";
   };
   const cardOf = (c: Card, nearby: boolean) => (

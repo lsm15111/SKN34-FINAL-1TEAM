@@ -33,6 +33,8 @@
 
 /* 리뷰 기준 줄 · 시트 */
 .rules { font-size: var(--mj-type-caption); color: var(--mj-text-mute); line-height: var(--mj-lh-body); }
+/* 글 속 '리뷰 기준' 단추도 누를 곳 높이 40px(폰에서 21px였어요, QA r7 N9). 줄이 그만큼 높아져요 */
+.rules button { display: inline-flex; align-items: center; min-height: 40px; vertical-align: middle; }
 .ruleList { display: flex; flex-direction: column; margin: 0; }
 .ruleList > div { display: flex; flex-direction: column; gap: 2px; padding: 12px 0; }
 .ruleList > div + div { border-top: 1px solid var(--mj-line); }

@@ -16,7 +16,7 @@ import { enc, newKey, send } from "../send";
 import { LOC_NOTE } from "../text";
 import { Notice } from "@/components/ui/Notice";
 import { Eyebrow, Group, Small } from "../ui/parts";
-import { factLine, visitTitle } from "./facts";
+import { DiyFact, factLine, visitTitle } from "./facts";
 import s from "./visit.module.css";
 
 export function AcceptForm({ v, now }: { v: VendorVisitV3; now: string }) {
@@ -47,6 +47,7 @@ export function AcceptForm({ v, now }: { v: VendorVisitV3; now: string }) {
         <PageHead title="날짜 수락" crumbs={[{ label: "작업함", href: "/vendor" }, { label: visitTitle(v) }]} />
         <Group>
           <Eyebrow>{factLine(v)}</Eyebrow>
+          <DiyFact v={v} />
           {b ? (
             <>
               <BigFigure size="mid" label="고객이 고른 날" caption={null}>{halfDayText(b.day, b.half, true)}</BigFigure>

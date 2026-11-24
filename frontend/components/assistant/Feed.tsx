@@ -25,7 +25,7 @@ export function Feed({ items, loaded, loadError, ctx, act, liveId, waitingReply,
   /** 단계 띠 높이(말 머리를 그 아래에 맞춰요) */
   headroom: () => number;
   onRetry: () => void;
-  /** 처음 열 때 이 공사의 비서 대화가 없었어요(첫 인사를 보여요. 화면이 만든 말 · 오늘 정할 일이 있어도, 첫 말을 보낸 뒤에도) */
+  /** 처음 열 때 이 공사의 비서 대화가 없었어요(첫 인사를 보여요. 화면이 만든 말 · 오늘 정할 일 · 먼저 말 건 줄이 있어도, 첫 말을 보낸 뒤에도) */
   fresh: boolean;
   hasOlder: boolean;
   olderBusy: boolean;

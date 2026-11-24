@@ -52,6 +52,12 @@ export function toQuoteLines(lines: StdLineIn[], scope: "full" | "partial" | nul
       if (own.rolls) return { key: l.key, name, note: `고객 구매 · ${own.rolls}`, amount: null };
       return { key: l.key, name, note: "고객 구매", qty: l.qty, unit: unitText(l.unit), amount: null };
     }
+    // 전체 철거면 '기존 벽지 철거' 줄은 철거 공사 몫이라 계산 엔진이 '안 함'으로 둬요. '안 함' 대신 줄 근거 글 앞머리(까닭)를 보이고,
+    // 합계 밖이라 수량 × 단가 · 금액은 빼요(QA r7 N2: 고른 '전체 철거'와 반대로 읽혔어요)
+    if (l.key === "removal" && state === "excluded") {
+      const why = (l.source ?? "").split(" · ")[0].trim();
+      return { key: l.key, name, amount: null, state, ...(why ? { stateText: why } : {}) };
+    }
     if (state === "excluded" && scope === "partial") note = "고르지 않았어요";
     if (state === "excluded" && scope === "partial") return { key: l.key, name, note, amount: null, state };
     return { key: l.key, name, note, qty: l.qty, unit: unitText(l.unit), unitPrice: l.unit_price, amount: l.amount, state };

@@ -2,14 +2,15 @@
 // 업체 작업함 '비서 소식'(GET /vendor/assistant/feed · /vendor/assistant/actions?status=proposed):
 // 비서가 만든 제안(기간 답하기 · 못 받아요 · 공사 날짜)의 승인 카드와 짧은 소식. 둘 다 비었으면 그리지 않아요.
 // - 승인 · 거절은 /vendor/assistant/actions/{id}/approve · reject(멱등 키 · 본 판). 409(만료 · 판 바뀜 · 실패)면 서버의 새 상태로 다시 그려요.
-// - 실행되면 작업함(서버 화면)을 다시 읽어요. 요청 화면의 v3 단추로 같은 일을 했으면 그 카드는 '처리됨'으로 보여요.
+// - 실행되면 작업함(서버 화면)을 다시 읽어요. 요청 화면의 v3 단추로 같은 일을 했으면 그 카드는 '처리됨'으로 보여요
+//   (다른 화면에서 보낸 뒤 작업함으로 와도: 이 탭에 둔 화면 쓰기 vendorDoneIds, QA r7 N4).
 // - 고객 이름 · 연락처 · 동 · 호는 없어요(서버가 넣지 않아요). 카드 글은 서버 값 그대로예요.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   approveVendorAction, getVendorFeed, handledByWrite, listVendorActions, newClientKey, rejectVendorAction, targetOfWrite, VENDOR_ASSISTANT_EVENT,
-  vendorKindsForWrite, type ActionOut, type AssistantItem, type FeedPart,
+  vendorDoneIds, vendorKindsForWrite, type ActionOut, type AssistantItem, type FeedPart,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { ApprovalCard } from "@/components/assistant/kit/ApprovalCard";
@@ -34,8 +35,12 @@ export function VendorFeed({ now }: { now: string }) {
 
   const load = useCallback(async () => {
     const [f, a] = await Promise.all([getVendorFeed().catch(() => null), listVendorActions("proposed").catch(() => [] as ActionOut[])]);
-    setItems(f ? f.items.filter((x): x is AssistantItem => x.role === "assistant" && x.parts.length > 0).slice(-SHOW) : []);
+    const shown = f ? f.items.filter((x): x is AssistantItem => x.role === "assistant" && x.parts.length > 0).slice(-SHOW) : [];
+    setItems(shown);
     setOpen(a);
+    // 다른 화면(요청 · 공사)에서 같은 일을 이미 보낸 카드: 서버가 닫기 전에도 '처리됨'
+    const done = vendorDoneIds([...a, ...shown.flatMap((it) => it.parts.flatMap((x) => (x.t === "action" ? [x.action] : [])))]);
+    if (done.length) setHandled((h) => ({ ...h, ...Object.fromEntries(done.map((x) => [x, true as const])) }));
   }, []);
   useEffect(() => { void load(); }, [load]);
   // 오늘 할 일 단추로 비서에게 고르기를 보낸 뒤(공사 날짜 승인 카드): 다시 읽어요

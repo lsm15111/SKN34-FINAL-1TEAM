@@ -7,9 +7,16 @@ import { PhotoGrid } from "@/components/ui/PhotoGrid";
 import { KeyValue } from "@/components/ui/Summary";
 import { MOCK } from "@/lib/mock/v3c/mode";
 import { Pics } from "../ui/parts";
+import s from "./visit.module.css";
 
 const title = (v: VendorVisitV3) => v.area_label ?? `${v.region} ${v.area_name}`;
 export const visitTitle = title;
+
+/** 고객이 직접 할 일(반셀프 칩 화면 말, 요청 때 고객이 업체에 알린 사본). 없으면 그리지 않아요(QA r7 N5: 브리핑 카드에만 보였어요) */
+export function DiyFact({ v }: { v: VendorVisitV3 }) {
+  if (!v.diy?.length) return null;
+  return <p className={s.diy}><b>고객이 직접 할 일</b>{v.diy.join(", ")}</p>;
+}
 const occ = (v: VendorVisitV3) => (v.occupied ? "사는 중" : "빈 집");
 
 /** 폰 한 줄(9판 V04 k-eb): '노원구 상계동 · 69.4㎡ · 아파트 · 전체 · 빈 집 · 고객 희망 12.7~12.21 · 공사 시작 희망 1.4(월) · 예산 300만 원' */

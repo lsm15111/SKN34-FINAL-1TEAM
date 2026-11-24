@@ -10,10 +10,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   actionsIn, anchorIndex, applyTurnEvent, approveAction, dismissNudge as dismissApi, foldCards, getBoard, getFeed, getHealth,
-  getLatestThread, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, newClientKey, openNudge as openApi,
+  getLatestThread, getSlotsNow, getToday, handledByTarget, handledByWrite, keepOlder, kindsForWrite, listActions, movedSlotIds, newClientKey, openNudge as openApi,
   rejectAction, replaceAction, resetMock, resetTurn, sayable, seqFilter, settledNudges, streamTurn, subscribeTurns, takeToday, targetOfWrite,
   turnErrorText, BUSY_TEXT, TURN_RETRY_MS, TurnBusy,
-  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type TodayData, type TurnEvent, type TurnIn,
+  type ActionOut, type AssistantItem, type BoardOut, type FeedItem, type HealthOut, type SlotNow, type TodayData, type TurnEvent, type TurnIn,
 } from "@/lib/api/assistant";
 import { API_WRITE_EVENT, ApiError, errorText, type ApiWrite } from "@/lib/backend/client";
 import { useStream } from "@/lib/backend/stream";
@@ -23,8 +23,12 @@ import { useToast } from "@/components/ui/Toast";
 
 export type Assistant = ReturnType<typeof useAssistant>;
 
-/** 처음 대화(기록 없음)일 때 빠른 답 칩 */
+/** 처음 대화(기록 없음)일 때 빠른 답 칩. 서버가 고른 칩(마지막 카드 다음 말)이 없으면 이 줄을 그대로 둬요(QA r7 M10: 먼저 말 건 줄이
+ *  생기면 칩이 0개였어요). 실측 단계(보드 단계 띠 3칸)부터는 '업체 추천해 줘'를 빼요(서버 칩 규칙 '실측 요청 전'과 같은 뜻) */
 const FIRST_CHIPS = ["표준견적서 금액 풀이해 줘", "업체 추천해 줘", "공사는 어떤 순서로 해요?"];
+const RECO_CHIP = "업체 추천해 줘";
+const VISIT_STEP = 3;
+const firstChips = (step: number | undefined) => (step != null && step >= VISIT_STEP ? FIRST_CHIPS.filter((c) => c !== RECO_CHIP) : FIRST_CHIPS);
 const LOST = "연결이 끊겼어요. 대화를 다시 불러올게요.";
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const handledKey = (pid: string) => `mj_v4_handled:${pid}`;
@@ -36,7 +40,8 @@ export function useAssistant(projectId: string) {
   const [items, setItems] = useState<FeedItem[]>([]);
   const [before, setBefore] = useState<number | null>(null);
   const [olderBusy, setOlderBusy] = useState(false);
-  /** 처음 열 때 대화가 비어 첫 인사를 보였어요. 이 화면에서는 첫 말을 보낸 뒤에도 그대로 둬요(인사 줄이 사라지며 튀지 않게, QA r3 v1 L2) */
+  /** 처음 열 때 고객이 비서와 나눈 대화가 없어 첫 인사를 보였어요(먼저 말 건 줄만 있어도, QA r7 M10). 이 화면에서는 첫 말을 보낸 뒤에도
+   *  그대로 둬요(인사 줄이 사라지며 튀지 않게, QA r3 v1 L2) */
   const [greet, setGreet] = useState(false);
   const [chips, setChips] = useState<string[]>([]);
   const [now, setNow] = useState<string>("");
@@ -149,11 +154,12 @@ export function useAssistant(projectId: string) {
       setBefore(page.before);
     }
     setNow(page.now);
-    setChips(page.items.length ? page.chips : FIRST_CHIPS);
+    setChips(page.chips);
     revRef.current = thread ? thread.rev : 0;
     if (!anchored.current) {
       anchored.current = true;
-      setGreet(!thread && !page.items.length);
+      // 대화(고객 말)가 없으면 첫 인사: 먼저 말 건 줄은 대화가 없어도 기록에 끼워져 와요(서버 feed_for)
+      setGreet(!thread);
       const last = page.items[page.items.length - 1];
       setAnchor(last ? { id: last.id, at: last.at } : null);
       const day = dateSeoul(page.now);
@@ -488,6 +494,20 @@ export function useAssistant(projectId: string) {
   /** 제안을 숨길 줄: 고객이 닫은 것 + 할 일이 끝난 것 */
   const shut = useMemo<Record<string, true>>(() => ({ ...gone, ...settled }), [gone, settled]);
 
+  /** 비서 밖(화면 · 업체)에서 처리돼 닫힌 반나절 카드가 보일 지금 잡힌 반나절(카드가 낸 날 대신, QA r7 M11).
+   *  그런 카드가 있을 때만 읽고, 보드가 바뀌면(실측 상태가 바뀜) 다시 읽어요 */
+  const [slotsNow, setSlotsNow] = useState<Record<string, SlotNow>>({});
+  const movedKey = useMemo(
+    () => movedSlotIds([...actionsIn(items), ...open, ...Object.values(kept)], handledAll).join(","),
+    [items, open, kept, handledAll],
+  );
+  useEffect(() => {
+    if (!movedKey) return;
+    let alive = true;
+    getSlotsNow(projectId).then((x) => { if (alive) setSlotsNow(x); }).catch(() => undefined);
+    return () => { alive = false; };
+  }, [projectId, movedKey, flash]);
+
   /** 오늘 정할 일을 그 자리에 처음 보일 때: 그날 카드가 기록에 없고 보일 줄이 있어요 */
   const todayDate = today?.date ?? null;
   const firstToday = useMemo(() => {
@@ -522,9 +542,9 @@ export function useAssistant(projectId: string) {
   }, [items, open, kept, today, todayFirst, firstToday, pin, anchor, now]);
 
   return {
-    projectId, items: view, chips, now, loaded, loadError, running, board, boardFailed, retryBoard, pending, errors, flash, handled: handledAll, ended, health,
-    gone: shut, settled,
-    /** 처음 열 때 대화가 비었어요(첫 인사). 이 화면에서는 첫 말을 보낸 뒤에도 그대로 보여요 */
+    projectId, items: view, chips: chips.length ? chips : firstChips(board?.step), now, loaded, loadError, running, board, boardFailed, retryBoard, pending, errors, flash, handled: handledAll, ended, health,
+    gone: shut, settled, slotsNow,
+    /** 처음 열 때 고객이 비서와 나눈 대화가 없었어요(첫 인사). 이 화면에서는 첫 말을 보낸 뒤에도 그대로 보여요 */
     fresh: greet,
     /** 기록의 마지막 말(화면이 만든 말 빼고): 입력 중 표시 · 답 기다림 줄은 이 말로 정해요 */
     tail: items[items.length - 1] ?? null,

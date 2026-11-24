@@ -127,7 +127,7 @@ function visit(r: InboxRowV3, p: Partial<VendorVisitV3>): VendorVisitV3 {
     id, received_at, code, trade, grade, region, area_name, pyeong, status, new: isNew, share_contact, closed_at, decline_code, close_reason, waiting_days,
     area_label, home, wish_start, wish_end, work_wish_on, estimate_total, budget_won, state, next, attempt,
     area_m2: "69.4", area_basis: "supply", occupied: false, home_text: r.home ?? "", when_text: "", message: null,
-    photos: [], photo_labels: [], taken: [], other_windows: [], propose_options: [], open_count: null, capacity: 2, instant_default: true, ...p,
+    photos: [], photo_labels: [], diy: [], taken: [], other_windows: [], propose_options: [], open_count: null, capacity: 2, instant_default: true, ...p,
   };
 }
 const TAKEN_DEC = [

@@ -25,7 +25,7 @@ function closedWord(a: ActionOut): string {
   return "실행하지 못했어요";
 }
 
-export function ApprovalCard({ action: a, now, busy = false, handled = false, handledText = "화면에서 직접 했어요", error = null, onApprove, onReject, onRemake }: {
+export function ApprovalCard({ action: a, now, busy = false, handled = false, handledText = "화면에서 직접 했어요", title, error = null, onApprove, onReject, onRemake }: {
   action: ActionOut;
   now: string;
   busy?: boolean;
@@ -33,6 +33,8 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, ha
   handled?: boolean;
   /** 처리됨 옆 한 줄(같은 대상이 끝났으면 그 까닭) */
   handledText?: string;
+  /** 처리됨 · 닫힘으로 접힌 카드의 제목(비서 밖에서 정해진 반나절처럼 카드가 낸 값과 달라졌을 때). 없으면 카드 제목 */
+  title?: string;
   error?: string | null;
   onApprove: () => void;
   onReject: () => void;
@@ -40,6 +42,7 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, ha
   onRemake?: () => void;
 }) {
   const s = a.summary;
+  const shut = title ?? s.title;
   const stamp = (t?: string | null) => (t ? (dateSeoul(t) === dateSeoul(now) ? timeSeoul(t) : listStamp(t)) : "");
 
   if (a.status === "executed") {
@@ -56,10 +59,10 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, ha
   }
   if (a.status === "proposed" && handled) {
     return (
-      <section className={k.fold} aria-label={`${s.title} · 처리됨`}>
+      <section className={k.fold} aria-label={`${shut} · 처리됨`}>
         <span className={k.result}>
           <StatusTag tone="ok">처리됨</StatusTag>
-          <b>{s.title}</b>
+          <b>{shut}</b>
           <span>{handledText}</span>
         </span>
       </section>
@@ -68,10 +71,10 @@ export function ApprovalCard({ action: a, now, busy = false, handled = false, ha
   if (a.status === "rejected" || a.status === "expired" || a.status === "failed") {
     const word = closedWord(a);
     return (
-      <section className={k.fold} aria-label={`${s.title} · ${word}`}>
+      <section className={k.fold} aria-label={`${shut} · ${word}`}>
         <span className={k.result}>
           <StatusTag tone={a.status === "failed" ? "failed" : "cancelled"}>{word}</StatusTag>
-          <b>{s.title}</b>
+          <b>{shut}</b>
         </span>
         {error && a.status === "failed" ? <span className={k.err}>{error}</span> : null}
         {onRemake && canRemake(a) ? <button type="button" className={k.text} onClick={onRemake}>다시 만들기</button> : null}

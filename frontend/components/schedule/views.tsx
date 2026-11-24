@@ -32,24 +32,33 @@ export function datesView({ projectId, t, holidays, finalVersion, today, startDa
   const proposed = (t.dates_state === "proposed" || t.dates_state === "change_proposed") && p && p.status !== "accepted";
   if (proposed && p) {
     const days = p.days.length ? p.days : [p.start, p.end].filter((d, i, a) => a.indexOf(d) === i);
+    // 수락한 날짜를 바꾸자고 했으면 지금 날짜를 같이 보이고, 수락하면 이미 있는 확정 공정표가 바뀌어요(QA r7 N7)
+    const change = t.dates_state === "change_proposed";
+    const accept = change ? "수락하면 공사 날짜와 확정 공정표가 바뀌어요." : "수락하면 확정 공정표가 만들어져요.";
     return {
       body: (
         <>
           <Group>
             {/* 수락한 날짜를 업체가 바꾸자고 했으면 그 이유(업체가 적은 글, 고객에게 보여요)를 같이 보여요 */}
-            <Eyebrow>{t.dates_state === "change_proposed" ? `${iGa(v)} 바꾸자고 한 공사 날짜` : `${iGa(v)} 올린 공사 날짜`}</Eyebrow>
+            <Eyebrow>{change ? `${iGa(v)} 바꾸자고 한 공사 날짜` : `${iGa(v)} 올린 공사 날짜`}</Eyebrow>
             <p className={`${s.big} mj-num`}>{daysText(days)}</p>
-            {t.dates_state === "change_proposed" && p.reason ? <Quote>{p.reason}</Quote> : null}
+            {change && p.reason ? <Quote>{p.reason}</Quote> : null}
             <Sub>{[`${p.workdays}일`, `${p.crew}명`, startDate && p.start === startDate ? "공사 시작 희망일과 같아요" : null].filter(Boolean).join(" · ")}</Sub>
           </Group>
+          {change && t.deal.work_days.length ? (
+            <Group>
+              <Eyebrow>지금 공사 날짜</Eyebrow>
+              <Sub>{daysText(t.deal.work_days)}</Sub>
+            </Group>
+          ) : null}
           <Group>
             <div className={s.cal}><WorkDays days={days} holidays={holidays} today={today} /></div>
           </Group>
           <Group list><Rows>{dealRow(t)}</Rows></Group>
           <Notice tone="gray">
             {t.requests_left > 0
-              ? "수락하면 확정 공정표가 만들어져요. 날짜가 안 맞으면 다른 날짜를 요청해요(2번까지)."
-              : "수락하면 확정 공정표가 만들어져요. 다른 날짜 요청은 2번을 다 썼어요. 날짜를 바꿔야 하면 채팅으로 이야기해요."}
+              ? `${accept} 날짜가 안 맞으면 다른 날짜를 요청해요(2번까지).`
+              : `${accept} 다른 날짜 요청은 2번을 다 썼어요. 날짜를 바꿔야 하면 채팅으로 이야기해요.`}
           </Notice>
         </>
       ),

@@ -29,6 +29,7 @@ from app.files import service as files_service
 from app.jobs import service as jobs_service
 from app.notify import service as notify_service
 from app.notify.catalog import link, work_name
+from app.project import diy as project_diy
 from app.project import service as project_service
 from app.project.schemas import ProjectBrief, ProjectOut, WhenIn
 from app.quote import service as quote_service
@@ -1032,6 +1033,8 @@ async def vendor_visit(
         message=v.message,
         photos=[ph.file_id for ph in photos],
         photo_labels=[ph.label for ph in photos],
+        # 요청 때 고객이 업체에 알린 직접 할 일 사본(칩 순서 · 화면 말), 브리핑 카드와 같은 값
+        diy=[label for key, label in project_diy.DIY.items() if key in set(v.diy or ())],
         **extra,
     )
 

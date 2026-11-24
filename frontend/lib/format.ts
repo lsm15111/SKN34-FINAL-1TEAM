@@ -165,10 +165,14 @@ export function halfDayText(iso: string, half: Half, long = false): string {
 }
 
 const RELATIVE = ["오늘", "내일", "모레"];
-/** 기한: "11.25(수) 09:05까지". relative면 오늘 · 내일 · 모레를 말로(업체 폰 작업함 · 일정 탭), 사흘 뒤부터 짧은 꼴 */
+/** 하루 앞날 "2026-11-27" → "2026-11-26" */
+const dayBefore = (iso: string) => { const [y, m, d] = ymdParts(iso); return new Date(Date.UTC(y, m - 1, d - 1)).toISOString().slice(0, 10); };
+/** 기한: "11.25(수) 09:05까지". relative면 오늘 · 내일 · 모레를 말로(업체 폰 작업함 · 일정 탭), 사흘 뒤부터 짧은 꼴.
+ *  0시 기한은 앞날 24:00으로 적어요('11.27(금) 00:00까지'가 27일까지로 읽혔어요, QA r7 N11) */
 export function dueText(dueTime: string, opts: { now?: string; relative?: boolean; today?: string } = {}): string {
-  const day = dateSeoul(dueTime);
-  const t = timeSeoul(dueTime);
+  const midnight = timeSeoul(dueTime) === "00:00";
+  const day = midnight ? dayBefore(dateSeoul(dueTime)) : dateSeoul(dueTime);
+  const t = midnight ? "24:00" : timeSeoul(dueTime);
   if (opts.relative && opts.now) {
     const gap = dayNo(day) - dayNo(dateSeoul(opts.now));
     if (gap >= 0 && gap < RELATIVE.length) return `${RELATIVE[gap]} ${t}까지`;

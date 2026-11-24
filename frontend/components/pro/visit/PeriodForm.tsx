@@ -22,7 +22,7 @@ import { enc, newKey, send } from "../send";
 import { LOC_NOTE } from "../text";
 import { Eyebrow, Group, PhoneOnly, Row, Rows, Small, TwoCol, WebOnly } from "../ui/parts";
 import { Switch } from "@/components/ui/Switch";
-import { FactsKV, factLine, occ, VisitPhotos, visitTitle } from "./facts";
+import { DiyFact, FactsKV, factLine, occ, VisitPhotos, visitTitle } from "./facts";
 import { PeriodCalendar, PeriodLegend, type Period } from "./PeriodCalendar";
 import s from "./visit.module.css";
 
@@ -81,6 +81,7 @@ export function PeriodForm({ v, now, openDecline }: { v: VendorVisitV3; now: str
                 <Group>
                   <div className={s.titleRow}><h2 className={s.vt}>{visitTitle(v)} · {occ(v)}</h2><Badge tone="now">새 실측 요청</Badge></div>
                   <FactsKV v={v} />
+                  <DiyFact v={v} />
                   <Small>{LOC_NOTE}</Small>
                   <VisitPhotos v={v} />
                 </Group>
@@ -88,6 +89,7 @@ export function PeriodForm({ v, now, openDecline }: { v: VendorVisitV3; now: str
               <Group>
                 <PhoneOnly>
                   <Eyebrow>{factLine(v)}</Eyebrow>
+                  <DiyFact v={v} />
                   <Small>{LOC_NOTE}</Small>
                 </PhoneOnly>
                 <h2 className={s.calT}>갈 수 있는 기간</h2>

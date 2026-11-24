@@ -680,6 +680,12 @@ class VendorVisitDetailOut(VendorVisitRow):
     photo_labels: list[str | None] = Field(
         default=[], description="사진 이름표 (photos와 같은 순서, 없으면 비움)"
     )
+    # v4 반셀프(QA r7 N5): 요청 브리핑 카드만이 아니라 요청 화면 · 작업함 옆 자세히에도 보여요
+    diy: list[str] = Field(
+        default=[],
+        description="고객이 직접 할 일(반셀프 칩 화면 말). 요청 때 고객이 업체에 알린 사본(visits.diy), "
+        "없으면 빈 목록",
+    )
     capacity: int | None = Field(default=None, description="반나절 한 칸에 받는 실측 수 (L03)")
     instant_default: bool | None = None
     window: WindowOut | None = None

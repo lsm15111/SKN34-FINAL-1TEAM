@@ -6,6 +6,7 @@
 // - 목업(lib/mock/assistant)이면 같은 모양 · 같은 이벤트를 대본으로 흘려요. 목업 모듈은 쓸 때만 불러요(운영 묶음에 안 들어가게).
 // - 금액 · 날짜 · 차액 · 기한은 서버(계산 엔진) 값이에요. 화면은 모양만 바꾸고 계산하지 않아요. '표준 대비 %'는 없어요.
 import { ApiError, call, errorText, type FieldError, type Schemas } from "@/lib/backend/client";
+import { halfDayText } from "@/lib/format";
 import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 
 // ───── 카드(kind로 구분, components/assistant/cards/registry). data 모양은 backend assistant/schemas.py의 *Data
@@ -767,6 +768,41 @@ export function vendorKindsForWrite(method: string, path: string): ActionKind[] 
   return [];
 }
 
+/**
+ * 업체가 요청 · 공사 화면(v3 단추)에서 한 쓰기(대상 id · 행동 종류)를 이 탭에 잠깐(5분) 둬요. 작업함 '비서 소식'은 다른 화면이라
+ * 쓰는 때 열려 있지 않아서, 다시 열릴 때 같은 대상의 열린 승인 카드를 '처리됨'으로 그려요(QA r7 N4: 서버 정리는 2분마다라 그 사이
+ * '승인이 필요해요'로 남고 누르면 409로 사라졌어요). 대상 id를 아는 쓰기만 둬요. 저장소를 못 쓰면 넘어가요(편의).
+ */
+const VENDOR_DONE_KEY = "mj_v4_vendor_done";
+const VENDOR_DONE_MS = 5 * 60 * 1000;
+type VendorDone = { kinds: ActionKind[]; target: string; at: number };
+function readVendorDone(now: number): VendorDone[] {
+  try {
+    const raw: unknown = JSON.parse(window.sessionStorage.getItem(VENDOR_DONE_KEY) ?? "[]");
+    if (!Array.isArray(raw)) return [];
+    return raw.filter((x): x is VendorDone =>
+      !!x && typeof x === "object" && typeof x.target === "string" && typeof x.at === "number" && now - x.at < VENDOR_DONE_MS
+      && Array.isArray(x.kinds) && x.kinds.every((k: unknown) => typeof k === "string"));
+  } catch {
+    return [];
+  }
+}
+export function rememberVendorWrite(method: string, path: string, now: number = Date.now()): void {
+  const kinds = vendorKindsForWrite(method, path);
+  const target = targetOfWrite(method, path);
+  if (!kinds.length || !target) return;
+  try {
+    const list = [...readVendorDone(now), { kinds, target, at: now }].slice(-20);
+    window.sessionStorage.setItem(VENDOR_DONE_KEY, JSON.stringify(list));
+  } catch { /* 편의 기능이라 넘어가요 */ }
+}
+/** 이 탭에서 화면으로 처리한 열린 승인 카드 id(대상 id가 같고 같은 일을 하는 카드만) */
+export function vendorDoneIds(actions: ActionOut[], now: number = Date.now()): string[] {
+  const done = readVendorDone(now);
+  const hit = (a: ActionOut) => a.status === "proposed" && done.some((w) => w.target === a.target_id && w.kinds.includes(a.kind));
+  return [...new Set(actions.filter(hit).map((a) => a.action_id))];
+}
+
 // ───── 실제 API(목업이면 대본)
 
 const mock = () => import("@/lib/mock/assistant/server");
@@ -800,6 +836,27 @@ export async function getBoard(projectId: string): Promise<BoardOut> {
 export async function getToday(projectId: string): Promise<TodayData> {
   if (ASSISTANT_MOCK) return (await mock()).today(projectId);
   return call<TodayData>("GET", `/assistant/today?project_id=${enc(projectId)}`);
+}
+
+/** 실측 요청 하나에 지금 잡힌 반나절(고객이 고른 날 · 확정 날)과 업체 이름 */
+export type SlotNow = { vendor: string; day: string; half: "am" | "pm" };
+/** 실측 요청마다 지금 잡힌 반나절(GET /projects/{id}/visits 상태판, 서버 값 그대로). 목업은 빈 값 */
+export async function getSlotsNow(projectId: string): Promise<Record<string, SlotNow>> {
+  if (ASSISTANT_MOCK) return {};
+  const v = await call<Schemas["VisitListOut"]>("GET", `/projects/${enc(projectId)}/visits`);
+  return Object.fromEntries(v.board.flatMap((r) => (r.booked ? [[r.visit_id, { vendor: r.vendor_name, day: r.booked.day, half: r.booked.half }]] : [])));
+}
+/** 비서 밖(화면 단추 · 업체)에서 처리돼 닫힌 반나절 고르기 카드인가(서버가 닫음 · 화면에서 직접 함) */
+const slotMoved = (a: ActionOut, handled: boolean) =>
+  a.kind === "visit_slot" && !!a.target_id && ((a.status === "expired" && a.error_code === "handled_elsewhere") || (a.status === "proposed" && handled));
+/** 지금 잡힌 반나절을 읽어야 하는 카드 id(바뀌면 다시 읽어요) */
+export function movedSlotIds(actions: ActionOut[], handled: Record<string, true>): string[] {
+  return [...new Set(actions.filter((a) => slotMoved(a, !!handled[a.action_id])).map((a) => a.action_id))].sort();
+}
+/** 닫힌 반나절 카드 제목: 카드가 낸 날 대신 지금 잡힌 날('결도배 실측 11월 26일(목) 오전', QA r7 M11). 모르면 null(카드 제목 그대로) */
+export function slotTitleNow(a: ActionOut, handled: boolean, slots: Record<string, SlotNow>): string | null {
+  const now = slotMoved(a, handled) && a.target_id ? slots[a.target_id] : undefined;
+  return now ? `${now.vendor} 실측 ${halfDayText(now.day, now.half, true)}` : null;
 }
 
 /** 비서가 지금 LLM으로 답하는지(무료 모드 띠). 못 읽으면 null */

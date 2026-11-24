@@ -6,7 +6,7 @@
 // 할 일이 끝난 먼저 말 건 줄(settled)은 기록에 '완료'로 남아요: 카드는 보낸 때 모습에서 단추를 빼고, 다음에 물을 말은 두지 않아요.
 // AI 글의 '고객님'은 그릴 때만 로그인한 사람 이름('○○ 님')으로 바꿔요(MyName, lib/callName). 저장 · LLM 기록은 '고객님' 그대로예요.
 import { createContext, useContext } from "react";
-import type { ActionOut, FeedItem, FeedPart, SuggestOut } from "@/lib/api/assistant";
+import { slotTitleNow, type ActionOut, type FeedItem, type FeedPart, type SlotNow, type SuggestOut } from "@/lib/api/assistant";
 import { callName } from "@/lib/callName";
 import { bubbles } from "@/lib/richText";
 import { ApprovalCard } from "./kit/ApprovalCard";
@@ -39,6 +39,8 @@ export type ActionHandlers = {
   gone: Record<string, true>;
   /** 할 일이 끝난 먼저 말 건 줄('완료'로 그려요) */
   settled: Record<string, true>;
+  /** 실측 요청마다 지금 잡힌 반나절: 비서 밖에서 처리된 반나절 카드는 카드가 낸 날 대신 이 날을 보여요 */
+  slots?: Record<string, SlotNow>;
 };
 
 export function Message({ item, ctx, act, live, onRetry }: { item: FeedItem; ctx: CardCtx; act: ActionHandlers; live: boolean; onRetry: () => void }) {
@@ -113,6 +115,7 @@ function Part({ part: p, ctx, act, old }: { part: FeedPart; ctx: CardCtx; act: A
           now={ctx.now}
           busy={!!act.pending[p.action.action_id]}
           handled={!!act.handled[p.action.action_id]}
+          title={slotTitleNow(p.action, !!act.handled[p.action.action_id], act.slots ?? {}) ?? undefined}
           handledText={act.ended?.[p.action.action_id] ? "실측 요청을 취소했어요" : undefined}
           error={act.errors[p.action.action_id] ?? null}
           onApprove={() => act.approve(p.action)}
