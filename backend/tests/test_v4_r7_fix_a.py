@@ -10,6 +10,7 @@
 - 6. 비서 실측 요청 카드에 고객이 말한 희망 기간(화면 N3): wish 칸, 검사는 계산 엔진(화면 요청과 같은 규칙).
 - 7. 지금 할 일 줄은 한 답에 한 번, 지난 턴과 같은 상태면 다시 말하지 않기(c1 19 · 27 · 20~23턴).
 - 8. 업체가 올린 날짜가 바란 것과 다를 때(c4 T12): 턴 사실에 다른 날짜 요청 남은 수, 지시문에 다시 요청 · 채팅 길.
+- 9. 카드를 누른 뒤 앞 턴의 맞는 말을 '잘못 안내했어요'로 사과 · 정정하지 않기(c4 T13, 지시문).
 """
 
 import asyncio
@@ -551,3 +552,15 @@ def test_rule_gives_the_next_step_for_other_dates():
     rules = prompts.rules("customer")
     assert "업체가 올린 공사 날짜가 고객이 바란 것과 다르면" in rules
     assert "'다른 날짜 요청 n번 남음'이면 바란 날로 propose_date_change 카드를 만들고" in rules
+
+
+# ---- 9. 카드를 누른 뒤 앞 턴의 맞는 말을 사과 · 정정하지 않기 ----
+
+
+def test_rule_keeps_the_last_answer_after_a_card_press():
+    """고객이 카드를 누른 뒤 앞 답('아직 수락하지 않았어요')을 '잘못 안내했어요'로 고치지 않아요(QA r7 c4 T13, 업체
+    지시문의 '최근 처리한 카드' 규칙과 같은 꼴)."""
+    from app.assistant import prompts
+
+    rules = prompts.rules("customer")
+    assert "'잘못 안내했어요' · '죄송해요'로 고치지 마" in rules
