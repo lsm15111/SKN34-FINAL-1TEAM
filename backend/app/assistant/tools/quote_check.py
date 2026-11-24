@@ -7,6 +7,8 @@
 - 금액은 고객이 준 값만 쓴다: 글로 받은 줄의 금액 · 단가 · 수량은 고객 글에 있는 숫자여야 하고(없으면 그 줄을 뺌),
   사진에서 읽은 값은 카드에 '견적서와 같은지 확인' 말을 붙인다. 부가세 맞추기 · 합 · 차 · 판정은 계산 엔진
   (calc.quote_compare)이 한다(고정 선 2).
+- 뽑기가 부가세를 모른다(unknown)고 둔 줄 · 합계는 붙인 글의 부가세 말('VAT 포함' · '부가세 별도')이 한 가지일 때만
+  그 값으로 채운다(묻는 말 · 둘 다 있으면 그대로, 글에 견적 금액이 없는 사진만이면 그대로).
 - 뽑은 줄은 대화마다 하루 Redis에 둔다(지워져도 되는 짧은 캐시): 다음 턴의 '퍼티는요?'에도 다시 뽑지 않고 같은 카드로
   답한다. 사진은 저장소에 그대로 두지 않는다(어디에도 붙이지 않은 파일이라 하루 뒤 files 정리 작업이 지운다).
 - 희망 예산(집 정보 projects.budget_won, 원 · 비면 아직 몰라요)이 있으면 받은 합계를 예산과 견주고, 없으면 뺀다(읽기만).
@@ -132,6 +134,29 @@ NO_QUOTE_HINT = (
 )
 
 
+# 붙인 글의 부가세 말(QA r10 c3 T22: '합계 … (VAT 포함)'인데 뽑기가 줄 부가세를 비워 '부가세 말이 없어'라고 했어요).
+# 'VAT · V.A.T · 부가세 · 부가가치세' + (10%) + 포함 · 별도 · 미포함. 바로 뒤가 묻는 말('포함인가요?') · 아니라는
+# 말('포함 안 된')이면 빼요
+_VAT_WORD = r"(?:(?<![a-z])v\s*\.?\s*a\s*\.?\s*t(?![a-z])\.?|부\s*가\s*(?:가\s*치\s*)?세)"
+_VAT_NOT = r"\s*(?:안|않|아님|아니|x(?![a-z]))"
+_VAT_ASK = (
+    r"\s*(?:인가|인지|일까|여부|맞나|맞는지|된\s*건가|(?:이에요|예요|이죠|이지요|이야|야)?\s*\?)"
+)
+_VAT_WAY = re.compile(
+    rf"{_VAT_WORD}\s*(?:\(?\s*10\s*%\s*\)?)?\s*(?:는|은|가|도)?\s*"
+    rf"(?:(?P<ex>별\s*도|미\s*포\s*함|불\s*포\s*함|제\s*외)|포\s*함)(?!{_VAT_NOT}|{_VAT_ASK})",
+    re.IGNORECASE,
+)
+
+
+def vat_said(text: str) -> Vat | None:
+    """붙인 글의 부가세 말 → included · excluded. 없거나 포함 · 별도가 둘 다 있거나 묻는 말뿐이면 None."""
+    ways: set[Vat] = {
+        "excluded" if m.group("ex") else "included" for m in _VAT_WAY.finditer(text or "")
+    }
+    return ways.pop() if len(ways) == 1 else None
+
+
 def values_in(text: str) -> set[Decimal]:
     """글에 적힌 숫자(쉼표 · 만 · 천 · 억 단위를 원으로 바꾼 값). 뽑은 금액이 고객 글에 있는지 볼 때 쓴다."""
     out: set[Decimal] = set()
@@ -231,6 +256,8 @@ async def pull(tc: ToolCtx, photos: list[bytes]) -> dict:
         )
     except llm.LLMError as e:  # 꺼짐 · 상한 · 공급자 오류 · 꼴 틀림: 지어내지 않고 못 읽었다고 해요
         raise ToolError("read_failed", "견적서를 읽지 못했어요. 잠시 뒤 다시 해 주세요.") from e
+    # 뽑기가 비운 부가세는 붙인 글의 부가세 말로 채워요(글에 견적 금액이 없는 사진만이면 그대로)
+    way = vat_said(text) if has_text else None
     lines: list[dict] = []
     dropped = 0
     for p in got.lines[:LINES_MAX]:
@@ -242,7 +269,7 @@ async def pull(tc: ToolCtx, photos: list[bytes]) -> dict:
             {
                 "name": name,
                 "amount": p.amount,
-                "vat": p.vat,
+                "vat": way if way and p.vat == "unknown" else p.vat,
                 "qty": str(q) if (q := _qty(p.qty)) is not None else None,
                 "unit": clean_name(p.unit, 12) or None,
                 "unit_price": p.unit_price,
@@ -262,7 +289,7 @@ async def pull(tc: ToolCtx, photos: list[bytes]) -> dict:
         "source": source,
         "lines": lines,
         "total": total,
-        "total_vat": got.total_vat,
+        "total_vat": way if way and got.total_vat == "unknown" else got.total_vat,
         "dropped": dropped,
         "turn": str(tc.turn_id or uuid.uuid4()),
     }
@@ -304,8 +331,11 @@ def build(pid: uuid.UUID, pulled: dict, c: qc.Compare) -> tuple[CardOut, dict]:
         notes.append(
             f"표준 합계 밖 줄({' · '.join(c.added)})도 이 견적서에 있어 표준에 더해 견줬어요."
         )
-    if c.extra_total:
-        notes.append("표준견적서에 없는 줄은 합계 견주기에서 뺐어요.")
+    if c.extra_total:  # 희망 예산 · 적힌 합계는 견적서 전체(받은 줄 모두 합)와 견줘요
+        notes.append(
+            f"표준견적서에 없는 줄 {c.extra_total:,}원은 합계 견주기에서 뺐어요"
+            f"(받은 견적서 전체 {c.outside_total:,}원)."
+        )
     if dropped := int(pulled.get("dropped") or 0):
         notes.append(f"글에 없는 금액이 든 줄 {dropped}개는 빼고 견줬어요.")
     putty = OutsidePuttyOut(

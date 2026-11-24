@@ -328,9 +328,9 @@ function outsideCard(s: State, photo: boolean): CardOut<"outside_quote"> {
         { key: "waste", name: "폐기물", state: "extra", outside_won: 165000, standard_won: null, diff_won: null, lines: ["폐기물 처리"], note: "표준견적서에서는 실측 후 정하는 줄이에요" },
         { key: "other", name: "걸레받이 교체", state: "extra", outside_won: 220000, standard_won: null, diff_won: null, lines: ["걸레받이 교체"] },
       ],
-      outside_won: 2970000, standard_won: 2470000, diff_won: 500000, state: "same",
+      outside_won: 2805000, standard_won: 2470000, diff_won: 335000, state: "same",
       basis: "부가세 포함으로 맞춰 견줬어요.",
-      notes: [...(photo ? ["사진에서 읽은 금액이에요. 받은 견적서와 같은지 한 번 확인해 주세요."] : []), "표준견적서에 없는 줄은 합계 견주기에서 뺐어요."],
+      notes: [...(photo ? ["사진에서 읽은 금액이에요. 받은 견적서와 같은지 한 번 확인해 주세요."] : []), "표준견적서에 없는 줄 385,000원은 합계 견주기에서 뺐어요(받은 견적서 전체 3,190,000원)."],
       putty: {
         need: "check", label: "실측 때 벽 보고 정해요", found: "none", found_label: "퍼티 줄 없음",
         why: "철거 없이 기존 벽에 실크를 바르면 부분퍼티로 충분한 경우가 많아요. 벽이 많이 울퉁불퉁하면 실측 때 올퍼티를 권할 수 있어요.",

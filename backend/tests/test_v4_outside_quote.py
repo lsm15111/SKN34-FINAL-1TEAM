@@ -16,6 +16,7 @@ from v3_kb import repo_index
 
 from app.agent import llm
 from app.assistant import asks
+from app.assistant.tools import quote_check
 from app.files import service as files_service
 from tests.conftest import query
 from tests.helpers import JPEG, PDF, signup, upload
@@ -156,8 +157,11 @@ def test_text_quote_is_masked_boxed_and_compared_by_the_engine(api, script):
     for r in data["rows"]:
         if r["standard_won"] is not None and r["outside_won"] is not None:
             assert r["diff_won"] == r["outside_won"] - r["standard_won"]
-    assert data["outside_won"] == 1_265_000 + 1_540_000 + 165_000
+    # 같은 범위 합계: 표준에 금액이 없는 폐기물(165,000)은 줄로만 보이고 빼요. 견적서 전체는 안내 줄에
+    assert rows["waste"]["outside_won"] == 165_000
+    assert data["outside_won"] == 1_265_000 + 1_540_000
     assert data["diff_won"] == data["outside_won"] - data["standard_won"]
+    assert any("165,000원" in n and "2,970,000원" in n for n in data["notes"])
     assert data["putty"]["need"] == "check" and data["putty"]["found"] == "none"
     assert data["asks"] and data["next"]
     assert any("빼고" in n for n in data["notes"])  # 글에 없는 금액 줄
@@ -252,6 +256,67 @@ def test_home_budget_is_compared_with_the_quote_total(api, script):
     log = script([CALL, {"text": "견줬어요."}])
     data = card(ok(ask(api, pid, "예산 없이 다시 봐 주세요")))["data"]
     assert data["budget"] is None and "budget" not in tool_result(log[-1])
+
+
+VAT_IN_TEXT = (
+    "다른 지업사 견적도 받았어요. 실크벽지 1,050,000 / 시공비 1,300,000 / 부자재 120,000 / "
+    "합계 2,470,000 (VAT 포함). 이건 어때요?"
+)
+UNKNOWN = {
+    "is_quote": True,
+    "lines": [
+        pulled_line("실크벽지", 1_050_000, vat="unknown"),
+        pulled_line("시공비", 1_300_000, vat="unknown"),
+        pulled_line("부자재", 120_000, vat="unknown"),
+    ],
+    "total": 2_470_000,
+    "total_vat": "unknown",
+}
+
+
+@pytest.mark.parametrize(
+    ("text", "way"),
+    [
+        ("합계 2,470,000 (VAT 포함)", "included"),
+        ("합계 2,700,000 (부가세 별도)", "excluded"),
+        ("vat포함 2,470,000", "included"),
+        ("V.A.T 별도", "excluded"),
+        ("부가세는 별도래요", "excluded"),
+        ("부가세 미포함", "excluded"),
+        ("부가가치세 포함", "included"),
+        ("부가세 포함인가요?", None),  # 묻는 말
+        ("VAT 별도예요?", None),
+        ("부가세 포함 안 된 금액이에요", None),  # 아니라는 말
+        ("자재는 부가세 포함, 인건비는 부가세 별도", None),  # 둘 다 있으면 몰라요
+        ("부가세 10% 270,000", None),
+        ("합계 2,700,000", None),
+    ],
+)
+def test_vat_words_in_the_pasted_text(text, way):
+    assert quote_check.vat_said(text) == way
+
+
+def test_vat_words_in_the_text_fill_unknown_lines_but_not_for_photos(api, script):
+    # QA r10 c3 T22: 'VAT 포함'인데 뽑기가 줄 부가세를 비워 카드가 '부가세 말이 없어 …'라고 했어요
+    _, pid = home(api)
+    script([CALL, {"json": UNKNOWN}, {"text": "견줬어요."}])
+    data = card(ok(ask(api, pid, VAT_IN_TEXT)))["data"]
+    assert data["basis"] == "부가세 포함으로 맞춰 견줬어요."
+    assert not any("부가세 말이 없어" in a for a in data["asks"])
+    rows = {r["key"]: r for r in data["rows"]}
+    assert rows["paper"]["outside_won"] == 1_050_000  # 포함이라 적힌 값 그대로
+    assert not any("적힌 합계" in a for a in data["asks"])  # 줄 합 = 적힌 합계
+    # '부가세 별도'면 줄에 부가세를 더해요
+    script([CALL, {"json": UNKNOWN}, {"text": "견줬어요."}])
+    data = card(ok(ask(api, pid, VAT_IN_TEXT.replace("VAT 포함", "부가세 별도"))))["data"]
+    assert {r["key"]: r for r in data["rows"]}["paper"]["outside_won"] == 1_155_000
+    assert data["basis"] == "부가세 포함으로 맞춰 견줬어요."
+    # 사진만 온 때는 뽑은 그대로(글에 견적 금액이 없어요)
+    fid = photo(api)
+    script([CALL, {"json": UNKNOWN}, {"text": "견줬어요."}])
+    data = card(ok(ask(api, pid, "받은 견적서 사진이에요. VAT 포함이래요.", files=[fid])))["data"]
+    assert data["source"] == "photo"
+    assert data["basis"].startswith("부가세 말이 없는 줄은")
 
 
 def test_check_counts_as_the_received_quote_ask():
