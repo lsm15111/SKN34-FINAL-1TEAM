@@ -34,7 +34,7 @@ $Q approve c1 1a2b3c4d
 | `new <키> --persona <이름> [집 칸]` | 화면과 같은 길로 가입해요: 손님 표준견적서(`POST /guest/standard`) → 가입 → 공사 만들기(`POST /projects` + 멱등 키). 이메일 `qa-<태그>-<키>@mitjip.test`, 비밀번호는 무작위로 만들어 비밀 파일에만 둬요. 집 칸: `--sgg`(기본 노원구) `--pyeong`(32) 또는 `--area`·`--basis` · `--occupied yes/no` · `--grade basic/economy`(실크 · 합지) · `--scope full/partial --spaces` · `--rooms` · `--budget`(만 원) · `--start` · `--demolition full/partial/none` |
 | `say <키> "<말>"` | 비서 턴(SSE)을 끝까지 받아 보여요: 글 묶음과 출처(믿집 계산 · AI 답변 · 믿집 안내) · 카드 kind와 핵심 값 · 단추 · 승인 카드(짧은 id · 제목 · 요약 · 상태) · 작업 줄 · 다음에 물을 말 · 칩 |
 | `say <키> --pick <n>` | 지난 턴 '다음에 물을 말' n번을 눌러요(먼저 말 건 줄이면 화면처럼 열기를 알리고 그 말을 보내요) |
-| `press <키> "<고르기>"` | 카드 단추. 화면과 같은 요청(카드 id + `context.choice` + 단추 말)이에요. `visit_request:v1,v2[,r1]` · `visit_slot:s2` · `vendor_confirm:m1` · `dates_accept:p1` · `delay_accept:p1` · `extra_answer:x1[,reject · ask]` · `demolition:full` |
+| `press <키> "<고르기>"` | 카드 단추. 화면과 같은 요청(카드 id + `context.choice` + 단추 말)이에요. `visit_request:v1,v2[,r1]` · `visit_slot:s2` · `vendor_confirm:m1` · `dates_accept:p1` · `delay_accept:p1` · `extra_answer:x1[,reject · ask]` · `demolition:full`. 여럿을 띄어 쓰면 한 턴에 목록으로 보내요(도배 전 점검 `prework.floor:done prework.electric:todo`, 말은 화면처럼 '앞 공사 답: …') |
 | `approve · reject <키> <id>` | 승인 카드 누르기 · 거절(화면처럼 본 판 `seen`과 누름 키를 같이 보내요). id는 출력의 짧은 id(뒤 8자리)나 앞 · 뒤 어느 쪽 일부든 돼요 |
 | `nudge <키> open · dismiss <id>` | 먼저 말 건 줄 [해 볼게요] · [괜찮아요] |
 | `feed <키> [--full] [--pages n]` | 대화 기록(먼저 말 건 줄 · 완료 표시 포함) |
