@@ -171,17 +171,21 @@ function TableAction({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
   }
 }
 
-export function Board({ board, project }: { board: VisitBoard; project: VisitProject }) {
+export function Board({ board, project, shortlisted }: {
+  board: VisitBoard;
+  project: VisitProject;
+  /** 담은 업체 수(GET …/shortlist count). slots_left는 살아 있는 요청만 세서 요청 전에는 담은 수를 알 수 없어요. 못 읽었으면 null */
+  shortlisted: number | null;
+}) {
   const pid = project.id;
   const L = linksOf(pid);
   const rows = board.board;
   const head = board.head;
   const left = Math.max(0, board.slots_left.dobae ?? 0);
 
-  // 아직 요청 전: 담은 업체가 있으면 요청서로, 없으면 업체 보기로(W10 막다른 화면 없음)
+  // 아직 요청 전: 담은 업체가 있으면 요청서로, 없으면(또는 못 읽었으면) 업체 보기로(W10 막다른 화면 없음)
   if (!head || !rows.length) {
-    const shortlisted = 3 - left;
-    return shortlisted > 0 ? (
+    return shortlisted ? (
       <Group>
         <Title as="h2">담은 업체 {shortlisted}곳에 실측 일정을 요청할 차례예요</Title>
         <Sub>희망 기간과 사진을 넣고 한 번에 보내요.</Sub>

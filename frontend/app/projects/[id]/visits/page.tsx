@@ -8,6 +8,7 @@ import { Main, PageHead, WithAside } from "@/components/site/Frame";
 import { AiSlot } from "@/components/visit/AiSlot";
 import { Board } from "@/components/visit/Board";
 import { BoardLive } from "@/components/visit/BoardActions";
+import { getShortlist } from "@/lib/api/shortlist";
 import { getVisitBoard, getVisitProject } from "@/lib/api/visit";
 
 export const metadata = { title: "실측 일정" };
@@ -17,13 +18,15 @@ export default async function VisitsPage({ params }: { params: Promise<{ id: str
   const [board, project] = await Promise.all([getVisitBoard(id), getVisitProject(id)]);
   if (!board || !project) notFound();
   const home = `/projects/${encodeURIComponent(project.id)}`;
+  // 요청 전 상태판은 담은 업체 수(담기 표)로 '요청할 차례' · '먼저 담아요'를 갈라요(slots_left는 요청만 세요)
+  const short = !board.head || !board.board.length ? await getShortlist(project.id).catch(() => null) : null;
   return (
     <>
       <AppHeader only="phone" phone={{ title: "실측 일정", back: home, action: <AsideOpenButton /> }} />
       <Main>
         <PageHead title="실측 일정" crumbs={[{ label: "내 공사", href: "/my" }, { label: project.name, href: home }, { label: "실측 일정" }]} />
         <WithAside aside={<AiSlot screen="visits" projectId={project.id} />}>
-          <Board board={board} project={project} />
+          <Board board={board} project={project} shortlisted={short?.count ?? null} />
         </WithAside>
       </Main>
       <BoardLive projectId={project.id} />

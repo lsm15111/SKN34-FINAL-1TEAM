@@ -1,5 +1,6 @@
 // C2 표준견적서 요약: 큰 금액(부가세 포함) · 큰 줄 몇 개 · 공사 일수 · '믿집 계산' · [견적서 열기]. 풀이는 그 아래 'AI 답변'으로 붙어요.
 // 첫 대화(/start, 로그인 전)도 같은 모양(StandardSummary)을 써요. 금액 · 일수는 계산 엔진 값 그대로예요.
+// 큰 줄 금액은 API가 공급가(부가세 별도)로 줘요(비서 카드 · 손님 표준견적서 줄 모두). 합계와 기준이 달라 줄 머리에 '공급가'를 붙여요.
 import Link from "next/link";
 import type { ReactNode } from "react";
 import type { StandardQuoteData } from "@/lib/api/assistant";
@@ -25,9 +26,12 @@ export function StandardSummary({ id, data: d, more }: { id: string; data: Stand
         <small>{["부가세 포함", days, d.partial ? "실측 후 확정 줄이 있어요" : ""].filter(Boolean).join(" · ")}</small>
       </div>
       {d.lines.length ? (
-        <ul className={c.lines} aria-label="큰 줄">
-          {d.lines.map((l) => <li key={l.name}><span>{l.name}</span><b className={k.num}>{won(l.won)}</b></li>)}
-        </ul>
+        <div>
+          <p className={c.linesHead} id={`${id}-l`}>큰 줄 · 공급가(부가세 별도)</p>
+          <ul className={c.lines} aria-labelledby={`${id}-l`}>
+            {d.lines.map((l) => <li key={l.name}><span>{l.name}</span><b className={k.num}>{won(l.won)}</b></li>)}
+          </ul>
+        </div>
       ) : null}
       <div className={k.row}>
         {/* 주소가 비면(로그인한 고객의 첫 대화: 공사를 만들기 전) 열기 단추를 빼요 */}

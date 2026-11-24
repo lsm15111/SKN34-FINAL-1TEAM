@@ -57,7 +57,9 @@ export function VendorDetail({ v }: { v: VendorApplicationDetail }) {
     setBusy(action);
     setErr(null);
     try {
-      await send("POST", `/admin/vendors/${enc(v.user_id)}/review`, { action, code: code ?? null, note: (memo ?? note).trim() || null }, { idem: `${idem}-${action}` });
+      // 승인에는 사유 · 보낼 말을 넣지 않아요(서버 ReviewIn: 넣으면 422). 처리 메모는 거절 · 보완 창으로만 가요
+      const body = action === "approve" ? { action, code: null, note: null } : { action, code: code ?? null, note: (memo ?? note).trim() || null };
+      await send("POST", `/admin/vendors/${enc(v.user_id)}/review`, body, { idem: `${idem}-${action}` });
       toast.show(action === "approve" ? `${v.biz_name ?? "업체"} 가입을 승인했어요. 업체에게 알림이 가요.` : action === "reject" ? "거절했어요. 업체 화면에 이유가 보여요." : "보완을 요청했어요. 업체에게 알림이 가요.");
       setDlg(null);
       router.refresh();
@@ -165,6 +167,12 @@ function ReasonDialog({ open, onClose, title, sub, reasons, memoLabel, foot, con
   const [code, setCode] = useState<string | null>(null);
   const [memo, setMemo] = useState(initialMemo);
   const [err, setErr] = useState<string | null>(null);
+  // 창은 닫혀 있어도 늘 그려져요: 열릴 때마다 옆 '처리 메모'를 다시 받아요(처음 그릴 때 빈 값에 고정되지 않게)
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) { setMemo(initialMemo); setErr(null); }
+  }
   function go() {
     if (!code) { setErr("이유를 하나 골라 주세요."); return; }
     if (code === "other" && !memo.trim()) { setErr("그 밖이면 메모로 이유를 적어 주세요."); return; }

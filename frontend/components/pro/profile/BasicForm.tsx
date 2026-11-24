@@ -29,7 +29,11 @@ type Area = { sido: string; sgg: string; label: string };
 type Tax = "general" | "simplified" | "exempt";
 type FaqKey = (typeof FAQ_LABEL)[number]["key"];
 const TIMES = Array.from({ length: 33 }, (_, i) => { const m = 6 * 60 + i * 30; return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`; });
+/** API 통화 시각은 "09:00:00"(time)이라 목록 값 "09:00"에 맞춰요 */
+const hm = (t: string | null | undefined, empty: string) => (t ? t.slice(0, 5) : empty);
 const digits = (v: string) => v.replace(/\D/g, "").slice(0, 7);
+// 출장비는 100만 원까지(서버 VISIT_FEE_MAX). 넘으면 보내기 전에 칸 오류로 알려요
+const FEE_MAX = 1_000_000;
 // 한 줄 소개는 60자(서버 INTRO_MAX). 넘게 붙여 넣으면 말없이 자르지 않고 오류 글로 알려요(QA r6 L10)
 const INTRO_MAX = 60;
 const introErr = (v: string) => `한 줄 소개는 ${INTRO_MAX}자 안으로 줄여 주세요 · 지금 ${v.trim().length}자예요.`;
@@ -52,8 +56,8 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
   const [refund, setRefund] = useState(profile.visit_fee_refund);
   const [contact, setContact] = useState<ContactMethod>((profile.contact_method as ContactMethod) ?? "phone");
   const [contactUrl, setContactUrl] = useState(profile.contact_url ?? "");
-  const [callStart, setCallStart] = useState(profile.call_start ?? "09:00");
-  const [callEnd, setCallEnd] = useState(profile.call_end ?? "18:00");
+  const [callStart, setCallStart] = useState(hm(profile.call_start, "09:00"));
+  const [callEnd, setCallEnd] = useState(hm(profile.call_end, "18:00"));
   const [tax, setTax] = useState<Tax>((profile.tax_kind as Tax) ?? "general");
   const [instant, setInstant] = useState(profile.instant_default ?? true);
   const [cap, setCap] = useState(String(profile.visit_capacity ?? 2));
@@ -78,7 +82,10 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
     if (!areas.length) e.areas = "다니는 지역을 하나 이상 골라 주세요.";
     if (hasIntro && intro.trim().length > INTRO_MAX) e.intro = introErr(intro);
     if (feeMode === "paid" && !(Number(fee) > 0)) e.fee = "출장비를 원 단위로 넣어 주세요.";
-    if (needUrl && contactUrl.trim() && !/^https?:\/\//i.test(contactUrl.trim())) e.url = "주소를 https://로 시작하게 넣어 주세요.";
+    else if (feeMode === "paid" && Number(fee) > FEE_MAX) e.fee = "출장비는 100만 원까지 넣을 수 있어요.";
+    // 카카오톡 채널 · 홈페이지 상담은 주소가 꼭 있어야 해요(서버도 없으면 받지 않아요)
+    if (needUrl && !contactUrl.trim()) e.url = contact === "kakao" ? "카카오톡 채널 주소를 넣어 주세요." : "홈페이지 상담 주소를 넣어 주세요.";
+    else if (needUrl && !/^https?:\/\//i.test(contactUrl.trim())) e.url = "주소를 https://로 시작하게 넣어 주세요.";
     if (callStart >= callEnd) e.call = "통화 끝을 통화 시작보다 늦게 골라 주세요.";
     setErr(e);
     if (e.fee) { feeRef.current?.focus(); return; }
@@ -137,7 +144,7 @@ export function BasicForm({ profile, regions, tabs }: { profile: ProfileV3; regi
         </Group>
         <Group>
           <ChoiceChips legend="연락 방법" options={(Object.keys(CONTACT_LABEL) as ContactMethod[]).map((k) => ({ value: k, label: CONTACT_LABEL[k] }))} value={contact} onChange={(x) => setContact(x as ContactMethod)} />
-          {needUrl ? <Field ref={urlRef} label={contact === "kakao" ? "카카오톡 채널 주소" : "홈페이지 상담 주소"} optional type="url" inputMode="url" maxLength={300} value={contactUrl} error={err.url} onChange={(e) => setContactUrl(e.target.value)} /> : null}
+          {needUrl ? <Field ref={urlRef} label={contact === "kakao" ? "카카오톡 채널 주소" : "홈페이지 상담 주소"} type="url" inputMode="url" maxLength={300} value={contactUrl} error={err.url} onChange={(e) => { setContactUrl(e.target.value); setErr((x) => ({ ...x, url: undefined })); }} /> : null}
           <SelectField label="통화 시작" options={TIMES.map((t) => ({ value: t, label: t }))} value={callStart} onChange={(e) => { setCallStart(e.target.value); setErr((x) => ({ ...x, call: undefined })); }} />
           <SelectField label="통화 끝" options={TIMES.map((t) => ({ value: t, label: t }))} value={callEnd} error={err.call} onChange={(e) => { setCallEnd(e.target.value); setErr((x) => ({ ...x, call: undefined })); }} />
         </Group>

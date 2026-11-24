@@ -1,6 +1,8 @@
 // /projects/{id}/quotes/{visitId}/confirm — 업체 확정 확인(C34). 폰 화면 · 웹 가운데 카드 모양.
 // 확정한 견적서 버전은 바뀌지 않아요. 확정하면 다른 업체 견적서는 닫히고 공사 날짜는 확정 업체가 올려요(서버).
+// 업체가 견적서를 다시 올리면(실시간 소식) 화면을 다시 읽어 새 금액 · 판으로 확정해요.
 import { notFound } from "next/navigation";
+import { LiveRefresh } from "@/components/schedule/LiveRefresh";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
 import { Button } from "@/components/ui/Button";
@@ -76,6 +78,7 @@ export default async function ConfirmPage({ params }: { params: Promise<{ id: st
         {row.valid_soon && !deal && !row.expired ? <Notice tone="warn">이 견적서는 유효기간이 곧 끝나요</Notice> : null}
         <div className={s.wrap}>{body}</div>
       </Main>
+      <LiveRefresh projectId={p.id} kinds={["quote", "visit", "deal"]} />
     </>
   );
 }
