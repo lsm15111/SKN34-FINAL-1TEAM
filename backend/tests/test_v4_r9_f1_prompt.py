@@ -26,11 +26,15 @@ def test_first_answer_line_is_not_a_leak(prompt_set, monkeypatch):
     assert check.sentence_ok(Sentence(text=leak), set(), None, None, rules)[1] == "지시문 누출"
 
 
-def test_rules_bring_out_of_scope_answers_back_to_the_step():
+def test_rules_bring_out_of_scope_answers_back_to_the_step(monkeypatch):
     """M2: 도배 밖 일 답의 끝도 지금 단계의 다음 걸음이에요('실측 때 도배 업체에 물어보세요'는 요청 뒤에만). 지난 답과
     같은 지금 단계 문장은 다시 풀어 말하지 않아요."""
     from app.assistant import prompts
+    from app.config import settings
 
+    monkeypatch.setattr(
+        settings, "assistant_prompt_set", "v4"
+    )  # v4 글(v5 뜻은 test_v5_customer_prompt)
     rules = prompts.rules("customer").splitlines()
     other = next(x for x in rules if x.startswith("- 도배 밖 일"))
     assert "끝은 다른 답처럼 지금 단계의 다음 걸음 하나야" in other
@@ -40,10 +44,14 @@ def test_rules_bring_out_of_scope_answers_back_to_the_step():
     assert "지난 답에서 이미 말했으면 다시 풀어 말하지 말고" in end
 
 
-def test_rules_name_buttons_words_masks_and_first_quote():
+def test_rules_name_buttons_words_masks_and_first_quote(monkeypatch):
     """그대로 · 낮음: 단추 이름 넣기 · '표준견적서' · 가림 말 · 첫 견적서만 왔을 때 확정 권하지 않기."""
     from app.assistant import prompts
+    from app.config import settings
 
+    monkeypatch.setattr(
+        settings, "assistant_prompt_set", "v4"
+    )  # v4 글(v5 뜻은 test_v5_customer_prompt)
     rules = prompts.rules("customer")
     assert "'카드를 눌러 주세요'로 끝내지 말고 단추 이름을 넣어" in rules
     assert "'승인 기다리는 카드' 끝 [ ] 안" in rules

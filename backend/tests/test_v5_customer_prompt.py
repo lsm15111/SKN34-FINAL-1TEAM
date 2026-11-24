@@ -103,9 +103,28 @@ def test_rules_part_drops_persona_examples_and_quotes(monkeypatch):
 
 
 @pytest.mark.parametrize("prompt_set", ["v4", "v5"])
-def test_default_stays_v4_and_v5_is_only_the_customer_file(prompt_set, monkeypatch):
-    assert type(settings).model_fields["assistant_prompt_set"].default == "v4"
+def test_default_is_v5_and_v5_is_only_the_customer_file(prompt_set, monkeypatch):
+    # 기본 판은 v5(11-25 A/B: 시나리오 25 × 2 · Opus 판정에서 v4와 같거나 나음)
+    assert type(settings).model_fields["assistant_prompt_set"].default == "v5"
     monkeypatch.setattr(settings, "assistant_prompt_set", prompt_set)
     assert prompts.version("vendor") == "vendor_v4"
     assert prompts.version("nudge_write") == "nudge_write_v3"
     assert prompts.version("customer") == f"customer_{prompt_set}"
+
+
+def test_v5_keeps_the_qa_rules_in_its_own_words(monkeypatch):
+    """QA r7 · r9 고침의 뜻(v4는 test_v4_r7_fix_a · test_v4_r9_f1_prompt가 v4 글로 봐요)이 v5에도 있는지 v5 말로 봐요."""
+    monkeypatch.setattr(settings, "assistant_prompt_set", "v5")
+    r = prompts.rules("customer")
+    for want in (
+        "내가 물은 것에 고객이 답하면 그 답을 받은 판단을 먼저 말해",  # r7 c2 L23
+        "앞 답을 사과하거나 정정하지 말고 이어서 말해",  # r7 c4 T13
+        "끝은 지금 단계의 도배 다음 걸음이야",  # r9 M2
+        "지난 답의 끝 질문 · 지금 단계 문장은 되풀이하지 마",  # r9 되풀이
+        "'카드를 눌러 주세요'로 끝내지 말고 단추 이름을",  # r9 단추 이름
+        "'표준견적'으로 줄이지 말고 '표준견적서'",
+        "'(번호 가림)' 같은 표시는 믿집이 가린 자리라",
+        "다른 업체 견적서를 기다리는 중이면 확정을 권하지 마",  # r9 첫 견적서만 왔을 때
+        "쉼표로 잇지 마",  # 말풍선 규칙
+    ):
+        assert want in r, want

@@ -57,10 +57,10 @@ class Settings(BaseSettings):
     assistant_answer_route: str = "period=v3,price=v3,*=expert+v3"
     # 공정 전문가 모델: main = 비서와 같은 모델 · 강도(기본), light = 'trade' 목적 기본(가벼운 모델)
     assistant_expert_model: Literal["main", "light"] = "main"
-    # 비서 지시문 판 묶음(assistant/prompts SETS): v4(기본, customer_v4 · vendor_v4 · nudge_write_v3) · v3(옛 판).
-    # v5는 고객 지시문만 원칙으로 합쳐 줄인 판(customer_v5)이고 평가로 견준 뒤 기본을 정한다.
+    # 비서 지시문 판 묶음(assistant/prompts SETS): v5(기본, customer_v5 · vendor_v4 · nudge_write_v3) · v4 · v3(옛 판).
+    # v5는 고객 지시문만 원칙으로 합쳐 줄인 판이다(11-25 A/B: 시나리오 25 × 2 · Opus 판정에서 v4와 같거나 나음).
     # 판마다 지시문 글이 달라 프롬프트 캐시도 판마다 따로 맞는다
-    assistant_prompt_set: Literal["v3", "v4", "v5"] = "v4"
+    assistant_prompt_set: Literal["v3", "v4", "v5"] = "v5"
     # 비서 조사 담당(assistant/research.py): 공사당 하루(서울 날짜) 조사 시작 수. 0이면 세지 않는다
     assistant_research_day_max: int = 3
     # 수동 임베딩 CLI와 에이전트 LLM(agent/llm.py)이 쓴다. 키는 repr·오류에 표시하지 않는다.

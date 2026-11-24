@@ -391,10 +391,14 @@ def test_first_greeting_and_chips_name_the_three():
 # ---- 5. 되물은 답 잇기 ----
 
 
-def test_rule_continues_from_the_answer_to_our_question():
+def test_rule_continues_from_the_answer_to_our_question(monkeypatch):
     """앞 답에서 비서가 물은 것('물기 · 누수 흔적도 있나요?')에 고객이 답하면 그 답으로 판단을 이어요(QA r7 c2 L23)."""
     from app.assistant import prompts
+    from app.config import settings
 
+    monkeypatch.setattr(
+        settings, "assistant_prompt_set", "v4"
+    )  # v4 글(v5 뜻은 test_v5_customer_prompt)
     rules = prompts.rules("customer")
     assert (
         "바로 앞 답에서 내가 물은 것에 고객이 답하면 그 답을 받은 판단 한 문장을 먼저 말해" in rules
@@ -549,10 +553,14 @@ def test_turn_facts_count_requests_left(api, script):
     assert "업체가 올린 공사 날짜를 수락할 차례 · 다른 날짜 요청 2번 남음" in facts_of(log)
 
 
-def test_rule_gives_the_next_step_for_other_dates():
+def test_rule_gives_the_next_step_for_other_dates(monkeypatch):
     """바란 날과 다른 날짜가 오면 사과만 하지 않고 다시 요청(남은 수) · 믿집 채팅 중 다음 걸음 하나(지시문)."""
     from app.assistant import prompts
+    from app.config import settings
 
+    monkeypatch.setattr(
+        settings, "assistant_prompt_set", "v4"
+    )  # v4 글(v5 뜻은 test_v5_customer_prompt)
     rules = prompts.rules("customer")
     assert "업체가 올린 공사 날짜가 고객이 바란 것과 다르면" in rules
     assert "'다른 날짜 요청 n번 남음'이면 바란 날로 propose_date_change 카드를 만들고" in rules
@@ -561,10 +569,14 @@ def test_rule_gives_the_next_step_for_other_dates():
 # ---- 9. 카드를 누른 뒤 앞 턴의 맞는 말을 사과 · 정정하지 않기 ----
 
 
-def test_rule_keeps_the_last_answer_after_a_card_press():
+def test_rule_keeps_the_last_answer_after_a_card_press(monkeypatch):
     """고객이 카드를 누른 뒤 앞 답('아직 수락하지 않았어요')을 '잘못 안내했어요'로 고치지 않아요(QA r7 c4 T13, 업체
     지시문의 '최근 처리한 카드' 규칙과 같은 꼴)."""
     from app.assistant import prompts
+    from app.config import settings
 
+    monkeypatch.setattr(
+        settings, "assistant_prompt_set", "v4"
+    )  # v4 글(v5 뜻은 test_v5_customer_prompt)
     rules = prompts.rules("customer")
     assert "'잘못 안내했어요' · '죄송해요'로 고치지 마" in rules
