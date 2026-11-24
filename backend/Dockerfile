@@ -28,4 +28,5 @@ USER app
 # DB 연결은 프로세스마다 최대 10개(app/db.py). 끌 때는 하던 요청을 20초까지 마친다.
 # 연결 유지는 Caddy(60초)보다 길게 둔다. 짧으면 Caddy가 이미 닫힌 연결로 POST를 보내 502가 난다.
 # X-Forwarded-For는 Caddy가 덮어써서 믿을 수 있다. api 포트는 운영에서 밖으로 열지 않는다.
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--timeout-graceful-shutdown", "20", "--timeout-keep-alive", "75", "--proxy-headers", "--forwarded-allow-ips", "*"]
+# 일꾼 응답 확인은 30초(기본 5초): 바쁠 때 첫 비서 턴 도중 응답이 5초 넘게 늦어 일꾼이 끊기고 턴이 사라졌다(QA r10 U1).
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--timeout-graceful-shutdown", "20", "--timeout-keep-alive", "75", "--timeout-worker-healthcheck", "30", "--proxy-headers", "--forwarded-allow-ips", "*"]
