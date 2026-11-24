@@ -6,6 +6,7 @@
 - 3. 전문가 답(c1 6 · 10 · 13 · 25턴 · c2 18문항 중 12): 근거 조각 · 출처 이름 알아 두기 카드, 확인할 조건 끝 물음
   (아는 칸을 되묻는 조건은 버림), 카드 인용 '-다'체는 '-요'체로(못 바꾸면 원문 인용).
 - 4. 첫 인사 · 첫 칩 · 지시문 첫 답이 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기를 알려요.
+- 5. 비서가 되물은 것에 고객이 답하면 그 답으로 판단 한 문장을 먼저 잇기(c2 L22 → L23, 지시문 규칙).
 """
 
 import asyncio
@@ -376,4 +377,17 @@ def test_first_greeting_and_chips_name_the_three():
 
     assert "도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물을 수 있다고" in prompts.rules(
         "customer"
+    )
+
+
+# ---- 5. 되물은 답 잇기 ----
+
+
+def test_rule_continues_from_the_answer_to_our_question():
+    """앞 답에서 비서가 물은 것('물기 · 누수 흔적도 있나요?')에 고객이 답하면 그 답으로 판단을 이어요(QA r7 c2 L23)."""
+    from app.assistant import prompts
+
+    rules = prompts.rules("customer")
+    assert (
+        "바로 앞 답에서 내가 물은 것에 고객이 답하면 그 답을 받은 판단 한 문장을 먼저 말해" in rules
     )
