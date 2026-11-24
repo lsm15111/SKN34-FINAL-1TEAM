@@ -971,6 +971,10 @@ ASKED = re.compile(
 IF_SAID = re.compile(r"[가-힣]면(?=[\s,.?!~]|$)|다면")
 INSTEAD = re.compile(r"말고|대신에?")  # 'A 말고 B'는 B
 NO_NOT = re.compile(r"거절\S{0,3}\s{0,2}(?:안|않|못|말)")  # '거절은 안 할게요'는 거절이 아니에요
+# 답을 미루는 말('승인은 나중에 할게요' · '아직이요' · '좀 더 생각해 볼게요')은 답이 아니에요(점검 R2 B4)
+LATER = re.compile(
+    r"나중에|이따|다음에|아직|좀\s{0,2}더|생각해\s{0,2}(?:볼|보고|봐)|고민|미룰|미뤄|보류|천천히|잠깐|잠시"
+)
 YES_NOT = re.compile(
     r"없이|(?<![가-힣])(?:안|못)\s{0,2}(?:괜찮|좋|동의|승인|진행)|"
     r"(?:괜찮|좋|동의하|승인하|진행하)지\s{0,2}(?:않|못|말)"
@@ -978,6 +982,14 @@ YES_NOT = re.compile(
 WORK_FIX = re.compile(
     r"남은\s{0,2}일(?![정자수])|다시\s{0,2}(?:해|손봐)\s{0,2}(?:주|줘|달)|고쳐\s{0,2}(?:주|줘|달)|"
     r"덜\s{0,2}(?:됐|끝)"
+)
+# 남은 일 말 바로 뒤의 부정('다시 해 주실 필요는 없어요' · '고쳐 주지 않아도 돼요' · '남은 일은 없어요' · '고쳐
+# 달라는 거 아니에요')은 남은 일을 알리는 말이 아니에요(점검 R2 B4)
+FIX_NOT = re.compile(
+    r"\s{0,2}(?:실|시|셔)?\s{0,2}(?:"
+    r"(?:은|는|이|가|도)?\s{0,2}없|필요\s{0,2}(?:는|가|도)?\s{0,2}없|지\s{0,2}(?:않|마|말)|"
+    r"라는\s{0,2}(?:건|게|거)\s{0,2}아니"
+    r")"
 )
 # 남은 일은 공사 끝 낱말과 같이 말할 때만(QA r1: '집 정보 고쳐 주세요' · '남은 일정 알려 주세요'가 남은 일 카드로 갔다)
 FIX_WHERE = re.compile(
@@ -999,6 +1011,14 @@ PREP = re.compile(
     r"미리\s{0,2}(?:할\s{0,2}일|챙길|준비)|관리\s{0,2}사무소|엘리베이터\s{0,2}(?:보양|예약)|일주일\s{0,2}(?:전|남)"
 )
 AGAIN = re.compile(r"한\s{0,2}번\s{0,2}더\s{0,2}(?:요청|보내)|다시\s{0,2}요청")
+# 한 번 더 요청 말 바로 뒤의 부정('다시 요청 안 할래요' · '한 번 더 요청하지 마세요' · '다시 요청은 하지 말아 주세요')
+# 은 부탁이 아니에요(점검 R2 B4)
+AGAIN_NOT = re.compile(
+    r"\s{0,2}(?:은|는|도|을|를)?\s{0,2}(?:"
+    r"(?:안|못)\s{0,2}(?:할|해|하|보낼|보내)|(?:하|보내)?\s{0,2}지\s{0,2}(?:않|마|말)|"
+    r"(?:할\s{0,2})?필요\s{0,2}(?:는|가|도)?\s{0,2}없|그만"
+    r")"
+)
 # 견적서 · 날짜를 다시 요청하는 말은 한 번 더 요청이 아니에요
 AGAIN_OTHER = re.compile(r"견적|날짜|일정|금액")
 # '결도배에 한 번 더 요청해 주세요'의 업체 자리(이름이 한 번 더 요청할 업체가 아니면 다른 업체로 만들지 않는다)
@@ -1019,6 +1039,8 @@ EXTRA_MADE = {
 }
 NO_CHECKING = "업체가 공사를 끝냈다고 올리면 점검표와 확인 카드를 보여 드릴게요."
 WORK_MADE = "점검표로 둘러본 뒤 공사 끝 확인 카드를 눌러 주세요."
+# 공사가 끝났는지 묻는 말('공사 끝났나요?' · '끝났는지 모르겠어요')에는 확인 카드를 만들지 않아요(점검 R2 B4)
+WORK_ASKED = "점검표로 둘러보고 다 됐으면 '공사 끝났어요'라고 말해 주세요. 그때 공사 끝 확인 카드를 만들어요."
 FIX_MADE = "남은 일 알리기 카드를 만들었어요. 내용을 확인하고 눌러 주세요."
 CHECK_TEXT = "공사 끝에 볼 곳이에요. 하자인지는 판정하지 않아요."
 NOTICE_SAID = "이웃 안내문 초안이에요. 빈칸을 채워 복사해 쓰세요."
@@ -1048,7 +1070,7 @@ def _answer_of(text: str) -> str | None:
     if unsure(t):
         return None
     t = INSTEAD.split(t)[-1]
-    if NO_NOT.search(t):
+    if NO_NOT.search(t) or LATER.search(t):
         return None
     if EXTRA_NO.search(t):
         return "reject"
@@ -1061,11 +1083,10 @@ def _answer_of(text: str) -> str | None:
 
 def fix_said(text: str) -> bool:
     """공사 끝에 남은 일을 말했는지: 고쳐 · 다시 해 달라는 말 + 공사 끝 낱말(벽지 · 몰딩 · 하자 …)이고, 다른 일(집
-    정보 · 날짜 · 견적 …)이 아니고 묻는 말 · 가정이 아닐 때만."""
+    정보 · 날짜 · 견적 …)이 아니고 묻는 말 · 가정 · 부정('고쳐 주지 않아도 돼요')이 아닐 때만."""
     t = text or ""
-    return bool(
-        WORK_FIX.search(t) and FIX_WHERE.search(t) and not FIX_OTHER.search(t) and not unsure(t)
-    )
+    asked = any(not FIX_NOT.match(t, m.end()) for m in WORK_FIX.finditer(t))
+    return bool(asked and FIX_WHERE.search(t) and not FIX_OTHER.search(t) and not unsure(t))
 
 
 # 공사 끝 확인을 못 눌렀거나 자동으로 끝났는지 묻는 말(QA 2차 t1 X4 '확인을 못 눌렀는데 어떻게 됐어요?' · X5)
@@ -1082,9 +1103,10 @@ def done_asked(text: str) -> bool:
 
 
 def again_said(text: str) -> bool:
-    """한 번 더 요청을 부탁하는 말인지(견적서 · 날짜를 다시 요청하는 말 · 묻는 말은 아니에요)."""
+    """한 번 더 요청을 부탁하는 말인지(견적서 · 날짜를 다시 요청하는 말 · 묻는 말 · 부정은 아니에요)."""
     t = text or ""
-    return bool(AGAIN.search(t) and not AGAIN_OTHER.search(t) and not unsure(t))
+    asked = any(not AGAIN_NOT.match(t, m.end()) for m in AGAIN.finditer(t))
+    return bool(asked and not AGAIN_OTHER.search(t) and not unsure(t))
 
 
 async def _free_extra(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
@@ -1107,11 +1129,11 @@ async def _free_extra(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
 
 
 async def _free_work(
-    tc: ToolCtx, text: str, fix: bool, *, asked: bool = False
+    tc: ToolCtx, text: str, fix: bool, *, asked: bool = False, offer: bool = True
 ) -> tuple[str, ToolOut]:
     """공사 끝 확인 · 남은 일 말 → 점검표 + 승인 카드. 확인 기다리는 공사가 없으면 지금 상태 그대로(자동으로 끝남 ·
     확인해서 끝남 · 남은 일 하는 중, 아니면 아직 안 올림) + 리뷰 안내를 말한다. asked(어떻게 됐는지 묻는 말)면 확인
-    기다리는 공사의 자동 끝 날도 먼저 말한다."""
+    기다리는 공사의 자동 끝 날도 먼저 말한다. offer=False(끝났는지 묻는 말)면 승인 카드 없이 점검표 · 상태만."""
     pid = pid_of(tc)
     async with SessionLocal() as s:
         sch = await _schedule(s, tc.user, pid, tc.today)
@@ -1126,6 +1148,9 @@ async def _free_work(
         return " ".join(lines) or NO_CHECKING, ToolOut(data={}, cards=got)  # 세 문장 안
     d = checking[0]
     card = done_card(d, pid, tc.refs)
+    if not offer:
+        said = " ".join(x for x in (auto_line(d), WORK_ASKED) if x)
+        return said, ToolOut(data={}, cards=[card])
     note = " ".join(text.split())[:300] if fix else None
     try:
         out, _ = await _offer(
@@ -1211,7 +1236,8 @@ async def free_answer(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
     if not fix and done_asked(t):
         return await _free_work(tc, t, False, asked=True)
     if fix or WORK_DONE.search(t):
-        return await _free_work(tc, t, fix)
+        # 끝났는지 묻는 말 · 가정('공사 끝났나요?')은 승인 카드 없이 상태 · 점검표만(점검 R2 B4). fix는 이미 묻는 말이 아님
+        return await _free_work(tc, t, fix, offer=fix or not unsure(t))
     if CHECK_SHOW.search(t):
         return await _free_check(tc)
     if NOTICE.search(t):

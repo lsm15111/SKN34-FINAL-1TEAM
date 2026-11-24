@@ -161,8 +161,9 @@ NO_SUCH = "그 낱말이 든 조사가 없어요. 오늘 조사 목록의 제목
 STARTED = "잠깐(1분 안팎) 걸려요. 끝나면 이 대화에 올려 드려요."
 BUSY = "다른 조사가 도는 중이에요. 끝나거나 멈춘 뒤에 새로 할 수 있어요."
 
-# 고객 목표 · 메모에서 떼는 것: 가린 자리 · 동 · 호 · 층 · 번지 숫자 · 주소
-_MASKED = re.compile(r"\((?:번호|동호수|이메일|주민번호|계좌) 가림\)")
+# 고객 목표 · 메모에서 떼는 것: 가린 자리(shared.pii가 남기는 꼴 모두, 점검 R1b #21: 주소 · 아이디가 남았어요) ·
+# 동 · 호 · 층 · 번지 숫자 · 주소
+_MASKED = re.compile(r"\((?:번호|동호수|이메일|주민번호|계좌|주소|아이디) 가림\)")
 _UNIT = re.compile(r"(?<![가-힣\d])\d+\s*(?:동|호|번지|층)(?![가-힣])")
 # 전화(안심번호 0507 · 지역번호 · 대표번호 1588)도 지운다(check.mask가 못 잡는 꼴)
 _PHONE = re.compile(r"(?<!\d)(?:0\d{1,3}[-.\s]?\d{3,4}[-.\s]?\d{4}|1[5-9]\d{2}[-.\s]?\d{4})(?!\d)")
@@ -376,9 +377,10 @@ def title_of(goal: str) -> str:
 
 def fit_pyeong(goal: str, pyeong: object | None) -> str:
     """조사 목표의 평을 집 정보의 공급 평형 그대로로(QA r3 c4b: 전용 59㎡ 집을 모델이 '21평'으로 적음, 집 정보는
-    21.4평). 평형대('30평대')는 그대로 둔다. 집 평형을 모르면 그대로."""
+    21.4평). 평형대('30평대')는 그대로 둔다. 집 평형을 모르면 그대로. 바꿔서 길어져도 목표 상한(GOAL_MAX) 안으로
+    잘라요(점검 R1b #15: 199자 목표가 201자가 되어 저장이 깨지고 조사가 시작되지 않았어요)."""
     text = pyeong_text(pyeong)
-    return _PYEONG.sub(text, goal) if text else goal
+    return _PYEONG.sub(text, goal)[:GOAL_MAX].strip() if text else goal
 
 
 def _day_of(page_age: str | None, today: date) -> date | None:
@@ -1208,14 +1210,13 @@ def _steer_text(note: str) -> str:
 
 
 def want_count(goal: str, notes: list[str] | tuple[str, ...] = ()) -> int | None:
-    """고객이 말한 찾을 수('5곳' · '다섯 군데'): 바꾸기 메모가 있으면 나중 말, 많아야 LINK_MAX. 없으면 None."""
+    """고객이 말한 찾을 수('5곳' · '다섯 군데'): 바꾸기 메모가 있으면 나중 말, 많아야 LINK_MAX. 없으면 None.
+    집 칸 수('방 3개')는 찾을 수가 아니에요(점검 R1b #14, asks.home_part)."""
     for text in (*reversed(list(notes)), goal):
-        m = _WANT_NUM.search(text or "")
-        n = (
-            int(m.group(1))
-            if m
-            else (_WANT_KO[w.group(1)] if (w := _WANT_WORD.search(text or "")) else 0)
-        )
+        t = text or ""
+        m = next((x for x in _WANT_NUM.finditer(t) if not asks.home_part(t, x.start())), None)
+        w = next((x for x in _WANT_WORD.finditer(t) if not asks.home_part(t, x.start())), None)
+        n = int(m.group(1)) if m else (_WANT_KO[w.group(1)] if w else 0)
         if n > 0:
             return min(n, LINK_MAX)
     return None

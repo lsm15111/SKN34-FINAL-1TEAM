@@ -762,11 +762,22 @@ class BriefIn(BaseModel):
 async def request_brief(tc: ToolCtx, a: BriefIn) -> ToolOut:
     vid = _visit_id(tc, a.visit_ref)
     async with SessionLocal() as s:
+        # 부르기 전에 열려 있던 제안(이번에 새로 만든 카드인지 가려요)
+        before = {x.id for x in await _open_on(s, tc.user.id, vid, tc.now)}
         # 읽기 도구: 이 요청에 열린 제안(대화에서 고른 못 받아요 등)이 있으면 덮지 않는다(리뷰 B3)
         card, model, _, made, closed = await brief(
             s, tc.user, vid, tc.today, tc.now, tc.refs, tc.turn_id, keep_open=True
         )
-    return ToolOut(data=model, cards=[card], actions=made, closed=closed)
+    # 승인 카드는 열린 행만 보내요. 업체가 거절한 같은 기간 제안(actions.offer rejected)은 다시 만들지 않았으니 보내지
+    # 않고 state로만 알려요(점검 R2 B8, 먼저 말 걸기 · 무료 모드와 같이). state는 제안 도구와 같은 말이라 문장 검사가
+    # 이 턴에 만든 카드(new)를 알아요(점검 R2 B3: 만든 카드를 '카드 없이 카드를 말함'으로 뺌)
+    live = [x for x in made if x.status == "proposed"]
+    data = {**model, "proposed": bool(live)}
+    if live:
+        data["state"] = "same" if all(x.action_id in before for x in live) else "new"
+    elif any(x.status == "rejected" for x in made):
+        data["state"] = "rejected"
+    return ToolOut(data=data, cards=[card], actions=live, closed=closed)
 
 
 class FreeIn(BaseModel):
@@ -989,10 +1000,9 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
                             f"고객이 바란 날({md_list(wish)})은 우리 업체의 다른 공사와 "
                             "겹쳐요. 가장 가까운 빈 날 후보로 다른 날을 제안할 수 있어요(고객이 수락해야 바뀌어요)."
                         )
-                    elif not got:
-                        row["note"] = (
-                            "보낼 수 있는 빈 날이 없어요. 공사 화면에서 확인하거나 믿집 채팅으로 이야기해요."
-                        )
+                # 후보가 없으면 고객 날짜 요청이 없어도 다른 길(지시문 '후보가 없으면 my_jobs 결과 note', 점검 R2 B11)
+                if not got:
+                    row["note"] = NO_DAYS_NOTE
             deals.append(row)
         visits = [  # 다가오는 실측(7일, 확정한 반나절만)
             {
@@ -1014,6 +1024,7 @@ async def my_jobs(tc: ToolCtx, _: NoArgs) -> ToolOut:
     )
 
 
+NO_DAYS_NOTE = "보낼 수 있는 빈 날이 없어요. 공사 화면에서 확인하거나 믿집 채팅으로 이야기해요."
 # 업체 쪽 공사 날짜 상태(dates_state) → 모델에 줄 화면 말
 DEAL_STATE = {
     "waiting": "공사 날짜를 낼 차례예요",

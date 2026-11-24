@@ -3,7 +3,8 @@
 한 번 부르기(consult_one): 지식 조각(그 공정 + 공통, EVIDENCE_K개) · 이 집 사실 · 질문 → LLM 구조화 답(ExpertOut,
 장부 목적 'trade', 모델은 비서와 같은 것 · ASSISTANT_EXPERT_MODEL) → 검사(refine)
 - 근거 번호는 받은 조각(K…)과 전문 지식(G)만 남기고, 조각 번호는 줄 글과 낱말이 겹쳐야 해요(bm25 cite_min).
-- 숫자는 받은 조각 · 이 집 사실 · 질문에 있는 것만(v2 guard.check). 한글 금액 · 쓰면 안 되는 말도 같은 검사가 걸러요.
+- 숫자는 받은 조각 · 이 집 사실 · 이번 턴 고객 말에 있는 것만(v2 guard.check, 비서가 쓴 질문은 근거가 아니에요).
+  한글 금액 · 쓰면 안 되는 말도 같은 검사가 걸러요.
 - 근거가 남지 않은 줄 · 숫자가 맞지 않는 줄은 버려요. 핵심 답 4줄 · 주의점 2줄 · 확인할 조건 하나까지.
 꺼짐 · 비용 상한 · 공급자 실패 · 시간 넘음 · 꼴 틀림이면 failed에 까닭만 남겨요(가짜 설명을 만들지 않아요).
 전문가는 DB에 쓰지 않고 고객에게 직접 말하지 않아요. 사용자 · 공사는 부르는 쪽(서버 세션)이 정해요.
@@ -438,8 +439,12 @@ FAILED = (
 )
 
 
-async def consult_one(trade: str, question: str, home: Home, hits: list[bm25.Hit]) -> Note:
-    """전문가 한 번. 오류는 Note.failed로 돌려줘요(부르는 쪽이 물러서요)."""
+async def consult_one(
+    trade: str, question: str, home: Home, hits: list[bm25.Hit], said: str = ""
+) -> Note:
+    """전문가 한 번. 오류는 Note.failed로 돌려줘요(부르는 쪽이 물러서요). 숫자 근거는 고객이 이번 턴에 한 말(said) ·
+    이 집 사실 · 조각이에요. 비서 모델이 쓴 질문(question)은 넣지 않아요(점검 R2 B2: 모델이 질문에 넣은 숫자가 전문가
+    줄을 지나 고객 답까지 갔어요)."""
     spec = SPECS[trade]
     pieces = {p.ref: p for p in map(piece_of, hits)}
     note = Note(trade=trade, pieces=pieces)
@@ -461,7 +466,7 @@ async def consult_one(trade: str, question: str, home: Home, hits: list[bm25.Hit
     except llm.LLMError as e:
         note.failed = next(k for cls, k in FAILED if isinstance(e, cls))
     else:
-        allowed = "\n".join([question, *home.lines, *(p.text for p in pieces.values())])
+        allowed = "\n".join([said, *home.lines, *(p.text for p in pieces.values())])
         note = refine(trade, got, pieces, allowed, home.known)
     note.ms = int((time.monotonic() - t0) * 1000)
     if note.failed:
@@ -470,11 +475,16 @@ async def consult_one(trade: str, question: str, home: Home, hits: list[bm25.Hit
 
 
 async def consult(
-    trades: tuple[str, ...], question: str, home: Home, terms: tuple[str, ...] = ()
+    trades: tuple[str, ...],
+    question: str,
+    home: Home,
+    terms: tuple[str, ...] = (),
+    *,
+    said: str = "",
 ) -> list[Note]:
     """고른 공정마다 조각을 찾고(임베딩은 세션 밖에서 한 번) 전문가를 함께 불러요. 결과는 도배 · 목공 순서.
     terms(비서가 준 표준 용어)는 따로 키워드로 찾아 앞 TERM_K개를 증거에 넣어요(고객 말과 자료 말이 다를 때,
-    QA r6 c2 T11)."""
+    QA r6 c2 T11). said는 이번 턴 고객 말(가린 글)로, 숫자 검사의 근거예요(consult_one)."""
     from app.knowledge import service as knowledge
 
     embedding = await llm.embed_query(question)
@@ -490,4 +500,6 @@ async def consult(
                 )
                 extra = more.hits
             found[t] = evidence(res.hits, t, extra)
-    return list(await asyncio.gather(*(consult_one(t, question, home, found[t]) for t in order)))
+    return list(
+        await asyncio.gather(*(consult_one(t, question, home, found[t], said) for t in order))
+    )
