@@ -43,10 +43,11 @@
 .row { display: flex; align-items: flex-end; gap: 6px; max-width: 86%; min-width: 0; }
 .me { align-self: flex-end; }
 .gap { margin-top: 8px; }
-.bub { margin: 0; padding: 9px 13px; border-radius: 18px 18px 18px 6px; background: var(--mj-fill); color: var(--mj-text); font-size: var(--mj-type-body); line-height: var(--mj-lh-ui); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
-.me .bub { border-radius: 18px 18px 6px 18px; background: var(--mj-primary); color: var(--mj-on-primary); }
+/* 말풍선 모서리: 카드 둥글기에 꼬리 쪽 한 귀만 배지 둥글기(비서 대화와 같아요) */
+.bub { margin: 0; padding: 9px 13px; border-radius: var(--mj-radius-card) var(--mj-radius-card) var(--mj-radius-card) var(--mj-radius-badge); background: var(--mj-fill); color: var(--mj-text); font-size: var(--mj-type-body); line-height: var(--mj-lh-ui); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
+.me .bub { border-radius: var(--mj-radius-card) var(--mj-radius-card) var(--mj-radius-badge) var(--mj-radius-card); background: var(--mj-primary); color: var(--mj-on-primary); }
 .time { flex: none; font-size: var(--mj-type-caption); color: var(--mj-text-mute); white-space: nowrap; }
-.photo { display: block; max-width: min(240px, 60vw); max-height: 320px; border-radius: 14px; background: var(--mj-fill); }
+.photo { display: block; max-width: min(240px, 60vw); max-height: 320px; border-radius: var(--mj-radius-card); background: var(--mj-fill); }
 .pending .bub, .pending .photo { opacity: 0.6; }
 .failed { align-self: flex-end; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; font-size: var(--mj-type-caption); color: var(--mj-danger); }
 .warn { align-self: stretch; margin: 4px 0; padding: 10px 14px; border-radius: var(--mj-radius-card); background: var(--mj-warn-weak); color: var(--mj-on-warn-weak); font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); line-height: var(--mj-lh-ui); }
@@ -72,17 +73,18 @@
 }
 .quick { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; padding: 2px 2px 0; }
 .quick::-webkit-scrollbar { display: none; }
-.quickBtn { flex: none; display: inline-flex; align-items: center; min-height: var(--mj-hit-min); padding: 0 14px; border: 0; border-radius: var(--mj-radius-pill); background: var(--mj-surface); box-shadow: inset 0 0 0 1px var(--mj-line); color: var(--mj-text-sub); font-size: var(--mj-type-label); white-space: nowrap; cursor: pointer; }
+.quickBtn { flex: none; display: inline-flex; align-items: center; min-height: var(--mj-hit-min); padding: 0 14px; border: 0; border-radius: var(--mj-radius-chip); background: var(--mj-surface); box-shadow: inset 0 0 0 1px var(--mj-line); color: var(--mj-text-sub); font-size: var(--mj-type-label); white-space: nowrap; cursor: pointer; }
 .quickBtn:hover { background: var(--mj-surface-sub); color: var(--mj-text); }
 .inputRow { display: flex; align-items: flex-end; gap: 8px; }
 .plus { flex: none; }
 /* 여는 단추만(Menu 감싸개 바로 아래). 시트 안 줄 단추에는 붙지 않아요 */
 .plus > div > button { display: inline-grid; place-items: center; width: var(--mj-hit); height: var(--mj-hit); border: 0; border-radius: 50%; background: var(--mj-fill); color: var(--mj-text-sub); cursor: pointer; }
 .field { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
-.input { width: 100%; min-height: var(--mj-hit); max-height: 140px; padding: 10px 16px; border: 1px solid var(--mj-line-control); border-radius: 22px; background: var(--mj-field-bg); color: var(--mj-text); font-size: var(--mj-type-body); line-height: var(--mj-lh-ui); resize: none; overflow-y: auto; }
+.input { width: 100%; min-height: var(--mj-hit); max-height: 140px; padding: 10px 16px; border: 1px solid var(--mj-line-control); border-radius: var(--mj-radius-field); background: var(--mj-field-bg); color: var(--mj-text); font-size: var(--mj-type-body); line-height: var(--mj-lh-ui); resize: none; overflow-y: auto; }
 .input::placeholder { color: var(--mj-text-placeholder); }
-.input:focus { outline: 2px solid var(--mj-focus); outline-offset: 0; border-color: var(--mj-focus); }
-.inputBad { border: 2px solid var(--mj-danger); }
+/* 초점 · 오류는 사이트 입력 칸(Field)처럼 1px 테두리 + 1px 고리(칸 크기가 그대로예요). 오류면 초점이 있어도 빨강 */
+.input:focus { outline: none; border-color: var(--mj-focus); box-shadow: 0 0 0 1px var(--mj-focus); }
+.inputBad, .inputBad:focus { border-color: var(--mj-danger); box-shadow: 0 0 0 1px var(--mj-danger); }
 .inputErr { display: flex; align-items: flex-start; gap: 6px; padding: 4px 6px 0; font-size: var(--mj-type-caption); color: var(--mj-danger); }
 .send { flex: none; }
 .ro { padding: 14px var(--mj-gutter) max(14px, env(safe-area-inset-bottom, 0px)); text-align: center; font-size: var(--mj-type-label); color: var(--mj-text-sub); background: var(--mj-surface-sub); box-shadow: var(--mj-edge-top); }

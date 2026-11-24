@@ -25,7 +25,7 @@
 .text:hover { text-decoration: underline; text-underline-offset: 3px; }
 .text svg { width: 16px; height: 16px; }
 .gray { color: var(--mj-text-mute); }
-.chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--mj-chip-h); padding: 0 16px; border-radius: var(--mj-radius-pill); border: 1px solid var(--mj-line-control); background: var(--mj-bg); font: inherit; font-size: var(--mj-type-label); color: var(--mj-text); cursor: pointer; white-space: nowrap; text-decoration: none; }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--mj-chip-h); padding: 0 16px; border-radius: var(--mj-radius-chip); border: 1px solid var(--mj-line-control); background: var(--mj-bg); font: inherit; font-size: var(--mj-type-label); color: var(--mj-text); cursor: pointer; white-space: nowrap; text-decoration: none; }
 .chip:hover { background: var(--mj-surface-sub); }
 .chip[aria-pressed="true"] { border-color: var(--mj-primary); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-weight: var(--mj-weight-bold); }
 .chip svg { width: 16px; height: 16px; color: var(--mj-text-mute); flex: none; }
@@ -132,7 +132,7 @@
 .tlist li b { font-weight: var(--mj-weight-bold); line-height: 1.45; }
 .tlist li span { font-size: var(--mj-type-label); color: var(--mj-text-mute); }
 .tlist li span.dueText { color: var(--mj-badge-wait-fg); font-weight: var(--mj-weight-semibold); }
-.tic { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--mj-primary-weak); color: var(--mj-primary); }
+.tic { width: 40px; height: 40px; border-radius: var(--mj-radius-chip); display: grid; place-items: center; background: var(--mj-primary-weak); color: var(--mj-primary); }
 .tic svg { width: 20px; height: 20px; }
 .ticWait { background: var(--mj-badge-wait-bg); color: var(--mj-badge-wait-fg); }
 .ticKnow { background: var(--mj-badge-ok-bg); color: var(--mj-badge-ok-fg); }
