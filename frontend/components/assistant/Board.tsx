@@ -154,10 +154,14 @@ function Sections({ b, base, onOpen }: { b: BoardOut; base: string; onOpen?: () 
           </ul>
         </section>
       ) : b.money ? (
-        // 아직 실측을 요청한 업체가 없으면 업체 목록(가견적 · 담기)으로
+        // 아직 실측을 요청한 업체가 없으면 빈 줄 하나 + 제목 옆 '모두 보기'로 업체 목록(가견적 · 담기)에 가요.
+        // 업체가 생긴 뒤 · 서류 칸과 같은 자리라 칸 모양이 바뀌지 않아요(2026-11-24 사용자)
         <section className={s.bsec}>
-          <h3 className={s.bsecT}>업체</h3>
-          <div className={s.links}><Link href={`${base}/vendors`} {...go}>업체 보기</Link></div>
+          <div className={s.bsecHead}>
+            <h3 className={s.bsecT}>업체</h3>
+            <Link className={s.bsecEdit} href={`${base}/vendors`} {...go}>모두 보기</Link>
+          </div>
+          <p className={s.muted}>아직 실측을 요청한 업체가 없어요</p>
         </section>
       ) : null}
       {b.period ? (

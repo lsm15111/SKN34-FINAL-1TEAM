@@ -8,11 +8,15 @@
 // - 검사는 '표준견적서 보기'를 누를 때 한 번(I6 B): 맨 위 '고칠 칸이 n개 있어요' + 칸 아래 오류 + 첫 틀린 칸으로 옮겨 가요.
 // - 금액은 서버 계산 엔진이 세요. 여기서는 단위만 바꿔요(평 → ㎡ 넣기 도움 · 만 원 → 원).
 // - 칸 아래 도움말 · 저장 안내 · 아래 띠 요약 줄은 두지 않아요(11-19 사용자 결정: 화면을 가볍게).
+// - 11-24 사용자: 공사 종류(도배) · 주거 종류(아파트)는 고를 것이 하나라 고정 한 줄이에요(다른 칩은 주석으로 남겨요).
+//   면적은 칸 옆 단위 고르기(㎡ | 평)로 넣어요(평이면 ㎡로 바꾼 값을 '믿집 계산'으로 보여요, 저장 · 계산은 ㎡).
+//   도배할 곳(공간 · 면)은 부분 공사에만 쓰여서 첫 화면에서는 빼고 집 전체예요. 고치기에서는 '집 전체 | 일부만'으로 접어 둬요.
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Main, PageHead, type Crumb } from "@/components/site/Frame";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
+import { CalcBox } from "@/components/ui/CalcBox";
 import { ChoiceChips } from "@/components/ui/ChoiceChip";
 import { Segmented } from "@/components/ui/Segmented";
 import { Field } from "@/components/ui/Field";
@@ -22,12 +26,11 @@ import type { Region } from "@/lib/api/project";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort } from "@/lib/format";
 import {
-  DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, roomsOf, scopeOf,
+  DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, PYEONG_M2, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, pyeongToM2, roomsOf, scopeOf,
   spaceLabel, summaryRows, toEditBody, toHomeInfo, type Demolition, type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
 } from "@/lib/guest/info";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
 import { DateSheet } from "./DateSheet";
-import { PyeongSheet } from "./PyeongSheet";
 import { RegionSheet } from "./RegionSheet";
 import s from "./info.module.css";
 
@@ -39,6 +42,20 @@ const FIELD_ID: Record<keyof InfoErrors, string> = {
   spaces: "inf-spaces", faces: "inf-faces", region: "inf-region", area: "inf-area", occupied: "inf-occupied", grade: "inf-grade", budget: "inf-budget",
 };
 const FOCUS_ID: Record<InfoFocus, string> = { ...FIELD_ID, rooms: "inf-rooms", start: "inf-start", demolition: "inf-demolition", diy: DIY_FIELD_ID };
+
+/** 면적 칸 단위: ㎡ · 평(평은 넣을 때만, 저장 · 계산은 ㎡) */
+type Unit = "m2" | "py";
+/** ㎡ 글 → 평 글(단위를 평으로 바꿀 때 칸에 보일 값, 소수 한 자리): "84.9" → "25.7". 숫자가 아니면 빈 글 */
+function pyeongOf(m2: string): string {
+  const n = Number(m2.trim());
+  return m2.trim() && Number.isFinite(n) && n > 0 ? String(Math.round((n / PYEONG_M2) * 10) / 10) : "";
+}
+/** 평으로 넣을 때 칸 아래 오류(검사는 ㎡로 해요): ㎡ 예시 대신 평 말로 바꿔요 */
+function pyeongError(py: string): string {
+  if (!py.trim()) return "평 숫자를 넣어 주세요. 예: 34";
+  if (!Number.isFinite(Number(py.trim()))) return "숫자로 넣어 주세요. 예: 34";
+  return "면적이 너무 작거나 커요. 평 숫자를 다시 확인해 주세요.";
+}
 
 /** 칸 묶음(id)의 첫 입력 · 단추에 초점을 주고 가운데로 보여요 */
 function focusBox(id: string) {
@@ -73,11 +90,17 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
   const [dirty, setDirty] = useState(false);
   const [tried, setTried] = useState(false);
   const [errors, setErrors] = useState<InfoErrors>({});
-  const [sheet, setSheet] = useState<null | "pyeong" | "region" | "date">(null);
+  const [sheet, setSheet] = useState<null | "region" | "date">(null);
   const [busy, setBusy] = useState(false);
   const [formErr, setFormErr] = useState<string | null>(null);
-  /** 준비 중 칩(목공 · 아파트 밖 주거)을 눌렀을 때 그 자리에 보일 한 줄: 지금 되는 범위로 이끌어요(QA r6 M4 · M18) */
-  const [soon, setSoon] = useState<{ at: "trade" | "house"; text: string } | null>(null);
+  // 준비 중 칩(목공 · 아파트 밖 주거)의 안내 한 줄(QA r6 M4 · M18). 칩을 주석으로 뺀 동안은 쓰지 않아요(11-24):
+  // const [soon, setSoon] = useState<{ at: "trade" | "house"; text: string } | null>(null);
+  /** 면적 칸 단위와 평으로 넣는 글(칸에는 평, 답에는 바꾼 ㎡) */
+  const [unit, setUnit] = useState<Unit>("m2");
+  const [py, setPy] = useState("");
+  /** 도배할 곳 '일부만'을 펼쳤어요. 첫 화면은 칸을 빼고 집 전체예요(넣던 답이 부분 공사면 그 칸을 보여요) */
+  const [part, setPart] = useState(initial?.scope === "partial" || focus === "spaces" || focus === "faces");
+  const [whereShown, setWhereShown] = useState(mode === "edit");
   const sumRef = useRef<HTMLDivElement>(null);
   const budgetRef = useRef<HTMLInputElement>(null);
 
@@ -85,7 +108,11 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
   useEffect(() => {
     if (mode === "edit") return;
     const g = readGuest();
-    if (g) setD(draftOf(g));
+    if (g) {
+      const saved = draftOf(g);
+      setD(saved);
+      if (saved.scope === "partial") { setPart(true); setWhereShown(true); }
+    }
     setReady(true);
   }, [mode]);
   // 바꿀 때마다 이 기기에 저장해요(손님 · 새 공사). 고치기는 저장하지 않아요
@@ -152,6 +179,27 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
     const added = next.filter((k) => !chips.includes(k));
     set({ rooms: n, ...scopeOf([...on, ...added], d.faces, next) });
   };
+  // 면적: 평이면 칸 글은 평 그대로 두고 답에는 바꾼 ㎡(pyeongToM2)를 넣어요. 바꿀 수 없는 글이면 그대로 넣어 검사가 잡아요
+  const setArea = (v: string) => {
+    if (unit === "m2") { set({ area: v }); return; }
+    setPy(v);
+    set({ area: pyeongToM2(v) ?? v.trim() });
+  };
+  const switchUnit = (v: string) => {
+    const next: Unit = v === "py" ? "py" : "m2";
+    if (next === unit) return;
+    if (next === "py") setPy(pyeongOf(d.area));
+    setUnit(next);
+  };
+  // 도배할 곳: 집 전체로 돌리면 공간 · 면을 모두 켜요(전체 공사). 일부만은 칩을 끄는 순간 부분 공사가 돼요
+  const setWhere = (v: string) => {
+    const p = v === "part";
+    setPart(p);
+    if (!p) set(scopeOf(chips, ["wall", "ceiling"], chips));
+  };
+  const areaM2 = unit === "py" ? pyeongToM2(py) : null;
+  const areaErr = errors.area && unit === "py" ? pyeongError(py) : errors.area;
+  const basisWord = d.basis === "exclusive" ? "전용" : "공급";
 
   const errKeys = ERROR_ORDER.filter((k) => errors[k]);
   const place = placeText(regions, d);
@@ -173,18 +221,23 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
 
           <section className={s.group} aria-labelledby="g-what">
             <h2 id="g-what" className={s.grp}>어떤 공사</h2>
+            {/* 지금은 도배만(11-24 사용자: 목공은 주석). 고를 것이 하나라 고정 한 줄이고, 서버로 보내는 값은 늘 dobae(toHomeInfo).
+                목공이 열리면 아래 칩과 위 soon 상태를 다시 켜요.
             <div className={s.cols}>
               <ChoiceChips legend="공사 종류" value="dobae" onChange={() => {}} onSoon={() => setSoon({ at: "trade", text: "목공은 준비 중이에요. 지금은 도배 견적만 받을 수 있어요." })} options={[{ value: "dobae", label: "도배" }, { value: "mokgong", label: "목공", soon: true }]} />
               {soon?.at === "trade" ? <p className={s.meta} role="status">{soon.text}</p> : null}
-            </div>
+            </div> */}
+            <Fixed label="공사 종류" value="도배" />
           </section>
 
           <section className={s.group} aria-labelledby="g-home">
             <h2 id="g-home" className={s.grp}>우리 집</h2>
+            {/* 1차 범위는 아파트만(11-24). 고를 것이 하나라 고정 한 줄이고, 서버도 housing=apt만 받아요. 범위가 넓어지면 아래 칩과 위 soon 상태를 다시 켜요.
             <ChoiceChips legend="주거 종류" value="apt" onChange={() => {}} onSoon={() => setSoon({ at: "house", text: "지금은 아파트만 견적을 받을 수 있어요." })} options={[
               { value: "apt", label: "아파트" }, { value: "villa", label: "빌라 · 다세대", soon: true }, { value: "officetel", label: "오피스텔", soon: true }, { value: "house", label: "단독주택", soon: true },
             ]} />
-            {soon?.at === "house" ? <p className={s.meta} role="status">{soon.text}</p> : null}
+            {soon?.at === "house" ? <p className={s.meta} role="status">{soon.text}</p> : null} */}
+            <Fixed label="주거 종류" value="아파트" />
             <div className={s.f}>
               <p className={s.fl} id="inf-region-l">지역</p>
               <button id={FIELD_ID.region} type="button" className={errors.region ? `${s.pick} ${s.bad}` : s.pick} aria-labelledby="inf-region-l inf-region-v" aria-describedby={errors.region ? "inf-region-e" : undefined} aria-invalid={errors.region ? true : undefined} onClick={() => setSheet("region")}>
@@ -199,12 +252,16 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
             <h2 id="g-area" className={s.fl}>면적</h2>
             <div className={s.cols}>
               <Segmented legend="면적 기준" hideLegend value={d.basis} onChange={(v) => set({ basis: v === "exclusive" ? "exclusive" : "supply" })} options={[{ value: "supply", label: "공급면적" }, { value: "exclusive", label: "전용면적" }]} />
-              <Field id={FIELD_ID.area} label={`${d.basis === "exclusive" ? "전용" : "공급"}면적(㎡)`} hideLabel unit="㎡" num value={d.area} error={errors.area} maxLength={8}
-                onChange={(e) => set({ area: e.target.value })} />
+              {/* 단위는 칸 옆에서 바로 골라요(11-24 사용자: '평으로 넣기' 단추 대신 눈에 보이게) */}
+              <div className={s.areaRow}>
+                <Field id={FIELD_ID.area} label={`${basisWord}면적(${unit === "py" ? "평" : "㎡"})`} hideLabel unit={unit === "py" ? "평" : "㎡"} num
+                  value={unit === "py" ? py : d.area} error={areaErr} maxLength={8} onChange={(e) => setArea(e.target.value)} />
+                <Segmented legend="면적 단위" hideLegend className={s.unit} value={unit} onChange={switchUnit} options={[{ value: "m2", label: "㎡" }, { value: "py", label: "평" }]} />
+              </div>
             </div>
-            <div className={s.gh}>
-              <Button variant="text" onClick={() => setSheet("pyeong")}>평으로 넣기</Button>
-            </div>
+            {areaM2 ? (
+              <CalcBox tone="form" lines={[{ terms: [{ n: py.trim(), unit: "평" }, "×", { n: String(PYEONG_M2) }], result: { n: areaM2, unit: "㎡" } }]} />
+            ) : null}
             <div id={FOCUS_ID.rooms}>
               <ChoiceChips legend="방 개수" value={String(rooms)} onChange={(v) => setRooms(Number(v))}
                 options={Array.from({ length: roomRule.max - roomRule.min + 1 }, (_, i) => { const n = roomRule.min + i; return { value: String(n), label: `${n}개` }; })} />
@@ -215,23 +272,32 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
             </div>
           </section>
 
-          <section className={s.group} aria-labelledby="g-where">
-            <h2 id="g-where" className={s.grp}>도배할 곳</h2>
-            <div id={FIELD_ID.spaces}>
-              <ChoiceChips multiple legend="공간" value={on} error={errors.spaces} onChange={(v) => set(scopeOf(v as SpaceKind[], d.faces, chips))}
-                options={chips.map((k) => ({ value: k, label: spaceLabel(k) }))} />
-            </div>
-            <div id={FIELD_ID.faces}>
-              <ChoiceChips multiple legend="면" value={d.faces} error={errors.faces} onChange={(v) => set(scopeOf(on, v as Face[], chips))}
-                options={FACES.map((x) => ({ value: x.key, label: x.label }))} />
-            </div>
-            {mode === "edit" ? (
-              <div id={FOCUS_ID.demolition}>
-                <ChoiceChips legend="철거 범위" value={d.demolition ?? null} onChange={(v) => set({ demolition: v as Demolition })}
-                  options={DEMOLITION.map((x) => ({ value: x.key, label: x.label }))} />
-              </div>
-            ) : null}
-          </section>
+          {/* 도배할 곳(11-24 사용자: 꼭 필요한가): 표준견적서는 집 전체가 기본이고 공간 · 면은 부분 공사에만 써요(API 기본 scope=full).
+              첫 화면은 이 칸을 빼고(넣던 답이 부분 공사면 보여요), 고치기에서는 '집 전체 | 일부만' 뒤에 접어 둬요 */}
+          {whereShown ? (
+            <section className={s.group} aria-labelledby="g-where">
+              <h2 id="g-where" className={s.grp}>도배할 곳</h2>
+              <Segmented legend="도배할 곳" hideLegend value={part ? "part" : "full"} onChange={setWhere} options={[{ value: "full", label: "집 전체" }, { value: "part", label: "일부만" }]} />
+              {part ? (
+                <>
+                  <div id={FIELD_ID.spaces}>
+                    <ChoiceChips multiple legend="공간" value={on} error={errors.spaces} onChange={(v) => set(scopeOf(v as SpaceKind[], d.faces, chips))}
+                      options={chips.map((k) => ({ value: k, label: spaceLabel(k) }))} />
+                  </div>
+                  <div id={FIELD_ID.faces}>
+                    <ChoiceChips multiple legend="면" value={d.faces} error={errors.faces} onChange={(v) => set(scopeOf(on, v as Face[], chips))}
+                      options={FACES.map((x) => ({ value: x.key, label: x.label }))} />
+                  </div>
+                </>
+              ) : null}
+              {mode === "edit" ? (
+                <div id={FOCUS_ID.demolition}>
+                  <ChoiceChips legend="철거 범위" value={d.demolition ?? null} onChange={(v) => set({ demolition: v as Demolition })}
+                    options={DEMOLITION.map((x) => ({ value: x.key, label: x.label }))} />
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className={s.group} aria-labelledby="g-want">
             <h2 id="g-want" className={s.grp}>희망</h2>
@@ -297,9 +363,13 @@ export function InfoForm({ regions, roomRule, today, mode, projectId, initial, m
         </BottomBar>
       </div>
 
-      <PyeongSheet open={sheet === "pyeong"} basis={d.basis} onClose={() => setSheet(null)} onApply={(m2, basis) => { set({ area: m2, basis }); setSheet(null); }} />
       <RegionSheet open={sheet === "region"} regions={regions} value={{ sido: d.sido, sgg: d.sgg }} onClose={() => setSheet(null)} onApply={(p) => { set({ ...p, emd: "" }); setSheet(null); }} />
       <DateSheet open={sheet === "date"} value={d.start} today={today} onClose={() => setSheet(null)} onApply={(day) => { set({ start: day }); setSheet(null); }} />
     </>
   );
+}
+
+/** 고를 것이 하나뿐인 칸(공사 종류 · 주거 종류): 고르기 칩 대신 이름 + 값 한 줄 */
+function Fixed({ label, value }: { label: string; value: string }) {
+  return <p className={s.fixed}><span>{label}</span><b>{value}</b></p>;
 }

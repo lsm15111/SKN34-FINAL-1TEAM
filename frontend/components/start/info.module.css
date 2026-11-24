@@ -5,10 +5,16 @@
 .grp { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
 .f { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
 .fl { font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-text); }
-.help { font-size: var(--mj-type-caption); color: var(--mj-text-mute); line-height: var(--mj-lh-body); }
 .cols { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
 .part { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--mj-line); }
-.gh { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0 12px; margin-top: -8px; }
+/* 고를 것이 하나뿐인 칸(공사 종류 · 주거 종류): 이름 + 값 한 줄(11-24) */
+.fixed { display: flex; align-items: baseline; gap: 12px; margin: 0; font-size: var(--mj-type-label); }
+.fixed > span { font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); }
+.fixed > b { font-weight: var(--mj-weight-bold); color: var(--mj-text); }
+/* 면적 칸 + 단위 고르기(㎡ | 평)를 한 줄에. 단위 칸(46)은 입력 칸(48) 가운데에 맞춰요 */
+.areaRow { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.areaRow > :first-child { flex: 1 1 auto; min-width: 0; }
+.unit { flex: none; width: 112px; margin-top: 1px; }
 
 /* 지역 · 날짜 고르기 칸(입력 칸과 같은 모양) */
 .pick {
@@ -28,9 +34,6 @@
 .summary > svg { flex: none; margin-top: 1px; }
 .formErr { display: flex; align-items: flex-start; gap: 6px; color: var(--mj-danger); font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); }
 .saved { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 4px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); text-align: center; }
-
-/* 시트 안 */
-.sheetBody { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
 
 /* 웹 오른쪽 '넣은 내용'(D11) */
 .aside { display: none; }
