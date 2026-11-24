@@ -2,29 +2,24 @@
 // 추가 금액 올리기(?step=extra, V12) · 공사 끝 알리기(?step=done, V13, CF-23)로 이어져요. 금액 · 날은 API 값 그대로예요.
 // 첫 공사 날 전이면 '공사 전', 끝 알리기는 마지막 공사 날부터라 그 전에는 단추 이름으로 언제부터인지 알려요(QA r6 M13).
 // canChange면 공사 날짜 줄 아래 [날짜 바꾸기](?step=dates, 이유 칸)로 수락한 날짜를 바꾸자고 보내요. 고객이 수락해야 바뀌어요.
+// 고객이 '남은 일이 있어요'로 답했으면(fixing) 고객이 적은 남은 일을 보이고, 추가 금액 · 남은 일 끝 알리기를 다시 열어요.
 import { Main, PageHead } from "@/components/site/Frame";
-import { Badge, type BadgeTone } from "@/components/ui/Badge";
+import { Badge } from "@/components/ui/Badge";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
 import type { JobV3, VendorJobLog } from "@/lib/api/vendor";
 import { dateSeoul, dateShort, listStamp, won } from "@/lib/format";
+import { tradeLabel } from "@/lib/labels";
 import { enc } from "../send";
 import { logText } from "../text";
 import { Notice } from "@/components/ui/Notice";
 import { Eyebrow, Group, Row, Rows, Small } from "../ui/parts";
 import { occ, visitTitle } from "../visit/facts";
 import { daysText } from "./days";
+import { jobState, jobWorking } from "./state";
 import s from "./jobs.module.css";
 
 const ANSWER: Record<string, string> = { pending: "고객 답 기다림", approved: "승인", rejected: "거절", asked: "채팅으로 물어봐요" };
-
-function jobState(j: JobV3, today: string): { tone: BadgeTone; label: string } {
-  if (j.status === "done" || j.status === "closed") return { tone: "mute", label: "공사 끝" };
-  if (j.done_posted_at || j.work_done_on) return { tone: "wait", label: "고객 확인 기다림" };
-  if (j.dates_state === "proposed" || j.dates_state === "change_proposed") return { tone: "wait", label: "날짜 수락 기다림" };
-  if (j.dates_state === "scheduled") return j.work_days.length && today < j.work_days[0] ? { tone: "ok", label: "공사 전" } : { tone: "ok", label: "공사 중" };
-  return { tone: "now", label: "공사 날짜 올리기" };
-}
 
 export function JobView({ job, log, now, canChange = false }: { job: JobV3; log: VendorJobLog; /** 지금 시각(서버 값) */ now: string; /** 수락한 날짜를 바꾸자고 보낼 수 있어요 */ canChange?: boolean }) {
   const v = job.visit;
@@ -37,7 +32,8 @@ export function JobView({ job, log, now, canChange = false }: { job: JobV3; log:
   const items = job.extras.items.filter((x) => !x.superseded);
   const okN = items.filter((x) => x.answer === "approved").length;
   const waitN = items.filter((x) => x.answer === "pending").length;
-  const working = job.dates_state === "scheduled" && !job.done_posted_at && !job.work_done_on && job.status !== "done";
+  const working = jobWorking(job);
+  const fixing = job.status === "fixing";
   const href = `/vendor/jobs/${enc(job.deal_id)}`;
   return (
     <>
@@ -45,8 +41,9 @@ export function JobView({ job, log, now, canChange = false }: { job: JobV3; log:
         <PageHead title="공사 한 건" crumbs={[{ label: "작업함", href: "/vendor?tab=jobs" }, { label: visitTitle(v) }]} />
         <Group>
           <Badge tone={st.tone}>{st.label}</Badge>
-          <h2 className={s.jt}>{visitTitle(v)} · {occ(v)}</h2>
-          <p className={`${s.js} mj-num`}>{["도배 전체", days.length ? daysText(days, true) : null, job.quote.days ? `${job.quote.days}일` : null, crew ? `${crew}명` : null].filter(Boolean).join(" · ")}</p>
+          {/* 집 글(API home '아파트 · 도배 부분 · 빈 집')에 전체 · 부분과 집 상태가 함께 있어요. 없을 때만 공정 이름 · 집 상태 */}
+          <h2 className={s.jt}>{v.home ? visitTitle(v) : `${visitTitle(v)} · ${occ(v)}`}</h2>
+          <p className={`${s.js} mj-num`}>{[v.home || tradeLabel(job.trade), days.length ? daysText(days, true) : null, job.quote.days ? `${job.quote.days}일` : null, crew ? `${crew}명` : null].filter(Boolean).join(" · ")}</p>
         </Group>
         <Group flush>
           <Rows label="공사 한 건">
@@ -76,7 +73,9 @@ export function JobView({ job, log, now, canChange = false }: { job: JobV3; log:
             <Small>고객이 승인하기 전에는 합계에 넣지 않아요.</Small>
           </Group>
         ) : null}
-        {job.done_posted_at || job.work_done_on ? (
+        {fixing ? (
+          <Notice tone="warn" title="고객이 남은 일을 알렸어요">{job.fixing_note ?? undefined}</Notice>
+        ) : job.status === "checking" ? (
           <Notice tone="info">공사 끝을 알렸어요. 고객이 확인하면 공사가 끝나요{job.auto_done_at ? ` · 확인이 없으면 ${dateShort(job.auto_done_at)}에 저절로 끝나요` : ""}.</Notice>
         ) : null}
         {log.length ? (
@@ -91,7 +90,7 @@ export function JobView({ job, log, now, canChange = false }: { job: JobV3; log:
       {working ? (
         <BottomBar>
           <Button size="lg" variant="secondary" href={`${href}?step=extra`}>추가 금액 올리기</Button>
-          <Button size="lg" href={`${href}?step=done`} disabled={!job.can_finish}>{job.can_finish || !lastDay ? "공사 끝 알리기" : `공사 끝은 ${dateShort(lastDay)}부터`}</Button>
+          <Button size="lg" href={`${href}?step=done`} disabled={!job.can_finish}>{fixing ? "남은 일 다 했어요" : job.can_finish || !lastDay ? "공사 끝 알리기" : `공사 끝은 ${dateShort(lastDay)}부터`}</Button>
         </BottomBar>
       ) : null}
     </>

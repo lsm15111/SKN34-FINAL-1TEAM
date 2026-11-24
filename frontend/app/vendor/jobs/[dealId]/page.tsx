@@ -3,8 +3,10 @@ import { DatesForm } from "@/components/pro/jobs/DatesForm";
 import { DoneForm } from "@/components/pro/jobs/DoneForm";
 import { ExtraForm } from "@/components/pro/jobs/ExtraForm";
 import { JobView } from "@/components/pro/jobs/JobView";
+import { jobCanChange, jobWorking } from "@/components/pro/jobs/state";
 import { ProHeader } from "@/components/pro/Shell";
 import { approvedVendorGate, getMyProfile, getVendorJob, getVendorJobLog, vendorNow } from "@/lib/api/vendor";
+import { dateSeoul } from "@/lib/format";
 
 export const metadata = { title: "공사 한 건" };
 
@@ -21,9 +23,10 @@ export default async function VendorJobPage({ params, searchParams }: { params: 
   const job = await getVendorJob(dealId);
   if (!job) notFound();
   const href = `/vendor/jobs/${encodeURIComponent(job.deal_id)}`;
-  const working = job.dates_state === "scheduled" && !job.done_posted_at && !job.work_done_on && job.status !== "done";
-  // 수락한 날짜를 업체가 스스로 바꾸기: 공사 끝을 알리기 전까지(서버 CHANGEABLE). 바꾸자고 보낸 뒤에도 다시 보낼 수 있어요(앞 것 대신)
-  const canChange = job.status === "scheduled" && (job.dates_state === "scheduled" || job.dates_state === "change_proposed") && !job.done_posted_at && !job.work_done_on;
+  // 공사 중 · 남은 일(고객이 '남은 일이 있어요'로 답함): 추가 금액 · 끝 알리기(서버 EXTRA_OPEN · FINISHABLE)
+  const working = jobWorking(job);
+  // 수락한 날짜를 업체가 스스로 바꾸기: 공사 첫날 전까지(서버는 내일부터의 날만 받아요). 바꾸자고 보낸 뒤에도 다시 보낼 수 있어요(앞 것 대신)
+  const canChange = jobCanChange(job, dateSeoul(vendorNow("job")));
 
   if (step === "extra" && working) {
     const profile = await getMyProfile().catch(() => null);

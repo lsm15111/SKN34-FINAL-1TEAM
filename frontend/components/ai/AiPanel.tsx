@@ -282,7 +282,8 @@ export function AiPanel({ screen, projectId, ids, embed = false, draft }: {
 
   async function send(q: string, button?: AiButton) {
     const t = q.trim().slice(0, MAX);
-    if (!t || busy) return;
+    // 공사 없는 화면은 '내 공사' 목록이 와야 기준 공사가 정해져요. 그 전에 보내면 뒤에 온 이어 볼 대화가 방금 질문을 덮어요
+    if (!t || busy || !scopeReady) return;
     const id = ++seq.current;
     const put = (patch: Partial<Turn>) => setTurns((ts) => ts.map((x) => (x.id === id ? { ...x, ...patch } : x)));
     setBusy(true);
@@ -389,7 +390,7 @@ export function AiPanel({ screen, projectId, ids, embed = false, draft }: {
           placeholder={PLACEHOLDER[screen] ?? "궁금한 걸 물어보세요"} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); void send(text); } }}
         />
-        <Button type="submit" busy={busy} disabled={!text.trim()}>{busy ? "답 기다리는 중" : "보내기"}</Button>
+        <Button type="submit" busy={busy} disabled={!text.trim() || !scopeReady}>{busy ? "답 기다리는 중" : "보내기"}</Button>
       </form>
     </>
   );

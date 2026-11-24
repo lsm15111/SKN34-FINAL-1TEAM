@@ -39,8 +39,10 @@ export function QuoteForm({ v, board, now }: { v: VendorVisitV3; board: VendorQu
   const router = useRouter();
   const toast = useToast();
   const d = board.draft;
-  const fixedVat = board.vat_modes.length === 1 ? (board.vat_modes[0] as Vat) : null;
   const simplified = board.tax_kind === "simplified";
+  // 간이과세는 서버가 부가세 방식을 보지 않고 낸 금액을 그대로 합계로 세요(included · 0%). 고르지 않게 '포함'으로 두고 간이 안내를 보여요
+  // (추가 금액 ExtraForm과 같아요). 면세는 서버가 방식을 하나만 줘요
+  const fixedVat: Vat | null = simplified ? "included" : board.vat_modes.length === 1 ? (board.vat_modes[0] as Vat) : null;
   const [files, setFiles] = useState<QFile[]>(d?.files ?? []);
   const [amount, setAmount] = useState(d?.entered_amount != null ? String(d.entered_amount) : "");
   const [vat, setVat] = useState<Vat | null>((fixedVat ?? (d?.vat_mode as Vat | null)) ?? null);
@@ -92,7 +94,8 @@ export function QuoteForm({ v, board, now }: { v: VendorVisitV3; board: VendorQu
     const t = setTimeout(() => { save().then(() => setCalcErr(null), (e) => setCalcErr(errorText(e))); }, 800);
     return () => clearTimeout(t);
   }, [amount, vat]);
-  const calcFresh = calc.amount != null && String(calc.amount) === amount && calc.vat === vat && calc.total != null;
+  // 간이과세는 방식과 상관없이 같은 값이라(앞서 다른 방식으로 저장한 임시본도) 방식은 견주지 않아요
+  const calcFresh = calc.amount != null && String(calc.amount) === amount && (simplified || calc.vat === vat) && calc.total != null;
 
   async function pick(list: File[]) {
     const room = board.files_max - files.length;

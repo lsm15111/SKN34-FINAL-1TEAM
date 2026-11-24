@@ -21,6 +21,8 @@
 .lines span { color: var(--mj-text-sub); min-width: 0; text-wrap: pretty; }
 /* 금액은 한 줄로(폰 360에서 '22만 / 800원'으로 갈리지 않게), 긴 줄 이름 쪽이 줄을 바꿔요 */
 .lines b { flex: none; white-space: nowrap; }
+/* 큰 줄 머리: 줄 금액은 공급가(부가세 별도)라 합계(부가세 포함)와 기준이 달라요 */
+.linesHead { margin: 0 0 2px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); }
 
 /* ───── C3 추천 업체 ───── */
 .reco { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }

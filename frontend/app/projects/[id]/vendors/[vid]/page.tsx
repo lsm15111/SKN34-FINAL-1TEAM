@@ -57,6 +57,10 @@ export default async function VendorDetailPage({ params, searchParams }: {
   // 보여 준 벽지는 API 값(?grade= 또는 공사 벽지). 고른 벽지를 업체가 안 하면 paper_ok false · state paper_unsupported
   const grade: Grade = d.grade ?? est?.grade ?? want ?? (shell.cond?.grade === "economy" ? "economy" : "basic");
   const state = est && est.paper_ok === false ? "paper_unsupported" : d.state ?? (est ? "ok" : "no_estimate");
+  // 두 번 요청했지만 답이 없던 업체(blocked_retry): 서버는 가견적이 있어도 이 상태를 먼저 줘요.
+  // 목록 카드처럼 가견적은 보이고, 까닭을 붙여 담기만 막아요(벽지 바꾸기도 두지 않아요)
+  const blocked = state === "blocked_retry";
+  const priced = state === "ok" || blocked;
   const r = d.rating ?? null;
   const avg = avgText(r);
   const reviewCount = r?.count ?? 0;
@@ -102,7 +106,8 @@ export default async function VendorDetailPage({ params, searchParams }: {
       <AppHeader only="phone" phone={{ title: name, back: listHref, action: <VendorMenu vendorId={vid} name={name} /> }} />
       <Main>
         <PageHead title={name} crumbs={[{ label: "내 공사", href: "/my" }, { label: shell.name, href: base }, { label: "업체 보기", href: listHref }, { label: name }]} />
-        <WithAside aside={<AiPanel screen="vendor" projectId={shell.id} ids={[vid]} context={`${name} 보는 중`} />}>
+        {/* v4 카드 창은 비서가 옆에 있어 v3 AI 칸을 그리지 않아요(숨긴 채 그리면 보이지 않는 대화를 불러요) */}
+        <WithAside aside={v4 ? undefined : <AiPanel screen="vendor" projectId={shell.id} ids={[vid]} context={`${name} 보는 중`} />}>
           <section className={s.group} aria-label={`${name} 요약`}>
             <div className={s.vhead}>
               <Avatar name={name} size="l" warm />
@@ -122,7 +127,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
 
           <section id="est" className={s.group} aria-labelledby="est-t">
             <h2 id="est-t" className="mj-sr">가견적</h2>
-            {state === "ok" && est ? (
+            {priced && est ? (
               <BigFigure label="가견적 · 부가세 포함" value={est.total} caption={["업체 단가 × 믿집 수량", v4 ? null : compareText(est.vs_standard_pct)].filter(Boolean).join(" · ")} />
             ) : (
               <div>
@@ -131,9 +136,10 @@ export default async function VendorDetailPage({ params, searchParams }: {
                 {state === "no_estimate" ? <p className={s.help}>업체가 단가를 확인하면 보여요</p> : null}
               </div>
             )}
-            {state === "no_estimate" ? null : <GradeToggle grade={grade} diff={state === "ok" ? d.grade_diff ?? null : null} />}
+            {blocked ? <p className={s.help}>두 번 요청했지만 답이 없던 업체라 이 공사에는 담을 수 없어요</p> : null}
+            {state === "no_estimate" || blocked ? null : <GradeToggle grade={grade} diff={state === "ok" ? d.grade_diff ?? null : null} />}
           </section>
-          {state === "ok" && est && lines ? (
+          {priced && est && lines ? (
             <section className={s.group} aria-label="가견적 줄">
               {lines.outside.length ? (
                 <>

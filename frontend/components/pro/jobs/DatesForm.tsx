@@ -31,7 +31,9 @@ export function DatesForm({ job, now, change = false }: { job: JobV3; now: strin
   const toast = useToast();
   const v = job.visit;
   const need = job.quote.days ?? job.need.days;
-  const [days, setDays] = useState<string[]>(change ? job.proposal?.days ?? job.work_days : job.proposal && job.dates_state !== "requested" ? job.proposal.days : []);
+  const today = dateSeoul(now);
+  // 처음 고른 날에서 오늘 · 지난 날은 빼요: 서버는 내일부터의 날만 받고, 달력은 지난 날을 꺼 둬서 고른 채로는 뺄 수 없어요
+  const [days, setDays] = useState<string[]>(() => (change ? job.proposal?.days ?? job.work_days : job.proposal && job.dates_state !== "requested" ? job.proposal.days : []).filter((d) => d > today));
   /** 업체가 스스로 바꿀 때만 이유가 필요해요(고객 요청에 답하는 바꾸기는 없어도 돼요) */
   const ask = change && !job.request;
   const [reason, setReason] = useState(job.proposal?.reason ?? "");
@@ -39,7 +41,6 @@ export function DatesForm({ job, now, change = false }: { job: JobV3; now: strin
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [idem] = useState(newKey);
-  const today = dateSeoul(now);
 
   const marks: Record<string, DayMark[]> = {};
   const notes: Record<string, DayNote> = {};
