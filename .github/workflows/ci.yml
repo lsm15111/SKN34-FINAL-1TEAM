@@ -13,6 +13,15 @@ on:
       - main
       - dev
       - integration
+      # 각자 fork에 작업 브랜치를 push해도 PR 전에 같은 검사를 돌린다(팀 저장소에는 작업 브랜치가 없다)
+      - "feat-*"
+      - "fix-*"
+      - "docs-*"
+      - "test-*"
+      - "chore-*"
+      - "refactor-*"
+      - "prompt-*"
+      - "eval-*"
   pull_request:
     # base 변경 후 경로 정책과 새 비교 대상도 다시 검사한다.
     types: [opened, synchronize, reopened, edited]
