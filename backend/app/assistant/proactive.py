@@ -129,6 +129,9 @@ TRIGGERS: dict[str, Trigger] = {
                  "{vendor_i_ga} 견적서를 {version}판으로 다시 올렸어요({change}). 견줘 볼까요?"),
                 ("feed", ("version",), "{vendor_i_ga} 견적서를 {version}판으로 다시 올렸어요. 견줘 볼까요?"),
                 ("feed", ("quoted",), "{quoted}에서 실측 견적서가 왔어요. 받은 견적서를 견줘 볼까요?"),
+                # 아직 견적서를 기다리는 곳이 있으면 확정이 아니라 기다렸다 견주기(QA r9 c1 68893362)
+                ("feed", ("waiting",),
+                 "{vendor_i_ga} 실측 견적서를 보냈어요. {waiting} 견적서도 오면 같이 견줘 볼까요?"),
             ),
         ),
         Trigger(
@@ -258,10 +261,20 @@ STEPS: dict[str, tuple[str, str]] = {
 }
 
 
+# 견적서가 일부만 왔을 때(사실 waiting: 아직 견적서를 기다리는 업체): 확정을 권하지 않아요(QA r9 c1: 첫 견적서만
+# 왔는데 '업체를 확정해 볼까요?')
+QUOTE_WAIT = (
+    "실측 견적서 일부 받음 · 다른 업체 견적서 기다리는 중",
+    "받은 견적서 살펴보며 다른 업체 견적서 기다리기",
+)
+
+
 def write_facts(f: Facts) -> dict:
     """문장(write)에 보낼 사실. 지금 단계 · 남은 할 일은 그것을 읽는 판(nudge_write_v3부터)에만 더한다(v2 판 그대로)."""
     facts = f.public()
     step = STEPS.get(f.trigger) if f.surface == "customer" else None
+    if step is not None and f.trigger == "quote_sent" and f.names.get("waiting"):
+        step = QUOTE_WAIT
     if step is not None and prompts.version("nudge_write") != "nudge_write_v2":
         facts["step"], facts["todo"] = step
     return facts
@@ -394,8 +407,8 @@ CARD_WORDS: dict[str, tuple[str, ...]] = {"work_eve": ("준비",), "prep_week": 
 
 def kept_facts(text: str, f: Facts) -> bool:
     """AI 글이 이 줄의 사실을 담았는지(빠뜨리면 틀을 쓴다): 견적서가 여러 곳이면 모든 업체 이름, 다시 올린 견적서는
-    다시 올렸다는 말(판), 추가 금액은 금액, 업체가 올린 날짜는 시작일 · 고객 요청의 답이면 '요청', 공사 전날 · 1주 전은
-    붙은 카드 말."""
+    다시 올렸다는 말(판), 다른 곳 견적서를 기다리면 확정 권하지 않기, 추가 금액은 금액, 업체가 올린 날짜는 시작일 ·
+    고객 요청의 답이면 '요청', 공사 전날 · 1주 전은 붙은 카드 말."""
     n = f.names
     if n.get("quoted") and not all(x in text for x in n["quoted"].split(" · ")):
         return False
@@ -411,6 +424,9 @@ def kept_facts(text: str, f: Facts) -> bool:
         and n.get("version")
         and not ("다시" in text or f"{n['version']}판" in text)
     ):
+        return False
+    # 다른 업체 견적서를 기다리는 중이면 확정을 권하지 않아요(QA r9 c1)
+    if f.trigger == "quote_sent" and n.get("waiting") and "확정" in text:
         return False
     words = CARD_WORDS.get(f.trigger)
     return not words or any(w in text for w in words)
@@ -553,6 +569,9 @@ async def _visit_ctx(
         quoted = await _quoted(s, v)
         if len(quoted) > 1:
             c.names["quoted"] = " · ".join(quoted)
+        # 아직 견적서를 기다리는 곳(QA r9 c1: 첫 견적서만 왔는데 '업체를 확정해 볼까요?')
+        if waiting := await _waiting(s, v):
+            c.names["waiting"] = " · ".join(waiting)
         # 유효기간(문장 사실 · 기한이 하루 안이면 쓰는 틀): '오늘' · '내일' · '12월 3일(목)'
         if until:
             c.names["until"] = (
@@ -598,6 +617,27 @@ async def _quoted(s: AsyncSession, v) -> list[str]:
         .order_by(first)
     )
     return list(dict.fromkeys(name for name, _ in rows if name))
+
+
+# 견적서를 아직 안 낸 살아 있는 실측 요청(요청함 · 기간 답 · 고름 · 다른 날 제안 · 실측 정해짐 · 실측 받음)
+QUOTE_PENDING = ("requested", "offered", "picked", "proposed", "booked", "visited")
+
+
+async def _waiting(s: AsyncSession, v) -> list[str]:
+    """같은 공사 · 공정에서 아직 실측 견적서를 기다리는 업체 이름(먼저 요청한 곳부터). 읽기만 한다."""
+    from app.visit.models import Visit
+
+    rows = await s.scalars(
+        select(Visit.vendor_name)
+        .where(
+            Visit.project_id == v.project_id,
+            Visit.trade == v.trade,
+            Visit.id != v.id,
+            Visit.status.in_(QUOTE_PENDING),
+        )
+        .order_by(Visit.created_at)
+    )
+    return list(dict.fromkeys(n for n in rows if n))
 
 
 HALF_KO = {"am": "오전", "pm": "오후"}

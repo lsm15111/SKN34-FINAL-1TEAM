@@ -127,11 +127,12 @@ def test_card_words_with_a_card_or_an_offer_stay(api, script):
     ev = ok(ask(api, pid, "방은 세 개예요"))
     text = tokens(ev)
     assert text.index("카드를 만들어 드릴게요") < text.index("눌러 주세요")  # 순서 그대로
-    # 조건이 붙은 제안과 열린 카드를 누르라는 말은 그대로
+    # 조건이 붙은 제안과 열린 카드를 누르라는 말은 그대로(열린 카드 단추가 하나면 그 이름을 넣어요, QA r9)
     script([{"text": "면적 기준을 알려 주시면 카드를 만들어 드릴게요. 위 카드를 눌러 주세요."}])
     ev = ok(ask(api, pid, "면적은 잘 모르겠어요"))
     text = tokens(ev)
-    assert "알려 주시면 카드를 만들어 드릴게요" in text and "위 카드를 눌러 주세요" in text
+    assert "알려 주시면 카드를 만들어 드릴게요" in text
+    assert "위 카드의 [맞아요, 저장]을 눌러 주세요" in text
 
 
 @pytest.mark.parametrize(

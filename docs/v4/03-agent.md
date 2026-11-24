@@ -133,7 +133,7 @@
 
 ### SSE
 - 순서: `ack`{turn_id, chat_id, at} → `status`{text, task?} · `card`{card_id, kind, data, say?} · `action`(ActionOut)(여러 번) → `token`{text}(여러 번) → `done`{rev, mode, cards, actions, stopped, chips, suggest}
-- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 열린 승인 카드가 있으면(종류와 상관없이, 누르기만 남음) 단계 제안은 빼요(QA r2 c5 · r6 c2). 같은 단계 제안은 최근 8턴에 3번 보였으면 쉬어요(`STEP_WINDOW` · `STEP_REPEAT`, 보인 제안은 턴 흔적 `trace.suggest`). 같은 client_key 되돌림에서는 비워요.
+- `done.suggest`: 다음에 물을 말 0~3개(`SuggestOut{id, text, why, say, nudge_id?}` 목록). 코드가 골라요: 열린 먼저 말 걸기 줄 → 지금 단계 다음 일(업체는 오늘 할 일). 이번 말 · 칩과 같은 말은 빼요. 열린 승인 카드가 있으면(종류와 상관없이, 누르기만 남음) 단계 제안은 빼요(QA r2 c5 · r6 c2). 같은 단계 제안은 최근 8턴에 3번 보였으면 쉬어요(`STEP_WINDOW` · `STEP_REPEAT`, 보인 제안은 턴 흔적 `trace.suggest`). 다만 범위 밖 말 턴(도배 · 목공 없는 다른 공정 · 잡담 · 지시문, `out_of_scope`)은 쉬지 않아요(지금 단계로 돌아올 누를 곳, QA r9 c2). 같은 client_key 되돌림에서는 비워요.
   - 화면 메모: 목업(`lib/api/assistant.ts`)은 `suggest`를 하나(SuggestOut)로 받아요. 백엔드는 목록이라 화면 담당이 맞춰야 해요.
 - 실패하면 `done` 대신 `error`{code, message}를 보내요.
 - 모든 data에 `seq`(턴 안에서 늘기만 함)와 `id: {turn_id}:{seq}`를 붙여요. 화면은 이미 받은 seq 이하를 버려요.
@@ -345,7 +345,7 @@
 ### 구현 메모(2026-11-21, 카드 갈래)
 - 제안 도구 모델 값 `state`: new(새 행) · same(열린 같은 행) · rejected(거절한 같은 제안, 승인 카드 없음) · closed. 승인 카드(action)는 new · same일 때만 보내요.
 - 수락 승인 카드가 열려 있으면 공사 날짜 카드(schedule dates)는 수락 단추(proposal_ref · proposal_kind)를 비우고 `action_id`를 달아요. 먼저 말 걸기 반나절 카드는 승인 카드의 반나절을 `chosen`으로 표시해요.
-- 말과 행동 맞추기(`runtime.SentenceGate` · `policy.card_claim`): '카드를 만들었어요 · 만들어 드릴게요 · 눌러 주세요'는 이번 턴에 만든 승인 카드 · 열린 승인 카드가 있을 때만 보내요. 눌러 달라는 말이 단추 이름(수락 · 실측 요청 …)을 대면 이번 턴에 보인 화면 카드 단추도 맞아요. 아직 모르면 붙잡아 두고, 턴 끝까지 없으면 첫 문장을 정직한 한 줄로 바꾸고 나머지는 빼요.
+- 말과 행동 맞추기(`runtime.SentenceGate` · `policy.card_claim`): '카드를 만들었어요 · 만들어 드릴게요 · 눌러 주세요'는 이번 턴에 만든 승인 카드 · 열린 승인 카드가 있을 때만 보내요. 눌러 달라는 말이 단추 이름(수락 · 실측 요청 …)을 대면 이번 턴에 보인 화면 카드 단추도 맞아요. 아직 모르면 붙잡아 두고, 턴 끝까지 없으면 첫 문장을 정직한 한 줄로 바꾸고 나머지는 빼요. 누르는 것이 화면 단추 이름([리뷰 쓰기] · [공사 끝 알리기] · [날짜 바꾸기] …)이면 '카드'가 같이 있어도 승인 카드 말이 아니에요(QA r9 c1). 단추 이름 없이 카드를 누르라는 맞는 말에는 그 승인 카드 단추 이름이 하나로 정해질 때 넣어요(턴 사실 '승인 기다리는 카드' 끝에도 [단추]).
 - `propose_home_info`는 평형(`pyeong`, 계산 엔진이 공급 ㎡로 바꿈)을 받아요. ㎡만 오고 기준(area_basis)이 없으면 `need_basis` 오류예요.
 - 날짜 바꾸기 요청(행동 `date_change`, 0044): 대상은 확정(deal), target_ver는 '공사 날짜 상태:기준 시작일', payload는 {deal_id, wish_dates 1~3, reason(move · family · other_work · other), proposal_id}. 실행하면 그 확정의 '공사 전날' · 그 날짜 제안의 '공사 날짜 왔어요' 줄을 닫아요(SETTLES). 무료 모드도 '공사 미루고 싶어요'처럼 바라는 말이면 이 승인 카드를 만들어요(묻는 말은 안내만, 계약 4장 9의 예외).
 - 턴 사실에 '최근 처리한 카드'(사람이 처리한 제안 4개까지, '제목(승인해 실행됨 · 거절함 · 승인했지만 실행 못 함)')를 넣어요. 이미 처리된 카드를 '안 만들어졌다'고 고쳐 말하지 않게 해요.
