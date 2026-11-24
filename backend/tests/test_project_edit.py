@@ -1,8 +1,8 @@
 """요청 번호 · 집 정보 고치기 · 실측 요청 뒤 잠금."""
 
 import re
-from datetime import date
 
+from app.shared.clock import today_seoul
 from tests.conftest import query
 from tests.helpers import signup, upload, use, vendor_signup
 from tests.test_project import body
@@ -12,7 +12,7 @@ def test_code_is_given_and_unique(api):
     signup(api)
     a = api.post("/projects", json=body()).json()
     b = api.post("/projects", json=body()).json()
-    assert re.fullmatch(rf"MJ-{date.today():%y%m}-\d{{4}}", a["code"])
+    assert re.fullmatch(rf"MJ-{today_seoul():%y%m}-\d{{4}}", a["code"])
     assert a["code"] != b["code"] and a["rev"] == 1 and a["locked"] is False
     assert {x["code"] for x in api.get("/projects").json()} == {a["code"], b["code"]}
 

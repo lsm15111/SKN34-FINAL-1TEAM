@@ -2,14 +2,14 @@
 
 import asyncio
 import uuid
-from datetime import date, timedelta
+from datetime import timedelta
 
 import asyncpg
 import pytest
 
 from app.config import settings
 from app.db import SessionLocal
-from app.shared.clock import now_utc
+from app.shared.clock import now_utc, today_seoul
 from app.shared.errors import AppError
 from app.vendor import repository as repo
 from app.vendor import service
@@ -219,7 +219,7 @@ def test_portfolio_add_edit_and_remove(api):
     assert again.status_code == 409 and again.json()["error"]["code"] == "file_used"
     lic = query("select license_file_id from vendors")[0]["license_file_id"]
     assert portfolio(api, lic).status_code == 422  # 시공 사진이 아닌 파일
-    future = (date.today() + timedelta(days=40)).isoformat()
+    future = (today_seoul() + timedelta(days=40)).isoformat()
     assert portfolio(api, b, taken_on=future).status_code == 422
     assert portfolio(api, b, pyeong=0).status_code == 422
 
