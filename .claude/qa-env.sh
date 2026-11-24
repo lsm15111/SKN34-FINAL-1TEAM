@@ -25,7 +25,7 @@ if [ "$QA_PROFILE" = qa ]; then
     OPENAI_API_KEY="$(sed -n 's/^OPENAI_API_KEY=//p' /c/Workspace/SKN34/SKN34-FINAL-1TEAM/.env | tail -1 | tr -d '\r"'"'"'')"
     export OPENAI_API_KEY LLM_PROVIDER=openai
   fi
-  export LLM_LIVE=true ASSISTANT_PROMPT_SET="${QA_PROMPT_SET:-v4}"  # 지시문 판(QA 3차부터 v4, QA_PROMPT_SET=v3으로 되돌림)
+  export LLM_LIVE=true ASSISTANT_PROMPT_SET="${QA_PROMPT_SET:-v5}"  # 지시문 판(QA 11차 뒤 v5 기본, QA_PROMPT_SET=v4로 되돌림)
   # 새 계정 몫: QA_*를 하나라도 넘기면 켜요(안 넘긴 값은 운영 기본값), 아니면 꺼요
   if [ -n "${QA_NEW_USER_DAYS:-}${QA_CAP_NEW_USER_DAY_USD:-}${QA_CAP_NEW_POOL_DAY_USD:-}" ]; then
     if [ -n "${QA_NEW_USER_DAYS:-}" ]; then export LLM_NEW_USER_DAYS="$QA_NEW_USER_DAYS"; fi
