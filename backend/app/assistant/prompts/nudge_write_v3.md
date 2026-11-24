@@ -25,6 +25,7 @@
 - vendor · trade · area · out 같은 이름과 문장은 그대로 써도 돼. hours_left는 급한 정도만 보고 글에 옮기지 마. 날짜가 사실에 있으면 그 날짜로 말해.
 - 사실에 있으면 꼭 넣는 것(빠지면 코드가 정해 둔 틀로 바꿔).
   - quoted: 실측 견적서를 보낸 업체가 여럿이야. 한 곳만 말하지 말고 quoted의 이름을 모두 써.
+  - waiting: 아직 실측 견적서를 기다리는 업체야. 업체 확정을 권하지 말고, 받은 견적서를 보면서 waiting 업체 견적서도 오면 같이 견줘 보자고 써.
   - won: 이 추가 금액 합계(원, 부가세 포함)야. 그 숫자에 '원'을 붙여 그대로 써. 같은 업체 추가 금액이 여럿이어도 서로 구분돼.
   - start: 업체가 올린 공사 시작일이야. 그 날짜를 써.
   - asked: 고객이 요청한 것(다른 날짜 · 날짜 바꾸기)이야. 업체가 올린 날짜가 그 요청의 답이라고 '요청하신 …'처럼 말해.
@@ -45,6 +46,7 @@
 말결만 보여 주는 예시야. 그대로 옮기지 말고 받은 사실로 새로 써.
 - 사실: trigger visit_offered · channel feed · vendor 솔빛도배 · action_ready true · todo "실측 날짜 고르기" → 솔빛도배가 실측 가능 기간을 보냈어요! 골라 둔 실측 일정을 확인하고 눌러 주세요.
 - 사실: trigger quote_sent · channel feed · vendor 솔빛도배 → 솔빛도배 견적서가 왔어요! 받은 견적서끼리 견줘 볼까요?
+- 사실: trigger quote_sent · channel feed · vendor 솔빛도배 · waiting "바른벽지" → 솔빛도배 견적서가 왔어요! 바른벽지 견적서도 오면 같이 견줘 볼까요?
 - 사실: trigger quote_sent · channel feed · vendor 바른벽지 · quoted "솔빛도배 · 바른벽지" → 솔빛도배 · 바른벽지 견적서가 모두 왔어요! 두 곳을 견줘 볼까요?
 - 사실: trigger dates_proposed · channel notify · vendor 솔빛도배 · action_ready true · step "업체 확정 끝 · 공사 날짜 수락 전" · todo "올라온 공사 날짜 확인하고 수락하기" → 솔빛도배가 공사 날짜를 올렸어요. 날짜를 확인하고 수락 카드를 눌러 주세요.
 - 사실: trigger dates_proposed · channel feed · vendor 솔빛도배 · start "3월 2일(화)" · asked "날짜 바꾸기" · action_ready true → 요청하신 날짜 바꾸기에 솔빛도배가 3월 2일(화)부터로 답했어요. 확인하고 수락해 주세요.

@@ -9,8 +9,8 @@
   만들어 뒀다(made) · 카드를 눌러 달라(press)고 하면 runtime.SentenceGate가 그 말이 확실히 틀릴 때만 바꾼다: 만들었다는
   말은 이 턴에 만든 카드가 하나도 없을 때, 눌러 달라는 말은 누를 것(이 턴에 만든 · 열린 승인 카드, 이 턴에 보인 화면
   카드 단추)이 하나도 없을 때. 첫 문장은 정직한 한 줄(honest)로, 나머지는 뺀다. 앞으로 하겠다는 말('만들어 드릴게요'
-  · 조건 · 물음 · 제안 · 할 수 있는 일 소개)과 지난 일('눌러 주셨어요') · 채팅 · 링크를 누르라는 말, 앞날 · 조건에 맞춰
-  누르라는 말('견적서가 오면 … 눌러 주세요', later)은 걸지 않는다.
+  · 조건 · 물음 · 제안 · 할 수 있는 일 소개)과 지난 일('눌러 주셨어요') · 채팅 · 링크 · 화면 단추([리뷰 쓰기] 등)를 누르라는
+  말, 앞날 · 조건에 맞춰 누르라는 말('견적서가 오면 … 눌러 주세요', later)은 걸지 않는다.
 - 말 길이 · 되풀이(TALK_*): 말투 · 길이는 모델에 맡기고 코드는 아주 긴 답만 줄인다. 보통 턴은 TALK_LEAD 문장
   (TALK_CHARS 자), 대화 첫 답 · 업체 소개 · 견적 비교 카드(LONG_CARDS)를 보인 턴은 LONG_LEAD 문장(LONG_CHARS 자)까지
   보낸다. 넘친 문장은 마지막 묻는 말(asks) 하나만 턴 끝에 보낸다(이미 물었으면 없음). 앞으로 가리키는 문장(pointer)과
@@ -152,9 +152,14 @@ _PRESS = re.compile(
 _NOT_CARD = re.compile(r"채팅\s*열기|링크|사진|파일|지도")
 # 화면 단추 길 안내('공사 한 건 화면의 [공사 끝 알리기]' · '[리뷰 쓰기]' · '[날짜 바꾸기]')도 승인 카드 말이 아니다. '카드'
 # 낱말이 같이 있으면 카드 말로 본다(QA r7 c4 T20 · V22: 화면 길 안내를 '지금 누를 승인 카드는 없어요'로 바꿈)
-_SCREEN = re.compile(
-    r"화면|메뉴|작업함|\[(?:리뷰\s*쓰기|공사\s*끝\s*알리기|추가\s*금액\s*올리기|날짜\s*바꾸기)\]"
+_SCREEN_BUTTON = (
+    r"\[(?:리뷰\s*쓰기|공사\s*끝\s*알리기|추가\s*금액\s*올리기|날짜\s*바꾸기|다른\s*날\s*제안|"
+    r"업체\s*기간에서\s*고르기)\]"
 )
+_SCREEN = re.compile(rf"화면|메뉴|작업함|{_SCREEN_BUTTON}")
+# 누르는 것이 화면 단추 이름이면('점검표 카드의 [리뷰 쓰기]를 눌러 주세요') '카드'가 같이 있어도 승인 카드 말이 아니다.
+# 승인 카드 단추가 아니라 화면 · 링크 단추다(QA r9 c1 T19: 턴 사실 '점검표 카드의 [리뷰 쓰기]'를 옮긴 말이 바뀜)
+_SCREEN_PRESS = re.compile(rf"{_SCREEN_BUTTON}\s*(?:단추|버튼)?\s*(?:을|를)?\s*$")
 # 앞날 · 조건에 맞춰 누르라는 말('견적서가 오면 … 눌러 주세요' · '실측이 끝나고 …' · '나중에' · '그때')은 지금 누를 카드가
 # 없어도 틀린 말이 아니다(고침 4차 G, QA r4 s4 8턴: 정직한 한 줄이 끼어 다음 문장 '그때'가 가리킬 말이 사라짐). 누르라는
 # 말 앞의 조건 · 때 말만 본다('누르시면'은 누르라는 말 자체다)
@@ -236,7 +241,8 @@ def buttons_of(kind: str, data: dict) -> frozenset[str]:
 def card_claim(text: str) -> tuple[str, set[str]] | None:
     """승인 카드를 두고 한 말인지: ("made" · "press", 말이 가리키는 행동 종류) 또는 None. 이 턴에 만들었다 · 만들어
     뒀다(made)와 카드 · 단추를 지금 눌러 달라(press)는 말만 본다(고정 선 5: 하지 않은 일을 한 것처럼, 없는 카드를 있는
-    것처럼). 채팅 열기 · 링크 · 사진을 누르라는 말, 앞날 · 조건에 맞춰 누르라는 말(later)은 승인 카드 말이 아니다."""
+    것처럼). 채팅 열기 · 링크 · 사진을 누르라는 말, 화면 단추 이름을 누르라는 말(_SCREEN_PRESS), 앞날 · 조건에 맞춰
+    누르라는 말(later)은 승인 카드 말이 아니다."""
     t = (text or "").strip()
     kinds = {k for k, rx in KIND_WORDS if rx.search(t)}
     if _MADE.search(t) and _CARD.search(t):
@@ -247,10 +253,41 @@ def card_claim(text: str) -> tuple[str, set[str]] | None:
         and (_CARD.search(t) or _LABEL.search(t) or kinds)
         and not _NOT_CARD.search(t)
         and not (_SCREEN.search(t) and "카드" not in t)
+        and not _SCREEN_PRESS.search(t[: press.start()])
         and not later(t[: press.start()])
     ):
         return "press", kinds
     return None
+
+
+# 누를 것이 '카드를'(꾸밈말 '모두' · '각각' 같은 것이 붙어도): '카드의 [단추]를'로 바꿔요
+_CARD_OBJ = re.compile(r"카드를(\s+(?:모두|각각|다|하나씩|차례로))?\s*$")
+# 누르라는 말 바로 앞에 누를 것을 이미 말함('수락을 눌러 주세요')
+_OBJ_END = re.compile(r"[을를]\s*$")
+
+
+def _obj(label: str) -> str:
+    """단추 이름 + 목적격 조사('[맞아요, 저장]을' · '[이 시간으로 고르기]를')."""
+    last = label.strip()[-1:]
+    jong = "가" <= last <= "힣" and (ord(last) - 0xAC00) % 28 != 0
+    return f"[{label}]{'을' if jong else '를'}"
+
+
+def with_button(text: str, label: str) -> str:
+    """단추 이름 없이 카드를 누르라는 말에 승인 카드 단추 이름을 넣은 글(QA r9 c1 · c2 · c3 그대로: '카드를 확인하고
+    누르시면'): '…카드를 눌러 주세요' → '…카드의 [이 시간으로 고르기]를 눌러 주세요', '카드를 확인하고 누르시면' →
+    '카드를 확인하고 [2곳에 요청 보내기]를 누르시면'. 단추 이름이 이미 있거나 누를 것을 말했거나('카드에서 수락을 눌러
+    주세요') 누르라는 말이 없으면 그대로."""
+    m = _PRESS.search(text or "")
+    if m is None or _LABEL.search(text):
+        return text
+    head, tail = text[: m.start()], text[m.start() :]
+    obj = _obj(label)
+    if card := _CARD_OBJ.search(head):
+        return f"{head[: card.start()]}카드의 {obj}{card.group(1) or ''} {tail}"
+    if _OBJ_END.search(head):
+        return text
+    return (f"{head.rstrip()} {obj} " if head.strip() else f"{obj} ") + tail
 
 
 def claim_ok(
@@ -513,6 +550,34 @@ def now_state(text: str) -> bool:
     return bool(NOW_STATE.search((text or "").strip()))
 
 
+# 지금 단계 문장에서 단계를 가르지 않는 낱말(앞 두 글자): 때 · 끝말 · 작은 말
+_STEP_SKIP = frozenset(
+    {"지금", "이제", "아직", "먼저", "차례", "중이", "중인", "예정", "있어", "있습", "돼요", "됩니",
+     "해요", "보세", "주세", "하시", "하면", "되면", "수", "중", "것", "때", "더", "곧", "꼭", "잘"}
+)  # fmt: skip
+STEP_SHARE = 3  # 같은 단계로 볼 때 같아야 하는 낱말 수
+
+
+def _step_words(text: str) -> frozenset[str]:
+    """지금 단계 문장의 낱말(조사를 떼고 앞 두 글자, '요청할' · '요청해' → '요청'). 숫자 낱말 · 작은 말은 뺀다."""
+    out = set()
+    for w in _WORD.findall(text or ""):
+        k = _stem(w)[:2]
+        if k and k not in _STEP_SKIP and not _DIGIT.search(k):
+            out.add(k)
+    return frozenset(out)
+
+
+def same_step(a: str, b: str, names: Collection[str] = ()) -> bool:
+    """두 지금 단계 문장이 같은 단계를 말하는지(업체 이름이 없어도, QA r9 c2 T5~T7 · T14 · T15: 말만 바꾼 '업체를 골라
+    실측을 요청할 차례' · '두 업체의 기간 답을 기다리시면 돼요'가 턴마다): 같은 낱말이 STEP_SHARE개 이상이고 a에만
+    있는 낱말이 하나 이하, 새 숫자 · 오전 오후 · 업체 이름이 없을 때."""
+    x, y = _step_words(a), _step_words(b)
+    if len(x & y) < STEP_SHARE or len(x - y) > 1:
+        return False
+    return all(p <= q for p, q in zip(targets(a, names), targets(b, names), strict=True))
+
+
 def same_line(a: str, b: str) -> bool:
     """두 문장이 완전히 같은지(띄움 · 문장부호만 다름). 한 글자라도 다르면 다른 말이다('포함' ≠ '불포함')."""
     x, y = _PLAIN.sub("", a or ""), _PLAIN.sub("", b or "")
@@ -535,6 +600,23 @@ def near_same(a: str, b: str) -> bool:
     return False
 
 
+# 화면 말: 줄인 '표준견적'은 '표준견적서'로 써요(QA r7 · r8 · r9 그대로 '실크 도배 표준견적은'). 받침이 없어지니 조사도
+# 바꿔요(은 → 는 · 이 → 가 · 을 → 를 · 과 → 와 · 으로 → 로 · 이에요 → 예요 …)
+_STD_WORD = re.compile(
+    r"표준\s?견적(?!서)"
+    r"(이에요|이었|이죠|이고|이라|이며|이면|이지만|이나|이랑|으로|은|을|과|이(?=[\s,.!?~]|$))?"
+)
+_STD_JOSA = {
+    "이에요": "예요", "이었": "였", "이죠": "죠", "이고": "고", "이라": "라", "이며": "며", "이면": "면",
+    "이지만": "지만", "이나": "나", "이랑": "랑", "으로": "로", "은": "는", "을": "를", "과": "와", "이": "가",
+}  # fmt: skip
+
+
+def term_fix(text: str) -> str:
+    """화면 말로 바꾼 글('표준견적은' → '표준견적서는')."""
+    return _STD_WORD.sub(lambda m: "표준견적서" + _STD_JOSA.get(m.group(1) or "", ""), text or "")
+
+
 def strip_lead(text: str) -> str:
     """첫머리 접속 말('다만 · 대신 · 그래서 …')을 뗀 글(남는 글이 없으면 그대로)."""
     t = LEAD_LINK.sub("", text or "", count=1)
@@ -555,6 +637,15 @@ INNER_FAIL = re.compile(
 )
 
 
+# 가림 이야기(고객 말의 '(번호 가림)' 자리를 두고 '말씀하신 금액이 가려져 확인되지 않아요'): 믿집이 글을 가린 안쪽
+# 사정이라 내지 않는다(QA r9 c2 T22, 0이 아주 많은 금액이 번호로 가려짐). 얼룩 · 바닥을 가리는 말은 아니다
+MASK_TALK = re.compile(
+    r"(?:번호|숫자|금액|글자|정보)\S{0,2}\s*가려(?:져|서|진|졌|지)"
+    r"|가려진\s*(?:번호|숫자|금액|글자|정보|부분)"
+    r"|가림\s*(?:표시|처리)|\([^()\n]{1,8}\s*가림\)"
+)
+
+
 def inside(text: str) -> str | None:
     """고객 답에 나오면 안 되는 안쪽 말이 든 문장인지: 까닭('이름표' · '안쪽 이름' · '안쪽 말') 또는 None."""
     t = text or ""
@@ -562,7 +653,7 @@ def inside(text: str) -> str | None:
         return "이름표"
     if SNAKE.search(t):
         return "안쪽 이름"
-    if INNER_FAIL.search(t):
+    if INNER_FAIL.search(t) or MASK_TALK.search(t):
         return "안쪽 말"
     return None
 

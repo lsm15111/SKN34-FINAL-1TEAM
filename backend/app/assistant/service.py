@@ -5,7 +5,8 @@
   turn_running) → 최근 24줄 · 열린 제안 · 턴 사실(업체마다 상태 · 채팅 · 실제 단계) → commit. 세션을 닫은 뒤
   LLM을 부른다.
 - finish_turn(한 트랜잭션): rev 올리기(조건부) → 가린 질문 · 검사한 답 두 줄 → (기억할 말이면 기억 일) →
-  턴 done → commit → 다음에 물을 말(suggest_for) → done 이벤트.
+  턴 done → commit → 다음에 물을 말(suggest_for) → done 이벤트. 실패 · 멈춤으로 저장하지 못한 턴은 고객 말 한 줄만
+  남긴다(keep_said).
 - SSE: 모든 data에 seq, 머리에 id {turn_id}:{seq}. action은 행 commit 뒤, done은 대화 저장 commit 뒤.
   스트림을 열기 전 오류(404 · 409 · 429)는 같은 오류 모양이다. 화면이 끊어도 턴은 끝까지 돌려 저장한다.
 - 먼저 말 걸기(proactive): 대화 기록 첫 쪽 · 오늘 · 다음에 물을 말에 보낸 줄을 넣고, 열기 · 닫기는 nudge_act.
@@ -167,22 +168,30 @@ def card_name(a, label: str | None = None) -> str:
     return f"{head}{title}{tail}"
 
 
+def button_of(a, name: str) -> str:
+    """열린 승인 카드의 단추 이름(턴 사실 '승인 기다리는 카드' 끝 ' [단추]'): 비서가 '카드를 눌러 주세요' 대신 단추
+    이름을 말하게 해요(QA r9 c1 · c2 · c3 그대로). 카드 이름에 이미 있으면 붙이지 않아요."""
+    label = str((a.summary or {}).get("approve_label") or "").strip()
+    return f" [{label}]" if label and label not in name else ""
+
+
 async def opened_name(s, p, a) -> str:
-    """승인 기다리는 카드 한 장의 턴 사실 이름. 표준견적서를 바꾸는 집 정보 카드는 바꾸는 칸 · 카드 차액 · 계산 엔진
-    미리 보기(기준 · 크게 바뀌는 줄)를 괄호로 붙여요(QA r7 c2 T10 · T11: 다음 턴에 카드 차액을 '확인되지 않아
-    정정할게요'로 뒤집고 까닭을 못 댐). 못 읽으면 이름만(세이브포인트: 턴 행을 넣은 트랜잭션을 지켜요)."""
+    """승인 기다리는 카드 한 장의 턴 사실 이름(끝에 단추 이름). 표준견적서를 바꾸는 집 정보 카드는 바꾸는 칸 · 카드
+    차액 · 계산 엔진 미리 보기(기준 · 크게 바뀌는 줄)를 괄호로 붙여요(QA r7 c2 T10 · T11: 다음 턴에 카드 차액을
+    '확인되지 않아 정정할게요'로 뒤집고 까닭을 못 댐). 못 읽으면 이름만(세이브포인트: 턴 행을 넣은 트랜잭션을 지켜요)."""
     from app.assistant.tools import propose
 
     name = card_name(a)
+    button = button_of(a, name)
     if a.kind != "home_info":
-        return name
+        return name + button
     try:
         async with s.begin_nested():
             more = await propose.open_home_fact(s, p, a)
     except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 이름만
         log.warning("턴 사실 집 정보 카드 미리 보기 실패 (%s)", type(e).__name__)
         more = None
-    return f"{name}({more})" if more else name
+    return (f"{name}({more})" if more else name) + button
 
 
 def _why_not(a) -> str | None:
@@ -829,8 +838,10 @@ async def _vendor_facts(
         lines.append(f"지금 보는 요청: {visit_ref}" + (f"({name})" if name else ""))
     lines += book.lines
     if opened:
+        names = [card_name(a, book.label_of(a)) for a in opened]
         lines.append(
-            "승인 기다리는 카드: " + " / ".join(card_name(a, book.label_of(a)) for a in opened)
+            "승인 기다리는 카드: "
+            + " / ".join(n + button_of(a, n) for a, n in zip(opened, names, strict=True))
         )
     if done := decided_line(decided, book.label_of):
         lines.append(done)
@@ -1063,6 +1074,43 @@ async def fail_turn(ctx: TurnCtx, code: str, res: TurnResult | None = None) -> N
             await s.commit()
     except Exception as e:  # noqa: BLE001 - 실패 기록 실패는 sweep이 stalled로 닫는다
         log.warning("비서 턴 실패 기록 실패 (%s)", type(e).__name__)
+    await keep_said(ctx)
+
+
+async def keep_said(ctx: TurnCtx) -> None:
+    """저장하지 못한 고객 턴(실패 · 멈춤)의 고객 말을 대화 기록에 남겨요(QA r9 c3 새 6: 멈춤으로 닫힌 턴은 고객 말이
+    빠짐). 답 줄은 없어요(실패 말은 그 턴이 대화 기록에 보여요). 시각은 턴 시작이라 실패 말 앞에 놓여요. 공사 행을
+    잠가 새 턴 시작(start_turn)과 줄 세우고, 새 턴이 돌고 있거나 그사이 다른 턴이 저장했으면(rev가 바뀜) 남기지 않아요
+    (새 턴의 저장을 막지 않게). 업체 대화는 같이 잠글 자리가 없어 그대로 둬요."""
+    from sqlalchemy import exists
+
+    from app.project import service as project_service
+
+    if ctx.surface != "customer" or ctx.project_id is None:
+        return
+    try:
+        async with SessionLocal() as s:
+            await project_service.lock(s, ctx.project_id)
+            busy = exists().where(
+                AssistantTurn.chat_id == ctx.chat_id, AssistantTurn.status == "running"
+            )
+            if await s.scalar(select(busy)) or not await chat_repo.bump_rev(
+                s, ctx.user.id, ctx.chat_id, ctx.rev, None
+            ):
+                await s.rollback()
+                return
+            s.add(
+                ChatMessage(
+                    chat_id=ctx.chat_id,
+                    turn=ctx.rev,
+                    role="user",
+                    text=ctx.text,
+                    created_at=ctx.now,
+                )
+            )
+            await s.commit()
+    except Exception as e:  # noqa: BLE001 - 못 남기면 지금처럼 실패 말만(종류 이름만 로그)
+        log.warning("실패한 턴 고객 말 저장 실패 (%s)", type(e).__name__)
 
 
 def _sse(turn_id: uuid.UUID, name: str, seq: int, data: dict) -> str:
@@ -1922,11 +1970,12 @@ async def suggest_for(
                 last, recent = await _recent(s, user.id, project_id)
                 ideas = STEP_IDEAS.get(key) if key else None  # 꺼 둔 단계(visit)는 단계 제안 없음
                 seen = await _shown_steps(s, user.id, project_id) if key and ideas else {}
+                # 범위 밖 말 턴 뒤에는 되풀이로 쉬지 않아요: 지금 단계로 돌아올 누를 곳(QA r9 c2 M2)
                 if (
                     key
                     and ideas
                     and STEP_CARD.get(key) not in last
-                    and seen.get(f"step-{key}", 0) < STEP_REPEAT
+                    and (seen.get(f"step-{key}", 0) < STEP_REPEAT or out_of_scope(said))
                 ):
                     idea, why, say = ideas
                     out.append(SuggestOut(id=f"step-{key}", text=text or idea, why=why, say=say))
@@ -1954,9 +2003,24 @@ async def suggest_for(
 
 
 # 같은 단계 제안(다음에 물을 말)은 최근 STEP_WINDOW턴에 STEP_REPEAT번 보였으면 쉬어요(QA r6 c2: '업체 2곳을 골라
-# 둘까요?'가 21턴 내내). 보인 제안은 턴 흔적(trace.suggest)에 남겨요(note_suggest)
+# 둘까요?'가 21턴 내내). 보인 제안은 턴 흔적(trace.suggest)에 남겨요(note_suggest). 범위 밖 말 턴은 쉬지 않아요(out_of_scope)
 STEP_WINDOW = 8
 STEP_REPEAT = 3
+# 믿집이 견적 · 업체를 다루는 공정: 이 공정 말이 있으면 다른 공정 말이 섞여도 범위 밖 말로 보지 않아요
+OWN_TRADES = frozenset({"dobae", "mokgong"})
+
+
+def out_of_scope(said: str) -> bool:
+    """범위 밖 말인지: 도배 · 목공 없이 다른 공정(바닥 · 욕실 · 전기 …)만 말하거나, 공사와 상관없는 부탁 · 잡담 ·
+    지시문 · 영어 답 부탁(free.guard_of). 이 턴 뒤에는 단계 제안이 되풀이로 쉬지 않아요(QA r9 c2 M2: 바닥 · 욕실 ·
+    전기 턴이 지금 단계로 돌아오지 않고 전기 턴은 누를 곳도 없었어요)."""
+    from app.assistant import free
+
+    t = said or ""
+    trades = set(free.trades_in(t))
+    if trades and not trades & OWN_TRADES:
+        return True
+    return free.guard_of(t, "customer") in ("off", "secret", "english")
 
 
 async def _shown_steps(s, user_id: uuid.UUID, project_id: uuid.UUID) -> dict[str, int]:
