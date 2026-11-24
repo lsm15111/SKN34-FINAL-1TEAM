@@ -1,7 +1,7 @@
 """v4 도배 전 앞 공사 점검: 모은 조건 prework.<공정> 칸 · 비서 행동 종류 prework
 
-Revision ID: 0059_v4_prework
-Revises: 0058_v4_audit_agent
+Revision ID: 0060_v4_prework
+Revises: 0059_v4_budget
 Create Date: 2026-11-24
 
 - 모은 조건(project_conditions)의 prework.<공정>은 목공 · 전기 · 필름 · 바닥만, 값은 단추 값(done · todo · none)만
@@ -14,8 +14,8 @@ from collections.abc import Sequence
 
 from alembic import op
 
-revision: str = "0059_v4_prework"
-down_revision: str | Sequence[str] | None = "0058_v4_audit_agent"
+revision: str = "0060_v4_prework"
+down_revision: str | Sequence[str] | None = "0059_v4_budget"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -26,12 +26,12 @@ PREWORK = (
 OLD_KINDS = (
     "kind in ('home_info', 'visit_request', 'visit_slot', 'vendor_confirm', 'dates_accept',"
     " 'delay_accept', 'date_change', 'window_answer', 'decline', 'dates', 'extra_answer',"
-    " 'work_check', 'visit_again', 'visit_cancel')"
+    " 'work_check', 'visit_again', 'visit_cancel', 'budget')"
 )
 NEW_KINDS = (
     "kind in ('home_info', 'visit_request', 'visit_slot', 'vendor_confirm', 'dates_accept',"
     " 'delay_accept', 'date_change', 'window_answer', 'decline', 'dates', 'extra_answer',"
-    " 'work_check', 'visit_again', 'visit_cancel', 'prework')"
+    " 'work_check', 'visit_again', 'visit_cancel', 'budget', 'prework')"
 )
 
 
