@@ -572,6 +572,7 @@ export function mockLog(step: StepKey): S["LogItemOut"][] {
 }
 
 // 내 공사 목록의 current는 API처럼 1부터(1~6, MyProjectOut). 화면이 stepIndex로 띠 칸(0부터)으로 바꿔요
+// 업체는 API처럼 살아 있는 요청만(답 없음 · 닫힘은 빼요, schedule.service _vendor_steps live_only)
 export function mockMyProjects(step: StepKey, ids: string[]): S["MyProjectOut"][] {
   const c = stepCtx(step);
   const out: S["MyProjectOut"][] = [];
@@ -579,7 +580,7 @@ export function mockMyProjects(step: StepKey, ids: string[]): S["MyProjectOut"][
     const { current, phase } = projectSteps(c);
     out.push({
       id: ids[0], code: "MJ-2611-2692", region: "서울 노원구", size: { band: null, basis: "supply", m2: "69.4" }, trades: ["dobae"], created_at: "2026-11-17T21:00:00+09:00",
-      phase, current: current + 1, todo: todoOf(c, ids[0]), next: null, updated_at: c.now, grades: { dobae: "basic" }, emd: "상계동", vendors: vendorSteps(c),
+      phase, current: current + 1, todo: todoOf(c, ids[0]), next: null, updated_at: c.now, grades: { dobae: "basic" }, emd: "상계동", vendors: vendorSteps(c).filter((v) => ACTIVE.has(v.status)),
     });
   }
   if (ids[1]) {
