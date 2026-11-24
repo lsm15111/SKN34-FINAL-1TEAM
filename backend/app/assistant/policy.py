@@ -260,36 +260,6 @@ def card_claim(text: str) -> tuple[str, set[str]] | None:
     return None
 
 
-# 누를 것이 '카드를'(꾸밈말 '모두' · '각각' 같은 것이 붙어도): '카드의 [단추]를'로 바꿔요
-_CARD_OBJ = re.compile(r"카드를(\s+(?:모두|각각|다|하나씩|차례로))?\s*$")
-# 누르라는 말 바로 앞에 누를 것을 이미 말함('수락을 눌러 주세요')
-_OBJ_END = re.compile(r"[을를]\s*$")
-
-
-def _obj(label: str) -> str:
-    """단추 이름 + 목적격 조사('[맞아요, 저장]을' · '[이 시간으로 고르기]를')."""
-    last = label.strip()[-1:]
-    jong = "가" <= last <= "힣" and (ord(last) - 0xAC00) % 28 != 0
-    return f"[{label}]{'을' if jong else '를'}"
-
-
-def with_button(text: str, label: str) -> str:
-    """단추 이름 없이 카드를 누르라는 말에 승인 카드 단추 이름을 넣은 글(QA r9 c1 · c2 · c3 그대로: '카드를 확인하고
-    누르시면'): '…카드를 눌러 주세요' → '…카드의 [이 시간으로 고르기]를 눌러 주세요', '카드를 확인하고 누르시면' →
-    '카드를 확인하고 [2곳에 요청 보내기]를 누르시면'. 단추 이름이 이미 있거나 누를 것을 말했거나('카드에서 수락을 눌러
-    주세요') 누르라는 말이 없으면 그대로."""
-    m = _PRESS.search(text or "")
-    if m is None or _LABEL.search(text):
-        return text
-    head, tail = text[: m.start()], text[m.start() :]
-    obj = _obj(label)
-    if card := _CARD_OBJ.search(head):
-        return f"{head[: card.start()]}카드의 {obj}{card.group(1) or ''} {tail}"
-    if _OBJ_END.search(head):
-        return text
-    return (f"{head.rstrip()} {obj} " if head.strip() else f"{obj} ") + tail
-
-
 def claim_ok(
     claim: tuple[str, set[str]],
     made: Collection[str],
@@ -600,23 +570,6 @@ def near_same(a: str, b: str) -> bool:
     return False
 
 
-# 화면 말: 줄인 '표준견적'은 '표준견적서'로 써요(QA r7 · r8 · r9 그대로 '실크 도배 표준견적은'). 받침이 없어지니 조사도
-# 바꿔요(은 → 는 · 이 → 가 · 을 → 를 · 과 → 와 · 으로 → 로 · 이에요 → 예요 …)
-_STD_WORD = re.compile(
-    r"표준\s?견적(?!서)"
-    r"(이에요|이었|이죠|이고|이라|이며|이면|이지만|이나|이랑|으로|은|을|과|이(?=[\s,.!?~]|$))?"
-)
-_STD_JOSA = {
-    "이에요": "예요", "이었": "였", "이죠": "죠", "이고": "고", "이라": "라", "이며": "며", "이면": "면",
-    "이지만": "지만", "이나": "나", "이랑": "랑", "으로": "로", "은": "는", "을": "를", "과": "와", "이": "가",
-}  # fmt: skip
-
-
-def term_fix(text: str) -> str:
-    """화면 말로 바꾼 글('표준견적은' → '표준견적서는')."""
-    return _STD_WORD.sub(lambda m: "표준견적서" + _STD_JOSA.get(m.group(1) or "", ""), text or "")
-
-
 def strip_lead(text: str) -> str:
     """첫머리 접속 말('다만 · 대신 · 그래서 …')을 뗀 글(남는 글이 없으면 그대로)."""
     t = LEAD_LINK.sub("", text or "", count=1)
@@ -630,11 +583,6 @@ REF_LIKE = re.compile(r"(?<![A-Za-z0-9_])(?<!\d\s)[vmrswdpnx]\d{1,3}(?![A-Za-z0-
 # 영어 snake_case 도구 · 칸 이름(propose_visit_request · vendor_ref · area_m2)
 SNAKE = re.compile(r"(?<![A-Za-z0-9_])[a-z][a-z0-9]*_[a-z0-9_]*[a-z0-9](?![A-Za-z0-9_])")
 QUOTE_RUN = 8  # 도구 hint 글과 이만큼(띄움 · 부호를 뺀 글자) 이어서 같으면 옮긴 문장이다
-# 도구 · 서버가 실패했다는 안쪽 사정('도구가 실패해서' · '도구 오류', QA r3 c4 #34). 연장 '도구'('준비할 도구는 …')는 아니다
-INNER_FAIL = re.compile(
-    r"도구\s*(?:가|를|의|에서|는)?\s*(?:\S+\s+){0,2}?\S*(?:실패|오류|에러)"
-    r"|(?:서버|시스템)\s*(?:가|에서|의)?\s*(?:오류|에러|실패)"
-)
 
 
 # 가림 이야기(고객 말의 '(번호 가림)' 자리를 두고 '말씀하신 금액이 가려져 확인되지 않아요'): 믿집이 글을 가린 안쪽
@@ -647,13 +595,14 @@ MASK_TALK = re.compile(
 
 
 def inside(text: str) -> str | None:
-    """고객 답에 나오면 안 되는 안쪽 말이 든 문장인지: 까닭('이름표' · '안쪽 이름' · '안쪽 말') 또는 None."""
+    """고객 답에 나오면 안 되는 안쪽 말이 든 문장인지: 까닭('이름표' · '안쪽 이름' · '안쪽 말') 또는 None. '도구가
+    실패해서' 같은 실패 말은 지시문 규칙 · 예시가 맡아요(docs/v4/15-sentence-rules.md)."""
     t = text or ""
     if "이름표" in t or REF_LIKE.search(t):
         return "이름표"
     if SNAKE.search(t):
         return "안쪽 이름"
-    if INNER_FAIL.search(t) or MASK_TALK.search(t):
+    if MASK_TALK.search(t):
         return "안쪽 말"
     return None
 
