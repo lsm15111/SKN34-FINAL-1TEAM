@@ -6,6 +6,7 @@
 // - 목업(lib/mock/assistant)이면 같은 모양 · 같은 이벤트를 대본으로 흘려요. 목업 모듈은 쓸 때만 불러요(운영 묶음에 안 들어가게).
 // - 금액 · 날짜 · 차액 · 기한은 서버(계산 엔진) 값이에요. 화면은 모양만 바꾸고 계산하지 않아요. '표준 대비 %'는 없어요.
 import { ApiError, call, errorText, type FieldError, type Schemas } from "@/lib/backend/client";
+import { halfDayText } from "@/lib/format";
 import { ASSISTANT_MOCK } from "@/lib/mock/assistant/mode";
 
 // ───── 카드(kind로 구분, components/assistant/cards/registry). data 모양은 backend assistant/schemas.py의 *Data
@@ -800,6 +801,27 @@ export async function getBoard(projectId: string): Promise<BoardOut> {
 export async function getToday(projectId: string): Promise<TodayData> {
   if (ASSISTANT_MOCK) return (await mock()).today(projectId);
   return call<TodayData>("GET", `/assistant/today?project_id=${enc(projectId)}`);
+}
+
+/** 실측 요청 하나에 지금 잡힌 반나절(고객이 고른 날 · 확정 날)과 업체 이름 */
+export type SlotNow = { vendor: string; day: string; half: "am" | "pm" };
+/** 실측 요청마다 지금 잡힌 반나절(GET /projects/{id}/visits 상태판, 서버 값 그대로). 목업은 빈 값 */
+export async function getSlotsNow(projectId: string): Promise<Record<string, SlotNow>> {
+  if (ASSISTANT_MOCK) return {};
+  const v = await call<Schemas["VisitListOut"]>("GET", `/projects/${enc(projectId)}/visits`);
+  return Object.fromEntries(v.board.flatMap((r) => (r.booked ? [[r.visit_id, { vendor: r.vendor_name, day: r.booked.day, half: r.booked.half }]] : [])));
+}
+/** 비서 밖(화면 단추 · 업체)에서 처리돼 닫힌 반나절 고르기 카드인가(서버가 닫음 · 화면에서 직접 함) */
+const slotMoved = (a: ActionOut, handled: boolean) =>
+  a.kind === "visit_slot" && !!a.target_id && ((a.status === "expired" && a.error_code === "handled_elsewhere") || (a.status === "proposed" && handled));
+/** 지금 잡힌 반나절을 읽어야 하는 카드 id(바뀌면 다시 읽어요) */
+export function movedSlotIds(actions: ActionOut[], handled: Record<string, true>): string[] {
+  return [...new Set(actions.filter((a) => slotMoved(a, !!handled[a.action_id])).map((a) => a.action_id))].sort();
+}
+/** 닫힌 반나절 카드 제목: 카드가 낸 날 대신 지금 잡힌 날('결도배 실측 11월 26일(목) 오전', QA r7 M11). 모르면 null(카드 제목 그대로) */
+export function slotTitleNow(a: ActionOut, handled: boolean, slots: Record<string, SlotNow>): string | null {
+  const now = slotMoved(a, handled) && a.target_id ? slots[a.target_id] : undefined;
+  return now ? `${now.vendor} 실측 ${halfDayText(now.day, now.half, true)}` : null;
 }
 
 /** 비서가 지금 LLM으로 답하는지(무료 모드 띠). 못 읽으면 null */

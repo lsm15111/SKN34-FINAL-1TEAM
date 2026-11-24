@@ -175,6 +175,7 @@ export function Shell({ projectId, name, me, unread, locked: lockedAtOpen = fals
     dismissNudge: (id) => { void a.dismissNudge("", id); },
     gone: a.gone,
     settled: a.settled,
+    slots: a.slotsNow,
   };
 
   const headroom = useCallback(() => col.current?.querySelector<HTMLElement>("[data-stepper]")?.offsetHeight ?? 64, []);
