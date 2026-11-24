@@ -35,6 +35,8 @@
 .pick > span { width: 28px; height: 28px; border-radius: 50%; background: var(--mj-bg); box-shadow: 0 0 0 2px var(--mj-bg), inset 0 0 0 1.5px var(--mj-line-control); display: grid; place-items: center; color: transparent; }
 .pick[aria-pressed="true"] > span { background: var(--mj-primary); color: var(--mj-on-primary); box-shadow: 0 0 0 2px var(--mj-bg); }
 .pick svg { width: 16px; height: 16px; }
+/* 키보드 초점 고리도 동그라미(사진 모서리에 잘리지 않게 안쪽으로) */
+.pick:focus-visible { outline-offset: -2px; border-radius: 50%; }
 .vcIn { padding: 12px 14px 4px; display: grid; gap: 8px; min-width: 0; flex: 1; align-content: start; }
 .vcName { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; flex-wrap: wrap; }
 .vcName b { font-size: var(--mj-type-body); }
@@ -50,7 +52,7 @@
 .vcFoot span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
 /* 사진이 없는 업체: 큰 회색 빈 칸 대신 머리글자 작은 칸 한 줄(배지 · 고르기 ✓도 그 줄에) */
 .vcBare .ph { aspect-ratio: auto; background: none; display: flex; align-items: center; gap: 8px; padding: 10px 56px 0 14px; }
-.ini { width: 40px; height: 40px; flex: none; border-radius: 12px; display: grid; place-items: center; background: var(--mj-fill); color: var(--mj-text-sub); font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.ini { width: 40px; height: 40px; flex: none; border-radius: 50%; display: grid; place-items: center; background: var(--mj-fill); color: var(--mj-text-sub); font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
 .vcBare .phBadge { position: static; }
 .vcBare .pick { top: 8px; }
 .basisList { margin: 0; padding: 12px 14px 12px 32px; border-radius: var(--mj-radius-field); background: var(--mj-surface-sub); display: grid; gap: 4px; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
@@ -106,13 +108,13 @@
 .halves .h b { display: block; color: var(--mj-text); font-size: var(--mj-type-caption); }
 .halves .off, .halves .off b { color: var(--mj-holiday); }
 .halves .lab { color: var(--mj-text-mute); align-self: center; }
-.cell { height: 34px; border-radius: 8px; background: var(--mj-fill); }
+.cell { height: 34px; border-radius: var(--mj-radius-badge); background: var(--mj-fill); }
 .work { background: var(--mj-accent-fill); color: var(--mj-on-primary); display: grid; place-items: center; font-weight: var(--mj-weight-semibold); overflow: hidden; white-space: nowrap; }
 .legend { display: flex; gap: 4px 14px; flex-wrap: wrap; font-size: var(--mj-type-caption); color: var(--mj-text-mute); margin: 0; }
 
 /* ───── C7 알아 두기 · 답 ───── */
 .know { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 4px 12px; align-items: start; }
-.knowIc { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--mj-badge-ok-bg); color: var(--mj-badge-ok-fg); }
+.knowIc { width: 40px; height: 40px; border-radius: var(--mj-radius-chip); display: grid; place-items: center; background: var(--mj-badge-ok-bg); color: var(--mj-badge-ok-fg); }
 .knowIc svg { width: 20px; height: 20px; }
 .know ul { margin: 4px 0 0; padding-left: 18px; display: grid; gap: 2px; font-size: var(--mj-type-label); color: var(--mj-text-sub); }
 .checks { list-style: none; margin: 0; padding: 0; display: grid; }
