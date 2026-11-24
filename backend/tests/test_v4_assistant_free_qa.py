@@ -262,7 +262,12 @@ def customer_chips() -> set[str]:
 
     got = {t for kind, xs in runtime.CHIPS.items() if kind != "vendor_brief" for t, _ in xs}
     got |= {say for _, _, say in service.STEP_IDEAS.values()}
-    got |= {t.say for t in proactive.TRIGGERS.values() if t.surface == "customer" and t.say}
+    # 다음에 물을 말을 붙이지 않는 줄(NO_SUGGEST: 이어 하기 follow_up은 승인 카드가 다음 걸음)의 say는 칩이 아니에요
+    got |= {
+        t.say
+        for k, t in proactive.TRIGGERS.items()
+        if t.surface == "customer" and t.say and k not in proactive.NO_SUGGEST
+    }
     got |= {"폐기물 처리도 포함인가요?", *first_chips()}  # 견적 비교 카드 칩 · 첫 화면 칩
     got |= {f"{v} 언제 · 어떻게 해요?" for v in DIY.values()}
     return got
