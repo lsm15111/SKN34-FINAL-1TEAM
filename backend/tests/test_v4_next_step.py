@@ -5,6 +5,7 @@
 import pytest
 
 from app.agent import llm
+from app.config import settings
 from tests.test_v4_assistant_turns import ask, home, ok
 
 ASK = {
@@ -16,7 +17,10 @@ SAID = "바탕이 고르지 않거나 초배가 덜 되면 들뜰 수 있어요.
 
 
 @pytest.fixture
-def script():
+def script(monkeypatch):
+    # 이 시험은 지식 답 뒤 다음 할 일 줄을 봐요. 기본 길(expert+v3)은 공정 전문가 하위 호출이 대본 단계를 먼저 써서,
+    # 하위 호출 없는 v2g+v3 길로 고정해요(01740cd 기본값 바꾼 뒤 깨졌던 것)
+    monkeypatch.setattr(settings, "assistant_answer_route", "period=v3,price=v3,*=v2g+v3")
     llm.clear_stubs()
     yield llm.set_claude_script
     llm.clear_stubs()

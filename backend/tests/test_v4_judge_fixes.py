@@ -58,5 +58,8 @@ def test_customer_prompt_retries_tool_before_refusing():
 
 def test_home_info_description_confirms_contract_area_basis():
     text = REGISTRY["propose_home_info"].description
-    assert "계약서 ㎡처럼 고객이 기준을 말하지 않은 ㎡는 보통 전용이라 exclusive로 카드를 만들고" in text
+    assert (
+        "계약서 ㎡처럼 고객이 기준을 말하지 않은 ㎡는 보통 전용이라 exclusive로 카드를 만들고"
+        in text
+    )
     assert "공급면적이면 말해 주세요" in text
