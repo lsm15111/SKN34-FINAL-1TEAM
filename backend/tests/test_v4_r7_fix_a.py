@@ -381,9 +381,11 @@ def test_first_greeting_and_chips_name_the_three():
     assert {"직접 할 수 있는 일 있어요?", "집 정보 바꾸고 싶어요", "업체 추천해 줘"} <= set(chips)
     from app.assistant import prompts
 
-    assert "도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물을 수 있다고" in prompts.rules(
-        "customer"
-    )
+    # 지시문 첫 답 규칙의 안내 글은 그대로 말해도 되는 예(큰따옴표)라 누출 견주기(rules)에는 없어요(QA r9 M4: 그대로
+    # 쓴 첫 답 안내가 '지시문 누출'로 빠짐)
+    assert "도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기도 물어보세요." in prompts.text("customer")
+    rules = prompts.rules("customer")
+    assert "대화의 첫 답(지난 대화가 없음)이면" in rules and "도배 궁금한 점" not in rules
 
 
 # ---- 5. 되물은 답 잇기 ----
