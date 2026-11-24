@@ -59,6 +59,8 @@ ACTION_KINDS = (
     "visit_again",
     # 보낸 실측 요청 취소(0051, visit.service.cancel)
     "visit_cancel",
+    # 도배 전 앞 공사 답(0059, project.prework.set_prework). 제안 도구 없이 점검 카드 단추(choices)로만 만들어요
+    "prework",
 )
 ACTION_STATUSES = ("proposed", "approved", "executed", "rejected", "expired", "failed")
 ORIGINS = ("turn", "nudge")

@@ -2,6 +2,8 @@
 승인 카드(대기 행동)를 만든다(무료 모드도). 실행은 여전히 사람이 그 카드를 승인할 때만이다.
 
 - 집 정보 칸 `demolition:<full · partial · none>` · `grade:<economy · basic>` → propose_home_info(고객)
+- 앞 공사 답 `prework.<mokgong · electric · film · floor>:<done · todo · none>`(도배 전 점검 카드, 여럿이면 한 승인
+  카드) → tools.prework.propose_answers(고객). LLM 도구는 없어요: 앞 공사 답은 단추로 고른 값만 저장해요.
 - 행동 `<kind>:<이름표,…>` → 그 제안 도구. 이름표는 이 대화의 도구 · 카드가 준 것만 받는다.
   - 고객: `visit_request:v1,v2[,r1]` · `visit_slot:s1` · `vendor_confirm:m1` · `dates_accept:p1`(연기 날짜면 delay_accept)
   - 업체: `window_answer:m1,w1`(w1만 줘도 됨) · `decline:m1,<full · out_of_area · other>`(보던 요청이면 코드만) ·
@@ -67,6 +69,17 @@ def field(choice: str) -> tuple[str, str] | None:
     return (key, value) if sep and value in FIELDS.get(key, ()) else None
 
 
+def prework_field(choice: str) -> tuple[str, str] | None:
+    """'prework.mokgong:done' → ("mokgong", "done"). 앞 공사 공정 · 단추 값(project.prework)이 아니면 None."""
+    from app.project import prework
+
+    key, sep, value = choice.partition(":")
+    trade = key.removeprefix(prework.PREFIX)
+    if not sep or trade == key or trade not in prework.PREWORK or value not in prework.STATES:
+        return None
+    return trade, value
+
+
 def action(choice: str, refs: "RefTable | None" = None) -> tuple[str, list[str]] | None:
     """'visit_request:v1,v2' → ("visit_request", ["v1", "v2"]). refs를 주면 이 대화가 아는 이름표만 받는다."""
     kind, sep, rest = choice.partition(":")
@@ -81,7 +94,12 @@ def action(choice: str, refs: "RefTable | None" = None) -> tuple[str, list[str]]
 
 
 def valid(choice: str, refs: "RefTable") -> bool:
-    return refs.known(choice) or field(choice) is not None or action(choice, refs) is not None
+    return (
+        refs.known(choice)
+        or field(choice) is not None
+        or prework_field(choice) is not None
+        or action(choice, refs) is not None
+    )
 
 
 def card_target(card_id: str | None) -> tuple[str, uuid.UUID | None]:
@@ -121,6 +139,10 @@ def text_of(choice: str) -> str:
     f = field(choice)
     if f is not None:
         return f"{FIELD_LABEL[f[0]]}: {_show(*f)}"
+    if (pw := prework_field(choice)) is not None:  # '앞 공사 목공: 끝났어요'
+        from app.project import prework
+
+        return f"{prework.LABEL} {prework.PREWORK[pw[0]]}: {prework.STATES[pw[1]]}"
     a = action(choice)
     if a is not None:
         return f"{LABEL[a[0]]} {', '.join(a[1])}"
@@ -253,17 +275,20 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
     지난 카드 단추(ctx.stale)는 그 카드를 새로 불러온다. 돌려주는 값: 모델 · 무료 답에 붙일 한 줄(고른 행동 ·
     칸 · 지난 단추가 없으면 None)."""
     from app.assistant.runtime import send_card
+    from app.assistant.tools import prework as prework_tools
     from app.assistant.tools import propose
 
     fields = dict(x for x in (field(c) for c in ctx.choice) if x)
+    # 앞 공사 답(여럿이어도 승인 카드 하나)
+    answers = dict(x for x in (prework_field(c) for c in ctx.choice) if x)
     acts = [
         a
         for a in (action(c, ctx.refs) for c in ctx.choice)
         if a is not None and ACTIONS[a[0]] == ctx.surface
     ][:MAX_ACTIONS]
     if ctx.surface != "customer":
-        fields = {}
-    if not fields and not acts and not ctx.stale:
+        fields, answers = {}, {}
+    if not fields and not answers and not acts and not ctx.stale:
         return None
     tc = ToolCtx(
         user=ctx.user,
@@ -282,11 +307,15 @@ async def apply(ctx: "TurnCtx", emit: "Emit", res: "TurnResult") -> str | None:
     errors: list[str] = []
     locked = False  # 칸 단추가 잠긴 집 정보에 막힘
     jobs = [("home", [])] if fields else []
+    if answers:
+        jobs.append(("prework", []))
     for kind, args in [*jobs, *acts]:
         try:
             if kind == "home":
                 home = propose.HomeIn(fields=propose.HomeFields(**fields))
                 outs.append(await propose.propose_home_info(tc, home))
+            elif kind == "prework":
+                outs.append(await prework_tools.propose_answers(tc, answers))
             else:
                 outs.append(await _run(tc, kind, args))
         except (ToolError, AppError) as e:

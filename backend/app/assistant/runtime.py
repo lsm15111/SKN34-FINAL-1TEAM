@@ -83,7 +83,7 @@ CARD_NAME = {
     "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트",
     "extra": "추가 금액", "notice": "이웃 안내문", "grade_compare": "벽지 두 종류 비교",
     "market_range": "시세 범위", "options": "고르기", "research": "조사",
-    "product_estimate": "벽지 금액",
+    "product_estimate": "벽지 금액", "prework_check": "도배 전 점검",
 }  # fmt: skip
 CARDS_ONLY = "(카드를 보여 줬어요"  # 카드만 보낸 턴의 기록 글 머리(끝 문장으로 보지 않는다)
 BREAKER_KEY = "assistant:breaker"

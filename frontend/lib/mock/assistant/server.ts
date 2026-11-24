@@ -9,7 +9,7 @@ import { ApiError, type Schemas } from "@/lib/backend/client";
 import {
   applyTurnEvent, MEMORY_LABEL, replaceAction, replaceCard,
   type ActionKind, type ActionOut, type ActionStatus, type ActionSummary, type BoardOut, type BriefSeed, type CardOut, type CompareCol,
-  type Demolition, type FeedItem, type FeedPage, type HealthOut, type HomeInfoData, type MemoryOut, type NotifyPage, type QuoteChecklistData,
+  PREWORK_STATES, type Demolition, type FeedItem, type PreworkKey, type PreworkState, type FeedPage, type HealthOut, type HomeInfoData, type MemoryOut, type NotifyPage, type QuoteChecklistData,
   type QuoteCompareData, type SuggestOut, type TaskOut, type TaskRow, type ThreadOut, type TodayData, type TurnEvent, type TurnIn, type VendorBriefData,
   type VendorTodayData,
 } from "@/lib/api/assistant";
@@ -42,6 +42,8 @@ type State = {
   deal: "gyeol" | "bareun";
   /** 승인 뒤 이어질 일(새로 고쳐도 이어지게 시각과 함께 저장) */
   pending: { beat: Beat; at: number }[];
+  /** 도배 전 점검 앞 공사 답(승인한 것만, 옛 저장본에는 없어요) */
+  prework?: Partial<Record<PreworkKey, PreworkState>>;
 };
 type Beat = "sent" | "answered" | "booked" | "maruBooked" | "quoted" | "closed" | "dates" | "final";
 type Draft =
@@ -440,6 +442,9 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
   const kind = cut > 0 ? picked.slice(0, cut) : "";
   const rest = cut > 0 ? picked.slice(cut + 1) : "";
   const args = rest.split(",").map((x) => x.trim()).filter(Boolean);
+  // 도배 전 점검 카드 앞 공사 단추(여럿을 한 턴에): 승인 카드 하나
+  const many = Array.isArray(choice) ? choice.filter((c) => c.startsWith("prework.")) : [];
+  if (many.length) return reply(preworkAsked(s, many));
   if (kind === "demolition") return reply(demolitionAsked(s, rest as Demolition));
   if (kind === "visit_request") return reply(repick(s, args));
   if (kind === "visit_slot" && args[0]) return reply(reslot(s, args[0]));
@@ -465,6 +470,7 @@ function respond(s: State, body: TurnIn, turnId: string): Plan {
     s.todayDismissed = true;
     return reply([step({ type: "card", data: { card_id: "today", kind: "today", data: todayData(s) } }, 200), step({ type: "token", data: { text: "알겠어요. 오늘은 더 알리지 않고, 정할 일이 바뀌면 다시 알려 드릴게요." } }, 300), done(s, ["견적서 비교 보기", "마루와벽 날짜 고르기"])]);
   }
+  if (/도배 전 점검|앞 공사|선행 공정|벽지 몇 롤/.test(text)) return reply([step({ type: "status", data: { text: "도배 전에 끝낼 일을 모으고 있어요" } }, 300), step({ type: "card", data: preworkCard(s) }, 500), ...sentences("앞 공사가 끝났는지 카드에서 골라 주세요. 고른 답은 승인 카드를 눌러야 저장돼요."), done(s, s.chips)]);
   if (/준비물|알아 두기/.test(text)) return reply([step({ type: "status", data: { text: "자료를 찾고 있어요" } }, 300), step({ type: "card", data: knowCard() }, 500), done(s, s.chips)]);
   if (/평면도/.test(text)) {
     const card: CardOut<"floorplan_links"> = {
@@ -514,6 +520,67 @@ function demolitionAsked(s: State, key: Demolition): Step[] {
     ...sentences(`철거 범위를 '${DEMO_LABEL[key]}'로 바꿔 둘게요. 집 카드에서 [맞아요, 저장]을 누르면 표준견적서를 다시 계산해요.`),
     done(s, s.chips),
   ];
+}
+// 도배 전 점검(갈래 P2): 서버 tools/prework.py와 같은 글 · 계산 엔진 값(공급 105.8㎡ 실크 · 도배만 하는 공사 기준)
+const PREWORK_ROWS: { key: PreworkKey; label: string; why: string }[] = [
+  { key: "mokgong", label: "목공", why: "문틀 · 몰딩을 바꾸면 벽에 틈이 생겨, 메우고 덮은 뒤에 도배해요." },
+  { key: "electric", label: "전기", why: "도배한 뒤에 배선을 옮기면 벽을 다시 뜯어야 해서, 전기 공사를 먼저 끝내요." },
+  { key: "film", label: "필름", why: "필름은 목공 뒤 도배 전에 붙여요. 순서가 어긋나면 비용이 겹치고 하자가 생길 수 있어요." },
+  { key: "floor", label: "바닥", why: "장판은 보통 도배 뒤, 마루는 도배 전에 까는 경우가 많아 실측 때 업체와 순서를 정해요." },
+];
+function preworkCard(s: State): CardOut<"prework_check"> {
+  const saved = s.prework ?? {};
+  const todo = Object.values(saved).includes("todo");
+  return {
+    card_id: `prework-${s.pid}`, kind: "prework_check", say: "도배 전에 끝낼 일을 모아 봤어요.",
+    data: {
+      rows: PREWORK_ROWS.map((r) => ({ ...r, state: saved[r.key] ?? null, note: null })),
+      tasks: [
+        { label: "페인트(문틀 · 몰딩) 칠하기", when: "목공이 끝난 뒤 ~ 12월 4일(금) 사이에 해요" },
+        { label: "벽지 사서 받아 두기", when: "11월 25일(수) ~ 12월 7일(월) 사이에 해요" },
+      ],
+      paper: {
+        name: "실크", size: "106cm × 15.6m", area_m2: "225.2", count: 17, base: 14, loss: 3, spare_min: 1, spare_max: 2,
+        basis: "도배 면적 225.2㎡ × 소요량 1.248 = 벽지 281㎡(85 벽지 평)",
+        materials: [
+          { name: "풀", state: "included", line: "부자재 (풀 · 부직포 · 네바리 · 실리콘 등)", amount: "약 67.6㎏" },
+          { name: "초배지", state: null, line: null, amount: "약 238.8㎡" },
+          { name: "부직포", state: "included", line: "부자재 (풀 · 부직포 · 네바리 · 실리콘 등)", amount: null },
+        ],
+      },
+      next: todo ? "아직인 앞 공사는 실측 때 업체에 알려 도배 날을 맞춰요. 다음은 도배 업체를 골라 실측을 요청하는 거예요." : "다음은 도배 업체를 골라 실측을 요청하는 거예요.",
+      next_label: "업체 고르기", next_say: "도배 업체 추천해 주세요",
+      href: href(s, "/plan"),
+    },
+  };
+}
+const PREWORK_WORD = (x: string) => PREWORK_STATES.find((p) => p.key === x)?.label ?? x;
+function preworkAsked(s: State, picked: string[]): Step[] {
+  const saved = s.prework ?? {};
+  const got = PREWORK_ROWS.flatMap((r) => {
+    const c = picked.find((x) => x.startsWith(`prework.${r.key}:`));
+    const v = c?.split(":")[1] as PreworkState | undefined;
+    return v && PREWORK_STATES.some((p) => p.key === v) && v !== saved[r.key] ? [{ r, v }] : [];
+  });
+  if (!got.length) return [...sentences("고른 답이 지금 저장된 답과 같아요."), done(s, s.chips)];
+  const close = closeOpen(s, "prework");
+  const act = makeAction(s, "prework", {
+    title: "앞 공사 답 저장",
+    rows: got.map(({ r, v }) => ({ label: r.label, value: PREWORK_WORD(v), sub: `지금 ${saved[r.key] ? PREWORK_WORD(saved[r.key] as string) : "고르지 않음"}` })),
+    note: "저장하면 도배 전 점검 카드에 남아요. 업체 연결 · 견적은 하지 않아요.",
+    approve_label: "맞아요, 저장",
+  }, D.T("2026-12-01", "10:00"), { target_ver: "p" });
+  return [...close, step({ type: "action", data: act }, 200), ...sentences("고른 것으로 승인 카드를 만들었어요. 카드를 확인하고 눌러 주세요."), done(s, s.chips)];
+}
+/** 승인한 앞 공사 카드의 줄(화면 말) → 답 */
+function preworkOf(a: ActionOut): Partial<Record<PreworkKey, PreworkState>> {
+  const out: Partial<Record<PreworkKey, PreworkState>> = {};
+  for (const row of a.summary.rows ?? []) {
+    const r = PREWORK_ROWS.find((x) => x.label === row.label);
+    const v = PREWORK_STATES.find((x) => x.label === row.value)?.key;
+    if (r && v) out[r.key] = v;
+  }
+  return out;
 }
 function vendorsBeat(s: State): Step[] {
   const close = closeOpen(s, "visit_request");
@@ -767,10 +834,12 @@ export async function approve(pid: string, actionId: string, _clientKey: string)
           : a.kind === "visit_slot" ? { text: a.summary.title.startsWith("마루와벽") ? "실측을 잡았어요" : "고른 시간을 보냈어요. 업체가 수락하면 확정돼요", href: href(s, "/visits"), label: "실측 일정 보기" }
             : a.kind === "vendor_confirm" ? { text: `${a.summary.title}했어요`, href: href(s, "/quotes"), label: "견적서 보기" }
               : a.kind === "dates_accept" ? { text: "공사 날짜를 수락했어요", href: href(s, "/plan"), label: "공정표 보기" }
+                : a.kind === "prework" ? { text: "앞 공사 답을 저장했어요" }
                 : { text: "했어요" };
     const fin: ActionOut = { ...a, status: "executed", decided_at: at, executed_at: at, result };
     setAction(s, fin);
     if (a.kind === "vendor_confirm") s.deal = bareun ? "bareun" : "gyeol";
+    if (a.kind === "prework") s.prework = { ...s.prework, ...preworkOf(a) };
     if (a.kind === "home_info") {
       const picked = /전체/.test(a.summary.rows?.[0]?.value ?? "") ? "full" : /일부/.test(a.summary.rows?.[0]?.value ?? "") ? "partial" : "none";
       s.demolition = picked;

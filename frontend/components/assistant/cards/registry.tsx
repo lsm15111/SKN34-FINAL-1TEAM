@@ -11,6 +11,7 @@ import { GradeCompareCard, MarketRangeCard, OptionsCard, ProductEstimateCard } f
 import { ExtraCard } from "./ExtraCard";
 import { HomeInfoCard } from "./HomeInfoCard";
 import { NoticeCard } from "./NoticeCard";
+import { PreworkCheckCard } from "./PreworkCheckCard";
 import { QuoteCompareCard } from "./QuoteCompareCard";
 import { ResearchCard } from "./ResearchCard";
 import { ScheduleCard } from "./ScheduleCard";
@@ -42,6 +43,7 @@ export const CARDS: Registry = {
   options: OptionsCard,
   product_estimate: ProductEstimateCard,
   research: ResearchCard,
+  prework_check: PreworkCheckCard,
 };
 
 /** old: 할 일이 끝난 먼저 말 건 줄의 카드(보낸 때 모습). 서버는 그 카드 id에 '@줄 id'를 붙여 보내요(뒤 카드와 합쳐지지 않게).

@@ -3124,7 +3124,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again" | "visit_cancel";
+            kind: "home_info" | "visit_request" | "visit_slot" | "vendor_confirm" | "dates_accept" | "delay_accept" | "date_change" | "window_answer" | "decline" | "dates" | "extra_answer" | "work_check" | "visit_again" | "visit_cancel" | "prework";
             /**
              * Status
              * @enum {string}
@@ -3881,7 +3881,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options" | "research" | "product_estimate";
+            kind: "home_info" | "standard_quote" | "vendor_picks" | "visit_slots" | "quote_compare" | "schedule" | "knowledge" | "answer" | "floorplan_links" | "today" | "vendor_brief" | "quote_checklist" | "extra" | "notice" | "grade_compare" | "market_range" | "options" | "research" | "product_estimate" | "prework_check";
             /** Data */
             data: {
                 [key: string]: unknown;

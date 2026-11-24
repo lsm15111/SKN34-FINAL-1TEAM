@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.files import service as files_service
-from app.project import diy
+from app.project import diy, prework
 from app.project import repository as repo
 from app.project.models import (
     CHECK_KEYS,
@@ -602,7 +602,7 @@ DIY_NONE = "없어요"
 
 
 def _chip(key: str, value: str) -> tuple[str, str]:
-    """모은 조건 한 칸 → 칩 (이름, 값). 코드 값 칸(철거 범위 · 직접 할 일)은 화면 말로 바꾼다."""
+    """모은 조건 한 칸 → 칩 (이름, 값). 코드 값 칸(철거 범위 · 직접 할 일 · 앞 공사 답)은 화면 말로 바꾼다."""
     from app.agent.v3.trades import slot_label
     from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
 
@@ -610,6 +610,11 @@ def _chip(key: str, value: str) -> tuple[str, str]:
         return slot_label(key), DEMOLITION.get(value, value)
     if key.startswith(diy.PREFIX):
         return DIY_LABEL, diy.DIY.get(key.removeprefix(diy.PREFIX), DIY_NONE)
+    if key.startswith(prework.PREFIX):  # '앞 공사 · 목공: 끝났어요'
+        trade = key.removeprefix(prework.PREFIX)
+        return f"{prework.LABEL} · {prework.PREWORK.get(trade, trade)}", prework.STATES.get(
+            value, value
+        )
     return slot_label(key), value
 
 

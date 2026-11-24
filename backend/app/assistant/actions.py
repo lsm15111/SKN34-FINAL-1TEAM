@@ -1103,6 +1103,25 @@ async def _dates(s: AsyncSession, vendor: User, a: AssistantAction, now: datetim
     await schedule_service.propose_dates(s, vendor, uuid.UUID(pl["deal_id"]), data, _day(now))
 
 
+async def _prework(s: AsyncSession, user: User, a: AssistantAction, now: datetime, mark: Mark):
+    """도배 전 앞 공사 답(모은 조건 prework.*)을 저장한다. 공사 행을 먼저 잠가 판(답 지문) 검사와 저장 사이에 다른
+    저장이 끼지 않게 한다. 집 정보 잠금(실측 요청 뒤)과 상관없이 저장해요(집 정보 · 표준견적서는 그대로)."""
+    from app.project import prework
+    from app.project import service as project_service
+
+    pid = a.project_id
+    await project_service.lock(s, pid)  # type: ignore[arg-type]
+    await project_service.get_for(s, user, pid)  # type: ignore[arg-type]
+    if prework.prework_ver(await prework.prework_for(s, pid)) != a.target_ver:  # type: ignore[arg-type]
+        raise _stale("앞 공사 답이 그사이 바뀌었어요. 점검 카드에서 다시 골라 주세요.")
+    try:
+        await prework.set_prework(s, pid, a.payload["answers"])  # type: ignore[arg-type]
+    except ValueError as e:
+        raise AppError(409, "invalid", "앞 공사 답을 다시 골라 주세요.") from e
+    await mark({"text": "앞 공사 답을 저장했어요"})
+    await s.commit()
+
+
 EXECUTORS: dict[str, Executor] = {
     "home_info": _home_info,
     "visit_request": _visit_request,
@@ -1115,5 +1134,6 @@ EXECUTORS: dict[str, Executor] = {
     "window_answer": _window_answer,
     "decline": _decline,
     "dates": _dates,
+    "prework": _prework,  # 도배 전 점검 카드 단추로 고른 앞 공사 답(갈래 P2)
     **aftercare.EXECUTORS,  # 07: extra_answer · work_check · visit_again
 }
