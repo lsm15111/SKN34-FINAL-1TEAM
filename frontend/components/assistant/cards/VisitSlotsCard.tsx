@@ -25,12 +25,12 @@ export function VisitSlotsCard({ card, ctx, old }: CardProps<"visit_slots">) {
     ctx.mark(card.card_id, [ref]);
     ctx.send(text, { card_id: card.card_id, choice });
   };
-  const title = before ? "희망 기간 어때요?" : "이 시간 어때요?";
+  const title = before ? "희망 기간 어때요?" : "이 일정 어때요?";
   const sub = `${d.vendor_name}${d.window ? ` · ${rangeText(d.window.start, d.window.end)}` : ""}`;
   if (old) {
     // 할 일이 끝난 줄의 카드: 보낸 때 후보만 글로 남겨요(고르기 · 달력 단추 없음)
     const rows = before
-      ? d.wishes.map((w) => ({ ref: w.ref, main: rangeText(w.start, w.end, { weekday: true }), sub: `업체 빈 반나절 ${w.open_count}칸` }))
+      ? d.wishes.map((w) => ({ ref: w.ref, main: rangeText(w.start, w.end, { weekday: true }), sub: `가능한 실측 일정 ${w.open_count}개` }))
       : d.candidates.map((s) => ({ ref: s.ref, main: halfDayText(s.day, s.half, true), sub: whyText(s.why).join(" · ") }));
     return (
       <section className={k.card} aria-labelledby={`${card.card_id}-t`}>
@@ -39,7 +39,7 @@ export function VisitSlotsCard({ card, ctx, old }: CardProps<"visit_slots">) {
           <span className={`${k.muted} ${k.num}`}>{sub}</span>
         </div>
         {rows.length ? (
-          <ul className={c.cands} aria-label={`${d.vendor_name} ${before ? "실측 희망 기간 후보" : "실측 시간 후보"}`}>
+          <ul className={c.cands} aria-label={`${d.vendor_name} ${before ? "실측 희망 기간 후보" : "실측 일정 후보"}`}>
             {rows.map((r) => <li key={r.ref} className={c.candOld}><b className={k.num}>{r.main}</b>{r.sub ? <small className={k.num}>{r.sub}</small> : null}</li>)}
           </ul>
         ) : null}
@@ -64,14 +64,14 @@ export function VisitSlotsCard({ card, ctx, old }: CardProps<"visit_slots">) {
                   onClick={() => pick(w.ref, `${euro(range)} 할래요`, CHOICE.visitRequest(chosenVendors(ctx), w.ref))}>
                   <span className={c.radio} aria-hidden="true" />
                   <b className={k.num}>{range}</b>
-                  <small className={k.num}>업체 빈 반나절 {w.open_count}칸</small>
+                  <small className={k.num}>가능한 실측 일정 {w.open_count}개</small>
                 </button>
               </li>
             );
           })}
         </ul>
       ) : d.candidates.length ? (
-        <ul className={c.cands} role="radiogroup" aria-label={`${d.vendor_name} 실측 시간 후보`}>
+        <ul className={c.cands} role="radiogroup" aria-label={`${d.vendor_name} 실측 일정 후보`}>
           {d.candidates.map((s) => {
             const on = chosen === s.ref;
             const why = whyText(s.why);

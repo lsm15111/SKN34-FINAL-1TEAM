@@ -77,7 +77,7 @@ def test_now_line_names_the_booked_visit_before_waiting_replies():
     o = overview(("마루와벽", "requested"), ("결도배", "booked"))
     assert free.now_of(o) == "지금은 결도배 실측과 실측 견적서를 기다리는 중이에요."
     o = overview(("마루와벽", "requested"), ("결도배", "booked"), ("한결도배", "offered"))
-    assert free.now_of(o) == "지금은 한결도배 실측 시간을 고를 차례예요."  # 고객 차례가 먼저
+    assert free.now_of(o) == "지금은 한결도배 실측 날짜를 고를 차례예요."  # 고객 차례가 먼저
     o = overview(("마루와벽", "requested"), ("결도배", "requested"), ("닫힌도배", "cancelled"))
     assert free.now_of(o) == "지금은 마루와벽 · 결도배 실측 기간 답을 기다리는 중이에요."
 
@@ -155,7 +155,7 @@ def test_proactive_line_after_the_last_customer_message_is_in_the_facts(api, scr
     ok(ask(api, f["pid"], "그거 알아서 해 줘요"))
     facts = facts_of(log)
     (line,) = [x for x in facts.splitlines() if x.startswith("먼저 말 건 줄")]
-    assert "마루와벽이 실측 기간을 보냈어요" in line and "카드 실측 시간" in line
+    assert "마루와벽이 실측 가능 기간을 보냈어요" in line and "카드 실측 일정" in line
     assert "승인 기다림" in line  # 함께 단 승인 카드의 지금 상태
     # 고객이 말한 뒤에는 그 줄이 '마지막으로 말한 뒤'가 아니라 빠져요
     log = script([{"text": "네."}])

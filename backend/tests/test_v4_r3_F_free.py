@@ -116,7 +116,7 @@ def test_rip_off_and_missing_with_quotes_say_the_missing_line(api):
 def test_now_line_is_said_once_per_state(api, monkeypatch):
     monkeypatch.setattr(free, "when_word", lambda _now: "밤")
     f = offered(api)  # 업체가 실측 기간을 답함(고객이 반나절을 고를 차례)
-    now = "지금은 마루와벽 실측 시간을 고를 차례예요."  # 그 상태 업체 이름과 말해요(QA r6 c3 M6)
+    now = "지금은 마루와벽 실측 날짜를 고를 차례예요."  # 그 상태 업체 이름과 말해요(QA r6 c3 M6)
     first, _ = turn(api, f["pid"], "치킨 시켜 줘")
     assert first.endswith(now), first
     for text in ("오늘 날씨 어때?", "요즘 주식 뭐 사면 좋아요?"):

@@ -229,7 +229,7 @@ def test_visit_offered_sends_feed_card_action_and_api(api, monkeypatch):
     (gone,) = nudges(trigger="visit_requested")
     assert (gone["status"], gone["reason"]) == ("expired", "gone")
     assert (n["status"], n["channel"], n["src"], n["score"]) == ("sent", "feed", "guide", 85)
-    assert n["body"].startswith("마루와벽이 실측 기간을 보냈어요")
+    assert n["body"].startswith("마루와벽이 실측 가능 기간을 보냈어요")
     card = __import__("json").loads(n["card"])
     assert card["kind"] == "visit_slots" and card["data"]["candidates"]
     (a,) = query("select kind, origin, status from assistant_actions where id = $1", n["action_id"])
@@ -291,7 +291,7 @@ def test_follow_up_notify_after_48h_then_state_change_closes(api, monkeypatch):
     assert tally == {"sent": 1}
     late = nudges(id=late["id"])[0]
     assert late["status"] == "sent" and late["body"].startswith(
-        "마루와벽이 보낸 실측 기간에서 아직"
+        "마루와벽이 보낸 실측 가능 기간에서 아직"
     )
     (note,) = query("select kind, link, body from notifications where kind = 'assistant_nudge'")
     assert note["link"] == f"/projects/{f['pid']}" and note["body"] == late["body"]

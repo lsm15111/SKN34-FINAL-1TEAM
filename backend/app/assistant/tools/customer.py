@@ -367,8 +367,8 @@ class SlotsIn(BaseModel):
     more: bool = False  # 다른 시간: 이 대화에서 이미 보인 반나절은 빼고 남은 자리에서
 
 
-MORE_NONE = "이 대화에서 이미 보인 후보 말고는 업체 기간에 남은 반나절이 없어요."
-MORE_NOTE = "이 대화에서 이미 보인 반나절은 빼고 남은 자리에서 골랐어요."
+MORE_NONE = "이 대화에서 이미 보인 후보 말고는 업체 기간에 남은 실측 일정이 없어요."
+MORE_NOTE = "이 대화에서 이미 보인 후보는 빼고 남은 자리에서 골랐어요."
 
 
 def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
@@ -384,11 +384,12 @@ def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
     "vendor_free_slots",
     surface="customer",
     kind="read",
-    status="실측 시간을 찾고 있어요",
-    description="실측 시간 후보를 찾아요. ref는 꼭 넣어요: 요청 전에는 업체 이름표(v1…, recommend_vendors 결과)로 "
+    status="실측 일정을 찾고 있어요",
+    description="실측 일정 후보를 찾아요. ref는 꼭 넣어요: 요청 전에는 업체 이름표(v1…, recommend_vendors 결과)로 "
     "희망 기간 후보(r1~r2), 업체가 기간을 답한 뒤에는 실측 요청 이름표(m1…, today_tasks · compare_quotes 결과)로 "
-    "반나절 후보(s1~s3). prefer는 고객이 말한 편한 반나절, days는 평일 · 주말이에요. 고객이 다른 시간 · 다른 날을 "
-    "더 보고 싶어 하면 more=true: 이 대화에서 이미 보인 반나절은 빼고 업체 기간에 남은 자리(오후 포함)에서 골라요.",
+    "실측 일정 후보(s1~s3, 날짜 · 오전 · 오후). prefer는 고객이 말한 편한 때(오전 · 오후), days는 평일 · 주말이에요. "
+    "고객이 다른 날짜 · 다른 때를 더 보고 싶어 하면 more=true: 이 대화에서 이미 보인 후보는 빼고 업체 기간에 남은 "
+    "자리(오후 포함)에서 골라요.",
     model=SlotsIn,
     schema=obj(
         {
@@ -397,7 +398,7 @@ def shown_halves(tc: ToolCtx, visit_id: str) -> frozenset[tuple[date, str]]:
             "days": {"type": "string", "enum": ["any", "weekday", "weekend"]},
             "more": {
                 "type": "boolean",
-                "description": "이미 보인 후보 말고 다른 반나절을 볼 때 true(업체가 기간을 답한 뒤)",
+                "description": "이미 보인 후보 말고 다른 일정을 볼 때 true(업체가 기간을 답한 뒤)",
             },
         },
         required=["ref", "prefer", "days"],

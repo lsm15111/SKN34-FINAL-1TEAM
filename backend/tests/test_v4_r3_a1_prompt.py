@@ -137,4 +137,13 @@ def test_card_made_words_say_what_pressing_does():
     r = rules("customer_v4")
     assert "다음 걸음은 누르면 무엇이 되는지로 말해" in r and "note에 없는 조건은 만들지 마" in r
     assert "누르기 전에는 마루와벽에 답이 가지 않아요" in r
-    assert "바닥 · 욕실 · 전기는 믿집이 금액 · 기간도 세지 않으니" in r  # S11(목공은 표준견적서가 있어요)
+    assert (
+        "바닥 · 욕실 · 전기는 믿집이 금액 · 기간도 세지 않으니" in r
+    )  # S11(목공은 표준견적서가 있어요)
+
+
+def test_visit_words_for_customers():
+    """고객에게 실측 후보는 '실측 일정 후보', 정해진 것은 '실측 날짜'(사용자 11-24: '반나절 후보' 표현이 이상해요)."""
+    r = rules("customer_v4")
+    assert "고를 후보는 '실측 일정 후보', 정해진 것은 '실측 날짜'(오전 · 오후)라고 해" in r
+    assert "고객에게 '반나절' · '실측 시간'이라고 하지 마" in r

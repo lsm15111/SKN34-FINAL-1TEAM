@@ -18,7 +18,7 @@ function textOf(x: ApiLogItem, all: ApiLogItem[]): string {
     case "picked": return slot(x) ? `${v}에 ${slot(x)} 보냄` : `${v}에 날짜 보냄`;
     case "booked":
     case "proposal_picked": return slot(x) ? `${v} ${slot(x)} 확정` : `${v} 실측 확정`;
-    case "hold_released": return `${v} 잡아 둔 반나절 풀림`;
+    case "hold_released": return `${v} 잡아 둔 날짜 풀림`;
     case "proposed": return `다른 날 제안${x.day ? tail(`${md(x.day)}${x.half ? ` ${HALF_LABEL[x.half]}` : ""}`) : ""}${x.day_to ? tail(md(x.day_to)) : ""}`;
     case "repick": return `${v} 업체 기간에서 다시 고름`;
     case "change_requested": return `${v} 일정 바꾸기 요청${tail(slot(x))}`;

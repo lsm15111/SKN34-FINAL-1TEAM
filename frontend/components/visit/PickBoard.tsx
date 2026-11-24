@@ -114,7 +114,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
   const wish = pick.wish_start && pick.wish_end ? { from: pick.wish_start, to: pick.wish_end } : undefined;
 
   async function send_(kind: "pick" | "proposal") {
-    if (!sel) { setErr("날짜와 반나절을 골라 주세요."); return; }
+    if (!sel) { setErr("날짜와 오전 · 오후를 골라 주세요."); return; }
     setBusy("pick");
     setErr(null);
     const instant = kind === "proposal" || pick.instant;
@@ -149,7 +149,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
     }
   }
   function onMain() {
-    if (!sel) { setErr("날짜와 반나절을 골라 주세요."); return; }
+    if (!sel) { setErr("날짜와 오전 · 오후를 골라 주세요."); return; }
     if (pick.instant) setConfirmOpen(true);
     else void send_("pick");
   }
@@ -219,7 +219,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
           <Group>
             <GroupHead><Name>{v}</Name><StateTag tone="wait">수락 기다림</StateTag></GroupHead>
             {pick.booked ? <Sub>{eulReul(slotText(pick.booked))} 보냈어요</Sub> : null}
-            {pick.next.due_at ? <Small>{dueText(pick.next.due_at)} {iGa(v)} 답해요 · 그때까지 이 반나절을 잡아 둬요</Small> : null}
+            {pick.next.due_at ? <Small>{dueText(pick.next.due_at)} {iGa(v)} 답해요 · 그때까지 이 날짜를 잡아 둬요</Small> : null}
           </Group>
           <div className={s.cardLink}><Button variant="text" arrow href={board}>실측 일정 보기</Button></div>
         </WithAside>
@@ -285,7 +285,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
   // ── 고르기(offered) · 제안한 날(proposed)
   const isProp = mode === "proposal" && proposal;
   const slots = sel ? cal.slotsOf(sel.day) : day ? cal.slotsOf(day) : {};
-  const hint = isProp ? "제안한 날을 고르면 바로 확정돼요." : day && cal.hasFull(day) ? "시각은 확정 뒤 채팅으로 정해요. 마감은 다른 고객이 먼저 고른 반나절이에요." : "시각은 확정 뒤 채팅으로 정해요.";
+  const hint = isProp ? "제안한 날을 고르면 바로 확정돼요." : day && cal.hasFull(day) ? "시각은 확정 뒤 채팅으로 정해요. 마감은 다른 고객이 먼저 고른 때예요." : "시각은 확정 뒤 채팅으로 정해요.";
   const mainLabel = isProp ? "이 날짜로 확정" : pick.instant ? "이 날짜로 확정" : `${v}에 보내기`;
   const why = proposal ? [proposal.reason_code ? PROPOSAL_REASON[proposal.reason_code] : null, proposal.note].filter(Boolean).join(" · ") : "";
   const headLine = isProp
@@ -300,11 +300,11 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
   const side = (
     <section className={s.pickSide} aria-label="고른 날">
       {!isProp && !pick.instant ? <Notice>{iGa(v)} 수락하면 확정돼요</Notice> : null}
-      <Eyebrow>{isProp ? `${iGa(v)} 제안한 반나절` : `${v} · 고른 날`}</Eyebrow>
+      <Eyebrow>{isProp ? `${iGa(v)} 제안한 날` : `${v} · 고른 날`}</Eyebrow>
       {isProp ? (
         <>
           {why ? <Quote>{why}</Quote> : null}
-          <div className={s.slotGrid} role="group" aria-label="제안한 반나절">
+          <div className={s.slotGrid} role="group" aria-label="제안한 날">
             {proposal!.slots.map((x) => {
               const on = sel?.day === x.day && sel.half === x.half;
               return <button key={`${x.day}${x.half}`} type="button" className={on ? `${s.slotBtn} ${s.slotOn}` : s.slotBtn} aria-pressed={on} onClick={() => chooseSlot(x)}>{slotText(x)}</button>;
@@ -322,7 +322,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
       ) : (
         <Button block onClick={onPrimary} busy={busy === "pick"}>{busy === "pick" ? "보내는 중" : mainLabel}</Button>
       )}
-      {!isProp && !pick.instant ? <Small>{`보내면 ${iGa(v)} 48시간 안에 답해요 · 그때까지 이 반나절을 잡아 둬요`}</Small> : null}
+      {!isProp && !pick.instant ? <Small>{`보내면 ${iGa(v)} 48시간 안에 답해요 · 그때까지 이 날짜를 잡아 둬요`}</Small> : null}
       <Err text={err} />
     </section>
   );
@@ -343,7 +343,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
         only={cal.only}
         wide={web}
       />
-      {web && !isProp && pick.days.some((d) => (d.am || d.pm) && d.am !== d.pm) ? <Small>업체가 된다고 한 날만 고를 수 있어요. 날짜 아래 &apos;오전만 · 오후만&apos;은 남은 반나절이에요.</Small> : null}
+      {web && !isProp && pick.days.some((d) => (d.am || d.pm) && d.am !== d.pm) ? <Small>업체가 된다고 한 날만 고를 수 있어요. 날짜 아래 &apos;오전만 · 오후만&apos;은 그날 고를 수 있는 때예요.</Small> : null}
       {web && pick.mine.length ? <Small>이미 잡힌 내 실측({pick.mine.map((m) => `${Number(m.day.slice(8))}일 ${HALF_LABEL[m.half]} · ${m.vendor_name}`).join(", ")})도 달력에 보여요.</Small> : null}
       {!day ? <div className={s.phoneStack}><Err text={err} /></div> : null}
     </Group>
@@ -358,7 +358,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
           {inCard ? <div className={s.pickCols}>{calGroup}{side}</div> : calGroup}
           {day ? (
             <div className={s.phoneStack}>
-              <Group label="반나절">
+              <Group label="오전 · 오후">
                 {halfPicker("body")}
                 <Small>{hint}</Small>
                 <Err text={err} />

@@ -78,7 +78,7 @@ EMPTY_TEXT = "말씀이 비어 있어요. 궁금한 것을 적어 주세요."
 # 카드 종류 → 화면 이름(카드만 보낸 턴의 기록 글)
 CARD_NAME = {
     "home_info": "집 정보", "standard_quote": "표준견적서", "vendor_picks": "업체 추천",
-    "visit_slots": "실측 시간", "quote_compare": "견적서 비교", "schedule": "공사 날짜",
+    "visit_slots": "실측 일정", "quote_compare": "견적서 비교", "schedule": "공사 날짜",
     "knowledge": "자료", "answer": "답", "floorplan_links": "평면도 찾기", "today": "오늘 할 일",
     "vendor_brief": "요청 브리핑", "quote_checklist": "견적서 체크리스트",
 }  # fmt: skip

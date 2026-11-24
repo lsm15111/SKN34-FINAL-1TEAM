@@ -92,8 +92,8 @@ SAT = NS(day=date(2026, 11, 28), half="am")
     ("r", "chosen", "want"),
     [
         (row("requested"), False, "실측 요청함(업체 답 기다림)"),
-        (row("offered"), False, "실측 기간 답 옴(반나절 고를 차례)"),
-        (row("picked", booked=SAT), False, "실측 시간 고름(11월 28일(토) 오전 · 업체 수락 기다림)"),
+        (row("offered"), False, "실측 기간 답 옴(날짜 고를 차례)"),
+        (row("picked", booked=SAT), False, "실측 날짜 고름(11월 28일(토) 오전 · 업체 수락 기다림)"),
         (row("booked", booked=SAT), False, "실측 날짜 정해짐(11월 28일(토) 오전)"),
         (
             row("booked", booked=SAT, next=NS(kind="change", who="vendor")),

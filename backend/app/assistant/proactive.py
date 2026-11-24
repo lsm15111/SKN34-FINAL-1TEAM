@@ -112,9 +112,9 @@ TRIGGERS: dict[str, Trigger] = {
         Trigger(
             "visit_offered", "customer", ("visit_offered",), follow=timedelta(hours=48),
             decision=True, action=True, state="visit", say="실측 날짜 고를래요",
-            why="업체가 갈 수 있는 기간을 보냈어요", ask="실측 반나절을 골라 볼까요?",
-            feed="{vendor_i_ga} 실측 기간을 보냈어요. 반나절 후보를 골라 뒀어요.",
-            notify="{vendor_i_ga} 보낸 실측 기간에서 아직 날짜를 고르지 않았어요. 후보를 확인해 주세요.",
+            why="업체가 갈 수 있는 기간을 보냈어요", ask="실측 날짜를 골라 볼까요?",
+            feed="{vendor_i_ga} 실측 가능 기간을 보냈어요. 실측 일정 후보를 골라 뒀어요.",
+            notify="{vendor_i_ga} 보낸 실측 가능 기간에서 아직 날짜를 고르지 않았어요. 후보를 확인해 주세요.",
         ),
         Trigger(
             "quote_sent", "customer", ("quote_sent", "quote_resent"), follow=timedelta(days=3),
@@ -232,7 +232,7 @@ class Facts:
 # 고객 문장 사실의 지금 단계 · 남은 할 일(nudge_write_v3가 읽어 할 일을 여기서 고른다). context()가 상태를 확인한
 # 뒤라 트리거마다 단계가 하나다(QA r2 c3: 업체 확정 뒤 공사 날짜 줄에 '이 업체로 확정해 보세요')
 STEPS: dict[str, tuple[str, str]] = {
-    "visit_offered": ("실측 요청 뒤 · 업체가 실측 기간을 답함", "실측 반나절 고르기"),
+    "visit_offered": ("실측 요청 뒤 · 업체가 실측 기간을 답함", "실측 날짜 고르기"),
     "quote_sent": ("실측 견적서 받음 · 업체 확정 전", "받은 견적서 견주고 업체 확정하기"),
     "dates_proposed": ("업체 확정 끝 · 공사 날짜 수락 전", "올라온 공사 날짜 확인하고 수락하기"),
     "work_eve": ("공사 날짜 수락 끝 · 내일 공사 시작", "공사 전날 준비물 챙기기"),

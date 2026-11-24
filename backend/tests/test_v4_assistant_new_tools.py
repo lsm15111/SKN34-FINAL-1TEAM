@@ -741,10 +741,10 @@ def test_pull_forward_change_offers_only_days_before_the_start(api, script):
     (b,) = made(ok(ask(api, pid, f"{two.month}월 {two.day}일부터로 당겨 주세요")))
     assert wishes(b) == [two.isoformat(), prev.isoformat()]
     reject(api, b)
-    # 방향 인자: 며칠 앞당기기(delay_days + earlier)
+    # 방향 인자: 며칠 앞당기기(delay_days + earlier). 날 수를 집어 말하면 그날 하나만 내요(b84acb2)
     change_script(script, delay_days=(start - before[-3]).days, direction="earlier")
-    (c,) = made(ok(ask(api, pid, "사흘쯤 당겨 주세요")))
-    assert wishes(c) == [x.isoformat() for x in before[-3:]]
+    (c,) = made(ok(ask(api, pid, "사흘 당겨 주세요")))
+    assert wishes(c) == [before[-3].isoformat()]
     reject(api, c)
     # 앞당길 날이 없으면(지금 시작일부터) 도구 오류, 카드 없음
     log = change_script(script, wish_from=start.isoformat(), direction="earlier")

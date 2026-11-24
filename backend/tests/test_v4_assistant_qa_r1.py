@@ -259,7 +259,7 @@ def test_suggest_vendor_picks_before_any_shortlist(api):
     _, pid = home(api)
     ev = ok(ask(api, pid, "집 정보 확인해 줘"))
     says = [x["say"] for x in ev[-1][1]["suggest"]]
-    assert "실측 시간 찾아 줘" not in says and "업체 추천해 줘" in says
+    assert "실측 일정 찾아 줘" not in says and "업체 추천해 줘" in says
 
 
 # ---- 고객: 공사 전 할 일 집 맞춤 · 채팅 링크 ----

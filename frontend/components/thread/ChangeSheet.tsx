@@ -61,7 +61,7 @@ export function ChangeSheet({ open, onClose, projectId, visit, vendorName, today
   }, [day, visit.days, visit.full, cur]);
 
   async function submit() {
-    if (!day || !half) { setErr("새 날짜와 반나절을 골라 주세요."); return; }
+    if (!day || !half) { setErr("새 날짜와 오전 · 오후를 골라 주세요."); return; }
     setErr(null);
     setBusy(true);
     try {
