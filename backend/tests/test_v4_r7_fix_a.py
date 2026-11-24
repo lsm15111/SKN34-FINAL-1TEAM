@@ -2,6 +2,7 @@
 
 - 1. 집 정보 승인 카드 차액의 까닭(c2 T9~T11): 계산 엔진 줄로 바뀌는 줄 · 기준을 모델 값 change와 다음 턴 사실에
   넘겨요. 화면 카드 글은 그대로예요.
+- 2. 값이 섞인 견주기(c2 L27) · v3 빈 답(c2 L21)은 공정 전문가로. 기본 경로(period=v3,price=v3,*=expert+v3)는 그대로예요.
 """
 
 import asyncio
@@ -14,15 +15,17 @@ import pytest
 from v3_kb import repo_index
 
 from app.agent import llm
-from app.assistant.tools import propose
+from app.assistant.tools import answer, propose
 from app.calc import dobae
 from app.calc.common import Line
 from app.calc.quote_diff import line_changes
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
+from app.config import settings
 from app.refprice.book import DOBAE_PROFILES
 from app.refprice.house import HOUSE_DEFAULT
 from app.refprice.wallpaper_market import paper_market
 from tests.test_v4_assistant_actions import acts
+from tests.test_v4_assistant_experts import TRADE_ROUTE, _gate, _out, repo_search  # noqa: F401
 from tests.test_v4_assistant_turns import ask, home, ok
 from tests.test_v4_r6_a1_lead import facts_of
 
@@ -160,3 +163,81 @@ def test_reason_words_and_cards_without_a_difference():
     assert propose.basis_said(replace(ch, basis=("리모델링 기준", "리모델링 기준"))) is None
     a = SimpleNamespace(kind="home_info", summary={"title": "집 정보 저장", "rows": []}, payload={})
     assert asyncio.run(propose.open_home_fact(None, SimpleNamespace(home=object()), a)) is None
+
+
+# ---- 2. 값이 섞인 견주기 · 빈 답은 공정 전문가로 ----
+
+COMPARE_Q = (
+    "문틀은 제가 페인트 칠하려는데, 필름 붙이는 거나 아예 문틀 교체하는 거랑 비교하면 어때요? "
+    "오래가는 거랑 비용 차이가 궁금해요."
+)
+
+
+def test_compare_words_and_money_first():
+    """견주기 · 장단 말이 있으면 돈 · 기간 낱말이 있어도 이 공사 금액 길이 먼저가 아니에요(기본 경로는 그대로)."""
+    assert answer.engine_for("price", TRADE_ROUTE) == "v3"  # 기본 경로 그대로
+    for q in (
+        COMPARE_Q,
+        "실크랑 합지 중에 뭐가 더 나아요? 가격은요?",
+        "페인트 아니면 필름, 어느 게 오래가요?",
+    ):
+        assert answer.kind_of("price", q) == "general" and not answer.money_first(q), q
+    for q in (
+        "도배 비용 얼마예요?",
+        "도배 며칠 걸려요?",
+        "초배는 꼭 해야 해요? 빼면 얼마나 아껴요?",
+    ):
+        assert answer.kind_of("price", q) == "price" and answer.money_first(q), q
+
+
+@pytest.mark.usefixtures("repo_search")
+@pytest.mark.parametrize("kind", ["general", "price"])
+def test_compare_with_money_goes_to_the_expert(api, script, monkeypatch, kind):
+    """'문틀 페인트 · 필름 · 교체 비교 + 비용'(QA r7 c2 L27): 모델이 price로 불러도 전문가 길(LLM 3번)이고, 값은 이
+    공사 계산 값으로만 말하라는 note가 붙어요."""
+    _, pid = home(api)
+    monkeypatch.setattr(settings, "assistant_answer_route", TRADE_ROUTE)
+    _gate(monkeypatch)
+    expert = _out(("문틀 상태가 좋으면 칠하기로 충분하고, 습한 곳은 필름이 들뜨기 쉬워요.", ["G"]))
+    call = {"id": "q", "name": "answer_question", "input": {"question": COMPARE_Q, "kind": kind}}
+    log = script([{"tool_calls": [call]}, {"json": expert}, {"text": "확인했어요."}])
+    ok(ask(api, pid, COMPARE_Q))
+    body = json.loads(log[-1]["messages"][-1]["content"][0]["content"])
+    assert len(log) == 3 and body["route"] == "expert"
+    assert answer.MONEY_NOTE in body["note"]
+
+
+@pytest.mark.usefixtures("repo_search")
+def test_empty_v3_answer_goes_on_to_the_expert(api, script, monkeypatch):
+    """v3가 범위 밖 · 되묻기가 아닌데 빈 답이면 전문가로 이어요(QA r7 c2 L21). 범위 밖 답은 그대로, 전부 v3 경로면
+    물러서지 않아요."""
+    from app.assistant.tools import ToolOut
+
+    _, pid = home(api)
+    monkeypatch.setattr(settings, "assistant_answer_route", TRADE_ROUTE)
+    _gate(monkeypatch)
+    route = {"v": "answer"}
+
+    async def empty(_tc, _q):
+        return ToolOut(data={"route": route["v"], "sources": [], "found": False}), False
+
+    monkeypatch.setattr(answer, "_v3_answer", empty)
+    q = "초배는 꼭 해야 해요? 빼면 얼마나 아껴요?"
+    expert = _out(("실크는 초배로 바탕을 골라야 이음매가 덜 보여요.", ["G"]))
+    for kind in ("price", "general"):
+        call = {"id": "q", "name": "answer_question", "input": {"question": q, "kind": kind}}
+        log = script([{"tool_calls": [call]}, {"json": expert}, {"text": "확인했어요."}])
+        ok(ask(api, pid, q))
+        body = json.loads(log[-1]["messages"][-1]["content"][0]["content"])
+        assert len(log) == 3 and body["route"] == "expert", kind
+        assert "v3_empty" not in body  # 기록 칸은 모델에 가지 않아요
+    route["v"] = "out_of_scope"  # 범위 밖 안내는 v3 그대로(전문가를 부르지 않아요)
+    call = {"id": "q", "name": "answer_question", "input": {"question": q, "kind": "price"}}
+    log = script([{"tool_calls": [call]}, {"text": "확인했어요."}])
+    ok(ask(api, pid, q))
+    assert len(log) == 2
+    route["v"] = "answer"
+    monkeypatch.setattr(settings, "assistant_answer_route", "v3")  # 전부 v3면 물러서지 않아요
+    log = script([{"tool_calls": [call]}, {"text": "확인했어요."}])
+    ok(ask(api, pid, q))
+    assert len(log) == 2

@@ -11,7 +11,8 @@
     알아 두기만(route know), 그 밖은 v2 범위 밖 안내 그대로.
   - expert · expert+v3: 공정 전문가(assistant/experts, docs/v4/13-trade-experts.md). 코드가 공정을 고르고(질문 낱말 →
     이 공사 공정 → 지식 조각 갈래) 도배 · 목공 전문가(LLM 구조화 답, 둘 다면 함께)가 핵심 답 · 주의점 · 확인할 조건을
-    근거 번호와 함께 내면, 코드가 근거 · 숫자를 거른 줄만 넘긴다(route expert). 금액 · 기간 질문은 v3, 모르는 공정은
+    근거 번호와 함께 내면, 코드가 근거 · 숫자를 거른 줄만 넘긴다(route expert). 금액 · 기간 질문은 v3(견주기 · 장단
+    질문은 전문가, v3가 범위 밖이 아닌데 빈 답이면 전문가로 이음), 모르는 공정은
     v2g(공정마다 답이 갈리면 되물을 조건 하나를 더함), 무료 모드 · 전문가 실패 · 범위 밖 · 남은 줄 없음은 v2g로 물러선다.
     expert+v3는 v2g+v3처럼 관문이 범위 밖으로 본 질문을 v3 · 알아 두기로 보낸다.
   - 다른 공정(믿집이 계산 · 연결하지 않는 공정)이 걸린 질문은 엔진과 상관없이 notes에 알아 두기(순서 · 주의점 ·
@@ -144,12 +145,38 @@ class AskIn(BaseModel):
 def kind_of(kind: str, question: str) -> str:
     """모델이 고른 질문 종류 → 답 길을 고를 종류. 금액 · 기간 종류라도 하자 · A/S · 보증 · 환불 질문이면 이 공사
     공정표 · 견적 값이 답이 아니라 general이에요(v3 policy WARRANTY · REFUND와 같은 말. 2026-11-23 도커 'AS기간은 보통
-    어떻게돼?'가 period로 와 v3 길에서 타일 글 조각만 받았어요)."""
+    어떻게돼?'가 period로 와 v3 길에서 타일 글 조각만 받았어요). 견주기 · 장단 질문(COMPARE)도 general이에요."""
     from app.agent.v3.policy import REFUND, WARRANTY
 
-    if kind in ("price", "period") and (WARRANTY.search(question) or REFUND.search(question)):
+    if kind in ("price", "period") and (
+        WARRANTY.search(question) or REFUND.search(question) or COMPARE.search(question)
+    ):
         return "general"
     return kind
+
+
+# 견주기 · 장단 질문(방법 · 자재를 서로 견줌): 돈 · 기간 낱말이 있어도 이 공사 금액 · 공정표가 답이 아니라 전문가 길로
+# 가요(QA r7 c2 L27: '문틀 페인트 · 필름 · 교체 비교하면 어때요? 비용 차이도'가 v3 길로 가 '자료로 확인하지 못했어요'만)
+COMPARE = re.compile(
+    r"비교|견주|견줘|장단|장점|단점|(?<![A-Za-z])vs(?![A-Za-z])|아니면"
+    r"|(?:뭐가|무엇이|어느\s*(?:게|것이|거|쪽이?)|어떤\s*(?:게|것이|거))\s*(?:더\s*)?"
+    r"(?:나[아을으]|낫|좋|오래|튼튼)",
+    re.IGNORECASE,
+)
+# 값이 섞인 견주기 · 빈 답 뒤 전문가 답(모델 값 note): 값은 이 공사 계산 값으로만, 믿집이 세지 않는 일은 그렇다고만
+MONEY_NOTE = (
+    "고객이 값도 물었어요. 이 공사 표준견적서에 있는 일이면 get_standard_quote 값으로 말하고, 표준견적서에 없는 일"
+    "(필름 · 도장 · 문틀 교체 같은)은 값을 짐작하지 말고 '그 값은 믿집이 세지 않아요'라고만 말해요."
+)
+
+
+def money_first(question: str) -> bool:
+    """이 공사 금액 · 공정표 값이 먼저인 질문인지: v3 정책 표시 price · period이고 견주기 · 장단 질문이 아니에요."""
+    from app.agent.v3.policy import policy_of
+    from app.v2 import ask
+
+    flags = set(policy_of(ask.clean_message(question)))
+    return bool({"price", "period"} & flags) and not COMPARE.search(question)
 
 
 # 'AS' · 'A/S' · '에이에스'(영어 낱말 안의 as는 아님)
@@ -207,7 +234,9 @@ async def answer_question(tc: ToolCtx, a: AskIn) -> ToolOut:
     elif engine in ("v2", GROUND, EXPERT):
         out = await _v2_or_v3(tc, question, ground=engine != "v2", expert=expert)
     else:
-        out, _ = await _v3_answer(tc, question)
+        out, answered = await _v3_answer(tc, question)
+        if not answered:  # 빈 답이면 전문가 길로(QA r7 c2 L21)
+            out = await _after_empty(tc, question, terms_of(a.terms), out)
     if know is not None:  # 다른 공정 알아 두기(숫자 없음 · 출처)
         out.data["notes"] = know.data()
     return out
@@ -268,6 +297,24 @@ async def _v2_or_v3(
         log.warning("지식 답 v2 길 실패, v3로 물러섬 (%s)", type(e).__name__)
     out, _ = await _v3_answer(tc, question)
     out.data.update(engine="v3", v2_failed=True)
+    return out
+
+
+async def _after_empty(
+    tc: ToolCtx, question: str, terms: tuple[str, ...], empty: ToolOut
+) -> ToolOut:
+    """v3(이 공사 계산 값 길)가 범위 밖 · 되묻기가 아닌데 빈 답이면 전문가 길로 이어요(기본 경로에 전문가가 있을 때만,
+    QA r7 c2 L21 '초배 꼭 해야 해요? 빼면 얼마?'가 174바이트 빈 답). 전문가 길이 깨지면 v3 빈 답 그대로예요."""
+    if empty.data.get("route") in V3_NO_ANSWER or engine_for("general") not in (EXPERT, HYBRID_E):
+        return empty
+    try:
+        out = await _expert_answer(tc, question, terms, money=False)
+    except (ToolError, AppError):
+        raise
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 로그(질문 글은 남기지 않음)
+        log.warning("지식 답 v3 빈 답 뒤 전문가 길 실패 (%s)", type(e).__name__)
+        return empty
+    out.data["v3_empty"] = True  # 기록용(모델에 가지 않아요)
     return out
 
 
@@ -374,21 +421,26 @@ REST_PIECES = 4  # 전문가가 실패한 공정에서 대신 넘기는 조각 �
 ORDER_WORDS = re.compile(r"순서|뭐부터|무엇부터|어느\s*(?:것|거|걸|쪽)\s*부터|먼저|나중")
 
 
-async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()) -> ToolOut:
+async def _expert_answer(
+    tc: ToolCtx, question: str, terms: tuple[str, ...] = (), *, money: bool = True
+) -> ToolOut:
     """공정 전문가: 공정 고르기(코드) → 도배 · 목공 전문가(LLM 구조화 답, 둘 다면 함께) → 비서가 받아 한 번에 써요.
-    금액 · 기간 질문은 v2g처럼 v3(이 공사 계산 엔진 값). 고른 공정이 없으면(모름 · 다른 공정 · 갈림) v2g 근거로,
+    금액 · 기간 질문은 v2g처럼 v3(이 공사 계산 엔진 값)가 먼저예요(money, 견주기 · 장단 질문은 아님). v3가 범위 밖 ·
+    되묻기가 아닌데 빈 답이면 전문가로 이어요(QA r7 c2 L21). 고른 공정이 없으면(모름 · 다른 공정 · 갈림) v2g 근거로,
     갈림이면 어느 공정인지 되물을 조건 하나를 더해요. 무료 모드 · 전문가 실패 · 범위 밖 · 남은 줄 없음도 v2g로
-    물러서요(가짜 설명 없음). expert 칸(기록, 모델에 안 감): 고른 길 · 전문가마다 줄 수 · 근거 · 버린 까닭 · 시간."""
+    물러서요(가짜 설명 없음). 값을 같이 물었으면 값은 이 공사 계산 값으로만 말하라는 note를 붙여요(MONEY_NOTE).
+    expert 칸(기록, 모델에 안 감): 고른 길 · 전문가마다 줄 수 · 근거 · 버린 까닭 · 시간."""
     from app.agent.v3.policy import policy_of
     from app.assistant.experts import agent as experts
     from app.assistant.experts import pick as picking
     from app.knowledge import service as knowledge
     from app.v2 import ask
 
-    if {"price", "period"} & set(policy_of(ask.clean_message(question))):
-        out, _ = await _v3_answer(tc, question)
-        out.data["engine"] = "v3"
-        return out
+    if money and money_first(question):
+        out, answered = await _v3_answer(tc, question)
+        if answered or out.data.get("route") in V3_NO_ANSWER:
+            out.data["engine"] = "v3"
+            return out
     t0 = time.monotonic()
     home = await experts.home_of(tc.user, tc.project_id)
     other = knowledge.other_trade_notes(question) is not None
@@ -426,6 +478,9 @@ async def _expert_answer(tc: ToolCtx, question: str, terms: tuple[str, ...] = ()
     order = len(got.trades) > 1 or bool(ORDER_WORDS.search(question))
     record.update(used=EXPERT, ms=int((time.monotonic() - t0) * 1000))
     data = expert_data(ok, notes, order=order)
+    # 값이 섞인 견주기 · 빈 답 뒤(QA r7 c2 L27): 값은 이 공사 계산 값으로만
+    if "price" in policy_of(ask.clean_message(question)):
+        data["note"] = " ".join(x for x in (data.get("note"), MONEY_NOTE) if x)
     return ToolOut(data={**data, "engine": EXPERT, "expert": record})
 
 
