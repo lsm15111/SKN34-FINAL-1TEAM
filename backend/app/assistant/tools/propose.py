@@ -41,7 +41,7 @@ from app.project.diy import DiyKey
 from app.shared.clock import SEOUL
 from app.shared.errors import AppError
 from app.shared.korean import euro
-from app.visit.models import SLOTS
+from app.visit.models import SLOTS, WISH_SPAN_MAX
 
 REF = {"type": "string", "description": "도구 결과에 나온 이름표"}
 HALF = {"am": "오전", "pm": "오후"}
@@ -607,7 +607,8 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
         out.data["vendors"] = vendors_of(reach)
     if not out.actions:  # 거절한 같은 제안: 카드에 바뀜 · 단추를 달지 않는다
         return out
-    if money is not None and moved:  # 차액의 까닭(모델 값만, 카드 글은 늘리지 않아요. QA r7 c2 T9~T11)
+    # 차액의 까닭(모델 값만, 카드 글은 늘리지 않아요. QA r7 c2 T9~T11)
+    if money is not None and moved:
         out.data["change"] = change_model(money)
     card.data = {
         **card.data,
@@ -619,11 +620,19 @@ async def propose_home_info(tc: ToolCtx, a: HomeIn) -> ToolOut:
     return out
 
 
+class WishIn(BaseModel):
+    """고객이 말한 희망 기간(하루면 시작 · 끝이 같은 날)."""
+
+    start: date
+    end: date
+
+
 class VisitReqIn(BaseModel):
     trade: Literal["dobae", "mokgong"] = "dobae"
     vendor_refs: list[str] = Field(default_factory=list, max_length=3)
     wish_ref: str | None = None
     pick: Literal["top"] | None = None  # 고객이 맡김: 믿집 점수 1위를 서버가 넣는다
+    wish: WishIn | None = None  # 고객이 말한 희망 기간(wish_ref · 초안보다 먼저)
 
     @model_validator(mode="after")
     def _who(self) -> "VisitReqIn":
@@ -642,6 +651,15 @@ def estimate_row(paper_note: str | None) -> SummaryRow:
     return SummaryRow(label=ESTIMATE_LABEL, value="업체가 확인한 단가로 고정돼요", sub=paper_note)
 
 
+# 고객이 말한 희망 기간이 화면 요청 규칙(calc.slots.said_wish)에 맞지 않을 때 도구 오류 글
+WISH_SAID = {
+    "past": "희망 기간은 내일부터 고를 수 있어요.",
+    "order": "희망 기간의 끝이 시작보다 앞이에요.",
+    "long": f"희망 기간은 {WISH_SPAN_MAX}일 안으로 고를 수 있어요.",
+}
+WISH_HINT = "wish는 고객이 말한 시작 · 끝 날짜(하루면 같은 날)예요. 고객에게 기간을 다시 물어요."
+
+
 def slots_full_said(n: int, room: int) -> str:
     """요청 칸이 모자랄 때 도구 오류 글: 진행 중 n곳, 더 요청할 수 있는 곳 room."""
     more = f"{room}곳만 더 요청할 수 있어요" if room > 0 else "새 업체에 요청할 수 없어요"
@@ -658,7 +676,9 @@ def slots_full_said(n: int, room: int) -> str:
     status="실측 요청을 준비하고 있어요",
     description="고른 업체(v1…, 1~3곳)에 보낼 실측 요청을 승인 카드로 만들어요. 업체 이름표는 recommend_vendors "
     "결과나 턴 사실 '담은 업체' 줄(업체 보기에서 고객이 담은 곳)의 v…예요. 희망 기간은 wish_ref(r1…)이고, "
-    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
+    "비우면 믿집 초안(공사 시작 희망일 − 28 ~ − 14일)이에요. 고객이 희망 기간을 말했으면('25일에서 27일 사이' · "
+    "'다음 주 평일') wish에 그 시작 · 끝 날짜를 넣어요(하루면 같은 날, 내일부터 · 62일 안, wish_ref보다 먼저예요). "
+    "고객이 업체를 알아서 골라 달라고 맡기면 vendor_refs를 "
     "빈 목록으로 두고 pick=top으로 불러요: 믿집 점수 1위 업체를 믿집이 넣고, 결과의 why가 까닭이에요(따로 고르지 "
     "않아요). 요청은 집 지역 업체에만 보낼 수 있어요.",
     model=VisitReqIn,
@@ -676,6 +696,12 @@ def slots_full_said(n: int, room: int) -> str:
                 "enum": ["top"],
                 "description": "고객이 고르기를 맡김: 믿집 점수 1위를 믿집이 넣어요",
             },
+            "wish": obj(
+                {
+                    "start": {"type": "string", "format": "date"},
+                    "end": {"type": "string", "format": "date"},
+                }
+            ),
         },
         required=["trade", "vendor_refs"],
     ),
@@ -714,7 +740,11 @@ async def propose_visit_request(tc: ToolCtx, a: VisitReqIn) -> ToolOut:
     room = SLOTS - len(live)
     if len([c for c in rows if c.vendor_id not in live]) > room:
         raise ToolError("slots_full", slots_full_said(len(live), room))
-    if a.wish_ref is not None:
+    if a.wish is not None:  # 고객이 말한 기간(화면 요청과 같은 규칙, QA r7 화면 N3)
+        start, end = a.wish.start, a.wish.end
+        if (bad := slots.said_wish(start, end, tc.today)) is not None:
+            raise ToolError("bad_wish", WISH_SAID[bad], hint=WISH_HINT)
+    elif a.wish_ref is not None:
         w = tc.refs.get(a.wish_ref, "wish")
         start, end = date.fromisoformat(w["start"]), date.fromisoformat(w["end"])
     else:

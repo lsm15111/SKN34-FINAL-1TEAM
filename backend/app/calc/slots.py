@@ -4,6 +4,7 @@
   잡아 둔 것(hold)과 확정(booked)을 모두 칸에 센다. 칸 번호(seat)는 1..capacity 중 빈 가장 작은 수.
 - 고를 수 있는 날: 업체 기간(start~end) 안 · 빼는 날 아님 · 오늘(서울)보다 뒤.
 - 희망 기간 초안(UC-VIS-01): 공사 시작 희망일 − 28일 ~ − 14일. 추천(D15): 희망일 − 20일에 가장 가까운 칸.
+  고객이 말한 희망 기간(v4 비서)은 화면 요청과 같은 규칙으로 본다(said_wish: 내일부터 · 62일 안).
   AI는 이 값을 설명만 한다.
 - 업체 공사 날(v4 비서 빈 반나절, ADR 0001): 그날은 실측 칸을 모두 막는다.
 - v4 비서 후보: 요청 전 희망 기간(wish_candidates) · 업체 기간 안 반나절(candidates) · 업체가 답할 기간(best_windows).
@@ -108,6 +109,21 @@ def free_at_home(day: date, half: str, taken: Collection[tuple[date, str]]) -> b
     """같은 집 다른 실측이 그 반나절을 잡지 않았는지. taken = 같은 공사의 다른 요청이 잡은 (날, 반나절)
     (확정 · 업체 수락 기다림). 두 업체가 같은 때 오지 않게 후보 · 고르기에서 뺀다(QA edge P8)."""
     return (day, half) not in taken
+
+
+WishProblem = Literal["past", "order", "long"]
+
+
+def said_wish(start: date, end: date, today: date) -> WishProblem | None:
+    """고객이 말한 희망 기간 검사(화면 요청 visit.flow.request와 같은 규칙): 내일부터(past) · 끝이 시작보다 앞이
+    아님(order) · SPAN_MAX일 안(long). 맞으면 None(QA r7 화면 N3: 비서 요청 카드가 고객이 말한 25~27일을 못 담음)."""
+    if start <= today:
+        return "past"
+    if end < start:
+        return "order"
+    if (end - start).days > SPAN_MAX:
+        return "long"
+    return None
 
 
 def draft_wish(work_start: date | None, today: date) -> tuple[date, date] | None:

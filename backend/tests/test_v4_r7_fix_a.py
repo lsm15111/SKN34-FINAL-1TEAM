@@ -7,6 +7,7 @@
   (아는 칸을 되묻는 조건은 버림), 카드 인용 '-다'체는 '-요'체로(못 바꾸면 원문 인용).
 - 4. 첫 인사 · 첫 칩 · 지시문 첫 답이 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기를 알려요.
 - 5. 비서가 되물은 것에 고객이 답하면 그 답으로 판단 한 문장을 먼저 잇기(c2 L22 → L23, 지시문 규칙).
+- 6. 비서 실측 요청 카드에 고객이 말한 희망 기간(화면 N3): wish 칸, 검사는 계산 엔진(화면 요청과 같은 규칙).
 """
 
 import asyncio
@@ -391,3 +392,63 @@ def test_rule_continues_from_the_answer_to_our_question():
     assert (
         "바로 앞 답에서 내가 물은 것에 고객이 답하면 그 답을 받은 판단 한 문장을 먼저 말해" in rules
     )
+
+
+# ---- 6. 비서 실측 요청 카드에 고객이 말한 희망 기간 ----
+
+
+def test_said_wish_uses_the_screen_request_rule():
+    """고객이 말한 희망 기간 검사는 화면 요청(visit.flow.request)과 같은 규칙: 내일부터 · 끝이 앞이 아님 · 62일 안."""
+    from datetime import date, timedelta
+
+    from app.calc import slots
+    from app.visit.models import WISH_SPAN_MAX
+
+    t, day = date(2026, 11, 24), timedelta(days=1)
+    assert slots.said_wish(t + day, t + 3 * day, t) is None
+    assert slots.said_wish(t + day, t + day, t) is None  # 하루
+    assert slots.said_wish(t, t + 3 * day, t) == "past"
+    assert slots.said_wish(t + 3 * day, t + day, t) == "order"
+    assert slots.said_wish(t + day, t + day * (1 + WISH_SPAN_MAX), t) is None
+    assert slots.said_wish(t + day, t + day * (2 + WISH_SPAN_MAX), t) == "long"
+    assert slots.SPAN_MAX == WISH_SPAN_MAX
+
+
+def test_visit_request_card_takes_the_said_wish(api, script, monkeypatch):
+    """'25일에서 27일 사이로요'(QA r7 화면 N3): 카드 희망 기간 · 실행한 요청이 고객이 말한 기간이에요. 규칙에 맞지 않는
+    기간은 카드 없이 까닭(도구 오류)."""
+    from datetime import timedelta
+
+    from app.shared.clock import today_seoul
+    from tests.conftest import query
+    from tests.test_v3_visit_kit import customer, quiet, vendor
+    from tests.test_v4_assistant_actions import approve
+    from tests.test_v4_r6_a1_cards import RECOMMEND
+
+    quiet(monkeypatch)
+    vendor(api, "r7wish@mitjip.test", "결도배")
+    _, pid = customer(api)
+    start = today_seoul() + timedelta(days=2)
+    end = start + timedelta(days=2)
+    wish = {"start": start.isoformat(), "end": end.isoformat()}
+    req = {
+        "id": "p",
+        "name": "propose_visit_request",
+        "input": {"trade": "dobae", "vendor_refs": ["v1"], "wish": wish},
+    }
+    script([{"tool_calls": [RECOMMEND]}, {"tool_calls": [req]}, {"text": "카드를 확인해 주세요."}])
+    ev = ok(ask(api, pid, "결도배에 실측 요청 보내 주세요. 모레부터 사흘 사이로요"))
+    (a,) = [x for x in acts(ev) if x["status"] == "proposed"]
+    rows = {r["label"]: r["value"] for r in a["summary"]["rows"]}
+    assert rows["희망 기간"] == cards.md_range(start, end)
+    r = approve(api, a["action_id"], seen=a["target_ver"])
+    assert r.status_code == 200 and r.json()["status"] == "executed", r.text
+    (v,) = query("select wish_start, wish_end from visits where project_id = $1::uuid", pid)
+    assert (v["wish_start"], v["wish_end"]) == (start, end)
+
+    bad = {**req, "input": {**req["input"], "wish": {"start": wish["end"], "end": wish["start"]}}}
+    log = script([{"tool_calls": [bad]}, {"text": "기간을 다시 알려 주세요."}])
+    ev = ok(ask(api, pid, "27일부터 25일까지로 해 주세요"))
+    err = tool_result(log, 1)
+    assert err["error"] == "bad_wish" and err["message"] == propose.WISH_SAID["order"]
+    assert not [x for x in acts(ev) if x["status"] == "proposed"]
