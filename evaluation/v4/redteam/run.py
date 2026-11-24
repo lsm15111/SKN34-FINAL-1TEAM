@@ -5,6 +5,7 @@
 
 - 기본은 무료 모드(LLM_LIVE=false, 키 환경변수 비움, 유료 호출 0회).
 - --live(LLM 모드): 환경변수 LLM_LIVE=true · ANTHROPIC_API_KEY와 --max-usd가 있어야 돌아요(apienv.live_mode).
+  --provider openai는 OPENAI_API_KEY로 OpenAI 길을 돌려요(apienv.openai_mode, 시뮬레이터와 같음).
   문항마다 reset 전에 장부(llm_usage)를 읽어 비용 · 호출 수 · 턴 비용 · 지연을 적고, 누적 + 다음 문항 어림
   (턴 수 × 턴당 어림, drive.next_estimate)이 --max-usd를 넘으면 시작하지 않고 멈춰요.
 - 문항마다 시험 DB(기본 mitjip_eval_rt, Redis 11번)를 비우고 바탕(고객 1 · 마포구 도배 업체 3곳)과 setup을 심어요.
@@ -369,11 +370,17 @@ def main(argv=None) -> int:
     ap.add_argument(
         "--no-worker", action="store_true", help="worker(기억 뽑기 · 먼저 말 걸기)를 돌리지 않아요"
     )
+    ap.add_argument(
+        "--provider",
+        choices=["anthropic", "openai"],
+        default="anthropic",
+        help="--live 공급자. openai는 OPENAI_API_KEY를 써요(모델 · effort는 OPENAI_* 환경변수)",
+    )
     a = ap.parse_args(argv)
     if a.live and (a.max_usd is None or a.max_usd <= 0):
         ap.error("--live에는 --max-usd(0보다 큰 값)가 필요해요")
     if a.live:
-        apienv.live_mode()
+        apienv.openai_mode() if a.provider == "openai" else apienv.live_mode()
     else:
         apienv.free_mode()
     env = apienv.load_db_env(a.env_file)
