@@ -144,7 +144,6 @@
 .tocPlain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .tocPlain a { display: flex; align-items: center; min-height: var(--mj-hit-min); color: var(--mj-text-sub); font-size: var(--mj-type-label); text-decoration: none; }
 .tocPlain a:hover { color: var(--mj-link); text-decoration: underline; text-underline-offset: 3px; }
-.copyRow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 /* 오른쪽 '이 글에서' */
 .toc { display: flex; flex-direction: column; gap: 4px; font-size: var(--mj-type-label); }

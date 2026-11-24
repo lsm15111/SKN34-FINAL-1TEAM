@@ -5,7 +5,6 @@ import { Button } from "@/components/ui/Button";
 import { CHECKED, NAV_GROUPS, readMinutes, termByName, type Article } from "@/lib/guide";
 import type { Block } from "@/lib/guide/types";
 import { ArticleToc } from "./ArticleToc";
-import { CopyChecks } from "./CopyChecks";
 import { GuideNav } from "./GuideNav";
 import { NavScroll } from "./NavScroll";
 import { Rich } from "./Rich";
@@ -109,7 +108,6 @@ export function ArticleView({ a, canAsk }: { a: Article; canAsk: boolean }) {
           <section id="a-checks" className={s.sec} aria-labelledby="a-checks-h">
             <h2 id="a-checks-h">확인할 것</h2>
             <ul id="a-checks-list" className={s.checks}>{a.checks.map((x, i) => <li key={i}><span><Rich text={x} /></span></li>)}</ul>
-            <CopyChecks lines={a.checks.map((x) => x.replace(/\[\[([^\]]+)\]\]/g, "$1"))} target="a-checks-list" />
           </section>
         ) : null}
 
