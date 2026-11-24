@@ -25,6 +25,9 @@
 - 지난 턴과 글자까지 같은 답이면 짧은 글로 바꾼다(AGAIN, QA 3차 f1x 추가 금액 · 날짜).
 - 무료 모드는 LLM을 못 쓸 때 카드 + 짧은 안내를 하는 비상 길이다(docs/v4/08-rules.md). 말투 · 길이를 손보는 사례 규칙은
   더하지 않고, 말로 승인 카드를 만드는 길(날짜 바꾸기 · 업체 못 받아요 · 기간 답하기)의 낱말 규칙만 촘촘히 둔다.
+- 바라는 말 거르기(doubt, 점검 R1b): 날짜 바꾸기 · 취소 · 못 받아요 · 기간 답하기 · 카드 의도는 그 낱말을 부정하거나
+  ('미루고 싶지 않아요' · '취소하지 마세요' · '거절 안 해요' · '업체 추천은 필요 없어요') 묻는 말('미뤄야 할까요?')이면
+  카드를 만들거나 거두지 않고 할 일을 되묻는 한 줄로 답해요. 'A 말고 B'는 B로 가요.
 - 정해 둔 길(route_of, 의도 모델 앞): 비서가 낸 칩(runtime.CHIPS · 다음에 물을 말 · 카드 칩)과 같은 뜻의 말은 칩 뜻대로
   간다. 폐기물 · 철거 포함 → 받은 견적서 칸, 비싸요 · 바가지 · 뭐가 빠졌어요 → 계산 사실(받은 견적서끼리 다른 포함 칸,
   없으면 표준견적서에서 금액이 큰 줄 이름) + 견적 비교 · 표준견적서 카드(리드 결정 2, QA 3차 f1), 추가금 → 추가 금액
@@ -154,6 +157,12 @@ CHANGE_WHEN_PULL = (
 )
 CHANGE_WHEN_NEXT = "다음 달 며칠부터로 미룰지 날짜로 말해 주세요. 그 날짜로 날짜 바꾸기 요청 카드를 만들어 드릴게요."
 CHANGE_REJECTED = "앞에서 거절한 날짜 바꾸기 요청과 같아요. 다른 날짜를 말해 주시면 새로 만들어요."
+# 미루기를 부정한 말('공사 미루고 싶지 않아요'): 카드를 만들거나 바꾸지 않고 할 일을 되묻는다(열린 카드는 그대로)
+CHANGE_KEEP = (
+    "네, 공사 날짜는 그대로예요. 바꾸려면 '2주 미뤄 주세요'처럼, 열어 둔 날짜 바꾸기 카드를 거두려면 "
+    "'날짜 바꾸기 카드 취소해 줘'라고 말해 주세요."
+)
+CHANGE_NO_DAY = "말씀하신 날짜는 달력에 없어요. 언제부터로 바꿀지 날짜로 다시 말해 주세요."
 CHANGE_HOW_EARLY = "공사 날짜는 업체를 확정한 뒤 업체가 올려요. 그 뒤에 바꿔야 하면 날짜 바꾸기 요청으로 새 날짜를 부탁할 수 있어요."
 STANDARD = "이 집 표준견적서는 부가세 포함 {won}원이에요. 공공 기준 단가로 믿집이 계산한 참고 금액이고 업체 견적은 아니에요."
 STANDARD_DAYS = "이 집 표준견적서로는 {who} 예상 {days}일이에요. 업체 공사 기간은 실측 견적서에서 확인해 주세요."
@@ -180,6 +189,8 @@ LEGAL = (
     "소비자상담센터나 법률 상담을 받아 보세요."
 )
 PREFS = "알려 주셔서 고마워요. 실측 날짜를 고르거나 업체에 요청할 때 이 조건을 같이 봐 주세요."
+# 카드 말을 부정한 말('업체 추천은 필요 없어요'): 그 카드를 보이지 않고 되묻는다
+NOT_WANTED = "네, 알겠어요. 무엇을 도와드릴까요?"
 # 업체
 NO_VISIT = "어느 요청인지 몰라요. 요청을 열고 다시 말해 주세요."
 DECLINED = "못 받아요 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 알려져요."
@@ -188,6 +199,8 @@ DECLINE_REJECTED = (
 )
 WINDOW = "답하기 좋은 기간으로 승인 카드를 만들었어요. 카드에서 눌러야 고객에게 보내져요."
 WINDOW_REJECTED = "앞에서 거절한 기간 답하기 카드와 같아요. 다른 기간은 요청 카드에서 골라 주세요."
+# 못 받아요 · 기간 답하기를 부정한 말('거절 안 해요' · '어렵지 않아요')에 다른 할 일 말이 없으면 되묻는다
+VENDOR_KEEP = "승인 카드는 만들지 않았어요. 받으시면 '기간 답할게요', 못 받으시면 '못 받아요'라고 말해 주세요."
 NO_WINDOW = "지금은 이 요청에 바로 답할 빈 기간을 찾지 못했어요. 요청 화면에서 기간을 골라 주세요."
 # 공정 · 지역이 맞지 않는 요청: 기간 답하기 카드를 만들지 않는다({what}은 '지역이' 꼴)
 NO_FIT = "{what} 우리 업체와 맞지 않아 기간 답하기 카드는 만들지 않았어요. 받기 어려우면 못 받아요로 답해 주세요."
@@ -462,6 +475,11 @@ WASTE = re.compile(
     r"폐기물(?:\s{0,2}처리)?\S{0,3}\s{0,2}(?:포함|따로|별도|비용|값|얼마|내야|빠|들어)|포함\S{0,3}\s{0,2}폐기물"
 )
 DEMOLISH = re.compile(r"철거")
+# 철거가 견적서에 들었는지 묻는 말('철거 포함이에요?' · '철거는 따로예요?'). '철거 포함해 주세요'는 집 정보 말이에요
+DEMOLISH_INCL = re.compile(
+    r"철거(?:비|\s{0,2}비용)?\S{0,3}\s{0,2}(?:포함(?:이|인|돼|되|됐|된|여부)|따로|별도|빠(?:졌|진|지))|"
+    r"포함\S{0,3}\s{0,2}(?:기존\s{0,2}(?:벽지\s{0,2})?)?철거"
+)
 QUOTE_WORD = re.compile(r"견적|포함")
 EXTRA_ASK = re.compile(
     r"추가\s{0,2}금(?!\s{0,2}액)|추가\s{0,2}(?:금액|비용|요금|공사비)|추가로\s{0,2}(?:돈|비용|금액)"
@@ -493,10 +511,9 @@ ACCESS = re.compile(
     r"출입|비밀\s{0,2}번호|현관\s{0,2}(?:문|비번)|열쇠|집\s{0,2}(?:을\s{0,2})?비워|"
     r"(?:집에|저희|제가|우리)\s{0,2}(?:\S+\s{0,2})?없어도|자리를?\s{0,2}비"
 )
-WEEKEND = re.compile(r"주말|토요일|일요일")
-NO_WEEKEND = re.compile(r"주말\S{0,3}\s{0,2}(?:안|못|빼|말고|제외)")
-WEEKDAY = re.compile(r"평일")
-NO_WEEKDAY = re.compile(r"평일\S{0,3}\s{0,2}(?:안|못|빼|말고|제외|회사|출근|근무|일해|일하)")
+# 요일 낱말(되는 때 · 안 되는 때는 memory.busy가 읽어요)
+DAY_WORD = re.compile(r"평일|주말|[월화수목금토일]요일")
+WEEKEND_WORD = re.compile(r"주말|[토일]요일")
 # 시작 순서 답의 v3 단계 번호('지금은 2단계예요.')는 v4 화면과 맞지 않아 뗀다
 STEP_NO = re.compile(r"^지금은\s{0,2}\d\s{0,2}단계예요\.\s*")
 # 일반 규칙을 말한 문장('믿집 공정표는 도배 다음에 바닥을 놓아요.')은 카드 말이 아니다
@@ -535,6 +552,89 @@ def intent_of(text: str, surface: str) -> str | None:
         if rx.search(text or ""):
             return name
     return None
+
+
+# ---- 바라는 말 거르기(점검 R1b #3~#5 · #20): 행동 낱말(미루기 · 취소 · 못 받아요 · 업체 추천 …)을 부정하거나 묻는
+# 말이면 그 카드를 만들거나 거두지 않아요. memory.busy처럼 낱말마다 그 말 조각(낱말 뒤 쉼표 · 문장 끝 전, 바로 앞
+# '안 · 못')만 봐요('날짜가 안 맞아서 2주 미뤄 주세요'의 앞 부정은 미루기를 부정하지 않아요)
+# 부정: 미루지 않아요 · 취소하지 마세요 · 보여 주지 마세요 · 미루고 싶지 않아요 · 미루기 싫어요 · 거절 안 해요 ·
+# 비교는 안 해도 돼요 · 미룰 필요 없어요 · 취소 없이 · 못 받는 거 아니에요
+DOUBT_NOT = re.compile(
+    r"^\S*?(?:\s+\S+?)?\s*주?(?:지|진|지는|지도)\s*(?:않|말|마)|"
+    r"^\S*?고\s*(?:는\s*)?싶(?:지|진|지는|지도)\s*않|^\S{0,3}\s*싫|"
+    r"^\S{0,2}\s+(?:안|못)\s*(?:해|할|하|합|함|\S*?(?:도|어도|아도)\s*(?:돼|되|괜찮))|"
+    r"^\S*?\s*(?:필요|생각|마음|계획|이유|일|거|건|것)\S{0,2}\s*없|^\S{0,2}\s*없이|"
+    r"^\S*?\s*(?:거|게|건|것|말)\S{0,2}\s*(?:아니|아냐)"
+)
+DOUBT_PRE = re.compile(r"(?<![가-힣])(?:안|못)\s*$")
+# 'A 말고 B' · 'A 대신 B': A는 바라지 않고 다른 것을 바라요
+DOUBT_OTHER = re.compile(r"^\S{0,2}\s*(?:말고|대신)|^\S*?지\s*말고")
+# 낱말에 붙은 묻는 말 · 가정: 미뤄야 할까요 · 바꿔야 하나요 · 미룰까요 · 취소되나요 · 미루면 · 미뤄도 되나요
+DOUBT_ASK = re.compile(
+    r"^\S*?야\s*(?:하나|할까|하죠|하는지|할지|되나|될까|되는지|될지)|"
+    r"^\S*?(?:까요|나요|는지|[을할될]지(?![가-힣]))|"
+    r"^\S*?(?:[가-힣]면|다면)(?=[\s,.?!~]|$)(?!\s*(?:좋겠|감사|고맙))|"
+    r"^\S*?도\s*(?:되나|될까|괜찮을까|괜찮나)"
+)
+# 물음표로 끝나도 부탁하는 말('2주 미뤄 주실 수 있어요?' · '미뤄 주면 안 될까요?')
+ASK_DO = re.compile(
+    r"주세요|주실|주시겠|줘|줄\s*(?:수|래)|싶|원해|할게|할래|려고|부탁|"
+    r"주(?:시)?면\s*(?:안\s*(?:될|돼|되)|좋겠|감사|고맙)"
+)
+CLAUSE = re.compile(r"[.!?\n,]")
+NOT_WISH = ("not", "other")
+
+
+def _doubt_at(text: str, m: re.Match[str]) -> tuple[str | None, int]:
+    """낱말 하나(m) → (바라는 말이 아닌 까닭, 그 말이 끝나는 자리). 까닭: ask(묻는 말 · 가정, 물음표로 끝난 조각은
+    부탁하는 말이 없을 때만) · other('A 말고 B') · not(부정), 바라는 말이면 None."""
+    cut = CLAUSE.search(text, m.end())
+    end = cut.start() if cut else len(text)
+    after = text[m.end() : end]
+    start = max((x.end() for x in CLAUSE.finditer(text, 0, m.start())), default=0)
+    if DOUBT_ASK.search(after) or (
+        cut is not None and cut[0] == "?" and not ASK_DO.search(text[m.start() : end])
+    ):
+        return "ask", end
+    for why, rx in (("other", DOUBT_OTHER), ("not", DOUBT_NOT)):
+        if (x := rx.search(after)) is not None:
+            return why, m.end() + x.end()
+    return ("not" if DOUBT_PRE.search(text[start : m.start()]) else None), m.end()
+
+
+def doubt(text: str, rx: re.Pattern[str]) -> str | None:
+    """행동 낱말(rx)이 든 말이 바라는 말이 아닌 까닭: ask(묻는 말 · 가정) · other('A 말고 B') · not(부정). 낱말이
+    없거나 하나라도 바라는 말이면 None. 부정 말 안에 든 낱말('거절 안 해요'의 '안 해')은 따로 세지 않아요."""
+    t = text or ""
+    got: list[str] = []
+    skip = 0
+    for m in rx.finditer(t):
+        if m.start() < skip:
+            continue
+        why, end = _doubt_at(t, m)
+        if why is None:
+            return None
+        got.append(why)
+        if why != "ask":
+            skip = end
+    return next((w for w in ("ask", "other", "not") if w in got), None)
+
+
+def vendor_next(text: str, after: str) -> str | None:
+    """업체 의도 표(VENDOR)에서 after 다음 의도 중 말에 맞는 첫 의도('네 받을게요, 거절 안 해요' → window)."""
+    names = [n for n, _ in VENDOR]
+    return next((n for n, rx in VENDOR[names.index(after) + 1 :] if rx.search(text)), None)
+
+
+def customer_wished(text: str, intent: str | None) -> str | None:
+    """고객 의도가 그 낱말을 부정한 말이면('업체 추천은 필요 없어요') 낱말 규칙에서 거르지 않은 다른 의도, 없으면
+    None. 부정이 아니면 그대로."""
+    rules = dict(CUSTOMER)
+    if intent not in rules or doubt(text, rules[intent]) not in NOT_WISH:
+        return intent
+    return next(
+        (n for n, rx in CUSTOMER if rx.search(text) and doubt(text, rx) not in NOT_WISH), None
+    )
 
 
 # 고객 의도: 학습한 비서 의도 모델(intent_v4) 라벨 → handler. dev로 고른 길은 '모델만'이에요
@@ -872,15 +972,18 @@ def trade_name(code: str) -> str:
 
 
 def days_said(text: str) -> str | None:
-    """이번 말이 바라는 요일(weekend · weekday). '평일엔 회사라 주말에' → weekend. 없으면 None."""
-    t = text or ""
-    if WEEKEND.search(t) and not NO_WEEKEND.search(t):
-        return "weekend"
-    if NO_WEEKDAY.search(t):
-        return "weekend"
-    if WEEKDAY.search(t) or NO_WEEKEND.search(t):
-        return "weekday"
-    return None
+    """이번 말이 바라는 요일(weekend · weekday). 기억(memory.busy)과 같게 읽어요: 되는 때로 말한 쪽('평일엔 회사라
+    주말에' → weekend), 되는 때가 없고 한쪽만 안 된다고 했으면 그 반대('토요일은 안 돼요' → weekday). 양쪽 다
+    되거나 요일 말이 없으면 None."""
+    from app.assistant import memory
+
+    marks = [
+        (bool(WEEKEND_WORD.fullmatch(m[0])), no) for m, no in memory.busy(DAY_WORD, text or "")
+    ]
+    sides = {end for end, no in marks if not no} or {not end for end, _ in marks}
+    if len(sides) != 1:
+        return None
+    return "weekend" if sides.pop() else "weekday"
 
 
 # 받은 견적서의 포함 칸(compare 모델 값: True 포함 · False 빠짐 · None 안 적음)
@@ -1268,10 +1371,12 @@ NOT_CHANGE = re.compile(r"실측|방문|수락|승인|받아들|업체\s*(?:가|
 MONTH_DAY = re.compile(r"(\d{1,2})\s*월\s*(\d{1,2})\s*일")
 N_WEEKS = re.compile(r"(\d{1,2})\s*주")
 N_DAYS = re.compile(r"(\d{1,3})\s*일\s*(?:정도|쯤|만|가량)?\s*(?:미루|미뤄|늦|뒤)")
+# '한 · 두 · 이'는 낱말 첫머리일 때만(조사 '남편이 주말'의 '이 주' · '이사한 달'은 아니에요), '주말'은 주가 아니에요
 WORD_DELAY = (
-    (re.compile(r"한\s*달"), 30), (re.compile(r"보름"), 15), (re.compile(r"(?:두|이)\s*주"), 14),
-    (re.compile(r"일주일|한\s*주"), 7), (re.compile(r"사흘"), 3), (re.compile(r"이틀"), 2),
-    (re.compile(r"하루"), 1),
+    (re.compile(r"(?<![가-힣])한\s*달"), 30), (re.compile(r"보름"), 15),
+    (re.compile(r"(?<![가-힣])(?:두|이)\s*주(?!말)"), 14),
+    (re.compile(r"일주일|(?<![가-힣])한\s*주(?!말)"), 7), (re.compile(r"사흘"), 3),
+    (re.compile(r"이틀"), 2), (re.compile(r"하루"), 1),
 )  # fmt: skip
 CHANGE_REASON_WORDS = (
     ("move", re.compile(r"이사|이삿|입주")),
@@ -1283,15 +1388,15 @@ DEFAULT_DELAY = 7  # 바라는 때를 말하지 않으면 일주일 뒤부터(�
 
 def change_wish(text: str, today: date) -> tuple[int | None, date | None]:
     """말 → (미룰 날 수, 시작해도 되는 첫날) 중 하나. 'M월 D일'은 오늘 뒤 가장 가까운 그날, 'n주' · 'n일' · 일주일 ·
-    한 달 …은 날 수, 바라는 때가 없으면 일주일. 날짜 없이 앞당기는 말 · '다음 달로'처럼 며칠인지 정할 수 없는 말은
-    (None, None)(날짜를 묻는다: 일주일 뒤로 미루면 반대 방향 · 다른 뜻)."""
+    한 달 …은 날 수, 바라는 때가 없으면 일주일. 날짜 없이 앞당기는 말 · '다음 달로'처럼 며칠인지 정할 수 없는 말 ·
+    달력에 없는 날짜('11월 31일')는 (None, None)(날짜를 묻는다: 일주일 뒤로 미루면 반대 방향 · 다른 뜻)."""
     m = MONTH_DAY.search(text)
     if m:
         try:
             got = date(today.year, int(m[1]), int(m[2]))
             return None, got if got > today else date(today.year + 1, got.month, got.day)
         except ValueError:
-            pass
+            return None, None
     if PULL.search(text):
         return None, None
     m = N_WEEKS.search(text)
@@ -1314,7 +1419,8 @@ def change_reason(text: str) -> str:
 
 async def _change(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOut]:
     """공사 날짜를 바꾸고 싶다는 말 → 날짜 바꾸기 요청 승인 카드(propose_date_change) + 공사 날짜 카드. 바라는 말이
-    없으면 안내 글과 카드만. 바꿀 수 있는 확정(수락한 날짜 · 업체가 낸 날짜)이 없으면 그렇게 말한다."""
+    없거나 묻는 말이면 안내 글과 카드만, 미루기를 부정한 말이면 카드를 만들거나 바꾸지 않고 되묻는다. 바꿀 수 있는
+    확정(수락한 날짜 · 업체가 낸 날짜)이 없으면 그렇게 말한다."""
     from app.assistant.tools import propose
 
     async with SessionLocal() as s:
@@ -1326,13 +1432,19 @@ async def _change(tc: ToolCtx, text: str, found: list[str]) -> tuple[str, ToolOu
         if (d["status"] == "scheduled" and d.get("start_date"))
         or (d["status"] == "confirmed" and d.get("proposal"))
     ]
-    # 묻는 말 · 가정: 안내만(업체가 날짜를 올리기 전이면 그 순서부터)
-    if not CHANGE_WANT.search(text):
+    why = doubt(text, CHANGE)
+    # 묻는 말 · 가정('미뤄야 할까요?'): 안내만(업체가 날짜를 올리기 전이면 그 순서부터)
+    if why == "ask" or (why is None and not CHANGE_WANT.search(text)):
         return (CHANGE_HOW if deals else CHANGE_HOW_EARLY), out
+    if why is not None:  # '공사 미루고 싶지 않아요': 열린 카드도 그대로 두고 되묻는다
+        return (CHANGE_KEEP if deals else CHANGE_HOW_EARLY), out
     if not deals:
         return CHANGE_NONE, out
     delay, wish = change_wish(text, tc.today)
-    if delay is None and wish is None:  # 날짜 없이 앞당기기 · '다음 달로': 날짜를 묻는다(말에 맞춰)
+    # 날짜 없이 앞당기기 · '다음 달로' · 달력에 없는 날짜: 날짜를 묻는다(말에 맞춰)
+    if delay is None and wish is None:
+        if MONTH_DAY.search(text):
+            return CHANGE_NO_DAY, out
         if PULL.search(text):
             return CHANGE_WHEN_PULL, out
         return (CHANGE_WHEN_NEXT if NEXT_MONTH.search(text) else CHANGE_WHEN), out
@@ -1408,8 +1520,8 @@ async def _access(tc: ToolCtx) -> tuple[str, ToolOut]:
 
 def route_of(text: str) -> str | None:
     """정해 둔 길 이름(의도 모델 앞, QA 1차 c1 · c3 · c4 · c5): 비서가 낸 칩과 같은 뜻의 말 · 돈 질문 · 공사 날 생활
-    질문. waste · pricey · missing · extra · estimate · visit_what · slots · eve · order · pet · access, 아니면 None(의도
-    모델로)."""
+    질문. waste · pricey · missing · demolish · extra · estimate · visit_what · slots · eve · order · pet · access, 아니면
+    None(의도 모델로)."""
     t = text or ""
     if WASTE.search(t):  # 칩 '폐기물 처리도 포함인가요?'
         return "waste"
@@ -1418,6 +1530,9 @@ def route_of(text: str) -> str | None:
     # '뭐가 빠진 거 아니에요?' · '빠진 거 없어요?'(받은 견적서가 없으면 표준견적서 포함 상태로)
     if MISSING.search(t) and not NOT_QUOTE.search(t):
         return "missing"
+    # '철거 포함이에요?'(폐기물처럼 받은 견적서 포함 칸, 욕실 · 바닥 같은 다른 공사 철거는 아니에요)
+    if DEMOLISH_INCL.search(t) and set(trades_in(t)) <= {"dobae", "demolition"}:
+        return "demolish"
     if EXTRA_ASK.search(t):
         return "extra"
     if ESTIMATE_HOW.search(t):  # 칩 '가견적은 어떻게 계산해요?'
@@ -1446,7 +1561,7 @@ async def route(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
         return None
     if name in fixed:
         return fixed[name], ToolOut(data={})
-    if name == "waste":
+    if name in ("waste", "demolish"):
         return await _compare(tc, text, [])
     if name == "pricey":
         return await _pricey(tc, text)
@@ -1684,8 +1799,15 @@ async def _vendor(tc: ToolCtx, text: str, intent: str | None) -> tuple[str, Tool
     if intent == "window" and NOT_ACCEPT.search(text):
         out = (await _brief(tc, propose_window=False))[2] if tc.visit_id else ToolOut(data={})
         return ACCEPT_RULE, out
-    if intent == "decline" and aftercare_tools.unsure(text):
+    why = doubt(text, dict(VENDOR)[intent]) if intent in ("decline", "window") else None
+    if intent == "decline" and (why == "ask" or aftercare_tools.unsure(text)):
         return None  # '못 받으면 불이익 있어요?'는 묻는 말: 못 받아요 카드 없이 브리핑 + 지식 답(열린 카드는 그대로)
+    # '거절 안 해요' · '어렵지 않아요': 이 카드는 만들지 않고 다음 의도('네 받을게요' → 기간 답하기)로, 없으면 되묻는다
+    if why in NOT_WISH:
+        if (nxt := vendor_next(text, intent)) is not None:  # type: ignore[arg-type]
+            return await _vendor(tc, text, nxt)
+        out = (await _brief(tc, propose_window=False))[2] if tc.visit_id else ToolOut(data={})
+        return VENDOR_KEEP, out
     if intent is None:
         return None
     if intent == "brief" and tc.visit_id is None:  # 보던 요청이 없으면 새 요청이 든 오늘 할 일
@@ -1759,6 +1881,8 @@ CANCEL_REJECTED = (
 CANCEL_PICK = "무엇을 취소할까요? 아래에서 골라 주세요."
 CANCEL_NONE = "지금 거둘 승인 카드나 취소할 실측 요청이 없어요."
 CANCEL_CLOSED = "그 카드는 이미 처리됐어요."
+# 취소를 부정한 말('취소하지 마세요' · '거두지 말아 주세요'): 아무것도 거두지 않는다
+CANCEL_KEEP = "네, 취소하지 않고 그대로 둘게요. 나중에 거두려면 '취소해 줘'라고 말해 주세요."
 # 말로 고른 보낸 요청이 여럿('둘 다 취소해 줘', QA r5 D 3): 요청마다 취소 승인 카드(propose.cancel_many)
 CANCEL_MANY_MADE = (
     "{names}에 보낸 실측 요청을 하나씩 취소하는 카드를 만들었어요. 카드마다 누르시면 그 요청이 취소되고 업체에도 "
@@ -1768,8 +1892,12 @@ CANCEL_MANY_SAME = "같은 실측 요청 취소 카드가 이미 있어요. 카�
 
 
 def cancel_said(text: str) -> bool:
-    """거두기 · 취소를 부탁하는 말인지(묻는 말 · 가정 '취소하면 …?'은 아니다)."""
-    return bool(CANCEL.search(text or "")) and not aftercare_tools.unsure(text)
+    """거두기 · 취소를 부탁하는 말인지(묻는 말 · 가정 '취소하면 …?' · 부정 '취소하지 마세요'는 아니다)."""
+    return (
+        bool(CANCEL.search(text or ""))
+        and not aftercare_tools.unsure(text)
+        and doubt(text, CANCEL) is None
+    )
 
 
 async def _cancel(tc: ToolCtx, text: str) -> tuple[str, ToolOut] | None:
@@ -2068,6 +2196,9 @@ async def _answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Too
         and (got := await _cancel(tc, text)) is not None
     ):
         return got
+    # '취소하지 마세요': 아무것도 거두지 않고 되묻는다('취소 말고 2주 미뤄 주세요'는 다음 길로)
+    if tc.project_id is not None and doubt(text, CANCEL) == "not":
+        return CANCEL_KEEP, ToolOut(data={})
     if (more := await aftercare_tools.free_answer(tc, text)) is not None:  # 07 자동화 카드
         return more
     if MEMORY_SAY_RX.search(text) and not_kept(text):  # '기억해: 내 예산은 …' → 기억하지 않는 것
@@ -2089,6 +2220,11 @@ async def _answer(tc: ToolCtx, text: str, card_id: str | None) -> tuple[str, Too
     if (got := await route(tc, text)) is not None:  # 칩 · 돈 · 생활 질문(의도 모델 앞)
         return _lead(text, *got)
     intent, step = customer_intent(text)
+    # '업체 추천은 필요 없어요': 그 카드는 보이지 않고 말에 다른 의도가 있으면 그것, 없으면 되묻는다
+    if intent is not None and (wished := customer_wished(text, intent)) != intent:
+        if wished is None:
+            return NOT_WANTED, ToolOut(data={})
+        intent = wished
     # 견적서의 철거 · 폐기물은 도배 견적 칸이에요(다른 공정 아님)
     quote_part = intent == "compare" or bool(QUOTE_WORD.search(text))
     link = [c for c in found if not (c == "demolition" and quote_part)]
