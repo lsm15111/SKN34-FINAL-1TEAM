@@ -32,12 +32,13 @@ export async function getVendorDetail(projectId: string, vendorId: string, grade
   return serverGet<VendorDetail>(`/projects/${seg(projectId)}/vendors/${seg(vendorId)}?${q.toString()}`);
 }
 
-/** 리뷰 전체(최신순 · 낮은 별점부터, 숨긴 리뷰 빠짐). before는 다음 쪽 커서 */
-export async function getVendorReviews(projectId: string, vendorId: string, sort: "latest" | "low", before?: string | null): Promise<ReviewPage | null> {
+/** 리뷰 전체(최신순 · 낮은 별점부터, 숨긴 리뷰 빠짐). before는 다음 쪽 커서, limit은 한 쪽 수(API 기본 50 · 최대 100) */
+export async function getVendorReviews(projectId: string, vendorId: string, sort: "latest" | "low", before?: string | null, limit?: number): Promise<ReviewPage | null> {
   if (mockKeyOf(projectId)) return mockReviews(vendorId, sort);
   if (!isUuid(projectId) || !isUuid(vendorId)) return null;
   const q = new URLSearchParams({ sort });
   if (before) q.set("before", before);
+  if (limit) q.set("limit", String(limit));
   return serverGet<ReviewPage>(`/projects/${seg(projectId)}/vendors/${seg(vendorId)}/reviews?${q.toString()}`);
 }
 

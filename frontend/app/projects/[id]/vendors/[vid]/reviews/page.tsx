@@ -1,5 +1,5 @@
 // /projects/{id}/vendors/{vid}/reviews — 리뷰 전체(C48) · 리뷰 기준 시트(C49).
-// 최신순 · 낮은 별점부터(?sort=), 숨긴 리뷰는 API가 빼요. 믿집 리뷰 아래에 업체가 연결한 외부 리뷰 링크를 펼쳐 보여요(새 창).
+// 최신순 · 낮은 별점부터(?sort=), 숨긴 리뷰는 API가 빼요. 업체가 연결한 외부 리뷰 링크는 우선 숨겨요(2026-11-24 사용자, 아래 주석).
 import { notFound } from "next/navigation";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
@@ -7,8 +7,6 @@ import { RatingSummary } from "@/components/review/RatingSummary";
 import { ReviewFeed } from "@/components/review/ReviewFeed";
 import { ReviewRulesLine } from "@/components/review/RulesSheet";
 import { Tabs } from "@/components/ui/Tabs";
-import { ReviewLinks } from "@/components/vendors/ReviewLinks";
-import { safeLinks } from "@/components/vendors/v3text";
 import s from "@/components/vendors/vendors3.module.css";
 import { getProjectShell } from "@/lib/api/project";
 import { getVendorDetail, getVendorReviews } from "@/lib/api/shortlist";
@@ -31,7 +29,6 @@ export default async function VendorReviewsPage({ params, searchParams }: {
   const base = `/projects/${shell.id}`;
   const detail = `${base}/vendors/${encodeURIComponent(vid)}`;
   const here = `${detail}/reviews`;
-  const links = safeLinks(page.links);
   const title = `${name} 리뷰`;
 
   return (
@@ -52,11 +49,12 @@ export default async function VendorReviewsPage({ params, searchParams }: {
         <section className={s.list} aria-label={`${name} 리뷰 목록`}>
           <ReviewFeed key={sort} projectId={shell.id} vendorId={vid} vendorName={name} first={page} sort={sort} />
         </section>
+        {/* 외부 리뷰는 우선 숨김(11-24 사용자). 되살릴 때 ReviewLinks · safeLinks import와 links(safeLinks(page.links))를 다시 둬요
         {links.length ? (
           <section className={s.group} aria-label="업체가 연결한 외부 리뷰">
             <ReviewLinks vendorId={vid} links={links} />
           </section>
-        ) : null}
+        ) : null} */}
       </Main>
     </>
   );

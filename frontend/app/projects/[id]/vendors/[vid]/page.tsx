@@ -2,8 +2,10 @@
 // 가견적 = 업체가 확인한 단가 × 믿집 수량(계산 엔진). 벽지를 바꿔 보면(?grade=) 그 벽지의 가견적을 API가 다시 계산해 줘요.
 // 화면은 금액을 더하거나 빼지 않아요(다른 벽지 차이도 API grade_diff). 남의 공사 · 목록 밖 업체면 404예요.
 // v4(비서 화면 카드 창)에서는 표준견적서와 견준 %를 보이지 않아요(리드 결정 2026-11-21).
-// 자주 묻는 답 · 사업자 정보는 맨 아래 닫힌 접기예요(폰 · 웹). 사업자 정보는 청약 전에 알릴 업체 신원 정보(전자상거래법 제20조)라
-// 접어 두되 늘 열어 볼 수 있어요. 리뷰 기준 줄은 리뷰 전체 화면에만 둬요(2026-11-24 사용자).
+// 자주 묻는 답 · 사업자 정보는 닫힌 접기예요(폰 · 웹). 사업자 정보는 청약 전에 알릴 업체 신원 정보(전자상거래법 제20조)라
+// 접어 두되 늘 열어 볼 수 있어요. 리뷰는 맨 아래에 별점 높은 순(같으면 최근 것 먼저) 몇 개만 보이고, 리뷰 기준 줄은
+// [리뷰 n개 모두 보기]로 가는 리뷰 전체 화면에만 둬요. 업체가 연결한 외부 리뷰는 우선 숨겨요(2026-11-24 사용자).
+// 위 섹션 띠(DetailTabs)는 내리면 위에 붙고 지금 보는 묶음을 표시해요. 띠 순서는 화면 순서(가견적 · 시공 사례 · 리뷰)와 같아요.
 import { notFound } from "next/navigation";
 import { uiMode } from "@/components/assistant/mode";
 import { AiPanel } from "@/components/ai/AiPanel";
@@ -18,18 +20,18 @@ import { QuoteLines } from "@/components/ui/QuoteLines";
 import { Stars } from "@/components/ui/Stars";
 import { SummaryRows } from "@/components/ui/Summary";
 import { avgText } from "@/components/review/RatingSummary";
+import { ReviewItem } from "@/components/review/ReviewItem";
 import { reviewDate, topTags } from "@/components/review/tags";
 import { CasesBlock, type CasePhoto } from "@/components/vendors/CasesBlock";
 import { DetailActions } from "@/components/vendors/DetailActions";
 import { DetailTabs, type TabItem } from "@/components/vendors/DetailTabs";
 import { GradeToggle } from "@/components/vendors/GradeToggle";
-import { ReviewLinks } from "@/components/vendors/ReviewLinks";
 import { FAQ_LABEL } from "@/components/vendors/text";
-import { areasText, caseLabel, compareText, estimateLines, feeText, monthText, replyText, safeLinks } from "@/components/vendors/v3text";
+import { areasText, caseLabel, compareText, estimateLines, feeText, monthText, replyText, topReviews } from "@/components/vendors/v3text";
 import { VendorMenu } from "@/components/vendors/VendorMenu";
 import s from "@/components/vendors/vendors3.module.css";
 import { getProjectShell } from "@/lib/api/project";
-import { getShortlist, getVendorDetail, photoSrc, type Grade } from "@/lib/api/shortlist";
+import { getShortlist, getVendorDetail, getVendorReviews, photoSrc, type Grade } from "@/lib/api/shortlist";
 import { areaText } from "@/lib/format";
 import { bizNoText } from "@/lib/labels";
 
@@ -46,7 +48,12 @@ export default async function VendorDetailPage({ params, searchParams }: {
   const shell = await getProjectShell(id);
   if (!shell) notFound();
   const want = isGrade(asked) ? asked : null;
-  const [d, short] = await Promise.all([getVendorDetail(shell.id, vid, want), getShortlist(shell.id).catch(() => null)]);
+  // 리뷰는 최신 100개(API 한 쪽 최대) 안에서 별점 높은 순으로 골라요. 못 받아도 화면은 그려요
+  const [d, short, rv] = await Promise.all([
+    getVendorDetail(shell.id, vid, want),
+    getShortlist(shell.id).catch(() => null),
+    getVendorReviews(shell.id, vid, "latest", null, 100).catch(() => null),
+  ]);
   if (!d) notFound();
 
   const pr = d.profile;
@@ -65,7 +72,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
   const avg = avgText(r);
   const reviewCount = r?.count ?? 0;
   const tags = topTags(r?.tags, 2);
-  const links = safeLinks(d.review_links);
+  const best = topReviews(rv?.items ?? [], 3);
   const photos: CasePhoto[] = pr.portfolio.map((p, i) => ({
     key: p.id,
     src: photoSrc(shell.id, vid, p.file_id, i),
@@ -97,8 +104,8 @@ export default async function VendorDetailPage({ params, searchParams }: {
     ...(opened ? [{ key: "open", label: "개업", value: opened }] : []),
     ...(pr.address_area ? [{ key: "addr", label: "사업장", value: pr.address_area }] : []),
     ...(d.verified_on ? [{ key: "ok", label: "믿집 사업자 확인", value: reviewDate(d.verified_on), num: true }] : []),
-    ...(pr.interior_license ? [{ key: "lic", label: "실내건축공사업 등록", sub: "업체가 적었어요", value: pr.interior_license }] : []),
-    ...(pr.insurance ? [{ key: "ins", label: "보험", sub: "업체가 적었어요", value: pr.insurance }] : []),
+    ...(pr.interior_license ? [{ key: "lic", label: "실내건축공사업 등록", value: pr.interior_license }] : []),
+    ...(pr.insurance ? [{ key: "ins", label: "보험", value: pr.insurance }] : []),
   ];
 
   return (
@@ -108,7 +115,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
         <PageHead title={name} crumbs={[{ label: "내 공사", href: "/my" }, { label: shell.name, href: base }, { label: "업체 보기", href: listHref }, { label: name }]} />
         {/* v4 카드 창은 비서가 옆에 있어 v3 AI 칸을 그리지 않아요(숨긴 채 그리면 보이지 않는 대화를 불러요) */}
         <WithAside aside={v4 ? undefined : <AiPanel screen="vendor" projectId={shell.id} ids={[vid]} context={`${name} 보는 중`} />}>
-          <section className={s.group} aria-label={`${name} 요약`}>
+          <section className={`${s.group} ${s.headTop}`} aria-label={`${name} 요약`}>
             <div className={s.vhead}>
               <Avatar name={name} size="l" warm />
               <div className={s.vtext}>
@@ -122,10 +129,11 @@ export default async function VendorDetailPage({ params, searchParams }: {
               </div>
               <VendorMenu vendorId={vid} name={name} className={s.headMenu} />
             </div>
-            <DetailTabs items={tabs} />
           </section>
+          {/* 섹션 띠는 머리 묶음 밖에 둬야 본문 끝까지 위에 붙어 있어요(sticky는 부모 칸 안에서만 붙어요) */}
+          <DetailTabs items={tabs} />
 
-          <section id="est" className={s.group} aria-labelledby="est-t">
+          <section id="est" className={`${s.group} ${s.spot}`} aria-labelledby="est-t">
             <h2 id="est-t" className="mj-sr">가견적</h2>
             {priced && est ? (
               <BigFigure label="가견적 · 부가세 포함" value={est.total} caption={["업체 단가 × 믿집 수량", v4 ? null : compareText(est.vs_standard_pct)].filter(Boolean).join(" · ")} />
@@ -157,15 +165,6 @@ export default async function VendorDetailPage({ params, searchParams }: {
 
           {photos.length ? <CasesBlock id="cases" photos={photos} /> : null}
 
-          <section id="reviews" className={s.group} aria-labelledby="rv-t">
-            <div className={s.gh}>
-              <h2 id="rv-t">리뷰 <span className="mj-num">{reviewCount}</span>{avg ? <> · <Stars value={Number(avg)} /></> : null}</h2>
-              {reviewCount ? <Button variant="text" arrow href={`${listHref}/${encodeURIComponent(vid)}/reviews`}>모두 보기</Button> : null}
-            </div>
-            {tags.length ? <p className={s.quote}>{tags.map((t) => `"${t}"`).join(" · ")}</p> : reviewCount ? null : <p className={s.sub}>아직 리뷰가 없어요</p>}
-            <ReviewLinks vendorId={vid} links={links} />
-          </section>
-
           <div className={s.group}>
             <Accordion
               items={[
@@ -174,6 +173,23 @@ export default async function VendorDetailPage({ params, searchParams }: {
               ]}
             />
           </div>
+
+          {/* 리뷰는 맨 아래: 별점 높은 순(같으면 최근 것 먼저) 3개 + 전체 리뷰 화면(리뷰 기준 줄이 있어요)으로 가는 단추 */}
+          <section id="reviews" className={`${s.group} ${s.spot}`} aria-labelledby="rv-t">
+            <div className={s.gh}>
+              <h2 id="rv-t">리뷰 <span className="mj-num">{reviewCount}</span>{avg ? <> · <Stars value={Number(avg)} /></> : null}</h2>
+              {best.length > 1 ? <span className={s.rvSort}>별점 높은 순</span> : null}
+            </div>
+            {tags.length ? <p className={s.quote}>{tags.map((t) => `"${t}"`).join(" · ")}</p> : null}
+            {best.length ? (
+              <ul className={s.rvList} aria-label={`${name} 리뷰 별점 높은 순 ${best.length}개`}>
+                {best.map((it) => <li key={it.id}><ReviewItem item={it} vendorName={name} /></li>)}
+              </ul>
+            ) : reviewCount ? null : <p className={s.sub}>아직 리뷰가 없어요</p>}
+            {reviewCount ? <Button variant="secondary" block href={`${listHref}/${encodeURIComponent(vid)}/reviews`}>리뷰 <span className="mj-num">{reviewCount}</span>개 모두 보기</Button> : null}
+            {/* 외부 리뷰는 우선 숨김(11-24 사용자). 되살릴 때 ReviewLinks · safeLinks import를 다시 둬요
+            <ReviewLinks vendorId={vid} links={safeLinks(d.review_links)} /> */}
+          </section>
         </WithAside>
       </Main>
       <BottomBar>

@@ -70,6 +70,29 @@ export function replyText(hours: number | null | undefined): string | undefined 
   return `보통 ${Math.max(1, Math.ceil(hours / 24))}일 안에 답`;
 }
 
+/** 업체 자세히 리뷰 미리 보기: 별점 높은 순, 같으면 최근 것 먼저 n개(2026-11-24 사용자).
+ *  API는 최신순 · 낮은 별점부터만 줘서 받은 쪽 안에서 화면이 골라요(금액이 아니라 순서만이에요) */
+export function topReviews<T extends { id: string; rating: number; created_at: string }>(items: T[], n = 3): T[] {
+  const at = (t: T) => Date.parse(t.created_at) || 0;
+  return [...items].sort((a, b) => b.rating - a.rating || at(b) - at(a) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, n);
+}
+
+/** 섹션 띠가 보는 묶음 하나(화면 좌표의 위 · 아래) */
+export type SectionBox = { id: string; top: number; bottom: number };
+/** 섹션 띠에서 '지금 보는 묶음'. boxes는 화면 순서, line은 붙은 띠 바로 아래 선이에요.
+ *  선을 지난 마지막 묶음(아직 없으면 첫 묶음). 끝까지 내렸으면(end) 마지막 묶음이라 짧은 마지막 묶음도 표시돼요.
+ *  다만 방금 누른 묶음(picked)이 선 아래에 보이면 그대로 둬요(더 못 내려가는 짧은 화면에서 누른 탭이 바뀌지 않게) */
+export function pickSection(boxes: SectionBox[], line: number, end: boolean, picked?: string | null): string | null {
+  if (!boxes.length) return null;
+  if (end) {
+    const hit = picked ? boxes.find((b) => b.id === picked) : undefined;
+    return hit && hit.bottom > line ? hit.id : boxes[boxes.length - 1].id;
+  }
+  let cur = boxes[0].id;
+  for (const b of boxes) if (b.top <= line) cur = b.id;
+  return cur;
+}
+
 /** 업체가 연결한 외부 리뷰: 관리자가 확인한(shown) https 주소만 보여요(security.md E) */
 export function safeLinks<T extends { url: string; status: string }>(links: T[] | null | undefined): T[] {
   return (links ?? []).filter((l) => {

@@ -1,5 +1,5 @@
 "use client";
-// 시공 사례 묶음(C11 · D07): 사진 칸(B4 PhotoGrid, 폰 3장 · 웹 4장) + '크게 보기'(C47, B4 Lightbox).
+// 시공 사례 묶음(C11 · D07): 사진 칸(B4 PhotoGrid, 묶음이 좁으면 3장 · 넓으면 4장) + '크게 보기'(C47, B4 Lightbox).
 // 크게 보기는 주소에 ?photo=n을 얕게 붙여요(history.pushState, routes.md 1장): 뒤로 가기로 닫히고, 주소로 바로 열 수도 있어요.
 // 기록 칸은 여기서 한 번만 넣으니 Lightbox는 pushHistory={false}, 넘길 때는 onIndex로 주소의 n만 바꿔요(기록을 더 쌓지 않아요).
 import { useCallback, useEffect, useState } from "react";
@@ -49,7 +49,7 @@ function usePhotoParam(count: number) {
 export function CasesBlock({ id, photos }: { id: string; photos: CasePhoto[] }) {
   const v = usePhotoParam(photos.length);
   return (
-    <section id={id} className={s.group} aria-labelledby={`${id}-t`}>
+    <section id={id} className={`${s.group} ${s.spot} ${s.cases}`} aria-labelledby={`${id}-t`}>
       <div className={s.gh}>
         <h2 id={`${id}-t`}>시공 사례 <span className="mj-num">{photos.length}</span></h2>
         <Button variant="text" onClick={() => v.open(0)} aria-haspopup="dialog">크게 보기</Button>
