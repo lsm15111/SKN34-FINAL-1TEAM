@@ -1,20 +1,20 @@
 """회원가입 · 로그인 · 세션. 비밀번호는 argon2id 해시로만 저장한다.
 
 argon2는 일부러 느리고(수십 ms) 메모리를 많이 쓴다(64MiB). 요청 처리 흐름(이벤트 루프)을 막지 않게
-작업 스레드에서 돌리고, 한 번에 4개까지만 돌려 메모리를 묶는다.
+작업 스레드에서 돌리고, 한 번에 4개까지만 돌려 메모리를 묶는다. 차례는 이벤트 루프에서 기다려 기다리는 요청이
+작업 스레드 자리(anyio 기본 40)를 쥐지 않게 한다.
 """
 
 import hashlib
 import logging
 import secrets
-import threading
 from datetime import timedelta
 
+import anyio.to_thread
 from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerificationError
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
 
 from app.auth import repository as repo
 from app.auth.models import User, UserSession
@@ -26,7 +26,7 @@ from app.shared.errors import AppError
 
 log = logging.getLogger(__name__)
 _hasher = PasswordHasher()  # 기본값이 OWASP 권장 범위의 argon2id
-_HASH_SLOTS = threading.BoundedSemaphore(4)
+_HASH_SLOTS = anyio.CapacityLimiter(4)
 # 없는 이메일로 로그인할 때도 같은 시간을 쓰게 하는 가짜 해시 (계정 있는지 알아내기 방지)
 _DUMMY_HASH = _hasher.hash("mitjip-dummy-password")
 
@@ -46,16 +46,22 @@ def _sid(token: str) -> str:
 
 
 def _hash_sync(password: str) -> str:
-    with _HASH_SLOTS:
-        return _hasher.hash(password)
+    return _hasher.hash(password)
 
 
 def _verify_sync(hashed: str, password: str) -> bool:
-    with _HASH_SLOTS:
-        try:
-            return _hasher.verify(hashed, password)
-        except (VerificationError, InvalidHashError):
-            return False
+    try:
+        return _hasher.verify(hashed, password)
+    except (VerificationError, InvalidHashError):
+        return False
+
+
+async def _hash(password: str) -> str:
+    return await anyio.to_thread.run_sync(_hash_sync, password, limiter=_HASH_SLOTS)
+
+
+async def _verify(hashed: str, password: str) -> bool:
+    return await anyio.to_thread.run_sync(_verify_sync, hashed, password, limiter=_HASH_SLOTS)
 
 
 async def signup_limit(ip: str) -> None:
@@ -73,7 +79,7 @@ async def create_user(
         email=email,
         name=name,
         phone=phone,
-        password_hash=await run_in_threadpool(_hash_sync, password),
+        password_hash=await _hash(password),
         role=role,
     )
     s.add(user)
@@ -120,7 +126,7 @@ async def _check_password(email: str, hashed: str | None, password: str, ip: str
     )
     k = ratelimit.key("login", email, ip)
     await ratelimit.hit(k, LOGIN_PER_EMAIL_IP, WINDOW, TOO_MANY, fallback=CLOSED)
-    ok = await run_in_threadpool(_verify_sync, hashed or _DUMMY_HASH, password)
+    ok = await _verify(hashed or _DUMMY_HASH, password)
     if ok and hashed:
         await ratelimit.reset(k)
     return ok and hashed is not None
@@ -134,7 +140,7 @@ async def login(s: AsyncSession, data: LoginIn, ip: str) -> tuple[User, str]:
     if user.status != "active":
         raise AppError(403, "suspended", "사용이 정지된 계정이에요. 고객센터에 문의해 주세요.")
     if _hasher.check_needs_rehash(user.password_hash):
-        user.password_hash = await run_in_threadpool(_hash_sync, data.password)
+        user.password_hash = await _hash(data.password)
     token = await start_session(s, user)
     await s.commit()
     return user, token

@@ -15,6 +15,7 @@ B5의 일 함수는 agent/jobs.py의 FUNCTIONS 목록을 WorkerSettings.function
 
 import asyncio
 import logging
+import time
 from collections import Counter
 from datetime import datetime
 from typing import ClassVar
@@ -52,6 +53,10 @@ JOB_HANDLERS: dict[str, JobHandler] = {
     **visit_jobs.HANDLERS,
 }
 SWEEP_TIMEOUT = 55  # 1분마다 도니 다음 차례 전에 끝낸다 (unique라 겹치지 않음)
+# 일 하나의 처리 상한(초). 넘으면 실패로 세고(1 · 5 · 30분 뒤 다시) 다음 일로 간다: LLM · 잠금 기다림이 긴 일 하나가
+# 같이 거둔 묶음을 막지 않게. SWEEP_BUDGET초가 지나면 새 일을 시작하지 않고 남은 일은 돌려놓는다(arq 제한에 끊기기 전에)
+JOB_TIMEOUT = 20
+SWEEP_BUDGET = SWEEP_TIMEOUT - JOB_TIMEOUT - 5
 
 
 async def ping(ctx: dict) -> str:
@@ -84,24 +89,28 @@ async def _signal(s, out: jobs.Outcome, later: list) -> None:
 
 
 async def _run_one(job: Job, now: datetime) -> str:
-    """일 하나: 처리 함수 → finish → commit → 신호. 돌려주는 값: done · skipped · retry · failed."""
+    """일 하나: 처리 함수(JOB_TIMEOUT초 안) → finish → commit → 신호. 돌려주는 값: done · skipped · retry · failed.
+    실패 · 시간 초과면 그 세션은 되돌려 닫고(저장되지 않은 일의 신호도 버림) 새 세션에 실패를 남긴다."""
     async with SessionLocal() as s:
         try:
-            out = jobs.outcome(await JOB_HANDLERS[job.kind](s, job, now))
+            got = await asyncio.wait_for(JOB_HANDLERS[job.kind](s, job, now), JOB_TIMEOUT)
+            out = jobs.outcome(got)
             await jobs.finish(s, job.id, now=now, skipped=not out.changed)
             await s.commit()
         except Exception as exc:  # noqa: BLE001 - 어떤 실패든 다시 해 볼 일로 남긴다(종류 이름만)
-            await s.rollback()
-            s.info.pop(jobs.AFTER_COMMIT, None)  # 저장되지 않은 일의 신호는 버린다
-            status = await jobs.fail(s, job.id, now=now, error=type(exc).__name__)
-            await s.commit()
-            return "failed" if status == "failed" else "retry"
-        await _signal(s, out, list(s.info.pop(jobs.AFTER_COMMIT, None) or []))
-        return "done" if out.changed else "skipped"
+            error = type(exc).__name__
+        else:
+            await _signal(s, out, list(s.info.pop(jobs.AFTER_COMMIT, None) or []))
+            return "done" if out.changed else "skipped"
+    async with SessionLocal() as s:  # 시간 초과로 끊긴 처리의 연결을 다시 쓰지 않는다
+        status = await jobs.fail(s, job.id, now=now, error=error)
+        await s.commit()
+    return "failed" if status == "failed" else "retry"
 
 
 async def sweep(now: datetime, limit: int = jobs.BATCH) -> Counter[tuple[str, str]]:
     """기한이 된 일을 한 번(limit개까지) 거둬 처리한다. 처리 함수가 없는 kind는 그대로 둔다.
+    SWEEP_BUDGET초가 지나면 새 일을 시작하지 않고 남은 일은 기다림으로 돌려놓는다(다음 차례에 처리).
     돌려주는 값: (kind, 결과) → 수. 결과는 done · skipped · retry(다시 해 볼 일) · failed."""
     tally: Counter[tuple[str, str]] = Counter()
     if not JOB_HANDLERS:
@@ -109,7 +118,14 @@ async def sweep(now: datetime, limit: int = jobs.BATCH) -> Counter[tuple[str, st
     async with SessionLocal() as s:
         claimed = await jobs.claim(s, now, limit=limit, kinds=list(JOB_HANDLERS))
         await s.commit()
-    for job in claimed:
+    start = time.monotonic()
+    for i, job in enumerate(claimed):
+        if time.monotonic() - start > SWEEP_BUDGET:
+            async with SessionLocal() as s:
+                n = await jobs.release(s, [j.id for j in claimed[i:]])
+                await s.commit()
+            log.warning("기한 일 %d개를 다음 차례로 미뤘어요 (처리 시간이 모자람)", n)
+            break
         tally[(job.kind, await _run_one(job, now))] += 1
     return tally
 

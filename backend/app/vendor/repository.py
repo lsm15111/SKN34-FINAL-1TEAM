@@ -246,9 +246,17 @@ async def approved_ids(
     sgg: str | None,
     vendor_id: uuid.UUID | None = None,
 ) -> list[uuid.UUID]:
-    """승인됐고 연락 방식을 정한 업체. 공정 · 지역(시 · 도 + 시 · 군 · 구) · 업체 한 곳으로 좁힌다."""
-    q = select(Vendor.user_id).where(
-        Vendor.status == "approved", Vendor.contact_method.is_not(None)
+    """고객에게 보일 업체: 승인됐고 연락 방식을 정했고, 관리자가 멈추지 않았고(D26, 새 요청만 막기도) 회원이 정지되지
+    않은 업체. 공정 · 지역(시 · 도 + 시 · 군 · 구) · 업체 한 곳으로 좁힌다."""
+    q = (
+        select(Vendor.user_id)
+        .join(User, User.id == Vendor.user_id)
+        .where(
+            Vendor.status == "approved",
+            Vendor.contact_method.is_not(None),
+            Vendor.suspended_at.is_(None),
+            User.status == "active",
+        )
     )
     if vendor_id is not None:
         q = q.where(Vendor.user_id == vendor_id)

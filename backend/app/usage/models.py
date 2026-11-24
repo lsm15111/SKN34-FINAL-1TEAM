@@ -48,6 +48,8 @@ class LlmUsage(Base):
 
     cost_micros는 price_ver 가격표로 셈한 마이크로달러(정수). 상한(usage.service)은 이 합계를 센다.
     turn_id는 비서 턴(assistant_turns)을 FK 없이 가리킨다. error에는 오류 종류 이름만 둔다.
+    new_account는 부른 때 새 계정 몫을 보던 호출(0055). 새 계정 합 하루 상한은 이 줄만 세고, 그 뒤 탈퇴해 user_id가
+    비어도 남는다.
     """
 
     __tablename__ = "llm_usage"
@@ -84,3 +86,4 @@ class LlmUsage(Base):
     error: Mapped[str | None] = mapped_column(String(40))
     latency_ms: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    new_account: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")

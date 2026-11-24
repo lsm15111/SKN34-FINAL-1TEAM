@@ -180,6 +180,27 @@ def _account(email: str, role: str, at: datetime) -> uuid.UUID:
     return uid
 
 
+def _vendor(email: str, status: str, at: datetime) -> uuid.UUID:
+    """at에 가입한 업체 계정(심사 상태 status: pending · approved)과 사업자등록증 파일 줄."""
+    uid, fid = _account(email, "vendor", at), uuid.uuid4()
+    query(
+        "insert into files (id, owner_id, kind, storage_key, filename, content_type, size, sha256)"
+        " values ($1, $2, 'license', $3, 'l.pdf', 'application/pdf', 1, $4)",
+        fid,
+        uid,
+        f"t/{fid.hex}",
+        "0" * 64,
+    )
+    query(
+        "insert into vendors (user_id, license_file_id, status, approved_at) values ($1, $2, $3, $4)",
+        uid,
+        fid,
+        status,
+        at if status == "approved" else None,
+    )
+    return uid
+
+
 def _go(monkeypatch, redis: str, make):
     """redis가 up이면 이 루프의 Redis로, down이면 연결이 안 되는 Redis(장부 합계로 셈)로 돌린다."""
     if redis == "down":
@@ -284,9 +305,10 @@ def test_new_accounts_share_one_dollar_a_day(monkeypatch, caps, redis):
 
 @pytest.mark.parametrize("redis", ["up", "down"])
 def test_vendor_and_admin_are_not_new_accounts(monkeypatch, caps, redis):
-    """업체(사업자등록증 + 관리자 승인) · 관리자(CLI로만)는 가입 1일이어도 새 계정 몫을 보지 않는다."""
+    """승인된 업체(사업자등록증 + 관리자 승인) · 관리자(CLI로만)는 가입 1일이어도 새 계정 몫을 보지 않는다.
+    승인 전 업체는 새 계정으로 센다(tests/test_v4_audit_platform.py, 점검 R6 B3)."""
     day_ago = clock.now_utc() - timedelta(days=1)
-    vendor = _account("v1@mitjip.test", "vendor", day_ago)
+    vendor = _vendor("v1@mitjip.test", "approved", day_ago)
     admin = _account("a1@mitjip.test", "admin", day_ago)
     customer = _account("c1@mitjip.test", "customer", day_ago)
 
@@ -306,18 +328,16 @@ def test_vendor_and_admin_are_not_new_accounts(monkeypatch, caps, redis):
     assert counted == summed == 190_000  # 업체 · 관리자 돈은 새 계정 합에 들어가지 않는다
 
 
-def test_new_pool_counts_only_calls_made_while_new(caps):
-    """새 계정 합의 장부 합계는 오늘, 부른 때 가입 7일 안이던 고객 계정의 호출만 센다."""
+def test_new_pool_counts_only_calls_made_while_new(monkeypatch, caps):
+    """새 계정 합의 장부 합계는 오늘, 부른 때 가입 7일 안이던 고객 · 승인 전 업체 계정의 호출만 센다.
+    새 계정인지는 부른 때(record) 장부 줄에 표시한다(new_account)."""
     now = datetime(2026, 11, 22, 12, 0, tzinfo=clock.SEOUL)
     x = _joined(_user("x@mitjip.test"), now - timedelta(days=7, hours=2))  # 오늘 10시에 7일이 됨
     y = _joined(_user("y@mitjip.test"), now - timedelta(hours=4))  # 오늘 8시 가입
     z = _joined(_user("z@mitjip.test"), now - timedelta(days=30))
-    v = _account("v@mitjip.test", "vendor", now - timedelta(days=1))
+    v = _vendor("v@mitjip.test", "approved", now - timedelta(days=1))
+    p = _vendor("p@mitjip.test", "pending", now - timedelta(days=1))
     a = _account("a@mitjip.test", "admin", now - timedelta(days=1))
-    sql = (
-        "insert into llm_usage (id, user_id, purpose, model, price_ver, ok, cost_micros, created_at)"
-        " values ($1, $2, 'assistant', 'claude-haiku-5-5', 'v', true, $3, $4)"
-    )
     for uid, hours_ago, cost in [
         (x, 3, 1),  # 9시: 새 계정이던 때라 센다
         (x, 1, 10),  # 11시: 7일이 지난 뒤라 안 센다
@@ -325,12 +345,21 @@ def test_new_pool_counts_only_calls_made_while_new(caps):
         (y, 2, 1000),  # 10시: 센다
         (z, 1, 10_000),  # 오래된 계정
         (None, 1, 100_000),  # 사용자 없는 일
-        (v, 1, 1_000_000),  # 가입 1일 업체
+        (v, 1, 1_000_000),  # 가입 1일 승인 업체
         (a, 1, 10_000_000),  # 가입 1일 관리자
+        (p, 1, 100_000_000),  # 가입 1일 심사 중 업체: 센다
     ]:
-        query(sql, uuid.uuid4(), uid, cost, now - timedelta(hours=hours_ago))
+        at = now - timedelta(hours=hours_ago)
+        before = {r["id"] for r in rows()}
+        with clock.moved_to(at):  # 그때 부른 것처럼 장부에 남긴다
+            run(
+                monkeypatch,
+                lambda u=uid: spend(u, "assistant", "claude-haiku-5-5", output_tokens=1),
+            )
+        (new,) = {r["id"] for r in rows()} - before
+        query("update llm_usage set cost_micros = $2, created_at = $3 where id = $1", new, cost, at)
     (pool,) = [b for b in service.buckets(y, now, now - timedelta(hours=4)) if b.new_days]
-    assert asyncio.run(service.db_spent(pool)) == 1001
+    assert asyncio.run(service.db_spent(pool)) == 100_001_001
 
 
 def test_join_time_is_cached_and_unknown_join_time_blocks(monkeypatch, caps):
@@ -434,7 +463,7 @@ def test_llm_usage_constraints_and_no_text_columns():
     assert cols == {
         "id", "user_id", "turn_id", "purpose", "model", "input_tokens", "cache_read_tokens",
         "cache_write_tokens", "output_tokens", "web_searches", "cost_micros", "price_ver", "ok",
-        "error", "latency_ms", "created_at",
+        "error", "latency_ms", "created_at", "new_account",
     }  # fmt: skip
 
 

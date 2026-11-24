@@ -244,7 +244,8 @@ class HomeInfoIn(BaseModel):
     @field_validator("emd")
     @classmethod
     def _emd(cls, v: str | None) -> str | None:
-        return (v or "").strip() or None
+        v = " ".join(strip_controls(v or "").split())  # NUL은 저장에서 500(점검 R5 #6)
+        return v if visible(v) else None
 
     @model_validator(mode="after")
     def _scope(self) -> "HomeInfoIn":

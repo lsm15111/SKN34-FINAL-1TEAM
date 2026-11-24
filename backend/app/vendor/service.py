@@ -36,6 +36,7 @@ from app.shared.clock import now_utc
 from app.shared.errors import AppError, app_error
 from app.shared.ids import uuid7
 from app.shared.regions import is_region, region_label
+from app.shared.text import strip_controls
 from app.vendor import repository as repo
 from app.vendor.models import (
     FAQ_KEYS,
@@ -234,8 +235,10 @@ async def _admin_out(
 async def list_for_admin(
     s: AsyncSession, status: str | None, q: str | None, today: date
 ) -> list[VendorAdminOut]:
-    """심사 목록: 기다림 · 보완 요청은 오래 기다린 순(마지막으로 낸 때), 처리함은 최근에 정한 순."""
-    pairs = await repo.list_with_users(s, LIST_STATUSES.get(status or ""), (q or "").strip())
+    """심사 목록: 기다림 · 보완 요청은 오래 기다린 순(마지막으로 낸 때), 처리함은 최근에 정한 순.
+    찾는 말의 제어 문자는 지운다(NUL은 DB가 받지 않아 500)."""
+    q = strip_controls(q or "").strip()
+    pairs = await repo.list_with_users(s, LIST_STATUSES.get(status or ""), q)
     out = await _admin_out(s, pairs, today)
     if status == "done":
         out.sort(key=lambda x: x.reviewed_at or x.created_at, reverse=True)
@@ -654,7 +657,7 @@ async def public_profile(s: AsyncSession, vendor_id: uuid.UUID) -> PublicProfile
 
 
 async def listed(s: AsyncSession, vendor_id: uuid.UUID, trade: str, sido: str, sgg: str) -> bool:
-    """list_public에 나오는 업체인지 (승인 · 그 공정 · 그 지역 · 연락 방식을 정함)"""
+    """list_public에 나오는 업체인지 (승인 · 그 공정 · 그 지역 · 연락 방식을 정함 · 멈춤 · 회원 정지 아님)"""
     return bool(await repo.approved_ids(s, trade, sido, sgg, vendor_id))
 
 
@@ -693,7 +696,8 @@ async def contacts(s: AsyncSession, vendor_ids: list[uuid.UUID]) -> dict[uuid.UU
 async def list_public(
     s: AsyncSession, trade: str | None, sido: str | None, sgg: str | None
 ) -> list[PublicCardOut]:
-    """그 공정 · 지역에서 일하는 승인된 업체 목록 (연락 방식을 정한 업체만)."""
+    """그 공정 · 지역에서 일하는 승인된 업체 목록 (연락 방식을 정한 업체만). 관리자가 멈춘 업체(D26, 새 요청만 막기도)
+    · 정지한 회원은 빼서 업체 목록 · 실측 요청(옛 몸통 포함) · 추천에 나오지 않는다."""
     ids = await repo.approved_ids(s, trade, sido, sgg)
     if not ids:
         return []

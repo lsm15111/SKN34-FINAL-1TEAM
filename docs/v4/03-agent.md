@@ -109,7 +109,7 @@
 - 저장은 `project.service.set_demolition`(모은 조건 덮어쓰기 · 지우기)이에요. 비서 승인에서 바뀐 칸이 철거 범위뿐이면 집 정보 rev는 안 올라요(집 정보 칸도 바뀌면 `project.service.update`가 같이 써요). 칩 목록은 '철거 범위: 전체 철거'처럼 화면 말로 보여요. 칩 지우기(DELETE …/conditions/demolition)도 돼요.
 
 ### llm_usage
-- 열: user_id FK SET NULL, turn_id, purpose(CHECK), model, 토큰 4종(캐시 읽기 · 쓰기 따로), web_searches, cost_micros(정수), price_ver, ok, error(종류 이름만), latency_ms
+- 열: user_id FK SET NULL, turn_id, purpose(CHECK), model, 토큰 4종(캐시 읽기 · 쓰기 따로), web_searches, cost_micros(정수), price_ver, ok, error(종류 이름만), latency_ms, new_account(부른 때 새 계정 몫, 새 계정 합이 셈, 0055)
 - 색인: (created_at), (user_id, created_at)
 - 글은 넣지 않아요.
 
