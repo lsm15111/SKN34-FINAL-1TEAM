@@ -3,13 +3,14 @@
 from datetime import date, timedelta
 
 from app.refprice.holidays import days_off
+from app.shared.clock import today_seoul
 from tests.helpers import signup
 from tests.test_project import body
 
 
 def _next_monday(after_days: int = 30) -> date:
     """공휴일이 없는 주의 월요일(테스트가 날짜에 따라 흔들리지 않게)"""
-    d = date.today() + timedelta(days=after_days)
+    d = today_seoul() + timedelta(days=after_days)
     d += timedelta(days=(7 - d.weekday()) % 7)
     while days_off(d, d + timedelta(days=14)):
         d += timedelta(days=7)
@@ -55,7 +56,7 @@ def test_redo_with_weekend_work_makes_a_new_version(api):
     got = r.json()
     assert got["version"] == first["version"] + 1 and got["weekend_work"] is True
     assert got["blocks"][0]["start"] == sat.isoformat()
-    past = api.post(f"/projects/{p['id']}/plan", json={"start": date.today().isoformat()})
+    past = api.post(f"/projects/{p['id']}/plan", json={"start": today_seoul().isoformat()})
     assert past.status_code == 422
 
 

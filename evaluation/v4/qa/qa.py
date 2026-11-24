@@ -1044,6 +1044,24 @@ def press_plan(st: State, choice: str) -> tuple[str | None, str]:
     return (hit[0] if hit else None), f"{ACTION_KO.get(kind, kind)} 할래요"
 
 
+PREWORK_WORD = {"done": "끝났어요", "todo": "아직이에요", "none": "안 해요"}  # 화면 PREWORK_STATES
+
+
+def press_list(st: State, choices: list[str]) -> tuple[str | None, str]:
+    """고르기 여럿(한 턴에 목록) → (card_id, 보낼 말). 도배 전 점검은 화면 preworkSend와 같은 말이에요."""
+    if not all(c.startswith("prework.") for c in choices):
+        return press_plan(st, choices[0])
+    hit = find_card(st, ("prework_check",), None)
+    label = (
+        {r.get("key"): r.get("label") for r in (hit[1]["data"].get("rows") or [])} if hit else {}
+    )
+    said = []
+    for c in choices:
+        key, _, state = c.removeprefix("prework.").partition(":")
+        said.append(f"{label.get(key) or key} {PREWORK_WORD.get(state, state)}")
+    return (hit[0] if hit else None), f"앞 공사 답: {' · '.join(said)}"
+
+
 def refresh_cards(api: Api, st: State, who: Who, surface: str) -> None:
     """대화 기록(먼저 말 건 줄 포함)의 카드를 이름표 찾기에 더해요."""
     try:
@@ -1185,7 +1203,9 @@ def cmd_press(ctx: Ctx, api: Api, a) -> None:
     who = customer(ctx, a.key)
     st = State(ctx, a.key)
     refresh_cards(api, st, who, "customer")
-    card_id, text = press_plan(st, a.choice)
+    # 여럿이거나 앞 공사 답이면 화면처럼 목록 하나로 보내요(preworkSend). 그 밖 하나는 글 하나
+    many = len(a.choice) > 1 or a.choice[0].startswith("prework.")
+    card_id, text = press_list(st, a.choice) if many else press_plan(st, a.choice[0])
     card_id = a.card or card_id
     if card_id is None:
         p("(그 이름표가 든 카드를 못 찾아 카드 id 없이 보내요)")
@@ -1196,7 +1216,7 @@ def cmd_press(ctx: Ctx, api: Api, a) -> None:
         who,
         "customer",
         a.text or text,
-        {"card_id": card_id, "choice": a.choice},
+        {"card_id": card_id, "choice": a.choice if many else a.choice[0]},
         None,
         "press",
     )
@@ -1743,7 +1763,9 @@ def build() -> argparse.ArgumentParser:
 
     s = sub.add_parser("press", help="고객 카드 단추(context.choice)")
     s.add_argument("key")
-    s.add_argument("choice")
+    s.add_argument(
+        "choice", nargs="+", help="여럿이면 한 턴에 목록으로(도배 전 점검 prework.floor:done …)"
+    )
     s.add_argument("--card", help="카드 id(안 주면 이름표로 찾음)")
     s.add_argument("--text", help="같이 보낼 말(안 주면 화면 단추 말)")
 

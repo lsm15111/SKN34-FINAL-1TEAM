@@ -42,7 +42,9 @@ _host, _port = os.environ.get("TEST_DB_HOST", "127.0.0.1"), _get("DB_HOST_PORT",
 # v3: 여러 역할이 동시에 테스트를 돌릴 수 있게 DB 이름을 바꿀 수 있어요(기본은 그대로)
 TEST_DB = os.environ.get("TEST_DB_NAME", "mitjip_test")
 ADMIN_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/postgres"
-TEST_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/{TEST_DB}"
+# 시험이 직접 여는 연결(query 등)은 세션 시간대를 서울로 둔다. SQL current_date가 앱 today_seoul()과 같은 날이 되게
+# (로컬 compose DB는 서울, CI Postgres는 UTC라 서울 0~9시에 하루 어긋났다). 앱 연결(DATABASE_URL)은 DB 기본값 그대로
+TEST_DSN = f"postgresql://{_user}:{_pw}@{_host}:{_port}/{TEST_DB}?timezone=Asia%2FSeoul"
 REDIS_URL = os.environ.get("TEST_REDIS_URL", "redis://127.0.0.1:6379/15")
 FILES_DIR = tempfile.mkdtemp(prefix="mitjip-files-")
 
