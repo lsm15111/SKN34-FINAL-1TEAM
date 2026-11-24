@@ -1,8 +1,10 @@
 // /guide — 믿집 백과 첫 화면: 찾기 칸 → '처음이에요' · '찾아볼래요' 나란히 → 많이 찾는 용어 그림 카드.
+// 용어를 누르면 이 화면 위에 자세히 칸이 열려요(?term=).
 import Link from "next/link";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main } from "@/components/site/Frame";
 import { TermCard } from "@/components/guide/TermCard";
+import { OpenTerm } from "@/components/guide/TermDetail";
 import { FindButton } from "@/components/guide/Triggers";
 import { Icon } from "@/components/ui/Icon";
 import { PATH, TERMS, popularTerms, topicHref, visibleTopics } from "@/lib/guide";
@@ -10,7 +12,10 @@ import s from "@/components/guide/guide.module.css";
 
 export const metadata = { title: "믿집 백과" };
 
-export default function GuidePage() {
+type Props = { searchParams: Promise<{ term?: string | string[] }> };
+
+export default async function GuidePage({ searchParams }: Props) {
+  const { term } = await searchParams;
   const popular = popularTerms();
 
   return (
@@ -56,6 +61,7 @@ export default function GuidePage() {
             {popular.map((t) => <li key={t.id}><TermCard term={t} /></li>)}
           </ul>
         </section>
+        <OpenTerm id={term} />
       </Main>
     </>
   );

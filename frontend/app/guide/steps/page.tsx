@@ -1,15 +1,20 @@
 // /guide/steps — 믿집으로 하는 순서(공사 화면 6단계와 같은 이름). 첫 단계만 펼쳐 두고, 나머지는 눌러서 펼쳐요.
 // 실측 뒤는 '그리고'(→) · '또는'으로 이어지는 길을 보여요. 내 공사 단계에 맞춰 펼치기는 보류예요(feat-v3-baekgwa-project-link).
+// 찾기 창에서 용어를 고르면 이 화면 위에 자세히 칸이 열려요(?term=).
 import Link from "next/link";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
+import { OpenTerm } from "@/components/guide/TermDetail";
 import { Icon } from "@/components/ui/Icon";
 import { STEPS, articleBySlug, articleHref } from "@/lib/guide";
 import s from "@/components/guide/guide.module.css";
 
 export const metadata = { title: "믿집으로 하는 순서" };
 
-export default function GuideStepsPage() {
+type Props = { searchParams: Promise<{ term?: string | string[] }> };
+
+export default async function GuideStepsPage({ searchParams }: Props) {
+  const { term } = await searchParams;
   return (
     <>
       <AppHeader phone={{ title: "믿집으로 하는 순서", back: "/guide" }} />
@@ -48,6 +53,7 @@ export default function GuideStepsPage() {
             })}
           </ol>
         </section>
+        <OpenTerm id={term} />
       </Main>
     </>
   );

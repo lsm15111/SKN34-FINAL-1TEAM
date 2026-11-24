@@ -3,13 +3,14 @@
 // - 목록은 처음 열 때 /guide/search-index에서 한 번만 받아요(화면마다 데이터를 싣지 않게).
 // - 띄어쓰기 · 가운뎃점은 빼고 견줘요. 'ㅊㅂ'처럼 첫소리만 쳐도 용어를 찾아요.
 // - ↑ ↓로 고르고 Enter로 열어요(콤보 상자 · 목록 상자 패턴). 빈 칸이면 많이 찾는 용어를 보여요.
+// - 용어는 보던 화면 위에 자세히 칸으로 열어요(주소에 ?term=만 붙고 스크롤은 그대로예요).
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MQ } from "@/components/site/breakpoints";
 import { Icon, type IconName } from "@/components/ui/Icon";
 import { useModal } from "@/components/ui/useModal";
-import { ASK_EVENT, FIND_EVENT, POPULAR, TRADE_LABEL, articleHref, termHrefId, type SearchIndex } from "@/lib/guide/shared";
+import { ASK_EVENT, FIND_EVENT, POPULAR, TRADE_LABEL, articleHref, withTerm, type SearchIndex } from "@/lib/guide/shared";
 import { afterClose } from "./afterClose";
 import { markTermOpen } from "./TermPanel";
 import s from "./guide.module.css";
@@ -58,6 +59,8 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
   const [failed, setFailed] = useState(false);
   const [active, setActive] = useState(0);
   const router = useRouter();
+  const path = usePathname();
+  const search = useSearchParams().toString();
   const listId = useId();
   const close = useCallback(() => setOpen(false), []);
   const m = useModal(ref, open, close, { closeOnBack: () => !window.matchMedia(MQ.tablet).matches });
@@ -92,7 +95,7 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
     if (!data) return [];
     const k = norm(q);
     const termItem = (t: SearchIndex["terms"][number]): Item => ({
-      key: `t-${t.id}`, href: termHrefId(t.id), title: t.term, sub: `${TRADE_LABEL[t.trade]} · ${t.easy}`, img: t.img, icon: "doc",
+      key: `t-${t.id}`, href: withTerm(path, search, t.id), title: t.term, sub: `${TRADE_LABEL[t.trade]} · ${t.easy}`, img: t.img, icon: "doc",
     });
     if (!k) {
       const pop = POPULAR.map((n) => data.terms.find((t) => t.term === n)).filter((t) => t !== undefined);
@@ -107,11 +110,11 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
     if (faq.length) out.push({ title: "자주 묻는 질문", items: faq.map((f) => ({ key: `f-${f.id}`, href: `/faq#${f.id}`, title: f.q, sub: f.a, icon: "chat" })) });
     if (canAsk && !onlyInitials(k)) out.push({ title: "AI 채팅", items: [{ key: "ask", title: `'${q.trim()}' AI 채팅에 물어보기`, sub: "답은 AI가 해요", icon: "chat", ask: q.trim() }] });
     return out;
-  }, [data, q, canAsk]);
+  }, [data, q, canAsk, path, search]);
   const flat = groups.flatMap((g) => g.items);
   const cur = Math.min(active, Math.max(0, flat.length - 1));
 
-  // 폰은 창이 넣은 기록 칸이 걷힌 뒤에 옮겨요(afterClose). 용어는 닫을 때 온 곳으로 돌아가게 표시해요
+  // 폰은 창이 넣은 기록 칸이 걷힌 뒤에 옮겨요(afterClose). 용어는 보던 화면 위에 열고(스크롤 그대로) 닫을 때 온 곳으로 돌아가게 표시해요
   function go(it: Item) {
     afterClose(close, () => {
       if (it.ask !== undefined) {
@@ -119,8 +122,10 @@ export function GuideFind({ canAsk }: { canAsk: boolean }) {
         return;
       }
       if (!it.href) return;
-      if (it.key.startsWith("t-")) markTermOpen();
-      router.push(it.href);
+      if (it.key.startsWith("t-")) {
+        markTermOpen();
+        router.push(it.href, { scroll: false });
+      } else router.push(it.href);
     });
   }
   function onKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {

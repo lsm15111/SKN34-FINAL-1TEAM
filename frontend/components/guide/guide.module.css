@@ -43,11 +43,15 @@
 .tile b { display: block; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
 .tile small { display: block; color: var(--mj-text-mute); font-size: var(--mj-type-caption); }
 
-/* 용어 카드(첫 화면 · 용어 사전) */
+/* 용어 카드(첫 화면 · 용어 사전). 테두리는 그림 위에 겹친 층(::after)에 그려서 hover · 초점 강조가 그림에 가리지 않고 네 변 모두 보여요 */
 .cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-.card { display: flex; flex-direction: column; height: 100%; border-radius: var(--mj-radius-card); overflow: hidden; background: var(--mj-surface); box-shadow: inset 0 0 0 1px var(--mj-line); color: var(--mj-text); text-decoration: none; }
-.card:hover { box-shadow: inset 0 0 0 1px var(--mj-line-control), var(--mj-shadow-raise); }
-.card:hover .cardName { color: var(--mj-link); }
+.card { position: relative; display: flex; flex-direction: column; height: 100%; border-radius: var(--mj-radius-card); overflow: hidden; background: var(--mj-surface); color: var(--mj-text); text-decoration: none; }
+.card::after { content: ""; position: absolute; inset: 0; border-radius: inherit; box-shadow: inset 0 0 0 1px var(--mj-line); pointer-events: none; }
+.card:hover { box-shadow: var(--mj-shadow-raise); }
+.card:hover::after, .card:focus-visible::after { box-shadow: inset 0 0 0 1px var(--mj-line-control); }
+.card:hover .cardName, .card:focus-visible .cardName { color: var(--mj-link); }
+/* 초점 테두리(globals :focus-visible)가 모서리를 4px로 바꾸지 않게 카드 모서리를 지켜요 */
+.card:focus-visible { border-radius: var(--mj-radius-card); }
 .cardImg { display: block; width: 100%; height: auto; aspect-ratio: 4 / 3; object-fit: cover; background: var(--mj-fill); }
 .cardBody { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px 12px; min-width: 0; }
 .cardText { background: var(--mj-surface-sub); }
