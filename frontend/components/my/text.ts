@@ -19,6 +19,7 @@ const STEP_NOW: Record<number, string> = {
 const TODO_NOTE: Record<string, { step?: number; text: string }> = {
   pick: { step: 3, text: "업체를 고를 차례" },
   visit_requested: { step: 4, text: "실측 날짜 맞추는 중" },
+  visit_booked: { step: 4, text: "실측 날짜 정해짐" },
   quotes_partial: { step: 4, text: "견적서가 오는 중" },
   quotes_arrived: { step: 4, text: "견적서 옴 · 비교할 차례" },
   dates_received: { step: 6, text: "날짜 옴 · 확인할 차례" },

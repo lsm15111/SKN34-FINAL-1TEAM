@@ -1168,7 +1168,7 @@ async def _trip() -> None:
 CHIPS: dict[str, tuple[tuple[str, str | None], ...]] = {
     "standard_quote": (("업체 추천해 줘", "!visits"), ("가견적은 어떻게 계산해요?", None)),
     "vendor_picks": (("가견적은 어떻게 계산해요?", None), ("실측은 무엇을 봐요?", None)),
-    "visit_slots": (("다른 시간도 볼래요", None), ("실측은 무엇을 봐요?", None)),
+    "visit_slots": (("다른 날짜도 볼래요", None), ("실측은 무엇을 봐요?", None)),
     "quote_compare": (("폐기물 처리도 포함인가요?", "quote"), ("표준견적서 다시 보기", None)),
     "schedule": (("공사 전날 준비물", "dates"), ("공정표 보기", None)),
     "today": (("견적서 비교 보기", "quote"), ("오늘 할 일 다시 보기", None)),

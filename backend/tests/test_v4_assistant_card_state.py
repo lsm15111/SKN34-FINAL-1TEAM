@@ -540,7 +540,7 @@ def test_slot_and_confirm_summaries_show_korean_dates():
     assert got.title == "마루와벽 실측 12월 15일(화) 오전"
     # 제목은 긴 꼴: 비서가 '12월 15일'이라고 말해도 문장 숫자 검사를 지난다
     assert {12, 15} <= guard.numbers(got.title)
-    assert got.version == "업체가 답한 기간 12.14(월)~12.18(금)"
+    assert got.version == "실측 가능 기간 12.14(월)~12.18(금)"
     s = actions.confirm_summary("마루와벽", 2, 3_000_000, 3, date(2026, 12, 31))
     assert {r.label: r.value for r in s.rows}["유효기간"] == "12.31(목)까지"
     # 카피 가이드 F2: 0을 붙이지 않는다

@@ -16,6 +16,7 @@ const TRADE_STATE: Record<string, { text: string; tone: Tone }> = {
   dates_overdue: { text: "공사 날짜 기한 지남", tone: "bad" },
   pick: { text: "업체 고를 차례", tone: "now" },
   visit_requested: { text: "실측 요청함", tone: "wait" },
+  visit_booked: { text: "실측 날짜 정해짐", tone: "wait" },
   before_work: { text: "날짜 수락함", tone: "ok" },
   dates_waiting: { text: "업체 확정 · 날짜 기다림", tone: "wait" },
   dates_requested: { text: "다른 날짜 요청함", tone: "wait" },

@@ -1586,6 +1586,7 @@ async def trade_facts(s: AsyncSession, project_id: uuid.UUID) -> dict[str, Visit
             quoted_names=[v.vendor_name for v in live],
             waiting_names=[v.vendor_name for v in waiting],
             last_at=max((last[v.id] for v in mine if v.id in last), default=None),
+            booked=sum(1 for v in mine if v.status in ("booked", "visited")),
         )
     return out
 

@@ -23,6 +23,7 @@ TODO_RANK = (
     "dates_overdue",  # 업체가 기한까지 날짜를 안 냄 → 확인하기
     "pick",  # 업체 고르기
     "visit_requested",  # 실측 요청함 → 실측 일정 보기
+    "visit_booked",  # 요청마다 실측 날짜가 정해짐(실측 받음 포함) → 실측 일정 보기
     "before_work",  # 공사 전 (체크 목록)
     "dates_waiting",  # 업체가 날짜를 정하는 중
     "dates_requested",  # 다른 날짜를 요청함 · 업체 답 기다림
@@ -54,6 +55,7 @@ class TradeFacts:
     end: date | None = None
     work_done_on: date | None = None
     extras_pending: int = 0
+    booked: int = 0  # 견적서 전 요청 중 실측 날짜가 정해진(실측 받음 포함) 수
 
 
 @dataclass(frozen=True)
@@ -82,7 +84,10 @@ def _todo(f: TradeFacts, today: date, overdue: bool) -> str:
     if st is None:
         if f.quotes:
             return "quotes_partial" if f.waiting else "quotes_arrived"
-        return "visit_requested" if f.asked else "pick"
+        if not f.asked:
+            return "pick"
+        # 요청마다 실측 날짜가 정해졌으면 '맞추는 중'이 아니에요(QA r9 u1 U4)
+        return "visit_booked" if f.booked >= f.asked else "visit_requested"
     if st == "confirmed":
         if f.proposed and not f.request_open:
             return "dates_received"
