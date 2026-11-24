@@ -252,12 +252,33 @@ def _pet_part(value: str, quote: str) -> str | None:
     return " ".join(dict.fromkeys(kept)) or None
 
 
+# 직접 할 일 값에 고객이 하지 않은 '직접'(칸 이름이 이미 직접 할 일이라 떼요, QA r7: '제가 달게요' → '조명 직접')
+SELF_WORD = re.compile(r"(?<![가-힣])직접(?![가-힣])")
+
+
+def _diy_part(value: str, quote: str) -> tuple[str | None, int]:
+    """직접 할 일 값을 조각(' · ')마다 본다: 고객이 하지 않은 '직접'은 떼고, 낱말 뿌리가 모두 인용에 있는 조각만
+    남긴다(QA r7 c2: '조명 교체' 한 조각이 인용 밖이라 페인트 · 조명 · 벽지가 통째로 빠짐). (남긴 값 · 뺀 조각 수),
+    남는 조각이 없으면 값은 None."""
+    q = _squash(quote)
+    parts = _parts(value)
+    kept: list[str] = []
+    for p in parts:
+        if "직접" not in q:
+            p = " ".join(SELF_WORD.sub(" ", p).split())
+        got = (p if _squash(p) in q else _grounded(p, quote)) if p else None
+        if got:
+            kept.append(got)
+    return LIST_SEP.join(dict.fromkeys(kept)) or None, len(parts) - len(kept)
+
+
 def validate(items: list[Item], message: str, why: list[str] | None = None) -> list[Item]:
     """허용 키 · 인용은 메시지 안 · 값은 인용 안(바꿔 쓴 값이면 낱말이 모두 인용에 있어야 하고 붙인 말은 뺀다).
     건강 · 연락처 · 금액이 든 값은 버리고, 인용에만 있으면 인용을 값으로 줄인다(근거 메시지 id는 그대로 남는다).
     편한 요일 · 때에 안 되는 때를 적은 값('평일엔 회사')은 같은 말 속 되는 때('주말')로 바꾸고, 없으면 버린다.
     편한 요일 · 때에 날짜('2.1(월)')를 적은 값도 버린다. 같은 키가 여럿이면 먼저 것(목록 칸은 합친다).
-    ITEMS_MAX개까지. 반려동물 값은 인용 밖 꾸밈말만 떼고 남긴다(_pet_part).
+    ITEMS_MAX개까지. 반려동물 값은 인용 밖 꾸밈말만 떼고 남긴다(_pet_part). 직접 할 일 값은 조각마다 보고 인용 밖
+    조각만 뺀다(_diy_part, 뺀 조각이 있으면 why에 'diy:part_outside').
     why를 주면 버린 줄마다 '키:까닭'을 넣는다(값 · 인용 글은 넣지 않는다, 기억 뽑기 일의 로그용)."""
     out: list[Item] = []
     seen: set[str] = set()
@@ -290,9 +311,12 @@ def validate(items: list[Item], message: str, why: list[str] | None = None) -> l
             continue  # 한 번 고른 날짜는 편한 요일 · 때로 남기지 않는다
         loose = _squash(value) not in _squash(quote)
         if loose:
-            value = (
-                _grounded(value, quote) or (_pet_part(value, quote) if key == "pet" else None) or ""
-            )
+            whole = _grounded(value, quote)
+            if whole is None and key == "diy":  # 조각마다: 인용 밖 조각만 빼요
+                whole, cut = _diy_part(value, quote)
+                if whole and cut:
+                    lost.append(f"{key}:part_outside")
+            value = whole or (_pet_part(value, quote) if key == "pet" else None) or ""
             if not value:
                 lost.append(f"{key}:value_outside")
                 continue  # 인용 밖 값
