@@ -68,6 +68,7 @@
 .taskRows { list-style: none; margin: 0; padding: 0; display: grid; }
 .taskRows li { display: grid; grid-template-columns: 88px auto minmax(0, 1fr); gap: 2px 12px; align-items: center; padding: 9px 0; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
 .taskRows li > span:last-child { color: var(--mj-text-mute); font-size: var(--mj-type-caption); text-align: right; }
+.taskRows li.rowEnded > b { color: var(--mj-text-mute); } /* 끝난 줄(취소 · 닫힘)은 이름을 흐리게: 기다리는 줄과 한눈에 갈라요 */
 .taskFoot { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: -4px; }
 .srcs { display: flex; gap: 6px; flex-wrap: wrap; }
 .err { font-size: var(--mj-type-label); color: var(--mj-danger); }

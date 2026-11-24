@@ -20,7 +20,7 @@ export function TaskCard({ task, now }: { task: TaskOut; now: string }) {
       {task.rows?.length ? (
         <ul className={k.taskRows}>
           {task.rows.map((r) => (
-            <li key={r.label}>
+            <li key={r.label} className={r.state === "cancelled" ? k.rowEnded : undefined}>
               <b>{r.label}</b>
               <StatusTag tone={r.state}>{r.text}</StatusTag>
               <span className={k.num}>{r.note ?? ""}</span>

@@ -6,8 +6,10 @@ type Extra = ApiDocs["extras"][number]["items"][number];
 
 export const PLAN_NAME: Record<"expected" | "final", string> = { expected: "예상 공정표", final: "확정 공정표" };
 
-/** 추가 금액 확인 상태 (고객 쪽 말, components/plan/PlanExtras와 같게) */
-export const ACK_TEXT: Record<Extra["ack"], string> = { pending: "확인 기다림", ok: "확인했어요", talk: "업체와 이야기 중" };
+/** 추가 금액 답 상태(고객 쪽 말, 공사 화면 추가 금액과 같게). 옛 ack 값은 거절도 '이야기 중'이라 v3 answer로 갈라요.
+ *  새 판이 나와 지난 판은 답할 일이 아니에요 */
+const ANSWER_TEXT: Record<Extra["answer"], string> = { pending: "답할 차례예요", approved: "승인했어요", rejected: "거절했어요", asked: "채팅으로 물었어요" };
+export const extraAnswerText = (x: Pick<Extra, "answer" | "superseded">) => (x.superseded ? "새 판으로 바뀌었어요" : ANSWER_TEXT[x.answer] ?? "확인 중");
 
 /** 실측 견적서 줄 아래 말: "도배 · 확정", "도배 · 닫힘 · 기록" */
 export function quoteSub(trade: string, closed: boolean, confirmed: boolean) {

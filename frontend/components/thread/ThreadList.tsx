@@ -17,20 +17,21 @@ export function ThreadList({ threads, today, label = "대화 목록" }: { thread
         const href = `/chat/${encodeURIComponent(t.thread_id)}`;
         const on = path === href || path.startsWith(`${href}/`);
         const preview = t.last ? (t.last.kind === "photo" && !t.last.preview ? "사진" : t.last.preview ?? "") : "";
+        // 읽기만인 대화(취소 · 다른 업체 확정 · 차단 등)는 흐린 색만이 아니라 글로도 보여요(색만으로 알리지 않음)
+        const sub = [t.visit_label, t.status === "read_only" ? "읽기만 돼요" : null].filter(Boolean).join(" · ");
         return (
           <li key={t.thread_id}>
             <Link href={href} className={[s.item, t.status === "read_only" ? s.itemRo : null].filter(Boolean).join(" ")} aria-current={on ? "page" : undefined}>
               <Avatar name={t.title} />
               <span className={s.itemText}>
                 <span className={s.itemTitle}>{t.title}</span>
-                {t.visit_label ? <span className={s.itemVisit}>{t.visit_label}</span> : null}
+                {sub ? <span className={s.itemVisit}>{sub}</span> : null}
                 {preview ? <span className={s.itemPrev}>{preview}</span> : null}
               </span>
               <span className={s.itemSide}>
                 {t.last ? <time dateTime={t.last.at} className="mj-num">{listTime(t.last.at, today)}</time> : null}
                 <Count n={t.unread} />
                 {t.unread > 0 ? <span className="mj-sr">, 안 읽은 글 {t.unread}개</span> : null}
-                {t.status === "read_only" ? <span className="mj-sr">, 읽기만 돼요</span> : null}
               </span>
             </Link>
           </li>

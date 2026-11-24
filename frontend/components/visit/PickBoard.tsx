@@ -217,12 +217,13 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
 
   // ── 수락 기다림(C19 보낸 뒤 · D10 잡아 둠)
   if (mode === "waiting") {
+    const st = visitState("picked", "customer");
     return (
       <Main>
         <PageHead title="실측 일정" crumbs={crumbs} />
         <WithAside aside={ai}>
           <Group>
-            <GroupHead><Name>{v}</Name><StateTag tone="wait">수락 기다림</StateTag></GroupHead>
+            <GroupHead><Name>{v}</Name><StateTag tone={st.tone}>{st.label}</StateTag></GroupHead>
             {pick.booked ? <Sub>{eulReul(slotText(pick.booked))} 보냈어요</Sub> : null}
             {pick.next.due_at ? <Small>{dueText(pick.next.due_at)} {iGa(v)} 답해요 · 그때까지 이 날짜를 잡아 둬요</Small> : null}
             {cancel ? <div className={s.cardFoot}>{cancel}</div> : null}

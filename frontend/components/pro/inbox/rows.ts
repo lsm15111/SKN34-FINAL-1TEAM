@@ -4,7 +4,7 @@ import { dateShort, dueText, rangeText, timeSeoul, won } from "@/lib/format";
 import { visitState, type StateTone } from "@/lib/labels";
 
 export const rowTone = (r: InboxRowV3): StateTone => (r.state?.icon as StateTone | undefined) ?? visitState(r.status, "vendor").tone;
-export const rowLabel = (r: InboxRowV3) => r.state?.label ?? visitState(r.status, "vendor").label;
+export const rowLabel = (r: InboxRowV3) => r.state?.label ?? visitState(r.status, "vendor", { close_reason: r.close_reason }).label;
 export const rowTitle = (r: InboxRowV3) => r.area_label ?? `${r.region} ${r.area_name}`;
 export const isJob = (r: InboxRowV3) => !!r.deal_id;
 /** 고객이 고른 반나절을 업체 수락까지 잡아 둔 줄(D10 A) */

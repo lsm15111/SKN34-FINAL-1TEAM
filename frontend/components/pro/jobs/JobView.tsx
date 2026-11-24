@@ -19,7 +19,8 @@ import { daysText } from "./days";
 import { jobState, jobWorking } from "./state";
 import s from "./jobs.module.css";
 
-const ANSWER: Record<string, string> = { pending: "고객 답 기다림", approved: "승인", rejected: "거절", asked: "채팅으로 물어봐요" };
+// 고객이 한 답(누가 한 일인지 붙여요). 물었으면 업체가 채팅에서 답할 차례예요
+const ANSWER: Record<string, string> = { pending: "고객 답 기다림", approved: "고객 승인", rejected: "고객 거절", asked: "고객이 채팅으로 물음" };
 
 export function JobView({ job, log, now, canChange = false }: { job: JobV3; log: VendorJobLog; /** 지금 시각(서버 값) */ now: string; /** 수락한 날짜를 바꾸자고 보낼 수 있어요 */ canChange?: boolean }) {
   const v = job.visit;

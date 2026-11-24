@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import type { ApiDeal, ApiDocs } from "@/lib/api/schedule";
 import { dateSeoul, md, won } from "@/lib/format";
 import { tradeLabel } from "@/lib/labels";
-import { ACK_TEXT, PLAN_NAME, finalPlanSub, quoteSub } from "./text";
+import { PLAN_NAME, extraAnswerText, finalPlanSub, quoteSub } from "./text";
 import s from "./docs.module.css";
 
 type QuoteDoc = ApiDocs["quotes"][number];
@@ -64,7 +64,7 @@ function extraRows(g: ExtraGroup) {
     <tr key={x.id} className={s.extra}>
       <th scope="row">
         <span className={s.exName}>업체가 알린 추가 금액</span>
-        <span className={s.sub}>{x.title} · {ACK_TEXT[x.ack]}</span>
+        <span className={s.sub}>{x.title} · {extraAnswerText(x)}</span>
       </th>
       <td className={s.date}>{day(x.created_at)}</td>
       <td className={s.amt}>{won(x.total)}</td>

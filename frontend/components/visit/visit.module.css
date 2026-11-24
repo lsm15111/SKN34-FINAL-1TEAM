@@ -25,6 +25,8 @@
 /* 표 단추 칸: 할 일 단추 아래 취소(회색 글자 단추) */
 .actStack { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
 .actStack > .btnRow { align-self: stretch; }
+/* 표 칸이 좁으면(업체 4곳 넘음) 상태 말 · 글자 단추가 옆 칸에 겹치지 않게 줄을 바꿔요 */
+.stateCell > span, .actStack > a { white-space: normal; text-align: left; }
 .btnRow { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; }
 .btnRow > * { flex: 1 1 0; min-width: 0; }
 .btnRow > .err { flex-basis: 100%; }

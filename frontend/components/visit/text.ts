@@ -75,13 +75,14 @@ export function windowText(w: { start: string; end: string; excluded: string[] }
 /** 기한 줄 꼴(표 칸): '11.25(수) 09:05'(까지 없이). 0시 기한은 앞날 24:00(dueText와 같은 꼴, QA r8 u1 데스크톱 표) */
 export const dueCell = (t: string) => dueText(t).replace(/까지$/, "");
 
-/** 상태 칩 말 · 모양(N4 C). 실측 시각이 지났는데 아직 확정 상태면 '실측 시각 지남'(copy-guide 1.9) */
-export function boardState(r: Pick<BoardRow, "status" | "can">): { label: string; tone: StateTone } {
+/** 상태 칩 말 · 모양(N4 C). 실측 시각이 지났는데 아직 확정 상태면 '실측 시각 지남'(copy-guide 1.9).
+ *  기한 지남은 누가 안 했는지(업체 답 없음 · 고르기 기한 지남)로 갈라요 */
+export function boardState(r: Pick<BoardRow, "status" | "can"> & { expired_reason?: string | null }): { label: string; tone: StateTone } {
   if (r.status === "booked" && r.can.visited) return { label: "실측 시각 지남", tone: "todo" };
-  return visitState(r.status, "customer");
+  return visitState(r.status, "customer", { expired_reason: r.expired_reason });
 }
 
-/** 표 '다음 할 일' 칸(D03 · CF-07). 누가 할 일인지 밝혀요(W3) */
+/** 표 '다음 할 일' 칸(D03 · CF-07). 누가 할 일인지 밝혀요(W3). 끝난 요청도 다음 길(다른 업체 담기)을 말해요 */
 export function nextText(r: BoardRow): string {
   const v = r.vendor_name;
   switch (r.status) {
@@ -89,15 +90,24 @@ export function nextText(r: BoardRow): string {
     case "offered": return "날짜 고르기";
     case "picked": return `${iGa(v)} 수락해요`;
     case "proposed": return "제안한 날 고르기";
-    case "booked": return r.can.visited ? "실측 받았는지 알려 주기" : r.change?.status === "open" ? `${iGa(v)} 일정 바꾸기에 답해요` : "실측 날 기다리기";
+    case "booked":
+      if (r.can.visited) return "실측 받았는지 알려 주기";
+      if (r.change?.status === "open") return `${iGa(v)} 일정 바꾸기에 답해요`;
+      if (r.change?.status === "countered") return "업체가 낸 다른 날 고르기";
+      return "실측 날 기다리기";
     case "visited": return `${iGa(v)} 견적서를 보내요`;
     case "quoted": return "견적서 비교하고 확정하기";
     case "chosen": return `${iGa(v)} 공사 날짜를 올려요`;
-    case "expired": return r.can.again ? "한 번 더 요청 · 다른 업체 담기" : "다른 업체 담기";
-    case "declined": return "다른 업체 담기";
-    default: return "—";
+    case "expired":
+    case "cancelled": return r.can.again ? "한 번 더 요청 · 다른 업체 담기" : "다른 업체 담기";
+    case "declined":
+    case "no_show": return "다른 업체 담기";
+    default: return "—"; // closed: 끝났고 할 일이 없어요
   }
 }
+
+/** 기한이 지나 끝난 요청의 그 기한(서버 expired_due_at). 없으면 next.due_at(예전 응답) */
+export const expiredDue = (r: Pick<BoardRow, "next"> & { expired_due_at?: string | null }): string | null => r.expired_due_at ?? r.next.due_at ?? null;
 
 /** 표 '날짜' 칸: 기간 · 고른 날 · 제안한 날 · 확정 날 */
 export function dayCell(r: BoardRow): string | null {

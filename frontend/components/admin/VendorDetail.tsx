@@ -72,7 +72,8 @@ export function VendorDetail({ v }: { v: VendorApplicationDetail }) {
 
   return (
     <aside className={s.aside} aria-label="고른 신청 자세히">
-      <div className={s.ah}><h2 className={s.at}>{v.biz_name ?? v.name}</h2><Badge tone={badge.tone}>{badge.label}</Badge></div>
+      {/* 승인 뒤 업체 기능을 멈춘 업체는 그냥 '승인'과 같아 보이지 않게 배지를 하나 더 둬요 */}
+      <div className={s.ah}><h2 className={s.at}>{v.biz_name ?? v.name}</h2><Badge tone={badge.tone}>{badge.label}</Badge>{v.suspended_at ? <Badge tone="bad">기능 멈춤</Badge> : null}</div>
       <Rows label="신청 내용">
         <Row label="대표자" value={v.owner_name ?? "—"} />
         <Row label="사업자등록번호" value={bizNoText(v.biz_no) || "—"} />
