@@ -218,7 +218,8 @@ RT_CHECKS = {
 ACTION_KINDS = {
     "customer": {"propose_home_info", "propose_visit_request", "propose_visit_slot",
                  "propose_vendor_confirm", "propose_dates_accept", "propose_delay_accept",
-                 "propose_extra_answer", "propose_work_check", "propose_visit_again"},
+                 "propose_extra_answer", "propose_work_check", "propose_visit_again",
+                 "propose_date_change", "propose_visit_cancel"},
     "vendor": {"propose_window_answer", "propose_decline", "propose_dates"},
 }  # fmt: skip
 MEMORY_KEYS = {
@@ -423,7 +424,12 @@ def check_all() -> int:
     print(
         f"scenarios {len(scen)}개 · {dict(Counter(f'{s.get("surface")}/{s.get("split")}' for s in scen))}"
     )
-    sizes = {"compare": (len(comp), 107), "redteam": (len(rt), 50), "scenarios": (len(scen), 20)}
+    reg = [
+        s for s in scen if str(s.get("id", "")).startswith("R")
+    ]  # 회귀 시나리오(QA r8 · r9 실패)
+    print(f"  회귀 {len(reg)}개 · 건너뜀(pending) {[s['id'] for s in reg if s.get('pending')]}")
+    sizes = {"compare": (len(comp), 107), "redteam": (len(rt), 50),
+             "scenarios": (len(scen) - len(reg), 20), "regression": (len(reg), 9)}  # fmt: skip
     for name, (n, want) in sizes.items():
         if n != want:
             errs.append(f"{name}: {n}개(정한 수 {want})")

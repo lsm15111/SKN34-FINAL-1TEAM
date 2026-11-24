@@ -19,7 +19,10 @@
   after_turn · 승인 규칙의 턴 번호는 대본 글 턴만 세요(단추 · ask 턴은 빼요). max_turns는 모든 턴을 세요.
 - worker: 걸음마다 한 차례 돌려요(기억 뽑기 일 assistant_memory + 비서 정리 · 먼저 말 걸기). --no-worker ·
   --no-nudges로 끌 수 있어요. 행동마다 출처(button · turn · screen · nudge)를 적어요.
-- 통과: 끝 상태(expected_end) + checks 모두. pass^k = 시나리오마다 C(c, k) / C(n, k) 평균(τ-bench).
+- 통과: 끝 상태(expected_end) + checks + 1계층 코드 불변식(sim/invariants.py) 모두. pass^k = 시나리오마다
+  C(c, k) / C(n, k) 평균(τ-bench). 불변식을 위해 턴마다 카드 값(card_data) · 승인 카드 요약(action_data) · 턴 앞 열린
+  승인 카드(open_before)를, 걸음마다 업무 상태 바뀜(timeline: 일어난 일 · 승인 · 거절 · 턴 · 화면 · worker)을 남겨요.
+- pending(기능이 아직 통합에 없음) 시나리오는 건너뛰고 meta.pending에 까닭을 남겨요.
 - 저장(runs/<tag>/): sim.jsonl(판마다 한 줄) · summary.json · meta.json
 """
 
@@ -38,13 +41,14 @@ sys.path.insert(0, str(V4))
 import apienv
 from kit import RUNS, SCENARIOS, Budget, append_jsonl, jsonl, utf8_stdout
 
-from sim import check, drive, press
+from sim import check, drive, invariants, press
 from sim.world import SeedError, World
 
 SETTLE = 6  # 한 걸음 뒤 사건 · 승인을 더 바뀌지 않을 때까지 도는 횟수 상한
 
 
-def load(ids: list[str] | None, split: str) -> list[dict]:
+def load(ids: list[str] | None, split: str, skipped: list[str] | None = None) -> list[dict]:
+    """시나리오 고르기. pending(기능이 아직 통합에 없음)은 건너뛰고 skipped에 'id: 까닭'을 남겨요."""
     out = []
     for p in sorted(SCENARIOS.glob("*.json")):
         if p.stem == "scenario.schema":
@@ -54,8 +58,27 @@ def load(ids: list[str] | None, split: str) -> list[dict]:
             continue
         if split != "all" and sc["split"] != split:
             continue
+        if sc.get("pending"):
+            if skipped is not None:
+                skipped.append(f"{sc['id']}: {sc['pending']}")
+            continue
         out.append(sc)
     return out
+
+
+class Watch:
+    """업무 상태 시간표(불변식 '승인 없는 실행'): 걸음(바탕 · 일어난 일 · 승인 · 거절 · 턴 · 화면 · worker)마다 업무 상태
+    지문(drive.biz)을 읽어 바뀐 줄을 남겨요. n은 그 걸음까지 센 비서 턴 수(불변식 턴 번호와 같아요)."""
+
+    def __init__(self, app) -> None:
+        self.app, self.rows, self.last, self.n = app, [], drive.biz(app), 0
+
+    def mark(self, op: str, **kw) -> None:
+        now = drive.biz(self.app)
+        changes = drive.biz_diff(self.last, now)
+        self.last = now
+        if changes:
+            self.rows.append({"op": op, "n": self.n, **kw, "changes": changes})
 
 
 class Events:
@@ -101,7 +124,17 @@ def actions_now(app, world: World | None = None) -> list[dict]:
     ]
 
 
-def fire(app, world: World, ev: Events, turn_no: int, cref: str) -> int:
+def open_kinds(app, surface: str) -> list[str]:
+    """이 화면(고객 · 업체)에서 열려 있는 승인 카드 종류(기한 전 proposed). 턴 앞에 읽어 기록해요."""
+    rows = app.query(
+        "select distinct kind from assistant_actions"
+        " where status = 'proposed' and surface = $1 and expires_at > now()",
+        surface,
+    )
+    return sorted(r["kind"] for r in rows)
+
+
+def fire(app, world: World, ev: Events, turn_no: int, cref: str, watch: Watch | None = None) -> int:
     n = 0
     for _ in range(len(ev.specs) + 1):
         due = ev.due(turn_no, actions_now(app, world))
@@ -114,12 +147,16 @@ def fire(app, world: World, ev: Events, turn_no: int, cref: str) -> int:
                 world.event(e["do"], e.get("args") or {}, cref)
             except SeedError as x:
                 row.update(ok=False, error=str(x))
+            # 상대방 · 시간 흐름이 바꾼 업무 상태(승인 없이 바뀌어도 되는 걸음)
+            if watch is not None:
+                watch.mark("event", ref=e["id"], do=e["do"])
             ev.log.append(row)
             n += 1
     return n
 
 
-def decide(app, world, sc, who, surface, pid, turn_no, decided, approved, log) -> int:
+def decide(app, world, sc, who, surface, pid, turn_no, decided, approved, log,
+           watch: Watch | None = None) -> int:  # fmt: skip
     rules = (sc.get("script") or {}).get("decide") or []
     n = 0
     for a in drive.open_actions(app, world, who, surface, pid):
@@ -135,6 +172,8 @@ def decide(app, world, sc, who, surface, pid, turn_no, decided, approved, log) -
         if do == "leave" or decided.get(aid) == do:
             continue
         got = drive.press(app, world, who, surface, a, do)
+        if watch is not None:  # 사람 승인 · 거절이 바꾼 업무 상태
+            watch.mark(do, ref=aid, kind=a["kind"])
         decided[aid] = do
         if do == "approve":
             approved.add(aid)
@@ -219,6 +258,7 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
         who, pid = world.customers[cref], world.customers[cref]["pid"]
     else:
         who, pid = world.vendors[script.get("as") or s["world"]["vendors"][0]["ref"]], None
+    watch = Watch(app)  # 바탕(world 심기) 뒤부터 업무 상태 바뀜을 걸음마다 남겨요
     ev = Events(s.get("events") or [])
     decided: dict[str, str] = {}
     approved: set[str] = set()
@@ -231,19 +271,23 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
 
     def settle() -> None:
         for _ in range(SETTLE):
-            moved = fire(app, world, ev, script_no, cref)
+            moved = fire(app, world, ev, script_no, cref, watch)
             if worker:
                 got = drive.tick(app, nudges=nudges)
                 if got:
                     ticks.append({"after_turn": script_no, **got})
+                    watch.mark("tick")
                     moved += 1
-            moved += decide(app, world, s, who, surface, pid, script_no, decided, approved, dlog)
+            moved += decide(app, world, s, who, surface, pid, script_no, decided, approved, dlog,
+                            watch)  # fmt: skip
             if not moved:
                 break
 
     def send(text: str, visit: str | None, context: dict | None, step: int, **extra) -> dict:
         nonlocal said
         said += 1
+        # 턴 앞에 열린 승인 카드 종류(불변식 '없는 카드' · SentenceGate opened와 같은 기준: 이 화면 · 기한 전)
+        extra["open_before"] = open_kinds(app, surface)
         rec = drive.turn(app, world, who, surface, text, project_id=pid, visit_id=visit,
                          context=context)  # fmt: skip
         if rec.get("http") == 422 and context and len(context.get("card_id") or "") > CARD_ID_MAX:
@@ -254,6 +298,8 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
                              context=context)  # fmt: skip
         rec.update(step=step, **extra)
         turns.append(rec)
+        watch.n = said
+        watch.mark("turn", step=step)  # 비서 턴 안에서 바뀐 업무 상태는 승인 없는 실행이에요
         return rec
 
     def plan(spec: dict, visit: str | None) -> press.Press:
@@ -297,6 +343,7 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
             rec = drive.screen(app, world, who, st["screen"], project_id=pid, visit_id=visit)
             rec["step"] = i
             turns.append(rec)
+            watch.mark("screen", step=i)
         settle()
     state = world.collect()
     for a in state["actions"]:
@@ -322,18 +369,26 @@ def run_one(app, sc: dict, trial: int, worker: bool = True, nudges: bool = True)
     proc = check.check_process(s.get("checks") or {}, run)
     row.update(
         notes=world.notes,
-        turns=[{k: v for k, v in t.items() if k not in ("shown", "card_data")} for t in turns],
+        turns=[{k: v for k, v in t.items() if k != "shown"} for t in turns],
         presses=presses,
         ticks=ticks,
         memory_jobs=mem_jobs,
         decisions=dlog,
         events=ev.log,
         state=state,
+        timeline=watch.rows,
+    )
+    # 1계층 코드 불변식(sim/invariants.py): 끝 상태 · 대화 확인 옆 세 번째 묶음. 통과는 셋 모두예요
+    inv = invariants.check_all(row, sc)
+    row.update(
         end=end,
         checks=proc,
+        invariants=inv,
+        inv_summary=invariants.summary(inv),
         end_ok=check.passed(end),
         checks_ok=check.passed(proc),
-        passed=check.passed(end + proc),
+        inv_ok=check.passed(inv),
+        passed=check.passed(end + proc + inv),
         usage=use,
         modes=sorted({t.get("mode") for t in turns if t.get("mode")}),
         secs=round(time.monotonic() - t0, 1),
@@ -394,7 +449,7 @@ def summarize(rows: list[dict], trials: int) -> dict:
     for sid, rs in sorted(by.items()):
         fails: dict[str, int] = {}
         for r in rs:
-            for it in (r.get("end") or []) + (r.get("checks") or []):
+            for it in (r.get("end") or []) + (r.get("checks") or []) + (r.get("invariants") or []):
                 if not it["ok"] and not it["na"]:
                     fails[it["what"]] = fails.get(it["what"], 0) + 1
         ok, n = _items(rs)
@@ -407,6 +462,8 @@ def summarize(rows: list[dict], trials: int) -> dict:
                 "passed": sum(bool(r.get("passed")) for r in rs),
                 "end_ok": sum(bool(r.get("end_ok")) for r in rs),
                 "checks_ok": sum(bool(r.get("checks_ok")) for r in rs),
+                "inv_ok": sum(bool(r.get("inv_ok", True)) for r in rs),
+                "inv": inv_stats(rs),
                 "seed_error": next((r["seed_error"] for r in rs if r.get("seed_error")), None),
                 "event_errors": sorted(
                     {e["error"] for r in rs for e in r.get("events") or [] if not e["ok"]}
@@ -442,6 +499,8 @@ def summarize(rows: list[dict], trials: int) -> dict:
         f"pass^{trials}": hat(full, "passed", trials),
         "end_only_pass^1": hat(full, "end_ok", 1),
         "checks_only_pass^1": hat(full, "checks_ok", 1),
+        "inv_only_pass^1": hat(full, "inv_ok", 1),
+        "invariants": inv_stats(rows),
         "by_split": {
             sp: {
                 "n": len([x for x in full if x["split"] == sp]),
@@ -464,6 +523,26 @@ def summarize(rows: list[dict], trials: int) -> dict:
     }
 
 
+def inv_stats(rs: list[dict]) -> dict:
+    """불변식 합: 불변식마다 (잰 것, 위반, 잴 수 없음)과 위반한 판 · 턴 번호."""
+    tot = {k: {"checked": 0, "bad": 0, "na": 0} for k in invariants.NAMES}
+    where = []
+    for r in rs:
+        s = r.get("inv_summary") or {}
+        for k, v in (s.get("by") or {}).items():
+            for f in ("checked", "bad", "na"):
+                tot[k][f] += v.get(f, 0)
+            if v.get("bad"):
+                where.append(
+                    {
+                        "key": f"{r['scenario']}#{r.get('trial', 0)}",
+                        "inv": k,
+                        "turns": v.get("turns"),
+                    }
+                )
+    return {"by": tot, "violations": sum(v["bad"] for v in tot.values()), "where": where}
+
+
 def nudge_stats(rs: list[dict]) -> dict:
     """먼저 말 건 줄: 보낸 줄(보낸 뒤 닫힌 줄 포함) 수와 거짓 경보(사람이 그 일을 끝낸 뒤 보낸 줄) 수."""
     ns = [n for r in rs for n in (r.get("state") or {}).get("nudges") or []]
@@ -477,21 +556,31 @@ def report(summary: dict, mode: str) -> None:
     k = summary["trials"]
     live = bool(summary.get("cost"))
     print(f"\n# 시뮬레이터 결과 ({mode} 모드, 시나리오마다 {k}번)")
-    print("| 시나리오 | 나눔 | 화면 | 통과 | 끝 상태만 | 확인만 | 맞은 항목 | 단추 |"
+    print("| 시나리오 | 나눔 | 화면 | 통과 | 끝 상태만 | 확인만 | 불변식 | 맞은 항목 | 단추 |"
           + (" 비용 |" if live else "") + " 주된 실패 |")  # fmt: skip
-    print("| --- " * (10 if live else 9) + "|")
+    print("| --- " * (11 if live else 10) + "|")
     for x in summary["scenarios"]:
         why = x["seed_error"] or " · ".join(x["fails"][:3]) or "-"
         usd = f" ${x.get('cost_usd', 0):.4f} |" if live else ""
         print(f"| {x['id']} | {x['split']} | {x['surface']} | {x['passed']}/{x['trials']} | "
               f"{x['end_ok']}/{x['trials']} | {x['checks_ok']}/{x['trials']} | "
+              f"{x.get('inv_ok', x['trials'])}/{x['trials']} | "
               f"{x['items_ok']}/{x['items']} | {press_cell(x.get('presses'))} |{usd} {why} |")  # fmt: skip
     f = summary.get("forbidden_tools") or {}
     print(f"\npass^1 {summary['pass^1']} · pass^{k} {summary[f'pass^{k}']} "
           f"· 끝 상태만 pass^1 {summary['end_only_pass^1']} · 확인만 pass^1 "
-          f"{summary['checks_only_pass^1']} · 맞은 항목 {summary['item_rate']} "
+          f"{summary['checks_only_pass^1']} · 불변식만 pass^1 {summary.get('inv_only_pass^1')} "
+          f"· 맞은 항목 {summary['item_rate']} "
           f"· 필수 도구 재현율 {summary['required_tools_recall']} "
           f"· 금지 도구 {f.get('used', 0)}/{f.get('items', 0)}항목")  # fmt: skip
+    iv = summary.get("invariants") or {}
+    if iv:
+        print("불변식: " + " · ".join(
+            f"{invariants.NAMES[k]} 위반 {v['bad']}/잰 것 {v['checked']}(na {v['na']})"
+            for k, v in (iv.get("by") or {}).items()
+        ))  # fmt: skip
+        for w in iv.get("where") or []:
+            print(f"  위반 {w['key']} {invariants.NAMES[w['inv']]} 턴 {w['turns'] or '-'}")
     print(f"유료 호출 {summary['paid_calls']}회 · 비용 ${summary['cost_usd']}")
     if live:
         c = summary["cost"]
@@ -571,7 +660,10 @@ def main(argv=None) -> int:
     else:
         apienv.free_mode()
     env = apienv.load_db_env(a.env_file)
-    scen = load(a.only.split(",") if a.only else None, a.split)
+    skipped: list[str] = []
+    scen = load(a.only.split(",") if a.only else None, a.split, skipped)
+    for x in skipped:
+        print(f"건너뜀(pending) {x}")
     out = RUNS / a.tag
     out.mkdir(parents=True, exist_ok=True)
     path = out / "sim.jsonl"
@@ -635,7 +727,7 @@ def main(argv=None) -> int:
     meta = {"tag": a.tag, "mode": mode, "run_mode": summary["mode"], "db": a.db,
             "redis_db": a.redis_db, "env_file": env.name if env else None,
             "scenarios": [s["id"] for s in scen], "trials": a.trials, "worker": not a.no_worker,
-            "nudges": not a.no_worker and not a.no_nudges}  # fmt: skip
+            "nudges": not a.no_worker and not a.no_nudges, "pending": skipped}  # fmt: skip
     if a.live:
         meta.update(llm=llm_set, max_usd=a.max_usd, stopped=stopped, cost=summary["cost"])
     write_json(out / "meta.json", meta)

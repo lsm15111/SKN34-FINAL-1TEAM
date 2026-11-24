@@ -1,0 +1,109 @@
+{
+ "id": "R09",
+ "title": "회귀(대기): 공사 전 선행 공정 · 자재 들어오는 때 브리핑",
+ "surface": "customer",
+ "split": "dev",
+ "tags": [
+  "regression",
+  "C6",
+  "prework"
+ ],
+ "pending": "P2 선행 공정 · 자재 브리핑 기능이 아직 통합(bb66cfc)에 없어요. 들어오면 도구 · 정답을 맞추고 pending을 지워요",
+ "persona": {
+  "role": "customer",
+  "who": "도배 공사를 앞둔 고객",
+  "goal": "도배 전에 끝나야 할 공정과 자재 들어오는 때를 알기",
+  "style": "짧게 물어요.",
+  "knows": {
+   "공사": "12월 14일 도배"
+  },
+  "approve": [],
+  "reject": [],
+  "never": [],
+  "done_when": "브리핑을 들으면 끝내요"
+ },
+ "world": {
+  "today": "2026-11-25",
+  "customer": {
+   "ref": "c1",
+   "gu": "마포구",
+   "complex": "서울 마포구 ○○아파트",
+   "phone": "010-5555-0101",
+   "address": "서울 마포구 ○○아파트 101동 1203호"
+  },
+  "home": {
+   "pyeong": 32,
+   "area_m2": 105.8,
+   "area_basis": "supply",
+   "trades": [
+    "dobae"
+   ],
+   "grade": "basic",
+   "living": "vacant",
+   "start_wish": "2026-12-14"
+  },
+  "project": {
+   "stage": "construction"
+  },
+  "vendors": [
+   {
+    "ref": "maru",
+    "name": "마루와벽",
+    "gu": "마포구",
+    "trades": [
+     "dobae"
+    ],
+    "price_confirmed": true,
+    "phone": "010-3333-4444"
+   }
+  ],
+  "deals": [
+   {
+    "ref": "d_dob",
+    "vendor": "maru",
+    "trade": "dobae",
+    "status": "scheduled",
+    "start": "2026-12-14",
+    "end": "2026-12-16"
+   }
+  ]
+ },
+ "opening": "도배 전에 먼저 끝나야 하는 공사가 있어요? 자재는 언제 들어와요?",
+ "max_turns": 3,
+ "script": {
+  "turns": [
+   {
+    "say": "도배 전에 먼저 끝나야 하는 공사가 있어요? 자재는 언제 들어와요?"
+   },
+   {
+    "say": "고마워요."
+   }
+  ],
+  "decide": []
+ },
+ "expected_end": {
+  "actions": {
+   "never_executed": [
+    "*"
+   ],
+   "none_without_approval": true
+  }
+ },
+ "checks": {
+  "max_tool_calls_per_turn": 6,
+  "no_text": [
+   "010-5555-0101",
+   "101동 1203호",
+   "010-3333-4444",
+   "010-3333-5555"
+  ],
+  "max_cost_usd": 0.2
+ },
+ "judge": [
+  "선행 공정 순서를 공정표 값으로만 말했나",
+  "자재 들어오는 때를 지어내지 않았나"
+ ],
+ "memo": [
+  "2026-11-25 평가 갈래 E: QA r8 · r9에서 찾은 실패를 시뮬레이터 회귀로 더했어요(docs/v4/eval/plan.md 3계층)."
+ ]
+}

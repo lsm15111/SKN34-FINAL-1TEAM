@@ -197,7 +197,7 @@ def _json(v, cap: int) -> str:
 
 def turn_evidence(t: dict, n: int, who: str) -> list[str]:
     """읽기 모듈: 턴 글 + 도구 입력 · 결과(모델이 받은 값) + 카드 데이터."""
-    lines = grade.turn_lines(t, n, who, cap=TEXT_CAP)
+    lines = grade.turn_lines(t, n, who, cap=TEXT_CAP, tools=False)  # 도구는 아래에 결과까지 넣어요
     if t.get("facts"):  # 비서가 턴 시작에 받은 집 · 단계 · 기한 · 업체 글(도구 결과와 같은 근거)
         lines.append(f"- 턴 사실: {_short(t['facts'], FACTS_CAP)}")
     args = t.get("tool_args") or []
@@ -523,6 +523,11 @@ def parse_args(argv=None):
     ap.add_argument("--env-file", type=Path, default=grade.ROOT / ".env")
     ap.add_argument("--report", action="store_true")
     ap.add_argument("--compare", help="같은 대화를 다른 방식으로 판정한 tag")
+    ap.add_argument(
+        "--allow-same-model",
+        action="store_true",
+        help="판정 모델이 실행 모델과 같아도 이어 가요(경고를 찍고 meta에 남겨요)",
+    )
     a = ap.parse_args(argv)
     if not a.judge.startswith("claude-") or a.judge not in prices.PRICES:
         ap.error("판정기는 가격표에 있는 Claude 모델이어야 해요")
@@ -543,9 +548,55 @@ def finish(a, out: Path, extra: dict) -> dict:
             **compare(rows, jsonl(RUNS / a.compare / "verdicts.jsonl")),
         }
     s.update(extra)
+    meta_p = out / "meta.json"
+    meta = json.loads(meta_p.read_text("utf-8")) if meta_p.exists() else {}
+    s["separation"] = meta.get("separation")
     (out / "summary.json").write_text(json.dumps(s, ensure_ascii=False, indent=1), encoding="utf-8")
     print(report(s))
+    print(grade.sep_line(meta.get("separation")))
+    if rows and (md := agent_report(out, rows, meta)):
+        print(f"보고: {md}")
     return s
+
+
+def agent_report(out: Path, rows: list[dict], meta: dict) -> Path:
+    """report.md: 대화마다 PASS/FAIL. 판정 PASS = '특히 볼 것' · 공통 규칙에 미충족 없음(끝 상태 점검은 코드가 정답이라
+    판정기 일치율만 재요). 코드 PASS = 시뮬레이터 끝 상태 · 대화 확인 · 불변식. 실패 턴 = 미충족 근거 턴 + 불변식 위반 턴."""
+    sims = (
+        {f"{r['scenario']}#{r.get('trial', 0)}": r for r in jsonl(Path(meta["sims"]))}
+        if meta.get("sims")
+        else {}
+    )
+    by: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        by[r["key"]].append(r)
+    table = []
+    for key, vs in sorted(by.items()):
+        sim = sims.get(key) or {}
+        sc_p = grade.SCEN / f"{key.split('#')[0]}.json"
+        code = (
+            grade.code_view(sim, json.loads(sc_p.read_text("utf-8")) if sc_p.exists() else None)
+            if sim
+            else {}
+        )
+        miss = [v for v in vs if v["source"] in ("hint", "rule") and v["verdict"] == "UNSATISFIED"]
+        why = [f"심기 · 실행 오류: {code['error']}"] if code.get("error") else []
+        why += [f"코드: {f}" for f in code.get("fails") or []]
+        why += [f"불변식 {b['inv']}: {b['why']}" for b in (code.get("inv_bad") or [])[:3]]
+        why += [f"미충족 {v['req']}({SRC_KO[v['source']]}): {v['reason']}" for v in miss]
+        turns = {t for v in miss for t in v.get("turns") or []}
+        turns |= {b["turn"] for b in code.get("inv_bad") or [] if b.get("turn")}
+        code_ok = bool(code.get("code_ok")) if sim else bool(vs[0].get("code_passed"))
+        table.append({"run": Path(meta.get("sims") or "").parent.name or "-", "key": key,
+                      "code": "PASS" if code_ok else "FAIL",
+                      "judge": f"{'PASS' if not miss else 'FAIL'}(미충족 {len(miss)})",
+                      "final": "PASS" if code_ok and not miss else "FAIL", "why": why,
+                      "turns": sorted(turns), "inv": code.get("inv_bad") or []})  # fmt: skip
+    head = [f"- 판정 에이전트 {meta.get('judge')} · 방식 {meta.get('mode')} · {meta.get('run')}",
+            f"- {grade.sep_line(meta.get('separation'))}",
+            "- 판정 PASS: '특히 볼 것' · 공통 규칙에 미충족 없음. 최종 PASS = 코드 PASS + 판정 PASS",
+            "- 실패 턴: 미충족 판정이 근거로 든 턴 + 불변식 위반 턴"]  # fmt: skip
+    return grade.write_md(out, "판정 보고(agent_judge.py)", head, table)
 
 
 def main(argv=None) -> int:
@@ -567,11 +618,13 @@ def main(argv=None) -> int:
     ]
     if not runs:
         sys.exit("판정할 대화가 없어요(--trial · --only를 확인해요)")
+    # 실행 모델과 판정 모델이 같으면 멈춰요(grade.separation, 돈을 쓰기 전에)
+    sep = grade.separation(a.judge, [a.sims], a.allow_same_model)
     out.mkdir(parents=True, exist_ok=True)
     meta = {
         "tag": a.tag, "mode": a.mode, "judge": a.judge, "run": "dry-run" if a.dry_run else "live",
         "prompts": short_hash(LOCATE_SYSTEM + ASK_SYSTEM + ALL_SYSTEM), "sims": str(a.sims), "trial": a.trial,
-        "scenarios": [r["scenario"] for r in runs], "head": jg._git("rev-parse", "HEAD"),
+        "scenarios": [r["scenario"] for r in runs], "head": jg._git("rev-parse", "HEAD"), "separation": sep,
     }  # fmt: skip
     meta_path = out / "meta.json"
     old = json.loads(meta_path.read_text("utf-8")) if meta_path.exists() else None

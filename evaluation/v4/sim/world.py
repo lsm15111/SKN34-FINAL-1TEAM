@@ -682,6 +682,48 @@ class World:
         self.ensure_booked(ref)
         self.send_quote(ref, a)
 
+    # ---- events: 회귀 시나리오(R03 다른 날 제안 · R04 두 번째 요청) ----
+
+    def ev_vendor_propose_days(self, a: dict, cref: str) -> None:
+        """업체가 고객이 고른 날 대신 다른 날을 내요(POST /vendor/visits/{id}/propose, picked → proposed).
+        halves: 'YYYY-MM-DD:am' 1~3개(고객 희망 기간 안). note는 업체가 적은 말(자료)."""
+        v = self.visits[self.visit_ref(a, cref)]
+        slots = []
+        for h in a.get("halves") or []:
+            day, _, half = h.partition(":")
+            slots.append({"day": day, "half": half or "am"})
+        body = {"reason_code": a.get("reason") or "other_site", "slots": slots}
+        if a.get("note"):
+            body["note"] = a["note"][:100]
+        self.as_(self.vendors[v["vendor"]])
+        self.need(
+            self.api.post(f"/vendor/visits/{v['id']}/propose", json=body), "업체 다른 날 제안"
+        )
+
+    def ev_customer_cancel_visit(self, a: dict, cref: str) -> None:
+        """고객이 실측 요청을 화면에서 취소해요(POST /projects/{pid}/visits/{id}/cancel, code: changed 등)."""
+        v = self.visits[self.visit_ref(a, cref)]
+        cust = self.customers[v["customer"]]
+        self.as_(cust)
+        r = self.api.post(
+            f"/projects/{cust['pid']}/visits/{v['id']}/cancel",
+            json={"code": a.get("code") or "changed"},
+        )
+        self.need(r, "실측 요청 취소")
+
+    def ev_customer_request(self, a: dict, cref: str) -> None:
+        """고객이 화면에서 실측을 다시 요청해요(담기 → 요청). 같은 업체면 두 번째 요청(attempt 2)이에요.
+        새 요청은 ref(없으면 '<업체 ref>-again')로 이름을 붙여요."""
+        cust = self.customers[cref]
+        trade = a.get("trade") or "dobae"
+        vendors = [self.vendors[x] for x in a.get("vendors") or []]
+        if not vendors:
+            raise SeedError("다시 요청할 업체가 없어요")
+        got = self.request(cust, vendors, trade, wish=a.get("wish"), message=a.get("note"))
+        for ref, vid in got.items():
+            name = a.get("ref") if len(got) == 1 and a.get("ref") else f"{ref}-again"
+            self.visits[name] = {"id": vid, "vendor": ref, "customer": cref, "trade": trade}
+
     def ensure_booked(self, ref: str) -> None:
         """v3 견적서는 실측 확정(booked · visited) 뒤에만 내요. 아직이면 화면에서 잡은 것처럼 기간 답 · 고르기 · 수락."""
         st = self._status(ref)

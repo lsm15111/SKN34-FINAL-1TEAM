@@ -14,7 +14,8 @@ import math
 import uuid
 from collections import Counter
 
-TEXT_KEEP = 800  # 기록에 남길 답 글 길이(채점은 전체 글로 해요)
+# 기록에 남길 답 글 길이(채점은 전체 글로 해요). 불변식 · 판정이 기록 글을 다시 읽어요
+TEXT_KEEP = 4000
 
 
 def sse(body: str) -> list[tuple[str, dict]]:
@@ -141,6 +142,17 @@ def turn(
             for n, d in ev
             if n == "action"
         ],
+        # 승인 카드 요약(제목 · 줄 · 메모 · 단추 이름): 불변식(숫자 근거 · 개인정보)이 다시 읽어요
+        action_data=[
+            {
+                "id": d.get("action_id"),
+                "kind": d.get("kind"),
+                "status": d.get("status"),
+                "summary": d.get("summary"),
+            }
+            for n, d in ev
+            if n == "action"
+        ],
         text=(tokens or answer)[:TEXT_KEEP],
         shown=shown_of(ev),
         tool_args=[{k: v for k, v in x.items() if k not in ("seen", "error")} for x in taken],
@@ -204,6 +216,44 @@ def press(app, world, who: dict, surface: str, action: dict, do: str) -> dict:
     out = {"http": r.status_code, "code": _err(r)}
     if r.status_code == 200:
         out["status"] = r.json().get("status")
+    return out
+
+
+# 업무 상태 지문(불변식 '승인 없는 실행'): 걸음마다 읽어 바뀐 줄을 timeline에 남겨요. 실측 · 확정 · 날짜 제안 · 날짜
+# 바꾸기 요청 · 업체 다른 날 제안 · 실측 일정 바꾸기 · 추가 금액 답 · 집 정보 판(rev) · 철거 범위 · 직접 할 일 칩 · 승인 카드 상태
+BIZ_SQL = (
+    "select 'visit' as t, id::text as id,"
+    " concat_ws('|', status, booked_day::text, booked_half, decline_code) as v from visits"
+    " union all select 'deal', id::text,"
+    " concat_ws('|', status, start_date::text, end_date::text, quote_id::text) from deals"
+    " union all select 'extra', id::text, ack from extra_charges"
+    " union all select 'date_proposal', id::text, status from date_proposals"
+    " union all select 'date_request', id::text, status from date_requests"
+    " union all select 'visit_proposal', id::text, status from visit_proposals"
+    " union all select 'visit_change', id::text, status from visit_changes"
+    " union all select 'project', id::text, rev::text from projects"
+    " union all select 'condition', project_id::text || ':' || key, value from project_conditions"
+    " where key = 'demolition' or key like 'diy.%'"
+    " union all select 'action', id::text, status || '|' || kind from assistant_actions"
+)
+
+
+def biz(app) -> dict[tuple[str, str], str]:
+    """지금 업무 상태 지문 {(표, id): 값}."""
+    return {(r["t"], r["id"]): r["v"] for r in app.query(BIZ_SQL)}
+
+
+def biz_diff(before: dict, after: dict) -> list[dict]:
+    """두 지문 사이 바뀐 줄(새 줄은 from None, 없어진 줄은 to None). 승인 카드 줄은 kind를 붙여요."""
+    out = []
+    for k in sorted(set(before) | set(after)):
+        a, b = before.get(k), after.get(k)
+        if a == b:
+            continue
+        c = {"table": k[0], "id": k[1], "from": a, "to": b}
+        if k[0] == "action":
+            c["kind"] = (b or a or "").rsplit("|", 1)[-1]
+        out.append(c)
     return out
 
 
