@@ -15,6 +15,7 @@ import math
 import re
 import unicodedata
 from bisect import bisect_left
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import date
 
@@ -173,7 +174,10 @@ def check(text: str, allowed_text: str, calc_text: str | None = None) -> Checked
 #   R은 V를 그 자리에서 반올림한 수여야 한다: R의 반올림 단위의 반 안(만 원 단위 ±5,000원 · 10만 원 단위 ±50,000원,
 #   백만 자리 이상 '약 300만 원'은 3%만 본다, 고침 4차 G · QA r4 s5 7번). 범위의 아래 · 위 끝도 숫자마다 같은 규칙
 # - 파생: 근거 금액(1만 이상) 둘의 합 · 차, 근거 금액(10만 이상) ÷ 근거 면적(평 · ㎡). 조합은 둘까지. 파생 값은 그대로
-#   (원 단위 올림 · 내림) · 만 원 반올림 · 버림(10만 이상)으로 지나고, 1만 이상이면 위 어림 · 원대로도 지난다
+#   (원 단위 올림 · 내림) · 만 원 반올림 · 버림(10만 이상)으로 지나고, 1만 이상이면 위 어림 · 원대로도 지난다.
+#   따로 근거(apart: 지난 고객 말 · 지난 비서 말 하나하나)는 숫자 그대로는 근거이고, 파생은 그 말 안 숫자끼리만 만든다
+#   (QA r10 c2 T26: 희망 예산 250만 원 + 다른 턴 송금 부탁 50만 원 = '300만 원')
+# - 고객 말의 한글 금액('삼백만 원' · '3백만' · '예산 200')은 부르는 쪽이 원 값 줄로 덧붙여 넘긴다(heard, 아래 절)
 # - 금액 묶음: '301만 6,000원' · '1억 2,000만 원'은 한 금액으로 본다(묶음으로 안 맞으면 옛 검사처럼 나눠서)
 # - 날짜: '12월 15일' · '12.15(화)' · '12/15' · ISO · '2027.1.4(월)'을 날짜로 읽고(소수 12.15로 읽지 않음) 근거 글에
 #   같은 월 · 일이 날짜로 있으면 통과. 없으면 옛 검사처럼 월 · 일 숫자를 따로 본다. 요일 없는 '12.15'는 근거 날짜일 때만
@@ -477,11 +481,72 @@ def _today(text: str) -> date | None:
         return None
 
 
-def ground(text: str, tags: dict[float, frozenset[str]] | None = None) -> Ground:
-    """허용 글 → 근거(옛 검사 값 · 파생 값 · 어림 견줄 값 · 날짜 · 요일 · 단위). tags(basis)를 주면 합 · 차는 같은
-    기준끼리만."""
-    text = norm(text or "")
-    tags = tags or {}
+# ---- 고객 말의 금액(QA r10 c2 T10 · T16 · T20: 되받는 비서 문장이 '자료에 없는 숫자'로 빠짐) ----
+# 고객은 '삼백만 원' · '3백만' · '2천5백만' · '이백오십만'처럼 한글 수 · 자리 말을 섞어 말해요. 부르는 쪽(runtime)이 고객
+# 말에만 원 값 줄을 덧붙여(heard) 숫자 근거로 넘겨요. 비서 글의 한글 금액은 그대로 막아요(HANGUL_MONEY).
+# - 한글 한 자리 수 + 만 · 억('이만' · '오만' · '일만')은 다른 낱말과 겹쳐 뒤에 '원'이 있을 때만 읽어요
+# - 금액 뒤는 띄움 · 끝 · 원 · 조사만('천만에요' · '천만다행'은 금액이 아니에요)
+# - 예산 · 금액 바로 뒤의 단위 없는 수('예산 200으로' · '예산은 삼백이에요')는 만 원으로 읽어요(1~9,999, 뒤가 단위가
+#   아닐 때만). 그 밖의 단위 없는 수('도배지 200 정도')는 그대로 둬요
+_KO_DIGIT = "일이삼사오육칠팔구"
+_KO_VAL = {c: i for i, c in enumerate(_KO_DIGIT, 1)} | {"십": 10, "백": 100, "천": 1000}
+_KO_BIG = {"만": 10**4, "억": 10**8}
+_KD1 = rf"(?:\d{{1,4}}|[{_KO_DIGIT}])"  # 자리 하나의 수(아라비아 숫자 · 한글 한 자리)
+_KSEC = rf"(?:{_KD1}?[십백천])+{_KD1}?"  # 자리 말이 든 만 아래 수('삼백오십' · '2천5백' · '백')
+_SEC = rf"(?:{_KSEC}|{_KD1})"
+_MONEY_END = (
+    r"(?=\s|$|[.,!?~)·]|원|이|인|으|은|을|과|도|만|에(?!요)"
+    r"|정도|쯤|뿐|밖에|까지|가량|안팎|내외|선|대|짜리|하고)"
+)
+KO_MONEY = re.compile(
+    rf"(?<![가-힣\d.,])(?P<n>{_SEC}\s?억(?:\s?{_SEC}\s?만)?|{_SEC}\s?만){_MONEY_END}(?P<won>\s?원)?"
+)
+# 한글 수는 자리 말로 끝나야 해요('삼백이에요'의 '이'는 조사)
+KO_BUDGET = re.compile(
+    rf"(?:예산|금액)(?:은|는|이|가|을|를|도|:)?(?:\s*(?P<d>\d{{1,4}})|\s+(?P<k>(?:{_KD1}?[십백천])+))"
+    r"(?![\d,.]|\s?[만억천백십원])(?=\s|$|[.,!?~)]|으로|이|인|요|정도|쯤|까지|선|에|은|을|도)"
+)
+_KO_TOKEN = re.compile(rf"\d+|[{_KO_DIGIT}십백천만억]")
+
+
+def _ko_value(s: str) -> int:
+    """한글 · 섞은 수 글('삼백만' · '2천5백만' · '1억 2천만' · '이백') → 값."""
+    total = sec = 0
+    num: int | None = None
+    for tok in _KO_TOKEN.findall(s):
+        if tok.isdigit():
+            num = int(tok)
+        elif tok in _KO_BIG:
+            total += (sec + (num or 0) or 1) * _KO_BIG[tok]
+            sec, num = 0, None
+        elif _KO_VAL[tok] >= 10:  # 십 · 백 · 천
+            sec += (1 if num is None else num) * _KO_VAL[tok]
+            num = None
+        else:
+            num = _KO_VAL[tok]
+    return total + sec + (num or 0)
+
+
+def said_won(text: str) -> list[int]:
+    """고객 말의 한글 · 섞은 금액과 예산 · 금액 뒤 단위 없는 수 → 원 값(나온 차례, 겹침 없이)."""
+    t = norm(text or "")
+    out: dict[int, None] = {}
+    for m in KO_MONEY.finditer(t):
+        if m["won"] or re.search(r"[\d십백천]", m["n"]):
+            out.setdefault(_ko_value(m["n"]))
+    for m in KO_BUDGET.finditer(t):
+        out.setdefault((int(m["d"]) if m["d"] else _ko_value(m["k"])) * 10**4)
+    return [v for v in out if 0 < v <= NUM_MAX]
+
+
+def heard(text: str) -> str:
+    """고객 말 → 숫자 근거 글: 말 그대로 + 다음 줄에 원 값(said_won, '3,000,000원 · 2,000,000원'). 없으면 그대로."""
+    got = said_won(text)
+    return f"{text}\n" + " · ".join(f"{v:,}원" for v in got) if got else text
+
+
+def _money_areas(text: str) -> tuple[list[float], set[float]]:
+    """글의 근거 금액(1만 이상 정수, 처음 나온 차례 · 겹침 없이)과 나눌 면적(평 · ㎡ · JSON 칸)."""
     money: dict[float, None] = {}
     areas: set[float] = set()
     for m in NUM.finditer(text):
@@ -494,16 +559,39 @@ def ground(text: str, tags: dict[float, frozenset[str]] | None = None) -> Ground
         elif (unit in MONEY_UNITS or not unit) and v >= PART_MIN and float(v).is_integer():
             money.setdefault(v)
     areas.update(float(x) for x in AREA_KEY.findall(text))
-    parts = list(money)[:MONEY_MAX]
+    return list(money), areas
+
+
+def _derive(money: list[float], areas: set[float], tags: dict[float, frozenset[str]]) -> set[float]:
+    """한 근거 묶음 안의 파생 값: 금액 둘의 합 · 차(같은 기준끼리) · 금액 ÷ 면적."""
+    parts = money[:MONEY_MAX]
     anyway = frozenset({ANY})
-    derived: set[float] = set()
+    out: set[float] = set()
     for i, a in enumerate(parts):
         for b in parts[i + 1 :]:
             if mixable(tags.get(round(a, 4), anyway), tags.get(round(b, 4), anyway)):
-                derived.update((a + b, abs(a - b)))
+                out.update((a + b, abs(a - b)))
     for a in parts:
         if a >= LOOSE_MIN:
-            derived.update(a / p for p in areas if 0 < p <= AREA_MAX)
+            out.update(a / p for p in areas if 0 < p <= AREA_MAX)
+    return out
+
+
+def ground(
+    text: str, tags: dict[float, frozenset[str]] | None = None, apart: Sequence[str] = ()
+) -> Ground:
+    """허용 글 → 근거(옛 검사 값 · 파생 값 · 어림 견줄 값 · 날짜 · 요일 · 단위). tags(basis)를 주면 합 · 차는 같은
+    기준끼리만. apart(따로 근거 글 하나하나)는 숫자 그대로 근거이고, 파생은 그 글 안 숫자끼리만 만든다."""
+    text = norm(text or "")
+    tags = tags or {}
+    pieces = [text, *(norm(x or "") for x in apart)]
+    money: list[float] = []
+    derived: set[float] = set()
+    for piece in pieces:
+        got, areas = _money_areas(piece)
+        money += got
+        derived |= _derive(got, areas, tags)
+    text = "\n".join(pieces)
     exact: set[int] = set()
     for d in derived:
         exact.update((math.floor(d), math.ceil(d)))
