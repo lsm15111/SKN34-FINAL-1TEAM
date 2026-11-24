@@ -167,6 +167,24 @@ def card_name(a, label: str | None = None) -> str:
     return f"{head}{title}{tail}"
 
 
+async def opened_name(s, p, a) -> str:
+    """승인 기다리는 카드 한 장의 턴 사실 이름. 표준견적서를 바꾸는 집 정보 카드는 바꾸는 칸 · 카드 차액 · 계산 엔진
+    미리 보기(기준 · 크게 바뀌는 줄)를 괄호로 붙여요(QA r7 c2 T10 · T11: 다음 턴에 카드 차액을 '확인되지 않아
+    정정할게요'로 뒤집고 까닭을 못 댐). 못 읽으면 이름만(세이브포인트: 턴 행을 넣은 트랜잭션을 지켜요)."""
+    from app.assistant.tools import propose
+
+    name = card_name(a)
+    if a.kind != "home_info":
+        return name
+    try:
+        async with s.begin_nested():
+            more = await propose.open_home_fact(s, p, a)
+    except Exception as e:  # noqa: BLE001 - 종류 이름만 남기고 이름만
+        log.warning("턴 사실 집 정보 카드 미리 보기 실패 (%s)", type(e).__name__)
+        more = None
+    return f"{name}({more})" if more else name
+
+
 def _why_not(a) -> str | None:
     """실행 못 한 카드의 까닭(첫 문장): 서버가 남긴 말(result.message), 없으면 그 카드를 누를 때 서버가 주는 말."""
     from app.visit.service import QUOTE_CHANGED
@@ -534,7 +552,8 @@ async def _customer_facts(
     if period:
         lines.append(period)
     if opened:
-        lines.append("승인 기다리는 카드: " + " / ".join(card_name(a) for a in opened))
+        names = [await opened_name(s, p, a) for a in opened]
+        lines.append("승인 기다리는 카드: " + " / ".join(names))
     if done := decided_line(decided):
         lines.append(done)
     from app.assistant.tools import diy as diy_tools
