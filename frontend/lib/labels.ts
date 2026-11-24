@@ -133,44 +133,56 @@ export const DECLINE_LABEL: Record<"full" | "out_of_area" | "other", string> = {
 
 // ── v3 실측 일정 상태 이름표(copy-guide 1.9 · data-model visits.status). 같은 일을 보는 쪽마다 다르게 불러요.
 // tone은 상태 칩(components/ui/StateTag, N4 C) 아이콘: todo ● 할 일 · wait ○ 기다림 · ok ✓ 일정 · 확정 · done – 끝남 · late ! 기한 지남
-// copy-guide에 말이 없는 상태(취소 · 안 옴)는 W13 꼴(짧은 명사)로 붙인 잠정 말이에요.
+// 상태마다 말이 서로 달라요. 고객 말에는 누구 차례인지 붙이고(업체 답 기다림 · 날짜 고를 차례), 끝난 요청은 모두 끝남(–)이에요(QA r9 U).
 export type StateTone = "todo" | "wait" | "ok" | "done" | "late";
 export type VisitStatus = "requested" | "offered" | "picked" | "proposed" | "booked" | "visited" | "quoted" | "chosen" | "declined" | "expired" | "cancelled" | "no_show" | "closed";
 /** 보낸 뒤 아직 살아 있는 요청(확정 · 닫힘 전). 업체 보기 · 요청서가 다음 단추를 고를 때 써요 */
 export const ASKED_VISIT: ReadonlySet<string> = new Set<VisitStatus>(["requested", "offered", "picked", "proposed", "booked", "visited", "quoted"]);
+/** 끝난 요청(서버 visit.models ENDED): 칸을 비웠고 다시 살아나지 않아요 */
+export const ENDED_VISIT: ReadonlySet<string> = new Set<VisitStatus>(["declined", "expired", "cancelled", "no_show", "closed"]);
 type StateText = { label: string; tone: StateTone };
 export const VISIT_STATE_CUSTOMER: Record<VisitStatus, StateText> = {
-  requested: { label: "답 기다림", tone: "wait" },
+  requested: { label: "업체 답 기다림", tone: "wait" },
   offered: { label: "날짜 고를 차례", tone: "todo" },
-  picked: { label: "수락 기다림", tone: "wait" },
+  picked: { label: "업체 수락 기다림", tone: "wait" },
   proposed: { label: "다른 날 제안 옴", tone: "todo" },
-  booked: { label: "확정", tone: "ok" },
+  booked: { label: "실측 확정", tone: "ok" },
   visited: { label: "실측 견적서 기다림", tone: "wait" },
-  quoted: { label: "실측 견적서 받음", tone: "ok" },
+  quoted: { label: "실측 견적서 받음", tone: "todo" },
   chosen: { label: "업체 확정", tone: "ok" },
-  declined: { label: "못 받음", tone: "done" },
-  expired: { label: "답 없음", tone: "late" },
-  cancelled: { label: "취소", tone: "done" },
-  no_show: { label: "업체가 안 옴", tone: "late" },
+  declined: { label: "업체가 못 받음", tone: "done" },
+  expired: { label: "기한 지남", tone: "done" },
+  cancelled: { label: "취소함", tone: "done" },
+  no_show: { label: "업체가 안 옴", tone: "done" },
   closed: { label: "닫힘", tone: "done" },
 };
 export const VISIT_STATE_VENDOR: Record<VisitStatus, StateText> = {
   requested: { label: "새 실측 요청", tone: "todo" },
-  offered: { label: "고객 차례", tone: "wait" },
+  offered: { label: "고객 날짜 고르는 중", tone: "wait" },
   picked: { label: "날짜 수락", tone: "todo" },
-  proposed: { label: "고객 차례", tone: "wait" },
+  proposed: { label: "제안한 날 기다림", tone: "wait" },
   booked: { label: "실측 확정", tone: "ok" },
   visited: { label: "견적서 올리기", tone: "todo" },
   quoted: { label: "견적서 보냄", tone: "wait" },
   chosen: { label: "업체 확정", tone: "ok" },
-  declined: { label: "끝남", tone: "done" },
-  expired: { label: "답 기한 지남", tone: "late" },
-  cancelled: { label: "끝남", tone: "done" },
-  no_show: { label: "안 옴 알림", tone: "late" },
-  closed: { label: "끝남", tone: "done" },
+  declined: { label: "못 받음", tone: "done" },
+  expired: { label: "기한 지남", tone: "done" },
+  cancelled: { label: "고객이 취소", tone: "done" },
+  no_show: { label: "실측 안 옴", tone: "done" },
+  closed: { label: "닫힘", tone: "done" },
 };
+/** 끝난 까닭(서버 expired_reason · close_reason)을 알면 말을 좁혀요. 업체 쪽 닫힘 말은 작업함 줄(schedule.inbox)과 같아요 */
+const EXPIRED_WHY: Record<"customer" | "vendor", Record<string, string>> = {
+  customer: { reply: "업체 답 없음", pick: "고르기 기한 지남" },
+  vendor: { reply: "답 기한 지남", pick: "고르기 기한 지남" },
+};
+const CLOSED_WHY_VENDOR: Record<string, string> = { other_chosen: "다른 업체로 정함", reselected: "다시 고르기로 닫힘", vendor_stopped: "업체 기능 멈춤으로 닫힘" };
+export type VisitWhy = { expired_reason?: string | null; close_reason?: string | null };
 /** 작업함 · 실측 일정 상태 칩 말. 모르는 값은 영어를 보이지 않고 '확인 중'으로 */
-export function visitState(status: string, side: "customer" | "vendor"): StateText {
+export function visitState(status: string, side: "customer" | "vendor", why: VisitWhy = {}): StateText {
   const t = (side === "vendor" ? VISIT_STATE_VENDOR : VISIT_STATE_CUSTOMER)[status as VisitStatus];
-  return t ?? { label: "확인 중", tone: "wait" };
+  if (!t) return { label: "확인 중", tone: "wait" };
+  const narrow = status === "expired" ? EXPIRED_WHY[side][why.expired_reason ?? ""]
+    : status === "closed" && side === "vendor" ? CLOSED_WHY_VENDOR[why.close_reason ?? ""] : undefined;
+  return narrow ? { ...t, label: narrow } : t;
 }

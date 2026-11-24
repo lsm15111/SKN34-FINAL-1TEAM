@@ -69,7 +69,8 @@ export function Summary({ p, ov, compare }: { p: VisitProject; ov: ApiOverview; 
               const q = quoteOf(v.visit_id);
               if (v.status === "chosen") {
                 const total = compare?.deal?.visit_id === v.visit_id ? compare.deal.quote.total : q?.total ?? null;
-                return <Row key={v.visit_id} label={v.vendor_name} sub={total != null ? `확정 · ${won(total)}` : "확정"} value={<Badge tone="ok">확정</Badge>} />;
+                // 실측 확정(booked)과 같은 '확정'으로 보이지 않게 '업체 확정'(lib/labels)
+                return <Row key={v.visit_id} label={v.vendor_name} sub={total != null ? `확정 금액 · ${won(total)}` : undefined} value={<Badge tone="ok">{visitState("chosen", "customer").label}</Badge>} />;
               }
               if (v.status === "closed") return <Row key={v.visit_id} label={v.vendor_name} sub={q?.total != null ? `실측 견적서 ${won(q.total)}` : undefined} value={<Badge tone="mute">닫힘</Badge>} />;
               const st = visitState(v.status, "customer");

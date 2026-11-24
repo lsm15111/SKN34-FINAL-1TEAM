@@ -163,6 +163,7 @@ a.rangeLine:hover { text-decoration: underline; text-underline-offset: 3px; }
 .vmini li { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 9px 12px; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); }
 .vmini li:first-child { border-top: 0; }
 .vmini li b { font-weight: var(--mj-weight-semibold); white-space: nowrap; flex: none; } /* 업체 이름은 한 줄(상태 · 금액 쪽이 줄을 바꿔요) */
+.vmini li.vEnded b { color: var(--mj-text-mute); } /* 끝난 요청(취소 · 못 받음 · 기한 지남 · 닫힘)은 이름을 흐리게: 답 기다리는 줄과 한눈에 갈라요 */
 .vstate { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 4px 8px; min-width: 0; text-align: right; }
 .links { display: flex; flex-wrap: wrap; gap: 0 12px; }
 .links a { display: inline-flex; align-items: center; min-height: var(--mj-hit-min); color: var(--mj-link); font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-label); text-decoration: none; }

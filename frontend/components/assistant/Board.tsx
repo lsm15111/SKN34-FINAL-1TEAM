@@ -149,7 +149,8 @@ function Sections({ b, base, onOpen }: { b: BoardOut; base: string; onOpen?: () 
                   </span>
                 </>
               );
-              return <li key={r.name}>{r.href ? <Link href={r.href} {...go}>{body}</Link> : body}</li>;
+              // 끝난 요청(서버 state cancelled: 취소 · 못 받음 · 기한 지남 · 닫힘)은 이름을 흐리게 해 답 기다리는 줄과 갈라요
+              return <li key={r.name} className={r.state === "cancelled" ? s.vEnded : undefined}>{r.href ? <Link href={r.href} {...go}>{body}</Link> : body}</li>;
             })}
           </ul>
         </section>

@@ -48,7 +48,8 @@ export default async function SchedulePage({ params, searchParams }: { params: P
   if (t) {
     const x = currentExtra(t);
     if (view !== "dates") others.push({ label: "공사 날짜", href: `${base}/schedule?view=dates` });
-    if (view !== "extra" && x) others.push({ label: x.answer === "pending" ? "추가 금액 · 답을 기다려요" : "추가 금액", href: `${base}/schedule?view=extra` });
+    // 답을 기다리는 추가 금액은 고객이 답할 차례예요(누가 기다리는지 헷갈리지 않게)
+    if (view !== "extra" && x) others.push({ label: x.answer === "pending" ? "추가 금액 · 답할 차례" : "추가 금액", href: `${base}/schedule?view=extra` });
     if (view !== "done" && ["checking", "fixing", "done"].includes(t.deal.status)) others.push({ label: "공사 끝 확인", href: `${base}/schedule?view=done` });
   }
 

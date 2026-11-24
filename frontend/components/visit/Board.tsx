@@ -13,7 +13,7 @@ import { Eyebrow, Group, GroupHead, InfoChips, Name, Quote, Small, Strip, Sub, T
 import { AgainButton, CancelButton, VisitedButtons } from "./BoardActions";
 import { DueChip } from "./Due";
 import { RequestSheetButton } from "./RequestSheet";
-import { boardState, cancelAct, cancelLabel, dayCell, dueCell, eunNeun, headText, iGa, nextText, PROPOSAL_REASON, slotText, windowText } from "./text";
+import { boardState, cancelAct, cancelLabel, dayCell, dueCell, eunNeun, expiredDue, headText, iGa, nextText, PROPOSAL_REASON, slotText, windowText } from "./text";
 import s from "./visit.module.css";
 
 const ACTIVE = new Set(["requested", "offered", "picked", "proposed", "booked", "visited", "quoted", "chosen"]);
@@ -86,6 +86,7 @@ function CardBody({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
         <>
           {r.booked ? <Sub>{slotText(r.booked, true)}</Sub> : null}
           {r.change?.status === "open" ? <Small>일정 바꾸기 요청 · {slotText({ day: r.change.to_day, half: r.change.to_half })} · {dueText(r.change.due_at)} {iGa(v)} 답해요</Small> : null}
+          {r.change?.status === "countered" ? <Small>{iGa(v)} 다른 날을 냈어요 · 채팅에서 골라요</Small> : null}
           {r.thread_id ? <div className={s.cardLink}><Button variant="text" arrow href={L.chat(r.thread_id)}>채팅 열기</Button></div> : null}
         </>
       );
@@ -111,13 +112,14 @@ function CardBody({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
           <div className={s.cardLink}><Button variant="text" arrow href={L.schedule}>공사 날짜 보기</Button></div>
         </>
       );
-    case "expired":
+    case "expired": {
+      const due = expiredDue(r);
       return (
         <>
           <Sub>
             {r.expired_reason === "pick"
               ? r.window ? `${dueText(r.window.pick_due_at)} 날짜를 고르지 않았어요` : "기한까지 날짜를 고르지 않았어요"
-              : r.next.due_at ? `${dueText(r.next.due_at)} 답하지 않았어요` : "기한까지 답하지 않았어요"}
+              : due ? `${dueText(due)} ${iGa(v)} 답하지 않았어요` : `기한까지 ${iGa(v)} 답하지 않았어요`}
           </Sub>
           <div className={s.btnRow}>
             <Button variant="secondary" size="sm" href={L.vendors}>다른 업체 담기</Button>
@@ -125,11 +127,15 @@ function CardBody({ r, pid, L }: { r: BoardRow; pid: string; L: Links }) {
           </div>
         </>
       );
+    }
     case "cancelled":
       return (
         <>
           <Sub>취소한 이유 · {cancelLabel(r.cancel_code)}</Sub>
-          {r.can.again ? <div className={s.btnRow}><AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /></div> : null}
+          <div className={s.btnRow}>
+            <Button variant="secondary" size="sm" href={L.vendors}>다른 업체 담기</Button>
+            {r.can.again ? <AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : null}
+          </div>
         </>
       );
     case "declined":
@@ -154,15 +160,16 @@ function tableMain(r: BoardRow, pid: string, L: Links): ReactNode {
     case "quoted": return <Button variant="text" arrow href={L.quotes}>견적서 비교</Button>;
     case "chosen": return <Button variant="text" arrow href={L.schedule}>공사 날짜 보기</Button>;
     case "expired":
+    case "cancelled":
+      // 표 칸은 좁아서(업체가 4곳 넘으면) 두 단추를 나란히 두면 글이 잘려요. 위아래로 쌓아요
       return (
-        <div className={s.btnRow}>
-          <Button variant="secondary" size="sm" href={L.vendors}>다른 업체 담기</Button>
+        <div className={s.actStack}>
           {r.can.again ? <AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : null}
+          <Button variant="text" arrow href={L.vendors}>다른 업체 담기</Button>
         </div>
       );
-    case "cancelled": return r.can.again ? <AgainButton projectId={pid} visitId={r.visit_id} vendorName={v} /> : null;
     case "declined":
-    case "no_show": return <Button variant="text" arrow href={L.vendors}>다른 업체 담기</Button>;
+    case "no_show": return <div className={s.actStack}><Button variant="text" arrow href={L.vendors}>다른 업체 담기</Button></div>;
     default: return null;
   }
 }
@@ -208,10 +215,14 @@ export function Board({ board, project, shortlisted }: {
   const cols: CompareCol[] = rows.map((r) => ({ key: r.visit_id, name: r.vendor_name, highlight: r.next.who === "customer" }));
   const cell = (fn: (r: BoardRow) => React.ReactNode) => Object.fromEntries(rows.map((r) => [r.visit_id, fn(r)]));
   const tableRows: CompareRow[] = [
-    { key: "state", label: "상태", cells: cell((r) => { const st = boardState(r); return <StateTag tone={st.tone}>{st.label}</StateTag>; }) },
+    { key: "state", label: "상태", cells: cell((r) => { const st = boardState(r); return <span className={s.stateCell}><StateTag tone={st.tone}>{st.label}</StateTag></span>; }) },
     { key: "day", label: "날짜", big: true, cells: cell((r) => { const d = dayCell(r); return d ? <b className={`${s.bigCell} mj-num`}>{d}</b> : "—"; }) },
     { key: "next", label: "다음 할 일", cells: cell((r) => nextText(r)) },
-    { key: "due", label: "기한", cells: cell((r) => (r.next.due_at ? <time dateTime={r.next.due_at} className="mj-num">{r.next.overdue ? "지났어요" : dueCell(r.next.due_at)}</time> : "—")) },
+    { key: "due", label: "기한", cells: cell((r) => {
+      // 기한이 지나 끝난 요청은 다음 일이 없어도(next none) 지난 기한을 보여요(서버 expired_due_at)
+      const t = r.status === "expired" ? expiredDue(r) : r.next.due_at;
+      return t ? <time dateTime={t} className="mj-num">{r.status === "expired" || r.next.overdue ? "지났어요" : dueCell(t)}</time> : "—";
+    }) },
     { key: "act", label: "할 수 있는 일", action: true, cells: cell((r) => <TableAction r={r} pid={pid} L={L} />) },
   ];
 

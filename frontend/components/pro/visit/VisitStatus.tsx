@@ -15,8 +15,17 @@ import { Notice } from "@/components/ui/Notice";
 import { Eyebrow, Group, Row, Rows, Small } from "../ui/parts";
 import { DiyFact, factLine, visitTitle } from "./facts";
 
+/** 닫힌 까닭마다 한 줄(서버 close_reason) */
+const CLOSED_BODY: Record<string, string> = {
+  other_chosen: "고객이 다른 업체로 정했어요.",
+  reselected: "고객이 업체를 다시 고르기로 해서 닫혔어요.",
+  vendor_stopped: "업체 기능이 멈춰서 닫혔어요.",
+};
+
 export function VisitStatus({ v, now }: { v: VendorVisitV3; now: string }) {
-  const st = v.state ? { tone: v.state.icon as StateTone, label: v.state.label } : visitState(v.status, "vendor");
+  // 닫힌 요청은 까닭을 작업함 줄과 같은 말로 보여요(자세히 응답의 상태 칩은 '닫힘'뿐이에요)
+  const st = v.status === "closed" && v.close_reason ? visitState("closed", "vendor", { close_reason: v.close_reason })
+    : v.state ? { tone: v.state.icon as StateTone, label: v.state.label } : visitState(v.status, "vendor");
   const b = v.booked;
   const quoteHref = `/vendor/requests/${enc(v.id)}/quote`;
   const chatHref = v.thread_id ? `/chat/${enc(v.thread_id)}` : null;
@@ -57,7 +66,17 @@ export function VisitStatus({ v, now }: { v: VendorVisitV3; now: string }) {
       body = <p>못 받는다고 알렸어요{v.decline_code ? ` · ${DECLINE_LABEL[v.decline_code as keyof typeof DECLINE_LABEL] ?? "그 밖"}` : ""}.</p>;
       break;
     case "expired":
-      body = <p>답 기한이 지났어요. 고객이 다시 요청하면 작업함에 새로 와요.</p>;
+      // 기간을 보냈으면(window) 고객이 고르기 기한을 넘긴 것, 아니면 내 답 기한이 지난 것(상태 칩과 같은 까닭)
+      body = v.window ? <p>고객이 기한까지 날짜를 고르지 않아 끝났어요.</p> : <p>답 기한이 지났어요. 고객이 다시 요청하면 작업함에 새로 와요.</p>;
+      break;
+    case "cancelled":
+      body = <p>고객이 요청을 취소했어요.</p>;
+      break;
+    case "no_show":
+      body = <p>고객이 &lsquo;업체가 안 왔어요&rsquo;를 눌러 끝났어요.</p>;
+      break;
+    case "closed":
+      body = <p>{CLOSED_BODY[v.close_reason ?? ""] ?? "이 요청은 닫혔어요."}</p>;
       break;
     default:
       body = <p>이 요청은 끝났어요.</p>;

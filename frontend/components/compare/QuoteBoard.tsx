@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import type { ApiCompare } from "@/lib/api/schedule";
 import { dateSeoul, dateShort, euro, won } from "@/lib/format";
+import { visitState } from "@/lib/labels";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { CompareTable, type CompareCol, type CompareRow as TableRow } from "@/components/ui/CompareTable";
@@ -97,12 +98,16 @@ export function QuoteBoard({ projectId, compare, slots, threads }: {
               <div>{action(r)}</div>
             </Group>
           ))}
-          {waiting.map((r) => (
-            <Group as="li" key={r.visit_id}>
-              <GroupHead><Name>{r.vendor_name}</Name><Badge tone="wait">실측 견적서 기다림</Badge></GroupHead>
-              <Small>견적서가 오면 여기에 같이 보여요</Small>
-            </Group>
-          ))}
+          {waiting.map((r) => {
+            // 실측 전(실측 확정)과 실측 뒤(실측 견적서 기다림)를 실측 일정 화면과 같은 말로 갈라요
+            const st = visitState(r.status, "customer");
+            return (
+              <Group as="li" key={r.visit_id}>
+                <GroupHead><Name>{r.vendor_name}</Name><Badge tone={st.tone === "ok" ? "ok" : "wait"}>{st.label}</Badge></GroupHead>
+                <Small>견적서가 오면 여기에 같이 보여요</Small>
+              </Group>
+            );
+          })}
         </ul>
         {!deal && askRow ? (
           <Notice tone="sub">

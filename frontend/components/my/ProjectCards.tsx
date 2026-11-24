@@ -26,13 +26,9 @@ const inSite = (v: string) => v.startsWith("/") && !v.startsWith("//") && !v.sta
 /** 꼬리표 순서: 기한 지남 · 내 차례 → 기다림 → 정해짐 → 끝남 */
 const TONE_ORDER: StateTone[] = ["late", "todo", "wait", "ok", "done"];
 
-/** 업체 하나의 상태 말. 업체 줄 밖에서도 읽히게 누구 답인지 · 무엇이 확정인지 붙여요 */
+/** 업체 하나의 상태 말. 업체 줄 밖에서도 읽히게 누구 답인지 · 무엇이 확정인지는 이름표(lib/labels)에 붙어 있어요 */
 function tagState(v: Vendor, row: BoardRow | undefined): { label: string; tone: StateTone } {
-  const st = row ? boardState(row) : visitState(v.status, "customer");
-  if (v.status === "requested") return { ...st, label: "업체 답 기다림" };
-  if (v.status === "picked") return { ...st, label: "업체 수락 기다림" };
-  if (v.status === "booked" && !row?.can.visited) return { ...st, label: "실측 확정" };
-  return st;
+  return row ? boardState(row) : visitState(v.status, "customer");
 }
 
 /** 같은 상태 업체를 한 꼬리표로 묶어요. 내가 날짜를 고를 차례(기간 옴 · 다른 날 제안)면 가장 이른 기한을 붙여요 */

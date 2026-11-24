@@ -134,7 +134,8 @@ function gyeolRow(c: Ctx): S["BoardRowOut"] | null {
   if (!c.past("sent")) return null;
   const base = { vendor_id: GYEOL.id, vendor_name: GYEOL.name, estimate_total: GYEOL.estimate, cancel_code: null, proposal: null, change: null, quote: null, booked: null, window: null, thread_id: null, expired_reason: null };
   if (!c.past("board_exp")) return { ...base, visit_id: I.visit.gyeol1, attempt: 1, status: "requested", next: nextOf(c, "reply", "vendor", T.replyDue), can: CAN({ cancel: true }) };
-  if (!c.past("pick_off")) return { ...base, visit_id: I.visit.gyeol1, attempt: 1, status: "expired", expired_reason: "reply", next: { ...nextOf(c, "reply", "vendor", T.replyDue) }, can: CAN({ again: true }) };
+  // 서버처럼 끝난 요청은 다음 일이 없고(next none), 지난 기한은 expired_due_at에 와요(업체 차례 · 기다림으로 세지 않게)
+  if (!c.past("pick_off")) return { ...base, visit_id: I.visit.gyeol1, attempt: 1, status: "expired", expired_reason: "reply", expired_due_at: T.replyDue, next: NONE(c), can: CAN({ again: true }) };
   const win: S["WindowOut"] = { start: "2026-12-14", end: "2026-12-18", excluded: [], instant: false, answered_at: T.gyeolAnswered, pick_due_at: T.gyeolPickDue };
   const b2 = { ...base, visit_id: I.visit.gyeol2, attempt: 2, window: win };
   if (!c.past("picked")) return { ...b2, status: "offered", next: nextOf(c, "pick", "customer", T.gyeolPickDue), can: CAN({ pick: true, cancel: true }) };
@@ -200,7 +201,7 @@ export function mockPick(step: StepKey, projectId: string, visitId: string): S["
   if (!row || row.visit_id !== visitId) {
     // 앞 시도(결도배 1번째)는 지난 기록으로만 보여요
     if (visitId === I.visit.gyeol1 && c.past("pick_off")) {
-      return { ...common, visit_id: visitId, vendor_id: GYEOL.id, vendor_name: GYEOL.name, attempt: 1, status: "expired", next: nextOf(c, "reply", "vendor", T.replyDue), window: null, days: [], full: [], mine: [], instant: false, recommend: null, booked: null, proposal: null, change: null, thread_id: null };
+      return { ...common, visit_id: visitId, vendor_id: GYEOL.id, vendor_name: GYEOL.name, attempt: 1, status: "expired", next: NONE(c), window: null, days: [], full: [], mine: [], instant: false, recommend: null, booked: null, proposal: null, change: null, thread_id: null };
     }
     return null;
   }
