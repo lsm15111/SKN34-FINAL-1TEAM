@@ -1,14 +1,15 @@
 """비서 서비스 (계약서 3장 · 4장): 턴 시작 · 끝 · SSE · 승인 · 거절 · 대화 기록 · 보드 · 오늘 · 업체 브리핑.
 
 - start_turn(짧은 세션): 같은 client_key면 되돌림(done) 또는 409(running) → 권한(남의 공사 · 요청 404) → 시간당
-  요청 제한 → 비서 대화(chats.kind=assistant) → 멈춘 턴 정리 → running 행(대화 잠금, 부분 UNIQUE → 409
-  turn_running) → 최근 24줄 · 열린 제안 · 턴 사실(업체마다 상태 · 채팅 · 실제 단계) → commit. 세션을 닫은 뒤
-  LLM을 부른다.
+  요청 제한 → 비서 대화(chats.kind=assistant) → 멈춘 턴 정리(heartbeat가 STALL_NEXT 넘게 멈춘 같은 대화 턴) →
+  running 행(대화 잠금, 부분 UNIQUE → 409 turn_running) → 최근 24줄 · 열린 제안 · 턴 사실(업체마다 상태 · 채팅 ·
+  실제 단계) → commit. 세션을 닫은 뒤 LLM을 부른다.
 - finish_turn(한 트랜잭션): rev 올리기(조건부) → 가린 질문 · 검사한 답 두 줄 → (기억할 말이면 기억 일) →
   턴 done → commit → 다음에 물을 말(suggest_for) → done 이벤트. 실패 · 멈춤으로 저장하지 못한 턴은 고객 말 한 줄만
   남긴다(keep_said).
 - SSE: 모든 data에 seq, 머리에 id {turn_id}:{seq}. action은 행 commit 뒤, done은 대화 저장 commit 뒤.
   스트림을 열기 전 오류(404 · 409 · 429)는 같은 오류 모양이다. 화면이 끊어도 턴은 끝까지 돌려 저장한다.
+  도는 동안 heartbeat를 BEAT초마다 올린다(keep_beating).
 - 먼저 말 걸기(proactive): 대화 기록 첫 쪽 · 오늘 · 다음에 물을 말에 보낸 줄을 넣고, 열기 · 닫기는 nudge_act.
   worker는 sweep(2분: 이벤트 · 평가) · hourly(시간 · 무응답)를 부른다.
 """
@@ -17,6 +18,7 @@ import asyncio
 import json
 import logging
 import re
+import time
 import uuid
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -79,6 +81,12 @@ HISTORY_CUT = 200
 # 지난 글 창보다 앞 대화가 있을 때 턴 사실에 넣는 줄(앞 대화를 몰라 고객 말을 틀리게 고치지 않게)
 OLDER = "지난 대화: 앞부분은 안 보이고 최근 {n}턴만 보여요"
 STALL = timedelta(minutes=2)  # heartbeat가 이만큼 멈추면 failed 'stalled'
+# 도는 턴은 BEAT초마다 heartbeat를 올려요(LLM · 도구를 오래 기다려도, keep_beating). 새 턴은 같은 대화의 도는 턴
+# heartbeat가 STALL_NEXT(주기의 세 배) 넘게 멈췄으면 그 자리에서 멈춤으로 닫아요: 일꾼이 죽은 턴이 대화를 2분 잠가
+# 다시 보내도 409였어요(QA r11 u1 N1). heartbeat는 턴 시간(45초 + 마무리 15초)에 30초를 더한 때까지만 올려요
+BEAT = runtime.BEAT_EVERY
+STALL_NEXT = timedelta(seconds=3 * BEAT)
+BEAT_FOR = policy.TURN_SECONDS + policy.WRAP_GRACE + 30
 FEED_LIMIT = 30
 RUNNING = "앞 답을 만드는 중이에요. 끝나면 다시 보내 주세요."
 TOO_MANY = "비서에게 너무 많이 물었어요. 잠시 뒤에 다시 해 주세요."
@@ -957,7 +965,7 @@ async def start_turn(
                 ratelimit.key("assistant-turn", str(user.id)), TURNS_PER_HOUR, 3600, TOO_MANY
             )
         chat = await ensure_chat(s, user.id, project_id)
-        await repo.fail_stalled(s, now, now - STALL, chat_id=chat.id)
+        await repo.fail_stalled(s, now, now - STALL_NEXT, chat_id=chat.id)
         turn = AssistantTurn(
             user_id=user.id,
             chat_id=chat.id,
@@ -1145,6 +1153,24 @@ async def keep_said(ctx: TurnCtx) -> None:
         log.warning("실패한 턴 고객 말 저장 실패 (%s)", type(e).__name__)
 
 
+async def keep_beating(turn_id: uuid.UUID, stop: asyncio.Event) -> None:
+    """도는 턴의 heartbeat를 BEAT초마다 짧은 세션으로 올려요(살아 있는 턴은 새 턴의 멈춤 정리에 닫히지 않게).
+    stop이 서거나 BEAT_FOR초가 지나면 그만둬요. 못 쓴 차례는 다음 차례에 다시 써요."""
+    until = time.monotonic() + BEAT_FOR
+    while time.monotonic() < until:
+        try:
+            await asyncio.wait_for(stop.wait(), BEAT)
+            return
+        except TimeoutError:
+            pass
+        try:
+            async with SessionLocal() as s:
+                await repo.beat(s, turn_id, now_utc())
+                await s.commit()
+        except Exception as e:  # noqa: BLE001 - heartbeat는 지워져도 되는 표시(턴은 이어 가요)
+            log.warning("비서 heartbeat 실패 (%s)", type(e).__name__)
+
+
 def _sse(turn_id: uuid.UUID, name: str, seq: int, data: dict) -> str:
     body = json.dumps({**data, "seq": seq}, ensure_ascii=False, default=str)
     return f"id: {turn_id}:{seq}\nevent: {name}\ndata: {body}\n\n"
@@ -1173,6 +1199,10 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
 
     async def work() -> None:
         res: TurnResult | None = None
+        stop = asyncio.Event()  # 턴이 끝나면 heartbeat를 그만 올려요
+        beat = asyncio.create_task(keep_beating(ctx.turn_id, stop))
+        _BACKGROUND.add(beat)
+        beat.add_done_callback(_BACKGROUND.discard)
         try:
             await emit(
                 "ack",
@@ -1212,6 +1242,7 @@ async def stream(ctx: TurnCtx) -> AsyncIterator[str]:
             await fail_turn(ctx, "failed", res)
             await emit("error", {"code": "failed", "message": FAILED})
         finally:
+            stop.set()
             let_go()
             q.put_nowait(None)
 
@@ -1920,6 +1951,7 @@ NUDGE_DONE: dict[str, tuple[str, frozenset[str]]] = {
     "extra_added": ("extra", frozenset({"extra_answer"})),
     "dates_proposed": ("schedule", frozenset({"dates_accept", "delay_accept"})),
     "visit_offered": ("visit_slots", frozenset({"visit_slot"})),
+    "visit_proposed": ("visit_slots", frozenset({"visit_slot"})),
     "vendor_out": ("vendor_picks", frozenset({"visit_request"})),
     "no_pick": ("vendor_picks", frozenset({"visit_request"})),
 }

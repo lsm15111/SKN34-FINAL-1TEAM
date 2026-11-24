@@ -14,8 +14,9 @@
 - 점수: 기본 50, 기한 24시간 안 +50(48시간 안 +30), 승인 카드 준비 +20, 돈 · 날짜 결정 +15, 같은 알림 읽음 −30,
   24시간 안 보낸 제안마다 −20, 같은 trigger를 7일 안에 닫음 −30. 70 이상 보냄, 40~69 판정, 40 미만 기록만(held).
   판정을 못 부르면(꺼짐 · 상한 · 실패) 대화 기록(feed)은 보내고 알림(notify)은 기록만 한다.
-  사건 알림(NEWS: 견적서 도착 · 공사 날짜 · 추가 금액 · 업체 빠짐 · 공사 끝의 첫 알림)은 고객이 꼭 알아야 하는 새
-  소식이라 점수 · 판정 없이 보낸다(리드 결정 2026-11-22, QA 3차 c1 P4: 같은 65점 견적서 줄 하나만 판정이 막음).
+  사건 알림(NEWS: 견적서 도착 · 공사 날짜 · 추가 금액 · 업체 빠짐 · 공사 끝 · 업체가 낸 다른 실측 날짜의 첫 알림)은
+  고객이 꼭 알아야 하는 새 소식이라 점수 · 판정 없이 보낸다(리드 결정 2026-11-22, QA 3차 c1 P4: 같은 65점 견적서 줄
+  하나만 판정이 막음).
   하루 상한 · 밤 · 쉬기 · 멈춤(RULES)은 그대로다.
 - 문장은 무엇 · 얼마 · 누구를 담는다(틀 more · AI 글 검사 kept_facts): 견적서가 여러 곳이면 모든 업체 이름, 추가 금액은
   금액(업체가 적은 '한 일'은 비서 문장에 넣지 않고 카드 칸에만, policy.vendor_note), 업체가 올린 날짜는 시작일과 고객
@@ -115,6 +116,14 @@ TRIGGERS: dict[str, Trigger] = {
             why="업체가 갈 수 있는 기간을 보냈어요", ask="실측 날짜를 골라 볼까요?",
             feed="{vendor_i_ga} 실측 가능 기간을 보냈어요. 실측 일정 후보를 골라 뒀어요.",
             notify="{vendor_i_ga} 보낸 실측 가능 기간에서 아직 날짜를 고르지 않았어요. 후보를 확인해 주세요.",
+        ),
+        # 업체가 고객이 고른 실측 날짜 대신 다른 날을 냄(QA r11 c1: 종만 오고 대화 줄이 없었어요). 종 알림은 제안 때
+        # 이미 갔으니 대화 줄(feed)만 · 무응답 알림 없음, 문장은 정해 둔 틀만(TEMPLATE_ONLY)
+        Trigger(
+            "visit_proposed", "customer", ("visit_proposed",), decision=True, state="visit",
+            say="실측 날짜 고를래요", why="업체가 실측 날짜로 다른 날을 제안했어요",
+            ask="업체가 낸 날에서 골라 볼까요?",
+            feed="{vendor_i_ga} 실측 날짜로 다른 날을 제안했어요. 고르실 날을 확인해 주세요.",
         ),
         Trigger(
             "quote_sent", "customer", ("quote_sent", "quote_resent"), follow=timedelta(days=3),
@@ -313,8 +322,14 @@ def no_24h_penalty(t: Trigger, n: AssistantNudge) -> bool:
 
 
 # 사건 알림(리드 결정 2026-11-22): 견적서 도착 · 공사 날짜 · 추가 금액 · 업체 빠짐 · 공사 끝은 고객이 꼭 알아야 하는 새
-# 소식이라 점수 · 판정(Haiku 40~69) 없이 보낸다. QA 3차 c1 P4: 같은 65점 견적서 줄 중 하나만 판정이 막았다
-NEWS = frozenset({"quote_sent", "dates_proposed", "extra_added", "vendor_out", "work_done"})
+# 소식이라 점수 · 판정(Haiku 40~69) 없이 보낸다. QA 3차 c1 P4: 같은 65점 견적서 줄 중 하나만 판정이 막았다.
+# 업체가 낸 다른 실측 날짜도 고객이 48시간 안에 골라야 하는 소식이에요(QA r11 c1)
+NEWS = frozenset(
+    {"quote_sent", "dates_proposed", "extra_added", "vendor_out", "work_done", "visit_proposed"}
+)
+# 정해 둔 틀만 쓰는 고객 줄: 업체가 다른 날을 냈다는 사실만 알려요(실측 말 규칙, Haiku 글이 '반나절' 같은 말을
+# 쓰지 않게)
+TEMPLATE_ONLY = frozenset({"visit_proposed"})
 
 
 def news(t: Trigger, n: AssistantNudge) -> bool:
@@ -457,11 +472,12 @@ async def write(f: Facts, user_id: uuid.UUID | None) -> tuple[str, str]:
     """문장 하나(60자 안): Haiku가 쓰고 검사에 걸리거나 못 부르면 틀. (글, 출처 ai · guide)
     검사: vendor.sentence_ok(길이 · 숫자 · 한 일처럼 …) + 업체 이름이 잘리지 않았는지 + 기한이 하루 안인데 '천천히'
     같은 말을 쓰지 않았는지 + 이 줄의 사실(kept_facts: 여러 곳 이름 · 금액 · 시작일 · 요청의 답 · 붙은 카드)을 담았는지.
-    업체 쪽은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린 적이 있다(QA r1 c6)."""
+    업체 쪽 · TEMPLATE_ONLY 줄은 틀만 쓴다: Haiku가 '고객이 공사 날짜를 확정했어요'처럼 누가 무엇을 했는지 틀린 적이
+    있다(QA r1 c6)."""
     from app.agent import llm
     from app.assistant.tools.vendor import sentence_ok
 
-    if f.surface == "vendor":
+    if f.surface == "vendor" or f.trigger in TEMPLATE_ONLY:
         return template(f), "guide"
     facts = json.dumps(write_facts(f), ensure_ascii=False)
     try:
@@ -508,10 +524,11 @@ async def _visit_ctx(
     from app.notify.catalog import work_name
     from app.project.models import Project
     from app.quote.models import VendorQuote
-    from app.visit.models import Visit, VisitHold, VisitWindow
+    from app.visit.models import Visit, VisitHold, VisitProposal, VisitWindow
 
     want = {
         "visit_offered": "offered",
+        "visit_proposed": "proposed",
         "quote_sent": "quoted",
         "visit_requested": "requested",
         "visit_picked": "picked",
@@ -542,6 +559,12 @@ async def _visit_ctx(
             .where(VisitWindow.visit_id == v.id)
             .order_by(VisitWindow.answered_at.desc())
             .limit(1)
+        )
+    elif t.name == "visit_proposed":  # 고객이 고를 기한(제안 + 48시간)
+        c.due = await s.scalar(
+            select(VisitProposal.due_at).where(
+                VisitProposal.visit_id == v.id, VisitProposal.status == "open"
+            )
         )
     elif t.name == "quote_sent":
         sent = (
@@ -745,7 +768,7 @@ async def context(
 
     t = TRIGGERS[n.trigger]
     today = now.astimezone(SEOUL).date()
-    if t.name in ("visit_offered", "quote_sent", "visit_requested", "visit_picked"):
+    if t.name in VISIT_LINES:
         c = await _visit_ctx(s, t, n.ref_id, n.user_id, today, check)
     elif t.name in ("dates_proposed", "work_eve", "deal_confirmed"):
         c = await _deal_ctx(s, t, n.ref_id, n.user_id, today)
@@ -770,8 +793,9 @@ async def context(
 
 
 async def _resolve(s: AsyncSession, kind: str, dedup_key: str) -> uuid.UUID | None:
-    """알림의 dedup_key 첫 id → 제안 대상 id(견적서는 그 실측 요청)."""
+    """알림의 dedup_key 첫 id → 제안 대상 id(견적서 · 다른 날 제안은 그 실측 요청)."""
     from app.quote.models import VendorQuote
+    from app.visit.models import VisitProposal
 
     m = UUID_RE.search(dedup_key or "")
     if m is None:
@@ -779,6 +803,8 @@ async def _resolve(s: AsyncSession, kind: str, dedup_key: str) -> uuid.UUID | No
     ref = uuid.UUID(m.group(0))
     if kind in ("quote_sent", "quote_resent"):
         return await s.scalar(select(VendorQuote.visit_id).where(VendorQuote.id == ref))
+    if kind == "visit_proposed":
+        return await s.scalar(select(VisitProposal.visit_id).where(VisitProposal.id == ref))
     if kind in aftercare.RESOLVE:  # 공사 끝(이력) · 날짜 요청(요청) → 그 확정
         return await aftercare.resolve(s, kind, ref)
     return ref
@@ -999,17 +1025,27 @@ async def _settle_rows(s: AsyncSession, limit: int) -> list[AssistantNudge]:
 
 
 # 대상이 실측 요청인 줄: 요청이 기한 지남(visits expired: 업체 첫 답 48시간 · 고객 고르기 7일)으로 끝나면 날이 지난 줄이다
-VISIT_LINES = ("visit_offered", "quote_sent", "visit_requested", "visit_picked")
+VISIT_LINES = ("visit_offered", "visit_proposed", "quote_sent", "visit_requested", "visit_picked")
 
 
 async def lapsed(s: AsyncSession, n: AssistantNudge, now: datetime) -> bool:
     """할 일이 끝난 줄(context 없음)이 사람이 한 일이 아니라 기한 · 날이 지나 끝났는지(R1b #10): 실측 요청이 기한
-    지남, 공사 전날 줄의 공사 날이 옴, 1주 전 줄의 공사 날이 옴 · 공사가 고객 확인 없이 자동으로 끝남(aftercare)."""
+    지남, 업체가 낸 다른 날을 고르지 않아 제안 기한이 지남(처음 기간으로 돌아감), 공사 전날 줄의 공사 날이 옴, 1주 전
+    줄의 공사 날이 옴 · 공사가 고객 확인 없이 자동으로 끝남(aftercare)."""
     from app.schedule.models import Deal
-    from app.visit.models import Visit
+    from app.visit.models import Visit, VisitProposal
 
     t = TRIGGERS[n.trigger]
     today = now.astimezone(SEOUL).date()
+    if t.name == "visit_proposed":
+        last = await s.scalar(
+            select(VisitProposal.status)
+            .where(VisitProposal.visit_id == n.ref_id, VisitProposal.change_id.is_(None))
+            .order_by(VisitProposal.created_at.desc())
+            .limit(1)
+        )
+        if last == "expired":
+            return True
     if t.name in VISIT_LINES:
         return await s.scalar(select(Visit.status).where(Visit.id == n.ref_id)) == "expired"
     if t.name == "work_eve":
@@ -1370,6 +1406,14 @@ async def _build(
             if first is not None:
                 v = await visit_service.pick_view(s, user, pid, n.ref_id, now)
                 offer = propose.slot_offer(v, refs.get(first["ref"], "slot"))
+        elif t.name == "visit_proposed":
+            # 업체가 낸 날(고르면 바로 정해져요). 승인 카드는 고객이 날을 고를 때 만들어요. 고를 날이 없으면 줄 글만
+            prefer, days = memory.prefs(await repo.memories(s, user.id))
+            card, _ = await cards.visit_slots(
+                s, user, pid, n.ref_id, now, refs, prefer=prefer, days=days
+            )
+            if not card.data.get("candidates"):
+                card = None
         elif t.name == "quote_sent":
             trade = c.names.get("trade_code", "dobae")
             card, _ = await cards.compare(s, user, pid, trade, today, refs)

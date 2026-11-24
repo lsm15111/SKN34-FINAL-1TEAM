@@ -599,7 +599,7 @@ async def dismissals(
 # 전날'(ref = 확정)과 요청할 때 수락 기다리던 날짜의 '공사 날짜 왔어요'(ref = 제안)를 닫는다
 SETTLES: dict[str, tuple[str, ...]] = {
     "visit_request": ("no_pick", "vendor_out"),
-    "visit_slot": ("visit_offered",),
+    "visit_slot": ("visit_offered", "visit_proposed"),
     "vendor_confirm": ("quote_sent",),
     "dates_accept": ("dates_proposed",),
     "delay_accept": ("dates_proposed",),
@@ -611,8 +611,8 @@ SETTLES: dict[str, tuple[str, ...]] = {
     "extra_answer": ("extra_added",),
     "work_check": ("work_done",),
     "visit_again": ("vendor_out",),
-    # 보낸 실측 요청 취소: 그 요청의 반나절 고르기 줄
-    "visit_cancel": ("visit_offered",),
+    # 보낸 실측 요청 취소: 그 요청의 반나절 고르기 · 업체가 낸 다른 날 줄
+    "visit_cancel": ("visit_offered", "visit_proposed"),
 }
 
 

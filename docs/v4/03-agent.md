@@ -205,7 +205,7 @@
 ## 4. 런타임(`runtime.run_turn`)
 1. `start_turn`(짧은 세션)
    - client_key 재생: done이면 결과를 돌려주고, running이면 409예요.
-   - 잠금은 running 행이에요(부분 UNIQUE → 409 turn_running). heartbeat가 2분 넘게 멈추면 failed 'stalled'로 바꿔요.
+   - 잠금은 running 행이에요(부분 UNIQUE → 409 turn_running). heartbeat가 2분 넘게 멈추면 failed 'stalled'로 바꿔요. 도는 턴은 10초마다 heartbeat를 올리고, 새 턴은 같은 대화의 heartbeat가 30초 넘게 멈춘 턴을 그 자리에서 'stalled'로 닫아요(QA r11 u1 N1: 일꾼이 죽은 턴이 대화를 2분 잠금).
    - 복원: 최근 24줄(글만, 앞 12줄의 비서 글은 앞 200자) · `project_facts` · 기억 · 열린 행동 · refs(Redis 30분)
    - 세션을 닫은 뒤 LLM을 불러요.
 2. 프롬프트 캐시
@@ -359,6 +359,7 @@
 | 이벤트 → 받는 사람 | 후보 | 채널(상태가 그대로일 때만) |
 | --- | --- | --- |
 | visit_offered → 고객 | 반나절 후보 3 + visit_pick 행동 | feed, 48시간 안 고르면 notify |
+| visit_proposed → 고객 | 업체가 낸 날 카드(정해 둔 틀 글, 판정 없이) | feed만(종 알림은 제안 때 이미 감) |
 | quote_sent · quote_resent → 고객 | 견적 비교 | feed, 3일 무응답 notify |
 | dates_proposed → 고객 | dates_accept(수락 뒤면 delay_accept + 영향) | feed, 2일(연기 1일) 뒤 notify |
 | 공사 시작 전날 → 고객 | 준비물 · 지식 카드 | notify 10시 |
@@ -401,7 +402,7 @@
 - 보낼 때 상태를 다시 봐요: 판정 · 문장을 기다리는 사이 상태가 바뀌었으면 보내지 않고 닫아요(gone). 근원 알림이 이미 종을 울린 사건(`done_remind`)은 비서 알림을 더하지 않아요(같은 사건 종 알림은 하나).
 - 카드 · 승인 카드를 못 만들면 문장만 보내요. 평가 중 오류가 나면 그 줄을 expired(error)로 닫아 2분마다 되풀이하지 않아요.
 - 할 일이 끝난 줄 닫기(2026-11-21 고침): 서버가 보이는 줄(sent · opened)을 닫아 대화 기록 · 턴 끝 제안(suggest) · 오늘에서 빠져요.
-  - 비서 승인(`actions.execute`)으로 행동을 실행하면 같은 트랜잭션에서 그 사람의 줄 중 같은 대상의 승인 카드를 단 줄(새 카드로 바뀐 옛 카드 포함)과 같은 대상을 가리키는 줄(`repository.SETTLES`: visit_slot → visit_offered · vendor_confirm → quote_sent · dates_accept · delay_accept → dates_proposed · visit_request → no_pick · window_answer · decline → visit_requested · visit_picked · dates → deal_confirmed)을 expired(acted)로 닫아요.
+  - 비서 승인(`actions.execute`)으로 행동을 실행하면 같은 트랜잭션에서 그 사람의 줄 중 같은 대상의 승인 카드를 단 줄(새 카드로 바뀐 옛 카드 포함)과 같은 대상을 가리키는 줄(`repository.SETTLES`: visit_slot → visit_offered · visit_proposed · vendor_confirm → quote_sent · dates_accept · delay_accept → dates_proposed · visit_request → no_pick · window_answer · decline → visit_requested · visit_picked · dates → deal_confirmed)을 expired(acted)로 닫아요.
   - 정리(2분, `proactive.close_settled`)는 보이는 줄(새것 50 + 오래 안 본 줄부터 150: 보이는 줄의 `due_at`은 정리가 마지막으로 본 때) 중 달린 행동이 실행된 줄은 acted, 대상 상태가 바뀐 줄(`context` 없음: 승인 카드가 없는 업체 추천 · 견적 도착 줄도)은 handled로 닫아요. 상태만 가볍게 보고(기한 · 이름 사실 · 추천 계산 없음), 업체 빠짐 줄은 이을 업체가 잠깐 없다고 닫지 않아요(2026-11-22).
   - 기록(2026-11-21 고침): 닫힌 줄(acted · handled)도 대화 기록에 남아요(`AssistantItem.settled`). 화면은 단추 · 제안 없이 보낸 때 카드와 '완료'로 보여요. 고객이 닫은 줄(dismissed)은 기록에서 빠져요.
     - 먼저 말 건 줄은 보낸 때가 속한 쪽에 끼워요(한 쪽 30줄까지, `service.NUDGE_FEED`).
