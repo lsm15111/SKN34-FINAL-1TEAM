@@ -618,6 +618,8 @@ class SentenceGate:
         self._back = False  # 바로 앞 문장이 내용 까닭으로 빠졌다(되가리키는 다음 문장도 뺀다)
         # 되풀이로 뺀 다음 할 일 문장(마지막 하나): 답에 다른 다음 할 일이 없으면 턴 끝에 살린다(settle)
         self._spare: _Piece | None = None
+        # 지난 턴과 같은 지금 단계 문장을 뺐다(_same_state): 상태가 그대로라 지금 할 일 줄도 붙이지 않아요(next_step)
+        self.state_cut = False
         # 바로 앞 비서 답들의 문장(답마다, 가까운 것부터, SPARE_RUN개). 주지 않으면 said 하나를 바로 앞 답으로 본다
         self.turns = [list(t) for t in turns] if turns is not None else [self.said]
 
@@ -689,6 +691,7 @@ class SentenceGate:
             self._gone,
             self._back,
             self._spare,
+            self.state_cut,
         )
         return len(self._out), keep, len(self.dropped), self.cut
 
@@ -712,6 +715,7 @@ class SentenceGate:
             self._gone,
             self._back,
             self._spare,
+            self.state_cut,
         ) = keep
         del self.dropped[dropped:]
         self.cut = cut
@@ -909,11 +913,32 @@ class SentenceGate:
         last = self.turns[:SPARE_RUN]
         return len(last) >= SPARE_RUN and all(self._repeat(text, t) for t in last)
 
+    def _same_state(self, text: str) -> bool:
+        """지금 단계 문장(policy.now_state)이 지난 비서 턴(said)의 지금 단계 문장과 같은 업체 · 날짜 · 반나절만 말하는지
+        (새 대상 없음, QA r7 c1 20~23턴: '우리집벽지 실측 내일 오전' 끝맺음 네 턴). 업체 이름이 없는 문장 · 고객이 금액 ·
+        날짜 · 할 일을 물은 턴은 보지 않아요."""
+        if self.asked or not policy.now_state(text):
+            return False
+        mine = policy.targets(text, self.names)
+        if not mine[2]:
+            return False
+        return any(
+            policy.now_state(x)
+            and all(a <= b for a, b in zip(mine, policy.targets(x, self.names), strict=True))
+            for x in self.said
+        )
+
     async def _send(self, p: _Piece) -> None:
         """검사를 지난 문장 하나를 보낸다. 이 턴에 보낸 문장과 같으면 빼고, 첫 문장이 아닌 지난 턴 안내 되풀이도 뺀다
         (묶음 안 문장은 목록이 비지 않게 둔다)."""
         if any(policy.same_line(p.text, x) for x in self.sent):
             self.dropped.append("같은 문장")
+            self.cut += 1
+            return
+        # 지난 턴과 같은 지금 단계(상태가 그대로)면 다시 말하지 않아요
+        if self._out and not p.member and self._same_state(p.text):
+            self.state_cut = True
+            self.dropped.append("지난 턴과 같은 지금 단계")
             self.cut += 1
             return
         if self._out and not p.member and self._repeat(p.text):
@@ -1189,6 +1214,9 @@ async def next_step(turn: "_Turn", res: TurnResult) -> str:
         asked, _why = turn.gate._check(turn.ask)  # 숫자 · 안쪽 말 검사(모델 문장과 같은 검사)
         if asked and asked not in res.text:
             return asked
+    # 지금 단계는 한 답에 한 번: 모델이 이미 말했거나(QA r7 c1 19 · 27턴) 지난 턴과 같은 상태라 뺐으면 붙이지 않아요
+    if turn.gate.state_cut or any(policy.now_state(s) for s in turn.gate.sent):
+        return ""
     try:
         line = await free.now_tail(turn.tc)
     except Exception as e:  # noqa: BLE001 - 할 일 줄을 못 읽으면 붙이지 않아요(종류 이름만 로그)

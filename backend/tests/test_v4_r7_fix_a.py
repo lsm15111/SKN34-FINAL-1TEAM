@@ -8,6 +8,7 @@
 - 4. 첫 인사 · 첫 칩 · 지시문 첫 답이 도배 궁금한 점 · 직접 할 일 · 집 조건 바꾸기를 알려요.
 - 5. 비서가 되물은 것에 고객이 답하면 그 답으로 판단 한 문장을 먼저 잇기(c2 L22 → L23, 지시문 규칙).
 - 6. 비서 실측 요청 카드에 고객이 말한 희망 기간(화면 N3): wish 칸, 검사는 계산 엔진(화면 요청과 같은 규칙).
+- 7. 지금 할 일 줄은 한 답에 한 번, 지난 턴과 같은 상태면 다시 말하지 않기(c1 19 · 27 · 20~23턴).
 """
 
 import asyncio
@@ -452,3 +453,59 @@ def test_visit_request_card_takes_the_said_wish(api, script, monkeypatch):
     err = tool_result(log, 1)
     assert err["error"] == "bad_wish" and err["message"] == propose.WISH_SAID["order"]
     assert not [x for x in acts(ev) if x["status"] == "proposed"]
+
+
+# ---- 7. 지금 할 일 줄은 한 답에 한 번 · 상태가 같으면 다시 말하지 않기 ----
+
+
+def test_now_state_sentences():
+    for t in (
+        "지금은 결도배 답을 기다리는 중이에요.",
+        "네, 내일 두 업체의 실측을 기다리시면 돼요.",
+        "우리집벽지 실측은 11월 25일 오전에 예정돼 있어요.",
+        "지금은 업체를 골라 실측을 요청할 차례예요.",
+    ):
+        assert policy.now_state(t), t
+    for t in (
+        "실크는 닦을 수 있어요.",
+        "카드를 눌러 주세요.",
+        "지금 바로 보내 드릴게요.",
+        "다음 차례로 넘어가요.",
+    ):
+        assert not policy.now_state(t), t
+
+
+def test_one_now_line_per_answer(api, script):
+    """모델이 지금 단계를 이미 말했으면 코드의 지금 할 일 줄을 붙이지 않아요(QA r7 c1 19 · 27턴: '지금은 …' 두 번)."""
+    from tests.test_v4_assistant_offers import tokens
+
+    q = "이제 뭐부터 하면 돼요?"
+    _, pid = home(api, "now1@mitjip.test")
+    script([{"text": "확인했어요. 지금은 업체 답을 기다려 주세요."}])
+    assert tokens(ok(ask(api, pid, q))) == "확인했어요. 지금은 업체 답을 기다려 주세요."
+    _, pid = home(api, "now2@mitjip.test")  # 견줌: 지금 단계가 없는 답이면 붙여요
+    script([{"text": "확인했어요."}])
+    assert tokens(ok(ask(api, pid, q))).startswith("확인했어요.\n\n지금은 ")
+
+
+def test_same_state_is_not_said_again(api, script, monkeypatch):
+    """지난 턴과 같은 업체 · 상태의 지금 단계 문장은 다시 말하지 않고, 지금 할 일 줄도 붙이지 않아요(QA r7 c1 20~23턴).
+    고객이 날짜 · 할 일을 물은 턴은 그대로 둬요."""
+    from tests.test_v3_visit_kit import add, customer, quiet, vendor
+    from tests.test_v3_visit_kit import ask as send_visits
+    from tests.test_v4_assistant_offers import tokens
+
+    quiet(monkeypatch)
+    vid = vendor(api, "r7state@mitjip.test", "결도배")
+    _, pid = customer(api)
+    assert add(api, pid, vid).status_code == 201
+    assert send_visits(api, pid, [vid]).status_code == 201
+    script([{"text": "알겠어요. 결도배 답을 기다리는 중이에요."}])
+    assert (
+        tokens(ok(ask(api, pid, "업체 답은 어때요?"))) == "알겠어요. 결도배 답을 기다리는 중이에요."
+    )
+    script([{"text": "송금은 제가 할 수 없어요. 결도배 답을 기다리는 중이에요."}])
+    assert tokens(ok(ask(api, pid, "계약금 송금해 줘"))) == "송금은 제가 할 수 없어요."
+    script([{"text": "아직 답이 없어요. 결도배 답을 기다리는 중이에요."}])
+    said = tokens(ok(ask(api, pid, "결도배 답은 언제 와요?")))
+    assert said == "아직 답이 없어요. 결도배 답을 기다리는 중이에요."
