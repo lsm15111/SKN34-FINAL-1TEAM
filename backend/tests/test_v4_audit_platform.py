@@ -11,13 +11,11 @@ from datetime import timedelta
 from pathlib import Path
 
 import anyio.to_thread
-import pytest
 from botocore.exceptions import ClientError
 from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import Headers, UploadFile
 
 from app import worker
-from app.agent import llm
 from app.auth import service as auth_service
 from app.config import settings
 from app.db import SessionLocal
@@ -26,11 +24,8 @@ from app.files import service as files_service
 from app.jobs import service as jobs
 from app.jobs.models import ATTEMPTS_MAX
 from app.shared import clock
-from app.usage import service as usage
 from tests.conftest import query
 from tests.helpers import JPEG, PASSWORD, PDF, PNG, make_admin, signup, upload, use, vendor_signup
-from tests.test_v4_llm_claude import _user
-from tests.test_v4_llm_usage import _go, caps, spend  # noqa: F401 (caps는 fixture)
 from tests.test_vendor_profile import approved_vendor, vendor_id
 from tests.test_vendor_profile import body as profile_body
 from tests.test_visit_request import home, listed, send
@@ -75,34 +70,6 @@ def test_r5_1_vendor_with_portfolio_and_price_file_withdraws(api):
 
 
 # ---- #2 새 계정 합 하루 상한은 탈퇴한 계정이 쓴 돈도 센다(부른 때 장부 줄에 표시) ----
-
-
-@pytest.mark.parametrize("redis", ["up", "down"])
-def test_r5_2_new_pool_keeps_spending_of_withdrawn_accounts(monkeypatch, caps, redis):  # noqa: F811
-    news = [_user(f"pool-{i}@mitjip.test") for i in range(7)]
-
-    async def first():
-        for uid in news[:6]:
-            await spend(uid, "assistant", output_tokens=15_000)  # 한 계정 $0.15씩, 합 $0.90
-        with pytest.raises(usage.OverCap) as e:
-            await usage.allow(news[6], "assistant")
-        return e.value.scope
-
-    assert _go(monkeypatch, redis, first) == "new_pool_day"
-    # 탈퇴(auth.repository.delete_user = delete from users): 장부 줄의 user_id는 비워진다(SET NULL)
-    query("delete from users where id = any($1::uuid[])", news[:6])
-
-    async def second():
-        (pool,) = [b for b in usage.buckets(news[6], joined=clock.now_utc()) if b.new_days]
-        if redis == "up":
-            await usage.queue.redis.delete(pool.key)  # 카운터를 장부 합계로 다시 맞추는 때(SYNC_S)
-        with pytest.raises(usage.OverCap) as e:
-            await usage.allow(news[6], "assistant")  # 탈퇴해도 그날 쓴 돈은 새 계정 합에 남는다
-        return e.value.scope, await usage.db_spent(pool)
-
-    assert _go(monkeypatch, redis, second) == ("new_pool_day", 900_000)
-    rows = query("select user_id, new_account from llm_usage")
-    assert len(rows) == 6 and all(r["user_id"] is None and r["new_account"] for r in rows)
 
 
 # ---- #3 멈춘 업체(새 요청만 막기)는 옛 목록 줄 · 옛 몸통 실측 요청에서도 빠진다 ----
@@ -464,49 +431,3 @@ def test_r5_10_waiting_password_checks_do_not_hold_worker_threads(monkeypatch):
 
 
 # ---- R6 B3 승인 전 업체는 유료 v2 상담을 못 쓰고, 새 계정 몫에 든다 ----
-
-
-def test_r6_b3_pending_vendor_cannot_use_paid_v2_ask(api, monkeypatch):
-    calls = []
-
-    async def fake_chat_tools(system, messages, tools):
-        calls.append(1)  # 실제로는 여기서 유료 호출
-        return {"text": "도배 전에 벽을 말려요.", "tool_calls": [], "stop": "stop"}
-
-    monkeypatch.setattr(llm, "chat_tools", fake_chat_tools)
-    assert vendor_signup(api, email="pending-vendor@mitjip.test").status_code == 201
-    assert api.get("/me").json()["vendor_status"] == "pending"
-    r = api.post("/v2/ask", json={"message": "도배 전에 뭘 준비해요?"})
-    assert r.status_code == 403, r.text
-    r = api.post("/v2/ask/t1", json={"results": [{"id": "c1", "content": "{}"}]})
-    assert r.status_code == 403, r.text
-    assert calls == []
-    approved_vendor(api, "approved-vendor@mitjip.test")  # 승인 업체도 v2 상담은 고객 화면 것
-    assert api.post("/v2/ask", json={"message": "도배 전에 뭘 준비해요?"}).status_code == 403
-    signup(api, "ask-customer@mitjip.test")
-    r = api.post("/v2/ask", json={"message": "도배 전에 뭘 준비해요?"})
-    assert r.status_code == 200, r.text
-
-
-@pytest.mark.parametrize("redis", ["up", "down"])
-def test_r6_b3_pending_vendor_counts_as_a_new_account(api, monkeypatch, caps, redis):  # noqa: F811
-    assert vendor_signup(api, email="pv@mitjip.test").status_code == 201
-    pending = vendor_id("pv@mitjip.test")
-    approved_vendor(api, "av@mitjip.test")
-    approved = vendor_id("av@mitjip.test")
-
-    async def go():
-        joined = (await usage.joined_at(pending), await usage.joined_at(approved))
-        await spend(approved, "assistant", output_tokens=19_000)  # $0.19 = $0.20의 95%
-        await usage.allow(approved, "assistant")  # 승인 업체는 새 계정 몫을 보지 않는다
-        await spend(pending, "assistant", output_tokens=19_000)
-        with pytest.raises(usage.OverCap) as e:
-            await usage.allow(pending, "assistant")  # 심사 중 업체는 새 계정처럼 막힌다
-        (pool,) = [b for b in usage.buckets(pending, joined=joined[0]) if b.new_days]
-        return joined, e.value.scope, await usage.db_spent(pool)
-
-    (j_pending, j_approved), scope, pooled = _go(monkeypatch, redis, go)
-    assert j_pending is not None and j_approved is None
-    assert (scope, pooled) == ("new_user_day", 190_000)  # 새 계정 합에는 심사 중 업체 돈만
-    flags = {r["user_id"]: r["new_account"] for r in query("select * from llm_usage")}
-    assert flags == {pending: True, approved: False}

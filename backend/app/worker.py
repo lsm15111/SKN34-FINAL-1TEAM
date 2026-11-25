@@ -22,13 +22,8 @@ from typing import ClassVar
 
 from arq import cron
 from arq.connections import RedisSettings
-from arq.worker import func
 
 from app import demo
-from app.agent import llm
-from app.assistant import jobs as assistant_jobs
-from app.assistant import research as assistant_research
-from app.assistant import service as assistant_service
 from app.config import settings
 from app.db import SessionLocal
 from app.files import service as files_service
@@ -46,8 +41,6 @@ log = logging.getLogger(__name__)
 
 # kind → 처리 함수 (jobs.models.KINDS). 기능마다 자기 jobs.py의 HANDLERS에 넣고 여기서 모은다
 JOB_HANDLERS: dict[str, JobHandler] = {
-    **assistant_jobs.HANDLERS,
-    **assistant_research.HANDLERS,
     **quote_jobs.HANDLERS,
     **schedule_jobs.HANDLERS,
     **visit_jobs.HANDLERS,
@@ -136,19 +129,6 @@ async def sweep_jobs(ctx: dict | None = None, now: datetime | None = None) -> in
     return sum(n for (_, result), n in tally.items() if result in ("done", "skipped"))
 
 
-async def assistant_sweep(ctx: dict | None = None, now: datetime | None = None) -> int:
-    """비서 정리(2분마다, unique): 만료 제안 → expired · 2분 넘은 승인 → failed · 멈춘 턴 → failed ·
-    상태 전이 알림 → 먼저 말 걸기 · 기한이 된 제안 평가. 기억 뽑기는 sweep_jobs가 한다. 돌려주는 값: 바꾼 수."""
-    got = await assistant_service.sweep(now or now_utc())
-    return sum(got.values())
-
-
-async def assistant_hourly(ctx: dict | None = None, now: datetime | None = None) -> int:
-    """먼저 말 걸기 시간 · 무응답 트리거(매시간 5분, unique). 돌려주는 값: 만든 제안 수."""
-    got = await assistant_service.hourly(now or now_utc())
-    return sum(got.values())
-
-
 async def clean_files(ctx: dict | None = None, now: datetime | None = None) -> int:
     """붙이지 않은 파일 정리(매시간 35분, unique): 올린 지 하루가 넘도록 어디에도 붙지 않은 파일 행과 저장소 내용을
     지운다(sec M5, files.service.sweep_unattached). 돌려주는 값: 지운 수."""
@@ -159,26 +139,9 @@ def demo_on() -> bool:
     return settings.demo_auto and settings.app_env != "production"
 
 
-async def startup(ctx: dict) -> None:
-    """worker 시작 때 준비: LLM SDK를 작업 스레드에서 미리 불러온다(llm.warm, LLM이 꺼져 있으면 아무것도 안 함).
-    첫 먼저 말 걸기 판정 · 문장(Haiku, 10초 제한)이 늦은 SDK import(Windows 12~14초)로 이벤트 루프를 멈추고 제한에
-    걸리지 않게 한다. 실패해도 시작은 막지 않는다(실호출 때 같은 오류가 난다)."""
-    try:
-        await asyncio.to_thread(llm.warm)
-    except Exception as exc:  # noqa: BLE001 - 준비 실패로 worker가 안 뜨면 안 된다(종류 이름만)
-        log.warning("LLM SDK 미리 불러오기 실패 (%s)", type(exc).__name__)
-
-
 class WorkerSettings:
-    on_startup = startup
-    functions: ClassVar[list] = [
-        ping,
-        # 조사 담당(09): 비서가 맡긴 웹 조사 하나(4분 상한 + 여유, 다시 하지 않음 · 멈춘 조사는 jobs 감시가 닫음)
-        func(assistant_research.run_job, name=assistant_research.JOB_FN, timeout=300, max_tries=1),
-    ]
+    functions: ClassVar[list] = [ping]
     cron_jobs: ClassVar[list] = [
-        cron(assistant_sweep, minute=set(range(0, 60, 2)), second=30, unique=True, timeout=60),
-        cron(assistant_hourly, minute=5, second=15, unique=True, timeout=60),
         cron(clean_files, minute=35, second=45, unique=True, timeout=300),
         cron(sweep_jobs, second=0, unique=True, timeout=SWEEP_TIMEOUT),
         *([cron(demo_reply, second=set(range(0, 60, 5)), timeout=50)] if demo_on() else []),

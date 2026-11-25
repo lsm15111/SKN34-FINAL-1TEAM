@@ -3,14 +3,11 @@
 빠듯한 직접 할 일 말(할 수 있는 첫날). 기대값은 손으로 검산했어요."""
 
 import json
-from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
 import pytest
 
-from app.assistant.tools import diy as diy_tools
-from app.calc import diy as calc_diy
 from app.calc import dobae, rolls
 from app.calc.common import COUNTED, with_vat
 from app.calc.estimate import PriceV3, StdLine, VendorPrice, estimate, estimate_v3
@@ -19,9 +16,6 @@ from app.quote.schemas import QuoteDraftIn
 from app.quote.service import standard_v3
 from app.refprice.book import DOBAE_PROFILES, SILK_2026
 from app.refprice.floor_plans import plans
-from app.v2 import preview_service
-from app.v2.ask import _profile_text
-from app.v2.schemas import V2AskProfile, V2Calc7In, V2PlanSelIn, V2QuoteIn
 from tests.test_v4_qa_r2_calc import MARU_V3
 
 D = Decimal
@@ -94,22 +88,6 @@ def test_plan_hapji_rolls_are_wide_by_default_not_two_and_a_half_times_silk():
         # 광폭은 한 롤 넓이가 실크와 거의 같아 롤 수도 비슷해요
         assert wide.rolls["hapji"].rolls <= silk, pid
         assert (wide.rolls["hapji"].ko, narrow.rolls["hapji"].ko) == ("광폭 합지", "소폭 합지")
-
-
-def test_v2_preview_and_answer_context_use_wide_hapji_rolls():
-    q = preview_service.plan_qty("fp06", True, None)
-    got = {r.kind: r for r in q.rolls}
-    assert (got["hapji"].ko, got["hapji"].size, got["hapji"].rolls) == (
-        "광폭 합지",
-        "0.93m × 17.75m",
-        16,
-    )
-    assert got["silk"].rolls == 18 and q.rules_version == "2026.11.2"
-    text = _profile_text(V2AskProfile(), V2QuoteIn(plan=V2PlanSelIn(id="fp06")))
-    assert "실크 18롤 · 합지 16롤" in text  # 옛 판은 합지 41롤
-    # v2 셀프 계산기도 빈 칸이면 광폭 합지 롤(소폭은 고를 때만)
-    c, wide = V2Calc7In(kind="wallpaper"), rolls.ROLLS["hapji_wide"]
-    assert (D(str(c.rollW)), D(str(c.rollLen))) == (wide.width_m, wide.length_m)
 
 
 # ---- 3. 옛 이름 '베스띠' → '실크벽지 베스트'(보이는 이름만, 키 · id 그대로) ----
@@ -232,47 +210,4 @@ def test_line_included_in_an_optional_row_is_missing():
 # ---- 7. 빠듯한 직접 할 일 말은 공정표와 같은 날(할 수 있는 첫날) ----
 
 
-def test_tight_task_says_the_first_possible_day_like_the_plan():
-    work = {
-        "mokgong": (date(2026, 12, 7), date(2026, 12, 8)),
-        "dobae": (date(2026, 12, 9), date(2026, 12, 10)),
-    }
-    (paint,) = calc_diy.plan(["paint"], work, date(2026, 11, 22))
-    assert (paint.why, paint.day, paint.end) == ("short", date(2026, 12, 9), date(2026, 12, 5))
-    said = diy_tools.when_text(paint)
-    assert said == "12월 9일(수)부터 할 수 있는데 날이 빠듯해요"  # 공정표 줄 날(마감 12월 5일 아님)
-    assert "12월 5일" not in said
-
-
 # ---- 벽지 직접 구매 직접 할 일: 도배 시작 전날까지 사서 받아 두기 ----
-
-
-def test_paper_buy_task_is_due_the_day_before_dobae():
-    dobae_days = {"dobae": (date(2026, 12, 7), date(2026, 12, 9))}  # 월 ~ 수
-    (t,) = calc_diy.plan(["paper_buy"], dobae_days, date(2026, 12, 1))
-    # 판은 diy_v4(페인트만 바뀜). 벽지 사 두기는 앞 판과 같이 오늘부터예요(목공을 기다리지 않아요)
-    assert (t.name, t.kind, t.rule_ver, t.after) == (
-        "벽지 사서 받아 두기",
-        "before",
-        "diy_v4",
-        None,
-    )
-    assert (t.start, t.end, t.day, t.fit) == (
-        date(2026, 12, 1),
-        date(2026, 12, 6),
-        date(2026, 12, 6),
-        True,
-    )
-    assert diy_tools.when_text(t) == "12월 1일(화) ~ 12월 6일(일) 사이에 해요"
-    # 도배가 없으면 없어요, 공사 날짜가 없으면 순서만
-    mok = {"mokgong": (date(2026, 12, 7), date(2026, 12, 8))}
-    assert calc_diy.plan(["paper_buy"], mok, date(2026, 12, 1)) == []
-    (undated,) = calc_diy.plan(["paper_buy"], {}, date(2026, 12, 1))
-    assert (undated.start, undated.end, undated.day) == (None, None, None)
-
-
-def test_free_mode_words_find_paper_buy_only_for_buying():
-    assert diy_tools.keys_in("벽지 직접 구매 언제 · 어떻게 해요?") == ["paper_buy"]
-    assert diy_tools.keys_in("벽지는 제가 살게요") == ["paper_buy"]
-    assert diy_tools.keys_in("벽지 사이즈가 어떻게 돼요?") == []
-    assert diy_tools.keys_in("실크 벽지 고르는 법 알려 줘") == []

@@ -5,7 +5,6 @@ from decimal import Decimal
 
 import pytest
 
-from app.agent.v3.trades import SPECS
 from app.calc import dobae, estimate
 from app.calc.common import COUNTED, pyeong_to_m2, won
 from app.calc.space_share import SPACE_SHARE_ROOMS_2026_11
@@ -88,19 +87,6 @@ def test_said_answer_wins_over_project_item():
     assert dobae.pick_profile(w((), {"mokgong.doors": "글쎄요"})).profile == "paper_only"
     # 띄어쓰기만 다른 단추 글은 같은 답
     assert dobae.pick_profile(w((), {"mokgong.doors": " 문틀까지 "})).profile == "remodel"
-
-
-def test_signal_values_are_the_agent_buttons():
-    """기준 고르기가 읽는 목공 값은 되묻기 단추 글과 같아야 해요(글이 바뀌면 이 테스트가 잡아요).
-    철거 범위는 단추 글이 아니라 코드 값(full · partial · none)이에요."""
-    options = {s.key: set(s.options) for spec in SPECS for s in spec.slots}
-    for _, item, key, yes, no in dobae.REMODEL_SIGNALS:
-        if key == dobae.DEMOLITION_KEY:
-            assert item is None and {yes, no} <= set(dobae.DEMOLITION)
-            continue
-        assert {yes, no} <= options[key], key
-        assert item in ("door", "flatten")
-    assert dobae.SCOPE_ALL in options[dobae.SCOPE_KEY]
 
 
 @pytest.mark.parametrize(

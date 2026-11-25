@@ -1,11 +1,10 @@
 """v3 모은 조건(맥락 L3): project_conditions
 
 Revision ID: 0038_v3_project_conditions
-Revises: 0037_v3_chat_state
+Revises: 0036_v3_rooms
 Create Date: 2026-11-20
 
-AI 상담에서 고객이 되묻기에 답하거나 단추로 고른 값(예: dobae.grade = 기본형)을 공사마다 둔다.
-에이전트는 다음 턴부터 같은 칸을 다시 묻지 않는다. LLM이 짐작한 값은 넣지 않는다.
+고객이 고른 공사 조건(예: 철거 범위 · 직접 할 일)을 공사 · 칸마다 하나씩 둔다.
 """
 
 from collections.abc import Sequence
@@ -14,7 +13,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0038_v3_project_conditions"
-down_revision: str | Sequence[str] | None = "0037_v3_chat_state"
+down_revision: str | Sequence[str] | None = "0036_v3_rooms"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

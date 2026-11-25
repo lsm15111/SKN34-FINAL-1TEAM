@@ -1,7 +1,7 @@
 """v4 모은 조건 직접 할 일(diy.<키>): 칩 키와 '없어요'만, 값은 self만
 
 Revision ID: 0046_v4_project_diy
-Revises: 0045_v4_assistant_aftercare
+Revises: 0043_v4_project_demolition
 Create Date: 2026-11-21
 
 - 공사 조건(project_conditions)의 diy.로 시작하는 칸은 project/diy.py 칩 키(paint · outlet · light · silicone ·
@@ -13,7 +13,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "0046_v4_project_diy"
-down_revision: str | Sequence[str] | None = "0045_v4_assistant_aftercare"
+down_revision: str | Sequence[str] | None = "0043_v4_project_demolition"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

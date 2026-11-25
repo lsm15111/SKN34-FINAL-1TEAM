@@ -1,4 +1,4 @@
-"""요청 입구 보호 (ASGI 미들웨어 네 개 + SSE 턴 자리).
+"""요청 입구 보호 (ASGI 미들웨어 네 개).
 
 - BodyLimit: 경로별 본문 크기 한도. Content-Length가 크면 읽기 전에 413, 나눠 오는 본문은 세다가 넘으면 413.
   FastAPI는 인증보다 본문 읽기를 먼저 하므로, 로그인 안 한 사람의 큰 본문도 여기서 막는다.
@@ -10,14 +10,11 @@
 - SecurityHeaders: API 응답의 기본 보안 머리. 경로가 이미 정한 값(파일 내려받기 · 줄기)은 그대로 둔다.
 - CatchAll: 처리하지 못한 오류를 같은 오류 모양으로 바꾼다. DB · 디스크 연결 문제와 DB 풀 기다림 시간 초과는
   503(Retry-After), 나머지는 500. 로그에는 오류 종류와 위치만 남긴다(메시지에 이메일 같은 값이 섞일 수 있어서).
-- turn_slot: SSE 턴 경로의 의존성. 프로세스 하나의 동시 턴 자리(settings.turn_slots)가 다 차면 기다리지 않고
-  바로 503(Retry-After)으로 거절한다(풀을 기다리다 늦게 500이 되는 대신).
 """
 
 import logging
 import re
 import traceback
-from collections.abc import AsyncIterator
 from urllib.parse import urlsplit
 
 from fastapi.responses import JSONResponse
@@ -28,7 +25,7 @@ from starlette.exceptions import HTTPException
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from app.config import settings
-from app.shared.errors import AppError, error_body
+from app.shared.errors import error_body
 
 log = logging.getLogger(__name__)
 KB = 1024
@@ -38,13 +35,11 @@ MB = 1024 * KB
 # {이름}은 id 한 칸(빗금 없는 글자)에 맞는다. 받는 경로가 생기면 한 줄씩 더한다.
 LIMITS: dict[str, int] = {
     "/ai/turns": 16 * KB,  # AI 칸 질문(글 + 보던 화면). 사진은 받지 않는다
-    "/assistant/turns": 16 * KB,  # 비서 턴 글 1,000자 + 고른 것(이스케이프여도 15KB 아래)
     "/auth/vendor-signup": 11 * MB,
     "/files": 21 * MB,
     "/guest/standard": 4 * KB,  # 로그인 없는 표준견적서 계산 (api.md 1장)
     "/threads/{id}/messages": 8 * KB,  # 채팅 글 1,000자(\u 이스케이프여도 6KB) + 칸. 사진은 /files
     "/v2/ask": 2 * MB,  # AI 상담: 사진 2장(base64)까지
-    "/vendor/assistant/turns": 16 * KB,  # 업체 비서 턴(고객 비서 턴과 같은 몸통)
 }
 DEFAULT_LIMIT = 1 * MB
 
@@ -252,38 +247,3 @@ class CatchAll:
             )
             headers = retry_after() if down else None
             await JSONResponse(body, 503 if down else 500, headers=headers)(scope, receive, send)
-
-
-# ---- SSE 턴 자리 (프로세스 하나) ----
-BUSY = "지금 묻는 분이 많아요. 잠시 뒤 다시 해 주세요."
-
-
-class Slots:
-    """프로세스 하나에서 동시에 도는 일의 수. 자리가 없으면 기다리지 않는다(이벤트 루프 하나라 잠금이 필요 없다)."""
-
-    def __init__(self) -> None:
-        self.used = 0
-
-    def take(self) -> bool:
-        if self.used >= settings.turn_slots:
-            return False
-        self.used += 1
-        return True
-
-    def give(self) -> None:
-        self.used = max(self.used - 1, 0)
-
-
-TURNS = Slots()
-
-
-async def turn_slot() -> AsyncIterator[None]:
-    """SSE 턴(비서 · 업체 비서 · AI 칸) 의존성. 로그인 확인 뒤에 두고, 응답을 다 보낼 때까지(화면이 끊으면 그때까지)
-    자리를 쥔다(FastAPI가 yield 의존성을 응답 뒤에 닫는다). 다 차면 바로 503 busy + Retry-After."""
-    if not TURNS.take():
-        log.warning("동시 턴 자리 %d개가 다 차서 거절했어요", settings.turn_slots)
-        raise AppError(503, "busy", BUSY, headers=retry_after())
-    try:
-        yield
-    finally:
-        TURNS.give()

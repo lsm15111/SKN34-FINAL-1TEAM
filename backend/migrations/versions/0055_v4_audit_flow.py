@@ -1,7 +1,7 @@
 """점검 고침 X4: 관리자가 숨긴 리뷰를 지운 공사(review_holds)
 
 Revision ID: 0055_v4_audit_flow
-Revises: 0054_v4_follow_up
+Revises: 0053_v4_diy_paper_buy
 Create Date: 2026-11-24
 
 - 관리자가 숨긴 리뷰를 쓴 사람이 지우면 그 공사를 남긴다. 같은 공사에 다시 쓰면 숨긴 채(같은 기준)로 시작하고,
@@ -15,7 +15,7 @@ import sqlalchemy as sa
 from alembic import op
 
 revision: str = "0055_v4_audit_flow"
-down_revision: str | Sequence[str] | None = "0054_v4_follow_up"
+down_revision: str | Sequence[str] | None = "0053_v4_diy_paper_buy"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

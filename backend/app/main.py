@@ -1,4 +1,3 @@
-import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -10,9 +9,6 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app import db, queue
 from app.account.router import router as account_router
-from app.agent import llm
-from app.assistant.router import router as assistant_router
-from app.assistant.router import vendor_router as assistant_vendor_router
 from app.auth.router import router as auth_router
 from app.chat.router import router as ai_router
 from app.config import settings
@@ -41,10 +37,7 @@ from app.visit.router import router as visit_router
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
-    # LLM SDK를 작업 스레드에서 미리 불러온다(첫 LLM 턴이 늦은 import로 멈추지 않게, 시작은 막지 않음)
-    warm = asyncio.create_task(asyncio.to_thread(llm.warm))
     yield
-    warm.cancel()
     await db.engine.dispose()
     await queue.redis.aclose()
 
@@ -70,8 +63,6 @@ app.add_exception_handler(StarletteHTTPException, http_error_handler)
 ROUTERS = [
     account_router,
     ai_router,
-    assistant_router,
-    assistant_vendor_router,
     auth_router,
     files_router,
     guest_router,

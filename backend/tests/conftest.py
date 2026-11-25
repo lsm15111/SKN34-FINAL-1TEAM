@@ -110,22 +110,6 @@ def _clean():
     yield
 
 
-@pytest.fixture(autouse=True)
-def _offline_pagecheck(monkeypatch):
-    """조사 결과 링크 · 판매가 확인(assistant/pagecheck)은 시험에서 바깥에 나가지 않아요. 연결 실패로 답해 링크는 그대로
-    두고 판매가 · 규격만 지워요. 확인을 시험하는 곳은 pagecheck._client를 다시 바꿔 끼워요."""
-    import httpx
-
-    from app.assistant import pagecheck
-
-    def offline(req: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("offline", request=req)
-
-    monkeypatch.setattr(
-        pagecheck, "_client", lambda: httpx.AsyncClient(transport=httpx.MockTransport(offline))
-    )
-
-
 @pytest.fixture(scope="session")
 def client():
     from fastapi.testclient import TestClient

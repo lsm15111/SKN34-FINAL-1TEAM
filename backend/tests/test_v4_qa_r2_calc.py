@@ -23,12 +23,10 @@ from tests import test_v3_visit_kit as kit
 from tests import test_v3_work_deal as work_deal
 from tests import test_vendor_quote as vendor_quote
 from tests.conftest import query
-from tests.helpers import signup, use
+from tests.helpers import use
 from tests.test_dates import OFF, SEEN0, propose, ready, sched
-from tests.test_project import body as project_body
 from tests.test_v3_vendor_prices import MARU, _estimate, _project, confirm, vendor, with_line
 from tests.test_v3_visit_kit import add
-from tests.test_v4_assistant_diy import block, chips, dobae_in, plan
 from tests.test_visit_inbox import login
 
 D = Decimal
@@ -218,35 +216,6 @@ def test_d5_tight_paint_is_placed_after_mokgong():
     assert (paint.fit, paint.why, paint.late) == (False, "short", False)
     assert paint.end == date(2026, 12, 5)  # 마감(도배 − 4일)은 그대로 알려요
     assert paint.day == date(2026, 12, 9) > work["mokgong"][1]
-
-
-def test_d5_plan_marks_tight_paint_and_keeps_it_off_the_day_cells(api):
-    signup(api, "home@mitjip.test")
-    r = api.post("/projects", json=project_body())  # 도배 + 목공
-    assert r.status_code == 201, r.text
-    pid = r.json()["id"]
-    chips(api, pid, ["paint", "outlet"])
-    p = plan(api, pid)
-    mok = block(p, "work", "mokgong")
-    rows = {b["label"]: b for b in p["blocks"] if b["kind"] == "diy"}
-    paint = rows["페인트(문틀 · 몰딩) 칠하기 · 날이 빠듯해요"]
-    assert paint["start"] == paint["end"] > mok["end"]  # 목공이 끝난 뒤
-    names = [n for d in p["days"] for n in d["names"]]
-    assert not any(n.startswith("페인트") for n in names)  # 그날 할 일로 두지 않아요
-    off = rows["콘센트 · 스위치 덮개 떼기"]  # 맞는 일은 그대로(표시 없음 · 날 칸 있음)
-    assert f"콘센트 · 스위치 덮개 떼기 · {calc_diy.SELF}" in names and off["start"] <= off["end"]
-
-
-def test_d5_plan_marks_a_late_task(api):
-    _, pid, _ = dobae_in(api, 2)  # 이틀 뒤 도배: 페인트 마감(도배 − 4일)이 지났어요
-    chips(api, pid, ["paint", "outlet"])
-    p = plan(api, pid)
-    assert p["kind"] == "final"
-    labels = [b["label"] for b in p["blocks"] if b["kind"] == "diy"]
-    assert "페인트(문틀 · 몰딩) 칠하기 · 마감이 지났어요" in labels
-    assert "콘센트 · 스위치 덮개 떼기" in labels  # 아직 할 수 있는 일은 그대로
-    names = [n for d in p["days"] for n in d["names"]]
-    assert not any(n.startswith("페인트") for n in names)
 
 
 # ---- P7 · P11 실측 견적서 · 추가 금액 0원 ----
