@@ -3,36 +3,12 @@
 .user { align-self: flex-end; max-width: 85%; background: var(--accent-weak); color: var(--ink); border-radius: var(--radius); padding: 8px 12px; font-size: var(--fs-md); overflow-wrap: anywhere; }
 .answer { display: flex; flex-direction: column; gap: 8px; font-size: var(--fs-md); color: var(--ink); overflow-wrap: anywhere; }
 .notice { font-size: var(--fs-xs); color: var(--ink-mute); }
-/* 묶음 출처 표시('믿집 계산' · 'AI 답변' · '믿집 안내'). 같은 표시가 이어지면 맨 앞에 한 번만 */
-.by { font-size: var(--fs-xs); color: var(--ink-mute); }
-/* 질문 + 답 한 턴. 마지막 턴은 목록 높이만큼 자리를 잡아 질문이 목록 맨 위로 올라갈 수 있어요(AiPanel이 --mj-turn-min을 재요) */
-.turn { display: flex; flex-direction: column; gap: 12px; }
-.turnLast { min-height: var(--mj-turn-min, 0px); }
-/* 답을 기다리는 줄: 점 세 개(움직임 줄이기 설정이면 멈춤) */
-.working { display: flex; align-items: center; gap: 8px; min-height: 24px; color: var(--ink-sub); font-size: var(--fs-sm); }
-.dots { display: inline-flex; gap: 4px; }
-.dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--ink-mute); animation: blink 1.2s ease-in-out infinite; }
-.dots i:nth-child(2) { animation-delay: 0.2s; }
-.dots i:nth-child(3) { animation-delay: 0.4s; }
-@keyframes blink { 0%, 80%, 100% { opacity: 0.25; } 40% { opacity: 1; } }
-@media (prefers-reduced-motion: reduce) { .dots i { animation: none; opacity: 0.6; } }
-/* '최신 대화로' 단추: 목록 아래쪽에 붙어 떠요(높이 0 띠라 목록 길이는 그대로) */
-.jumpWrap { position: sticky; bottom: 8px; height: 0; display: flex; justify-content: flex-end; pointer-events: none; }
-.jump { pointer-events: auto; transform: translateY(-100%); display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; border: 1px solid var(--line); border-radius: 50%; background: var(--surface); color: var(--ink); box-shadow: var(--shadow-sm); cursor: pointer; }
-.jump:hover { background: var(--surface-2); }
-.jump:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .section { display: flex; flex-direction: column; gap: 4px; }
 .secTitle { font-weight: 700; color: var(--ink-sub); font-size: var(--fs-sm); }
 .caution { color: var(--warn); font-size: var(--fs-sm); }
 .tip { color: var(--ink-sub); font-size: var(--fs-sm); }
 .sources { color: var(--ink-mute); font-size: var(--fs-xs); }
-.lead { font-weight: 700; color: var(--ink); }
-.cite { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; margin-left: 3px; padding: 0 4px; border-radius: 8px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 600; line-height: 1; vertical-align: 2px; cursor: default; }
-.refs { list-style: none; margin: 2px 0 0; padding: 0; display: flex; flex-direction: column; gap: 2px; color: var(--ink-mute); font-size: var(--fs-xs); }
-.refs li { display: flex; gap: 6px; align-items: baseline; min-width: 0; overflow-wrap: anywhere; }
-.refNum { flex: none; display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; border-radius: 8px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 600; }
 .unknown { color: var(--ink-sub); font-size: var(--fs-sm); }
-.more { align-self: flex-start; }
 .calcNote { color: var(--ink-sub); font-size: var(--fs-sm); background: var(--surface-2); border-radius: var(--radius-s); padding: 6px 10px; }
 .ask { display: flex; flex-direction: column; gap: 6px; border-top: 1px solid var(--line-soft); padding-top: 8px; }
 .choices { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -55,42 +31,3 @@
 .guestHead { display: flex; flex-direction: column; gap: 4px; }
 .guestTitle { font-weight: 700; font-size: var(--fs-lg); }
 .embed { display: flex; flex-direction: column; gap: 8px; }
-.step { display: flex; gap: 8px; align-items: baseline; }
-.stepNum { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 10px; background: var(--surface-2); color: var(--ink-sub); font-size: var(--fs-xs); font-weight: 700; }
-.reco { display: flex; flex-direction: column; gap: 8px; border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 12px; }
-.recoList { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
-.recoItem { display: flex; gap: 8px; align-items: flex-start; }
-.recoBody { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.recoName { font-weight: 700; color: var(--ink); }
-.recoWhy { color: var(--ink-sub); font-size: var(--fs-sm); overflow-wrap: anywhere; }
-.steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.tableWrap { overflow-x: auto; }
-.table { width: 100%; border-collapse: collapse; font-size: var(--fs-sm); }
-.table th, .table td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--line); }
-.table th { color: var(--ink-sub); font-weight: 600; white-space: nowrap; width: 30%; }
-/* 이어 온 지난 턴의 답(저장된 글만, 카드 · 출처 없음) */
-.old { margin: 0; white-space: pre-line; font-size: var(--fs-md); color: var(--ink); overflow-wrap: anywhere; }
-/* 머리 오른쪽 '새 대화'(폰은 닫기 X 바로 왼쪽). 누를 곳은 44px이지만 머리 높이는 그대로 둬요 */
-.newChat { margin: -10px 0 -10px auto; }
-.embedNew { display: flex; justify-content: flex-end; }
-/* 기억한 조건(모은 조건) 칩: '칸: 값' + 지우기 */
-.conds { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.condsHead { font-size: var(--fs-xs); color: var(--ink-mute); }
-.cond { display: inline-flex; align-items: center; gap: 2px; max-width: 100%; min-height: 32px; padding: 0 2px 0 10px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface); color: var(--ink-sub); font-size: var(--fs-sm); }
-.condText { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.condX { flex: none; display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: none; color: var(--ink-mute); cursor: pointer; }
-.condX:hover { background: var(--surface-2); color: var(--ink); }
-.condX:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-/* 공사 없는 화면의 '○○ 기준' 칩과 고르기 메뉴(입력 칸 위라 메뉴는 위로 열려요) */
-.scopeWrap { position: relative; display: flex; }
-.scope { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; min-height: 32px; padding: 0 8px 0 12px; border: 1px solid var(--line); border-radius: 16px; background: var(--surface-2); color: var(--ink); font: inherit; font-size: var(--fs-sm); font-weight: 600; cursor: pointer; }
-.scope:hover { border-color: var(--line-strong); }
-.scope:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
-.scopeMenu { position: absolute; left: 0; bottom: calc(100% + 4px); z-index: 5; display: flex; flex-direction: column; min-width: 220px; max-width: 100%; padding: 4px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
-.scopeMenu button { min-height: 40px; padding: 8px 10px; border: 0; border-radius: 6px; background: none; color: var(--ink); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
-.scopeMenu button:hover { background: var(--surface-2); }
-.scopeMenu button[aria-checked="true"] { font-weight: 700; }
-.scopeMenu button:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
-/* '업체에 물을 말' 복사 단추 · 복사가 막혔을 때 고를 글 */
-.copyRow { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
-.copyText { width: 100%; min-width: 0; resize: none; border: 1px solid var(--line-strong); border-radius: var(--radius); padding: 8px 10px; font: inherit; font-size: var(--fs-sm); color: var(--ink); background: var(--surface); }

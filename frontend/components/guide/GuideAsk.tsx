@@ -20,7 +20,6 @@ export function GuideAsk({ who }: { who: AskWho }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [open, setOpen] = useState(false);
   const [used, setUsed] = useState(false);
-  const [draft, setDraft] = useState<{ text: string; key: number }>();
   const path = usePathname();
   const close = () => setOpen(false);
   const m = useModal(ref, open, close, { closeOnBack: () => !window.matchMedia(MQ.tablet).matches });
@@ -37,22 +36,14 @@ export function GuideAsk({ who }: { who: AskWho }) {
 
   useEffect(() => {
     if (who === "none") return;
-    const on = (e: Event) => {
-      const text = (e as CustomEvent<{ text?: string }>).detail?.text?.trim() ?? "";
+    // 찾기 창이 넘긴 말(detail.text)은 AI 칸이 받지 않아서 창만 열어요
+    const on = () => {
       setUsed(true);
-      if (text) setDraft({ text, key: Date.now() });
       setOpen(true);
     };
     window.addEventListener(ASK_EVENT, on);
     return () => window.removeEventListener(ASK_EVENT, on);
   }, [who]);
-
-  // 찾기 창에서 넘긴 말이 있으면 입력 칸에 커서를 둬요(바로 고치거나 보내게)
-  useEffect(() => {
-    if (!open || !draft) return;
-    const id = requestAnimationFrame(() => document.getElementById("ai-input")?.focus());
-    return () => cancelAnimationFrame(id);
-  }, [open, draft]);
 
   if (who === "none") return null;
   return (
@@ -61,7 +52,7 @@ export function GuideAsk({ who }: { who: AskWho }) {
         <div className={s.askIn}>
           {used ? (
             <AsideHost onClose={close}>
-              <AiPanel screen="home" draft={draft} />
+              <AiPanel screen="home" />
             </AsideHost>
           ) : null}
         </div>
