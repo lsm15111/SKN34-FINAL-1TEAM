@@ -16,20 +16,23 @@
 // - 로그인한 고객: 마지막 [다음]에 POST /projects(Idempotency-Key = 기기 답 key) → /v5/projects/{id}/standard.
 // - v5(dev 백엔드 위): 기능 확인(caps.v4, lib/v5/caps.ts)이 꺼져 있으면 방 개수 · 철거 범위 칸을 그리지 않고 몸통에도 넣지 않아요.
 //   공사 희망 시기 칩도 없어서(빈 wishes) '아직 몰라요 · 날짜 고르기'만 보여요. 벽지는 dev도 받는 칸이라 '원하는 공사' 카드에 그대로 둬요.
+// - 전체 도배 요약은 [견적서 열기](/v5/start/standard)와 같은 시장 단가 표준견적서(POST /v2/market-quote) 금액 · 큰 줄이에요.
+//   공사 일수는 표준견적서 값(dev 내 공사 표준견적서와 같은 묶음)이고, 시장 단가를 못 받으면 표준견적서 금액 그대로예요.
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { JoinDialog } from "@/components/auth/JoinDialog";
+import { JoinDialog } from "@/components/v5/auth/JoinDialog";
 import { CalcBox } from "@/components/ui/CalcBox";
 import { Field as NumField } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
 import type { Region } from "@/lib/v5/api/project";
-import { errorText } from "@/lib/backend/client";
+import { call, errorText } from "@/lib/backend/client";
+import { toMarketIn, type MqOut } from "@/lib/guest/market";
 import type { Schemas } from "@/lib/v5/types";
 import { dateShort, decText } from "@/lib/v5/format";
 import { calcGuest, sendHome, type GuestStandard } from "@/lib/v5/guest/api";
 import {
   areaOfPyeong, checkDraft, DEMOLITION, EMPTY_DRAFT, GRADE_WORD, PYEONG_M2, pyeongError, pyeongOf, pyeongToM2, roomsOf, toHomeInfo, WISH_LABEL,
-  type AreaUnit, type InfoDraft, type RoomRule, type StartWish,
+  type AreaUnit, type HomeBody, type InfoDraft, type RoomRule, type StartWish,
 } from "@/lib/v5/guest/info";
 import { toQuoteLines } from "@/lib/v5/guest/standard";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/v5/guest/store";
@@ -50,18 +53,21 @@ const MOCK_PID = "a3a00000-0000-4000-8000-000000000001";
 /** 철거 범위는 백과 용어가 없어서 두 줄로 풀어요 */
 const DEMOLITION_NOTE = "집 안 마감(벽지 · 바닥 · 몰딩 등)을 뜯어내는 범위예요. 집 전체를 뜯고 새로 고치면 '전체 철거'예요.";
 
-/** 손님 표준견적서 → 요약 카드 값(큰 줄 몇 개는 계산 엔진 줄 금액 그대로 골라 보여요). href가 비면 열기 단추를 빼요 */
-function summaryOf(g: GuestStandard, d: InfoDraft, href: string): StandardQuoteData {
-  const lines = toQuoteLines(g.lines, g.scope)
-    .filter((l) => (l.state === "included" || l.state === "separate") && (l.amount ?? 0) > 0)
-    .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
-    .slice(0, 3)
-    .map((l) => ({ name: l.name, won: l.amount ?? 0 }));
+/** 손님 표준견적서 → 요약 카드 값(큰 줄 몇 개는 계산 엔진 줄 금액 그대로 골라 보여요). href가 비면 열기 단추를 빼요.
+ *  mq(시장 단가)가 있으면 금액 · 큰 줄은 그 값이에요 */
+function summaryOf(g: GuestStandard, d: InfoDraft, href: string, mq: MqOut | null): StandardQuoteData {
+  const lines = mq
+    ? mq.trades.flatMap((t) => t.lines).filter((l) => l.amount > 0).sort((a, b) => b.amount - a.amount).slice(0, 3).map((l) => ({ name: l.name, won: l.amount }))
+    : toQuoteLines(g.lines, g.scope)
+      .filter((l) => (l.state === "included" || l.state === "separate") && (l.amount ?? 0) > 0)
+      .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
+      .slice(0, 3)
+      .map((l) => ({ name: l.name, won: l.amount ?? 0 }));
   // 벽지 직접 구매면 '벽지 고객 구매'를 붙여요(도배지 줄은 합계 밖, 계산 엔진)
   const label = [
     "도배", d.grade ? GRADE_WORD[d.grade] : null, `${g.area_basis === "exclusive" ? "전용" : "공급"} ${decText(g.area_m2)}㎡`, g.own_paper ? "벽지 고객 구매" : null,
   ].filter(Boolean).join(" · ");
-  return { total_won: g.total, label, lines, days: g.days, partial: g.scope === "partial", href };
+  return { total_won: mq?.total ?? g.total, label, lines, days: g.days, partial: g.scope === "partial", href };
 }
 
 /** 보이는 방 개수: 고른 값, 없으면 면적 기본값. 방 개수 표를 못 읽었으면(기본값 표 없음) 미리 고르지 않아요(null) */
@@ -130,6 +136,8 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
   const [dirty, setDirty] = useState(false);
   const [tried, setTried] = useState<Record<Step, boolean>>({ home: false, work: false });
   const [std, setStd] = useState<GuestStandard | null>(null);
+  /** 전체 도배 시장 단가(못 받으면 null, 표준견적서 금액 그대로) */
+  const [mq, setMq] = useState<MqOut | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [join, setJoin] = useState(false);
   /** 면적 칸 단위와 평으로 넣는 글(칸에는 평, 답에는 바꾼 ㎡). 처음은 ㎡(U10) */
@@ -245,7 +253,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
       return;
     }
     try {
-      setStd(await calcGuest(toHomeInfo(body, caps), mock));
+      await calc(toHomeInfo(body, caps));
       setPhase("done");
       writeStep({ key: g.key });
     } catch (e) {
@@ -254,11 +262,19 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
     }
   }
 
+  /** 손님 표준견적서 계산 + 전체 도배면 시장 단가(견적서 열기와 같은 금액). 시장 단가가 실패해도 표준견적서로 보여요 */
+  async function calc(info: HomeBody) {
+    const market = info.scope === "full" && !mock ? call<MqOut>("POST", "/v2/market-quote", toMarketIn(info)).catch(() => null) : Promise.resolve(null);
+    const [g, m] = await Promise.all([calcGuest(info, mock), market]);
+    setStd(g);
+    setMq(m);
+  }
+
   /** [견적서 열기] 뒤 뒤로 왔어요: 표준견적서(서버 계산 엔진에 다시 물어요) · 가입 카드까지 이어 그려요. 못 세면 원하는 공사 카드로 */
   async function resume(draft: InfoDraft) {
     setPhase("calc");
     try {
-      setStd(await calcGuest(toHomeInfo(withRooms(draft, roomRule), caps), mock));
+      await calc(toHomeInfo(withRooms(draft, roomRule), caps));
       setPhase("done");
       // 되돌아온 화면은 브라우저가 앞 스크롤 자리를 되살린 뒤에 끝까지 내려요(QA r8 u1 U2: 가입 단추가 화면 밖)
       window.setTimeout(() => log.current?.lastElementChild?.scrollIntoView({ block: "end" }), 120);
@@ -272,6 +288,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
   function back() {
     setPhase("work");
     setStd(null);
+    setMq(null);
     setErr(null);
     writeStep(null);
     focusTo.current = "work";
@@ -392,7 +409,7 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
               {phase === "done" && std ? (
                 <Bot>
                   <p className={`${t.bubble} ${t.say}`}>표준견적서가 나왔어요.</p>
-                  <StandardSummary id="st-std" data={summaryOf(std, d, mode === "guest" ? "/v5/start/standard" : "")}
+                  <StandardSummary id="st-std" data={summaryOf(std, d, mode === "guest" ? "/v5/start/standard" : "", mq)}
                     more={<button type="button" className={`${t.text} ${t.gray}`} onClick={back}>조건 바꾸기</button>} />
                 </Bot>
               ) : null}

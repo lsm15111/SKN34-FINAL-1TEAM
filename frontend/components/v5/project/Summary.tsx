@@ -1,13 +1,17 @@
 // 한 공사 화면 · 요약(C43): 지금 할 일 · 6단계 + 실측 뒤 작은 단계 · 업체 · 서류 · 기본 정보(잠김).
 // 금액 · 단계 · 할 일은 API 값(overview · 비교) 그대로예요. 화면은 줄 세우기 · 이름 붙이기만 해요.
+// v5: dev 부품을 그대로 얹어요. 맨 위 '재재와 진행하기'(dev /projects/{id}/assistant), 공사 날짜를 수락했고 시작 전이면
+//   공사 전에 할 일(PreWorkCheck, PUT /projects/{id}/checks/{key}), 공사가 끝나기 전에는 현장 정보(SiteInfoCard, GET · PUT /projects/{id}/site).
 import type { ApiCompare, ApiOverview } from "@/lib/api/schedule";
 import type { VisitProject } from "@/lib/api/visit";
-import { areaText, won } from "@/lib/v5/format";
+import { areaText, todaySeoul, won } from "@/lib/v5/format";
 import { visitState, type StateTone } from "@/lib/v5/labels";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { AFTER_VISIT_STEPS, PROJECT_STEPS, Steps, SubSteps } from "@/components/ui/Steps";
 import { Eyebrow, Group, Row, Rows, Strip, Title } from "@/components/project/Kit";
+import { PreWorkCheck } from "@/components/project/PreWorkCheck";
+import { SiteInfoCard } from "@/components/project/SiteInfoCard";
 import s from "@/components/project/home.module.css";
 import { v5Href } from "@/lib/v5/paths";
 
@@ -32,6 +36,8 @@ export function Summary({ p, ov, compare }: { p: VisitProject; ov: ApiOverview; 
   const quoteOf = (visitId: string) => compare?.vendors.find((r) => r.visit_id === visitId)?.latest ?? null;
   const quotedCount = compare?.vendors.filter((r) => r.latest).length ?? 0;
   const todo = ov.todo && ov.todo.text ? ov.todo : null;
+  // 공사 날짜를 수락했고 아직 시작 전이면 공사 전에 할 일(dev 한 공사 화면 Overview와 같은 조건)
+  const beforeWork = ov.period.kind === "final" && ov.period.start > todaySeoul() && ov.checks.length > 0;
   const homeSub = [
     `도배 ${p.scope === "partial" ? "부분" : "전체"}`,
     "아파트",
@@ -42,6 +48,7 @@ export function Summary({ p, ov, compare }: { p: VisitProject; ov: ApiOverview; 
 
   return (
     <>
+      <Strip label="재재와 진행하기" sub="대화하면서 단계마다 할 일을 챙겨요" href={`/projects/${encodeURIComponent(p.id)}/assistant`} />
       {todo ? (
         <Group hi>
           <div className={s.todo}>
@@ -61,6 +68,8 @@ export function Summary({ p, ov, compare }: { p: VisitProject; ov: ApiOverview; 
           </div>
         </Group>
       </div>
+
+      {beforeWork ? <PreWorkCheck projectId={p.id} checks={ov.checks} start={ov.period.start} /> : null}
 
       {ov.vendors.length ? (
         <Group list>
@@ -93,6 +102,7 @@ export function Summary({ p, ov, compare }: { p: VisitProject; ov: ApiOverview; 
       </Group>
 
       <Strip label="기본 정보" sub={homeSub} href={`/v5/start?edit=${encodeURIComponent(p.id)}`} />
+      {ov.phase === "done" ? null : <SiteInfoCard projectId={p.id} />}
     </>
   );
 }
