@@ -43,7 +43,7 @@
 .row { display: flex; align-items: flex-end; gap: 6px; max-width: 86%; min-width: 0; }
 .me { align-self: flex-end; }
 .gap { margin-top: 8px; }
-/* 말풍선 모서리: 카드 둥글기에 꼬리 쪽 한 귀만 배지 둥글기(비서 대화와 같아요) */
+/* 말풍선 모서리: 카드 둥글기에 꼬리 쪽 한 귀만 배지 둥글기 */
 .bub { margin: 0; padding: 9px 13px; border-radius: var(--mj-radius-card) var(--mj-radius-card) var(--mj-radius-card) var(--mj-radius-badge); background: var(--mj-fill); color: var(--mj-text); font-size: var(--mj-type-body); line-height: var(--mj-lh-ui); white-space: pre-wrap; overflow-wrap: anywhere; min-width: 0; }
 .me .bub { border-radius: var(--mj-radius-card) var(--mj-radius-card) var(--mj-radius-badge) var(--mj-radius-card); background: var(--mj-primary); color: var(--mj-on-primary); }
 .time { flex: none; font-size: var(--mj-type-caption); color: var(--mj-text-mute); white-space: nowrap; }

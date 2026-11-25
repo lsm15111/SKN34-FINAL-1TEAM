@@ -34,10 +34,7 @@ const FLOW = [
 export function HowItWorks({ current }: { current?: number }) {
   return (
     <section className={`${s.group} ${s.flow}`} aria-labelledby="flow-t">
-      <div className={s.flowHead}>
-        <h2 id="flow-t" className={s.eb}>이렇게 진행돼요</h2>
-        <p className={s.note}>단계마다 AI 비서가 다음 할 일을 알려 줘요</p>
-      </div>
+      <h2 id="flow-t" className={s.eb}>이렇게 진행돼요</h2>
       <ol className={s.flowList}>
         {FLOW.map((f, i) => {
           const now = current === i;

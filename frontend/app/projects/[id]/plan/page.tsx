@@ -1,10 +1,8 @@
 // /projects/{id}/plan — 공정표. 수락한 공사 날짜가 있으면 확정 공정표(C36 폰 · D19 웹), 없으면 예상 공정표(C08).
 // 날짜 · 일수 · 인원 · 금액은 모두 API(계산 엔진) 값이에요. 화면은 나누거나 올리지 않아요.
-// v4(비서 화면 카드 창)에서는 확정 공정표 옆 칸에 AI 채팅을 따로 두지 않아요(비서가 옆에 있어요).
 // 예상 공정표 아래 단추는 공사 '지금 할 일'(단계마다 다름, 없으면 업체 보기)이에요.
 // 업체가 수락한 날짜를 바꾸자고 했으면(change_proposed) 맨 위에서 답하는 화면(공사 날짜)으로 이끌어요: 알림 · 지금 할 일이 이 주소로 와요.
 import { notFound } from "next/navigation";
-import { uiMode } from "@/components/assistant/mode";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead, WithAside } from "@/components/site/Frame";
 import { ExpectedPlan } from "@/components/plan/ExpectedPlan";
@@ -30,7 +28,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
   const crumbs = (here: string) => [{ label: "내 공사", href: "/my" }, { label: shell.name, href: base }, { label: here }];
 
   if (plan.kind === "final") {
-    const [checks, ui, sch] = await Promise.all([getChecks(shell.id), uiMode(), getSchedule(shell.id).catch(() => null)]);
+    const [checks, sch] = await Promise.all([getChecks(shell.id), getSchedule(shell.id).catch(() => null)]);
     const h = finalHead(plan);
     const change = sch?.trades.find((t) => t.dates_state === "change_proposed" && t.proposal) ?? null;
     return (
@@ -43,7 +41,7 @@ export default async function PlanPage({ params }: { params: Promise<{ id: strin
               <Button variant="text" arrow href={`${base}/schedule?view=dates`}>새 날짜 보고 답하기</Button>
             </Notice>
           ) : null}
-          <WithAside label="공사 전 할 일" aside={<FinalPlanAside plan={plan} projectId={shell.id} checks={checks} mock={shell.mock} ai={ui !== "v4"} />}>
+          <WithAside label="공사 전 할 일" aside={<FinalPlanAside plan={plan} projectId={shell.id} checks={checks} mock={shell.mock} />}>
             <FinalPlanBody plan={plan} projectId={shell.id} checks={checks} mock={shell.mock} />
           </WithAside>
         </Main>

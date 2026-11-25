@@ -1,7 +1,5 @@
 // /account — 내 정보(C45 고객 · 업체 같이). 이름 · 이메일 · 휴대폰(고객만, 가려서) · 비밀번호 · 알림(목록으로) · 도움말.
 // 로그아웃 · 탈퇴(C53, 비밀번호를 다시 받아요). 비밀번호 바꾸기는 C46(/reset-password, B2 화면)으로 가요.
-// v4: 고객은 '비서가 기억한 것'(근거 말 인용 · 지우기)을 봐요. 비서 기억 API가 아직 없으면 그 칸은 그리지 않아요.
-import { MemoryList } from "@/components/assistant/MemoryList";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
 import { TabBar } from "@/components/site/TabBar";
@@ -48,7 +46,6 @@ export default async function AccountPage() {
             <Row label="알림" href="/notifications" />
           </Rows>
         </Group>
-        {vendor ? null : <MemoryList />}
         <Group list>
           <Rows>
             {vendor ? null : <Row label="믿집 백과" href="/guide" />}

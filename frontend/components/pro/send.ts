@@ -2,7 +2,6 @@
 // 예시 모드는 개발 서버에서만 켜져요(lib/mock/v3c/mode.ts). 운영에서는 늘 lib/backend/client.ts의 call()이에요.
 // B7 규칙: 경로 속 id는 늘 enc()(encodeURIComponent)로 넣어요(CSPT). 두 번 눌러도 한 번만 돼야 하는 쓰기는
 // { idem: 키 }로 Idempotency-Key 머리를 붙여요(화면이 키를 하나 만들어 두고, 다시 누르면 같은 키 → 처음 결과).
-import { rememberVendorWrite } from "@/lib/api/assistant";
 import { call, type Schemas } from "@/lib/backend/client";
 import { MOCK } from "@/lib/mock/v3c/mode";
 
@@ -20,10 +19,7 @@ export async function send<T = unknown>(
     await wait(350);
     return {} as T;
   }
-  const out = await call<T>(method, path, body, opts?.idem ? { "Idempotency-Key": opts.idem } : undefined);
-  // 기간 답하기 · 못 받아요 · 공사 날짜를 화면에서 보냈으면 작업함 '비서 소식'의 같은 카드를 '처리됨'으로(QA r7 N4)
-  rememberVendorWrite(method, path);
-  return out;
+  return call<T>(method, path, body, opts?.idem ? { "Idempotency-Key": opts.idem } : undefined);
 }
 
 /** 파일 올리기(POST /files). 사진의 위치 정보는 서버가 지워요 */

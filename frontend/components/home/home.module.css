@@ -40,7 +40,6 @@
 
 /* 이렇게 진행돼요(폰 · 웹) */
 .flow { gap: 16px; }
-.flowHead { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; }
 .flowList { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin: 0; padding: 0; list-style: none; }
 .flowList li { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
 .flowList b { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }

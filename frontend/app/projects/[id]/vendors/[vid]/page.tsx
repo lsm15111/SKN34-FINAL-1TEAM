@@ -1,13 +1,11 @@
 // /projects/{id}/vendors/{vid} — 업체 자세히(C11 · D07 + 옆 AI 칸) · 시공 사례 크게 보기(C47, ?photo=n).
 // 가견적 = 업체가 확인한 단가 × 믿집 수량(계산 엔진). 벽지를 바꿔 보면(?grade=) 그 벽지의 가견적을 API가 다시 계산해 줘요.
 // 화면은 금액을 더하거나 빼지 않아요(다른 벽지 차이도 API grade_diff). 남의 공사 · 목록 밖 업체면 404예요.
-// v4(비서 화면 카드 창)에서는 표준견적서와 견준 %를 보이지 않아요(리드 결정 2026-11-21).
 // 자주 묻는 답 · 사업자 정보는 닫힌 접기예요(폰 · 웹). 사업자 정보는 청약 전에 알릴 업체 신원 정보(전자상거래법 제20조)라
 // 접어 두되 늘 열어 볼 수 있어요. 리뷰는 맨 아래에 별점 높은 순(같으면 최근 것 먼저) 몇 개만 보이고, 리뷰 기준 줄은
 // [리뷰 n개 모두 보기]로 가는 리뷰 전체 화면에만 둬요. 업체가 연결한 외부 리뷰는 우선 숨겨요(2026-11-24 사용자).
 // 위 섹션 띠(DetailTabs)는 내리면 위에 붙고 지금 보는 묶음을 표시해요. 띠 순서는 화면 순서(가견적 · 시공 사례 · 리뷰)와 같아요.
 import { notFound } from "next/navigation";
-import { uiMode } from "@/components/assistant/mode";
 import { AiPanel } from "@/components/ai/AiPanel";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead, WithAside } from "@/components/site/Frame";
@@ -87,7 +85,6 @@ export default async function VendorDetailPage({ params, searchParams }: {
   const reply = replyText(d.reply_hours);
   const lines = est ? estimateLines(est.lines, grade) : null;
   const count = short?.count ?? (d.shortlisted ? 1 : 0);
-  const v4 = (await uiMode()) === "v4";
   // 업체가 적은 자주 묻는 답(업체 정보 화면과 같은 순서 · 이름, QA r6 M12). 업체 글은 글 그대로 보여요
   const faqs = FAQ_LABEL.flatMap(({ key, label }) => { const answer = pr.faqs.find((f) => f.key === key)?.answer?.trim(); return answer ? [{ key, label, answer }] : []; });
 
@@ -113,15 +110,13 @@ export default async function VendorDetailPage({ params, searchParams }: {
       <AppHeader only="phone" phone={{ title: name, back: listHref, action: <VendorMenu vendorId={vid} name={name} /> }} />
       <Main>
         <PageHead title={name} crumbs={[{ label: "내 공사", href: "/my" }, { label: shell.name, href: base }, { label: "업체 보기", href: listHref }, { label: name }]} />
-        {/* v4 카드 창은 비서가 옆에 있어 v3 AI 칸을 그리지 않아요(숨긴 채 그리면 보이지 않는 대화를 불러요) */}
-        <WithAside aside={v4 ? undefined : <AiPanel screen="vendor" projectId={shell.id} ids={[vid]} context={`${name} 보는 중`} />}>
+        <WithAside aside={<AiPanel screen="vendor" projectId={shell.id} ids={[vid]} context={`${name} 보는 중`} />}>
           <section className={`${s.group} ${s.headTop}`} aria-label={`${name} 요약`}>
             <div className={s.vhead}>
               <Avatar name={name} size="l" warm />
               <div className={s.vtext}>
-                {/* 이름 줄: v3 웹은 화면 제목(h1)이 이름이라 폰에서만 보여요. v4 카드 창은 h1을 숨기고 창 제목이 '업체 자세히'라
-                    폭과 상관없이 보여요(QA r9 U2) */}
-                <p className={v4 ? s.vname : `${s.vname} ${s.phoneWord}`} aria-hidden="true">{name}</p>
+                {/* 이름 줄: 웹은 화면 제목(h1)이 이름이라 폰에서만 보여요 */}
+                <p className={`${s.vname} ${s.phoneWord}`} aria-hidden="true">{name}</p>
                 {pr.intro ? <p className={s.vintro}>{pr.intro}</p> : null}
                 <p className={s.vmeta}>{line1}</p>
                 <p className={`${s.vmeta} mj-num`}>
@@ -138,7 +133,7 @@ export default async function VendorDetailPage({ params, searchParams }: {
           <section id="est" className={`${s.group} ${s.spot}`} aria-labelledby="est-t">
             <h2 id="est-t" className="mj-sr">가견적</h2>
             {priced && est ? (
-              <BigFigure label="가견적 · 부가세 포함" value={est.total} caption={["업체 단가 × 믿집 수량", v4 ? null : compareText(est.vs_standard_pct)].filter(Boolean).join(" · ")} />
+              <BigFigure label="가견적 · 부가세 포함" value={est.total} caption={["업체 단가 × 믿집 수량", compareText(est.vs_standard_pct)].filter(Boolean).join(" · ")} />
             ) : (
               <div>
                 <p className={s.eb}>가견적</p>

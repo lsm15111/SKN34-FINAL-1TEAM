@@ -22,16 +22,13 @@ const HEADERS: Record<string, string> = {
   "cross-origin-opener-policy": "same-origin",
 };
 
-// 조사 결과 항목의 제조사 대표 그림(그 사이트에서 바로 불러와요). 서버 backend/app/assistant/linkimage.py SITES와 같은 곳만
-const MAKER_IMAGES = "https://*.lxzin.com https://www.shinhanwall.co.kr https://shinhanwall.co.kr";
-
 function policy(nonce: string, https: boolean, host: string | null): string {
   const hmr = DEV && host && HOST.test(host) ? ` ws://${host} wss://${host}` : "";
   return [
     "default-src 'self'",
     `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${DEV ? " 'unsafe-eval'" : ""}`,
     "style-src 'self' 'unsafe-inline'",
-    `img-src 'self' blob: data: ${MAKER_IMAGES}`,
+    "img-src 'self' blob: data:",
     "font-src 'self' data:",
     `connect-src 'self'${hmr}`,
     "worker-src 'self'",

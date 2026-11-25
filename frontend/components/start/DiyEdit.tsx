@@ -1,7 +1,7 @@
 "use client";
 // 잠긴 기본 정보(C50)에서도 직접 할 일은 고쳐요(PUT /projects/{id}/diy: 실측 요청 뒤에도 바꿀 수 있어요, 나머지 칸은 읽기만).
 // 확정 전 실측 요청 · 공사 시작 전 확정 업체에는 서버가 바뀐 직접 할 일을 알려요(told). 알린 업체가 있으면 그 이름을 짧게 알려요.
-// 대화 안 '우리 집 정보' 창이면 저장 뒤 창을 닫고 대화로 가요(after, 고치기 폼과 같아요). 칩은 첫 대화 · 서버 project/diy.py와 같아요.
+// '우리 집 정보' 화면(/projects/{id}/home)이면 저장 뒤 after로 가요(고치기 폼과 같아요). 칩은 첫 대화 · 서버 project/diy.py와 같아요.
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";

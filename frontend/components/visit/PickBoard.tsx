@@ -6,7 +6,6 @@
 // - booked: 실측 확정됨(C17) · picked: 수락 기다림(C19 덧그림) · 그 밖: 짧은 상태
 // - 취소(C30): 서버가 받는 상태마다 상태판과 같은 회색 글자 단추(요청 취소 · 실측 취소, cancelAct)
 // 열린 반나절 · 마감 · 내 다른 실측 · 기한은 모두 API(계산 엔진) 값이에요. 같은 반나절을 거의 같이 누르면 늦은 쪽은 409 slot_taken.
-// inCard(v4 비서 화면 카드 창 안): 창이 옆 AI 칸을 숨겨서, 웹은 고른 날 칸(반나절 · 보내기)을 본문 오른쪽에 둬요(QA r6 H1).
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, type ReactNode } from "react";
@@ -41,8 +40,7 @@ function Err({ text, id }: { text: string | null; id?: string }) {
   return text ? <p id={id} className={s.err} role="alert"><Icon name="error" size={16} />{text}</p> : null;
 }
 
-export function PickBoard({ pick, project, today, aside, inCard = false }: { pick: VisitPick; project: VisitProject; today: string; aside: ReactNode; inCard?: boolean }) {
-  const ai = inCard ? undefined : aside;
+export function PickBoard({ pick, project, today, aside }: { pick: VisitPick; project: VisitProject; today: string; aside: ReactNode }) {
   const router = useRouter();
   const toast = useToast();
   const web = useMedia(MQ.web);
@@ -181,7 +179,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
       <>
         <Main>
           <PageHead title="실측 일정" crumbs={crumbs.slice(0, 3).concat({ label: "실측 확정" })} />
-          <WithAside aside={ai}>
+          <WithAside aside={aside}>
             <Group>
               <div className={s.done}>
                 <span className={s.okc} aria-hidden="true"><Icon name="check" size={34} strokeWidth={2.6} /></span>
@@ -221,7 +219,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
     return (
       <Main>
         <PageHead title="실측 일정" crumbs={crumbs} />
-        <WithAside aside={ai}>
+        <WithAside aside={aside}>
           <Group>
             <GroupHead><Name>{v}</Name><StateTag tone={st.tone}>{st.label}</StateTag></GroupHead>
             {pick.booked ? <Sub>{eulReul(slotText(pick.booked))} 보냈어요</Sub> : null}
@@ -242,7 +240,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
     return (
       <Main>
         <PageHead title={title} crumbs={crumbs} />
-        <WithAside aside={ai}>
+        <WithAside aside={aside}>
           <Group>
             <Title as="h2">겹치는 날이 없어요</Title>
             <Sub>업체는 {rangeLong(w.start, w.end)}에 돼요.{late && pick.work_wish_on ? <><br />공사 시작({dayOnly(pick.work_wish_on)})보다 늦어요.</> : null}</Sub>
@@ -278,7 +276,7 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
     return (
       <Main>
         <PageHead title={title} crumbs={crumbs} />
-        <WithAside aside={ai}>
+        <WithAside aside={aside}>
           <Group>
             <GroupHead><Name>{v}</Name><StateTag tone={st.tone}>{st.label}</StateTag></GroupHead>
             {status === "requested" && pick.next.due_at ? <Sub>{dueText(pick.next.due_at)} 답해요</Sub> : null}
@@ -363,8 +361,8 @@ export function PickBoard({ pick, project, today, aside, inCard = false }: { pic
       <Main>
         <PageHead title={title} crumbs={crumbs} />
         {headLine ? <p className={s.headLine}>{headLine}</p> : null}
-        <WithAside aside={inCard ? undefined : <div className={s.sideStack}>{side}<div className={s.aiFill}>{aside}</div></div>}>
-          {inCard ? <div className={s.pickCols}>{calGroup}{side}</div> : calGroup}
+        <WithAside aside={<div className={s.sideStack}>{side}<div className={s.aiFill}>{aside}</div></div>}>
+          {calGroup}
           {day ? (
             <div className={s.phoneStack}>
               <Group label="오전 · 오후">

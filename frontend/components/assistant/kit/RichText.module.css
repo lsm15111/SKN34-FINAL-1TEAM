@@ -1,6 +1,0 @@
-/* AI 답 글(굵게 · 줄바꿈 · 목록). 글자 크기 · 줄 높이는 감싼 말 칸을 그대로 따라요. 긴 낱말 · 주소도 줄을 바꿔요. */
-.rich { display: grid; gap: 8px; min-width: 0; overflow-wrap: anywhere; white-space: normal; }
-.rich p { margin: 0; }
-.rich ul { margin: 0; padding-left: 20px; display: grid; gap: 4px; }
-.rich li { padding-left: 2px; }
-.rich strong { font-weight: var(--mj-weight-bold); }
