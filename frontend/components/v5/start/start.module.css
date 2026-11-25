@@ -1,0 +1,127 @@
+/* 첫 대화(/start 새로 시작) 전용: 대화 한 열 · 단계 띠 · 말 · 카드(우리 집 · 원하는 공사 · 표준견적서 요약 · 가입) · 집 확인 카드의 고르기 칸 ·
+   면적 단위 줄 · 칸 이름 옆 '?' 풀이 · 폰 머리 오른쪽 글자 단추. 색 · 글자는 --mj-* 토큰만 */
+
+/* ───── 틀: 머리 → 대화 열(따로 스크롤) ───── */
+.shell { height: 100vh; height: 100dvh; display: flex; flex-direction: column; background: var(--mj-bg); color: var(--mj-text); overflow: hidden; word-break: keep-all; overflow-wrap: anywhere; }
+.body { flex: 1; min-height: 0; width: 100%; max-width: calc(var(--mj-content-max) + 2 * var(--mj-gutter)); margin: 0 auto; padding: 0 var(--mj-gutter); display: grid; grid-template-columns: minmax(0, 1fr); }
+.col { position: relative; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--mj-fill-strong) transparent; display: flex; flex-direction: column; }
+.thread { width: 100%; max-width: 760px; margin: 0 auto; flex: 1; display: flex; flex-direction: column; }
+
+/* 단계 띠(공사 화면 단계 띠 모양): 목록 꾸밈을 빼고, 누르는 칸이 아니라 손 모양을 쓰지 않아요 */
+.stepper { position: sticky; top: 0; z-index: var(--mj-z-sticky); background: var(--mj-surface); display: flex; align-items: center; gap: 8px 16px; padding: 12px 0; border-bottom: 1px solid var(--mj-line); }
+.steps { display: flex; gap: 4px; flex: 1; min-width: 0; overflow-x: auto; scrollbar-width: none; list-style: none; margin: 0; padding: 0; }
+.steps::-webkit-scrollbar { display: none; }
+.step { flex: 1 0 auto; min-width: var(--mj-hit); border: 0; background: none; padding: 6px 0 0; min-height: var(--mj-hit-min); display: grid; gap: 6px; align-content: start; color: var(--mj-text-mute); font: inherit; font-size: var(--mj-type-caption); text-align: left; white-space: nowrap; text-decoration: none; cursor: default; }
+.step::before { content: ""; height: 3px; border-radius: var(--mj-radius-pill); background: var(--mj-line); }
+.stepDone { color: var(--mj-text-sub); }
+.stepDone::before { background: var(--mj-text); }
+.stepDone:hover { color: var(--mj-text); }
+.stepNow { color: var(--mj-primary); font-weight: var(--mj-weight-bold); }
+.stepNow::before { background: var(--mj-primary); }
+.stepLater { opacity: .6; }
+
+/* ───── 말 ───── */
+.msgs { display: flex; flex-direction: column; gap: 20px; padding: 24px 0; flex: 1; }
+.msg { display: flex; gap: 10px; align-items: flex-start; }
+.msgBody { min-width: 0; flex: 1; display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+.av { flex: none; width: 28px; height: 28px; border-radius: 50%; background: var(--mj-text); color: var(--mj-text-inverse); display: grid; place-items: center; font-weight: var(--mj-weight-bold); font-size: var(--mj-type-caption); letter-spacing: -.02em; margin-top: 2px; }
+.bubble { max-width: 620px; white-space: pre-wrap; margin: 0; line-height: var(--mj-lh-body); }
+.say { padding-top: 2px; }
+.aiTag { justify-self: start; }
+.enter { animation: rise var(--mj-dur-slow) var(--mj-ease-out); }
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+
+/* ───── 카드 바탕 ───── */
+/* 칸 너비를 카드 너비로 묶어요(minmax(0, 1fr)): 안의 긴 글 · 줄 바꿈 없는 조각이 카드와 대화 칸을 가로로 밀지 않게 */
+.card { background: var(--mj-bg); border: 1px solid var(--mj-line); border-radius: var(--mj-radius-card); padding: 20px; min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; overflow-wrap: anywhere; }
+.card h3 { margin: 0; font-size: var(--mj-type-title-s); line-height: 1.35; letter-spacing: -0.015em; }
+.done { opacity: .55; }
+.done :is(button, a, input, select) { pointer-events: none; }
+.top { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.muted { color: var(--mj-text-mute); font-size: var(--mj-type-label); }
+.num { font-variant-numeric: tabular-nums; }
+.err { font-size: var(--mj-type-label); color: var(--mj-danger); }
+
+/* ───── 단추 · 칩 ───── */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: var(--mj-btn-h-md); padding: 0 18px; border-radius: var(--mj-radius-btn); border: 1px solid var(--mj-line-control); background: var(--mj-bg); color: var(--mj-text); font: inherit; font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-body); cursor: pointer; text-decoration: none; white-space: nowrap; }
+.btn:hover { background: var(--mj-surface-sub); }
+.pri { background: var(--mj-primary); border-color: var(--mj-primary); color: var(--mj-on-primary); font-weight: var(--mj-weight-bold); }
+.pri:hover { background: var(--mj-primary-hover); border-color: var(--mj-primary-hover); }
+.btn[disabled], .btn[aria-disabled="true"] { background: var(--mj-fill); border-color: var(--mj-line); color: var(--mj-text-mute); cursor: not-allowed; }
+.btn[aria-busy="true"] { cursor: progress; }
+.sm { min-height: var(--mj-btn-h-sm); padding: 0 14px; font-size: var(--mj-type-label); }
+.text { border: 0; background: none; color: var(--mj-link); font: inherit; font-weight: var(--mj-weight-semibold); font-size: var(--mj-type-label); cursor: pointer; padding: 0 4px; min-height: var(--mj-hit-min); min-width: var(--mj-hit-min); justify-content: center; display: inline-flex; align-items: center; gap: 4px; text-decoration: none; white-space: nowrap; }
+.text:hover { text-decoration: underline; text-underline-offset: 3px; }
+.gray { color: var(--mj-text-mute); }
+.chip { display: inline-flex; align-items: center; gap: 6px; min-height: var(--mj-chip-h); padding: 0 16px; border-radius: var(--mj-radius-chip); border: 1px solid var(--mj-line-control); background: var(--mj-bg); font: inherit; font-size: var(--mj-type-label); color: var(--mj-text); cursor: pointer; white-space: nowrap; text-decoration: none; }
+.chip:hover { background: var(--mj-surface-sub); }
+.chip[aria-pressed="true"] { border-color: var(--mj-primary); background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); font-weight: var(--mj-weight-bold); }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* 출처 이름표: 믿집 계산(계산 엔진) · 믿집 안내(정해 둔 글) */
+.src { display: inline-flex; align-items: center; gap: 4px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); background: var(--mj-fill); border-radius: var(--mj-radius-badge); padding: 1px 8px; white-space: nowrap; }
+
+/* ───── 칸(우리 집 · 원하는 공사) ───── */
+.lbl { font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); }
+.field { display: grid; gap: 8px; }
+.sel { appearance: none; min-height: var(--mj-btn-h-md); min-width: 112px; border: 1px solid var(--mj-line-control); border-radius: var(--mj-radius-field); background: var(--mj-bg) no-repeat; padding: 0 34px 0 12px; font: inherit; color: inherit;
+  background-image: linear-gradient(45deg, transparent 50%, var(--mj-text-mute) 50%), linear-gradient(135deg, var(--mj-text-mute) 50%, transparent 50%);
+  background-position: calc(100% - 17px) 50%, calc(100% - 12px) 50%; background-size: 5px 5px; }
+.sels { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sels select { flex: 1 1 140px; max-width: 220px; }
+/* 면적 칸 + 단위 고르기(㎡ | 평)를 한 줄에(고치기 화면 info.module.css와 같은 모양). 단위 칸(46)은 입력 칸(48) 가운데에 맞춰요 */
+.areaRow { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.areaRow > :first-child { flex: 1 1 auto; min-width: 0; }
+.unit { flex: none; width: 112px; margin-top: 1px; }
+
+/* ───── 표준견적서 요약: 큰 금액 상자 · 큰 줄 ───── */
+.kpi { display: grid; gap: 2px; padding: 12px 16px; border: 1px solid var(--mj-line); border-radius: var(--mj-radius-field); }
+.kpi > span, .kpi small { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+.kpi b { font-size: var(--mj-size-28); font-weight: var(--mj-weight-heavy); letter-spacing: var(--mj-track-amount); line-height: var(--mj-lh-tight); }
+.lines { list-style: none; margin: 0; padding: 0; display: grid; font-size: var(--mj-type-label); }
+.lines li { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; padding: 6px 0; border-top: 1px solid var(--mj-line-soft); }
+.lines li:first-child { border-top: 0; }
+.lines span { color: var(--mj-text-sub); min-width: 0; text-wrap: pretty; }
+/* 금액은 한 줄로(폰 360에서 '22만 / 800원'으로 갈리지 않게), 긴 줄 이름 쪽이 줄을 바꿔요 */
+.lines b { flex: none; white-space: nowrap; }
+/* 큰 줄 머리: 줄 금액은 공급가(부가세 별도)라 합계(부가세 포함)와 기준이 달라요 */
+.linesHead { margin: 0 0 2px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); }
+
+/* ───── 칸 이름 + '?'. 보이는 동그라미는 20px, 누를 곳은 40px(바깥 여백을 줄여 줄 높이는 그대로) ───── */
+.lblRow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.help { position: relative; display: inline-flex; align-items: center; }
+.helpBtn { display: inline-grid; place-items: center; flex: none; width: var(--mj-hit-min); height: var(--mj-hit-min); margin: calc((20px - var(--mj-hit-min)) / 2); padding: 0; border: 0; border-radius: 50%; background: none; color: var(--mj-text-mute); font: inherit; cursor: pointer; }
+.helpBtn > span { display: grid; place-items: center; width: 20px; height: 20px; border: 1.5px solid currentColor; border-radius: 50%; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); line-height: 1; }
+.helpBtn:hover { background: var(--mj-fill); color: var(--mj-text); }
+.helpBtn[aria-expanded="true"] { color: var(--mj-primary); }
+.helpBtn:focus-visible { border-radius: 50%; }
+.helpPop {
+  position: absolute; top: calc(100% + 8px); left: -8px; z-index: var(--mj-z-pop);
+  width: max-content; max-width: min(300px, calc(100vw - 2 * var(--mj-gutter)));
+  display: grid; gap: 12px; padding: 12px 14px; border-radius: var(--mj-radius-card); background: var(--mj-surface); color: var(--mj-text);
+  box-shadow: 0 0 0 1px var(--mj-line), var(--mj-shadow-overlay);
+  font-size: var(--mj-type-label); font-weight: var(--mj-weight-regular); line-height: var(--mj-lh-body); white-space: normal; text-align: left;
+}
+.helpPop[hidden] { display: none; }
+.tipRow { display: grid; gap: 2px; }
+.tipHead { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.tipMore { display: inline-flex; align-items: center; min-height: var(--mj-hit-min); margin: -10px 0; color: var(--mj-link); font-weight: var(--mj-weight-semibold); text-decoration: none; white-space: nowrap; }
+.tipMore:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* 폰 머리 오른쪽 글자 단추(손님 로그인 · 고객 내 공사) */
+.headLink { display: inline-flex; align-items: center; min-height: var(--mj-hit); padding: 0 10px; border-radius: var(--mj-radius-field); color: var(--mj-link); font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); text-decoration: none; white-space: nowrap; }
+.headLink:hover { background: var(--mj-primary-weak); }
+
+@media (max-width: 520px) {
+  .stepper { padding: 6px 0 8px; }
+  /* 폰 360: 칸은 40px부터 · 긴 이름은 글 너비, 남는 폭은 고르게. 이름은 칸 가운데라 옆 칸 이름과 붙어 보이지 않아요 */
+  .step { flex: 1 1 var(--mj-hit-min); min-width: auto; text-align: center; }
+  .av { display: none; }
+  .msgs { padding: 16px 0; gap: 16px; }
+  .card { padding: 16px; gap: 14px; }
+  .sels select { max-width: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .enter { animation: none; }
+}

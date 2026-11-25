@@ -1,0 +1,70 @@
+/* 기본 정보(C02 · C03 · D11 · C50) */
+.layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; min-width: 0; }
+.form { display: flex; flex-direction: column; gap: var(--mj-gap-group); min-width: 0; }
+.group { display: flex; flex-direction: column; gap: 16px; padding: var(--mj-pad-group); border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); min-width: 0; }
+.grp { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
+.f { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.fl { font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); color: var(--mj-text); }
+.cols { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.part { display: flex; flex-direction: column; gap: 12px; padding-top: 12px; border-top: 1px solid var(--mj-line); }
+/* 고를 것이 하나뿐인 칸(공사 종류 · 주거 종류): 이름 + 값 한 줄(11-24) */
+.fixed { display: flex; align-items: baseline; gap: 12px; margin: 0; font-size: var(--mj-type-label); }
+.fixed > span { font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); }
+.fixed > b { font-weight: var(--mj-weight-bold); color: var(--mj-text); }
+/* 면적 칸 + 단위 고르기(㎡ | 평)를 한 줄에. 단위 칸(46)은 입력 칸(48) 가운데에 맞춰요 */
+.areaRow { display: flex; align-items: flex-start; gap: 8px; min-width: 0; }
+.areaRow > :first-child { flex: 1 1 auto; min-width: 0; }
+.unit { flex: none; width: 112px; margin-top: 1px; }
+
+/* 지역 · 날짜 고르기 칸(입력 칸과 같은 모양) */
+.pick {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; max-width: var(--mj-field-max, 520px);
+  min-height: var(--mj-field-h, 48px); padding: 0 14px; border: 1px solid var(--mj-line-control); border-radius: var(--mj-radius-field);
+  background: var(--mj-field-bg); color: var(--mj-text); font: inherit; font-size: var(--mj-type-body); text-align: left; cursor: pointer;
+}
+.pick:hover { border-color: var(--mj-text-sub); }
+.pick > svg { flex: none; color: var(--mj-text-sub); }
+.bad { border: 2px solid var(--mj-danger); }
+.ph { color: var(--mj-text-placeholder, var(--mj-text-mute)); }
+.err { display: flex; align-items: flex-start; gap: 6px; color: var(--mj-danger); font-size: var(--mj-type-label); }
+.err > svg { flex: none; margin-top: 2px; }
+
+/* 맨 위 '고칠 칸이 1개 있어요 · 면적'(I6 B · L11) */
+.summary { display: flex; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: var(--mj-radius-card); background: var(--mj-danger-weak); color: var(--mj-on-danger-weak, var(--mj-danger)); font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); }
+.summary > svg { flex: none; margin-top: 1px; }
+.formErr { display: flex; align-items: flex-start; gap: 6px; color: var(--mj-danger); font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); }
+.saved { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 0 4px; color: var(--mj-text-mute); font-size: var(--mj-type-caption); text-align: center; }
+
+/* 웹 오른쪽 '넣은 내용'(D11) */
+.aside { display: none; }
+.eb { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
+.rows { display: flex; flex-direction: column; margin: 0; }
+.row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--mj-line); }
+.row:last-child { border-bottom: 0; }
+.row dt { display: flex; flex-direction: column; gap: 2px; font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); }
+.row dt span { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-regular); color: var(--mj-text-mute); }
+.row dd { margin: 0; font-size: var(--mj-type-label); text-align: right; }
+.note { font-size: var(--mj-type-caption); color: var(--mj-text-mute); text-align: center; }
+
+/* 폰 · 태블릿 아래 단추 띠. display: contents라 띠가 body에 붙어요(sticky) */
+.phoneBar { display: contents; }
+
+@media (min-width: 768px) {
+  .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 16px 20px; }
+}
+@media (min-width: 1024px) {
+  .layout { grid-template-columns: minmax(0, 1fr) var(--mj-aside-w); }
+  .aside {
+    display: flex; flex-direction: column; gap: 12px; position: sticky; top: calc(var(--mj-sticky-top) + 16px);
+    padding: 18px; border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge);
+  }
+  .phoneBar { display: none; }
+  .form .saved { display: none; }
+}
+
+/* 잠긴 기본 정보(C50) */
+.locked { display: flex; align-items: flex-start; gap: 8px; padding: 14px 16px; border-radius: var(--mj-radius-card); background: var(--mj-warn-weak); color: var(--mj-on-warn-weak); font-size: var(--mj-type-label); line-height: var(--mj-lh-body); }
+.locked > svg { flex: none; margin-top: 2px; }
+/* 잠긴 뒤에도 고치는 직접 할 일(DiyEdit): 저장 단추는 오른쪽 */
+.diySave { display: flex; justify-content: flex-end; }
+.meta { font-size: var(--mj-type-label); color: var(--mj-text-sub); }
