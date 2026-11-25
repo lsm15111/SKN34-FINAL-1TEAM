@@ -1,10 +1,7 @@
 """담당들이 같이 쓰는 무료 모드 답 단계 (agents.md 10.2~10.4): 검증된 카드 → 조각 문장 뽑기 → 정직한 모름.
 
-- 받아들이기: 카드 점수 ≥ T_CARD 이고 카드 근거 조각이 같은 질문의 검색 위 8개에 있음(맞물림), 또는 점수 ≥ T_HIGH.
+- 받아들이기: 카드 점수 ≥ T_CARD 이고 카드 근거 조각이 같은 질문의 검색 위 5개에 있음(맞물림), 또는 점수 ≥ T_HIGH.
   기준값은 E3 dev에서 골랐다(evaluation/v3/e3_answers.py, docs/v3/verification/b5.md).
-- 의미 검색 순위(KB.dense)가 있고 위 규칙으로 못 받았으면: 근거 조각이 의미 순위 위 D_LOCK개에 있는 카드를
-  맞물림으로 보고 덤 BD를 더해 한 번 더 본다. 이미 받을 카드가 있으면 순서를 바꾸지 않는다.
-  값은 dev로만 골랐다(docs/v3/verification/dense-cards.md).
 - 숫자 검사 허용 글: 카드 글 + 인용 조각 원문(카드는 오프라인 검사를 통과한 글), 조각 문장은 그 조각 원문.
 - 카드 · 조각 · 계산 결과 밖의 말은 하지 않는다. 못 찾으면 '확인하지 못했어요' + 확인할 곳 + 다음 할 일.
 """
@@ -18,7 +15,6 @@ from app.agent.v3.schemas import (
     AskSlot,
     CalcBox,
     CompareTable,
-    GeneralFacts,
     PolicyFlag,
     ProjectFacts,
     Route,
@@ -35,31 +31,9 @@ from app.knowledge import bm25, cards, extract, search3
 T_CARD = 0.55  # 맞물림이 있을 때 받는 점수(열쇠 점수 + 덤). E3 dev 격자에서 고름(b5.md 표)
 T_HIGH = 0.62  # 맞물림이 없어도 받는 열쇠 점수
 B3, B8 = 0.10, 0.05  # 카드 근거 조각이 검색 위 3개 · 위 8개에 있을 때 덤(E3 dev로 고름)
-# 근거 조각이 의미 검색 위 D_LOCK개에 있으면 의미 맞물림 + 덤 BD(dense-cards.md, dev로 고름)
-D_LOCK, BD = 3, 0.15
 NEAR = 0.05  # 1등과 이만큼 가까운 카드는 '이것도 궁금하세요?'로
-DIY_PENALTY = (
-    0.10  # 셀프를 묻지 않은 질문에서 셀프 카드 열쇠 점수를 깎는 만큼(T_HIGH 0.62 → 맞물림 필요)
-)
-T_NEAR_ASK = 0.40  # 모름일 때 이 점수 이상인 카드 열쇠 질문을 '이걸 물으셨나요?' 버튼으로
 # 정해 둔 글로 답하는 정책 질문은 조각 문장을 붙이지 않는다(추천 · 금액 · 법률은 원문 한 줄이 오해를 부름)
 NO_EXTRACT = frozenset({"price", "vendor_reco", "brand_reco", "legal_case"})
-# 믿집이 견적 · 공정표를 만드는 공종. 그 밖은 범위 밖이라 묶음 제목에 '알아 두기'를 붙여요(agent-context.md 4.1)
-OWN_TRADES = frozenset({"dobae", "mokgong", "common"})
-# 업체에 물을 말을 찾는 질문: 있으면 카드의 '업체에 물을 말' 표를 펼쳐요(없으면 이어 물을 질문으로)
-ASK_VENDOR = re.compile(
-    r"물어\s{0,2}볼|물어봐|물어\s{0,2}봐야|물을\s{0,2}(?:거|것|게|말)|뭐\s{0,2}물어|질문할|확인할|체크|따져"
-)
-METHODS_LEAD = "업체가 쓰는 방법은 이래요."
-ASK_LEAD = "업체에 이렇게 물어보세요."
-
-
-def trade_title(code: str | None) -> str:
-    """묶음 제목: '[도배]' · 범위 밖은 '[전기 · 알아 두기]'"""
-    if not code or code not in BY_CODE:
-        return ""
-    ko = BY_CODE[code].ko  # type: ignore[index]
-    return f"[{ko}]" if code in OWN_TRADES else f"[{ko.split(' · ')[0]} · 알아 두기]"
 
 
 @dataclass
@@ -69,9 +43,6 @@ class KB:
     ix: bm25.Index
     cards: cards.CardSet
     tags: Mapping[str, str] = field(default_factory=lambda: TAG_TO_CODE)
-    dense: tuple[
-        str, ...
-    ] = ()  # 이 턴 질문의 의미 검색 순위(rid). chat.service가 임베딩을 만들 수 있을 때 채워요
 
 
 @dataclass
@@ -87,13 +58,6 @@ class Task:
     slot: str | None = None
     value: str | None = None
     asked: str = ""  # 되물은 담당이 남긴 원래 질문(칸 답일 때)
-    general: GeneralFacts | None = (
-        None  # 질문의 평수 · 예시 평수로 센 계산 엔진 값(프로젝트와 별개)
-    )
-    # 질문 분석기(LLM 모드 데이터 화면)가 고른 화면 항목 키('vendor.truck' · 'standard.removal')와 할 일.
-    # 있으면 견적 설명이 글 맞추기 대신 그 줄 · 그 비교로 답해요(screen_tools)
-    item: str | None = None
-    want: str | None = None  # line · compare
 
 
 @dataclass
@@ -106,9 +70,6 @@ class Part:
     ask: AskSlot | None = None
     unknown: list[str] = field(default_factory=list)
     suggest: list[str] = field(default_factory=list)
-    near: list[str] = field(
-        default_factory=list
-    )  # 모름일 때만 보일 가까운 카드 질문(turn.finish가 고름)
     used_cards: list[str] = field(default_factory=list)
     used_chunks: list[str] = field(default_factory=list)
     dropped: list[str] = field(default_factory=list)
@@ -133,36 +94,21 @@ class Part:
 
 
 def accept(
-    matches: list[cards.Match], top: list[str], near: list[str] | None = None
+    matches: list[cards.Match], top: list[str]
 ) -> tuple[cards.Match | None, list[cards.Match]]:
     """(받아들인 카드, 점수 순 후보). 점수 = 열쇠 점수 + 검색 맞물림 덤(인용 조각이 위 3개 B3 · 위 8개 B8).
-    맞물림이 없으면 열쇠 점수 ≥ T_HIGH일 때만 받는다.
-
-    near: 의미 검색 순위(조각 ref, 가까운 순). 위 규칙으로 못 받았을 때만 쓴다: 인용 조각이 near 위 D_LOCK개에
-    있는 카드에 덤 BD를 더해 다시 줄 세우고, 1등이 그 카드이고 점수 ≥ T_CARD면 받는다."""
-
-    def rank(dlock: set[str]) -> list[tuple[float, cards.Match]]:
-        out = []
-        for m in matches:
-            cites = set(m.card.cites())
-            bonus = B3 if cites & set(top[:3]) else (B8 if cites & set(top) else 0.0)
-            if cites & dlock:
-                bonus = max(bonus, BD)
-            out.append((m.score + bonus if bonus else m.score, m))
-        return sorted(out, key=lambda p: -p[0])
-
-    ranked = rank(set())
-    if not ranked:
-        return None, []
-    s, m = ranked[0]
-    if (set(m.card.cites()) & set(top) and s >= T_CARD) or m.score >= T_HIGH:
-        return m, [x for _, x in ranked]
-    dlock = set((near or ())[:D_LOCK])
-    if dlock:
-        again = rank(dlock)
-        s, m = again[0]
-        if set(m.card.cites()) & dlock and s >= T_CARD:
-            return m, [x for _, x in again]
+    맞물림이 없으면 열쇠 점수 ≥ T_HIGH일 때만 받는다."""
+    ranked: list[tuple[float, cards.Match]] = []
+    for m in matches:
+        cites = set(m.card.cites())
+        bonus = B3 if cites & set(top[:3]) else (B8 if cites & set(top) else 0.0)
+        ranked.append((m.score + bonus if bonus else m.score, m))
+    ranked.sort(key=lambda p: -p[0])
+    for s, m in ranked:
+        locked = bool(set(m.card.cites()) & set(top))
+        if (locked and s >= T_CARD) or m.score >= T_HIGH:
+            return m, [x for _, x in ranked]
+        break
     return None, [x for _, x in ranked]
 
 
@@ -172,8 +118,9 @@ def card_section(card: cards.AnswerCard, *, route: Route, trade: TradeCode | Non
     def sent(x: cards.CardSentence | None) -> Sentence | None:
         return Sentence(text=x.text, cites=[*x.cites, tag]) if x else None
 
+    ko = BY_CODE[card.trade].ko if card.trade in BY_CODE else ""
     return Section(
-        title=trade_title(card.trade),
+        title=f"[{ko}]" if ko else "",
         sentences=[sent(x) for x in card.answer],  # type: ignore[misc]
         caution=sent(card.caution),
         tip=sent(card.tip),
@@ -184,52 +131,15 @@ def card_section(card: cards.AnswerCard, *, route: Route, trade: TradeCode | Non
     )
 
 
-def card_tables(
-    part: Part, c: cards.AnswerCard, q: str, allowed: str, *, route: Route, trade: TradeCode | None
-) -> None:
-    """카드의 방법 표 · 업체에 물을 말 표(agent-context.md 4.2). 물을 말은 질문이 그걸 찾을 때만 펼치고,
-    아니면 그 카드의 물을 말 열쇠 질문을 이어 물을 질문 맨 앞에 둬요."""
-    srcs = [s.model_dump(include={"ref", "title", "kind", "publisher"}) for s in c.sources]
-    if c.methods:
-        sec = Section(title="[방법]", sentences=[Sentence(text=METHODS_LEAD)], source="card",
-                      route=route, trade=trade, sources=srcs, table=[[m.name, m.when] for m in c.methods])  # fmt: skip
-        part.add(sec, allowed)
-    if not c.vendor_ask:
-        return
-    if ASK_VENDOR.search(q or ""):
-        sec = Section(title="[업체에 물을 말]", sentences=[Sentence(text=ASK_LEAD)], source="card",
-                      route=route, trade=trade, sources=srcs, copyable=True,
-                      table=[[a.q, a.why] for a in c.vendor_ask])  # fmt: skip
-        part.add(sec, allowed)
-    else:
-        key = next((k for k in c.keys if ASK_VENDOR.search(k)), None)
-        if key:
-            part.suggest.insert(0, key)
-
-
 def card_allowed(kb: KB, card: cards.AnswerCard) -> str:
     texts = [x.text for x in card.answer] + [x.text for x in (card.caution, card.tip) if x]
-    texts += [x.text for x in (*card.methods, *card.vendor_ask)]
     texts += [kb.ix.by_ref[r].chunk.text for r in card.cites() if r in kb.ix.by_ref]
     return "\n".join(texts)
 
 
-# 검색 · 발췌 글에서 빼는 말: 계산 엔진이 이미 받아 쓰는 시작 날짜 · 집 크기('12월 1일부터 · 32평이에요').
-# 남겨 두면 숫자 조각이 날짜 많은 법령 · 보고서 글과 맞물려요(3300 날짜 질문에 층간소음 규칙이 뽑혔어요)
-FACT_WORDS = re.compile(
-    r"\d{1,2}\s{0,1}월\s{0,1}\d{1,2}\s{0,1}일(?:부터|에|까지|쯤|경|로)?|"
-    r"\d{1,3}(?:\.\d)?\s{0,1}(?:평형|평|㎡|m2|제곱미터)(?:이에요|이요|이고|이면|인데|이라서|이라|대|짜리|형)?"
-)
-
-
-def query_of(q: str) -> str:
-    """검색 · 발췌에 쓰는 질문 글(시작 날짜 · 집 크기를 뺌). 다 빠지면 원래 글."""
-    return re.sub(r"\s{2,}", " ", FACT_WORDS.sub(" ", q)).strip() or q
-
-
 def search(kb: KB, q: str, trade: TradeCode | None) -> bm25.Result:
     want = [trade] if trade and trade != "common" else []
-    return search3.search(kb.ix, query_of(q), trades=want, tags=kb.tags, k=8, dense=kb.dense)
+    return search3.search(kb.ix, q, trades=want, tags=kb.tags, k=8)
 
 
 def knowledge(
@@ -243,46 +153,31 @@ def knowledge(
     facts: ProjectFacts | None = None,
     allow_extract: bool = True,
     policy: list[PolicyFlag] | tuple = (),
-    also: list[TradeCode] | tuple = (),
 ) -> str:
-    """카드 → 조각 문장 → 모름 순서로 part에 담는다. 어느 길로 답했는지 돌려준다(card · extract · unknown).
-
-    also: 관문이 함께 고른 다른 공종. 카드는 trade + also + 공통에서 찾는다(검색 무게는 trade만).
-    """
+    """카드 → 조각 문장 → 모름 순서로 part에 담는다. 어느 길로 답했는지 돌려준다(card · extract · unknown)."""
     hits = search(kb, q, trade)
     top = [h.ref for h in hits.hits[:8]]
-    by_rid = kb.ix.by_rid
-    near = [by_rid[r].chunk.ref for r in kb.dense if r in by_rid] if kb.dense else None
-    want = [trade, *(t for t in also if t != trade)] if trade and trade != "common" else None
+    want = [trade] if trade and trade != "common" else None
     matches = cards.find(kb.cards, q, trades=want, intents=intents, k=4)
     # 검색 맞물림 후보: 위 조각을 인용한 카드(열쇠 말이 달라도 근거가 같은 카드)
     seen = {m.card.id for m in matches}
     allow = set(want or ()) | {"common"} if want else None
     extra = [
-        i for r in [*top, *(near or ())[:D_LOCK]] for i in kb.cards.by_cite.get(r, [])
+        i for r in top for i in kb.cards.by_cite.get(r, [])
         if kb.cards.cards[i].id not in seen and (allow is None or kb.cards.cards[i].trade in allow)
         and (intents is None or kb.cards.cards[i].intent in intents)
     ]  # fmt: skip
     matches += cards.score(kb.cards, q, list(dict.fromkeys(extra)))
-    if "diy" not in set(policy):
-        # 셀프를 묻지 않았으면 셀프 카드는 점수를 깎아, 검색 맞물림이 있을 때만 받게 해요(r2 점검 C16).
-        # 통째로 빼면 '곰팡이 위 덧칠'처럼 셀프 카드가 맞는 답까지 사라져서(1,511개 점검) 깎기만 해요
-        matches = [
-            cards.Match(m.card, round(m.score - DIY_PENALTY, 4), m.key) if _diy_card(m.card) else m
-            for m in matches
-        ]
-    best, matches = accept(matches, top, near)
+    best, matches = accept(matches, top)
     if best is not None:
         c = best.card
-        # 함께 고른 공종의 카드면 묶음 공종도 그 공종으로
-        own = c.trade if c.trade in also and c.trade != trade else trade
-        use_card(part, kb, c, route=route, trade=own, facts=facts, q=q, score=best.score)  # type: ignore[arg-type]
+        use_card(part, kb, c, route=route, trade=trade, facts=facts, score=best.score)
         part.suggest.extend(
-            m.key for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD
+            m.card.keys[0] for m in matches[1:] if best.score - m.score < NEAR and m.score >= T_CARD
         )
         return "card"
     if allow_extract and hits.enough and not (NO_EXTRACT & set(policy)):
-        quotes = extract.pick(kb.ix, query_of(q), hits.hits)
+        quotes = extract.pick(kb.ix, q, hits.hits)
         if quotes:
             part.used_chunks.extend(x.ref for x in quotes)
             lead = (
@@ -299,7 +194,7 @@ def knowledge(
                         Sentence(text=f"“{x.text}” ({x.kind_ko} · {x.title[:40]})", cites=[x.ref])
                     )
             sec = Section(
-                title=trade_title(trade),
+                title=f"[{BY_CODE[trade].ko}]" if trade and trade in BY_CODE else "",
                 sentences=sents, source="extract", route=route, trade=trade,
                 sources=[{"ref": x.ref, "title": x.title, "kind": x.kind, "publisher": x.publisher} for x in quotes],
             )  # fmt: skip
@@ -310,56 +205,9 @@ def knowledge(
             part.add(sec, allowed)
             if part.sections:
                 return "extract"
-    where = where_for(q, trade)
-    part.unknown.append(templates.UNKNOWN)
-    if where:
-        part.unknown.append(templates.UNKNOWN_WHERE.format(where=where))
-    # 받지 못한 가까운 카드는 '이걸 물으셨나요?' 버튼 후보로(맞은 열쇠 질문 그대로). 답 전체가 모름일 때만 보여요
-    part.near.extend(m.key for m in matches[:2] if m.score >= T_NEAR_ASK)
+    where = BY_CODE[trade].check_where if trade and trade in BY_CODE else "실측 때 업체"
+    part.unknown.extend([templates.UNKNOWN, templates.UNKNOWN_WHERE.format(where=where)])
     return "unknown"
-
-
-def _diy_card(c: cards.AnswerCard) -> bool:
-    return "diy" in c.policy or c.kind == "셀프"
-
-
-# 공통 질문의 '확인할 곳'은 주제로 고른다(늘 '관리사무소 · 1372'면 실측 · 일정 질문에 엉뚱해요)
-APT_WORDS = re.compile(
-    r"관리사무소|이웃|소음|엘리베이터|승강기|동의서|공사\s{0,2}시간|주차|입주민|게시"
-)
-DISPUTE_WORDS = re.compile(
-    r"하자|분쟁|환불|위약금|피해|소비자|보상|배상|사기|폐업|연락이?\s{0,2}(?:안|끊)|계약\s{0,2}(?:해제|해지|취소)"
-    r"|빼고\s{0,2}시공|다른\s{0,2}자재|내용증명"
-)
-# 확인할 곳을 고르는 말(r2 점검): 업체 고르기 · 견적 비교는 업체에 물으라고 하지 않고, 공사 뒤 · 중은 시공한 업체로
-CHOICE_WORDS = re.compile(
-    r"업체\s{0,2}(?:고르|선택|비교)|포트폴리오|제일\s{0,2}싼|싼\s{0,2}업체|실측\s{0,2}없이|사진만\s{0,2}보고|견적\s{0,2}(?:차이|비교)"
-)
-CONTRACT_WORDS = re.compile(r"계약서|특약|계약금|중도금|잔금")
-AFTER_WORDS = re.compile(
-    r"보수\s{0,2}요청|벌어졌|벌어지|들떴|들뜨|찍혀|파였|얼룩|저절로|하고\s{0,2}나서|끝나고|끝난\s{0,2}뒤|시공한|"
-    r"새로\s{0,2}단|생겼|불량"
-)
-DURING_WORDS = re.compile(r"굳기\s{0,2}전|공사\s{0,2}중|시공\s{0,2}중")
-
-
-def where_for(q: str, trade: TradeCode | None) -> str | None:
-    """'…에 물어보시면 정확해요'의 확인할 곳. None이면 그 줄을 빼요."""
-    if CHOICE_WORDS.search(q):
-        return None
-    if APT_WORDS.search(q):
-        return "관리사무소"
-    if DISPUTE_WORDS.search(q):
-        return "1372 소비자상담센터"
-    if CONTRACT_WORDS.search(q):
-        return "표준계약서 · 1372 소비자상담센터"
-    if AFTER_WORDS.search(q):
-        return "시공한 업체"
-    if DURING_WORDS.search(q):
-        return "시공하는 업체"
-    if trade and trade in BY_CODE and trade != "common":
-        return BY_CODE[trade].check_where
-    return "실측 때 업체"
 
 
 def use_card(
@@ -370,17 +218,14 @@ def use_card(
     route: Route,
     trade: TradeCode | None,
     facts: ProjectFacts | None,
-    q: str = "",
     score: float = 1.0,
 ) -> None:
-    """카드 하나를 몫에 담는다: 묶음 문장 + 방법 · 물을 말 표 + 비교표 · 계산 상자 · 되묻기."""
+    """카드 하나를 몫에 담는다: 묶음 문장 + 비교표 · 계산 상자 · 되묻기."""
     part.used_cards.append(c.tag)
     part.used_chunks.extend(c.cites())
     part.scores[c.tag] = score
-    allowed = card_allowed(kb, c)
-    part.add(card_section(c, route=route, trade=trade), allowed)
-    card_tables(part, c, q, allowed, route=route, trade=trade)
-    _card_extras(part, c, facts, q)
+    part.add(card_section(c, route=route, trade=trade), card_allowed(kb, c))
+    _card_extras(part, c, facts)
 
 
 @dataclass
@@ -435,7 +280,7 @@ def drop_promise(part: Part) -> None:
                 x.text = templates.RECO_SHORT.get(x.text, x.text)
 
 
-def _card_extras(part: Part, c: cards.AnswerCard, facts: ProjectFacts | None, q: str = "") -> None:
+def _card_extras(part: Part, c: cards.AnswerCard, facts: ProjectFacts | None) -> None:
     """카드의 비교표 · 계산 상자 · 되묻기. 숫자는 facts(계산 엔진)에 있을 때만 상자로."""
     if c.compare:
         t = c.compare
@@ -457,40 +302,13 @@ def _card_extras(part: Part, c: cards.AnswerCard, facts: ProjectFacts | None, q:
         box = calc_box(cc.ref, facts, label=cc.label)
         if box is not None:
             part.calc.append(box)
-    if c.ask and not slot_known(c.ask.slot, facts) and not said_in(c.ask.question, q):
+    if c.ask and not slot_known(c.ask.slot, facts):
         part.ask = AskSlot(
             trade=c.trade,
             slot=c.ask.slot,
             question=c.ask.question,
             options=c.ask.options,  # type: ignore[arg-type]
         )
-
-
-# 되묻기 질문에서 뜻 없는 말(질문 꼴 · 흔한 낱말)을 빼고, 남은 낱말이 고객 질문에 이미 있으면 묻지 않아요
-_ASK_STOP = frozenset(
-    {
-        "있나요",
-        "있어요",
-        "없어요",
-        "있으세요",
-        "어떤",
-        "어느",
-        "얼마나",
-        "집에",
-        "벽에",
-        "하세요",
-        "해요",
-    }
-)
-
-
-def said_in(question: str, q: str) -> bool:
-    """되묻기 질문의 핵심 낱말(예: '곰팡이' · '물자국')이 고객 질문에 이미 있나(r2 점검 C23)."""
-    for w in re.findall(r"[가-힣]{2,}", question or ""):
-        w = re.sub(r"(?:이나|이랑|이|가|나|은|는|을|를|에|도|요)$", "", w)
-        if len(w) >= 2 and w not in _ASK_STOP and w in (q or ""):
-            return True
-    return False
 
 
 def slot_known(slot: str, facts: ProjectFacts | None) -> bool:
@@ -520,11 +338,6 @@ def calc_box(ref: str, facts: ProjectFacts | None, label: str = "") -> CalcBox |
             if ln.key == key:
                 return line_box(ln)
         return None
-    if ref == "standard.rolls" and facts.standard and facts.standard.rolls is not None:
-        st = facts.standard  # 벽지 롤 수(계산 엔진 calc.rolls, 보이기용 · 돈은 벽지 평으로 세요)
-        return CalcBox(
-            label=label or "벽지 롤 수", ref=ref, qty=st.rolls, unit="롤", note=st.rolls_text,
-        )  # fmt: skip
     if ref == "plan.range" and facts.plan:
         p = facts.plan
         return CalcBox(
@@ -538,15 +351,4 @@ def line_box(ln) -> CalcBox:
     return CalcBox(
         label=ln.name, ref=f"standard.lines.{ln.key}", qty=ln.qty, unit=ln.unit,
         unit_price=ln.unit_price, amount=ln.amount, in_total=ln.state in ("included", "separate"),
-    )  # fmt: skip
-
-
-def screen_box(ln, vendor: str) -> CalcBox:
-    """보던 화면(업체 자세히)의 가견적 줄 상자. 값은 화면과 같은 계산 엔진 값 그대로.
-    '선택' 줄(퍼티 · 운송비, ADR 0006)은 금액이 있어도 합계 밖이에요(화면 '선택 · 합계 밖')."""
-    tag = " · 선택" if ln.optional else ""
-    return CalcBox(
-        label=f"{vendor} {ln.name}{tag}".strip(), ref=f"screen.vendor.lines.{ln.key}", qty=ln.qty,
-        unit=ln.unit, unit_price=ln.unit_price, amount=ln.amount,
-        in_total=ln.amount > 0 and not ln.optional,
     )  # fmt: skip

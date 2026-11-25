@@ -29,13 +29,10 @@ def md(d: date) -> str:
     return f"{d.month}.{d.day}({WEEK[d.weekday()]})"
 
 
-def section(
-    lines: list[str], *, title: str = "", route="guide", trade=None, source="template", table=None
-):
+def section(lines: list[str], *, title: str = "", route="guide", trade=None, source="template"):
     return Section(
-        title=title, sentences=[s(x) for x in lines], source=source, route=route, trade=trade,
-        table=[list(r) for r in table or []],
-    )  # fmt: skip
+        title=title, sentences=[s(x) for x in lines], source=source, route=route, trade=trade
+    )
 
 
 # ---- 범위 밖 ----
@@ -86,11 +83,11 @@ SLOT_LEAD = "답을 더 맞추려면 하나만 알려 주세요."
 # ---- 견적 설명: 표준견적서 줄 상태 6종 ----
 LINE_STATE = {
     "included": "{name} 줄은 합계에 들어가요.",
-    "bundled": "{eun} 다른 줄에 묶여 들어가서 따로 금액을 적지 않았어요.",
-    "separate": "{eun} 따로 계산해서 합계에 더했어요.",
-    "optional": "{eun} 고르면 더하는 줄이라 지금 합계에는 없어요.",
-    "after_visit": "{eun} 집을 봐야 양을 알 수 있어서 실측 뒤 업체가 정해요. 괄호 금액은 참고 금액이에요.",
-    "excluded": "{eun} 이번 공사에 넣지 않았어요.",
+    "bundled": "{name}은 다른 줄에 묶여 들어가서 따로 금액을 적지 않았어요.",
+    "separate": "{name}은 따로 계산해서 합계에 더했어요.",
+    "optional": "{name}은 고르면 더하는 줄이라 지금 합계에는 없어요.",
+    "after_visit": "{name}은 집을 봐야 양을 알 수 있어서 실측 뒤 업체가 정해요. 괄호 금액은 참고 금액이에요.",
+    "excluded": "{name}은 이번 공사에 넣지 않았어요.",
 }
 LINE_STATE_SPECIAL = {
     # 9판 C09 · D01 화면 글 그대로
@@ -108,29 +105,13 @@ QUOTE_COMPARE = (
     "무엇이 들어갔는지는 파일을 열거나 채팅으로 물어보세요."
 )
 NO_STANDARD = "아직 표준견적서가 없어요. 기본 정보를 넣으면 바로 계산해요."
-# ---- 견적 설명: 보던 화면(업체 자세히)의 가견적 줄 · 견주기. 숫자는 계산 상자에만 둬요 ----
-SCREEN_LINE = "{name} 줄은 {vendor} 확인한 단가에 이 집 수량({unit})을 곱했어요."
-SCREEN_BASIS = "수량은 {basis} 단위로 셌어요."
-SCREEN_MAN_DAY = "품 수는 이 집 벽 · 천장 도배 면적으로 셈하고 0.5품 단위로 올렸어요."
-SCREEN_MAN_DAY_LIVING = "살면서 하는 집이라 짐을 옮기며 붙이는 만큼 품을 더 셌어요."
-# 표준견적서와 견주는 말(표준 대비 % · '견줄 때 빼요')은 쓰지 않아요(사용자 결정 2026-11-21). 줄이 있는지만 말해요
-SCREEN_EXTRA = "{eun} 표준견적서에 없는 줄이에요."
-SCREEN_NOTE = "{name} 줄에는 {note} 들어가요."
-# 시장 기준값(자료 많은 줄만, 사용자 결정 2026-11-20): 판단 말 없이 범위 · 건수 · 기준 달만
-SCREEN_MARKET = (
-    "믿집이 모은 실견적 {n}건에서 {name} 단가는 {basis}당 {stat} {base}원(부가세 빼고)이고, "
-    "절반이 {p25}~{p75}원 사이예요({ym} 기준)."
-)
-SCREEN_MARKET_ONE = "믿집이 모은 실견적 {n}건에서 {name} 단가는 {basis}당 {stat} {base}원(부가세 빼고)이에요({ym} 기준)."
-SCREEN_INCLUDED = "{eun} 다른 줄에 포함돼 따로 받지 않아요."
-SCREEN_COMPARE_SAME = "업체 가견적은 모두 같은 믿집 수량에 업체 단가를 곱해서, 업체끼리는 같은 줄의 단가를 견주면 돼요."
-SCREEN_COMPARE_EXTRA = "{lines} 줄은 표준견적서에 없는 줄이에요. 다른 업체도 따로 받는지 봐요."
-SCREEN_COMPARE_AFTER = "{lines} 실측 뒤 업체가 정해서 가견적에 없어요. 실측 견적서에서 꼭 확인해요."
 
 # ---- 일정 ----
 PLAN_READ = "예상 공정표는 이렇게 잡혔어요. 날짜는 믿집 계산이에요."
 PLAN_NONE = "아직 공정표가 없어요. 기본 정보를 넣으면 예상 공정표를 계산해요."
-DRAFT_BEFORE = "공사 시작 희망일에 맞춰 실측 희망 기간을 계산했어요."  # '직접 눌러 주세요'는 DRAFT_RULE 한 번만
+DRAFT_BEFORE = (
+    "공사 시작 희망일에 맞춰 실측 희망 기간을 계산했어요. 요청 보내기는 직접 눌러 주세요."
+)
 DRAFT_NO_WISH = "공사 시작 희망일을 알려 주시면 실측 희망 기간을 계산해 드려요."
 DRAFT_AFTER = "{vendor_ga} {range}에 된대요. 공사 시작 희망 {wish}에 맞추면 {day}이 무난해요."
 DRAFT_RULE = "AI는 초안만 만들어요. 보내기 · 날짜 확정은 직접 눌러 주세요."
@@ -155,23 +136,3 @@ NO_PROJECT_NEXT = [
     Choice(text="기본 정보 넣기", action="start"),
     Choice(text="표준견적서 보기", action="standard"),
 ]
-
-
-# 처음 고객의 '뭐부터'(gate.START): 믿집 흐름 그대로의 시작 순서. 숫자 · 기간은 넣지 않아요(계산 엔진 화면으로 안내)
-START_STEPS = [
-    "처음이면 아래 순서로 하면 돼요.",
-    "1. 기본 정보에 집 면적과 할 공사(도배 · 목공)를 넣어요.",
-    "2. 표준견적서로 이 집 조건의 참고 금액을 봐요.",
-    "3. 업체를 골라 가견적을 비교하고 실측을 요청해요.",
-    "4. 실측 견적서를 받아 비교한 뒤 업체를 확정해요.",
-    "5. 확정 업체가 올린 공사 날짜를 수락하면 공정표가 정해져요.",
-]
-START_HERE: dict[str, str] = {
-    "info": "지금은 1단계예요. 기본 정보를 마저 넣어 주세요.",
-    "standard": "지금은 2단계예요. 표준견적서를 보고 업체를 골라 보세요.",
-    "vendors": "지금은 3단계예요. 업체를 골라 실측을 요청해 보세요.",
-    "visit": "지금은 3단계예요. 실측 견적서를 기다리고 있어요.",
-    "after_visit": "지금은 4단계예요. 실측 견적서를 비교해 업체를 확정해요.",
-    "construction": "지금은 5단계예요. 공사 날짜와 공정표를 확인해요.",
-    "done": "공사가 끝났어요. 끝난 공사는 내 공사에서 볼 수 있어요.",
-}

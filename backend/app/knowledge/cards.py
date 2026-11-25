@@ -47,7 +47,7 @@ DOC_REFS: dict[str, str] = {
 DOC_REF = re.compile(r"doc:[a-z0-9_.\-]+")
 
 
-def _check_refs(v: list[str]) -> list[str]:
+def _refs(v: list[str]) -> list[str]:
     for r in v:
         if not (bm25.REF.fullmatch(r) or r in DOC_REFS):
             raise ValueError(f"조각 번호 모양이 아니에요: {r}")
@@ -58,54 +58,14 @@ class CardSentence(BaseModel):
     text: str = Field(min_length=4, max_length=220)
     cites: list[str] = Field(min_length=1, max_length=4)
 
-    @field_validator("cites")
-    @classmethod
-    def _refs(cls, v: list[str]) -> list[str]:
-        return _check_refs(v)
-
-
-class CardMethod(BaseModel):
-    """'어떻게' 답의 방법 한 줄: 이름 · 언제 쓰고 무엇을 보는지(표 한 줄로 보여요)."""
-
-    name: str = Field(min_length=2, max_length=24)
-    when: str = Field(min_length=4, max_length=90)
-    cites: list[str] = Field(min_length=1, max_length=4)
-
-    @field_validator("cites")
-    @classmethod
-    def _refs(cls, v: list[str]) -> list[str]:
-        return _check_refs(v)
-
-    @property
-    def text(self) -> str:
-        return f"{self.name}: {self.when}"
-
-
-class CardVendorAsk(BaseModel):
-    """업체에 물을 말 한 줄: 물을 말 · 왜 묻는지(표 한 줄 · 복사 단추로 보여요)."""
-
-    q: str = Field(min_length=4, max_length=60)
-    why: str = Field(min_length=4, max_length=90)
-    cites: list[str] = Field(min_length=1, max_length=4)
-
-    @field_validator("cites")
-    @classmethod
-    def _refs(cls, v: list[str]) -> list[str]:
-        return _check_refs(v)
-
-    @property
-    def text(self) -> str:
-        return f"{self.q} {self.why}"
+    _cites = field_validator("cites")(_refs)
 
 
 class CardRow(BaseModel):
     cells: list[str] = Field(min_length=2, max_length=4)
     cites: list[str] = Field(min_length=1, max_length=4)
 
-    @field_validator("cites")
-    @classmethod
-    def _refs(cls, v: list[str]) -> list[str]:
-        return _check_refs(v)
+    _cites = field_validator("cites")(_refs)
 
 
 class CardTable(BaseModel):
@@ -168,10 +128,7 @@ class AnswerCard(BaseModel):
     calc: list[CardCalc] = []
     actions: list[str] = []
     ask: CardAsk | None = None
-    # 범위 밖 공종 '어떻게' 카드의 선택 칸(agent-context.md 4.2): 방법 표 · 업체에 물을 말 표
-    methods: list[CardMethod] = Field(default=[], max_length=4)
-    vendor_ask: list[CardVendorAsk] = Field(default=[], max_length=6)
-    compare: CardTable | None = None  # '종류 · 차이' 비교표(#166)
+    compare: CardTable | None = None
     policy: list[str] = []
     sources: list[CardSource] = []
     guest: bool = False  # 로그인 전 자주 묻는 질문 칩으로 보여도 되는 카드
@@ -187,8 +144,6 @@ class AnswerCard(BaseModel):
         for s in (self.caution, self.tip):
             if s:
                 out.extend(s.cites)
-        for row in (*self.methods, *self.vendor_ask):
-            out.extend(row.cites)
         return list(dict.fromkeys(out))
 
 
@@ -239,24 +194,6 @@ STOP = COMMON | frozenset(
 
 def _tf(text: str) -> Counter[str]:
     return Counter(g for g in bm25.grams(text) if g not in STOP)
-
-
-# 카드 찾기에만 쓰는 같은 뜻 말(좁게). 질문에 앞말이 있으면 뒷말로 바꾼 질문으로도 재서 더 높은 점수를 써요
-CARD_SYN = (
-    ("화장실", "욕실"),
-    ("욕실", "화장실"),
-    ("굽도리", "걸레받이"),
-    ("관리실", "관리사무소"),
-    ("섀시", "샷시"),
-)
-
-
-def _variants(q: str) -> list[str]:
-    out = [q]
-    for a, b in CARD_SYN:
-        if a in q and b not in q:
-            out.append(q.replace(a, b))
-    return out
 
 
 def _vec(tf: Counter[str], idf: dict[str, float]) -> tuple[dict[str, float], float]:
@@ -313,8 +250,8 @@ def find(
     k: int = 3,
 ) -> list[Match]:
     """질문과 가장 가까운 카드(카드마다 가장 가까운 열쇠 하나). trades를 주면 그 공종 + 공통 카드만."""
-    qvs = [x for x in (_vec(_tf(t), cs.idf) for t in _variants(q)) if x[0]]
-    if not qvs:
+    qv, qn = _vec(_tf(q), cs.idf)
+    if not qv:
         return []
     allow = set(trades or ()) | {"common"} if trades else None
     best: dict[int, tuple[float, int]] = {}
@@ -327,7 +264,8 @@ def find(
             continue
         if intents is not None and c.intent not in intents:
             continue
-        s = max(sum(w * v.get(g, 0.0) for g, w in qv.items()) / (qn * n) for qv, qn in qvs)
+        dot = sum(w * v.get(g, 0.0) for g, w in qv.items())
+        s = dot / (qn * n)
         if s > best.get(i, (-1.0, 0))[0]:
             best[i] = (s, j)
     ranked = sorted(best.items(), key=lambda p: -p[1][0])[:k]
@@ -336,16 +274,16 @@ def find(
 
 def score(cs: CardSet, q: str, idxs: list[int]) -> list[Match]:
     """정한 카드들만 질문과의 열쇠 점수를 잰다(검색 맞물림 후보용)."""
-    qvs = [x for x in (_vec(_tf(t), cs.idf) for t in _variants(q)) if x[0]]
+    qv, qn = _vec(_tf(q), cs.idf)
     want = set(idxs)
     best: dict[int, tuple[float, int]] = {}
     pos: dict[int, int] = {}
     for i, v, n in cs.vecs:
         j = pos.get(i, -1) + 1
         pos[i] = j
-        if i not in want or not qvs:
+        if i not in want or not qv:
             continue
-        s = max(sum(w * v.get(g, 0.0) for g, w in qv.items()) / (qn * n) for qv, qn in qvs)
+        s = sum(w * v.get(g, 0.0) for g, w in qv.items()) / (qn * n)
         if s > best.get(i, (-1.0, 0))[0]:
             best[i] = (s, j)
     return [Match(cs.cards[i], round(s, 4), cs.cards[i].keys[j]) for i, (s, j) in best.items()]

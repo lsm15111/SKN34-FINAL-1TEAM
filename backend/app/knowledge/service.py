@@ -60,28 +60,9 @@ async def search(
     )
 
 
-async def nearest(s: AsyncSession, embedding: tuple[str, list[float]] | None) -> tuple[str, ...]:
-    """질문 벡터와 가까운 조각 rid(가까운 순). 벡터가 없거나 활성 자료가 없으면 빈 묶음(키워드로만 찾아요)"""
-    if not embedding:
-        return ()
-    ix, ids = await _index(s)
-    if not ix.items:
-        return ()
-    model, vector = embedding
-    return tuple(await repository.nearest(s, ids, model, vector, bm25.CONF["dense_n"]))
-
-
 async def verify_cites(s: AsyncSession, text: str) -> tuple[str, int]:
     """[K번호] 인용 중 문장과 맞지 않는 것을 뗀다. (고친 글, 뗀 수)"""
     return bm25.verify_cites(await index(s), text)
-
-
-def other_trade_notes(question: str):
-    """다른 공정 알아 두기(믿집이 계산 · 연결하지 않는 공정의 순서 · 주의점, 숫자 없음). 걸린 공정이 없으면 None.
-    DB를 쓰지 않는다(정적 자료 other_trades.json)."""
-    from app.knowledge import other_trades
-
-    return other_trades.notes_for(question)
 
 
 async def suggest_candidates(

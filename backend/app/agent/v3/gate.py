@@ -9,11 +9,10 @@ Jev는 무료 모드에서 부르지 않는다(L21). 되묻기는 한 번이고 
 """
 
 import re
-from collections.abc import Sequence
 from itertools import pairwise
 
 from app.agent import intent as clf
-from app.agent.v3 import policy, screen, trades
+from app.agent.v3 import policy, trades
 from app.agent.v3.schemas import Button, Choice, GateResult, Route, View
 
 THRESHOLD = 0.7  # settings.intent_confidence_threshold와 같은 값(E1 기준값 곡선으로 다시 봄)
@@ -25,8 +24,6 @@ LABEL_ROUTE: dict[str, Route] = {
     "out_of_scope": "out_of_scope",
 }
 NEED_PROJECT: tuple[Route, ...] = ("quote_explanation", "schedule")
-# 화면 줄 이름이 나와도 견적 설명으로 보내지 않는 정책 표시(브랜드 · 하자 · 셀프 · 법률 · 추천 · 기간은 제 길로)
-SCREEN_OK_FLAGS = frozenset({"price", "my_house"})
 
 QUOTE_MINE = re.compile(
     r"표준\s*견적|가견적|실측\s*견적|견적서|견적\s*(?:이|가|에서|은|받았|차이)|합계|부가세|줄\s*하나|이\s*줄|"
@@ -35,19 +32,11 @@ QUOTE_MINE = re.compile(
 SCHEDULE_MINE = re.compile(
     r"일정|날짜|공정표|연기|미뤄|미루|언제\s*(?:시작|끝|와|들어|오)|끝나는\s*날|시작하는\s*날|"
     r"실측\s*(?:날|일정|요청|와|오|받)|희망\s*기간|반나절|"
-    r"언제.{0,8}(?:오|와|들어)|실측\S{0,3}\s{0,3}언제"
+    r"언제.{0,8}(?:오|와|들어)"
 )
 GUIDE_WORDS = re.compile(
     r"처음|순서|뭐부터|어떻게\s*진행|믿집|가입|뜻이|뭐예요|뭔가요|뭐에요|무슨\s*뜻|계약|관리사무소|"
     r"하자|업체\s*(?:고르|선택)|고르는|준비|체크|확인할\s*것|안녕|반갑|영수증|세금계산서"  # 영수증 · 세금계산서: 계약 · 비용(공통)
-)
-# 처음 고객의 시작 순서 질문('도배 처음인데 뭐부터'): 공종 낱말이 하나 있어도 가이드가 시작 순서로 답해요(ChatGPT 비교 G1)
-# 업체를 고르는 법 · 기준을 묻는 말('좋은 도배 업체 고르는 법'): 공종 낱말이 있어도 공통(가이드) 지식이에요
-CHOOSE = re.compile(
-    r"업체\s{0,2}(?:고르|선택|찾는|비교|고를)|(?:좋은|괜찮은|믿을\s{0,2}만한)\s{0,2}\S{0,6}\s{0,2}업체"
-)
-START = re.compile(
-    r"처음\s{0,2}(?:해|하|이라|인데|이에요|이예요)|뭐부터|무엇부터|어디서부터|어떻게\s{0,2}시작"
 )
 WHEN = re.compile(r"언제|날짜|며칠|몇\s*시|오전|오후|주말")
 VAGUE = re.compile(r"^\s*(?:이거|이건|저거|여기|이\s*줄|이\s*금액|이게|왜)")
@@ -99,7 +88,7 @@ GREETING = re.compile(r"^\s*(?:안녕|하이|헬로|hi\b|hello|저기요|여보�
 # 공통 지식 주제(계약 · 하자 · 관리사무소 · 이사 · 청소 · 예산). 분류기가 범위 밖이라 해도 가이드가 답한다
 COMMON_TOPIC = re.compile(
     r"하자|계약|잔금|계약금|현금|영수증|세금계산서|부가세|보수|입주\s*청소|청소|새집|관리사무소|관리실|이사|예산|공사비|세입자|집주인|"
-    r"원상복구|분쟁|업체\s*말|업체가|무상\s{0,2}수리|A\s{0,1}/\s{0,1}S|보증|"
+    r"원상복구|분쟁|업체\s*말|업체가|"
     r"동의서|이웃|옆집|앞집|아랫집|윗집|복도|소음|공사\s*(?:팀|시간)|치수|빈집"  # 이웃 · 공사 예절 · 입주 전(초보 질문 dev)
 )
 
@@ -136,10 +125,8 @@ def gate(
     button: Button | None = None,
     has_project: bool = False,
     ignore: list[str] | None = None,
-    items: Sequence[str] = (),
 ) -> GateResult:
-    """text는 가린 뒤의 고객 글. ignore: 업체 이름처럼 공종 낱말로 읽으면 안 되는 말(예: '마루와벽').
-    items: 보던 화면의 항목 이름(화면 데이터 그대로, 예: 업체 가견적 줄 '운송비 · 식대')."""
+    """text는 가린 뒤의 고객 글. ignore: 업체 이름처럼 공종 낱말로 읽으면 안 되는 말(예: '마루와벽')."""
     plain = _strip(text or "", ignore or [])
     found = trades.trades_in(plain)
     flags = policy.policy_of(plain)
@@ -154,18 +141,10 @@ def gate(
     model_route = LABEL_ROUTE.get(label) if label else None
 
     def done(route: Route, source: str, c: float = conf, keep: bool = False) -> GateResult:
-        start = (
-            (START.search(plain) is not None or CHOOSE.search(plain) is not None)
-            and len(found) <= 1
-            and "vendor_reco" not in flags
-        )
-        if route == "guide" and found and not start:
+        if route == "guide" and found:
             route = "trade"  # 공종이 분명하면 그 공종 담당이 답한다(가이드는 공통 · 처음 안내). 이음말 복합은 위에서 multi
-        if route == "trade" and start:
-            route = "guide"  # 처음 고객의 '뭐부터'는 공종 지식보다 시작 순서가 먼저예요
         if route in NEED_PROJECT and not has_project:
-            # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요. 견적서 줄을 묻지 않은 공종 질문('도배 비용')은 공종 담당
-            route = "trade" if found and not QUOTE_MINE.search(plain) else "guide"
+            route = "guide"  # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요
         if route == "out_of_scope" and found and not keep:
             route = "trade"  # v3: 다른 공종은 범위 밖이 아니라 공종 지식 답
         if route == "out_of_scope" or route == "ask_back":
@@ -182,15 +161,6 @@ def gate(
     moved = model_route is not None and model_route != waiting and conf >= THRESHOLD
     if waiting is not None and waiting not in ("ask_back", "out_of_scope") and not moved:
         return done(waiting, "waiting")
-
-    # 데이터 화면: 질문에 화면 줄 이름이 있으면 그 줄 풀이로(무료 모드 길, 2026-11-20 사용자 결정).
-    # 이름은 화면 데이터에서 와요. 정책 표시(브랜드 · 하자 · 셀프 · 기간 …)가 붙은 질문은 제 길로 둬요
-    if (
-        items
-        and not (set(flags) - SCREEN_OK_FLAGS)
-        and screen.first_named(plain, items) is not None
-    ):
-        return done("quote_explanation", "rule")
 
     # 범위 밖: 믿집이 하지 않는 일 · 10공종 견적 계산 요청
     if policy.out_of_scope(plain, bool(found)):
@@ -223,14 +193,6 @@ def gate(
             and (sig["quote_explanation"] or "price" in flags)
         ):
             route = "multi"  # '날짜랑 비용' · '견적서랑 일정'처럼 두 담당을 이어 물음
-        elif (
-            route == "guide"
-            and sig["schedule"]
-            and not found
-            and has_project
-            and not START.search(plain)
-        ):
-            route = "schedule"  # '실측은 언제 와요': 내 공사가 있으면 일정 담당이 답해요
         elif route == "out_of_scope" and COMMON_TOPIC.search(plain):
             route = "guide"  # v1 분류기는 계약 · 결제 · 청소 문장을 범위 밖으로 배웠다. v3는 공통 지식으로 답한다
         return done(route, "model")

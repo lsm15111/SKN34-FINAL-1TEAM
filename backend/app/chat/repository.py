@@ -1,7 +1,6 @@
 """대화 표 읽기 · 쓰기. commit은 하지 않는다 (service가 한다)."""
 
 import uuid
-from datetime import timedelta
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,22 +9,18 @@ from app.chat.models import Chat, ChatMessage
 
 
 async def insert_chat(
-    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None = None, kind: str = "ai"
+    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None = None
 ) -> Chat:
-    """project_id는 service가 세션 기준으로 본인 공사인지 확인한 값만 넘긴다. kind: ai · assistant(v4 비서) · v2."""
-    chat = Chat(user_id=user_id, project_id=project_id, kind=kind)
+    """project_id는 service가 세션 기준으로 본인 공사인지 확인한 값만 넘긴다."""
+    chat = Chat(user_id=user_id, project_id=project_id)
     s.add(chat)
     await s.flush()  # id · rev를 바로 쓰려고 DB에 먼저 보낸다
     return chat
 
 
-async def get_owned(
-    s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, kind: str = "ai"
-) -> Chat | None:
-    """내 대화만 꺼낸다. 남의 것과 없는 것을 구별하지 않는다(둘 다 None). 종류(kind)가 다른 대화도 None."""
-    return await s.scalar(
-        select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id, Chat.kind == kind)
-    )
+async def get_owned(s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID) -> Chat | None:
+    """내 대화만 꺼낸다. 남의 것과 없는 것을 구별하지 않는다(둘 다 None)."""
+    return await s.scalar(select(Chat).where(Chat.id == chat_id, Chat.user_id == user_id))
 
 
 async def recent_messages(s: AsyncSession, chat_id: uuid.UUID, limit: int) -> list[ChatMessage]:
@@ -80,15 +75,6 @@ def add_turn(
     )
 
 
-async def set_state(
-    s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, state: dict | None
-) -> None:
-    """내 대화의 맥락(chats.state)을 덮어쓴다. bump_rev와 같은 트랜잭션에서 부른다."""
-    await s.execute(
-        update(Chat).where(Chat.id == chat_id, Chat.user_id == user_id).values(state=state)
-    )
-
-
 async def set_project(
     s: AsyncSession, user_id: uuid.UUID, chat_id: uuid.UUID, project_id: uuid.UUID
 ) -> None:
@@ -103,28 +89,12 @@ async def set_project(
 async def list_chats(
     s: AsyncSession, user_id: uuid.UUID, limit: int = 20, project_id: uuid.UUID | None = None
 ) -> list[Chat]:
-    """내 v3 AI 칸 대화방(kind=ai) 최근 것부터. project_id를 주면 그 공사 대화만."""
-    q = select(Chat).where(Chat.user_id == user_id, Chat.kind == "ai")
+    """내 대화방 최근 것부터. project_id를 주면 그 공사 대화만."""
+    q = select(Chat).where(Chat.user_id == user_id)
     if project_id is not None:
         q = q.where(Chat.project_id == project_id)
     rows = await s.scalars(q.order_by(Chat.updated_at.desc()).limit(limit))
     return list(rows.all())
-
-
-async def latest_chat(
-    s: AsyncSession, user_id: uuid.UUID, project_id: uuid.UUID | None, hours: int
-) -> Chat | None:
-    """마지막 턴 뒤 hours시간 안의 내 v3 대화(kind=ai) 하나(이어 보기). project_id가 없으면 공사 칸이 빈 대화만."""
-    q = select(Chat).where(
-        Chat.user_id == user_id,
-        Chat.kind == "ai",
-        Chat.updated_at >= func.now() - timedelta(hours=hours),
-    )
-    if project_id is not None:
-        q = q.where(Chat.project_id == project_id)
-    else:
-        q = q.where(Chat.project_id.is_(None))
-    return await s.scalar(q.order_by(Chat.updated_at.desc()).limit(1))
 
 
 async def last_questions(s: AsyncSession, chat_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:

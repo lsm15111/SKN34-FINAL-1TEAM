@@ -85,7 +85,6 @@ def check_file(path: Path, ix: bm25.Index, fix: bool, all_keys: Counter) -> tupl
             print(f"[오류] {where} {cid}: 없는 조각 {missing}")
             errors += 1
         sents = list(card.answer) + [x for x in (card.caution, card.tip) if x]
-        sents += [*card.methods, *card.vendor_ask]  # 방법 · 물을 말 줄도 같은 검사(text = 두 칸을 이은 글)
         for s in sents:
             items = [ix.by_ref[r] for r in s.cites if r in ix.by_ref]
             src_text = " ".join(x.chunk.text for x in items)

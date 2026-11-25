@@ -13,7 +13,6 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db import Base
@@ -36,7 +35,6 @@ class Chat(Base):
         ),
         # 공사별 대화 목록(0034, B5 부탁): 같은 사람 · 같은 공사를 최근 순으로 거꾸로 읽는다
         Index("ix_chats_user_project", "user_id", "project_id", "updated_at"),
-        CheckConstraint("kind in ('ai', 'assistant', 'v2')", name="kind"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid7)
@@ -49,11 +47,6 @@ class Chat(Base):
     )
     rev: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     waiting: Mapped[str | None] = mapped_column(String(30))  # 고객 답을 기다리는 담당
-    # v3 (0037): 이어 묻기를 풀 대화 맥락(agent/v3/context.ChatState). 숫자 값 · 개인정보는 넣지 않는다
-    state: Mapped[dict | None] = mapped_column(JSONB())
-    # v4 (0040): ai = v3 AI 칸 대화, assistant = v4 비서 대화(턴 장부 assistant_turns). v3 목록은 ai만 보인다
-    # 0055: v2 = /v2 상담 대화(전에는 ai로 저장돼 v3 목록에 섞임)
-    kind: Mapped[str] = mapped_column(String(10), default="ai", server_default="ai")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

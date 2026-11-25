@@ -28,7 +28,7 @@ View = Literal[
 ]  # fmt: skip
 Stage = Literal["info", "standard", "vendors", "visit", "after_visit", "construction", "done"]
 LineState = Literal["included", "bundled", "separate", "optional", "after_visit", "excluded"]
-SectionSource = Literal["card", "extract", "llm", "template", "calc", "general"]
+SectionSource = Literal["card", "extract", "llm", "template", "calc"]
 Mode = Literal["free", "llm"]
 
 TEXT_MAX = 1000  # 질문 길이 (agents.md 8절)
@@ -63,14 +63,8 @@ class StandardFacts(BaseModel):
     total: int
     supply: int
     vat: int
-    trades: dict[
-        str, int
-    ] = {}  # 공정별 합계(부가세 포함, 계산 엔진 값). 공정이 둘 이상일 때 공정 질문에 씀
     lines: list[StandardLineFact] = []
     days: int | None = None  # 계산 엔진 공정 일수(있을 때만)
-    # 도배 벽지 롤 수(계산 엔진 calc.rolls, 보이기용) · 롤 종류 글('실크(106cm × 15.6m) 약 11롤 · 여분 1~2롤은 따로')
-    rolls: int | None = None
-    rolls_text: str = ""
 
 
 class PlanBlockFact(BaseModel):
@@ -86,7 +80,6 @@ class PlanFacts(BaseModel):
     end: date
     work_days: int
     blocks: list[PlanBlockFact] = []
-    after: str = ""  # 마지막 공정 뒤 날 이름(예: '자연 건조 · 입주 청소'). end는 그 날까지예요
 
 
 class VisitRecommendFact(BaseModel):
@@ -129,116 +122,12 @@ class EstimateFacts(BaseModel):
     separate: list[str] = []  # 따로 받는 줄 이름
 
 
-class MarketFact(BaseModel):
-    """업체 단가 줄의 시장 기준값(실견적 모음). 자료가 많은 줄만 옮겨요(가운데 값 · 평균, 20건 이상)."""
-
-    base: int  # 원/단위, 부가세 별도
-    stat: Literal["median", "mean"]
-    p25: int
-    p75: int
-    n: int
-    checked: date  # 기준값을 확인한 날
-
-
-class ScreenLineFact(BaseModel):
-    """보는 화면의 가견적 줄 한 개. 값은 화면과 같은 계산 엔진 결과(vendor_detail) 그대로."""
-
-    # 업체 단가 키: putty · paper_hapji · paper_silk · material(실크) · material_hapji · labor · meal · truck
-    key: str
-    name: str  # 고객 화면 이름: 퍼티작업 · 합지벽지 · 실크벽지 · 부자재 · 인건비 · 식대 · 운송비
-    note: str = ""  # 화면 줄 아래 짧은 뜻(풀 · 부직포 · 네바리 · 실리콘 등)
-    qty: float
-    unit: str  # 공급 평 · 벽지 평 · 품 · 대
-    unit_price: int | None = None  # 다른 줄에 포함이면 비어요
-    amount: int = 0  # 포함 · 빼기 줄은 0
-    in_standard: bool = True  # 표준견적서에 같은 일이 있는 줄. 아니면 표준 대비 %에서 빼요
-    # 표준견적서에서 '선택'인 일(퍼티 · 운송비, 판 2026.11b, ADR 0006): 금액은 보이고 합계 밖이에요
-    optional: bool = False
-    included_in: str | None = None
-    # 수량 1의 뜻(시장 기준값 표 unit_ko에서 '당'을 뗀 것): '공급면적 1평(3.3058㎡)'
-    basis: str = ""
-    market: MarketFact | None = None  # 시장 기준값(자료 많은 줄만)
-
-
-class VendorScreenFacts(BaseModel):
-    """업체 자세히 화면에 보이는 그 업체 가견적(부가세 포함 합계 · 줄)."""
-
-    vendor: str
-    grade: Literal["economy", "basic"] | None = None  # 보여 준 벽지
-    total: int
-    supply: int
-    vat: int
-    vs_standard: float | None = None  # 표준견적서 대비 %(표준에 없는 줄은 빼고 견줌, 계산 엔진)
-    grade_diff: int | None = None  # 다른 벽지로 바꾸면 차이(원, 계산 엔진)
-    lines: list[ScreenLineFact] = []
-
-
-class ScreenFacts(BaseModel):
-    """고객이 보던 화면과 그 화면에 보이는 값. 지금은 업체 자세히(vendor)만 값을 채워요."""
-
-    view: View | None = None
-    vendor: VendorScreenFacts | None = None
-
-
-class VendorPickFact(BaseModel):
-    """업체 추천(코드): 조건 필터 + 계산 엔진 점수로 고른 업체 한 곳. 사유는 정해 둔 틀로 쓴다(LLM 아님)."""
-
-    vendor_id: str
-    name: str
-    local: bool = True  # 이 구 업체
-    estimate_total: int | None = None  # 가견적(계산 엔진)
-    vs_standard_pct: int | None = None  # 표준견적서 대비 %(계산 엔진, 음수 = 낮음)
-    rating: float | None = None
-    review_count: int = 0
-    done_count: int = 0
-    instant: bool = False  # 바로 확정 가능
-    score: float = 0.0  # 계산 엔진 점수(0~1)
-    reasons: list[str] = []  # 사유 1~3줄(틀)
-
-
-class SizeCalcFact(BaseModel):
-    """평수 하나로 센 계산 엔진 값(프로젝트가 없거나 질문에 다른 평수가 나올 때). 빈집 · 벽 + 천장 · 전체 기준."""
-
-    label: str  # 화면 이름: '34평' · '전용 84㎡'
-    pyeong: float  # 계산 엔진이 센 평(공급 기준)
-    area_m2: float
-    area_basis: Literal["supply", "exclusive"] = "supply"
-    rooms: int
-    dobae_total: int  # 기본형(실크) 부가세 포함
-    dobae_total_economy: int  # 저가형(합지)
-    dobae_days: float  # 반나절 단위 작업 일수
-    dobae_days_occupied: float  # 살면서 할 때
-    mokgong_total: int | None = None  # 몰딩 + 걸레받이
-    mokgong_days: float | None = None
-    # 질문에 시작 날짜가 있을 때: 빈집 기준 일을 그날부터 일하는 날(주말 · 공휴일 빼고)에 놓은 첫날 · 끝날
-    dobae_dates: tuple[date, date] | None = None
-    mokgong_dates: tuple[date, date] | None = None
-    # 같은 시작 날짜에 목공 다음 도배를 이어 놓은 일정(계산 엔진 schedule.lay_out, '목공도 같이 하면' 답)
-    pair: PlanFacts | None = None
-
-
-class GeneralFacts(BaseModel):
-    """질문만 보고 코드가 미리 센 계산 엔진 값. 숫자는 모두 calc 결과 그대로."""
-
-    asked: SizeCalcFact | None = None  # 질문에 나온 평수 · ㎡
-    examples: list[SizeCalcFact] = []  # 24 · 34 · 44평
-    door_set: int | None = None  # 방문 1개 문틀까지(목공 계산, 부가세 포함)
-    door_leaf: int | None = None  # 방문 1개 문짝만
-    price_ver: str = ""
-    start: date | None = None  # 질문에 나온 시작 날짜(서울 기준, 지난 날짜면 다음 해)
-    # 공사 화면에서 이 집 면적으로 센 값. 공사에 없는 공종(도배만 한 집에 '목공도 같이 하면요?')의 기간에 써요
-    here: SizeCalcFact | None = None
-
-
 class ProjectFacts(BaseModel):
     """에이전트에 넘기는 프로젝트 칸. 동 · 호 · 연락처는 넣지 않는다."""
 
     stage: Stage = "info"
     area_m2: float | None = None
     area_basis: Literal["supply", "exclusive"] | None = None
-    # 계산 엔진이 쓴 면적(평형대만 고른 집은 대표 평형의 공급면적). 공사에 없는 공종을 이 집 크기로 셀 때 써요
-    calc_m2: float | None = None
-    calc_basis: Literal["supply", "exclusive"] | None = None
     trades: list[TradeCode] = []
     grade: Literal["economy", "basic"] | None = None
     living: Literal["living", "vacant"] | None = None
@@ -247,9 +136,7 @@ class ProjectFacts(BaseModel):
     plan: PlanFacts | None = None
     visit_draft: VisitDraftFacts | None = None
     estimates: list[EstimateFacts] = []
-    vendors: list[VendorPickFact] = []  # 코드가 고른 추천 업체(조건 필터 + 점수), 최대 3곳
     brief: dict[str, str] = {}  # 지금까지 모은 조건(도배 · 목공 브리프 칸)
-    screen: ScreenFacts | None = None  # 보던 화면에 보이는 값(업체 가견적 줄 등)
 
 
 # ---- 관문 ----
@@ -300,16 +187,13 @@ class Section(BaseModel):
     route: Route = "guide"
     trade: TradeCode | None = None
     sources: list[dict] = []  # 인용 조각 출처 {ref, title, kind_ko, publisher} (원문 없음)
-    table: list[list[str]] = []  # 비교 블록(2칸 줄). 칸 글도 출력 검사를 지난 것만
-    steps: bool = False  # 단계 블록(문장이 순서대로인 단계)
-    copyable: bool = False  # 표 첫 칸을 '복사' 단추로 옮길 수 있게(업체에 물을 말)
 
 
 class CalcBox(BaseModel):
     """'믿집 계산' 상자. 값은 계산 엔진 결과를 옮긴 것이고 글로 쓰지 않는다."""
 
     label: str
-    ref: str  # 예: standard.lines.demolish · standard.total · standard.rolls · plan.range · visit_draft.recommend
+    ref: str  # 예: standard.lines.demolish · standard.total · plan.range · visit_draft.recommend
     qty: float | None = None
     unit: str = ""
     unit_price: int | None = None
@@ -344,15 +228,14 @@ class CompareTable(BaseModel):
 class UiCard(BaseModel):
     kind: Literal[
         "calc", "visit_draft", "open_calendar", "grade_preview", "faq", "choices", "next_step",
-        "vendor_reco", "compare",
+        "compare",
     ]  # fmt: skip
     title: str = ""
     text: str = ""
     choices: list[Choice] = []
     calc: list[CalcBox] = []
     draft: DraftCard | None = None
-    vendors: list[VendorPickFact] = []  # vendor_reco: 코드가 고른 업체와 사유
-    table: CompareTable | None = None  # compare: 검증된 카드의 비교표(#166)
+    table: CompareTable | None = None
 
 
 class AskSlot(BaseModel):
@@ -378,15 +261,6 @@ class Trace(BaseModel):
     parts: list[str] = []  # 오케스트레이터가 나눈 조각 담당
     failed_parts: int = 0
     dropped: list[str] = []  # 출력 검사가 뺀 이유(문장 원문 없음)
-    inherited: bool = False  # 이어 묻기라 앞 턴의 공종 · 꼴을 물려받았는지(context.resolve)
-
-
-class Brief(BaseModel):
-    """짧은 답(brief.py): 질문 꼴에 맞춰 먼저 보일 문장 1~3개. 새 글이 아니라 sections · unknown에서 고른 것."""
-
-    form: str = "other"  # 질문 꼴(brief.FORM_KO)
-    lines: list[Sentence] = []
-    more: int = 0  # '자세히'에만 있는 문장 수(주의 · 팁 포함)
 
 
 class AgentAnswer(BaseModel):
@@ -397,22 +271,15 @@ class AgentAnswer(BaseModel):
     unknown: list[str] = []
     suggest: list[str] = []
     failed: bool = False
-    brief: Brief | None = None
-    fixed: int = (
-        0  # 앞에서부터 먼저 보낸(SSE part) 고정 묶음 수. 화면이 그 묶음 모양을 part와 같게 그려요
-    )
     trace: Trace = Trace()
 
     def plain(self) -> str:
-        """대화 표에 남길 글: 묶음 제목 · 문장 · 표 줄만 잇는다(카드 · 상자는 뺀다)."""
+        """대화 표에 남길 글: 묶음 제목 · 문장만 잇는다(카드 · 상자는 뺀다)."""
         out: list[str] = []
         for s in self.sections:
             if s.title:
                 out.append(s.title)
             out.extend(x.text for x in s.sentences)
-            out.extend(
-                f"· {' — '.join(c for c in r if c)}" for r in s.table
-            )  # 이어 보기에서도 표 내용이 보이게
             if s.caution:
                 out.append(s.caution.text)
         out.extend(self.unknown)

@@ -6,7 +6,7 @@
 
 import uuid
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -20,9 +20,8 @@ from app.agent.v3.schemas import (
     UiCard,
     View,
 )
-from app.project.schemas import ConditionOut
-from app.shared.text import Tidy
 
+NOTICE = "자동 답변"  # 9판 C09 · D01 화면 글(답 위 표시)
 FIRST_NOTICE = "AI가 답해요. 금액 · 날짜는 믿집 계산을 그대로 보여 주고, 저장 · 확정은 하지 않아요."
 
 
@@ -34,7 +33,7 @@ class AiContext(BaseModel):
 
 class AiTurnIn(BaseModel):
     client_key: str = Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9_\-]+$")
-    text: Annotated[str, Field(min_length=1, max_length=TEXT_MAX), Tidy]
+    text: str = Field(min_length=1, max_length=TEXT_MAX)
     chat_id: uuid.UUID | None = None
     context: AiContext = AiContext()
     button: Button | None = None
@@ -51,26 +50,14 @@ class AiSection(BaseModel):
     sentences: list[str]
     caution: str = ""
     tip: str = ""
-    source: Literal["card", "extract", "llm", "template", "calc", "general"]
+    source: Literal["card", "extract", "llm", "template", "calc"]
     route: Route
     trade: str | None = None
     sources: list[AiSource] = []
-    cites: list[list[int]] = []  # 문장마다 출처 번호(AiAnswer.refs의 1부터). sentences와 같은 길이
-    table: list[list[str]] = []  # 비교 블록 2칸 줄
-    steps: bool = False  # 단계 블록
-    copyable: bool = False  # 표 첫 칸(업체에 물을 말)을 복사 단추로
-
-
-class AiBrief(BaseModel):
-    """짧은 답: 먼저 보일 문장 1~3개(sections · unknown에서 고른 것). 나머지는 '자세히'에서 sections로 보여요."""
-
-    form: str = "other"
-    lines: list[str] = []
-    more: int = 0
-    cites: list[list[int]] = []  # 줄마다 출처 번호
 
 
 class AiAnswer(BaseModel):
+    notice: str = NOTICE
     sections: list[AiSection] = []
     calc: list[CalcBox] = []
     cards: list[UiCard] = []
@@ -78,11 +65,6 @@ class AiAnswer(BaseModel):
     unknown: list[str] = []
     suggest: list[str] = []
     failed: bool = False
-    brief: AiBrief | None = None
-    fixed: int = 0  # 앞에서부터 먼저 보낸(SSE part) 고정 묶음 수
-    refs: list[
-        AiSource
-    ] = []  # 이 답의 출처. 번호는 코드가 처음 나온 순서로 매겨요(LLM이 매기지 않음)
 
 
 class AiTurnOut(BaseModel):
@@ -93,20 +75,6 @@ class AiTurnOut(BaseModel):
     mode: Literal["free", "llm"]
     route: Route
     answer: AiAnswer
-    # 공사 화면 대화의 모은 조건(맥락 L3). 이 턴에 답한 칸까지 들어 있어요. 공사 밖 대화는 빈 목록
-    conditions: list[ConditionOut] = []
-
-
-class AiAnswerOnlyOut(BaseModel):
-    """answer_only 결과(대화에 저장하지 않음). v4 비서의 answer_question 도구 · 무료 모드가 쓴다."""
-
-    mode: Literal["free", "llm"]
-    route: Route
-    answer: AiAnswer
-    text: str = Field(
-        description="비서에게 넘기는 평문(검사를 지난 문장에서 짧은 답 먼저, 세 문장 · 150자 안쪽). "
-        "무료 모드에서는 그대로 보여요"
-    )
 
 
 class AiThreadOut(BaseModel):
@@ -157,7 +125,4 @@ def section_out(s: Section) -> AiSection:
         route=s.route,
         trade=s.trade,
         sources=src,
-        table=[list(r) for r in s.table],
-        steps=s.steps,
-        copyable=s.copyable,
     )

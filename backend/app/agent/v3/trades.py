@@ -23,24 +23,6 @@ class Slot:
     fact: str = ""  # ProjectFacts에서 이 칸을 채우는 필드(있으면 되묻지 않음)
 
 
-# 모은 조건 칩(맥락 L3)에 보일 칸 이름. '이름: 값'으로 보여요(예: '천장 도배: 천장도 해요')
-SLOT_LABEL = {
-    "dobae.grade": "집 쓰임",
-    "dobae.ceiling": "천장 도배",
-    "dobae.living": "살면서 공사",
-    "dobae.mold": "곰팡이 · 물자국",
-    "dobae.area_basis": "면적 기준",
-    "mokgong.molding": "몰딩",
-    "mokgong.doors": "방문",
-    "mokgong.ceiling": "천장 평탄화",
-    "demolition": "철거 범위",  # v4: 비서 집 정보 승인으로 모으는 코드 값 칸(calc.dobae.DEMOLITION)
-}
-
-
-def slot_label(key: str) -> str:
-    return SLOT_LABEL.get(key, "조건")
-
-
 @dataclass(frozen=True)
 class TradeSpec:
     code: TradeCode
@@ -56,9 +38,6 @@ class TradeSpec:
     calc: bool = False  # 믿집 계산 엔진이 금액 · 기간을 내는 공종
     risky_diy: bool = False  # 셀프 방법 대신 전문 업체를 권하는 공종(L24)
     check_where: str = "실측 때 업체"  # 모를 때 확인할 곳
-    # v4 자동화(07): 공사 일주일 전 할 일 · 공사 끝 점검표('볼 곳'만, 하자 판정은 하지 않는다). 출처는 CHECK_SOURCE
-    check_before: tuple[str, ...] = ()
-    check_after: tuple[str, ...] = ()
     pattern: re.Pattern = field(init=False, repr=False, compare=False)
 
     def __post_init__(self) -> None:
@@ -70,7 +49,7 @@ SPECS: tuple[TradeSpec, ...] = (
         "dobae",
         "도배",
         "deep",
-        r"도배|도베|벽지|초배|정배|합지|실크|도배풀|풀자국|퍼티|빠데|광폭|소폭|띠벽지|덧방\s*도배|wallpaper",
+        r"도배|벽지|초배|정배|합지|실크|도배풀|풀자국|퍼티|빠데|광폭|소폭|띠벽지|덧방\s*도배",
         ("도배",),
         7,
         cautions=(
@@ -78,17 +57,7 @@ SPECS: tuple[TradeSpec, ...] = (
             "곰팡이 · 습기가 있는 벽은 벽지보다 바탕부터 손봐요.",
         ),
         survey=("벽 · 천장 면적", "기존 벽지 상태(들뜸 · 곰팡이 · 결로)"),
-        # 가구 같은 짐 옮기기는 표준품셈도 따로 셈해 누가 할지 업체와 정해요(QA r7 c1: 고객 몫으로 적었어요)
-        prep=("벽 앞 가구 · 짐을 누가 옮길지 업체와 채팅으로 정하기", "벽에 건 액자 · 선반 떼기"),
-        check_before=("벽지 색 · 무늬를 업체와 채팅으로 한 번 더 맞춰 보기",),
-        check_after=(  # 하자판정기준 도배 항목(들뜸 · 주름 · 이음부 벌어짐) + 보수비용 항목(긁힘 · 무늬맞춤)
-            "벽 · 천장을 비스듬히 비춰 벽지가 들뜬 곳이 없는지 봐요",
-            "벽지에 주름이 진 곳이 없는지 봐요",
-            "벽지 이음매가 벌어져 줄이 보이지 않는지 봐요",
-            "무늬 벽지면 이음매에서 무늬가 맞는지 봐요",
-            "긁힌 곳 · 풀 자국 · 얼룩이 남지 않았는지 봐요",
-            "콘센트 · 스위치 · 몰딩 둘레 마감을 봐요",
-        ),
+        prep=("벽 앞 가구 옮기기", "벽에 건 액자 · 선반 떼기"),
         slots=(
             Slot(
                 "dobae.grade",
@@ -123,23 +92,13 @@ SPECS: tuple[TradeSpec, ...] = (
         "mokgong",
         "목공",
         "deep",
-        r"목공|목수|목재|몰딩|걸레받이|걸래받이|굽도리|문틀|문선|molding|moulding|"
-        r"(?:화장실|욕실|안방|작은방|현관|베란다)\s{0,2}문(?![제의자서구장])|(?<!사전)(?<!실측 )방문(?!판매)|문짝|경첩|석고|"
-        r"(?<![가-힣])문\s{0,2}(?:교체|바꾸|달기|철거)|헌\s{0,2}문|"
+        r"목공|목수|목재|몰딩|걸레받이|굽도리|문틀|문선|(?<!사전)(?<!실측 )방문(?!판매)|문짝|경첩|석고|"
         r"도어(?!락|록)|다루끼|각재|가벽|칸막이|천장틀|평탄화|단내림|커튼박스|단열|웨인스코팅|템바보드|분리대",
         ("목공",),
         4,
         cautions=("목공을 도배 · 필름보다 먼저 끝내요.",),
         survey=("몰딩 · 걸레받이 길이", "방문 개수 · 크기", "천장 · 벽 상태"),
         prep=("바꿀 방문 고르기",),
-        check_before=("바꿀 방문 · 몰딩 색을 업체와 채팅으로 한 번 더 맞춰 보기",),
-        check_after=(  # 하자판정기준 창호(여닫힘) · 목재 문 마구리면 · 가구(고정 · 이음매) · 마감부위 균열 항목
-            "방문이 걸리지 않고 잘 여닫히는지, 닫았을 때 틈이 고른지 봐요",
-            "욕실 · 세탁실 문짝 위아래 끝면까지 마감됐는지 봐요",
-            "몰딩 · 걸레받이 이음매가 벌어지거나 들뜬 곳이 없는지 봐요",
-            "석고보드 이음 자리 · 모서리에 금이 보이지 않는지 봐요",
-            "선반 · 수납장을 달았다면 흔들리지 않게 고정됐는지 봐요",
-        ),
         slots=(
             Slot(
                 "mokgong.molding", "몰딩도 바꾸실 건가요?", ("바꿔요", "그대로 둬요", "아직 몰라요")
@@ -209,7 +168,7 @@ SPECS: tuple[TradeSpec, ...] = (
         "paint",
         "도장",
         "knowledge",
-        r"도장(?!\s*(?:찍|을\s*찍|날인))|페인트|탄성코트|벽칠|도색|젯소|(?<!며)칠(?:하|을|해|이|은)",
+        r"도장(?!\s*(?:찍|을\s*찍|날인))|페인트|탄성코트|벽칠|도색|젯소|칠(?:하|을|해|이|은)",
         ("도장",),
         6,
         cautions=("칠하기 전에 바탕을 고르고 환기해요.",),
@@ -276,23 +235,8 @@ SPECS: tuple[TradeSpec, ...] = (
         ("전체", "공통", "마감"),
         0,
         check_where="관리사무소 · 1372 소비자상담센터",
-        # 관리사무소 신고 · 엘리베이터 보양은 단지마다 달라서 '관리사무소에 물어보기'로만 쓴다(07 4.4)
-        check_before=(
-            "관리사무소에 공사 신고가 필요한지 물어보기",
-            "엘리베이터 보양 · 사용 예약이 필요한지 관리사무소에 물어보기",
-            "이웃 안내문 붙이기(초안은 비서에게 부탁해요)",
-            "공사할 방의 작은 짐 · 귀중품은 미리 치워 두기",  # 가구는 누가 옮길지 업체와(도배 prep)
-            "직접 할 일(콘센트 옮기기 등)은 공사 전에 끝내기",
-            "공사 날 출입 방법을 업체와 믿집 채팅으로 정하기",
-        ),
-        check_after=("걸리는 곳은 사진을 찍어 업체 채팅으로 물어보기",),
     ),
 )
-# 공사 끝 점검표 출처(07 4.4): 국토교통부 고시 「공동주택 하자의 조사, 보수비용 산정 및 하자판정기준」
-# (국가법령정보센터 현행판, 2026-11-21 확인)의 도배 · 창호 · 목재 문 마구리면 · 가구 · 마감부위 균열 항목을
-# 고객이 볼 곳으로 짧게 옮겼다. 원문은 옮기지 않았고 조 번호는 판마다 달라 적지 않는다. 하자인지는 판정하지 않는다.
-CHECK_SOURCE = "국토교통부 하자판정기준 · 믿집 안내"
-CHECK_NOTE = "하자인지는 판정하지 않아요. 볼 곳만 알려 드려요."
 BY_CODE: dict[str, TradeSpec] = {s.code: s for s in SPECS}
 TRADE_CODES: tuple[str, ...] = tuple(s.code for s in SPECS if s.code != "common")
 TAG_TO_CODE: dict[str, str] = {t: s.code for s in SPECS for t in s.tags}
@@ -358,7 +302,7 @@ def rules() -> dict[str, dict[str, str]]:
 # (예: '욕실 타일' → 타일, '붙박이장 필름' → 필름, '방문 칠' → 도장). E1 dev 질문 은행에서 고른 규칙(held-out 안 봄)
 CONTEXT = {"bath": 2, "kitchen": 2, "mokgong": 1, "window": 1}
 WORK_OVER = {
-    "bath": ("tile", "electric", "plumbing", "demolition", "film", "paint", "mokgong"),
+    "bath": ("tile", "electric", "plumbing", "demolition", "film", "paint"),
     "kitchen": ("film", "demolition", "electric", "tile", "paint"),
     "mokgong": ("paint", "film"),
     "window": ("film",),

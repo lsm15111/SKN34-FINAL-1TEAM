@@ -14,7 +14,7 @@ from app.agent.v3.schemas import PolicyFlag
 
 FLAGS: dict[str, re.Pattern] = {
     "price": re.compile(
-        r"얼마(?!\s{0,2}나\s{0,2}(?:걸|오래|동안|걸릴|기다))|비용|가격|금액|평당|단가|시세|예산|비싸|저렴|싸게|싼\s*편|돈이?\s*(?:들|드|많이)|"
+        r"얼마|비용|가격|금액|평당|단가|시세|예산|비싸|저렴|싸게|싼\s*편|돈이?\s*(?:들|드|많이)|"
         r"견적(?:이|가|은)?\s*(?:적당|적정|맞는|괜찮|비싼|싼|얼마)|적정가|바가지"
     ),
     "period": re.compile(
@@ -23,12 +23,11 @@ FLAGS: dict[str, re.Pattern] = {
     ),
     "vendor_reco": re.compile(
         r"업체\s*(?:추천|알려|소개|골라|찍어)|어느\s*업체|어디\s*업체|어떤\s*업체가|잘하는\s*(?:곳|업체|팀|집|데)|"
-        r"(?:업체|곳)\s*(?:한\s*곳|하나)만|어디가\s*(?:잘|친절|싸|좋)|"
-        r"(?:후기|평점|리뷰|별점)\s{0,2}(?:좋은|많은|높은)\s{0,2}(?:곳|업체|데)"
+        r"(?:업체|곳)\s*(?:한\s*곳|하나)만|어디가\s*(?:잘|친절|싸|좋)"
     ),
     "brand_reco": re.compile(
         r"브랜드|어느\s*(?:회사|제품|브랜드|메이커)|어떤\s*(?:회사|브랜드|메이커)|제품\s*(?:추천|골라|하나)|"
-        r"(?:모델|제품명)\s*(?:추천|알려)|모델명|품번|하나만\s*골라|제품.{0,10}골라\s*주|뭘\s*사야|어디\s*제품"
+        r"(?:모델|제품명)\s*(?:추천|알려)|하나만\s*골라|제품.{0,10}골라\s*주|뭘\s*사야|어디\s*제품"
     ),
     "defect_judgement": re.compile(
         r"하자(?:인지|일까|예요|인가|맞|아닌|라고|로\s*볼)|불량인지|불량일까|업체\s*잘못|업체\s*책임|"
@@ -50,7 +49,7 @@ FLAGS: dict[str, re.Pattern] = {
 # 믿집이 하지 않는 일 (범위 밖). 업체 · 제품 하나 골라 달라는 말은 정책 표시로 다룬다
 OUT_RULES = re.compile(
     r"로또|주식|코인|영화|점심|저녁\s*뭐|강아지|번역|날씨|심심|노래|게임|"
-    r"할부|카드\s*결제|간편결제|결제(?:해|하|를)|(?:어디로|어디에|어떻게)\s{0,2}입금|입금\s{0,2}(?:해|하면|할|하는|방법|처)|대신\s{0,2}입금|송금\s{0,2}(?:해|하면|할|대신)|계좌\s*(?:알려|이체)|"  # 현금영수증 · 세금계산서는 계약 · 비용 질문(공통)
+    r"할부|카드\s*결제|간편결제|결제(?:해|하|를)|입금|송금|계좌\s*(?:알려|이체)|"  # 현금영수증 · 세금계산서는 계약 · 비용 질문(공통)
     r"대출|금리|보험\s*(?:상품|가입)|적금|"  # 누수 · 배상책임 보험 처리는 설비 카드가 답해요(범위 안)
     r"이사\s*업체|이삿짐|중고로?\s*(?:팔|판매)|어디에\s*팔|전세\s*대출|"
     r"대신\s*(?:대응|신고|신청|해\s*주|처리|가\s*주|만나|받아|연락|써|작성)|(?:신고|소송)를?\s*대신|"
@@ -71,52 +70,11 @@ CALC_REQUEST = re.compile(
     r"(?:견적|금액|철거비|공사비|비용|가격)(?:을|를|만)?\s{0,3}(?:(?:바로|지금|정확히)\s{0,3})?"
     r"(?:뽑아|계산해|산출해|내\s{0,2}주|알려\s{0,2}주)"
     r"|(?:평수|평)로\s{0,3}(?:바로\s{0,3})?계산"
-    r"|얼마(?:나)?\s{0,2}나올지\s{0,3}(?:계산|뽑아|알려)"
 )
-
-
-# '얼마'만 있고 돈 낱말이 없는 기간 질문('공사 기간이 얼마나 돼요')은 비용 질문이 아니에요
-MONEY = re.compile(r"비용|가격|금액|평당|단가|시세|예산|비싸|저렴|싸게|싼|돈|견적|만\s{0,2}원|원이")
-PAYMENT = re.compile(r"계약금|중도금|잔금|착수금|선금|선급금")
-# 돌려받을 돈 · 분쟁: '얼마를 돌려받아요?'는 공사 금액이 아니에요(r2 점검 xd099)
-REFUND = re.compile(r"돌려\s{0,2}받|환불|배상|보상|분쟁|위약금|조정\s{0,2}(?:신청|하면)")
-# 하자 보수 기간: 'A/S는 얼마 동안?'은 공사 일수가 아니에요(r2 점검 qv3b-dobae-082)
-WARRANTY = re.compile(
-    r"A\s{0,1}/\s{0,1}S|AS(?![A-Za-z])|애프터|하자|보수|보증|무상\s{0,2}수리", re.IGNORECASE
-)
-DISPUTE_MONEY = re.compile(r"분쟁|조정|배상|보상|돌려\s{0,2}받")
-DOOR_ITEM = re.compile(r"방문|문짝|문틀|(?<![가-힣])문\s{0,4}(?:하나|한\s{0,2}짝|교체)")
-# 견적을 어떻게 보고 가늠하는지 묻는 말: 금액 표보다 볼 항목이 답이에요(r2 점검 C07)
-QUOTE_HOW = re.compile(
-    r"(?:적정|적당|바가지|맞는).{0,6}(?:어떻게|뭘|무엇|알\s{0,2}수|확인|봐)|(?:어떻게|뭘|무엇을?)\s{0,2}(?:봐|확인|비교)"
-)
-# 대금 말과 함께 시세를 묻는 말(평당 · 단가 · 시세)이 있으면 금액 질문으로 둔다
-PAY_PRICE = re.compile(r"평당|단가|시세|공사비\s{0,2}(?:얼마|가격)")
 
 
 def policy_of(text: str) -> list[PolicyFlag]:
-    t = text or ""
-    got = [k for k, p in FLAGS.items() if p.search(t)]
-    if "price" in got and "period" in got and not MONEY.search(t):
-        got.remove("price")
-    if "price" in got and PAYMENT.search(t) and not PAY_PRICE.search(t):
-        got.remove("price")  # '계약금은 얼마나 줘요?'는 시세가 아니라 나눠 내는 방법(계약 카드)
-    if (
-        "price" in got
-        and (REFUND.search(t) or QUOTE_HOW.search(t))
-        and not PAY_PRICE.search(t)
-        and not DOOR_ITEM.search(t)
-    ):
-        got.remove(
-            "price"
-        )  # 돌려받을 돈 · 견적 보는 법은 금액 표가 아니라 카드 · 정해 둔 글로(방문 값은 계산 엔진이 있어요)
-    if REFUND.search(t) and DISPUTE_MONEY.search(t) and "legal_case" not in got:
-        got.append(
-            "legal_case"
-        )  # '분쟁조정하면 얼마 돌려받아요?'는 판단하지 않고 1372 · 조정 절차로
-    if "period" in got and WARRANTY.search(t):
-        got.remove("period")  # 하자 보수 기간은 공사 일수가 아니에요(보증 카드로)
-    return got  # type: ignore[return-value]
+    return [k for k, p in FLAGS.items() if p.search(text or "")]  # type: ignore[misc]
 
 
 def out_of_scope(text: str, has_trade: bool = False) -> bool:

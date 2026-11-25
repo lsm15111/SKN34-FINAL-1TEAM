@@ -1,58 +1,28 @@
 """한 턴 (무료 · LLM 모드 공통). agents.md 2.1 · 10.1절.
 
-가림 · 길이 → 입구 관문 → (범위 밖 · 되묻기 · 담당 하나 · 오케스트레이터) → 출력 검사.
-LLM 모드(guide · trade · multi): 고정 몫(계산 결과 · 정해 둔 글)을 검사해 on_part로 먼저 보내고, 답 작성기 묶음을
-그 아래에 붙인다. 먼저 보낸 묶음은 마지막 답에도 그대로 앞에 둬서 화면에 이미 보인 글은 바뀌지 않는다.
+가림 · 길이 → 입구 관문 → (범위 밖 · 되묻기 · 담당 하나 · 오케스트레이터) → [LLM 모드면 글 다시 쓰기] → 출력 검사.
 DB · HTTP를 모른다: 프로젝트 사실(ProjectFacts)과 지식(KB)은 chat.service가 짧은 DB 세션으로 읽어 넘긴다.
 돌려주는 waiting은 되물은 담당의 칸(다음 턴의 짧은 답을 그 담당이 받게). 저장은 chat.service가 한다.
 """
 
 import re
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
-from app.agent.v3 import (
-    brief,
-    check,
-    composer,
-    context,
-    explain,
-    llm_mode,
-    orchestrator,
-    planner,
-    policy,
-    screen,
-    screen_tools,
-    templates,
-)
+from app.agent.v3 import check, llm_mode, orchestrator, policy, templates
 from app.agent.v3 import gate as gate_mod
-from app.agent.v3 import general as general_mod  # run_turn의 general(질문 계산 값)과 이름이 겹쳐요
 from app.agent.v3.answer import KB, T_HIGH, Part, Task
 from app.agent.v3.schemas import (
     TEXT_MAX,
     AgentAnswer,
     Button,
-    GeneralFacts,
     ProjectFacts,
-    Section,
     Trace,
     TurnContext,
     UiCard,
 )
 from app.agent.v3.trades import BY_CODE, trades_in
 
-# 사진 · 그림을 보여 달라는 말: 아직 그림 자료가 없어 안내 한 줄을 앞에 두고, 나머지 질문으로 답해요(ChatGPT 비교 G6)
-PHOTO = re.compile(
-    r"(?:사진|이미지|그림|영상)\s{0,3}(?:으로|로)?\s{0,3}(?:좀\s{0,2})?(?:보여|볼\s{0,2}수)\S{0,6}"
-)
-PHOTO_LINE = "사진은 아직 보여 드리지 못해요. 대신 글로 알려 드릴게요."
 CHITCHAT = re.compile(r"로또|주식|코인|집값|영화|점심|저녁\s*뭐|강아지|번역|날씨|심심|노래|게임")
-
-
-VERSIONS = {
-    "composer": composer.VERSION, "general": general_mod.VERSION, "planner": planner.VERSION,
-}  # fmt: skip
-RULES = {"composer": composer.rules, "general": general_mod.rules, "planner": planner.rules}
 
 
 @dataclass
@@ -62,20 +32,6 @@ class TurnResult:
     label: str | None  # 분류기 라벨(대화 표 intent_label 기록용)
     confidence: float
     source: str
-    state: dict | None = (
-        None  # 다음 턴의 대화 상태(context.ChatState). chat.service가 chats.state에 저장
-    )
-    filled: tuple[str, str, str] | None = (
-        None  # 이 턴에 받은 되묻기 칸 답(공종, 칸, 값). 공사 브리프로 저장
-    )
-
-
-def suggest_of(p: Part) -> list[str]:
-    """이어 묻기 버튼. 가까운 카드 질문(near)은 답 전체가 '확인하지 못했어요'일 때만 붙여요."""
-    out = list(p.suggest)
-    if templates.UNKNOWN in p.unknown:
-        out += [x for x in p.near if x not in out]
-    return out
 
 
 def ignore_words(facts: ProjectFacts | None) -> list[str]:
@@ -101,7 +57,8 @@ def _out(text: str, flags: list[str], facts: ProjectFacts | None) -> Part:
     else:
         line = templates.OUT["service"]
     part.add(templates.section([line], route="out_of_scope"), f"{line}\n{templates.ALLOWED}")
-    # 단계 버튼('표준견적서 보기 · 업체 보기')은 붙이지 않아요(2026-11-20 사용자 요청)
+    nxt = templates.NEXT.get(facts.stage, []) if facts else templates.NO_PROJECT_NEXT
+    part.cards.append(UiCard(kind="next_step", choices=list(nxt)))
     return part
 
 
@@ -136,27 +93,12 @@ async def run_turn(
     facts: ProjectFacts | None = None,
     waiting: dict | None = None,
     button: Button | None = None,
-    on_part: Callable[[AgentAnswer], Awaitable[None]] | None = None,
-    general: GeneralFacts | None = None,
-    state: dict | None = None,
 ) -> TurnResult:
-    """state: 이 대화의 앞 턴 맥락(chats.state). 이어 묻기면 공종 · 꼴을 물려받은 독립 질문으로 답해요."""
     masked = check.mask(text or "").strip()[:TEXT_MAX]
-    photo = PHOTO.search(masked) is not None
-    if photo:
-        rest = PHOTO.sub(" ", masked).strip(" ,.?")
-        masked = rest or masked
-    prev = context.load(state)
-    slot_turn = bool(waiting and waiting.get("slot")) or button is not None
-    inherited = False
-    if (
-        not slot_turn
-    ):  # 되묻기 칸 답 · 단추는 맥락을 물려받지 않아요(그 칸 · 단추가 이미 담당을 정해요)
-        masked, inherited = context.resolve(masked, prev)
     w_route = waiting.get("route") if waiting else None
     g = gate_mod.gate(
         masked, view=ctx.view, waiting=w_route, button=button, has_project=facts is not None,
-        ignore=ignore_words(facts), items=screen.items_of(facts),
+        ignore=ignore_words(facts),
     )  # fmt: skip
     slot = value = None
     asked = ""
@@ -167,7 +109,7 @@ async def run_turn(
         if waiting.get("trade"):
             g = g.model_copy(update={"route": "trade", "trades": [waiting["trade"]]})
     task = Task(text=masked, route=g.route, trades=g.trades, policy=g.policy, ctx=ctx, facts=facts,
-                slot=slot, value=value, asked=asked, general=general)  # fmt: skip
+                slot=slot, value=value, asked=asked)  # fmt: skip
     names: list[str] = []
     failed_parts = 0
     if g.route == "out_of_scope":
@@ -180,159 +122,22 @@ async def run_turn(
         part, names, failed_parts = orchestrator.run(task, kb)
     else:
         part = orchestrator.AGENTS[g.route](task, kb)
-    # 질문 분석(LLM 모드 · 표준견적서 · 업체 자세히 화면): 조각 · 가리킨 화면 항목을 받아 코드가 도구(담당)를 불러요.
-    # 버튼 · 기다리던 칸 · 범위 밖이면 걸지 않고, 분석이 실패하면 위에서 만든 지금 길 몫을 그대로 써요
-    plan: planner.Plan | None = None
-    if (
-        ctx.mode == "llm" and ctx.view in planner.DATA_VIEWS and facts is not None
-        and not slot_turn and g.route != "out_of_scope"
-    ):  # fmt: skip
-        plan = await planner.plan(masked, ctx.view, facts)
-        if plan is not None and (plan.out_of_scope or not plan.asks):
-            plan = None
-    if plan is not None:
-        part, names = screen_tools.run(plan, task, kb)
-    if photo and g.route not in ("out_of_scope", "ask_back"):
-        part.sections.insert(0, templates.section([PHOTO_LINE], route=g.route))
-
-    def finish(
-        p: Part, routes: list[str], shown: list[Section] | None = None, long: bool = False
-    ) -> AgentAnswer:
-        """검사 · 짧은 답. shown: 화면에 먼저 보낸 고정 묶음(검사를 마친 것)이라 그대로 앞에 두고 나머지만 검사해요.
-        long: 작성기가 쓴 긴 설명 답. 먼저 보인 글이 없으면 개요 1~2줄만 보이고 나머지는 '자세히'에 접어요."""
-        prompts = [VERSIONS[r] if r in VERSIONS else llm_mode.VERSION[r] for r in routes]
-        boxes = list({b.ref: b for b in reversed(p.calc)}.values())[::-1]  # 같은 값 상자는 하나만
-        rest = (
-            p.sections
-            if shown is None
-            else [s for s in p.sections if s.source not in composer.FIXED]
-        )
-        ans = AgentAnswer(
-            sections=rest, calc=boxes, cards=p.cards, ask=p.ask,
-            unknown=p.unknown, suggest=suggest_of(p)[:3],
-            trace=Trace(
-                route=g.route, source=g.source, confidence=g.confidence, trades=g.trades,
-                policy=g.policy, mode=ctx.mode, cards=list(dict.fromkeys(p.used_cards)),
-                chunks=list(dict.fromkeys(p.used_chunks)), prompts=prompts,
-                card_set=kb.cards.version, parts=names, failed_parts=failed_parts, dropped=p.dropped,
-            ),
-        )  # fmt: skip
-        texts = [RULES[r]() if r in RULES else llm_mode.prompt(r) for r in routes]
-        # 알아 두기 숫자 검사의 계산 값: 먼저 보인 계산 묶음까지(p.sections는 고정 몫을 포함해요)
-        calc = "\n".join(x.text for s in p.sections if s.source == "calc" for x in s.sentences)
-        ans = check.final(
-            ans, prompt="\n".join(texts) or None, question=masked, calc=calc, trades=list(g.trades)
-        )
-        if shown is not None:
-            ans.sections = [*shown, *ans.sections]
-            ans.failed = not (ans.sections or ans.cards or ans.calc or ans.unknown)
-            ans.fixed = len(shown)
-            if long and not shown:  # 아직 보인 글이 없을 때만 접어요(설명 답의 개요 먼저)
-                ans.brief = brief.lead(ans)
-            return ans  # 먼저 보인 글이 접힌 짧은 답으로 바뀌지 않게, 보인 글이 있으면 통째로 보여요(brief 없음)
-        ans.brief = brief.make(ans, masked)  # 검사를 통과한 문장에서만 고른다(새 글 없음)
-        if "composer" in routes:
-            ans.brief = None  # 작성기 답은 블록 한 벌이 이미 짧아서 통째로 보여요
-        if ans.sections and ans.sections[0].title == "[시작 순서]":
-            ans.brief = None  # 단계 목록은 잘라 보이면 순서가 끊겨서 통째로 보여요
-        if any(s.table for s in ans.sections):
-            ans.brief = None  # 표는 짧은 답에 들어가지 않아서, 표가 있는 답은 통째로 보여요
-        if photo and ans.brief and ans.sections and ans.sections[0].sentences[:1]:
-            first = ans.sections[0].sentences[0]
-            if first.text == PHOTO_LINE and first not in ans.brief.lines:
-                ans.brief.lines = [first, *ans.brief.lines][:3]  # 사진 안내는 짧은 답에도 맨 앞에
-        return ans
-
-    routes: list[str] = ["planner"] if plan is not None else []
-    shown: list[Section] | None = None
-    mode: composer.Mode | None = None
-    # 칸 답으로 정할 수 없어 같은 칸을 다시 묻는 턴(#166)은 작성기 · 일반 설명을 부르지 않아요(다시 묻기만)
-    ask_again = task.slot is not None and part.ask is not None
-    if (
-        ctx.mode == "llm" and not ask_again
-        and (g.route in ("guide", "trade", "multi") or plan is not None)
-    ):  # fmt: skip
-        # 질문 꼴: 화면(질문 분석을 거친 턴) · 설명(일반 설명 섞기 · 길게) · 우리 집 조건(대략 답 + 끝에 확인할 곳).
-        # 그 밖은 자료로만 짧게
-        mode = (
-            "screen"
-            if plan is not None
-            else explain.kind(masked, g.route, list(g.trades), list(g.policy))
-        )
-        # 우리 집 조건 질문의 '집 상태는 직접 봐야 …' 안내는 먼저 보이지 않아요(대략 답 뒤에 확인할 곳 줄이 붙어요)
-        held = [
-            s for s in part.sections
-            if mode == "house" and s.source == "template" and any(x.text == templates.MY_HOUSE for x in s.sentences)
-        ]  # fmt: skip
-        part.sections = [s for s in part.sections if s not in held]
-        # 고정 몫(계산 결과 · 정해 둔 글)만 검사해 먼저 보낸다. 비어 있어도 보내서 화면이 'AI가 쓰는 중'을 알아요.
-        # 카드 · 계산 상자 · 이어 묻기는 마지막 답에만 둬요(먼저 보인 글 아래로 이어 붙게)
-        fixed = Part(
-            sections=[s for s in part.sections if s.source in composer.FIXED],
-            route=part.route, trade=part.trade,
-        )  # fmt: skip
-        first = finish(fixed, [])
-        first.failed, first.brief, first.fixed = False, None, len(first.sections)
-        shown = first.sections
-        if on_part is not None:
-            await on_part(first)
-        # 답 작성기 한 번(근거 묶음 → 블록). 근거가 질문에 안 맞거나 실패하면 무료 몫(카드 · 조각)을 붙여요
-        composed = await composer.compose(
-            part,
-            kb,
-            masked,
-            trade=g.trades[0] if g.trades else None,
-            mode=mode,
-            trades=list(g.trades),
-            screen=screen_tools.screen_text(ctx.view, facts) if plan is not None else None,
-            asks=[(a.kind, a.text) for a in plan.asks] if plan is not None else None,
-        )
-        if composed is not None:
-            part, routes = composed, [*routes, "composer"]
-        elif shown and composer.QUIET & set(part.dropped):
-            # 고정 몫이 이미 답했고 작성기가 더할 것이 없어요(빈 답 · 모름 · 다 걸러짐): 무료 발췌로 채우지 않아요.
-            # 카드는 검증된 글이라 둬요. 작성기 실패는 아래 길(무료 몫 그대로)이에요
-            part.sections = [s for s in part.sections if s.source != "extract"]
-        elif (
-            templates.UNKNOWN in part.unknown
-            and not any(s.source in ("card", "extract") for s in part.sections)
-            and general_mod.eligible(masked, g.route, g.trades, g.policy)
-        ):
-            # 믿집 자료가 없는 도배 · 목공 '무엇 · 어떻게' 질문: 숫자 없는 일반 설명 + 확인할 곳(모름 줄은 뺌)
-            more = await general_mod.explain(
-                masked, route=part.route, trade=g.trades[0], dropped=part.dropped
-            )
-            if more:
-                where = [u for u in part.unknown if u != templates.UNKNOWN]
-                part.sections = [*part.sections, *more]
-                part.unknown = where or [
-                    templates.UNKNOWN_WHERE.format(where=general_mod.WHERE_DEFAULT)
-                ]
-                routes = [*routes, "general"]
-        if held and composed is None:  # 작성기가 못 쓰면 미뤄 둔 안내를 끝 줄로 둬요
-            part.unknown = [*(x.text for s in held for x in s.sentences), *part.unknown]
-    ans = finish(part, routes, shown, long=mode in ("explain", "screen") and "composer" in routes)
-    ans.trace.inherited = inherited
+    routes: list[str] = []
+    if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
+        part, routes = await _llm(part, kb, masked)
+    prompts = [llm_mode.VERSION[r] for r in routes]
+    ans = AgentAnswer(
+        sections=part.sections, calc=part.calc, cards=part.cards, ask=part.ask,
+        unknown=part.unknown, suggest=part.suggest[:3],
+        trace=Trace(
+            route=g.route, source=g.source, confidence=g.confidence, trades=g.trades, policy=g.policy,
+            mode=ctx.mode, cards=list(dict.fromkeys(part.used_cards)),
+            chunks=list(dict.fromkeys(part.used_chunks)), prompts=prompts, card_set=kb.cards.version,
+            parts=names, failed_parts=failed_parts, dropped=part.dropped,
+        ),
+    )  # fmt: skip
+    ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
     new_wait = None
     if ans.ask is not None:
         new_wait = {"route": "trade", "trade": ans.ask.trade, "slot": ans.ask.slot, "q": masked}
-    turn_no = (prev.turn if prev else 0) + 1
-    if (
-        slot_turn
-    ):  # 짧은 칸 답('기본형')이 앞 질문 맥락을 지우지 않게 앞 상태를 둬요(공종만 단추 것으로)
-        new_state = prev
-        if prev is not None and button is not None and button.trade:
-            new_state = prev.model_copy(update={"trades": [button.trade], "turn": turn_no})
-    else:
-        # 이번 질문의 집 크기 · 시작 날짜(앞 턴에서 이어받은 값이어도 같아요)
-        x = general.asked if general is not None else None
-        said = context.SaidArea(m2=x.area_m2, basis=x.area_basis, label=x.label) if x else None
-        new_state = context.next_state(
-            prev, masked, route=g.route, trades=list(g.trades), turn=turn_no, area=said,
-            start=general.start if general is not None else None,
-        )  # fmt: skip
-    filled = (task.trades[0] if task.trades else "common", slot, value) if slot and value else None
-    return TurnResult(
-        ans, new_wait, g.label, g.confidence, g.source,
-        state=new_state.model_dump(mode="json") if new_state else None, filled=filled,
-    )  # fmt: skip
+    return TurnResult(ans, new_wait, g.label, g.confidence, g.source)

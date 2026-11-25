@@ -65,9 +65,6 @@ def test_scope_of_groups_trade_tags():
     assert bm25.scope_of(()) == ("공통",)
     assert bm25.scope_of(("전체", "공통")) == ("공통",)
     assert bm25.scope_of(("욕실", "전체")) == ("범위밖",)
-    # 다른 마감이 주인 조각(첫 표시 필름)은 도배 · 목공 표시가 곁에 있어도 범위 밖, 결로처럼 이어지는 공정은 그대로
-    assert bm25.scope_of(("필름", "도배", "목공")) == ("범위밖",)
-    assert bm25.scope_of(("결로", "도배")) == ("도배",)
 
 
 def test_trade_words_skip_door_to_door_sales_and_visits():

@@ -9,7 +9,6 @@ import json
 import re
 import secrets
 from datetime import date
-from decimal import Decimal
 from pathlib import Path
 
 from redis.exceptions import RedisError
@@ -18,7 +17,6 @@ from app.agent import gate as agent_gate
 from app.agent import llm
 from app.agent.schemas import Intent
 from app.agent.trades import TRADES
-from app.agent.v3 import check
 from app.config import settings
 from app.db import SessionLocal
 from app.knowledge import bm25
@@ -26,7 +24,6 @@ from app.knowledge import service as knowledge
 from app.queue import redis
 from app.shared import ratelimit
 from app.shared.errors import AppError
-from app.shared.text import strip_controls
 from app.v2 import guard, preview_service, service
 from app.v2 import schemas as v2
 from app.v2.ask_tools import BY_KIND, CALC_TOOLS, RAG_TRADES, SERVER_TOOLS, tools_for
@@ -98,34 +95,10 @@ STATE_KO = {
     "excluded": "안 함",
 }
 DATE = r"^\d{4}-\d{2}-\d{2}$"
-# 되물을 조건(grounds): 공정 지시문(trade_*_v1.md) '조건 묻기'의 말 그대로(시험이 지시문에 있는지 봐요)
-ASK_IF = {
-    "도배": (
-        "벽지 종류(합지 · 실크)",
-        "천장까지 하는지",
-        "지금 벽 상태(들뜸 · 곰팡이 · 결로 · 요철)",
-        "사는 채로 하는지",
-    ),
-    "목공": (
-        "바꿀 것(몰딩 · 걸레받이 · 방문 · 문틀)",
-        "문짝만인지 문틀까지인지",
-        "천장 평탄화 · 가벽을 하는지",
-        "사는 채로 하는지",
-    ),
-}
-LIVING_ASK = "사는 채로 하는지"  # 집 사실(거주)을 알면 묻지 않아요
 
 
 def health() -> v2.V2AskHealthOut:
-    # live: LLM_LIVE=true이고 고른 공급자(LLM_PROVIDER)의 키가 있을 때만
-    return v2.V2AskHealthOut(ok=True, live=llm.available())
-
-
-def clean_message(text: str) -> str:
-    """사용자 글 → 입구에서 가린 글(보안 M2). 제어 문자(NUL 등)를 지우고 전화 · 동호수 · 주소 번호 · 이메일 · 아이디 ·
-    주민번호 · 계좌를 가린다(v4 비서 policy.mask_in과 같은 가림). 입구 관문 · 임베딩 · LLM · 저장 · 허용 숫자가 모두
-    이 글을 쓴다(연락처가 LLM · 임베딩 공급자로 가지 않게)."""
-    return check.mask(strip_controls(text or "")).strip()
+    return v2.V2AskHealthOut(ok=True, live=settings.llm_live)
 
 
 # ---- 지시문에 넣는 데이터 ----
@@ -334,11 +307,9 @@ CITE = re.compile(r"\[(K\d{1,5})\]")
 SEARCH_TRADES = frozenset(RAG_TRADES)
 
 
-async def _search(
-    q: str, *, queries: list[str] | None = None, trade: str | None = None, embed: bool = True
-):
-    """검색어 임베딩을 먼저 만들고(세션 밖), 짧은 DB 세션으로 찾고 바로 닫는다. embed=False면 낱말로만"""
-    embedding = await llm.embed_query(q) if embed else None
+async def _search(q: str, *, queries: list[str] | None = None, trade: str | None = None):
+    """검색어 임베딩을 먼저 만들고(세션 밖), 짧은 DB 세션으로 찾고 바로 닫는다"""
+    embedding = await llm.embed_query(q)
     async with SessionLocal() as s:
         return await knowledge.search(
             s, q, queries=queries or [], trade=trade, k=6, embedding=embedding
@@ -478,7 +449,6 @@ async def start(
 ) -> v2.V2AskOut:
     if settings.app_env != "local":  # 로컬 개발 · 시연에서는 손으로 여러 번 물어봐도 막지 않는다
         await ratelimit.hit(ratelimit.key("v2-ask", user_id), ASK_PER_HOUR, 3600, TOO_MANY)
-    b = b.model_copy(update={"message": clean_message(b.message)})  # 입구에서 가린다(보안 M2)
     intent: Intent | None = None
     if b.kind == "chat" and not b.images:
         # "?" · "ㅠㅠ"처럼 낱말이 없으면 LLM을 부르지 않는다 (앞 답을 스스로 고치는 일을 막는다). 저장하지 않는다
@@ -545,98 +515,6 @@ async def resume(
     return await _run(turn_id, turn)
 
 
-async def answer_only(
-    user_id: str,
-    message: str,
-    today: date,
-    *,
-    pyeong: Decimal | None = None,
-    region: str = "",
-    living: str = "",
-    mode: str = "llm",
-) -> v2.V2AskOut:
-    """v2 답 파이프라인(일반 상담)에서 저장 없이 답만 낸다(v4 비서 answer_question, 계약서 1장).
-
-    근거 검색 → 지시문 → LLM ↔ 서버 도구(price_reference · search_knowledge) → 숫자 · 인용 검사.
-    화면 도구 · 대화 저장 · Redis 턴 보관 · 입구 관문 · 시간당 요청 제한은 쓰지 않는다(부르는 쪽 턴이 지킨다).
-    mode="free"면 LLM을 부르지 않고(임베딩도 없이) 먼저 찾은 근거 자료만 sources로 돌려준다(text 비움).
-    금액(price_reference)은 v2 계산 엔진 값이라 비서 표준견적서(v4 두 기준)와 다를 수 있다(평가로 고른다)."""
-    b = v2.V2AskIn(
-        kind="chat",
-        message=clean_message(message)[:1_000],  # 부르는 쪽이 가렸어도 한 번 더(보안 M2)
-        profile=v2.V2AskProfile(pyeong=pyeong, region=region[:40], living=living[:40]),
-        quote=v2.V2QuoteIn(pyeong=pyeong) if pyeong else None,
-    )
-    trade = route(b)
-    first = await _search(b.message, trade=trade, embed=mode != "free")
-    if mode == "free":
-        turn: dict = {}
-        _remember(turn, first.hits)
-        sources = [v2.V2AskSource(**x) for x in turn.get("seen", {}).values()]
-        return v2.V2AskOut(done=True, text="", sources=sources, trade=trade)
-    system, allowed, calc = _system(b, today, "", first, trade)
-    turn = {
-        "user": user_id,
-        "question": b.message,
-        "prev": "",
-        "kind": "chat",
-        "today": today.isoformat(),
-        "chat": None,
-        "system": system,
-        "messages": [{"role": "user", "content": [{"type": "text", "text": b.message}]}],
-        "allowed": [*allowed, b.message],
-        "calc": calc,
-        "text": "",
-        "calls": 0,
-        "rounds": 0,
-        "nudged": False,
-        "pending": [],
-        "quote": b.quote.model_dump(mode="json") if b.quote else None,
-        "plan": None,
-        "cons": None,
-        "intent": None,
-        "trade": trade,
-    }
-    _remember(turn, first.hits)
-    return await _run(secrets.token_urlsafe(16), turn, server_only=True)
-
-
-async def grounds(message: str, *, living: str = "", mode: str = "llm") -> v2.V2GroundsOut:
-    """v2 답 파이프라인(일반 상담)의 근거만 LLM 없이 모은다(v4 비서 answer_question 'v2g', 저장 없음).
-
-    answer_only가 지시문에 넣는 재료와 같다: 질문으로 먼저 찾은 지식 조각 · 출처(임베딩은 LLM 모드만), 공정 순서
-    (GUIDE, 순서를 묻거나 공정이 둘 이상일 때), 공정 설정(주의점 · 실측 때 정할 것 · 고객 준비), 되물을 조건(아는 칸은 뺌).
-    price_reference는 넣지 않는다(금액 규칙): 평형만으로는 공사 범위가 비어 금액 · 기간이 없고, v2 평형 계산은 비서
-    표준견적서와 다른 값이다. 금액 · 기간 질문이면 money만 표시해 부르는 쪽이 이 공사 계산 엔진 값으로 답하게 한다."""
-    from app.agent.v3.orchestrator import ORDER_ASK
-    from app.agent.v3.policy import policy_of
-    from app.agent.v3.trades import trades_in
-
-    b = v2.V2AskIn(kind="chat", message=clean_message(message)[:1_000])  # 가린 글로 찾는다(보안 M2)
-    trade = route(b)
-    first = await _search(b.message, trade=trade, embed=mode != "free")
-    many = len([t for t in trades_in(b.message) if t != "common"]) >= 2
-    c = BY_TRADE.get(trade) if trade else None
-    known = {LIVING_ASK} if living.strip() else set()
-    return v2.V2GroundsOut(
-        trade=trade,
-        hits=[
-            v2.V2Ground(
-                ref=h.ref, source_type=h.source_type, title=h.title, publisher=h.publisher,
-                section=h.section, text=h.text,
-            )
-            for h in first.hits
-        ],
-        enough=first.enough,
-        order=[f"{n}: {t}" for n, t in GUIDE] if many or ORDER_ASK.search(b.message) else [],
-        cautions=list(c.cautions) if c else [],
-        survey=list(c.survey_vars) if c else [],
-        prep=list(c.prep) if c else [],
-        ask=[x for x in ASK_IF.get(trade or "", ()) if x not in known],
-        money=bool({"price", "period"} & set(policy_of(b.message))),
-    )  # fmt: skip
-
-
 def _intent_out(i: Intent) -> v2.V2IntentOut:
     return v2.V2IntentOut(label=i.label, confidence=i.confidence, source=i.source)
 
@@ -686,17 +564,12 @@ def _system(
     return system, [profile, materials, refs], []
 
 
-async def _run(turn_id: str, turn: dict, server_only: bool = False) -> v2.V2AskOut:
-    """server_only: 서버 도구만 주고(화면 도구 없음) 화면을 기다리지 않는다(answer_only)."""
+async def _run(turn_id: str, turn: dict) -> v2.V2AskOut:
     kind = turn["kind"]
     today = date.fromisoformat(turn["today"])
-    allowed_names = set(BY_KIND[kind]) & (SERVER_TOOLS if server_only else set(BY_KIND[kind]))
+    allowed_names = set(BY_KIND[kind])
     while turn["calls"] < MAX_CALLS:
-        tools = (
-            [t for t in tools_for(kind) if t["name"] in allowed_names]
-            if turn["rounds"] < MAX_TOOL_ROUNDS
-            else []
-        )
+        tools = tools_for(kind) if turn["rounds"] < MAX_TOOL_ROUNDS else []
         try:
             r = await llm.chat_tools(turn["system"], turn["messages"], tools)
         except llm.LLMError:

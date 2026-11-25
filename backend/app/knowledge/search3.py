@@ -5,31 +5,23 @@ bm25.search는 도배 · 목공 두 공정만 알아서 다른 공종 조각을 
 같은 공종 +, 공통 +, 다른 공종만 −로 무게를 준다(무게 값은 bm25.CONF 그대로).
 """
 
-import weakref
 from collections.abc import Mapping
 
 from app.knowledge import bm25
 
-# 색인마다 공종 표. 열쇠는 id(ix)라 같은 색인인지 약한 참조로 다시 보고, 색인이 사라지면 칸도 지운다(점검 R6 B4:
-# 버려진 색인의 주소를 새 색인이 받으면 옛 표를 돌려줬고, 칸은 색인마다 늘기만 했다)
-_scope_cache: dict[int, tuple[weakref.ref, Mapping[str, str], dict[str, frozenset[str]]]] = {}
-
-
-def _forget(key: int):
-    return lambda _ref: _scope_cache.pop(key, None)
+_scope_cache: dict[int, tuple[Mapping[str, str], dict[str, frozenset[str]]]] = {}
 
 
 def scopes(ix: bm25.Index, tags: Mapping[str, str]) -> dict[str, frozenset[str]]:
     """조각 번호 → 공종 코드 묶음(표시가 없거나 공통뿐이면 {'common'}). 색인마다 한 번 만든다."""
-    key = id(ix)
-    hit = _scope_cache.get(key)
-    if hit and hit[0]() is ix and hit[1] is tags:
-        return hit[2]
+    hit = _scope_cache.get(id(ix))
+    if hit and hit[0] is tags:
+        return hit[1]
     out: dict[str, frozenset[str]] = {}
     for x in ix.items:
         got = {tags.get(t) for t in x.chunk.trades} - {None, "common"}
         out[x.chunk.ref] = frozenset(got) if got else frozenset({"common"})  # type: ignore[arg-type]
-    _scope_cache[key] = (weakref.ref(ix, _forget(key)), tags, out)
+    _scope_cache[id(ix)] = (tags, out)
     return out
 
 
@@ -42,12 +34,10 @@ def search(
     k: int = 6,
     policy_text: str | None = None,
     exclude_kinds: frozenset[str] = frozenset(),
-    dense: list[str] | tuple[str, ...] = (),
 ) -> bm25.Result:
     """검색어(+ 동의어)를 BM25로 찾아 RRF로 합치고 출처 등급 · 공종 무게를 더한다.
 
     법 · 안전 · 금액 질문은 블로그 · 후기를 뺀다(bm25.POLICY). exclude_kinds: 더 뺄 출처 종류(예: 책).
-    dense: 의미 검색 순위(DB 행 키 rid, 가까운 순). 있으면 bm25.search와 같은 무게(dense_w)로 RRF에 더한다.
     """
     if not ix.items:
         return bm25.Result([], False, [])
@@ -66,10 +56,6 @@ def search(
             if x.doc.kind in exclude:
                 continue
             fused[x] = fused.get(x, 0.0) + 1 / (bm25.CONF["rrf_k"] + r + 1)
-    if dense and bm25.CONF["dense_w"]:
-        near = [ix.by_rid[r] for r in dense if r in ix.by_rid][: bm25.CONF["dense_n"]]
-        for r, x in enumerate(x for x in near if x.doc.kind not in exclude):
-            fused[x] = fused.get(x, 0.0) + bm25.CONF["dense_w"] / (bm25.CONF["rrf_k"] + r + 1)
 
     def bonus(x: bm25.Item) -> float:
         b = bm25.CONF["tier_w"] * bm25.TIER.get(x.doc.kind, 0.5)
