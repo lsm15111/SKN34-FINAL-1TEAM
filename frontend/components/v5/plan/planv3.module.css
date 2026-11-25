@@ -1,0 +1,46 @@
+/* v3 공정표(C08 예상 · C36 · D19 확정) */
+.group { display: flex; flex-direction: column; gap: 10px; padding: var(--mj-pad-group); border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); min-width: 0; }
+.eb { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); color: var(--mj-text-mute); }
+.ebRow { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.sm { font-size: var(--mj-type-caption); color: var(--mj-text-mute); line-height: var(--mj-lh-body); }
+.gh { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.gh b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.infoGray { padding: 14px 16px; border-radius: var(--mj-radius-card); background: var(--mj-surface-sub); color: var(--mj-text-sub); font-size: var(--mj-type-label); line-height: var(--mj-lh-body); }
+
+/* 공정 요약 줄 · 확정 요약 칸 */
+.legend { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: var(--mj-type-label); }
+.legend li { display: flex; align-items: center; gap: 8px; }
+.legend i { flex: none; width: 14px; height: 14px; border-radius: 4px; background: var(--mj-accent-fill); }
+.legend i.self { background: var(--mj-surface-sub); border: 1px dashed var(--mj-line-control); }
+
+.kv { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 20px; margin: 0; }
+.kv div { display: flex; flex-direction: column; gap: 4px; }
+.kv dt { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+.kv dd { margin: 0; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+
+/* 공사 전 할 일 */
+.checks { display: flex; flex-direction: column; margin: 0; padding: 0; list-style: none; }
+.check { display: flex; align-items: center; gap: 12px; min-height: 52px; cursor: pointer; }
+.ck { flex: none; width: 24px; height: 24px; margin: 0; accent-color: var(--mj-primary); cursor: pointer; }
+.checkText { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.checkText b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); }
+.checkText span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+
+/* 폰 줄(캘린더 · 채팅) */
+.row1 { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 60px; padding: 8px 8px 8px var(--mj-pad-group); border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); color: var(--mj-text); text-decoration: none; }
+.rowLink { padding-right: 16px; }
+.rowLink > svg { flex: none; color: var(--mj-text-sub); }
+.rl { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rl b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.rl span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+
+/* 웹 옆 칸 */
+.asideBtns { display: flex; flex-wrap: wrap; gap: 8px; }
+.sep { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--mj-line); }
+
+.phoneOnly { }
+.webOnly { display: none !important; }
+@media (min-width: 1024px) {
+  .phoneOnly { display: none !important; }
+  .webOnly { display: flex !important; }
+}

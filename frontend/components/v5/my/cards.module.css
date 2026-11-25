@@ -1,0 +1,29 @@
+/* 내 공사 카드(C42 폰 한 줄 · D09 웹 2열). 색 · 글자는 토큰만. 웹은 모든 카드 높이를 같게 하고 단추 줄을 카드 바닥에 둬요 */
+.grid { display: grid; gap: var(--mj-gap-group); margin: 0; padding: 0; list-style: none; }
+@media (min-width: 1024px) {
+  .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: 1fr; }
+}
+.item { display: flex; min-width: 0; }
+.card { flex: 1 1 auto; display: flex; flex-direction: column; gap: 12px; }
+.head { display: flex; flex-direction: column; gap: 2px; }
+.title { margin: 0; }
+.name {
+  display: inline-flex; align-items: center; gap: 4px; min-height: 44px; align-self: flex-start;
+  font-size: var(--mj-type-title-s); font-weight: var(--mj-weight-bold); line-height: var(--mj-lh-title);
+  color: var(--mj-text); text-decoration: none; overflow-wrap: anywhere;
+}
+.name:hover { color: var(--mj-link-hover); }
+.name:focus-visible { outline: 2px solid var(--mj-focus); outline-offset: 2px; border-radius: var(--mj-radius-badge); }
+.todoText { margin: 0; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); color: var(--mj-text); }
+
+/* 할 일 단추 + 업체 상태 꼬리표: 한 줄에 두고 넘치면 다음 줄로 */
+.foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: auto; min-width: 0; }
+.tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; min-width: 0; margin: 0; padding: 0; list-style: none; }
+.tags > li { min-width: 0; }
+/* 폰에서 기한까지 붙은 꼬리표가 칸보다 길면 줄을 바꿔요(가로 스크롤 없게) */
+.tags .tag { white-space: normal; overflow-wrap: anywhere; }
+.due { font-weight: var(--mj-weight-regular); color: var(--mj-text-sub); }
+@media (min-width: 1024px) {
+  /* 웹 2열: 꼬리표는 늘 단추 오른쪽 칸에 두고 그 칸 안에서 줄을 바꿔요 */
+  .foot { display: grid; grid-template-columns: auto minmax(0, 1fr); }
+}
