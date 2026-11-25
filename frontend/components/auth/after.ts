@@ -11,11 +11,11 @@ export type After =
 /** 옮길 손님 답이 있는지(가입 단추 글 '가입하고 업체 보기'를 고를 때) */
 export const hasGuestAnswers = () => guestBody() !== null;
 
-/** 손님 답을 새 공사로 옮기고 그 공사 업체 보기로 */
-export async function moveAndGo(mock: boolean, to: "vendors" | "assistant" = "vendors"): Promise<After> {
+/** 손님 답을 새 공사로 옮기고 그 공사 업체 보기로. base: v5 화면에서 왔으면 '/v5' */
+export async function moveAndGo(mock: boolean, to: "vendors" | "assistant" = "vendors", base = ""): Promise<After> {
   try {
     const p = await moveGuest(mock);
-    return { kind: "go", href: p ? `/projects/${p.id}/${to}` : "/" };
+    return { kind: "go", href: p ? `${base}/projects/${p.id}/${to}` : base || "/" };
   } catch (e) {
     return { kind: "error", message: e instanceof Error && e.message ? e.message : "잠시 문제가 생겼어요. 다시 해 주세요." };
   }
@@ -23,14 +23,16 @@ export async function moveAndGo(mock: boolean, to: "vendors" | "assistant" = "ve
 
 export async function afterAuth(role: string, next: string | null | undefined, mock: boolean, opts: { fresh?: boolean } = {}): Promise<After> {
   const n = safeNext(next);
+  // 돌아올 곳이 v5 화면(/v5…)이면 손님 답을 옮긴 뒤에도 v5 화면으로 가요
+  const v5 = n && /^\/v5(?=[/?#]|$)/.test(n) ? "/v5" : "";
   if (role === "customer" && hasGuestAnswers()) {
     // 재재 대화에서 가입 · 로그인하면 옮긴 공사의 재재 화면으로 돌아가요(새로 시작한 집이라 진행 중 공사를 묻지 않아요)
     if (n === "/assistant") return moveAndGo(mock, "assistant");
     if (!opts.fresh) {
       const ongoing = await myOngoing();
-      if (ongoing.length) return { kind: "go", href: "/?resume=1" };
+      if (ongoing.length) return { kind: "go", href: v5 ? "/v5?resume=1" : "/?resume=1" };
     }
-    return moveAndGo(mock);
+    return moveAndGo(mock, "vendors", v5);
   }
   if (n) return { kind: "go", href: n };
   if (role === "customer") {

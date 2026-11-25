@@ -32,7 +32,7 @@ export type PhoneHeader = {
 };
 
 /** pending: 누가 로그인했는지 아직 모를 때(오류 화면) 로고만 그려요. only: 레이아웃이 반쪽만 그릴 때 */
-export function HeaderBar({ session, admin = false, unread = 0, pending = false, phone, only, legacy = false, sticky = true }: {
+export function HeaderBar({ session, admin = false, unread = 0, pending = false, phone, only, legacy = false, sticky = true, loginHref = "/login" }: {
   session: Session | null;
   admin?: boolean;
   unread?: number;
@@ -41,6 +41,8 @@ export function HeaderBar({ session, admin = false, unread = 0, pending = false,
   only?: "web" | "phone";
   legacy?: boolean;
   sticky?: boolean;
+  /** v5: 로그인 주소(돌아올 곳 next= 포함) */
+  loginHref?: string;
 }) {
   const kind: HeaderKind = admin ? "admin" : session ? session.role : "guest";
   const tag = LOGO_TAG[kind];
@@ -64,7 +66,7 @@ export function HeaderBar({ session, admin = false, unread = 0, pending = false,
                 <nav aria-label="주 메뉴" className={s.nav}><NavLinks kind={kind} lock={lock} /></nav>
                 <div className={s.right}>
                   {bell ? <NotifyBell unread={unread} /> : null}
-                  {account ? <AccountMenu label={account.label} role={account.role} /> : <Link href="/login" className={s.login}>로그인</Link>}
+                  {account ? <AccountMenu label={account.label} role={account.role} /> : <Link href={loginHref} className={s.login}>로그인</Link>}
                 </div>
               </>
             )}
@@ -93,7 +95,7 @@ export function HeaderBar({ session, admin = false, unread = 0, pending = false,
                   <MobileMenu kind={kind} account={account} lock={lock} />
                 </div>
               ) : kind === "guest" ? (
-                <Link href="/login" className={s.plogin}>로그인</Link>
+                <Link href={loginHref} className={s.plogin}>로그인</Link>
               ) : null}
             </>
           )}

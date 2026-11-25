@@ -38,6 +38,7 @@ const NEXT_NAMES: [RegExp, string][] = [
 export function nextScreen(next?: string | null): string | null {
   const n = safeNext(next);
   if (!n) return null;
-  const hit = NEXT_NAMES.find(([re]) => re.test(n));
+  const path = n.replace(/^\/v5(?=[/?#])/, ""); // v5 화면(/v5/…)도 같은 이름이에요
+  const hit = NEXT_NAMES.find(([re]) => re.test(path));
   return hit ? euro(hit[1]) : null;
 }

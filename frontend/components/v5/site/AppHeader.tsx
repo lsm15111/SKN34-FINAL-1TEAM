@@ -2,10 +2,13 @@
 // v3 머리(서버). 화면마다 그려요: 웹은 늘 같은 메뉴 머리, 폰은 phone(제목 · 뒤로 · 오른쪽 단추)을 주면 뒤로형, 안 주면 로고형.
 // 레이아웃이 웹 머리를 그리고 화면이 폰 머리만 그리고 싶으면 only="web" · only="phone"으로 나눠요(공사 화면 · 채팅 2단).
 // 붙는 머리(sticky)라 <body> 바로 아래(다른 칸으로 감싸지 않게) 둬요. 그래야 화면 끝까지 붙어 있어요.
+// v5: '로그인'에 지금 화면을 돌아올 곳(next=)으로 붙여요. 가입 · 로그인 뒤 v5 화면으로 돌아와요(components/auth/after.ts).
 import { HeaderBar, type PhoneHeader } from "./HeaderBar";
+import { withNext } from "@/components/auth/next";
 import { getShellData } from "@/components/site/who";
+import { currentPath } from "@/lib/session";
 
 export async function AppHeader({ phone, only, admin = false }: { phone?: PhoneHeader; only?: "web" | "phone"; admin?: boolean }) {
-  const { session, unread } = await getShellData();
-  return <HeaderBar session={session} admin={admin || session?.role === "admin"} unread={unread} phone={phone} only={only} />;
+  const [{ session, unread }, here] = await Promise.all([getShellData(), currentPath("/v5")]);
+  return <HeaderBar session={session} admin={admin || session?.role === "admin"} unread={unread} phone={phone} only={only} loginHref={withNext("/login", here)} />;
 }
