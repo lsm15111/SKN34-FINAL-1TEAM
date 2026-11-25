@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.models import User
 from app.files import service as files_service
-from app.project import diy, prework
+from app.project import diy
 from app.project import repository as repo
 from app.project.models import (
     BUDGET_WON_MAX,
@@ -609,7 +609,7 @@ async def _own(s: AsyncSession, user: User, project_id: uuid.UUID) -> None:
 
 
 async def conditions(s: AsyncSession, project_id: uuid.UUID) -> dict[str, str]:
-    """{칸: 값}. 에이전트 사실(ProjectFacts.brief)로 넘겨요. 권한은 부르는 쪽이 get_for로 먼저 확인한다."""
+    """{칸: 값}. 표준견적서 기준 고르기 입력으로 넘겨요. 권한은 부르는 쪽이 get_for로 먼저 확인한다."""
     rows = await s.execute(
         select(ProjectCondition.key, ProjectCondition.value).where(
             ProjectCondition.project_id == project_id
@@ -618,25 +618,20 @@ async def conditions(s: AsyncSession, project_id: uuid.UUID) -> dict[str, str]:
     return {k: v for k, v in rows}
 
 
+DEMOLITION_LABEL = "철거 범위"  # 모은 조건 칩 '철거 범위: 전체 철거'
 DIY_LABEL = "직접 할 일"  # 모은 조건 칩 '직접 할 일: 페인트(문틀 · 몰딩)'
 DIY_NONE = "없어요"
 
 
 def _chip(key: str, value: str) -> tuple[str, str]:
-    """모은 조건 한 칸 → 칩 (이름, 값). 코드 값 칸(철거 범위 · 직접 할 일 · 앞 공사 답)은 화면 말로 바꾼다."""
-    from app.agent.v3.trades import slot_label
+    """모은 조건 한 칸 → 칩 (이름, 값). 코드 값 칸(철거 범위 · 직접 할 일)은 화면 말로 바꾼다."""
     from app.calc.dobae import DEMOLITION, DEMOLITION_KEY
 
     if key == DEMOLITION_KEY:
-        return slot_label(key), DEMOLITION.get(value, value)
+        return DEMOLITION_LABEL, DEMOLITION.get(value, value)
     if key.startswith(diy.PREFIX):
         return DIY_LABEL, diy.DIY.get(key.removeprefix(diy.PREFIX), DIY_NONE)
-    if key.startswith(prework.PREFIX):  # '앞 공사 · 목공: 끝났어요'
-        trade = key.removeprefix(prework.PREFIX)
-        return f"{prework.LABEL} · {prework.PREWORK.get(trade, trade)}", prework.STATES.get(
-            value, value
-        )
-    return slot_label(key), value
+    return "조건", value
 
 
 async def condition_list(s: AsyncSession, user: User, project_id: uuid.UUID) -> list[ConditionOut]:
@@ -672,29 +667,10 @@ async def put_diy(s: AsyncSession, user: User, project_id: uuid.UUID, keys: list
     return DiyOut(diy=picked, told=synced.told, notice=synced.note)
 
 
-async def save_condition(
-    s: AsyncSession, user: User, project_id: uuid.UUID, *, trade: str, key: str, value: str
-) -> None:
-    """고객이 되묻기에 답한 값 한 칸을 덮어써요. commit은 부르는 쪽(대화 저장과 같은 트랜잭션)이 해요."""
-    await _own(s, user, project_id)
-    v = (value or "").strip()[:40]
-    if not v or not 3 <= len(key) <= 40:
-        return
-    stmt = insert(ProjectCondition).values(
-        id=uuid7(), project_id=project_id, trade=trade[:20], key=key, value=v
-    )
-    await s.execute(
-        stmt.on_conflict_do_update(
-            constraint="uq_project_conditions_key",
-            set_={"value": v, "trade": trade[:20], "updated_at": func.now()},
-        )
-    )
-
-
 async def delete_condition(
     s: AsyncSession, user: User, project_id: uuid.UUID, key: str
 ) -> list[ConditionOut]:
-    """칩 X: 그 칸을 지우면 에이전트가 다음에 다시 물어요. 없는 칸을 지워도 그대로예요."""
+    """칩 X: 그 칸을 지워요. 없는 칸을 지워도 그대로예요."""
     await _own(s, user, project_id)
     await s.execute(
         delete(ProjectCondition).where(
