@@ -1,9 +1,8 @@
 "use client";
-// /start 첫 대화(v4): 단계 띠(우리 집 · 원하는 공사 · 표준견적서)를 [다음]으로 한 걸음씩 가요(2026-11-24 사용자: 바로 표준견적서로 넘어가지 않게).
+// /start 첫 대화(새로 시작): 단계 띠(우리 집 · 원하는 공사 · 표준견적서)를 [다음]으로 한 걸음씩 가요(2026-11-24 사용자: 바로 표준견적서로 넘어가지 않게).
 //   손님은 표준견적서 요약 → 가입 카드, 로그인한 고객은 내 공사를 만들어 그 공사 표준견적서로 가요. 글 입력 칸은 두지 않아요(11-23 사용자).
 // - 처음 받는 기본 정보 7개(2026-11-21 사용자 결정): 우리 집(지역 · 면적 · 방 개수 · 공사할 때 집) → 원하는 공사(벽지 · 철거 범위 ·
-//   공사 희망 시기). 직접 할 일은 여기서 묻지 않아요(2026-11-24 사용자: 추후에. 공사 화면 집 정보 · 비서가 받아요).
-//   그 밖의 조건(편한 요일 · 목공 세부 · 우선순위)은 필요한 단계에서 비서가 물어요.
+//   공사 희망 시기). 직접 할 일은 여기서 묻지 않아요(2026-11-24 사용자: 추후에. 공사의 기본 정보 고치기에서 받아요).
 // - 처음 고객이 모를 말(공급 · 전용 면적 · 실크 · 합지 · 철거 범위)은 칸 이름 옆 '?'로 그 자리에서 풀어요(TermHelp, 백과 용어는 용어 칸까지).
 // - 면적은 고치기 화면(InfoForm)과 같은 칸 · 같은 함수예요: 기준(공급 | 전용) + 넣는 칸 + 단위(㎡ | 평, 평이면 '믿집 계산'으로 ㎡).
 //   평형 칩은 두지 않아요(QA r9: 두 입구의 넣는 법을 하나로 · copy-guide U10 ㎡ 기본, 평은 넣을 때 돕기만).
@@ -18,26 +17,21 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { JoinDialog } from "@/components/auth/JoinDialog";
-import { DateSheet } from "@/components/start/DateSheet";
 import { CalcBox } from "@/components/ui/CalcBox";
 import { Field as NumField } from "@/components/ui/Field";
 import { Segmented } from "@/components/ui/Segmented";
-import { DEMOLITION, resetMock, type StandardQuoteData } from "@/lib/api/assistant";
 import type { Region } from "@/lib/api/project";
 import { errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort, decText } from "@/lib/format";
 import { calcGuest, sendHome, type GuestStandard } from "@/lib/guest/api";
 import {
-  areaOfPyeong, checkDraft, EMPTY_DRAFT, GRADE_WORD, PYEONG_M2, pyeongError, pyeongOf, pyeongToM2, roomsOf, toHomeInfo, WISH_LABEL,
+  areaOfPyeong, checkDraft, DEMOLITION, EMPTY_DRAFT, GRADE_WORD, PYEONG_M2, pyeongError, pyeongOf, pyeongToM2, roomsOf, toHomeInfo, WISH_LABEL,
   type AreaUnit, type InfoDraft, type RoomRule, type StartWish,
 } from "@/lib/guest/info";
 import { toQuoteLines } from "@/lib/guest/standard";
 import { clearGuest, draftOf, readGuest, writeGuest } from "@/lib/guest/store";
-import { StandardSummary } from "../cards/StandardQuoteCard";
-import { SourceTag } from "../kit/StatusTag";
-import k from "../kit/kit.module.css";
-import c from "../cards/cards.module.css";
-import s from "../assistant.module.css";
+import { DateSheet } from "./DateSheet";
+import { SourceTag, StandardSummary, type StandardQuoteData } from "./StandardSummary";
 import { TermHelp, type StartTip } from "./TermHelp";
 import { useLeaveGuard } from "./useLeaveGuard";
 import t from "./start.module.css";
@@ -47,6 +41,7 @@ type Phase = "home" | "work" | "calc" | "creating" | "done";
 type Step = "home" | "work";
 const STEPS = ["우리 집", "원하는 공사", "표준견적서"] as const;
 const stepAt = (p: Phase) => (p === "home" ? 0 : p === "done" ? 2 : 1);
+/** 개발 예시(mock) 공사: lib/mock/v3a/mode MOCK_PROJECT.full */
 const MOCK_PID = "a3a00000-0000-4000-8000-000000000001";
 /** 철거 범위는 백과 용어가 없어서 두 줄로 풀어요 */
 const DEMOLITION_NOTE = "집 안 마감(벽지 · 바닥 · 몰딩 등)을 뜯어내는 범위예요. 집 전체를 뜯고 새로 고치면 '전체 철거'예요.";
@@ -58,7 +53,7 @@ function summaryOf(g: GuestStandard, d: InfoDraft, href: string): StandardQuoteD
     .sort((a, b) => (b.amount ?? 0) - (a.amount ?? 0))
     .slice(0, 3)
     .map((l) => ({ name: l.name, won: l.amount ?? 0 }));
-  // 벽지 직접 구매면 비서 표준견적서 카드처럼 '벽지 고객 구매'를 붙여요(도배지 줄은 합계 밖, 계산 엔진)
+  // 벽지 직접 구매면 '벽지 고객 구매'를 붙여요(도배지 줄은 합계 밖, 계산 엔진)
   const label = [
     "도배", d.grade ? GRADE_WORD[d.grade] : null, `${g.area_basis === "exclusive" ? "전용" : "공급"} ${decText(g.area_m2)}㎡`, g.own_paper ? "벽지 고객 구매" : null,
   ].filter(Boolean).join(" · ");
@@ -230,7 +225,6 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
     if (mode === "member") {
       try {
         if (mock) {
-          await resetMock(MOCK_PID, "f1");
           clearGuest();
           router.push(`/projects/${MOCK_PID}/standard`);
           return;
@@ -286,28 +280,28 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
   const nWork = Object.keys(eWork).length;
 
   return (
-    <div className={s.shell}>
+    <div className={t.shell}>
       {siteHeader}
-      <div className={`${s.body} ${t.body}`}>
-        <div className={s.col} id="main">
-          <div className={s.thread}>
+      <div className={t.body}>
+        <div className={t.col} id="main">
+          <div className={t.thread}>
             <StartSteps now={stepAt(phase)} />
-            <div ref={log} className={s.msgs} role="log" aria-label="첫 대화" aria-live="polite" aria-relevant="additions">
+            <div ref={log} className={t.msgs} role="log" aria-label="첫 대화" aria-live="polite" aria-relevant="additions">
               <Bot>
-                <span className={s.aiTag}><SourceTag src="guide" /></span>
-                <p className={`${s.bubble} ${s.say}`}>
-                  안녕하세요. 공사를 끝까지 챙기는 믿집 비서예요.{"\n"}{resumed ? "넣던 집 정보예요. 맞는지 확인해 주세요." : "우리 집 정보를 골라 주세요."}
+                <span className={t.aiTag}><SourceTag src="guide" /></span>
+                <p className={`${t.bubble} ${t.say}`}>
+                  안녕하세요. 믿집이에요.{"\n"}{resumed ? "넣던 집 정보예요. 맞는지 확인해 주세요." : "우리 집 정보를 골라 주세요."}
                 </p>
-                <section className={homeOff ? `${k.card} ${k.done}` : k.card} aria-labelledby="st-home-t">
-                  <div className={k.top}><h3 id="st-home-t" ref={homeHead} tabIndex={-1}>우리 집</h3><span className={k.muted}>아파트 · 도배</span></div>
+                <section className={homeOff ? `${t.card} ${t.done}` : t.card} aria-labelledby="st-home-t">
+                  <div className={t.top}><h3 id="st-home-t" ref={homeHead} tabIndex={-1}>우리 집</h3><span className={t.muted}>아파트 · 도배</span></div>
                   <Field label="지역" id="st-region" error={eHome.region}>
                     <div className={t.sels}>
-                      <select id="st-region" className={c.sel} aria-label="시 · 도" value={d.sido} disabled={homeOff}
+                      <select id="st-region" className={t.sel} aria-label="시 · 도" value={d.sido} disabled={homeOff}
                         onChange={(e) => set({ sido: e.target.value, sgg: "" })}>
                         <option value="">시 · 도</option>
                         {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
                       </select>
-                      <select className={c.sel} aria-label="시 · 군 · 구" value={d.sgg} disabled={homeOff || !sido} onChange={(e) => set({ sgg: e.target.value })}>
+                      <select className={t.sel} aria-label="시 · 군 · 구" value={d.sgg} disabled={homeOff || !sido} onChange={(e) => set({ sgg: e.target.value })}>
                         <option value="">시 · 군 · 구</option>
                         {sgs.map((x) => <option key={x.label} value={x.key}>{x.label}</option>)}
                       </select>
@@ -327,21 +321,21 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
                     ) : null}
                   </Field>
                   <Field label="방 개수" id="st-rooms">
-                    <div className={k.chips} id="st-rooms">
+                    <div className={t.chips} id="st-rooms">
                       {roomNums.map((n) => <Chip key={n} on={rooms === n} off={homeOff} onClick={() => set({ rooms: n })}>{n}개</Chip>)}
                     </div>
                   </Field>
                   <Field label="공사할 때 집" id="st-occ" error={eHome.occupied}>
-                    <div className={k.chips} id="st-occ">
+                    <div className={t.chips} id="st-occ">
                       <Chip on={d.occupied === true} off={homeOff} onClick={() => set({ occupied: true })}>살면서 공사</Chip>
                       <Chip on={d.occupied === false} off={homeOff} onClick={() => set({ occupied: false })}>빈 집</Chip>
                     </div>
                   </Field>
                   {phase === "home" ? (
                     <>
-                      {nHome ? <p className={k.err} role="alert">고를 칸이 {nHome}개 있어요</p> : null}
-                      <div className={k.row}>
-                        <button type="button" className={`${k.btn} ${k.pri}`} onClick={nextHome}>다음</button>
+                      {nHome ? <p className={t.err} role="alert">고를 칸이 {nHome}개 있어요</p> : null}
+                      <div className={t.row}>
+                        <button type="button" className={`${t.btn} ${t.pri}`} onClick={nextHome}>다음</button>
                       </div>
                     </>
                   ) : null}
@@ -349,22 +343,22 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
               </Bot>
               {phase !== "home" ? (
                 <Bot>
-                  <p className={`${s.bubble} ${s.say}`}>원하는 공사를 골라 주세요.</p>
-                  <section className={workOff ? `${k.card} ${k.done}` : k.card} aria-labelledby="st-work-t">
-                    <div className={k.top}><h3 id="st-work-t" ref={workHead} tabIndex={-1}>원하는 공사</h3></div>
+                  <p className={`${t.bubble} ${t.say}`}>원하는 공사를 골라 주세요.</p>
+                  <section className={workOff ? `${t.card} ${t.done}` : t.card} aria-labelledby="st-work-t">
+                    <div className={t.top}><h3 id="st-work-t" ref={workHead} tabIndex={-1}>원하는 공사</h3></div>
                     <Field label="벽지" id="st-grade" error={eWork.grade} help={<TermHelp label="벽지" tips={tips.grade} />}>
-                      <div className={k.chips} id="st-grade">
+                      <div className={t.chips} id="st-grade">
                         <Chip on={d.grade === "basic"} off={workOff} onClick={() => set({ grade: "basic" })}>실크</Chip>
                         <Chip on={d.grade === "economy"} off={workOff} onClick={() => set({ grade: "economy" })}>합지</Chip>
                       </div>
                     </Field>
                     <Field label="철거 범위" id="st-demo" error={eWork.demolition} help={<TermHelp label="철거 범위" note={DEMOLITION_NOTE} />}>
-                      <div className={k.chips} id="st-demo">
+                      <div className={t.chips} id="st-demo">
                         {DEMOLITION.map((x) => <Chip key={x.key} on={d.demolition === x.key} off={workOff} onClick={() => set({ demolition: x.key })}>{x.label}</Chip>)}
                       </div>
                     </Field>
                     <Field label="공사 희망 시기" id="st-when" error={eWork.when}>
-                      <div className={k.chips} id="st-when">
+                      <div className={t.chips} id="st-when">
                         {wishes.map((w) => <Chip key={w.key} on={d.when === w.key} off={workOff} onClick={() => set({ when: w.key, start: w.start_date })}>{WISH_LABEL[w.key]}</Chip>)}
                         <Chip on={d.when === "unknown"} off={workOff} onClick={() => set({ when: "unknown", start: null })}>아직 몰라요</Chip>
                         <Chip on={d.when === "date"} off={workOff} onClick={() => setDateOpen(true)}>{d.when === "date" && d.start ? dateShort(d.start, today) : "날짜 고르기"}</Chip>
@@ -372,11 +366,11 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
                     </Field>
                     {phase !== "done" ? (
                       <>
-                        {err ? <p className={k.err} role="alert">{err}</p> : null}
-                        {nWork ? <p className={k.err} role="alert">고를 칸이 {nWork}개 있어요</p> : null}
-                        <div className={k.row}>
-                          <button type="button" className={k.btn} disabled={busy} onClick={prevWork}>이전</button>
-                          <button type="button" className={`${k.btn} ${k.pri}`} disabled={busy} aria-busy={busy || undefined} onClick={() => { void nextWork(); }}>
+                        {err ? <p className={t.err} role="alert">{err}</p> : null}
+                        {nWork ? <p className={t.err} role="alert">고를 칸이 {nWork}개 있어요</p> : null}
+                        <div className={t.row}>
+                          <button type="button" className={t.btn} disabled={busy} onClick={prevWork}>이전</button>
+                          <button type="button" className={`${t.btn} ${t.pri}`} disabled={busy} aria-busy={busy || undefined} onClick={() => { void nextWork(); }}>
                             {phase === "calc" ? "계산하고 있어요" : phase === "creating" ? "내 공사를 만들고 있어요" : "다음"}
                           </button>
                         </div>
@@ -387,21 +381,18 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
               ) : null}
               {phase === "done" && std ? (
                 <Bot>
-                  <p className={`${s.bubble} ${s.say}`}>표준견적서가 나왔어요.</p>
+                  <p className={`${t.bubble} ${t.say}`}>표준견적서가 나왔어요.</p>
                   <StandardSummary id="st-std" data={summaryOf(std, d, mode === "guest" ? "/start/standard" : "")}
-                    more={<button type="button" className={`${k.text} ${k.gray}`} onClick={back}>조건 바꾸기</button>} />
+                    more={<button type="button" className={`${t.text} ${t.gray}`} onClick={back}>조건 바꾸기</button>} />
                 </Bot>
               ) : null}
               {phase === "done" && std && mode === "guest" ? (
                 <Bot>
-                  <section className={k.card} aria-labelledby="st-join-t">
-                    <div className={k.top}><h3 id="st-join-t">가입하고 이어서 해요</h3></div>
-                    <p className={k.muted}>업체 추천 · 실측 요청은 가입하면 열려요. 넣은 답이 그대로 이어져요</p>
-                    <div className={k.row}>
-                      <button type="button" className={`${k.btn} ${k.pri}`} onClick={() => setJoin(true)}>가입하고 이어 하기</button>
-                      {mock ? (
-                        <button type="button" className={`${k.btn} ${k.sm}`} onClick={() => { void resetMock(MOCK_PID, "f1").then(() => router.push(`/projects/${MOCK_PID}`)); }}>예시 공사로 이어 보기</button>
-                      ) : null}
+                  <section className={t.card} aria-labelledby="st-join-t">
+                    <div className={t.top}><h3 id="st-join-t">가입하고 이어서 해요</h3></div>
+                    <p className={t.muted}>업체 추천 · 실측 요청은 가입하면 열려요. 넣은 답이 그대로 이어져요</p>
+                    <div className={t.row}>
+                      <button type="button" className={`${t.btn} ${t.pri}`} onClick={() => setJoin(true)}>가입하고 이어 하기</button>
                     </div>
                   </section>
                 </Bot>
@@ -421,10 +412,10 @@ export function StartChat({ regions, roomRule, wishes, today, mode, mock, tips, 
 /** 단계 띠(공사 화면 단계 띠와 같은 모양): 지난 칸 검정 · 지금 칸 파랑 · 앞 칸 흐림. 누르는 칸은 없어요(되돌리기는 [이전] · 조건 바꾸기) */
 function StartSteps({ now }: { now: number }) {
   return (
-    <div className={s.stepper}>
-      <ol className={`${s.steps} ${t.steps}`} aria-label="견적 받기 단계">
+    <div className={t.stepper}>
+      <ol className={t.steps} aria-label="견적 받기 단계">
         {STEPS.map((label, i) => (
-          <li key={label} className={`${s.step} ${i < now ? s.stepDone : i === now ? s.stepNow : s.stepLater} ${t.step}`} aria-current={i === now ? "step" : undefined}>
+          <li key={label} className={`${t.step} ${i < now ? t.stepDone : i === now ? t.stepNow : t.stepLater}`} aria-current={i === now ? "step" : undefined}>
             {label}
           </li>
         ))}
@@ -435,21 +426,21 @@ function StartSteps({ now }: { now: number }) {
 
 function Bot({ children }: { children: ReactNode }) {
   return (
-    <div className={`${s.msg} ${s.enter}`}>
-      <div className={s.av} aria-hidden="true">AI</div>
-      <div className={s.msgBody}>{children}</div>
+    <div className={`${t.msg} ${t.enter}`}>
+      <div className={t.av} aria-hidden="true">AI</div>
+      <div className={t.msgBody}>{children}</div>
     </div>
   );
 }
 function Field({ label, id, error, help, children }: { label: string; id: string; error?: string; help?: ReactNode; children: ReactNode }) {
   return (
-    <div className={c.field} role="group" aria-labelledby={`${id}-l`}>
-      <span className={t.lblRow}><span className={c.lbl} id={`${id}-l`}>{label}</span>{help}</span>
+    <div className={t.field} role="group" aria-labelledby={`${id}-l`}>
+      <span className={t.lblRow}><span className={t.lbl} id={`${id}-l`}>{label}</span>{help}</span>
       {children}
-      {error ? <span className={k.err}>{error}</span> : null}
+      {error ? <span className={t.err}>{error}</span> : null}
     </div>
   );
 }
 function Chip({ on, off, onClick, children }: { on: boolean; off: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" className={k.chip} aria-pressed={on} disabled={off} onClick={onClick}>{children}</button>;
+  return <button type="button" className={t.chip} aria-pressed={on} disabled={off} onClick={onClick}>{children}</button>;
 }

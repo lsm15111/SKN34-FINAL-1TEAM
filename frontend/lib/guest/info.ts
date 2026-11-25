@@ -58,6 +58,12 @@ export function diyFromPicks(next: readonly string[], prev: readonly string[]): 
 }
 /** 철거 범위 글(요약 줄 · 보드, 서버 calc.dobae.DEMOLITION과 같은 말) */
 export const DEMOLITION_TEXT: Record<Demolition, string> = { full: "전체 철거", partial: "부분 철거", none: "철거 안 함" };
+/** 철거 범위 칩(첫 대화 · 고치기 화면). 백엔드도 같은 키 · 값으로 받아요 */
+export const DEMOLITION: { key: Demolition; label: string }[] = [
+  { key: "full", label: "전체 철거" },
+  { key: "partial", label: "일부" },
+  { key: "none", label: "안 함" },
+];
 
 /** 넣는 중인 답(기기에 저장하는 모양). 다 차면 toHomeInfo로 API 몸통이 돼요 */
 export type InfoDraft = {
@@ -249,7 +255,7 @@ export function toHomeInfo(d: InfoDraft): HomeBody {
   };
 }
 
-/** 고치기(PATCH /projects/{id}) 몸통. 동은 이 폼에서 받지 않지만 비서 대화로 받아 둔 동은 지켜요(안 보내면 지워져 공사 이름이
+/** 고치기(PATCH /projects/{id}) 몸통. 동은 이 폼에서 받지 않지만 앞서 받아 둔 동(v2로 만든 공사 등)은 지켜요(안 보내면 지워져 공사 이름이
  *  '상계동 …'에서 '노원구 …'로 바뀌어요). 지역을 다시 고르면 폼이 동을 비워요 */
 export function toEditBody(d: InfoDraft): HomeBody {
   return { ...toHomeInfo(d), ...(d.emd ? { emd: d.emd } : {}) };

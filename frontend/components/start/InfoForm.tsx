@@ -3,7 +3,7 @@
 // - 손님: 답은 이 기기에만 저장돼요(mj_guest_v3). '표준견적서 보기'를 누르면 가입 없이 /start/standard로 가요(N1 A).
 // - 로그인한 고객: 같은 답으로 POST /projects(Idempotency-Key = 기기 답의 key) → 내 공사 표준견적서로 가요.
 // - 고치기(?edit=): 그 공사 값을 채우고 PATCH /projects/{id}(첫 요청 뒤에는 서버가 409 locked, 화면은 C50).
-//   대화 안 '우리 집 정보' 창(/projects/{id}/home)은 같은 고치기에 after(저장 뒤 갈 곳: 대화) · focus(처음 초점 칸)를 줘요.
+//   '우리 집 정보' 화면(/projects/{id}/home)은 같은 고치기에 after(저장 뒤 갈 곳) · focus(처음 초점 칸)를 줘요.
 //   고치기에는 v4 첫 대화가 묻는 철거 범위 · 직접 할 일 칸도 있어요(같은 PATCH, 칩 이름 · 순서는 첫 대화 · 서버 project/diy.py와 같아요).
 // - 검사는 '표준견적서 보기'를 누를 때 한 번(I6 B): 맨 위 '고칠 칸이 n개 있어요' + 칸 아래 오류 + 첫 틀린 칸으로 옮겨 가요.
 // - 금액은 서버 계산 엔진이 세요. 여기서는 단위만 바꿔요(평 → ㎡ 넣기 도움 · 만 원 → 원).
@@ -21,12 +21,11 @@ import { ChoiceChips } from "@/components/ui/ChoiceChip";
 import { Segmented } from "@/components/ui/Segmented";
 import { Field } from "@/components/ui/Field";
 import { Icon } from "@/components/ui/Icon";
-import { DEMOLITION } from "@/lib/api/assistant";
 import type { Region } from "@/lib/api/project";
 import { call, errorText, type Schemas } from "@/lib/backend/client";
 import { dateShort } from "@/lib/format";
 import {
-  DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, PYEONG_M2, areaOfPyeong, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, pyeongError, pyeongOf,
+  DEMOLITION, DIY_CHIPS, DIY_FIELD_ID, EMPTY_DRAFT, ERROR_NAME, ERROR_ORDER, FACES, PYEONG_M2, areaOfPyeong, checkDraft, chipsFor, diyFromPicks, diyPicks, onChips, placeText, pyeongError, pyeongOf,
   pyeongToM2, roomsOf, scopeOf, spaceLabel, summaryRows, toEditBody, toHomeInfo,
   type AreaUnit, type Demolition, type Face, type InfoDraft, type InfoErrors, type RoomRule, type SpaceKind,
 } from "@/lib/guest/info";

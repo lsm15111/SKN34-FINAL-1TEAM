@@ -1,20 +1,19 @@
-// /start — 기본 정보(C02 · C03 · D11). ?edit={id}면 그 공사를 고쳐요(만든 고객만, 남의 것은 404). 첫 실측 요청 뒤면 잠김(C50).
+// /start — 인테리어 받기. 새로 시작은 첫 대화(StartChat: 우리 집 → 원하는 공사 → 표준견적서, [다음]으로 한 걸음씩)예요.
 // 손님은 답을 이 기기에 두고 가입 없이 표준견적서로 가요(N1 A). 로그인한 고객은 같은 답으로 내 공사를 만들어요.
-// v4(겉모양 스위치): 새로 시작은 첫 대화(StartChat: 우리 집 → 원하는 공사 → 표준견적서, [다음]으로 한 걸음씩). 고치기(?edit=)는 v3 화면 그대로예요.
-//   머리는 다른 화면과 같은 사이트 머리(웹 메뉴 · 폰 ‹)를 여기서 그려 넘겨요(2026-11-24 사용자: 백과 같은 곳으로 갈 수 있게).
+// ?edit={id}면 그 공사 기본 정보를 고쳐요(C02 · C03 · D11 InfoForm, 만든 고객만, 남의 것은 404). 첫 실측 요청 뒤면 잠김(C50).
+//   첫 대화 머리는 다른 화면과 같은 사이트 머리(웹 메뉴 · 폰 ‹)를 여기서 그려 넘겨요(2026-11-24 사용자: 백과 같은 곳으로 갈 수 있게).
 //   칸 옆 '?'의 풀이는 백과 용어 사전 글이고, '자세히'는 ?term=으로 이 화면 위에 용어 칸을 열어요(OpenTerm).
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { uiMode } from "@/components/assistant/mode";
-import { StartChat } from "@/components/assistant/start/StartChat";
-import type { StartTip } from "@/components/assistant/start/TermHelp";
-import t from "@/components/assistant/start/start.module.css";
 import { OpenTerm } from "@/components/guide/TermDetail";
 import { AppHeader } from "@/components/site/AppHeader";
 import { Main, PageHead } from "@/components/site/Frame";
 import { InfoForm } from "@/components/start/InfoForm";
 import { InfoLocked } from "@/components/start/InfoLocked";
+import { StartChat } from "@/components/start/StartChat";
+import type { StartTip } from "@/components/start/TermHelp";
+import t from "@/components/start/start.module.css";
 import { BottomBar } from "@/components/ui/BottomBar";
 import { Button } from "@/components/ui/Button";
 import { getDiy, getMyProject, getProjectShell, getRegions, getRoomRule, getStartWishes } from "@/lib/api/project";
@@ -24,10 +23,10 @@ import { termById } from "@/lib/guide";
 import { MOCK_V3A, mockKeyOf } from "@/lib/mock/v3a/mode";
 import { getSession, requireRole } from "@/lib/session";
 
-/** 탭 제목: v4 새로 시작은 사이트 메뉴 이름 '인테리어 받기'(QA r9 U5), 고치기 · v3 화면은 화면 제목 '기본 정보' */
+/** 탭 제목: 새로 시작은 사이트 메뉴 이름 '인테리어 받기'(QA r9 U5), 고치기는 화면 제목 '기본 정보' */
 export async function generateMetadata({ searchParams }: { searchParams: Promise<{ edit?: string }> }): Promise<Metadata> {
   const { edit } = await searchParams;
-  return { title: !edit && (await uiMode()) === "v4" ? "인테리어 받기" : "기본 정보" };
+  return { title: edit ? "기본 정보" : "인테리어 받기" };
 }
 
 /** 첫 대화 칸 옆 '?' 풀이(백과 용어 사전 글): 면적은 쉬운 말, 벽지는 고르는 법. 사전에 없는 용어는 빼요 */
@@ -73,27 +72,18 @@ export default async function StartPage({ searchParams }: { searchParams: Promis
     );
   }
 
-  if ((await uiMode()) === "v4") {
-    const wishes = await getStartWishes();
-    const member = session?.role === "customer";
-    const tips = { area: tipsOf(["공급면적", "전용면적"], "easy"), grade: tipsOf(["실크-벽지", "합지"], "tip") };
-    // 폰 머리 오른쪽: 손님은 로그인(돌아올 곳 /start), 고객은 내 공사. 웹은 사이트 머리 메뉴 · 로그인 · 이름 ▾ 그대로예요
-    const action = member
-      ? <Link className={t.headLink} href="/my">내 공사</Link>
-      : <Link className={t.headLink} href="/login?next=%2Fstart">로그인</Link>;
-    return (
-      <>
-        <StartChat regions={regions} roomRule={roomRule} wishes={wishes} today={today} mode={member ? "member" : "guest"} mock={MOCK_V3A} tips={tips}
-          siteHeader={<AppHeader phone={{ title: "새 공사 시작", back: "/", action }} />} />
-        <OpenTerm id={term} />
-      </>
-    );
-  }
+  const wishes = await getStartWishes();
+  const member = session?.role === "customer";
+  const tips = { area: tipsOf(["공급면적", "전용면적"], "easy"), grade: tipsOf(["실크-벽지", "합지"], "tip") };
+  // 폰 머리 오른쪽: 손님은 로그인(돌아올 곳 /start), 고객은 내 공사. 웹은 사이트 머리 메뉴 · 로그인 · 이름 ▾ 그대로예요
+  const action = member
+    ? <Link className={t.headLink} href="/my">내 공사</Link>
+    : <Link className={t.headLink} href="/login?next=%2Fstart">로그인</Link>;
   return (
     <>
-      <AppHeader phone={{ title: "기본 정보", back: "/" }} />
-      <InfoForm regions={regions} roomRule={roomRule} today={today} mode={session?.role === "customer" ? "member" : "guest"} mock={MOCK_V3A}
-        crumbs={[{ label: "인테리어 받기", href: "/start" }, { label: "기본 정보" }]} />
+      <StartChat regions={regions} roomRule={roomRule} wishes={wishes} today={today} mode={member ? "member" : "guest"} mock={MOCK_V3A} tips={tips}
+        siteHeader={<AppHeader phone={{ title: "새 공사 시작", back: "/", action }} />} />
+      <OpenTerm id={term} />
     </>
   );
 }
