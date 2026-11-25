@@ -1,0 +1,110 @@
+.wrap { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+
+/* 웹(≥ 768): 표 */
+.tableBox { display: none; min-width: 0; }
+.table { width: 100%; min-width: var(--sc-min, 600px); table-layout: fixed; border-collapse: separate; border-spacing: 0; font-size: var(--mj-type-label); color: var(--mj-text); }
+.caption { padding: 0 0 8px; text-align: left; font-size: var(--mj-type-title-s); font-weight: var(--mj-weight-bold); }
+.colLabel { width: 150px; }
+.table th, .table td { padding: 0; border-bottom: 1px solid var(--mj-line-soft); vertical-align: middle; }
+.table tbody tr:last-child > * { border-bottom: 0; }
+.table .l { padding: 10px 12px 10px 0; text-align: left; font-weight: var(--mj-weight-regular); }
+.table .l b { display: block; font-size: var(--mj-type-label); font-weight: var(--mj-weight-semibold); overflow-wrap: anywhere; }
+.sub { display: block; margin-top: 2px; font-size: var(--mj-type-caption); color: var(--mj-text-mute); overflow-wrap: anywhere; }
+.table thead .l { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); vertical-align: bottom; border-bottom-color: var(--mj-line); }
+.table .dh { padding: 8px 4px 6px; text-align: center; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-sub); font-variant-numeric: tabular-nums; white-space: nowrap; border-left: 1px solid var(--mj-line-soft); }
+.table .hh { padding: 4px 2px 6px; text-align: center; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-regular); color: var(--mj-text-mute); border-bottom-color: var(--mj-line); }
+.table .hh:not(.pm) { border-left: 1px solid var(--mj-line-soft); }
+.table thead tr:last-child .dh { border-bottom-color: var(--mj-line); }
+.hol, .todayTag { display: block; margin-top: 2px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); }
+.hol { color: var(--mj-holiday); }
+.todayTag { color: var(--mj-primary); }
+.today time { color: var(--mj-text); font-weight: var(--mj-weight-bold); }
+.table td { height: 52px; padding: 6px 2px; border-left: 1px solid var(--mj-line-soft); }
+.table td.pm { border-left: 1px dashed var(--mj-line-soft); }
+.off { background: var(--mj-fill); }
+.table .dh.off, .table .hh.off { color: var(--mj-text-mute); }
+/* 접은 빈 날(공사 사이 쉬는 날): 날짜만 적은 좁은 한 칸 */
+.colGap { width: 64px; }
+.table .gapH { padding: 8px 2px 6px; }
+.table td.gapCell { padding: 0; }
+
+/* 막대 */
+.bar {
+  display: flex; align-items: center; gap: 4px; height: 32px; min-width: 0; padding: 0 8px;
+  border-radius: var(--mj-radius-badge); font-size: var(--mj-type-caption); font-weight: var(--mj-weight-bold); line-height: 1.2;
+  text-decoration: none; white-space: nowrap; overflow: hidden;
+}
+.barText { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.note { font-weight: var(--mj-weight-regular); }
+/* 막대를 누르는 칸: 막대는 32px, 누를 곳은 감싼 링크 44px(UI 누를 곳 기준) */
+.barLink { display: flex; align-items: center; width: 100%; min-height: var(--mj-hit); color: inherit; text-decoration: none; border-radius: var(--mj-radius-badge); }
+.barLink > .bar:not(.am):not(.pm) { flex: 1 1 auto; }
+.barLink:hover .barText { text-decoration: underline; }
+.barLink:focus-visible, a.lbar:focus-visible { outline: var(--mj-focus-w) solid var(--mj-focus); outline-offset: 2px; }
+.table td.linked { padding-top: 4px; padding-bottom: 4px; }
+/* 날 칸 하나에 반나절만(half 아닌 표): 오전은 왼쪽 반 · 오후는 오른쪽 반 */
+.bar.am { width: 50%; padding: 0 4px; }
+.bar.pm { width: 50%; margin-left: auto; padding: 0 4px; }
+
+/* 칸 종류(색 + 테두리 모양으로 같이 알려요, 범례와 같아요) */
+.work { background: var(--mj-primary-weak); color: var(--mj-on-primary-weak); }
+.dry { background: var(--mj-surface-sub); color: var(--mj-text-sub); box-shadow: inset 0 0 0 1.5px var(--mj-line-control); background-image: repeating-linear-gradient(135deg, transparent 0 6px, var(--mj-fill) 6px 9px); }
+.clean { background: var(--mj-surface); color: var(--mj-text-sub); box-shadow: inset 0 0 0 1.5px var(--mj-line-control); }
+.booked { background: var(--mj-badge-ok-bg); color: var(--mj-badge-ok-fg); }
+.hold { background: var(--mj-surface); color: var(--mj-proposed-text); border: 1.5px dashed var(--mj-proposed); }
+.pending { background: var(--mj-surface); color: var(--mj-on-primary-weak); border: 1.5px dashed var(--mj-primary); }
+
+/* 폰(< 768): 날마다 세로 목록(C36) */
+.list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; }
+.item { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 12px; align-items: start; padding: 12px 0; border-bottom: 1px solid var(--mj-line-soft); }
+.item:last-child { border-bottom: 0; }
+.dt { margin: 0; font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); line-height: 1.2; font-variant-numeric: tabular-nums; }
+.dt time span { display: block; margin-top: 2px; font-size: var(--mj-type-caption); font-weight: var(--mj-weight-regular); color: var(--mj-text-mute); }
+.dt .todayTag { margin-top: 4px; }
+.bars { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.lbar {
+  display: flex; align-items: center; min-height: var(--mj-hit-min); padding: 6px 12px; border-radius: var(--mj-radius-chip);
+  font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); text-decoration: none; overflow-wrap: anywhere;
+}
+.restDay .dt { color: var(--mj-text-mute); }
+/* 접은 쉬는 날(fold): 날짜만 적은 작은 회색 줄 */
+.restLine { padding: 8px 0; border-bottom: 1px solid var(--mj-line-soft); }
+.restLine:last-child { border-bottom: 0; }
+.restPill { display: inline-flex; align-items: center; min-height: 28px; padding: 0 10px; border-radius: var(--mj-radius-chip); background: var(--mj-fill); font-size: var(--mj-type-caption); color: var(--mj-text-mute); font-variant-numeric: tabular-nums; }
+.rest { display: flex; align-items: center; min-height: var(--mj-hit-min); font-size: var(--mj-type-label); color: var(--mj-text-mute); }
+
+/* 폰 날짜 묶음(heads, V08): '오늘 · 12월 15일(화)' 머리 + 흰 묶음 안 줄 */
+.group { display: flex; flex-direction: column; }
+.group + .group { margin-top: 12px; }
+.gh { margin: 0; padding: 2px 0 6px; font-size: var(--mj-type-label); font-weight: var(--mj-weight-bold); color: var(--mj-text); }
+.rows { margin: 0; padding: 0 16px; list-style: none; display: flex; flex-direction: column; border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); }
+.row { display: flex; align-items: center; gap: 12px; min-height: 52px; padding: 12px 0; border-bottom: 1px solid var(--mj-line-soft); color: inherit; text-decoration: none; }
+.rows > li:last-child .row { border-bottom: 0; }
+.rl { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.rl b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-semibold); overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.rl span { font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+.rowLink:hover b { text-decoration: underline; }
+.rowLink:focus-visible { outline: var(--mj-focus-w) solid var(--mj-focus); outline-offset: 2px; border-radius: var(--mj-radius-badge); }
+.kindWord { flex: none; font-size: var(--mj-type-caption); color: var(--mj-text-sub); }
+
+@media (min-width: 768px) {
+  .tableBox { display: block; }
+  .list { display: none; }
+}
+/* 보기 고정(view): 폭과 상관없이 목록만 · 표만. 폰 표는 ScrollBox로 옆으로 넘겨요 */
+.vList .tableBox { display: none; }
+.vList .list { display: flex; }
+.vTable .tableBox { display: block; }
+.vTable .list { display: none; }
+/* 폰 표: 이름 칸을 줄여(150 → 96px) 1~2일 공사는 넘기지 않고 한눈에 보여요. 더 길면 옆으로 넘겨요 */
+@media (max-width: 767px) {
+  .vTable .colLabel { width: 96px; }
+  .vTable .table { min-width: calc(var(--sc-min, 600px) - 54px); }
+}
+
+/* 범례 · 아래 글 */
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0; padding: 0; list-style: none; font-size: var(--mj-type-caption); color: var(--mj-text-sub); }
+.legend li { display: inline-flex; align-items: center; gap: 6px; }
+.sw { display: inline-block; width: 16px; height: 12px; border-radius: 3px; }
+.swOff { background: var(--mj-fill); box-shadow: inset 0 0 0 1px var(--mj-line); }
+.foot { margin: 0; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }

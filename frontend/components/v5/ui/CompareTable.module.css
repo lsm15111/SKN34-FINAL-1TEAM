@@ -1,0 +1,43 @@
+.wrap { container-type: inline-size; min-width: 0; }
+
+/* 표(넓은 칸) */
+.tblBox { display: none; }
+.table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: var(--mj-type-label); }
+.table th, .table td { padding: 12px; border-bottom: 1px solid var(--mj-line-soft); text-align: left; vertical-align: middle; overflow-wrap: anywhere; }
+.table tr:last-child th, .table tr:last-child td { border-bottom: 0; }
+.table thead th { padding: 12px; font-size: var(--mj-type-body); font-weight: var(--mj-weight-heavy); color: var(--mj-text); border-bottom: 1px solid var(--mj-line); vertical-align: bottom; }
+.table thead th.lab { font-size: var(--mj-type-caption); font-weight: var(--mj-weight-semibold); color: var(--mj-text-mute); }
+.lab { width: 170px; color: var(--mj-text-mute); font-weight: 500; }
+.table tbody th.lab { font-size: var(--mj-type-label); }
+.hint { display: block; font-size: var(--mj-type-caption); color: var(--mj-text-mute); }
+.table td { font-size: var(--mj-type-label); color: var(--mj-text); }
+.big td, .big th { padding-top: 16px; padding-bottom: 16px; }
+.act td { padding-top: 14px; }
+.hl { background: var(--mj-primary-weak); }
+.dim, .dim b, .dim .colName { color: var(--mj-text-mute); }
+.colName { display: block; }
+.colAside { display: block; margin-top: 2px; font-size: var(--mj-type-caption); font-weight: 400; color: var(--mj-text-mute); }
+/* 담을 수 있는 곳이 남았을 때 표(카드) 아래 한 줄: 글 + 다음 길 */
+.more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding: 12px; border-top: 1px solid var(--mj-line-soft); font-size: var(--mj-type-label); color: var(--mj-text-sub); }
+.more p { margin: 0; }
+
+/* 카드(좁은 칸) */
+.cards { display: flex; flex-direction: column; gap: var(--mj-gap-group); margin: 0; padding: 0; list-style: none; }
+.card { display: flex; flex-direction: column; gap: 9px; padding: 18px 20px; border-radius: var(--mj-radius-group); background: var(--mj-surface); box-shadow: var(--mj-group-edge); }
+.cardHl { box-shadow: inset 0 0 0 2px var(--mj-primary); }
+.cardHead { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.cardHead b { font-size: var(--mj-type-body); font-weight: var(--mj-weight-bold); }
+.kv { display: flex; flex-direction: column; margin: 0; }
+.kv > div { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--mj-line-soft); }
+.kv > div:last-child { border-bottom: 0; }
+.kv dt { flex: none; font-size: var(--mj-type-label); color: var(--mj-text-mute); }
+.kv dd { margin: 0; min-width: 0; text-align: right; font-size: var(--mj-type-label); overflow-wrap: anywhere; }
+.kvBig { flex-direction: column; align-items: flex-start !important; gap: 2px !important; }
+.kvBig dd { text-align: left; }
+.cardAct { display: flex; }
+.cardAct > * { flex: 1 1 auto; }
+
+@container (min-width: 600px) {
+  .tblBox { display: block; }
+  .cards { display: none; }
+}
