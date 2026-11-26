@@ -1,15 +1,15 @@
-"""공종 에이전트 판단 루프(LLM 켬에서만, docs/v3/floor-agent.md 4.2 · 4.4). 처음 쓰는 공종은 바닥이에요.
+"""공종 에이전트 판단 루프(LLM 모드에서만, docs/v3/floor-agent.md 4.2 · 4.4). 처음 적용한 공종은 바닥이에요.
 
-- LLM은 도구를 고르고 칸만 채워요. 실행 · 결과 · 검사는 코드가 해요. DB에 쓰지 않아요.
-- 상한: 도구 차례 4번 · LLM 호출 6번(v2/ask.py와 같음). 도구 차례를 다 쓰면 도구 없이 답만 받아요.
-- 답 꼴: {"sentences": [{"text", "cites"}]}. 꼴이 틀리면 한 번만 다시 쓰라고 해요.
-- LLM 실패 · 상한 초과 · 검사 뒤 남은 문장 없음 → part=None(부르는 쪽이 규칙 흐름 답을 그대로 씀).
-- 근거 검사: 문장과 근거 글의 두 글자 묶음이 OVERLAP 이상 겹친 근거 번호만 남겨요. 근거가 없는 설명 문장은
+- LLM은 도구를 고르고 인자만 채워요. 실행 · 결과 · 검사는 코드가 해요. DB에 쓰지 않아요.
+- 상한: 도구 라운드 4번 · LLM 호출 6번(v2/ask.py와 같음). 도구 라운드를 다 쓰면 도구 없이 답만 받아요.
+- 응답 형식(JSON): {"sentences": [{"text", "cites"}]}. 형식이 틀리면 한 번만 다시 쓰게 해요.
+- LLM 실패 · 상한 초과 · 검사 뒤 남은 문장 없음 → part=None(호출한 쪽이 규칙 기반 기본 응답(폴백)을 그대로 씀).
+- 근거 검사: 문장과 근거 글의 2-gram(바이그램)이 OVERLAP 이상 겹친 근거 번호만 남겨요. 근거 없는 설명 문장은
   빼고, 확인할 곳을 알려 주는 문장만 근거 없이 둬요.
-- 범위 검사: 공종 도구 모음의 scope가 정해 둔 글을 돌려주면 그 문장을 정해 둔 글로 바꿔요.
-- 답 먼저: 에이전트 글이 맨 앞이라 첫 문장부터 답해요. 규칙 흐름의 정해 둔 고지(정책 · 주의)는 '꼭 알릴 것'으로
-  넘겨 답 안에 넣게 하고, 코드는 뜻이 빠졌는지만 봐서(COVER) 빠진 고지만 답 뒤에 붙여요.
-- 공종 도구 모음(Toolbox)의 상태는 hits(보인 근거) · calc_refs(계산 상자 번호) · ask · handoff를 가져야 해요.
+- 범위 검사: 공종 도구 모음의 scope가 고정 정책 문구를 돌려주면 그 문장을 그 문구로 바꿔요.
+- 답 먼저: 에이전트 응답이 맨 앞이라 첫 문장부터 답해요. 기본 응답의 고정 정책 문구(정책 · 주의 고지)는
+  '꼭 알릴 것'으로 넘겨 답 안에 넣게 하고, 코드는 그 뜻이 빠졌는지만 봐서(COVER) 빠진 고지만 답 뒤에 붙여요.
+- 공종 도구 모음(Toolbox)의 상태 객체는 hits(보인 근거) · calc_refs(계산 상자 번호) · ask · handoff를 가져야 해요.
 """
 
 from __future__ import annotations
@@ -41,23 +41,24 @@ MAX_TOOL_ROUNDS = 4
 MAX_CALLS = 6
 MAX_CALLS_PER_ROUND = 3
 MAX_SENTENCES = 5
-FIX = '답 꼴이 틀렸어요. {"sentences": [{"text": "...", "cites": ["K123"]}]} JSON 하나로만 다시 써 주세요.'
+FIX = '응답 형식(JSON)이 맞지 않아요. {"sentences": [{"text": "...", "cites": ["K123"]}]} JSON 하나로만 다시 써 주세요.'
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
-# 문장의 두 글자 묶음 중 근거 글에 있는 몫. 카드 문장 1,414개로 잼(2026-11-26): 0.25면 사람이 쓴 문장의 99.2%가
-# 넘고, 엉뚱한 글과 짝지으면 0.8%만 넘어요
+# 문장 2-gram(바이그램) 중 근거 글에도 있는 비율. 카드 문장 1,414개로 측정(2026-11-26): 0.25면 사람이 쓴 문장의
+# 99.2%가 넘고, 무관한 근거 글과 짝지으면 0.8%만 넘어요
 OVERLAP = 0.25
-# 고객 질문 낱말을 받아 쓴 답('고무 매트를 오래 깔아 두면 …')은 근거만으로 0.25가 안 나와요. 근거와 0.15 이상 겹치고
-# 근거 + 질문과 0.4 이상 겹치면 받아요(카드 문장으로 잼: 사람이 쓴 문장 99.3% · 엉뚱한 글 1.1% 통과, 2026-11-26)
+# 고객 질문 낱말을 받아 쓴 답('고무 매트를 오래 깔아 두면 …')은 근거만으로 0.25가 안 나와요. 근거와 0.15 이상,
+# 근거 + 질문과 0.4 이상 겹치면 통과(카드 문장으로 측정: 사람이 쓴 문장 99.3% · 무관한 글 1.1% 통과, 2026-11-26)
 OVERLAP_LOW, OVERLAP_Q = 0.15, 0.4
-# 앞 문장이 검사에서 빠진 뒤 남은 첫 문장 앞의 이음말은 떼요(바닥 평가 f52)
+# 앞 문장이 검사에서 빠진 뒤 남은 첫 문장 앞의 접속사는 떼요(바닥 평가 f52)
 LEAD = re.compile(r"^(?:다만|또한|그리고|그래서|따라서|하지만|그러나|게다가|특히)\s*,?\s*")
 GUIDE = re.compile(r"확인|물어|문의")
-# 정해 둔 고지(templates 정책 글)와, 그 뜻이 에이전트 글에 이미 들었는지 보는 말. 짝이 없는 고지는 늘 뒤에 붙여요
+# (고정 정책 문구에 든 열쇠 말, 그 뜻이 에이전트 응답에 이미 있는지 보는 패턴). 열쇠는 templates 문구의 일부라
+# 문구를 바꾸면 같이 맞춰요. 짝이 없는 고지는 늘 답 뒤에 붙여요
 COVER = (
     ("금액은 실측 뒤 업체 견적서", re.compile(r"견적서|견적.{0,12}(?:확인|비교|받)")),
     ("기간은 집을 본 뒤", re.compile(r"기간.{0,24}(?:업체|실측|집을 본)|(?:업체|실측).{0,24}기간")),
     (
-        "하자인지는 믿집이 판정",
+        "믿집이 판정하지 않아요",
         re.compile(
             r"(?:판정|단정|판단).{0,40}(?:사진|기록)|(?:사진|기록).{0,40}(?:업체|상담|1372)"
         ),
@@ -73,7 +74,7 @@ class Toolbox:
     defs: list[dict]
     call: Callable[..., Any]  # (name, arguments, task, kb, state) → Out(content, ok, end_turn)
     state: Callable[[], Any]
-    scope: Callable[[str], str | None] | None = None  # 범위 밖 말이면 정해 둔 글
+    scope: Callable[[str], str | None] | None = None  # 범위 밖 말이면 바꿔 넣을 고정 정책 문구
 
 
 @dataclass
@@ -110,12 +111,12 @@ def user_message(task: Task, notes: list[str] | None = None) -> str:
 
 
 def notices(free: Part) -> list[str]:
-    """규칙 흐름이 만든 정해 둔 고지 문장들."""
+    """규칙 기반 기본 응답에 든 고정 정책 문구(고지) 문장들."""
     return [x.text for sec in free.sections if sec.source == "template" for x in sec.sentences]
 
 
 def missing(notes: list[str], sents: list[Sentence]) -> list[str]:
-    """에이전트 글에 뜻이 없는 고지만. 뜻을 볼 말(COVER)이 없는 고지는 늘 남겨요."""
+    """에이전트 응답에 뜻이 빠진 고지만 돌려줘요. COVER 패턴이 없는 고지는 늘 남겨요."""
     text = " ".join(x.text for x in sents)
     out = []
     for n in notes:
@@ -152,9 +153,9 @@ def grounded(text: str, refs: list[str], kb: KB, question: str) -> bool:
 def ground(
     sec: Section, kb: KB, scope: Callable[[str], str | None] | None, question: str = ""
 ) -> tuple[Section | None, list[str], list[str]]:
-    """범위 밖 문장은 정해 둔 글로, 근거와 안 맞는 번호 · 문장은 빼요. 남은 문장이 없으면 None.
+    """범위 밖 문장은 고정 정책 문구로 바꾸고, 근거와 안 맞는 번호 · 문장은 빼요. 남은 문장이 없으면 None.
 
-    정해 둔 글은 고객이 그 일을 물었을 때만 넣고, 묻지 않았는데 나온 범위 밖 문장은 빼기만 해요."""
+    고정 정책 문구는 고객이 그 일을 물었을 때만 넣고, 묻지 않았는데 나온 범위 밖 문장은 빼기만 해요."""
     out: list[Sentence] = []
     dropped: list[str] = []
     removed: list[str] = []  # 빠진 문장(평가 기록용, 답 · 로그에는 남기지 않음)
@@ -182,7 +183,7 @@ def ground(
             removed.append(x.text)
     if not out:
         return None, dropped, removed
-    if sec.sentences and out[0].text != sec.sentences[0].text:  # 첫 문장이 빠졌으면 이음말을 뗀다
+    if sec.sentences and out[0].text != sec.sentences[0].text:  # 첫 문장이 빠졌으면 접속사를 뗀다
         first = LEAD.sub("", out[0].text)
         out[0] = out[0].model_copy(update={"text": first or out[0].text})
     return sec.model_copy(update={"sentences": out}), dropped, removed
@@ -224,7 +225,7 @@ def build(
     scope: Callable[[str], str | None] | None = None,
     removed: list[str] | None = None,
 ) -> tuple[Part | None, list[str]]:
-    """에이전트 글을 검사해 몫으로 만든다. 숫자 · 근거 번호 · 지시문 누출은 check.section이 걸러요."""
+    """에이전트 응답을 검사해 담당 응답(Part)으로 만든다. 숫자 · 근거 번호 · 지시문 누출은 check.section이 걸러요."""
     code = free.trade or task.trades[0]
     hits = st.hits
     boxes = [b for b in (calc_box(r, task.facts) for r in st.calc_refs) if b is not None]
@@ -260,7 +261,7 @@ def build(
     part = Part(route="trade", trade=code)  # type: ignore[arg-type]
     part.sections = [kept]
     tail = missing(notes, kept.sentences)
-    if tail:  # 에이전트 글에 뜻이 빠진 고지만 답 뒤에(제목 없이)
+    if tail:  # 에이전트 응답에 뜻이 빠진 고지만 답 뒤에(제목 없이)
         part.sections.append(templates.section(tail, route="trade", trade=code))
     part.calc = boxes
     part.cards = [c for c in free.cards if c.kind == "next_step"]
@@ -272,7 +273,7 @@ def build(
 
 
 async def run(task: Task, kb: KB, free: Part, box: Toolbox) -> Result:
-    """한 턴 판단 루프. free는 같은 턴의 규칙 흐름 답(고정 몫 · 되돌아갈 답)."""
+    """한 턴 판단 루프. free는 같은 턴의 규칙 기반 기본 응답(고정 정책 문구의 출처이자 폴백)."""
     code = free.trade or task.trades[0]
     prompt = system(code)
     st = box.state()

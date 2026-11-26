@@ -53,7 +53,7 @@ V3 = [
 CATS = ["자재", "시공", "순서", "기간", "비용", "하자", "AS", "규정", "계약", "관리", "셀프"]
 MAKER = frozenset({"maker", "maker_guide"})  # 제조사 글(라이선스 결정 대기)
 # 10공종 금액 · 기간 정해 둔 글(templates.PRICE_KNOWLEDGE · PERIOD_KNOWLEDGE)의 고정 부분
-QUOTE_TEXT = ("금액은 실측 뒤 업체 견적서에서 확인해요", "기간은 집을 본 뒤 업체가 정해요")
+QUOTE_TEXT = ("금액은 실측 뒤 업체 견적서로 확인해 주세요", "기간은 집을 본 뒤 업체가 정해요")
 TODAY = date(2026, 11, 25)
 K = 5
 

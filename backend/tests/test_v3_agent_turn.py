@@ -134,7 +134,7 @@ def test_visit_draft_after_vendor_range_recommends_calc_day():
     })  # fmt: skip
     facts = FACTS.model_copy(update={"visit_draft": vd})
     a = turn("마루와벽은 언제 실측 오면 좋아요?", facts=facts, view="visits").answer
-    assert "마루와벽이 12.13(일)~12.18(금)에 된대요" in words(a)
+    assert "마루와벽이 12.13(일)~12.18(금)에 가능하다고 했어요" in words(a)
     assert "12.15(화)" in words(a)
     assert any(c.kind == "open_calendar" for c in a.cards)
     assert "floor" not in a.trace.trades  # '마루와벽'은 업체 이름이라 바닥 공종이 아니다
@@ -187,7 +187,7 @@ def test_merge_keeps_same_text_once_and_folds_failed_trades_into_one_line():
         asked="도배랑 필름 칠 어때요?",
     )
     texts = [x.text for s in m.sections for x in s.sentences]
-    assert texts[-1] == "필름 · 도장 쪽 자세한 내용은 믿집 자료로 확인하지 못했어요."
+    assert texts[-1] == "필름 · 도장 쪽 자세한 내용은 아직 확인하지 못했어요."
     assert UNKNOWN not in m.unknown
     none = merge([_part("film"), _part("paint")], asked="필름이랑 칠 어때요?")
     assert none.sections == [] and none.unknown[0] == UNKNOWN

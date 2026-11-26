@@ -45,9 +45,9 @@ PROBLEM_NAME = {
 }
 STATE_NOTE = {
     "included": "합계에 들어가요",
-    "bundled": "다른 줄에 묶여 있어요",
+    "bundled": "다른 항목에 묶여 있어요",
     "separate": "합계에 따로 들어가요",
-    "optional": "고르면 더해요",
+    "optional": "선택하면 더해져요",
     "after_visit": "실측 뒤 업체가 정해요",
     "excluded": "이 집은 하지 않아요",
 }
@@ -106,7 +106,7 @@ def _vendor(q: str, ln: StandardLineFact | None) -> tuple[str, ...]:
                 f"{josa(name, '은', '는')} 실측 뒤에 정해진다고 들었어요. "
                 "실측 날 집을 보시고 대략적인 범위를 알려 주실 수 있을까요?"
             )
-        return (first, f"정해진 작업 범위와 금액을 {name} 줄에 나눠 견적서에 적어 주세요.")
+        return (first, f"정해진 작업 범위와 금액을 {name} 항목으로 나눠 견적서에 적어 주세요.")
     work = WORK.search(q)
     bad = PROBLEM.search(q)
     if bad and not PERIOD.search(
@@ -122,7 +122,7 @@ def _vendor(q: str, ln: StandardLineFact | None) -> tuple[str, ...]:
         w = work.group(1)
         return (
             f"우리 집에 {josa(w, '이', '가')} 필요한지 알고 싶어요. 벽 사진을 보내 드리면 확인해 주실 수 있을까요?",
-            f"필요하면 작업 범위와 금액을 견적서에 {w} 줄로 나눠 적어 주세요.",
+            f"필요하면 작업 범위와 금액을 견적서에 {w} 항목으로 나눠 적어 주세요.",
         )
     return ()
 
@@ -152,9 +152,7 @@ def shape(ans: AgentAnswer, task: Task, trade: str | None = None) -> AgentAnswer
         return ans
     first, *rest = ans.sections
     said = list(first.sentences)
-    if (
-        said[0].text == EXTRACT_SUMMARY_LEAD
-    ):  # 채움 글('믿집 자료를 보면 이래요.')은 결론이 아니에요
+    if said[0].text == EXTRACT_SUMMARY_LEAD:  # 도입 문구(EXTRACT_SUMMARY_LEAD)는 결론이 아니에요
         said = said[1:]
     if not said:
         return ans

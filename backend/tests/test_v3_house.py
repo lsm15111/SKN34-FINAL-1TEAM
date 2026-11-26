@@ -4,7 +4,7 @@ import re
 
 from test_v3_agent_turn import FACTS, turn
 
-from app.agent.v3 import gate
+from app.agent.v3 import gate, templates
 
 DIGIT = re.compile(r"\d")
 
@@ -58,7 +58,7 @@ def test_guide_question_keeps_old_shape():
 def test_shape_skips_filler_and_misreads():
     # 자료에서 뽑은 답의 채움 글은 결론이 아니에요
     a = turn("도배 전에 곰팡이 어떻게 없애요?", facts=FACTS).answer
-    assert a.lead and a.lead != "믿집 자료를 보면 이래요."
+    assert a.lead and a.lead != templates.EXTRACT_SUMMARY_LEAD
     # '얼마나'(수명 · 기간)는 금액 질문이 아니에요: 견적서 카드 · 견적 부탁을 붙이지 않아요
     a = turn("합지 벽지 수명은 얼마나 가요?", facts=FACTS).answer
     assert not [c for c in a.cards if c.kind == "house"]

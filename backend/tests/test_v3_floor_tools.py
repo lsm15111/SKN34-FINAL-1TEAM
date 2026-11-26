@@ -49,7 +49,7 @@ def test_unknown_tool_and_extra_fields_are_refused():
     assert not out.ok and body["error"]
     # 공사 번호 · 사용자를 칸으로 넣어 남의 공사를 읽으려 해도 실행하지 않는다
     out, body, _ = _call("project_facts", {"project_id": str(uuid.uuid4())})
-    assert not out.ok and body["error"] == "정해 둔 칸만 넣어요"
+    assert not out.ok and body["error"] == "정해 둔 인자만 넣어요"
     out, _, _ = _call("search_knowledge", "강마루")
     assert not out.ok
 
