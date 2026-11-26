@@ -97,6 +97,28 @@ def test_quote_and_schedule_need_a_project():
     assert gate(q, has_project=True).route == "quote_explanation"
 
 
+def test_knowledge_trade_quote_question_without_project_goes_to_trade():
+    # 계산 엔진이 없는 공종의 일반 견적 질문은 그 공종 담당이 지식으로 답한다(바닥 평가 f26 · f27)
+    for q in (
+        "같은 평수인데 업체마다 마루 견적이 왜 이렇게 달라요?",
+        "장판 견적서를 받았는데 뭐가 빠졌는지 어떻게 봐요?",
+    ):
+        g = gate(q)
+        assert (g.route, g.trades[0]) == ("trade", "floor"), q
+    assert (
+        gate("도배 견적서 합계가 왜 이래요?").route == "guide"
+    )  # 계산 엔진 공종 · 믿집 문서는 그대로
+
+
+def test_floor_words_win_over_place_and_pet_words():
+    assert gate("욕실 문 앞 마루가 물 먹어서 검게 변했어요").trades[0] == "floor"
+    assert gate("욕실 바닥이 미끄러워요").trades[0] == "bath"  # 그냥 '바닥'은 자리 공종
+    assert gate("거실이랑 방 사이 문턱을 없애도 괜찮아요?").trades == ["floor"]
+    g = gate("강아지 발톱에 마루가 자꾸 긁히는데 어떻게 관리해요?")
+    assert (g.route, g.trades) == ("trade", ["floor"])
+    assert gate("강아지 키워도 돼요?").route == "out_of_scope"
+
+
 def test_low_confidence_asks_back_with_two_or_three_buttons():
     g = gate("음")
     assert g.route == "ask_back"

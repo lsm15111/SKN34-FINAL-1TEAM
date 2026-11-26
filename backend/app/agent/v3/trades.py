@@ -262,10 +262,18 @@ def rules() -> dict[str, dict[str, str]]:
 # (예: '욕실 타일' → 타일, '붙박이장 필름' → 필름, '방문 칠' → 도장). E1 dev 질문 은행에서 고른 규칙(held-out 안 봄)
 CONTEXT = {"bath": 2, "kitchen": 2, "mokgong": 1, "window": 1}
 WORK_OVER = {
-    "bath": ("tile", "electric", "plumbing", "demolition", "film", "paint"),
+    "bath": ("tile", "electric", "plumbing", "demolition", "film", "paint", "floor"),
     "kitchen": ("film", "demolition", "electric", "tile", "paint"),
     "mokgong": ("paint", "film"),
     "window": ("film",),
+}
+
+
+# 자리 공종보다 앞설 때 낱말을 좁히는 공종: '욕실 바닥'은 욕실, '욕실 문 앞 마루'는 바닥
+WORK_ONLY = {
+    "floor": re.compile(
+        r"마루|장판|모노륨|데코타일|헤링본|PVC\s*(?:타일|시트|장판)|비닐\s*(?:타일|시트|장판)"
+    )
 }
 
 
@@ -280,7 +288,14 @@ def trades_in(text: str) -> list[TradeCode]:
             hits.append((m.start(), -s.route_priority, s.code))
     order = [code for _, _, code in sorted(hits)]
     if len(order) >= 2 and order[0] in WORK_OVER:
-        work = next((c for c in order[1:] if c in WORK_OVER[order[0]]), None)
+        work = next(
+            (
+                c
+                for c in order[1:]
+                if c in WORK_OVER[order[0]] and (c not in WORK_ONLY or WORK_ONLY[c].search(text))
+            ),
+            None,
+        )
         if work:
             order.remove(work)
             order.insert(0, work)

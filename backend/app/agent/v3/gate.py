@@ -34,6 +34,8 @@ SCHEDULE_MINE = re.compile(
     r"실측\s*(?:날|일정|요청|와|오|받)|희망\s*기간|반나절|"
     r"언제.{0,8}(?:오|와|들어)"
 )
+# 믿집이 만든 문서(표준견적서 · 가견적 · 실측 견적의 줄 · 합계)를 묻는 말. 공사가 없으면 가이드가 시작 순서를 안내해요
+OWN_DOC = re.compile(r"표준\s*견적|가견적|실측\s*견적|합계|부가세|줄")
 MEANING = re.compile(r"뭐야|뭐예요|뭔가요|뭐에요|무슨\s*뜻|뭘\s*하는|이란\s*게|란\s*게")
 GUIDE_WORDS = re.compile(
     r"처음|순서|뭐부터|어떻게\s*진행|믿집|가입|뜻이|뭐예요|뭔가요|뭐에요|무슨\s*뜻|계약|관리사무소|"
@@ -145,7 +147,10 @@ def gate(
         if route == "guide" and found:
             route = "trade"  # 공종이 분명하면 그 공종 담당이 답한다(가이드는 공통 · 처음 안내). 이음말 복합은 위에서 multi
         if route in NEED_PROJECT and not has_project:
-            route = "guide"  # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요
+            # 내 견적 · 공정표가 없으면 가이드가 시작 순서로 안내해요. 계산 엔진이 없는 공종 낱말이 있으면
+            # 그 공종 담당이 일반 지식으로 답해요('업체마다 마루 견적이 왜 달라요?')
+            knowledge = found and not trades.BY_CODE[found[0]].calc and not OWN_DOC.search(text)
+            route = "trade" if knowledge else "guide"
         if route == "out_of_scope" and found and not keep:
             route = "trade"  # v3: 다른 공종은 범위 밖이 아니라 공종 지식 답
         if route == "out_of_scope" or route == "ask_back":
