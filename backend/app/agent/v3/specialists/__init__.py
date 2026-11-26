@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Awaitable, Callable, Mapping
 from dataclasses import dataclass
 from functools import cache
 from importlib import import_module
@@ -26,6 +26,8 @@ class Specialist:
     prompt_path: Path | None = None
     run: Callable[[Task, KB, TradeRunner], Part] | None = None
     vector_query: Callable[[str], str | None] | None = None
+    # LLM 켬일 때 판단 루프(agent.py의 run_llm). 규칙 흐름 답을 받아 새 몫이나 None(그대로 씀)을 돌려준다
+    run_llm: Callable[[Task, KB, Part], Awaitable[Part | None]] | None = None
 
 
 def _folders(root: Path) -> list[Path]:
@@ -70,6 +72,7 @@ def load_specialists(root: Path, known: Mapping[str, TradeSpec]) -> dict[str, Sp
             retrieve=retrieval.retrieve if retrieval else None,
             vector_query=getattr(retrieval, "vector_query", None),
             run=agent.run if agent else None,
+            run_llm=getattr(agent, "run_llm", None),
             prompt_path=prompt if prompt.is_file() else None,
         )
     return out

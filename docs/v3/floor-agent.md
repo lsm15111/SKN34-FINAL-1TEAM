@@ -147,13 +147,13 @@ dev 공사에 이미 있는 칸도 같이 써요.
 ```
 POST /ai/turns → chat.service(프로젝트 사실 + 모은 조건)
   → gate(바닥 낱말 → trade/floor)
-  → turn → trade_agent → specialists/floor/agent.run
-       LLM 끔: run_common(지금 규칙 흐름)
-       LLM 켬: agent_loop.run(바닥 지시문 · 바닥 도구)
+  → turn → trade_agent → specialists/floor/agent.run → run_common(규칙 흐름 답, 늘 먼저 만듦)
+  → LLM 켬이고 담당 하나(trade)면: turn이 floor/agent.run_llm → agent_loop.run(공용 지시문 + 바닥 지시문 · 바닥 도구)
          LLM ↔ 도구(search_knowledge · project_facts · floor_estimate · ask_customer · handoff)
-         도구 호출 4번 · LLM 호출 6번이 상한(v2/ask.py와 같음), 넘으면 그때까지 받은 근거로 답
-         → 코드 검사(4.4) → Part(글 · 계산 상자 · 되묻기 단추 · 넘긴 공종 답)
-         실패 · 시간 초과 · 검사에서 글이 다 빠짐 → run_common
+         도구 차례 4번 · LLM 호출 6번이 상한(v2/ask.py와 같음), 차례를 다 쓰면 도구 없이 답만 받음
+         → 코드 검사(4.4) → Part(규칙 흐름의 정해 둔 글 + 에이전트 글 · 계산 상자 · 되묻기 단추 · 넘긴 공종 답)
+         실패 · 답 꼴 두 번 틀림 · 상한 초과 · 검사에서 글이 다 빠짐 → 규칙 흐름 답 그대로(다시 쓰기 안 함)
+  → 여러 공종(multi)은 아직 지금처럼 다시 쓰기(llm_mode)만 해요
   → 저장 · commit → token · card · done
 ```
 
@@ -186,8 +186,10 @@ LLM은 도구를 고르고 칸만 채워요. 실행과 결과는 코드가 맡�
 | --- | --- |
 | `agent/v3/agent_loop.py`(새로, 공용) | LLM ↔ 도구 루프 · 상한 · 코드 검사 · 실패 처리. 처음 쓰는 공종은 바닥이고, 도배를 붙일 때 둘 다 쓰는지 시험해요 |
 | `specialists/floor/tools.py`(새로) | 도구 5개 정의와 실행 함수 |
-| `specialists/floor/prompt_v1.md` | 에이전트 지시문(도구 쓰는 법 · 지킬 선 · 답 꼴) |
-| `specialists/floor/agent.py` | LLM 켬이면 루프, 끔이면 `run_common` |
+| `prompts/trade_agent_v1.md`(새로, 공용) | 에이전트 지시문(도구 쓰는 법 · 지킬 선 · 답 꼴) |
+| `specialists/floor/prompt_v1.md` | 바닥 지침. 공용 지시문 뒤에 붙여요 |
+| `specialists/floor/agent.py` | `run`은 규칙 흐름, `run_llm`은 판단 루프. 공종 폴더가 `run_llm`을 두면 turn이 LLM 켬에서 불러요 |
+| `turn.py` · `specialists/__init__.py` | `run_llm`이 있는 담당이면 다시 쓰기 대신 판단 루프를 불러요(턴 흐름이 동기라 turn에서 기다려요) |
 | `specialists/floor/spec.py` · `retrieval.py` · `terms.py` | 지금 그대로(W6-1) |
 | `agent/llm.py` | 바꾸지 않아요. 이미 있는 `chat_tools`(도구 호출 한 번)만 써요 |
 
@@ -302,7 +304,7 @@ LLM은 도구를 고르고 칸만 채워요. 실행과 결과는 코드가 맡�
 | W3 | 바닥 기본 정보 칸 | `FloorInfoIn`, 검사(`check_home`), PATCH | W1 | 422 · 권한 404/403 |
 | W4 | 계산 엔진 `calc/floor.py` | 입력 · 줄 · 기간 · 근거 등급, 단가 판 | D(단가) | 계산 엔진 시험 |
 | W5 | 표준견적서 · 공정표 조립 | `quote/service` 바닥 블록, `ProjectFacts.standard` · `plan` | W3 · W4 | 표준견적서 API 시험 |
-| W6 | 바닥 에이전트 | W6-1 폴더(끝, `specialists/floor/`) · W6-2 도구 5개(끝, `tools.py`) · W6-3 판단 루프(`agent/v3/agent_loop.py`) · W6-4 코드 검사와 LLM 호출 평가 | — | 바닥 시험 · `test_v3_trade_specialists` · 4.10 평가 |
+| W6 | 바닥 에이전트 | W6-1 폴더(끝, `specialists/floor/`) · W6-2 도구 5개(끝, `tools.py`) · W6-3 판단 루프(끝, `agent/v3/agent_loop.py`) · W6-4 코드 검사와 LLM 호출 평가 | — | 바닥 시험 · `test_v3_trade_specialists` · 4.10 평가 |
 | W7 | 되묻기 칸 · 모은 조건 잇기 | `Slot.fact`, `slot_known`, `ProjectFacts.brief` | W2 · W6 | 같은 칸 다시 안 묻기 시험 |
 | W8 | 지식 넣기(F) | `data/processed` 15~18 번호, 문서별 나누기, 시방서 요약 지식 | — | `validate.py` · 번호 겹침 시험 |
 | W9 | 카드 보강 | `cards/floor.jsonl` 열쇠 · ask · calc 참조 | W6 · W7 | `cards_check.py` |

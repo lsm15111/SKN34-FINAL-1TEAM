@@ -9,7 +9,7 @@ import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, replace
 
-from app.agent.v3 import check, house, llm_mode, orchestrator, policy, templates
+from app.agent.v3 import agent_loop, check, house, llm_mode, orchestrator, policy, templates
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3.answer import KB, T_HIGH, Part, Task, next_card
 from app.agent.v3.schemas import (
@@ -156,9 +156,19 @@ async def run_turn(
     else:
         part = orchestrator.AGENTS[g.route](task, kb)
     routes: list[str] = []
-    if ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
+    prompts: list[str] = []
+    leak = ""  # 지시문 누출 검사에 쓸 지시문
+    sp = registered().get(task.trades[0]) if g.route == "trade" and task.trades else None
+    if ctx.mode == "llm" and sp is not None and sp.run_llm is not None:
+        # 공종 판단 루프(docs/v3/floor-agent.md 4.2). 실패하면 규칙 흐름 답 그대로(다시 쓰기 안 함)
+        new = await sp.run_llm(task, kb, part)
+        if new is not None:
+            part = new
+            prompts, leak = [agent_loop.VERSION], agent_loop.system(task.trades[0])
+    elif ctx.mode == "llm" and g.route in ("guide", "trade", "multi"):
         part, routes = await _llm(part, kb, masked)
-    prompts = [llm_mode.VERSION[r] for r in routes]
+        prompts = [llm_mode.VERSION[r] for r in routes]
+        leak = "\n".join(llm_mode.prompt(r) for r in routes)
     ans = AgentAnswer(
         sections=part.sections, calc=part.calc, cards=part.cards, ask=part.ask,
         unknown=part.unknown, suggest=part.suggest[:3],
@@ -169,7 +179,7 @@ async def run_turn(
             parts=names, failed_parts=failed_parts, dropped=part.dropped,
         ),
     )  # fmt: skip
-    ans = check.final(ans, prompt="\n".join(llm_mode.prompt(r) for r in routes) or None)
+    ans = check.final(ans, prompt=leak or None)
     ans = house.shape(ans, task, part.trade)  # 결론 한 줄 · 이 집 견적서 카드 · 업체에 요청할 말
     new_wait = None
     if ans.ask is not None:
