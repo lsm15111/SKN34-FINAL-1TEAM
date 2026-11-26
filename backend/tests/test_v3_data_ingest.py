@@ -1,4 +1,4 @@
-"""v3 지식 요지 190개(data/v3/knowledge/chunks.jsonl)를 임베딩 없이 키워드 검색에 넣는 길(B6).
+"""v3 지식 요지 193개(data/v3/knowledge/chunks.jsonl)를 임베딩 없이 키워드 검색에 넣는 길(B6).
 
 - CSV는 에이전트 담당 변환기(`app.knowledge.v3_csv`, 번호 `v3_csv.START`~ = K20001~)로 만들어요. 번호 규칙을 한 곳에만 둬요.
 - 적재 · 활성화는 테스트 DB에서만 해요. 유료 API는 부르지 않아요.
@@ -21,6 +21,7 @@ from app.knowledge.json_csv import EXTRA, REQUIRED
 
 SRC = Path(__file__).resolve().parents[2] / "data" / "v3" / "knowledge" / "chunks.jsonl"
 MODEL, DIMS, PROFILE = "text-embedding-3-small", 3, ingest.BUILD_PROFILE
+N = 193  # chunks.jsonl 조각 수(K20001~K20193)
 
 
 def build(tmp_path: Path) -> tuple[Path, list[dict]]:
@@ -57,11 +58,11 @@ def test_v3_chunks_make_a_knowledge_csv(tmp_path):
     path, lines = build(tmp_path)
     data = ingest.inspect_csv(path)
     assert data.kind == "knowledge" and data.key == "v3_knowledge_rag"
-    assert len(data.hashes) == len(lines) == 190
+    assert len(data.hashes) == len(lines) == N
     with path.open(encoding="utf-8-sig", newline="") as f:
         refs = [r["ref"] for r in csv.DictReader(f)]
-    first, last = v3_csv.START, v3_csv.START + 189
-    assert len(set(refs)) == 190 and (refs[0], refs[-1]) == (f"K{first}", f"K{last}")
+    first, last = v3_csv.START, v3_csv.START + N - 1
+    assert len(set(refs)) == N and (refs[0], refs[-1]) == (f"K{first}", f"K{last}")
 
 
 def test_keyword_only_activation_makes_chunks_searchable(tmp_path, monkeypatch):
@@ -72,17 +73,17 @@ def test_keyword_only_activation_makes_chunks_searchable(tmp_path, monkeypatch):
     async def run():
         await ingest.load_dataset(SessionLocal, ingest.inspect_csv(path), MODEL, DIMS, PROFILE)
         # 임베딩을 요구하는 기본 활성화는 막혀요(임베딩 0행)
-        with pytest.raises(ValueError, match="임베딩 미완료 190행"):
+        with pytest.raises(ValueError, match=f"임베딩 미완료 {N}행"):
             await activate([path], require_embeddings=True)
         result = await activate([path], require_embeddings=False)
-        assert result[0]["status"] is True and result[0]["embedding_missing"] == 190
+        assert result[0]["status"] is True and result[0]["embedding_missing"] == N
         async with SessionLocal() as s:
             found = await service.search(s, "도배바름 하루 시공량 표준품셈", k=3)
         refs = [h.ref for h in found.hits]
-        assert want in refs and all(v3_csv.START <= int(r[1:]) < v3_csv.START + 190 for r in refs)
+        assert want in refs and all(v3_csv.START <= int(r[1:]) < v3_csv.START + N for r in refs)
 
     asyncio.run(run())
-    assert query("select count(*) n from rag_chunks where embedding is null")[0]["n"] == 190
+    assert query("select count(*) n from rag_chunks where embedding is null")[0]["n"] == N
     assert query("select status from ref_dataset_versions")[0]["status"] is True
 
 
@@ -126,5 +127,5 @@ def test_keyword_only_cli(tmp_path, monkeypatch, capsys):
         ingest.run(ingest.parser().parse_args(["verify", *base, "--keyword-only", "--activate"]))
     )
     out = capsys.readouterr().out
-    assert "활성화 완료" in out and "키워드 검색에만" in out and "190행" in out
+    assert "활성화 완료" in out and "키워드 검색에만" in out and f"{N}행" in out
     assert query("select status from ref_dataset_versions")[0]["status"] is True

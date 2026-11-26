@@ -28,7 +28,7 @@
 | 분류기 | `intent_lr_v2` 다시 학습 | 다시 학습 안 함. v1 + 12공종 낱말 + 규칙 관문으로 의도 정확도 dev 0.887 · held-out 0.881, held-out macro-F1 0.889(17.3 #2 목표 0.92 못 미침) |
 | 검색 | 키워드 + 12공종 | `knowledge/search3.py`(12공종 무게) 채택. 카드 열쇠 색인은 맞물림이 자기 자신과 돌아서 안 넣음. Kiwi는 dev +0.087이지만 의존성 승인 전이라 보류 |
 | 오케스트레이터 | 나누기 · 합치기 | 공종마다 자기 마디만 남기는 `focus` 추가. E4 dev 조각 덮음 0.64(17.3 #3 목표 0.9 못 미침) |
-| 지식 번호 | K7001~ | K20001~(v3 첫 묶음 190) · K21001~(개선 2회차 iter2 140, `v3_csv.START2`). 품셈 · LH 시방서 · KCS처럼 문서 첫 화면 주소뿐인 출처는 링크 없이 이름만 |
+| 지식 번호 | K7001~ | K20001~(v3 첫 묶음 193) · K21001~(개선 2회차 iter2 140, `v3_csv.START2`). 품셈 · LH 시방서 · KCS처럼 문서 첫 화면 주소뿐인 출처는 링크 없이 이름만 |
 | API | `/v3/ask` | `/ai/turns`(SSE) · `/ai/threads` · `/ai/faq`(`backend/app/chat/`) |
 | 테스트 | `backend/tests/v3/test_agent_*.py` | `backend/tests/test_v3_agent_*.py` · `test_v3_ai_*.py` |
 | 하위 에이전트 정의 | `.claude/agents/v3-*.md` | 만들지 않음(맡은 파일 밖). 카드는 Agent 도구로 띄운 쓰기 하위 에이전트가 근거 조각만 보고 썼어요 |

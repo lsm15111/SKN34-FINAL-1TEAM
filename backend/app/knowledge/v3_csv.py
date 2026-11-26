@@ -22,7 +22,7 @@ from pathlib import Path
 from app.knowledge.json_csv import EXTRA, REQUIRED
 
 START = 20001
-START2 = 21001  # 개선 2회차(iter2) 조각. v3 첫 묶음(K20001~K20190)과 안 겹쳐요
+START2 = 21001  # 개선 2회차(iter2) 조각. v3 첫 묶음(K20001~K20193)과 안 겹쳐요
 DOC_HOME = ("pumsem", "lhcs", "kcs")  # 주소가 문서 첫 화면뿐이라 링크로 안 보이는 출처
 SIGONG_MAX = 6000 + 218 * 50 + 49  # 시공일지 마지막 번호(SPEC.md 규칙)
 TAG = {

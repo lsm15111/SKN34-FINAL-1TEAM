@@ -154,7 +154,7 @@ vendor_base("1204").unit           # "벽지 평"
 
 | 파일 | 내용 |
 | --- | --- |
-| `chunks.jsonl` | 요지 조각 190개(필수 10칸 + verify · related_ref · question_hints 등) |
+| `chunks.jsonl` | 요지 조각 193개(필수 10칸 + verify · related_ref · question_hints 등) |
 | `sources.csv` | 원문 문서 74개(판 · 시행일 · 라이선스 · 확인 방법 · 조각 수) |
 - 지식 검색에 넣는 법(B6). 임베딩 없이 키워드 검색에만 써요. 개발 DB(`mitjip_v3`)나 테스트 DB에서만 해요(`mitjip_rag` · 다른 DB는 안 돼요).
   - CSV는 에이전트 담당 변환기 `app.knowledge.v3_csv`로 만들어요(번호 K7001~, 파일 줄 순서, agents.md 17.2). 카드 인용 번호와 같아야 해서 변환기를 하나만 둬요. 만든 CSV는 저장소에 올리지 않아요(`evaluation/v3/.cache/`는 git 무시).
