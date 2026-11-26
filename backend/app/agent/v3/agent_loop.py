@@ -102,17 +102,23 @@ def overlap(text: str, refs: list[str], kb: KB) -> float:
 
 
 def ground(
-    sec: Section, kb: KB, scope: Callable[[str], str | None] | None
+    sec: Section, kb: KB, scope: Callable[[str], str | None] | None, question: str = ""
 ) -> tuple[Section | None, list[str]]:
-    """범위 밖 문장은 정해 둔 글로, 근거와 안 맞는 번호 · 문장은 빼요. 남은 문장이 없으면 None."""
+    """범위 밖 문장은 정해 둔 글로, 근거와 안 맞는 번호 · 문장은 빼요. 남은 문장이 없으면 None.
+
+    정해 둔 글은 고객이 그 일을 물었을 때만 넣고, 묻지 않았는데 나온 범위 밖 문장은 빼기만 해요."""
     out: list[Sentence] = []
     dropped: list[str] = []
+    asked = scope(question) if scope else None
     for x in sec.sentences:
         fixed = scope(x.text) if scope else None
-        if fixed:
+        if fixed and fixed == asked:
             if all(o.text != fixed for o in out):
                 out.append(Sentence(text=fixed))
             dropped.append("범위 밖 말을 정해 둔 글로 바꿈")
+            continue
+        if fixed:
+            dropped.append("묻지 않은 범위 밖 말")
             continue
         refs = [r for r in x.cites if r in kb.ix.by_ref]
         good = [r for r in refs if overlap(x.text, [r], kb) >= OVERLAP]
@@ -180,7 +186,7 @@ def build(
     allowed = "\n".join([*evidence, *tool_text, task.text, task.asked, task.value or "", calc_text])
     kept, dropped = check.section(sec, allowed, calc_text=calc_text, shown=set(hits), prompt=prompt)
     if kept is not None:
-        kept, more = ground(kept, kb, scope)
+        kept, more = ground(kept, kb, scope, task.search_text)
         dropped += more
     if kept is None:
         return None, dropped
@@ -195,7 +201,10 @@ def build(
         for r in cited
     ]
     part = Part(route="trade", trade=code)  # type: ignore[arg-type]
-    part.sections = [*_fixed(free), kept]
+    fixed = _fixed(free)
+    if fixed:  # 정해 둔 글 묶음에 이미 공종 제목이 있으면 한 번만
+        kept.title = ""
+    part.sections = [*fixed, kept]
     part.calc = boxes
     part.cards = [c for c in free.cards if c.kind == "next_step"]
     part.used_chunks = cited

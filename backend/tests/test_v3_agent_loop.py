@@ -236,8 +236,35 @@ def test_out_of_scope_sentence_becomes_fixed_text(monkeypatch):
     heat2 = ("엑셀 배관도 같이 바꾸면 좋아요.", True)
     script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루"})]),
                      _with_sentences([heat, heat2])])  # fmt: skip
-    res, _ = _run(_task(), script, monkeypatch)
+    res, _ = _run(_task("마루 새로 깔 때 난방 배관도 손봐야 해요?"), script, monkeypatch)
     texts = _texts(res)
     fixed = tools.SCOPE[0][1]
     assert texts.count(fixed) == 1 and heat[0] not in texts  # 같은 정해 둔 글은 한 번만
     assert "범위 밖 말을 정해 둔 글로 바꿈" in res.dropped
+
+
+def test_unasked_out_of_scope_sentence_is_only_dropped(monkeypatch):
+    from app.agent.v3.specialists.floor import tools
+
+    heat = ("난방 배관 위치도 같이 확인하면 좋아요.", True)
+    script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루"})]),
+                     _with_sentences([heat])])  # fmt: skip
+    res, _ = _run(_task(), script, monkeypatch)  # 강마루 차이 질문: 난방 배관을 묻지 않음
+    texts = _texts(res)
+    assert tools.SCOPE[0][1] not in texts and heat[0] not in texts
+    assert "묻지 않은 범위 밖 말" in res.dropped
+
+
+def test_agent_section_has_no_second_title_after_fixed_text(monkeypatch):
+    q = "강마루 시공하면 평당 얼마 정도 해요?"
+
+    def answer(m):
+        return _answer_from_last_tool(m)[0]
+
+    script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루 시공비"})]), answer])
+    task = _task(q)
+    task.policy = ["price"]
+    res, free = _run(task, script, monkeypatch)
+    assert free.sections and free.sections[0].source == "template" and free.sections[0].title
+    assert res.part.sections[0].title == free.sections[0].title
+    assert res.part.sections[-1].source == "llm" and res.part.sections[-1].title == ""
