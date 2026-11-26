@@ -32,12 +32,12 @@ from app.agent.v3.specialists import registered
 from app.agent.v3.trades import BY_CODE
 from app.knowledge import bm25
 
-VERSION = "trade_agent_v1"
+VERSION = "trade_agent_v2"  # v1: 11-26 첫 평가(근거 맞는 답 44/60)
 PROMPT = Path(__file__).with_name("prompts") / f"{VERSION}.md"
 MAX_TOOL_ROUNDS = 4
 MAX_CALLS = 6
 MAX_CALLS_PER_ROUND = 3
-MAX_SENTENCES = 4
+MAX_SENTENCES = 5
 FIX = '답 꼴이 틀렸어요. {"sentences": [{"text": "...", "cites": ["K123"]}]} JSON 하나로만 다시 써 주세요.'
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 # 문장의 두 글자 묶음 중 근거 글에 있는 몫. 카드 문장 1,414개로 잼(2026-11-26): 0.25면 사람이 쓴 문장의 99.2%가

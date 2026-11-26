@@ -73,8 +73,10 @@ def defs() -> list[dict]:
     return [
         {
             "name": "search_knowledge",
-            "description": "바닥 지식(시방서 · 가이드북 · 상담 지식)에서 근거 글을 찾는다. 설명하기 전에 쓴다. "
-            "검색어는 고객 말을 바닥 용어로 다듬어 넣는다. 돌려받은 글의 번호(ref)만 근거로 쓴다.",
+            "description": "바닥 지식(시방서 · 가이드북 · 상담 지식)에서 근거 글을 최대 8개 찾는다. "
+            "설명 · 이유 · 방법 · 기준 질문이면 먼저 쓴다. 검색어는 고객 말에 바닥 용어를 더해 짧게 "
+            "(예: '마루 밑 스펀지' → '강화마루 PE폼 밑깔기'). 결과가 질문 핵심을 다루지 않으면 다른 말로 다시 "
+            "찾는다(3번까지). 돌려받은 글의 번호(ref)만 근거로 쓴다.",
             "parameters": {
                 "type": "object",
                 "properties": {"query": {"type": "string", "maxLength": QUERY_MAX}},
@@ -84,18 +86,20 @@ def defs() -> list[dict]:
         },
         {
             "name": "project_facts",
-            "description": "이 공사 정보(면적 · 기준 · 거주 · 시작 희망일 · 공정 · 고객이 고른 바닥 칸)를 읽는다.",
+            "description": "이 공사 정보(면적 · 기준 · 거주 · 시작 희망일 · 공정 · 고객이 고른 바닥 칸)를 읽는다. "
+            "'우리 집' · 평수 · 일정처럼 이 공사 이야기일 때 쓴다. 일반 설명 질문에는 쓰지 않는다.",
             "parameters": none,
         },
         {
             "name": "floor_estimate",
             "description": "계산 엔진 값(표준견적서 바닥 줄 · 공정표 바닥 블록 · 도배와 바닥 순서)을 읽는다. "
-            "금액 · 기간 · 순서는 여기 값만 말한다.",
+            "금액 · 기간 · 순서를 물을 때 쓴다. 값이 '아직 계산이 없어요'면 금액 · 기간 숫자를 말하지 않는다.",
             "parameters": none,
         },
         {
             "name": "ask_customer",
-            "description": "답에 꼭 필요한 바닥 칸이 비었을 때 하나만 되묻는다. 고객에게 단추가 나가고 이번 답은 끝난다.",
+            "description": "답이 고객 선택(바닥재 종류 · 걷어내기 등)에 따라 완전히 갈릴 때만 그 칸 하나를 되묻는다. "
+            "고객에게 단추가 나가고 이번 답은 끝난다. 일반 설명으로 답할 수 있으면 쓰지 않는다.",
             "parameters": {
                 "type": "object",
                 "properties": {"slot": {"type": "string", "enum": list(_slots())}},
