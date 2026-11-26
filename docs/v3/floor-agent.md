@@ -302,7 +302,7 @@ LLM은 도구를 고르고 칸만 채워요. 실행과 결과는 코드가 맡�
 | W3 | 바닥 기본 정보 칸 | `FloorInfoIn`, 검사(`check_home`), PATCH | W1 | 422 · 권한 404/403 |
 | W4 | 계산 엔진 `calc/floor.py` | 입력 · 줄 · 기간 · 근거 등급, 단가 판 | D(단가) | 계산 엔진 시험 |
 | W5 | 표준견적서 · 공정표 조립 | `quote/service` 바닥 블록, `ProjectFacts.standard` · `plan` | W3 · W4 | 표준견적서 API 시험 |
-| W6 | 바닥 에이전트 | W6-1 폴더(끝, `specialists/floor/`) · W6-2 도구 5개(`tools.py`) · W6-3 판단 루프(`agent/v3/agent_loop.py`) · W6-4 코드 검사와 LLM 호출 평가 | — | 바닥 시험 · `test_v3_trade_specialists` · 4.10 평가 |
+| W6 | 바닥 에이전트 | W6-1 폴더(끝, `specialists/floor/`) · W6-2 도구 5개(끝, `tools.py`) · W6-3 판단 루프(`agent/v3/agent_loop.py`) · W6-4 코드 검사와 LLM 호출 평가 | — | 바닥 시험 · `test_v3_trade_specialists` · 4.10 평가 |
 | W7 | 되묻기 칸 · 모은 조건 잇기 | `Slot.fact`, `slot_known`, `ProjectFacts.brief` | W2 · W6 | 같은 칸 다시 안 묻기 시험 |
 | W8 | 지식 넣기(F) | `data/processed` 15~18 번호, 문서별 나누기, 시방서 요약 지식 | — | `validate.py` · 번호 겹침 시험 |
 | W9 | 카드 보강 | `cards/floor.jsonl` 열쇠 · ask · calc 참조 | W6 · W7 | `cards_check.py` |
