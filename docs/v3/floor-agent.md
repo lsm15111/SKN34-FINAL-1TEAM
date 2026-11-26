@@ -309,7 +309,7 @@ LLM은 도구를 고르고 칸만 채워요. 실행과 결과는 코드가 맡�
 | W5 | 표준견적서 · 공정표 조립 | `quote/service` 바닥 블록, `ProjectFacts.standard` · `plan` | W3 · W4 | 표준견적서 API 시험 |
 | W6 | 바닥 에이전트 | W6-1 폴더(끝, `specialists/floor/`) · W6-2 도구 5개(끝, `tools.py`) · W6-3 판단 루프(끝, `agent/v3/agent_loop.py`) · W6-4 코드 검사(끝)와 LLM 호출 평가(끝, 근거 맞는 답 14 → 44/60, $0.13) | — | 바닥 시험 · `test_v3_trade_specialists` · 4.10 평가 |
 | W7 | 되묻기 칸 · 모은 조건 잇기 | `Slot.fact`, `slot_known`, `ProjectFacts.brief` | W2 · W6 | 같은 칸 다시 안 묻기 시험 |
-| W8 | 지식 넣기(F) | `data/processed` 15~18 번호, 문서별 나누기, 시방서 요약 지식 | — | `validate.py` · 번호 겹침 시험 |
+| W8 | 지식 넣기(F) | `data/processed` 15~18 번호, 문서별 나누기(끝, 515조각 K17001~), 시방서 요약 지식(남음) | — | `validate.py` · 번호 겹침 시험 |
 | W9 | 카드 보강 | `cards/floor.jsonl` 열쇠 · ask · calc 참조 | W6 · W7 | `cards_check.py` |
 | W10 | 관문 · 정책 고치기 | `gate` · `policy`(calc 통과, 강아지, AS) | W4 | 관문 시험 · 레드팀 |
 | W11 | 다른 에이전트 연결 | 오케스트레이터 · 견적 설명 · 공정표 · 실측 브리핑 · 업체 견적 비교 | W5 · W6 | 에이전트 시험 |

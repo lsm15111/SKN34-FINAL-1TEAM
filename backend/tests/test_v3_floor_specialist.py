@@ -64,3 +64,18 @@ def test_floor_expansion_keeps_original_top_hits(monkeypatch):
     assert [h.ref for h in got[: retrieval.KEEP]] == [h.ref for h in base[: retrieval.KEEP]]
     assert len({h.ref for h in got}) == len(got) <= retrieval.K
     assert calls[1][0] != q and calls[1][1:] == (q, ["floor"])  # 출처 제한은 원래 질문
+
+
+def test_floor_source_data_has_own_refs_docs_and_trades():
+    kb = repo_kb()
+    refs = [r for r in kb.ix.by_ref if 17001 <= int(r[1:]) <= 17999]
+    nums = sorted(int(r[1:]) for r in refs)
+    assert (
+        len(nums) == 515 and nums[0] == 17001 and nums[-1] < 20001
+    )  # 시공일지 · v3 지식과 안 겹침
+    kcs, law = kb.ix.by_ref["K17001"], kb.ix.by_ref["K17451"]
+    assert kcs.doc.kind in ("kcs", "official") and "바닥재" in kcs.chunk.trades + ("타일",)
+    assert law.doc.kind == "law" and set(law.chunk.trades) == {"공통", "바닥재"}
+    assert (
+        len({kb.ix.by_ref[r].chunk.doc for r in refs}) == 56
+    )  # 출처 문서마다 하나(파일 하나가 문서 하나가 아님)

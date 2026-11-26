@@ -160,3 +160,9 @@ def test_scope_catches_work_words_not_floor_explanations():
     assert tools.scope("수용성 에폭시 접착제를 써요.") is None
     assert tools.scope("온돌마루는 합판 위에 무늬목을 붙여요.") is None
     assert not any(ch.isdigit() for _, fixed in tools.SCOPE for ch in fixed)
+
+
+def test_search_snippet_drops_source_time_header():
+    _, body, _ = _call("search_knowledge", {"query": "강화마루 PE폼 밑깔기"})
+    assert any(d["ref"].startswith("K17") for d in body["data"])
+    assert not any(d["text"].startswith("[자료 시점") for d in body["data"])

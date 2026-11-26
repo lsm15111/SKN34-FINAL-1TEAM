@@ -23,7 +23,7 @@
 
 원본 PDF·엑셀은 프로젝트 폴더 밖에서 별도로 보관하고 저장소에 올리지 않는다. `data/raw/`는 사용하지 않으며 Git 추적에서도 제외한다. 저장소에는 `data/processed/`의 전처리 결과를 두고, 출처 파일명·페이지·해시 등 추적 정보는 유지한다.
 
-`data/processed/`에서 관리하는 공유 자료는 CSV 14개, 55,674행(정형 4개·54,936행, RAG 10개·738행)이다. 가이드북은 기존 59행과 바닥재 22행이며, 시공일지는 포함하지 않는다. `data/consult/consult_knowledge_rag.csv`는 별도 상담 자료로 이 집계에 포함하지 않는다. CSV를 추가하거나 교체하면 **이 문서의 집계·출처 표**와 [검색 평가의 자료 구성](../evaluation/rag/README.md)을 검토한다. 프로젝트 README에는 수치를 중복 기재하지 않는다.
+`data/processed/`에서 관리하는 공유 자료는 CSV 18개, 56,189행(정형 4개·54,936행, RAG 14개·1,253행)이다. 가이드북은 기존 59행과 바닥재 22행이며, 시공일지는 포함하지 않는다. `data/consult/consult_knowledge_rag.csv`는 별도 상담 자료로 이 집계에 포함하지 않는다. CSV를 추가하거나 교체하면 **이 문서의 집계·출처 표**와 [검색 평가의 자료 구성](../evaluation/rag/README.md)을 검토한다. 프로젝트 README에는 수치를 중복 기재하지 않는다.
 
 | CSV | 데이터 행 테이블 | 상태 처리 |
 | --- | --- | --- |
@@ -34,6 +34,10 @@
 | `04`, `05`, `07`~`12`의 `*_rag.csv` 8개 | `rag_chunks` | 새 버전 적재 시 `False`, 검증·활성화 후 `True` |
 | `13_interior_guide_book_rag.csv` 59행 | `rag_chunks` | 새 버전 적재 시 `False`, 검증·활성화 후 `True` |
 | `14_interior_guide_floor_rag.csv` 22행 | `rag_chunks` | 새 버전 적재 시 `False`, 검증·활성화 후 `True` |
+| `15_kcs_flooring_rag.csv` 395 · `16_haja_floor_rag.csv` 32 · `17_floor_law_rag.csv` 44 · `18_floor_guide_rag.csv` 44행 | `rag_chunks` | 새 버전 적재 시 `False`, 검증·활성화 후 `True` |
+
+- 15~18은 바닥 원문이다(KCS · LH 시방서 · 하자판정기준 · 법령 · 고시 · 소비자원 안내). 행마다 `ref`(K17001~K17544) · `doc` · `trades`가 있어 문서별로 출처가 붙는다.
+- 요지만 쓰기로 한 17행(분쟁조정 사례 · 표준계약서 · 이웃사이센터 · 생활법령 · 서울 준칙)은 넣지 않았다. LH 시방서 · 신축 기준은 '참고 기준'으로 쓴다(`current_rule_usable=false`). 모든 행은 `needs_review=true`다.
 
 ### 기준 자료 출처와 수집 예시
 
