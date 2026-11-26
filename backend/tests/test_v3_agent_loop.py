@@ -255,19 +255,45 @@ def test_unasked_out_of_scope_sentence_is_only_dropped(monkeypatch):
     assert "묻지 않은 범위 밖 말" in res.dropped
 
 
-def test_agent_section_has_no_second_title_after_fixed_text(monkeypatch):
-    q = "강마루 시공하면 평당 얼마 정도 해요?"
+def _price_task():
+    task = _task("강마루 시공하면 평당 얼마 정도 해요?")
+    task.policy = ["price"]
+    return task
 
+
+def test_agent_answer_comes_first_and_missing_notice_goes_after(monkeypatch):
     def answer(m):
         return _answer_from_last_tool(m)[0]
 
     script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루 시공비"})]), answer])
-    task = _task(q)
-    task.policy = ["price"]
-    res, free = _run(task, script, monkeypatch)
-    assert free.sections and free.sections[0].source == "template" and free.sections[0].title
-    assert res.part.sections[0].title == free.sections[0].title
-    assert res.part.sections[-1].source == "llm" and res.part.sections[-1].title == ""
+    res, free = _run(_price_task(), script, monkeypatch)
+    note = free.sections[0].sentences[0].text
+    assert free.sections[0].source == "template" and "견적서" in note
+    assert "꼭 알릴 것" in script.seen[0][0]["content"] and note in script.seen[0][0]["content"]
+    first, last = res.part.sections[0], res.part.sections[-1]
+    assert first.source == "llm" and first.title == "[바닥]"  # 첫 묶음이 에이전트 답
+    assert last.source == "template" and last.title == "" and last.sentences[0].text == note
+
+
+def test_notice_already_in_agent_answer_is_not_repeated(monkeypatch):
+    def answer(m):
+        r, _ = _answer_from_last_tool(m)
+        body = json.loads(r["text"])
+        body["sentences"].append(
+            {"text": "바닥 금액은 실측 뒤 업체 견적서에서 확인해 보세요.", "cites": []}
+        )
+        return _reply(json.dumps(body, ensure_ascii=False))
+
+    script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루 시공비"})]), answer])
+    res, _ = _run(_price_task(), script, monkeypatch)
+    assert [s.source for s in res.part.sections] == ["llm"]  # 뜻이 이미 있으니 고지를 덧붙이지 않음
+
+
+def test_ask_comes_before_notice(monkeypatch):
+    script = Script([_reply(calls=[_call("ask_customer", {"slot": "floor.kind"})])])
+    res, _ = _run(_price_task(), script, monkeypatch)
+    assert res.part.sections[0].sentences[0].text == res.part.ask.question
+    assert "견적서" in res.part.sections[-1].sentences[0].text
 
 
 def test_answer_reusing_question_words_is_grounded():

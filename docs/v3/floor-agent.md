@@ -151,7 +151,8 @@ POST /ai/turns → chat.service(프로젝트 사실 + 모은 조건)
   → LLM 켬이고 담당 하나(trade)면: turn이 floor/agent.run_llm → agent_loop.run(공용 지시문 + 바닥 지시문 · 바닥 도구)
          LLM ↔ 도구(search_knowledge · project_facts · floor_estimate · ask_customer · handoff)
          도구 차례 4번 · LLM 호출 6번이 상한(v2/ask.py와 같음), 차례를 다 쓰면 도구 없이 답만 받음
-         → 코드 검사(4.4) → Part(규칙 흐름의 정해 둔 글 + 에이전트 글 · 계산 상자 · 되묻기 단추 · 넘긴 공종 답)
+         → 코드 검사(4.4) → Part(에이전트 글이 맨 앞 · 빠진 고지만 뒤에 · 계산 상자 · 되묻기 단추 · 넘긴 공종 답)
+         정해 둔 고지(금액 · 기간 · 하자 · 추천 · 셀프)는 '꼭 알릴 것'으로 넘기고, 코드는 뜻이 빠졌는지만 봐요(agent_loop.COVER)
          실패 · 답 꼴 두 번 틀림 · 상한 초과 · 검사에서 글이 다 빠짐 → 규칙 흐름 답 그대로(다시 쓰기 안 함)
   → 여러 공종(multi)은 아직 지금처럼 다시 쓰기(llm_mode)만 해요
   → 저장 · commit → token · card · done

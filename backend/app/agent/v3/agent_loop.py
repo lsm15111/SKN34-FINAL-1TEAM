@@ -7,7 +7,8 @@
 - 근거 검사: 문장과 근거 글의 두 글자 묶음이 OVERLAP 이상 겹친 근거 번호만 남겨요. 근거가 없는 설명 문장은
   빼고, 확인할 곳을 알려 주는 문장만 근거 없이 둬요.
 - 범위 검사: 공종 도구 모음의 scope가 정해 둔 글을 돌려주면 그 문장을 정해 둔 글로 바꿔요.
-- 고정 몫 먼저: 규칙 흐름의 정해 둔 글(정책 · 주의)은 그대로 두고 에이전트 글을 뒤에 붙여요.
+- 답 먼저: 에이전트 글이 맨 앞이라 첫 문장부터 답해요. 규칙 흐름의 정해 둔 고지(정책 · 주의)는 '꼭 알릴 것'으로
+  넘겨 답 안에 넣게 하고, 코드는 뜻이 빠졌는지만 봐서(COVER) 빠진 고지만 답 뒤에 붙여요.
 - 공종 도구 모음(Toolbox)의 상태는 hits(보인 근거) · calc_refs(계산 상자 번호) · ask · handoff를 가져야 해요.
 """
 
@@ -32,7 +33,9 @@ from app.agent.v3.specialists import registered
 from app.agent.v3.trades import BY_CODE
 from app.knowledge import bm25
 
-VERSION = "trade_agent_v2"  # v1: 11-26 첫 평가(근거 맞는 답 44/60)
+VERSION = (
+    "trade_agent_v3"  # v1 첫 평가(근거 맞는 답 44/60) · v2 첫 문장 답 · 다시 검색 · v3 꼭 알릴 것
+)
 PROMPT = Path(__file__).with_name("prompts") / f"{VERSION}.md"
 MAX_TOOL_ROUNDS = 4
 MAX_CALLS = 6
@@ -49,6 +52,20 @@ OVERLAP_LOW, OVERLAP_Q = 0.15, 0.4
 # 앞 문장이 검사에서 빠진 뒤 남은 첫 문장 앞의 이음말은 떼요(바닥 평가 f52)
 LEAD = re.compile(r"^(?:다만|또한|그리고|그래서|따라서|하지만|그러나|게다가|특히)\s*,?\s*")
 GUIDE = re.compile(r"확인|물어|문의")
+# 정해 둔 고지(templates 정책 글)와, 그 뜻이 에이전트 글에 이미 들었는지 보는 말. 짝이 없는 고지는 늘 뒤에 붙여요
+COVER = (
+    ("금액은 실측 뒤 업체 견적서", re.compile(r"견적서|견적.{0,12}(?:확인|비교|받)")),
+    ("기간은 집을 본 뒤", re.compile(r"기간.{0,24}(?:업체|실측|집을 본)|(?:업체|실측).{0,24}기간")),
+    (
+        "하자인지는 믿집이 판정",
+        re.compile(
+            r"(?:판정|단정|판단).{0,40}(?:사진|기록)|(?:사진|기록).{0,40}(?:업체|상담|1372)"
+        ),
+    ),
+    ("추천하지 않아요", re.compile(r"추천(?:하지|은\s*하지|드리지|은\s*어려|하기\s*어려)")),
+    ("전문 업체에 맡기는 게 안전", re.compile(r"전문\s*업체")),
+    ("직접 봐야 정확히", re.compile(r"실측|직접\s*(?:보|확인)")),
+)
 
 
 @dataclass(frozen=True)
@@ -79,14 +96,33 @@ def system(code: str) -> str:
     return f"{base}\n\n{sp.prompt_path.read_text(encoding='utf-8')}"
 
 
-def user_message(task: Task) -> str:
+def user_message(task: Task, notes: list[str] | None = None) -> str:
     lines = [f"고객 질문: {check.mask(task.text)}"]
     if task.slot and task.value:
         lines += [
             f"앞에서 물은 것: {check.mask(task.asked)}",
             f"고객이 고른 답: {check.mask(task.value)}",
         ]
+    if notes:
+        lines.append("꼭 알릴 것(첫 문장은 질문의 답으로 두고, 이 뜻을 답 안에 자연스럽게 넣어):")
+        lines += [f"- {n}" for n in notes]
     return "\n".join(lines)
+
+
+def notices(free: Part) -> list[str]:
+    """규칙 흐름이 만든 정해 둔 고지 문장들."""
+    return [x.text for sec in free.sections if sec.source == "template" for x in sec.sentences]
+
+
+def missing(notes: list[str], sents: list[Sentence]) -> list[str]:
+    """에이전트 글에 뜻이 없는 고지만. 뜻을 볼 말(COVER)이 없는 고지는 늘 남겨요."""
+    text = " ".join(x.text for x in sents)
+    out = []
+    for n in notes:
+        rule = next((pat for key, pat in COVER if key in n), None)
+        if rule is None or not rule.search(text):
+            out.append(n)
+    return out
 
 
 def parse(text: str) -> list[Sentence] | None:
@@ -152,10 +188,6 @@ def ground(
     return sec.model_copy(update={"sentences": out}), dropped, removed
 
 
-def _fixed(free: Part) -> list[Section]:
-    return [s for s in free.sections if s.source == "template"]
-
-
 def _merge(part: Part, other: Part) -> None:
     part.sections += other.sections
     part.calc += other.calc
@@ -169,13 +201,15 @@ def _merge(part: Part, other: Part) -> None:
 def _ask_part(task: Task, free: Part, st: Any) -> Part:
     code = st.ask.trade
     part = Part(route="trade", trade=code, ask=st.ask)
-    part.sections = _fixed(free)
     part.add(
         templates.section(
             [st.ask.question], title=f"[{BY_CODE[code].ko}]", route="trade", trade=code
         ),
         st.ask.question,
     )
+    notes = notices(free)
+    if notes:  # 되묻기가 먼저, 고지는 뒤에
+        part.add(templates.section(notes, route="trade", trade=code), "\n".join(notes))
     return part
 
 
@@ -201,7 +235,10 @@ def build(
         title=f"[{BY_CODE[code].ko}]", source="llm", route="trade", trade=code, sentences=sents
     )
     evidence = [kb.ix.by_ref[r].chunk.text for r in hits if r in kb.ix.by_ref]
-    allowed = "\n".join([*evidence, *tool_text, task.text, task.asked, task.value or "", calc_text])
+    notes = notices(free)
+    allowed = "\n".join(
+        [*evidence, *tool_text, *notes, task.text, task.asked, task.value or "", calc_text]
+    )
     kept, dropped = check.section(sec, allowed, calc_text=calc_text, shown=set(hits), prompt=prompt)
     if kept is not None:
         kept, more, gone = ground(kept, kb, scope, task.search_text)
@@ -221,10 +258,10 @@ def build(
         for r in cited
     ]
     part = Part(route="trade", trade=code)  # type: ignore[arg-type]
-    fixed = _fixed(free)
-    if fixed:  # 정해 둔 글 묶음에 이미 공종 제목이 있으면 한 번만
-        kept.title = ""
-    part.sections = [*fixed, kept]
+    part.sections = [kept]
+    tail = missing(notes, kept.sentences)
+    if tail:  # 에이전트 글에 뜻이 빠진 고지만 답 뒤에(제목 없이)
+        part.sections.append(templates.section(tail, route="trade", trade=code))
     part.calc = boxes
     part.cards = [c for c in free.cards if c.kind == "next_step"]
     part.used_chunks = cited
@@ -239,7 +276,7 @@ async def run(task: Task, kb: KB, free: Part, box: Toolbox) -> Result:
     code = free.trade or task.trades[0]
     prompt = system(code)
     st = box.state()
-    messages: list[dict] = [{"role": "user", "content": user_message(task)}]
+    messages: list[dict] = [{"role": "user", "content": user_message(task, notices(free))}]
     res = Result(part=None, why="over_budget")
     tool_text: list[str] = []
     retried = False
