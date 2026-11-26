@@ -204,3 +204,13 @@ def test_every_trade_name_hits_its_own_words():
         if s.code != "common":
             assert trades_in(s.ko.split(" · ")[0])[:1] == [s.code], s.code
     assert BY_CODE["electric"].risky_diy and BY_CODE["plumbing"].risky_diy
+
+
+def test_extra_cost_dispute_is_not_a_price_question():
+    from app.agent.v3 import policy
+
+    assert "price" not in policy.policy_of(
+        "공사 중에 바닥 상태가 나쁘다고 추가 비용을 달라는데 줘야 해요?"
+    )
+    assert "price" in policy.policy_of("추가 비용이 얼마나 나와요?")
+    assert "price" in policy.policy_of("강마루 시공 비용 알려 주세요")

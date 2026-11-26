@@ -268,3 +268,26 @@ def test_agent_section_has_no_second_title_after_fixed_text(monkeypatch):
     assert free.sections and free.sections[0].source == "template" and free.sections[0].title
     assert res.part.sections[0].title == free.sections[0].title
     assert res.part.sections[-1].source == "llm" and res.part.sections[-1].title == ""
+
+
+def test_answer_reusing_question_words_is_grounded():
+    kb = repo_kb()
+    q = "장판 위에 고무 매트를 오래 깔아 두면 안 좋아요?"
+    s = "고무 매트를 오래 깔아 두면 장판 색이 변할 수 있어 좋지 않아요."
+    assert agent_loop.overlap(s, ["K772"], kb) < agent_loop.OVERLAP  # 근거만으로는 모자람
+    assert agent_loop.grounded(s, ["K772"], kb, q)
+    assert not agent_loop.grounded("우주선 발사대는 달 표면에 맞춰 설계해요.", ["K772"], kb, q)
+
+
+def test_leading_connector_removed_when_first_sentence_dropped():
+    from app.agent.v3.schemas import Section, Sentence
+
+    kb = repo_kb()
+    text = kb.ix.by_ref["K772"].chunk.text
+    sec = Section(sentences=[
+        Sentence(text="우주선 발사대는 달 표면에 맞춰 설계해요.", cites=["K772"]),
+        Sentence(text="다만, " + text[:40], cites=["K772"]),
+    ])  # fmt: skip
+    kept, dropped, removed = agent_loop.ground(sec, kb, None, "장판 관리")
+    assert kept.sentences[0].text == text[:40] and removed == [sec.sentences[0].text]
+    assert dropped == ["근거와 안 맞는 문장"]

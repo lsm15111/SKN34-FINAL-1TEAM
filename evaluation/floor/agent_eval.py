@@ -179,7 +179,7 @@ def main() -> None:
             "id": q["id"], "split": q["split"], "category": q["category"], "text": q["text"],
             "free": judge(kb, rule, free), "llm": judge(kb, rule, ans),
             "loop": None if res is None else {"why": res.why, "calls": res.calls, "rounds": res.rounds,
-                                             "tools": res.tools, "dropped": res.dropped},
+                                             "tools": res.tools, "dropped": res.dropped, "removed": res.removed},
             "calls": meter.calls, "usage": dict(meter.usage), "chars": meter.chars,
             "cost": round(cost(meter.model, meter.usage), 5), "secs": round(time.perf_counter() - t0, 2),
         })  # fmt: skip

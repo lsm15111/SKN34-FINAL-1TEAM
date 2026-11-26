@@ -43,6 +43,11 @@ _JSON = re.compile(r"\{.*\}", re.DOTALL)
 # 문장의 두 글자 묶음 중 근거 글에 있는 몫. 카드 문장 1,414개로 잼(2026-11-26): 0.25면 사람이 쓴 문장의 99.2%가
 # 넘고, 엉뚱한 글과 짝지으면 0.8%만 넘어요
 OVERLAP = 0.25
+# 고객 질문 낱말을 받아 쓴 답('고무 매트를 오래 깔아 두면 …')은 근거만으로 0.25가 안 나와요. 근거와 0.15 이상 겹치고
+# 근거 + 질문과 0.4 이상 겹치면 받아요(카드 문장으로 잼: 사람이 쓴 문장 99.3% · 엉뚱한 글 1.1% 통과, 2026-11-26)
+OVERLAP_LOW, OVERLAP_Q = 0.15, 0.4
+# 앞 문장이 검사에서 빠진 뒤 남은 첫 문장 앞의 이음말은 떼요(바닥 평가 f52)
+LEAD = re.compile(r"^(?:다만|또한|그리고|그래서|따라서|하지만|그러나|게다가|특히)\s*,?\s*")
 GUIDE = re.compile(r"확인|물어|문의")
 
 
@@ -63,6 +68,7 @@ class Result:
     tools: list[str] = field(default_factory=list)
     usage: dict[str, int] = field(default_factory=lambda: {"input": 0, "cached": 0, "output": 0})
     dropped: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)  # 근거 검사에서 빠진 문장(평가 기록용)
 
 
 def system(code: str) -> str:
@@ -95,20 +101,27 @@ def parse(text: str) -> list[Sentence] | None:
     return out[:MAX_SENTENCES] or None
 
 
-def overlap(text: str, refs: list[str], kb: KB) -> float:
+def overlap(text: str, refs: list[str], kb: KB, extra: str = "") -> float:
     g = set(bm25.grams(text))
     have = {x for r in refs if r in kb.ix.by_ref for x in bm25.grams(kb.ix.by_ref[r].chunk.text)}
+    have |= set(bm25.grams(extra))
     return len(g & have) / len(g) if g else 0.0
+
+
+def grounded(text: str, refs: list[str], kb: KB, question: str) -> bool:
+    c = overlap(text, refs, kb)
+    return c >= OVERLAP or (c >= OVERLAP_LOW and overlap(text, refs, kb, question) >= OVERLAP_Q)
 
 
 def ground(
     sec: Section, kb: KB, scope: Callable[[str], str | None] | None, question: str = ""
-) -> tuple[Section | None, list[str]]:
+) -> tuple[Section | None, list[str], list[str]]:
     """범위 밖 문장은 정해 둔 글로, 근거와 안 맞는 번호 · 문장은 빼요. 남은 문장이 없으면 None.
 
     정해 둔 글은 고객이 그 일을 물었을 때만 넣고, 묻지 않았는데 나온 범위 밖 문장은 빼기만 해요."""
     out: list[Sentence] = []
     dropped: list[str] = []
+    removed: list[str] = []  # 빠진 문장(평가 기록용, 답 · 로그에는 남기지 않음)
     asked = scope(question) if scope else None
     for x in sec.sentences:
         fixed = scope(x.text) if scope else None
@@ -121,8 +134,8 @@ def ground(
             dropped.append("묻지 않은 범위 밖 말")
             continue
         refs = [r for r in x.cites if r in kb.ix.by_ref]
-        good = [r for r in refs if overlap(x.text, [r], kb) >= OVERLAP]
-        if not good and refs and overlap(x.text, refs, kb) >= OVERLAP:
+        good = [r for r in refs if grounded(x.text, [r], kb, question)]
+        if not good and refs and grounded(x.text, refs, kb, question):
             good = refs  # 근거 둘을 합쳐 한 문장으로 쓴 경우
         if good:
             out.append(x.model_copy(update={"cites": good}))
@@ -130,9 +143,13 @@ def ground(
             out.append(x.model_copy(update={"cites": []}))
         else:
             dropped.append("근거와 안 맞는 문장" if refs else "근거 없는 문장")
+            removed.append(x.text)
     if not out:
-        return None, dropped
-    return sec.model_copy(update={"sentences": out}), dropped
+        return None, dropped, removed
+    if sec.sentences and out[0].text != sec.sentences[0].text:  # 첫 문장이 빠졌으면 이음말을 뗀다
+        first = LEAD.sub("", out[0].text)
+        out[0] = out[0].model_copy(update={"text": first or out[0].text})
+    return sec.model_copy(update={"sentences": out}), dropped, removed
 
 
 def _fixed(free: Part) -> list[Section]:
@@ -171,6 +188,7 @@ def build(
     prompt: str,
     tool_text: list[str],
     scope: Callable[[str], str | None] | None = None,
+    removed: list[str] | None = None,
 ) -> tuple[Part | None, list[str]]:
     """에이전트 글을 검사해 몫으로 만든다. 숫자 · 근거 번호 · 지시문 누출은 check.section이 걸러요."""
     code = free.trade or task.trades[0]
@@ -186,8 +204,10 @@ def build(
     allowed = "\n".join([*evidence, *tool_text, task.text, task.asked, task.value or "", calc_text])
     kept, dropped = check.section(sec, allowed, calc_text=calc_text, shown=set(hits), prompt=prompt)
     if kept is not None:
-        kept, more = ground(kept, kb, scope, task.search_text)
+        kept, more, gone = ground(kept, kb, scope, task.search_text)
         dropped += more
+        if removed is not None:
+            removed += gone
     if kept is None:
         return None, dropped
     cited = list(dict.fromkeys(c for x in kept.sentences for c in x.cites if c in hits))
@@ -268,7 +288,9 @@ async def run(task: Task, kb: KB, free: Part, box: Toolbox) -> Result:
                 {"role": "user", "content": FIX},
             ]
             continue
-        res.part, res.dropped = build(task, kb, free, st, sents, prompt, tool_text, box.scope)
+        res.part, res.dropped = build(
+            task, kb, free, st, sents, prompt, tool_text, box.scope, res.removed
+        )
         res.why = "ok" if res.part is not None else "all_dropped"
         return res
     return res
