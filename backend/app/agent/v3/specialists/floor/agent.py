@@ -23,7 +23,9 @@ async def loop(task: Task, kb: KB, free: Part) -> Result:
     from app.agent.v3 import agent_loop
     from app.agent.v3.specialists.floor import tools
 
-    box = agent_loop.Toolbox(defs=tools.defs(), call=tools.call, state=tools.State)
+    box = agent_loop.Toolbox(
+        defs=tools.defs(), call=tools.call, state=tools.State, scope=tools.scope
+    )
     return await agent_loop.run(task, kb, free, box)
 
 

@@ -147,3 +147,16 @@ def test_handoff_registered_trade_once():
     task.trades = ["floor", "tile"]
     out, _, _ = _call("handoff", {"trade": "tile"}, task)
     assert not out.ok  # 관문이 이미 같이 답하게 한 공종
+
+
+def test_scope_catches_work_words_not_floor_explanations():
+    assert tools.scope("난방 배관을 옮기려면 어떻게 해요?") == tools.SCOPE[0][1]
+    assert tools.scope("보일러 교체도 바닥 업체가 해요?") == tools.SCOPE[0][1]
+    assert tools.scope("오래된 아파트 석면 바닥재") == tools.SCOPE[1][1]
+    assert tools.scope("거실은 에폭시 바닥으로 할래요") == tools.SCOPE[2][1]
+    # 바닥 설명에 나오는 말은 그대로
+    assert tools.scope("강마루는 바닥 난방 열이 잘 전해져요.") is None
+    assert tools.scope("시공 뒤 보일러를 약하게 켜서 말려요.") is None
+    assert tools.scope("수용성 에폭시 접착제를 써요.") is None
+    assert tools.scope("온돌마루는 합판 위에 무늬목을 붙여요.") is None
+    assert not any(ch.isdigit() for _, fixed in tools.SCOPE for ch in fixed)

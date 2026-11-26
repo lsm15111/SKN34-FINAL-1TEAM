@@ -198,3 +198,46 @@ def test_turn_falls_back_to_rule_answer(monkeypatch, why):
     got = _turn(Q, "llm", monkeypatch, chat).answer
     assert got.trace.prompts == []
     assert [s.model_dump() for s in got.sections] == [s.model_dump() for s in free.sections]
+
+
+def _with_sentences(extra):
+    """첫 문장은 근거 글 낱말로, 뒤에 extra 문장들을 붙인다."""
+
+    def answer(m):
+        r, ref = _answer_from_last_tool(m)
+        body = json.loads(r["text"])
+        body["sentences"] += [{"text": t, "cites": [ref] if c else []} for t, c in extra]
+        return _reply(json.dumps(body, ensure_ascii=False))
+
+    return answer
+
+
+def _texts(res):
+    return [x.text for x in res.part.sections[-1].sentences]
+
+
+def test_sentence_not_matching_cited_evidence_is_dropped(monkeypatch):
+    odd = ("우주선 발사대는 달 표면 조건에 맞춰 설계해야 안전해요.", True)
+    plain = ("마루는 고급스럽고 누구에게나 잘 어울리는 최고의 선택이에요.", False)
+    guide = ("집 바닥 상태는 실측 때 바닥 업체에 확인해 보세요.", False)
+    script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루"})]),
+                     _with_sentences([odd, plain, guide])])  # fmt: skip
+    res, _ = _run(_task(), script, monkeypatch)
+    texts = _texts(res)
+    assert odd[0] not in texts and plain[0] not in texts and guide[0] in texts
+    assert "근거와 안 맞는 문장" in res.dropped and "근거 없는 문장" in res.dropped
+    assert res.part.sections[-1].sentences[-1].cites == []  # 확인할 곳 문장은 근거 없이 둔다
+
+
+def test_out_of_scope_sentence_becomes_fixed_text(monkeypatch):
+    from app.agent.v3.specialists.floor import tools
+
+    heat = ("난방 배관이 새면 바닥을 뜯고 바로 고치면 돼요.", True)
+    heat2 = ("엑셀 배관도 같이 바꾸면 좋아요.", True)
+    script = Script([_reply(calls=[_call("search_knowledge", {"query": "강마루"})]),
+                     _with_sentences([heat, heat2])])  # fmt: skip
+    res, _ = _run(_task(), script, monkeypatch)
+    texts = _texts(res)
+    fixed = tools.SCOPE[0][1]
+    assert texts.count(fixed) == 1 and heat[0] not in texts  # 같은 정해 둔 글은 한 번만
+    assert "범위 밖 말을 정해 둔 글로 바꿈" in res.dropped
