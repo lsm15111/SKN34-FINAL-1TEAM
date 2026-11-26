@@ -87,7 +87,7 @@ _BUILTIN_SPECS: tuple[TradeSpec, ...] = (
         r"바닥재|강마루|강화마루|원목마루|마루|장판|데코타일|폴리싱|층간소음|바닥(?!\s*타일)",
         ("바닥재",),
         8,
-        cautions=("바닥재는 도배가 끝난 뒤에 깔아요.",),
+        cautions=("마루는 도배 전에, 장판 · 데코타일은 도배 뒤에 깔아요.",),
         survey=("바닥 수평 · 들뜸", "문턱 · 걸레받이 높이"),
         prep=("바닥에 둔 짐 옮기기",),
     ),
@@ -224,7 +224,7 @@ ORDER_RULES: dict[tuple[str, str], str] = {
     (
         "dobae",
         "floor",
-    ): "믿집 공정표는 도배 다음에 바닥을 놓아요. 다만 마루는 도배 전에, 장판은 도배 뒤에 까는 경우가 많아서 실측 때 업체와 순서를 정해요.",
+    ): "믿집 공정표는 마루면 도배 전에, 장판 · 데코타일이면 도배 뒤에 바닥을 놓아요. 바닥재를 아직 정하지 않았으면 도배 뒤에 두고, 정하면 순서가 바뀔 수 있어요.",
     ("floor", "kitchen"): "바닥재를 깐 뒤 주방 가구를 설치해요.",
     ("demolition", "floor"): "철거 뒤 바닥 상태를 보고 바닥재를 정해요.",
 }
@@ -253,14 +253,18 @@ PLAN_KO = {
 
 def rules() -> dict[str, dict[str, str]]:
     """근거 종류 rule: 계산 엔진이 공정표를 놓는 순서. 답 · 채점 묶음에 근거로 붙인다(글은 계산 엔진 상수에서 만든다)."""
-    from app.calc.v2_plan import PLAN_ORDER
+    from app.calc.v2_plan import PLAN_ORDER, plan_order
 
     order = " → ".join(PLAN_KO.get(c, c) for c in PLAN_ORDER)
+    maru = plan_order("maru")
+    before = PLAN_KO.get(maru[maru.index("floor") + 1], "")
     return {
         "rule:plan-order": {
             "title": "믿집 공정표 계산 순서",
             "kind": "rule",
-            "text": f"믿집 계산 엔진이 공정표를 놓는 순서: {order}. 뒤 공정은 앞 공정이 끝난 다음 일하는 날 시작해요.",
+            "text": f"믿집 계산 엔진이 공정표를 놓는 순서: {order}. 바닥재가 마루면 바닥을 {before} 바로 앞에 놓고, "
+            "장판 · 데코타일이거나 종류를 모르면 위 순서대로 둬요. "
+            "뒤 공정은 앞 공정이 끝난 다음 일하는 날 시작해요.",
         }
     }
 

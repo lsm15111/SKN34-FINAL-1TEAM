@@ -103,6 +103,36 @@ def test_plan_and_trial(api):
     assert api.post("/v2/plan", json=bad).status_code == 422
 
 
+def test_plan_orders_floor_by_kind(api):
+    """마루는 도배 앞, 장판 · 데코타일은 도배 뒤. 종류는 고른 값 → 고른 바닥 자재 → 모름(안내 글)."""
+    from app.calc.v2_plan import FLOOR_UNKNOWN_WARN
+
+    signup(api)
+    cons = {"weekendWork": False, "endBy": "", "startAfter": "", "avoid": []}
+
+    def order(**quote):
+        r = api.post("/v2/plan", json={"quote": QUOTE | quote, "cons": cons})
+        assert r.status_code == 200, r.text
+        p = r.json()
+        return [b["trade"] for b in p["blocks"] if b["kind"] == "work"], p["warn"]
+
+    unknown, warn = order()
+    assert unknown == ["mokgong", "paint", "dobae", "floor"] and FLOOR_UNKNOWN_WARN in warn
+    maru, warn = order(floor_kind="maru")
+    assert maru == ["mokgong", "paint", "floor", "dobae"] and FLOOR_UNKNOWN_WARN not in warn
+    assert order(floor_kind="decotile")[0] == unknown
+    picked, warn = order(picks={"floor": "floor-hansol-laminate-standard-oak"})  # 강화마루
+    assert picked == maru and FLOOR_UNKNOWN_WARN not in warn
+    sheet, warn = order(picks={"floor": "floor-kcc-soop-green-pyeonbaek"})  # 장판
+    assert sheet == unknown and FLOOR_UNKNOWN_WARN not in warn
+    assert (
+        order(floor_kind="sheet", picks={"floor": "floor-hansol-laminate-standard-oak"})[0]
+        == unknown
+    )
+    bad = {"quote": QUOTE | {"floor_kind": "tile"}, "cons": cons}
+    assert api.post("/v2/plan", json=bad).status_code == 422
+
+
 def test_plan_rejects_dates_not_on_calendar(api):
     """모양만 맞고 달력에 없는 날짜(2월 30일 · 13월)는 500이 아니라 422."""
     signup(api)

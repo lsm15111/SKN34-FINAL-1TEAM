@@ -68,6 +68,7 @@ def materials() -> dict[str, RefMaterial]:
             price_min=r["price"]["min"],
             price_max=r["price"]["max"],
             unit=r["price"]["unit"] or "",
+            kind=r.get("kind", ""),
         )
         for r in rows
     }

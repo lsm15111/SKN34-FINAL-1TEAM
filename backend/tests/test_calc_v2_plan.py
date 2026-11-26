@@ -1,6 +1,18 @@
 """v2 예상 공정표(v10 fixPlan · defaultStart · buildPlan). 순수 함수만 본다. 기대값은 손으로 센 날짜다."""
 
-from app.calc.v2_plan import Opts, build_plan, default_start, fix_plan, next_work, trial, weeks
+from app.calc.v2_plan import (
+    FLOOR_UNKNOWN_WARN,
+    PLAN_ORDER,
+    Opts,
+    build_plan,
+    default_start,
+    fix_plan,
+    floor_kind_of,
+    next_work,
+    plan_order,
+    trial,
+    weeks,
+)
 
 NO_HOLIDAY = Opts(False, frozenset(), {})
 MOK = {
@@ -94,3 +106,38 @@ def test_trial_moves_later_trades_and_checks_dates():
     assert sat["error"].startswith("시작일과 끝나는 날은 일하는 날로")
     short = trial(p, "mokgong", "2026-11-30", "2026-11-30", NO_HOLIDAY, "2026-11-11", {})
     assert short["work_days"] == 1 and short["short"] is True
+
+
+FLOOR = {
+    "trade": "floor",
+    "ko": "바닥재",
+    "crew": 2,
+    "steps": [{"key": "lay", "name": "바닥재 깔기", "half_days": 3}],
+    "need": 1.5,
+}
+
+
+def test_plan_order_puts_maru_just_before_wallpaper():
+    """팀 결정(2026-11-25): 마루는 도배 전, 장판 · 데코타일 · 모름은 도배 뒤(지금 순서)."""
+    for kind in (None, "sheet", "decotile", "모름"):
+        assert plan_order(kind) == PLAN_ORDER
+    maru = plan_order("maru")
+    assert sorted(maru) == sorted(PLAN_ORDER)
+    assert maru[maru.index("floor") + 1] == "wallpaper"
+    assert PLAN_ORDER.index("wallpaper") < PLAN_ORDER.index("floor")
+    assert [c for c in maru if c != "floor"] == [c for c in PLAN_ORDER if c != "floor"]
+
+
+def test_floor_kind_uses_choice_then_picked_material():
+    assert floor_kind_of("maru", "sheet") == "maru"  # 고객이 고른 값이 먼저
+    assert floor_kind_of(None, "decotile") == "decotile"  # 고른 자재의 종류
+    assert floor_kind_of(None, "") is None and floor_kind_of("tile", "x") is None
+
+
+def test_build_plan_notes_unknown_floor_kind():
+    unknown = build_plan([DOB, FLOOR], NO_HOLIDAY, "2026-11-11", "", "", "")
+    assert unknown["warn"] == [FLOOR_UNKNOWN_WARN]
+    assert [b["trade"] for b in unknown["blocks"]][:2] == ["dobae", "floor"]
+    known = build_plan([FLOOR, DOB], NO_HOLIDAY, "2026-11-11", "", "", "", "maru")
+    assert known["warn"] == [] and [b["trade"] for b in known["blocks"]][:2] == ["floor", "dobae"]
+    assert build_plan([MOK, DOB], NO_HOLIDAY, "2026-11-11", "", "", "")["warn"] == []

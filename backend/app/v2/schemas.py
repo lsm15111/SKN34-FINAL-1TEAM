@@ -103,6 +103,8 @@ class V2QuoteIn(BaseModel):
     tier: Literal["economy", "basic", "premium"] = "basic"
     # 도배 유형을 고객이 직접 골랐으면 그 값(자재를 고르지 않아도 금액에 이어진다)
     grade: Literal["economy", "basic"] | None = None
+    # 바닥재 종류(마루 · 장판 · 데코타일). 비우면 고른 바닥 자재의 종류, 그것도 없으면 모름. 공정표 순서에 쓴다
+    floor_kind: Literal["maru", "sheet", "decotile"] | None = None
 
 
 # ---- 출력: 견적 ----

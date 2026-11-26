@@ -193,9 +193,11 @@ def plan(b: v2.V2PlanIn, today: date) -> v2.V2PlanOut:
     o = v2_plan.Opts(c.weekendWork, frozenset(c.avoid), _holidays())
     props = {k: v.model_dump() for k, v in b.props.items()}
     acc = {k: v.model_dump() for k, v in b.accepted.items()}
-    trades = v2_plan.plan_trades(q, b.quote.cats, props, acc)
+    pick = books().materials.get(b.quote.picks.get("floor", ""))
+    kind = v2_plan.floor_kind_of(b.quote.floor_kind, pick.kind if pick else "")
+    trades = v2_plan.plan_trades(q, b.quote.cats, props, acc, kind)
     t = today.isoformat()
-    p = v2_plan.build_plan(trades, o, t, c.endBy, c.startAfter, b.move)
+    p = v2_plan.build_plan(trades, o, t, c.endBy, c.startAfter, b.move, kind)
     tri = b.trial
     trial = v2_plan.trial(p, tri.trade, tri.start, tri.end, o, t, acc) if tri else None
     return v2.V2PlanOut(

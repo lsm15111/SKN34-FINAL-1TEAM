@@ -26,6 +26,13 @@ PLAN_ORDER = (
     "finish",
 )
 TRADE_OF = {"wallpaper": "dobae", "carpentry": "mokgong"}
+# 바닥재 종류에 따른 도배 · 바닥 순서(팀 결정 2026-11-25): 마루는 도배 바로 앞, 장판 · 데코타일은 도배 뒤.
+# 종류를 모르면 PLAN_ORDER 그대로(도배 뒤)에 두고 안내 글을 붙인다
+FLOOR_KINDS = ("maru", "sheet", "decotile")
+FLOOR_BEFORE_WALLPAPER = frozenset({"maru"})
+FLOOR_UNKNOWN_WARN = (
+    "바닥재 종류(마루 · 장판 · 데코타일)를 정하면 도배와 바닥 순서가 바뀔 수 있어요."
+)
 DRY_DAYS = 2
 CLEAN_DAYS = 1
 SPAN = 3 * 366
@@ -166,14 +173,32 @@ def default_start(
     return next_work(add_days(today, 14), o)
 
 
+def floor_kind_of(explicit: str | None, pick_kind: str = "") -> str | None:
+    """바닥재 종류: 고객이 고른 값 → 고른 바닥 자재의 종류 → 모름(None)."""
+    for k in (explicit, pick_kind):
+        if k in FLOOR_KINDS:
+            return k
+    return None
+
+
+def plan_order(floor_kind: str | None = None) -> tuple[str, ...]:
+    """공정표에 놓는 순서. 마루면 바닥을 도배 바로 앞으로 옮긴다."""
+    if floor_kind not in FLOOR_BEFORE_WALLPAPER:
+        return PLAN_ORDER
+    rest = [c for c in PLAN_ORDER if c != "floor"]
+    i = rest.index("wallpaper")
+    return (*rest[:i], "floor", *rest[i:])
+
+
 def plan_trades(
     quote: dict,
     cats: Sequence[str],
     props: Mapping[str, dict],
     accepted: Mapping[str, dict],
+    floor_kind: str | None = None,
 ) -> list[dict]:
     out = []
-    for c in PLAN_ORDER:
+    for c in plan_order(floor_kind):
         if c not in cats:
             continue
         p = next((t for t in quote["precise"] if t["trade"] == TRADE_OF.get(c)), None) or next(
@@ -214,6 +239,7 @@ def build_plan(
     end_by: str,
     start_after: str,
     move: str,
+    floor_kind: str | None = None,
 ) -> dict:
     start = default_start(trades, o, today, end_by, start_after, move)
     plan = fix_plan(trades, start, o)
@@ -229,6 +255,8 @@ def build_plan(
     for a, b in itertools.pairwise(bs):
         if a["kind"] == "work" and b["kind"] == "work" and b["start"] <= a["end"]:
             warn.append(f"{a['ko']}와 {b['ko']} 날짜가 겹쳐요")
+    if floor_kind not in FLOOR_KINDS and any(t["trade"] == "floor" for t in trades):
+        warn.append(FLOOR_UNKNOWN_WARN)
     plan["warn"] = warn
     return plan
 

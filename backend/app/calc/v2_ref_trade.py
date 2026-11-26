@@ -26,6 +26,7 @@ class RefMaterial:
     price_min: int | None
     price_max: int | None
     unit: str
+    kind: str = ""  # 바닥재 종류(maru · sheet · decotile). 공정표 순서에 쓴다
 
 
 def unit_norm(u: str | None) -> str:

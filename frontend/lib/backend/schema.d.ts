@@ -9787,6 +9787,8 @@ export interface components {
             tier: "economy" | "basic" | "premium";
             /** Grade */
             grade?: ("economy" | "basic") | null;
+            /** Floor Kind */
+            floor_kind?: ("maru" | "sheet" | "decotile") | null;
         };
         /** V2QuoteOut */
         V2QuoteOut: {
