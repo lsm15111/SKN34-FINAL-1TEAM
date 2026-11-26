@@ -1,8 +1,8 @@
 """바닥 상담 시작점(docs/v3/floor-agent.md 4.2).
 
-- LLM 끔: run_common(규칙 흐름) 그대로예요.
-- LLM 켬: turn이 규칙 흐름 답을 만든 뒤 run_llm을 불러 판단 루프(agent_loop)를 돌려요.
-  실패하면 None을 돌려주고 turn은 규칙 흐름 답을 그대로 써요.
+- 기본 모드(LLM 꺼짐): run_common(규칙 기반 기본 응답) 그대로예요.
+- LLM 모드: turn이 규칙 기반 기본 응답을 만든 뒤 run_llm을 불러 판단 루프(agent_loop)를 돌려요.
+  실패하면 None을 돌려주고, turn은 기본 응답을 폴백으로 그대로 써요.
 """
 
 from __future__ import annotations

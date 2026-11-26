@@ -1,12 +1,12 @@
 """오케스트레이터 (복합 · 여러 공종만, 깊이 1). agents.md 10.6절.
 
-1. 나누기(코드): 물음 · 이음말로 조각을 나누고 조각마다 관문 2단계를 다시 돌린다(버튼 · 기다림 없이).
-   조각이 하나뿐인데 공종이 둘 이상이면 같은 문장을 공종마다 하나씩(공종 칸 고정) 만든다. 최대 3조각.
+1. 나누기(코드): 물음 · 접속사로 조각을 나누고 조각마다 관문 2단계를 다시 돌린다(버튼 · 기다림 없이).
+   조각이 하나뿐인데 공종이 둘 이상이면 같은 문장을 공종마다 하나씩(공종 필드 고정) 만든다. 최대 3조각.
 2. 부르기: 조각마다 담당을 부른다(한 턴 담당 호출 3번까지, 담당끼리는 서로 부르지 않음).
-3. 합치기: 하위 묶음을 다시 쓰지 않는다. 공정 순서(계산 엔진 순서 · TradeSpec.order)로 줄 세우고 더하는 것은 셋뿐이다.
+3. 합치기: 하위 묶음을 다시 쓰지 않는다. 공정 순서(계산 엔진 순서 · TradeSpec.order)로 정렬하고, 더하는 것은 셋뿐이다.
    - 순서를 물었을 때(ORDER_ASK)만 앞뒤 공종 쌍의 순서 문장(ORDER_RULES)
    - 같은 글 묶음(같은 공통 카드 등)은 한 번만
-   - 못 찾은 공종은 한 줄로 모아 '… 쪽 자세한 내용은 확인하지 못했어요'. 모두 못 찾으면 '확인하지 못했어요'만
+   - 못 찾은 공종은 한 문장으로 모아 '… 쪽 자세한 내용은 아직 확인하지 못했어요'. 모두 못 찾으면 그 안내만 한 번
 """
 
 import itertools
@@ -81,7 +81,7 @@ def focus(text: str, trade: str, all_trades: list[str]) -> str:
     """같은 문장을 공종마다 나눌 때 그 공종 낱말이 든 마디 + 문장 끝 물음(예: '순서가 어떻게 돼요?')만 남긴다.
 
     '몰딩 바꾸고 도배도 새로 하려는데 순서가 어떻게 돼요?' → 목공: '몰딩 바꾸고 … 순서가 어떻게 돼요?'
-    이음말로 이어 쓴 문장만 자른다(이음말이 없으면 문장 그대로).
+    접속사로 이어 쓴 문장만 자른다(접속사가 없으면 문장 그대로).
     """
     spans = mention_spans(text, all_trades)
     cuts = [0]
@@ -132,7 +132,7 @@ def order_section(pair: tuple[str, str], kb: KB | None) -> Section | None:
 
 
 def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
-    """하위 묶음을 그대로 이어 붙인다. 순서 문장(순서를 물었을 때) · 못 찾은 공종 한 줄만 더한다.
+    """하위 묶음을 그대로 이어 붙인다. 순서 문장(순서를 물었을 때) · 못 찾은 공종 안내 한 문장만 더한다.
 
     asked: 고객 질문 전체. 비우면 순서를 물은 것으로 봐요(예전 동작).
     """
@@ -171,7 +171,7 @@ def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
         out.used_chunks.extend(p.used_chunks)
         out.dropped.extend(p.dropped)
     if failed:
-        if out.sections or out.calc:  # 답한 공종이 있으면 못 찾은 공종을 한 줄로
+        if out.sections or out.calc:  # 답한 공종이 있으면 못 찾은 공종을 한 문장으로
             names = list(dict.fromkeys(k for k in failed if k))
             line = (
                 templates.PART_FAILED_WHICH.format(which=" · ".join(names))
@@ -185,7 +185,7 @@ def merge(parts: list[Part], kb: KB | None = None, asked: str = "") -> Part:
 
 
 def run(task: Task, kb: KB, *, tasks: list[Task] | None = None) -> tuple[Part, list[str], int]:
-    """(합친 몫, 조각 담당 이름들, 실패한 조각 수)"""
+    """(합친 응답(Part), 조각 담당 이름들, 실패한 조각 수)"""
     if tasks is None:
         tasks = split(task)
     parts = [AGENTS[t.route](t, kb) for t in tasks]
