@@ -12,7 +12,7 @@ from v3_kb import repo_index, repo_kb
 from app.agent import llm
 from app.agent.hub import concierge, experts
 from app.agent.hub.core import AgentSpec, Budget, BudgetExceeded, Run, Tool, ToolOut, call_tool
-from app.agent.hub.experts.base import ExpertTask, run_expert
+from app.agent.hub.experts.base import ExpertTask, run_expert, split_cites
 from app.agent.hub.reply import Reply
 from app.agent.v3 import policy
 from app.agent.v3 import turn as v3_turn
@@ -111,6 +111,39 @@ def test_general_floor_question_uses_verified_card():
     )
 
 
+def test_customer_told_family_is_remembered_and_used_for_fit():
+    rep = expert("강아지 키우는데 마루 괜찮을까요?")
+    assert rep.memory == {"floor.family": "반려동물"}
+    said = " ".join(x.text for s in rep.sections for x in s.sentences)
+    assert "말씀하신 조건(반려동물)" in said and rep.ask.slot == "floor.priority"
+
+
+def test_defect_question_explains_without_judging_and_drafts_repair_request():
+    rep = expert("마루가 들떴어요 하자인가요?")
+    said = [x.text for s in rep.sections for x in s.sentences]
+    assert any("단정하기는 어려워요" in t for t in said)
+    assert any("보수" in v for v in rep.vendor)
+
+
+def test_vendor_question_wording_and_after_work_wording():
+    assert expert("바닥 업체 실측 올 때 뭘 물어보면 좋아요?").vendor
+    rep = expert(
+        "미장 끝나고 바로 마루 시공해도 되나요?"
+    )  # 공사 전 이야기: 공사 뒤 체크리스트가 아니에요
+    assert not any("끝나고 확인할 것" in s.title for s in rep.sections)
+
+
+def test_new_floor_words_and_pet_question_reach_floor_expert():
+    for q in (
+        "LVT가 뭐예요?",
+        "아이가 뛰는 소리 매트로 줄일 수 있어요?",
+        "강아지가 마루에서 미끄러져요",
+    ):
+        assert "trade:floor" in turn(q).answer.trace.parts, q
+    assert turn("오늘 점심 뭐 먹지").answer.trace.route == "out_of_scope"
+    assert "trade:floor" not in turn("강아지 산책 몇 번 해요?").answer.trace.parts
+
+
 # ---- 총괄: 넘겨주기 · 되묻기 · 대화 기억 ----
 def test_fit_asks_one_condition_at_a_time_and_remembers():
     first = turn("우리 집에 맞는 바닥재 골라 줘")
@@ -187,6 +220,24 @@ def test_expert_llm_loop_checks_numbers_and_cites():
     assert "바닥 전문가" in seen[0]["system"] and "answer" in seen[0]["tools"]
 
 
+def test_inline_cite_marks_move_out_of_answer_text():
+    llm.set_chat_script(
+        [
+            call("search_knowledge", query="마루 시공 뒤 확인"),
+            call(
+                "answer",
+                2,
+                sentences=[{"text": "계약한 제품이 맞는지 먼저 봐요. [K779]", "cites": []}],
+            ),
+        ]
+    )
+    rep = expert("마루 시공 끝나면 뭐 확인해야 해요?", mode="llm")
+    assert rep.sections[0].sentences[0].text == "계약한 제품이 맞는지 먼저 봐요."
+    s = split_cites("들떠요 [K12·K13] 그래서 (K1, K22)", ["K9"])
+    assert s.text == "들떠요 그래서" and s.cites == ["K9", "K12", "K13", "K1", "K22"]
+    assert split_cites("숫자 [1] 그대로", []).text == "숫자 [1] 그대로"
+
+
 def test_expert_llm_failure_falls_back_to_offline():
     llm.set_chat_script([{"error": True}])
     rep = expert("강마루랑 강화마루 차이가 뭐예요?", mode="llm")
@@ -249,6 +300,48 @@ def test_concierge_lead_with_made_up_number_is_dropped():
     )
     res = turn("처음인데 장판 깔려면 뭐부터 해요?", mode="llm")
     assert res.answer.lead == "" and res.answer.sections
+
+
+def test_llm_request_is_built_through_real_sdk_path(monkeypatch):
+    """네트워크 없이 실제 langchain_openai 경로로 요청을 만든다: 도구 스키마 · 메시지 순서 · 총괄 → 전문가 흐름."""
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from langchain_openai import ChatOpenAI
+    from pydantic import SecretStr
+
+    monkeypatch.setattr(settings, "llm_live", True)
+    monkeypatch.setattr(settings, "openai_api_key", SecretStr("sk-test-offline"))
+    payloads: list[dict] = []
+    replies = [
+        ("ask_expert", {"trade": "floor", "question": "장판이랑 데코타일 뭐가 나아요?"}),
+        ("compare_materials", {"materials": ["jangpan", "decotile"]}),
+        ("answer", {"sentences": [{"text": "긁힘에 강한지부터 봐요.", "cites": []}]}),
+        ("finish", {"lead": "바닥재는 비교표를 보고 고르면 돼요."}),
+    ]
+
+    async def fake(self, messages, stop=None, run_manager=None, **kwargs):
+        payloads.append(self._get_request_payload(messages, stop=stop, **kwargs))
+        name, args = replies.pop(0)
+        msg = AIMessage(
+            content="", tool_calls=[{"id": f"c{len(payloads)}", "name": name, "args": args}]
+        )
+        return ChatResult(generations=[ChatGeneration(message=msg)])
+
+    monkeypatch.setattr(ChatOpenAI, "_agenerate", fake)
+    ans = turn("처음인데 바닥이랑 도배 다 하려면 바닥재는 뭐가 나아요?", mode="llm").answer
+    assert replies == [] and len(payloads) == 4
+    assert ans.lead == "바닥재는 비교표를 보고 고르면 돼요." and "trade:floor" in ans.trace.parts
+    assert any(c.kind == "compare" for c in ans.cards)
+    tools = {(t.get("function") or t)["name"] for t in payloads[1]["tools"]}
+    assert {
+        "search_knowledge",
+        "compare_materials",
+        "answer",
+    } <= tools  # 전문가 차례에는 전문가 도구
+    for p in payloads:
+        for t in p["tools"]:
+            schema = (t.get("function") or t)["parameters"]
+            assert schema["type"] == "object" and "$ref" not in json.dumps(schema)
 
 
 # ---- 런타임 ----

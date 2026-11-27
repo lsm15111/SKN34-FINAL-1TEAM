@@ -230,15 +230,26 @@ class AnswerArgs(BaseModel):
     suggest: list[str] = Field(default=[], max_length=3, description="이어 물을 짧은 질문")
 
 
+# 답 글 안에 적은 근거 표시('… 확인해요. [K779]' · '(K1, K2)'): 글에서 떼어 cites로 옮긴다
+INLINE_CITE = re.compile(r"\s*[\[(]\s*(K\d{1,5}(?:\s*[,·/]\s*K\d{1,5})*)\s*[\])]")
+
+
+def split_cites(text: str, cites: list[str]) -> Sentence:
+    found = [c for m in INLINE_CITE.finditer(text) for c in re.findall(r"K\d{1,5}", m.group(1))]
+    clean = INLINE_CITE.sub("", text).strip()
+    return Sentence(text=clean, cites=list(dict.fromkeys([*cites, *found])))
+
+
 def answer_tool() -> Tool:
     def run(r: ExpertRun, a: AnswerArgs) -> ToolOut:
+        sents = [split_cites(s.text, s.cites) for s in a.sentences]
         sec = Section(
             title=f"[{r.x.ko}]",
-            sentences=[Sentence(text=s.text, cites=s.cites) for s in a.sentences],
+            sentences=sents,
             source="llm",
             route="trade",
             trade=r.x.code,  # type: ignore[arg-type]
-            sources=sources_of(r, [c for s in a.sentences for c in s.cites]),
+            sources=sources_of(r, [c for s in sents for c in s.cites]),
         )
         allowed = "\n".join([*r.evidence, r.t.text, r.t.asked, r.x.pack.all_text()])
         before = len(r.reply.sections)

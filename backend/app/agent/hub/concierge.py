@@ -13,6 +13,7 @@ DB · HTTP를 모른다. 프로젝트 사실 · 지식은 chat.service가 읽어
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,7 +24,7 @@ from app.agent.hub import experts
 from app.agent.hub.core import AgentSpec, Budget, BudgetExceeded, Run, Tool, ToolOut, loop
 from app.agent.hub.experts.base import ExpertTask, run_expert
 from app.agent.hub.reply import Asked, Memory, Reply
-from app.agent.v3 import check, orchestrator, policy, templates
+from app.agent.v3 import check, orchestrator, policy, templates, trades
 from app.agent.v3 import gate as gate_mod
 from app.agent.v3 import turn as v3_turn
 from app.agent.v3.answer import KB, Task
@@ -46,6 +47,7 @@ PROMPT_VERSION = "concierge_v1"
 PROMPT = (Path(__file__).with_name("prompts") / f"{PROMPT_VERSION}.md").read_text(encoding="utf-8")
 LLM_ROUTES: tuple[Route, ...] = ("multi", "ask_back", "guide")  # 총괄 LLM이 정하는 길
 TRADE_CODES = tuple(c for c in BY_CODE if c != "common")
+PET = re.compile(r"강아지|고양이|반려\s*(?:견|묘|동물)|애견|애묘|멍멍이|냥이")
 STAGE_KO = {
     "info": "기본 정보 넣기", "standard": "표준견적서 보기", "vendors": "업체 고르기", "visit": "실측",
     "after_visit": "실측 견적서 비교", "construction": "공사 중", "done": "공사 끝",
@@ -84,6 +86,14 @@ def understand(
         has_project=facts is not None, ignore=v3_turn.ignore_words(facts),
     )  # fmt: skip
     u = Understood(text=masked, gate=g)
+    if g.route == "out_of_scope" and g.source != "button":
+        # v3 범위 밖 규칙의 잡담 낱말('강아지')은 바닥재 고르기에서는 집 조건이에요
+        found = trades.trades_in(gate_mod._strip(masked, v3_turn.ignore_words(facts)))
+        if any(experts.get(c) for c in found) and not policy.out_of_scope(
+            PET.sub(" ", masked), True
+        ):
+            route: Route = "multi" if len(found) >= 2 else "trade"
+            u.gate = g.model_copy(update={"route": route, "trades": found, "source": "rule"})
     if waiting and waiting.get("slot") and (g.source == "waiting" or (button and button.slot)):
         u.slot = waiting["slot"]
         u.value = (button.value if button and button.value else masked)[:40]

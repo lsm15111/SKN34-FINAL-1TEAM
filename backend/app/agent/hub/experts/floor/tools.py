@@ -6,6 +6,7 @@ LLM에는 짧은 요약만 돌려준다(검증된 문장을 LLM이 다시 옮겨
 
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -25,6 +26,27 @@ from app.agent.v3.schemas import CompareTable, TableRow, UiCard
 # 맞춤에 쓰는 조건 순서(앞에서부터 하나씩 되묻는다). 지금 바닥은 철거 · 덧방 이야기에만 쓴다
 FIT_ORDER = ("floor.family", "floor.priority")
 WHO = {"직접": "직접", "업체": "업체에 확인", "같이": "업체와 같이"}
+# 고객이 자기 집 이야기로 말한 가족 조건(질문 글에서 바로 읽어 기억한다)
+FAMILY = (
+    ("반려동물", re.compile(r"강아지|고양이|반려\s*(?:견|묘|동물)|애견|애묘|멍멍이|냥이")),
+    (
+        "어린 아이",
+        re.compile(r"(?:아이|아기|애기|유아|아들|딸)(?:가|들|를|랑|와|는|도|\s)|어린\s*자녀"),
+    ),
+    ("어르신", re.compile(r"어르신|부모님|노인|할머니|할아버지")),
+)
+
+
+def sniff(r: ExpertRun, text: str) -> str | None:
+    """글에 나온 가족 조건을 기억한다(이미 알면 그대로). 처음 나온 것 하나."""
+    if "floor.family" in r.known():
+        return None
+    hits = [(m.start(), name) for name, p in FAMILY if (m := p.search(text))]
+    if not hits:
+        return None
+    got = min(hits)[1]
+    r.reply.memory["floor.family"] = got
+    return got
 
 
 # ---- 같이 쓰는 일 ----
@@ -201,10 +223,13 @@ def _checklist(r: ExpertRun, a: ChecklistArgs) -> ToolOut:
     return ToolOut(text=f"{head} {cl.title}: 항목 {len(cl.items)}개", refs=refs)
 
 
+Topic = Literal[
+    "quote", "visit", "before", "after", "demolish", "product", "overlay", "method", "defect"
+]
+
+
 class VendorArgs(BaseModel):
-    topics: list[
-        Literal["quote", "visit", "before", "after", "demolish", "product", "overlay", "method"]
-    ] = Field(min_length=1, max_length=3, description="물을 주제")
+    topics: list[Topic] = Field(min_length=1, max_length=3, description="물을 주제")
 
 
 def _vendor(r: ExpertRun, a: VendorArgs) -> ToolOut:
