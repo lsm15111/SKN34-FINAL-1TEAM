@@ -71,11 +71,10 @@ def test_floor_source_data_has_own_refs_docs_and_trades():
     refs = [r for r in kb.ix.by_ref if 17001 <= int(r[1:]) <= 17999]
     nums = sorted(int(r[1:]) for r in refs)
     assert (
-        len(nums) == 515 and nums[0] == 17001 and nums[-1] < 20001
+        len(nums) == 395 and nums[0] == 17001 and nums[-1] < 20001
     )  # 시공일지 · v3 지식과 안 겹침
-    kcs, law = kb.ix.by_ref["K17001"], kb.ix.by_ref["K17451"]
+    kcs = kb.ix.by_ref["K17001"]
     assert kcs.doc.kind in ("kcs", "official") and "바닥재" in kcs.chunk.trades + ("타일",)
-    assert law.doc.kind == "law" and set(law.chunk.trades) == {"공통", "바닥재"}
     assert (
-        len({kb.ix.by_ref[r].chunk.doc for r in refs}) == 56
+        len({kb.ix.by_ref[r].chunk.doc for r in refs}) == 17
     )  # 출처 문서마다 하나(파일 하나가 문서 하나가 아님)

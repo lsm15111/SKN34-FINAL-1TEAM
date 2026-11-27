@@ -1,4 +1,4 @@
-"""v3 지식 요지 193개(data/v3/knowledge/chunks.jsonl)를 임베딩 없이 키워드 검색에 넣는 길(B6).
+"""v3 지식 요지 202개(data/v3/knowledge/chunks.jsonl)를 임베딩 없이 키워드 검색에 넣는 길(B6).
 
 - CSV는 에이전트 담당 변환기(`app.knowledge.v3_csv`, 번호 `v3_csv.START`~ = K20001~)로 만들어요. 번호 규칙을 한 곳에만 둬요.
 - 적재 · 활성화는 테스트 DB에서만 해요. 유료 API는 부르지 않아요.
@@ -21,7 +21,7 @@ from app.knowledge.json_csv import EXTRA, REQUIRED
 
 SRC = Path(__file__).resolve().parents[2] / "data" / "v3" / "knowledge" / "chunks.jsonl"
 MODEL, DIMS, PROFILE = "text-embedding-3-small", 3, ingest.BUILD_PROFILE
-N = 193  # chunks.jsonl 조각 수(K20001~K20193)
+N = 202  # chunks.jsonl 조각 수(K20001~K20202)
 
 
 def build(tmp_path: Path) -> tuple[Path, list[dict]]:
