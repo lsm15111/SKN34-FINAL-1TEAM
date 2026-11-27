@@ -15,6 +15,9 @@ JEV_URL = "https://openrouter.ai/api/alpha/decisions"
 _stubs: dict[Role, BaseModel] = {}
 _jev_stub: list[tuple[str, float]] = []
 _embed_stub: list[tuple[str, list[float]]] = []
+# LLM_LIVE=false일 때 chat_tools가 차례로 돌려줄 답(에이전트 루프 시험용)과 받은 것(지시문 · 도구 확인용)
+_chat_script: list[dict] = []
+_chat_seen: list[dict] = []
 EMBED_DIMENSIONS = 1536  # 지식 조각 임베딩과 같은 차원 (data_ingest 기본값)
 
 
@@ -45,10 +48,27 @@ def set_embed_stub(model: str, vector: list[float]) -> None:
     _embed_stub[:] = [(model, vector)]
 
 
+def set_chat_script(replies: list[dict]) -> None:
+    """LLM_LIVE=false일 때 chat_tools가 부를 때마다 앞에서부터 하나씩 돌려줄 답.
+
+    한 답: {text?, tool_calls?: [{id, name, arguments}]}. {"error": True}면 LLMError를 낸다.
+    다 쓰면 예전처럼 CHAT_STUB_TEXT를 돌려준다.
+    """
+    _chat_script[:] = [dict(r) for r in replies]
+    _chat_seen.clear()
+
+
+def chat_seen() -> list[dict]:
+    """스텁 모드에서 chat_tools가 받은 {system, messages, tools} (시험용)."""
+    return list(_chat_seen)
+
+
 def clear_stubs() -> None:
     _stubs.clear()
     _jev_stub.clear()
     _embed_stub.clear()
+    _chat_script.clear()
+    _chat_seen.clear()
 
 
 async def embed_texts(texts: list[str]) -> tuple[str, list[list[float]]] | None:
@@ -149,6 +169,21 @@ async def chat_tools(system: str, messages: list[dict], tools: list[dict]) -> di
     usage: {input, cached, output}} (usage는 비용 기록용, 모르면 0).
     """
     if not settings.llm_live:
+        _chat_seen.append(
+            {"system": system, "messages": list(messages), "tools": [t["name"] for t in tools]}
+        )
+        del _chat_seen[:-20]  # 로컬 스텁 서버가 오래 돌아도 쌓이지 않게
+        if _chat_script:
+            r = _chat_script.pop(0)
+            if r.get("error"):
+                raise LLMError("chat 스텁 실패")
+            calls = list(r.get("tool_calls") or [])
+            return {
+                "text": r.get("text", ""),
+                "tool_calls": calls,
+                "stop": "tool_calls" if calls else "stop",
+                "usage": {"input": 0, "cached": 0, "output": 0},
+            }
         return {
             "text": CHAT_STUB_TEXT,
             "tool_calls": [],

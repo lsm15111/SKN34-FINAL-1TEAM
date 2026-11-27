@@ -272,3 +272,28 @@ def test_opted_in_trade_reads_only_active_vectors(api, monkeypatch):
     assert out["route"] == "trade"
     assert len(calls) == 1
     assert seen == ["dobae-vector-active/K9000"]
+
+
+def test_hub_floor_expert_remembers_conditions_across_turns(api):
+    """총괄 → 바닥 전문가: 되물은 조건을 대화 기억(Redis)에 담아 다음 턴에 이어 써요."""
+    use(api, signup(api))
+    first = done(ask(api, text="우리 집에 맞는 바닥재 골라 줘"))
+    assert first["route"] == "trade" and first["answer"]["ask"]["slot"] == "floor.family"
+    assert any(c["kind"] == "compare" for c in first["answer"]["cards"])
+    cid = first["chat_id"]
+    btn = {"route": "trade", "trade": "floor", "slot": "floor.family", "value": "어린 아이"}
+    second = done(ask(api, text="어린 아이", chat_id=cid, button=btn))
+    assert second["answer"]["ask"]["slot"] == "floor.priority"
+    third = done(ask(api, text="소음 줄이기", chat_id=cid))  # 버튼 없이 글로 답해도 기다리던 칸으로
+    said = " ".join(t for s in third["answer"]["sections"] for t in s["sentences"])
+    assert "어린 아이 · 소음 줄이기" in said and third["answer"]["ask"] is None
+    assert query("select waiting from chats where id = $1", uuid.UUID(cid))[0]["waiting"] is None
+
+
+def test_hub_can_be_switched_off(api, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "agent_hub", False)
+    use(api, signup(api))
+    out = done(ask(api, text="우리 집에 맞는 바닥재 골라 줘"))
+    assert out["answer"]["ask"] is None  # v3 한 턴: 바닥은 되묻기 칸이 없어요

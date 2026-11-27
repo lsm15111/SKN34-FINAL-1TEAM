@@ -87,6 +87,7 @@ AI_PER_HOUR = 60  # 사용자별 시간당 질문 수(APP_ENV=local이면 세지
 FAQ_PER_MIN = 60  # 로그인 전 자주 묻는 질문: IP 해시별 분당
 TOO_MANY = "AI에게 너무 많이 물었어요. 잠시 뒤에 다시 해 주세요."
 WAIT_TTL = 1800  # 되물은 칸은 30분 뒤 비운다(agents.md 5절)
+MEMORY_TTL = 14 * 86400  # 대화 기억(공종별 조건)은 2주 둔다. 지워지면 다시 물으면 된다
 REPLAY_TTL = 600  # 같은 client_key는 10분 동안 처음 답을 그대로 돌려준다
 THREAD_MESSAGES = 30
 # 대화 표 CHECK(0022)에 맞춘 라벨 · 출처. v3 가이드 · 복합은 v2처럼 orchestrator로 남긴다
@@ -209,10 +210,21 @@ async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
         except SQLAlchemyError:
             return ()
 
-    res = await run_turn(
-        body.text, ctx, kb=kb, facts=facts, waiting=waiting, button=body.button,
-        load_vectors=load_vectors if vector_versions and ix.items else None,
-    )  # fmt: skip
+    vectors = load_vectors if vector_versions and ix.items else None
+    memory = None
+    if settings.agent_hub:  # 총괄 에이전트 → 공종 전문가. 대화 기억(공종별 조건)을 이어 쓴다
+        from app.agent.hub.concierge import run_turn as hub_turn
+
+        memory = await _get_json(_key("mem", str(body.chat_id))) if body.chat_id else None
+        res = await hub_turn(
+            body.text, ctx, kb=kb, facts=facts, waiting=waiting, button=body.button,
+            memory=memory, load_vectors=vectors,
+        )  # fmt: skip
+    else:
+        res = await run_turn(
+            body.text, ctx, kb=kb, facts=facts, waiting=waiting, button=body.button,
+            load_vectors=vectors,
+        )  # fmt: skip
     ans = res.answer
     chat_id, new_rev = body.chat_id, None
     if not ans.failed:
@@ -238,6 +250,8 @@ async def ai_turn(user, body: AiTurnIn, today: date) -> AiTurnOut:
             await s.commit()
         new_rev = rev + 1
         await _set_json(_key("wait", str(chat_id)), res.waiting, WAIT_TTL)
+        if settings.agent_hub:
+            await _set_json(_key("mem", str(chat_id)), getattr(res, "memory", None), MEMORY_TTL)
     out = AiTurnOut(
         chat_id=chat_id, rev=new_rev, mode=ctx.mode, route=ans.trace.route, answer=_public(ans)
     )
